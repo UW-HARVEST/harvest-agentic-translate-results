@@ -4,234 +4,1235 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
-[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
-[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc[0m [38;5;244m(9 entries)[0m
-[38;5;244m - Completed in 0.0s[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -100; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src tree
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:59 .
+drwxr-xr-x. 499 scheschb amazon 81920 Sep  1 05:59 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 05:59 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 05:59 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 05:59 translation
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/c_src/include/lib.h[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/c_src/src/lib.c[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/c_src/CMakeLists.txt[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m193 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jpAAXc/c_src/include/lib.h
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/include/lib.h c_src/src/lib.c c_src/CMakeLists.txt; echo "---"; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes and CMakeLists
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1568 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jpAAXc/c_src/src/lib.c
+   6 c_src/include/lib.h
+  45 c_src/src/lib.c
+  15 c_src/CMakeLists.txt
+  66 total
+---
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jpAAXc/c_src/CMakeLists.txt
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read the C header and source
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m193 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1568 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/c_src/src/lib.c
 
  ⋮ 
 
-[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mNo namespace macros in the header, so the linker symbol is plain [38;5;10mmerge_sort[0m.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
-Purpose: Create Cargo.toml with cdylib crate type
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la .claude; cat .claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check .claude directory contents
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  27 Sep  1 05:59 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 05:59 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 05:59 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1 && echo OK && ls -la *.so && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library and enumerate exported symbols
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && tail -20 cmake.log; which cmake gcc cc[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect cmake failure log
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin/cmake
+/usr/bin/gcc
+/usr/bin/cc
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild-2PVBNZ && mkdir -p /tmp/cbuild-2PVBNZ && cd /tmp/cbuild-2PVBNZ && cmake /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1 && echo BUILD_OK && ls *.so && echo "=== nm -D --defined-only ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in fresh dir and list exported symbols
+
+BUILD_OK
+libharvest-work-2PVBNZ.so
+=== nm -D --defined-only ===
+0000000000001240 T merge_sort
+[38;5;244m - Completed in 0.419s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.30s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib translation crate
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
-[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-2PVBNZ"
 [0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
 [0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
-[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest-work-2PVBNZ"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Simplify Cargo.toml lib target
+
+[49m[39m   1,  1[0m:[39m[49m [package]
+[0m[49m[39m   2,  2[0m:[39m[49m name = "harvest-work-2PVBNZ"
+[0m[49m[39m   3,  3[0m:[39m[49m version = "0.1.0"
+[0m[49m[39m   4,  4[0m:[39m[49m edition = "2024"
+[0m[49m[39m   5,  5[0m:[39m[49m 
+[0m[49m[39m   6,  6[0m:[39m[49m [lib]
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m name = "harvest-work-2PVBNZ"
+[0m[49m[39m   8,  7[0m:[39m[49m crate-type = ["cdylib"]
+[0m[49m[39m   9,  8[0m:[39m[49m path = "src/lib.rs"
+[0m[49m[39m  10,  9[0m:[39m[49m 
+[0m[49m[39m  11, 10[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 11[0m:[39m[49m panic = "abort"
+[0m[K
+Replacing: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the Rust translation of the C library
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C library (`c_src/src/lib.c`, `c_src/include/lib.h`) exports exactly one
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! public symbol: `merge_sort`. Everything else in the C translation unit is
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! `static` and therefore has internal linkage (verified with
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! `nm -D --defined-only` on the C `.so`, which lists only `T merge_sort`).
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! The translation is intentionally literal: quirks of the original are
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! preserved, not fixed. In particular:
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! * `spritebatch_internal_sprite_less_than_or_equal` returns early on
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!   `a->sort_bits <= b->sort_bits`, which makes its second `if` unreachable
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //!   dead code (the `texture_id` tiebreak never runs). Reproduced as-is.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //! * `merge_sort` computes the `memcpy` length as
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!   `sizeof(spritebatch_sprite_t) * size` where `size` is an `int` implicitly
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //!   converted to `size_t`; a negative `size` therefore yields a huge unsigned
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //!   byte count. Reproduced with wrapping arithmetic.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //! * `int` arithmetic (`hi - lo`, `lo + hi`) uses wrapping semantics to match
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //!   what the C compiler emits on this target.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m /// Mirror of the C `spritebatch_sprite_t`.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// typedef struct spritebatch_sprite_t {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m ///     unsigned long long texture_id;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m ///     int sort_bits;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// } spritebatch_sprite_t;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// `#[repr(C)]` gives the same layout as the C struct: size 16, align 8 on the
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// LP64 targets this library is built for (4 bytes of tail padding after
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// `sort_bits`).
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #[derive(Clone, Copy)]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m pub struct spritebatch_sprite_t {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     pub texture_id: u64,
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     pub sort_bits: c_int,
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// Size in bytes of one sprite, i.e. C's `sizeof(spritebatch_sprite_t)`.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m const SPRITE_SIZE: usize = core::mem::size_of::<spritebatch_sprite_t>();
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// Translation of `spritebatch_internal_sprite_less_than_or_equal`.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// Kept returning `c_int` (1 / 0) rather than `bool` to stay faithful to the
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// original; the value is only ever used as a truth value.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// `a` and `b` must be valid, aligned, readable pointers to a
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// `spritebatch_sprite_t`.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m unsafe fn spritebatch_internal_sprite_less_than_or_equal(
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     a: *const spritebatch_sprite_t,
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     b: *const spritebatch_sprite_t,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m ) -> c_int {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     let a = unsafe { &*a };
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     let b = unsafe { &*b };
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     if a.sort_bits <= b.sort_bits {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     // Dead code in the original as well: the branch above already covers
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     // `a->sort_bits == b->sort_bits`. Preserved deliberately.
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     if a.sort_bits == b.sort_bits && a.texture_id <= b.texture_id {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         return 1;
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// Translation of `spritebatch_internal_merge_sort_iteration`.
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// Merges the two adjacent, already-sorted runs `a[lo..split)` and
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// `a[split..hi)` into `b[lo..hi)`.
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// `a` and `b` must be valid for reads / writes respectively over the index
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m /// range touched by the loop, exactly as required by the C original.
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m unsafe fn spritebatch_internal_merge_sort_iteration(
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     a: *const spritebatch_sprite_t,
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     lo: c_int,
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     split: c_int,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     hi: c_int,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     b: *mut spritebatch_sprite_t,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     let mut i = lo;
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let mut j = split;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     let mut k = lo;
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     while k < hi {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         // `i < split && (j >= hi || leq(a + i, a + j))` — note the C code
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         // short-circuits, so `a + j` is only dereferenced when `j < hi`.
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         let take_left = i < split
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             && (j >= hi
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                 || unsafe {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m                     spritebatch_internal_sprite_less_than_or_equal(
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                         a.offset(i as isize),
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m                         a.offset(j as isize),
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m                     )
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 } != 0);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         if take_left {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             unsafe { *b.offset(k as isize) = *a.offset(i as isize) };
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             i = i.wrapping_add(1);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             unsafe { *b.offset(k as isize) = *a.offset(j as isize) };
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             j = j.wrapping_add(1);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         k = k.wrapping_add(1);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m /// Translation of `spritebatch_internal_merge_sort_recurse`.
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m /// Note the deliberate parameter swap on the recursive calls: the C original
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m /// alternates the roles of the two buffers on each level so that the final
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m /// merge at this level reads from `b` and writes into `a`.
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m /// `b` and `a` must both be valid for the index range `[lo, hi)`.
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m unsafe fn spritebatch_internal_merge_sort_recurse(
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     b: *mut spritebatch_sprite_t,
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     lo: c_int,
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     hi: c_int,
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     a: *mut spritebatch_sprite_t,
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     if hi.wrapping_sub(lo) <= 1 {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     let split = lo.wrapping_add(hi) / 2;
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         spritebatch_internal_merge_sort_recurse(a, lo, split, b);
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         spritebatch_internal_merge_sort_recurse(a, split, hi, b);
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         spritebatch_internal_merge_sort_iteration(b, lo, split, hi, a);
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m /// Translation of the library's only exported function:
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m /// void merge_sort(spritebatch_sprite_t *a, spritebatch_sprite_t *b, int size);
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m /// Sorts `a[0..size)` in place, using `b` as scratch space of the same length.
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m /// Same contract as the C function: `a` and `b` must be valid, non-overlapping
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m /// arrays of at least `size` `spritebatch_sprite_t` elements.
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m pub unsafe extern "C" fn merge_sort(
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     a: *mut spritebatch_sprite_t,
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     b: *mut spritebatch_sprite_t,
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     size: c_int,
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     // `memcpy(b, a, sizeof(spritebatch_sprite_t) * size);`
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     //
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     // `size` is an `int` widened to `size_t`, so a negative `size` produces an
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     // enormous byte count here just as it does in C. The multiplication is done
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     // with wrapping semantics to reproduce that faithfully.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     let bytes = SPRITE_SIZE.wrapping_mul(size as usize);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     if bytes != 0 {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         unsafe { core::ptr::copy_nonoverlapping(a.cast::<u8>(), b.cast::<u8>(), bytes) };
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     unsafe { spritebatch_internal_merge_sort_recurse(b, 0, size, a) };
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib in release mode
+
+   Compiling harvest-work-2PVBNZ v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation)
+warning: crate `harvest_work_2PVBNZ` should have a snake case name
+  |
+  = help: convert the identifier to snake case: `harvest_work_2_pvbnz`
+  = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `harvest-work-2PVBNZ` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.155s[0m
+
+[?25l[0m[38;5;141m> [0mNow verify the exported symbol surface matches the C [38;5;10m.so[0m exactly.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ
+ls translation/target/release/*.so
+echo "=== C exports ==="
+nm -D --defined-only /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so | awk '$2=="T"||$2=="W"||$2=="D"||$2=="B"{print $3}' | sort > /tmp/c.syms
+cat /tmp/c.syms
+echo "=== Rust exports (non-Rust-runtime) ==="
+nm -D --defined-only translation/target/release/libharvest_work_2PVBNZ.so | awk '$2=="T"||$2=="W"||$2=="D"||$2=="B"{print $3}' | sort > /tmp/r.syms
+cat /tmp/r.syms
+echo "=== DIFF: C symbols missing from Rust ==="
+comm -23 /tmp/c.syms /tmp/r.syms
+echo "=== (end diff) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust shared libraries
+
+translation/target/release/libharvest_work_2PVBNZ.so
+=== C exports ===
+merge_sort
+=== Rust exports (non-Rust-runtime) ===
+merge_sort
+=== DIFF: C symbols missing from Rust ===
+=== (end diff) ===
+[38;5;244m - Completed in 0.38s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol surface matches exactly. Now a differential test against the real C library:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/diffharness-2PVBNZ.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write a differential test harness comparing C and Rust merge_sort
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Differential harness: loads the C .so and the Rust .so, runs merge_sort on
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m // identical inputs, and compares the resulting arrays byte-for-byte.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #include <stdint.h>
 [0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
-[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m typedef struct { unsigned long long texture_id; int sort_bits; } sprite;
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m typedef void (*fn_t)(sprite *, sprite *, int);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m static uint64_t st = 0x853c49e6748fea9bULL;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m static uint64_t rnd(void) {
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     st ^= st << 13; st ^= st >> 7; st ^= st << 17; return st;
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m static int run_case(fn_t cfn, fn_t rfn, int size, sprite *seed) {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     size_t n = size > 0 ? (size_t)size : 1;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     sprite *ca = calloc(n, sizeof(sprite)), *cb = calloc(n, sizeof(sprite));
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     sprite *ra = calloc(n, sizeof(sprite)), *rb = calloc(n, sizeof(sprite));
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     if (size > 0) {
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         memcpy(ca, seed, sizeof(sprite) * (size_t)size);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         memcpy(ra, seed, sizeof(sprite) * (size_t)size);
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     cfn(ca, cb, size);
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     rfn(ra, rb, size);
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     int bad = 0;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     if (size > 0) {
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         if (memcmp(ca, ra, sizeof(sprite) * (size_t)size) != 0) { bad = 1; }
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         if (memcmp(cb, rb, sizeof(sprite) * (size_t)size) != 0) { bad |= 2; }
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     if (bad) {
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         printf("MISMATCH size=%d flags=%d\n", size, bad);
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m         for (int i = 0; i < size && i < 24; i++)
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m             printf("  [%2d] C{%llu,%d} R{%llu,%d}\n", i,
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m                    ca[i].texture_id, ca[i].sort_bits,
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m                    ra[i].texture_id, ra[i].sort_bits);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     free(ca); free(cb); free(ra); free(rb);
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     return bad;
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     void *ch = dlopen(argv[1], RTLD_NOW), *rh = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     if (!ch || !rh) { printf("dlopen failed: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     fn_t cfn = (fn_t)dlsym(ch, "merge_sort");
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     fn_t rfn = (fn_t)dlsym(rh, "merge_sort");
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     if (!cfn || !rfn) { printf("dlsym failed: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     int fails = 0, cases = 0;
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     sprite buf[512];
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     // size 0 and 1 edge cases, then exhaustive-ish small sizes, then bigger.
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     int sizes[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,15,16,17,31,32,33,63,64,
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m                    65,100,127,128,129,255,256,257,333,511,512};
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     for (unsigned s = 0; s < sizeof(sizes)/sizeof(sizes[0]); s++) {
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         int size = sizes[s];
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         for (int trial = 0; trial < 400; trial++) {
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m             for (int i = 0; i < size; i++) {
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m                 switch (trial % 5) {
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m                     case 0: // wide random
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m                         buf[i].sort_bits = (int)(rnd() & 0xffffffffu);
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m                         buf[i].texture_id = rnd();
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m                     case 1: // heavy duplicate sort_bits -> exercises stability
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m                         buf[i].sort_bits = (int)(rnd() % 3);
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m                         buf[i].texture_id = rnd() % 5;
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m                     case 2: // already sorted ascending
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m                         buf[i].sort_bits = i;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m                         buf[i].texture_id = (unsigned long long)i * 7u;
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m                     case 3: // reverse sorted
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m                         buf[i].sort_bits = size - i;
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m                         buf[i].texture_id = rnd();
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m                     default: // all identical sort_bits, varying texture_id
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m                         buf[i].sort_bits = 42;
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m                         buf[i].texture_id = rnd();
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m             // include INT_MIN / INT_MAX sort_bits to catch overflow differences
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m             if (size > 2 && trial % 7 == 0) {
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m                 buf[0].sort_bits = (-2147483647 - 1);
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m                 buf[1].sort_bits = 2147483647;
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m                 buf[size-1].sort_bits = (-2147483647 - 1);
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m             fails += (run_case(cfn, rfn, size, buf) != 0);
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m             cases++;
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m     // negative sizes: C does a huge memcpy and would crash, so only the
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m     // recursion path is exercised here via size == 0 above. Skipped by design.
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m     printf("cases=%d failures=%d\n", cases, fails);
+[0m[49m[38;5;10m+    97[0m:[38;5;10m[49m     return fails != 0;
+[0m[49m[38;5;10m+    98[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/translation/Cargo.toml[0m
+Creating: [38;5;141m/tmp/diffharness-2PVBNZ.c[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
-Purpose: Check toolchain version for edition 2024 support
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o diffharness-2PVBNZ diffharness-2PVBNZ.c -ldl && ./diffharness-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile and run the differential harness
 
-rustc 1.94.0 (4a4ef493e 2026-03-02)
-cargo 1.94.0 (85eff7c80 2026-01-15)
-[38;5;244m - Completed in 0.43s[0m
+  [ 5] C{5178250917758751188,42} R{5178250917758751188,42}
+  [ 6] C{7560426309766387575,42} R{7560426309766387575,42}
+  [ 7] C{9261146274304746393,42} R{9261146274304746393,42}
+  [ 8] C{9614092544420060702,42} R{9614092544420060702,42}
+  [ 9] C{5184025988031585954,42} R{5184025988031585954,42}
+  [10] C{16468513406327979551,42} R{16468513406327979551,42}
+  [11] C{12017296129277314595,42} R{12017296129277314595,42}
+  [12] C{15907359796887498351,42} R{15907359796887498351,42}
+  [13] C{11861015508549684211,42} R{11861015508549684211,42}
+  [14] C{12442085862126737060,42} R{12442085862126737060,42}
+  [15] C{5498363303332908297,42} R{5498363303332908297,42}
+  [16] C{1588213065508030547,42} R{1588213065508030547,42}
+  [17] C{11770265494249637763,42} R{11770265494249637763,42}
+  [18] C{14288053225750893644,42} R{14288053225750893644,42}
+  [19] C{7900062490151388260,42} R{7900062490151388260,42}
+  [20] C{113368163182224492,42} R{113368163182224492,42}
+  [21] C{15259166680764554788,42} R{15259166680764554788,42}
+  [22] C{3549937602636247576,42} R{3549937602636247576,42}
+  [23] C{1527604063367015164,42} R{1527604063367015164,42}
+cases=13200 failures=1584
+[38;5;244m - Completed in 0.146s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-Purpose: Translate lib.c merge sort to Rust
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && ./diffharness-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so 2>&1 | grep MISMATCH | sort | uniq -c | head -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Summarize mismatch sizes and flags
 
-[48;2;40;67;43m[39m+      1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Rust translation of `c_src/src/lib.c` (spritebatch merge sort).[K
-[0m[48;2;40;67;43m[39m+      2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+      3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Behaviour is preserved exactly, including the dead second comparison in[K
-[0m[48;2;40;67;43m[39m+      4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m `spritebatch_internal_sprite_less_than_or_equal` (the first `<=` test makes[K
-[0m[48;2;40;67;43m[39m+      5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m the `==` test unreachable). That quirk is part of the original code and is[K
-[0m[48;2;40;67;43m[39m+      6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m intentionally *not* fixed here.[K
-[0m[48;2;40;67;43m[39m+      7[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+      8[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;180;142;173mc_int[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+      9[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     10[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Mirrors:[K
-[0m[48;2;40;67;43m[39m+     11[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m ```c[K
-[0m[48;2;40;67;43m[39m+     12[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m typedef struct spritebatch_sprite_t {[K
-[0m[48;2;40;67;43m[39m+     13[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m     unsigned long long texture_id;[K
-[0m[48;2;40;67;43m[39m+     14[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m     int sort_bits;[K
-[0m[48;2;40;67;43m[39m+     15[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m } spritebatch_sprite_t;[K
-[0m[48;2;40;67;43m[39m+     16[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m ```[K
-[0m[48;2;40;67;43m[39m+     17[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     18[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mderive[38;2;192;197;206m([38;2;192;197;206mClone[38;2;192;197;206m,[38;2;192;197;206m Copy[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     19[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mspritebatch_sprite_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     20[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mtexture_id[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu64[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+     21[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106msort_bits[38;2;192;197;206m:[38;2;192;197;206m c_int,[K
-[0m[48;2;40;67;43m[39m+     22[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     23[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     24[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `static int spritebatch_internal_sprite_less_than_or_equal(...)`[K
-[0m[48;2;40;67;43m[39m+     25[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+     26[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m The second `if` is unreachable in the C original; kept verbatim.[K
-[0m[48;2;40;67;43m[39m+     27[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106minline[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     28[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179msprite_less_than_or_equal[38;2;192;197;206m([38;2;191;97;106ma[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mspritebatch_sprite_t, [38;2;191;97;106mb[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206mspritebatch_sprite_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mbool[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     29[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m a.sort_bits [38;2;192;197;206m<[38;2;192;197;206m=[38;2;192;197;206m b.sort_bits [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     30[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;208;135;112mtrue[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     31[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     32[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m a.sort_bits [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m b.sort_bits [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m a.texture_id [38;2;192;197;206m<[38;2;192;197;206m=[38;2;192;197;206m b.texture_id [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;208;135;112mtrue[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112mfalse[K
-[0m[48;2;40;67;43m[39m+     36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     37[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     38[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `static void spritebatch_internal_merge_sort_iteration(a, lo, split, hi, b)`[K
-[0m[48;2;40;67;43m[39m+     39[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+     40[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Reads from `src` (the C `a`) and writes into `dst` (the C `b`).[K
-[0m[48;2;40;67;43m[39m+     41[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmerge_sort_iteration[38;2;192;197;206m([K
-[0m[48;2;40;67;43m[39m+     42[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106msrc[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m[spritebatch_sprite_t],[K
-[0m[48;2;40;67;43m[39m+     43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mlo[38;2;192;197;206m:[38;2;192;197;206m c_int,[K
-[0m[48;2;40;67;43m[39m+     44[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106msplit[38;2;192;197;206m:[38;2;192;197;206m c_int,[K
-[0m[48;2;40;67;43m[39m+     45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mhi[38;2;192;197;206m:[38;2;192;197;206m c_int,[K
-[0m[48;2;40;67;43m[39m+     46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mdst[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m [spritebatch_sprite_t],[K
-[0m[48;2;40;67;43m[39m+     47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m i [38;2;192;197;206m=[38;2;192;197;206m lo[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     49[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m j [38;2;192;197;206m=[38;2;192;197;206m split[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     50[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m k [38;2;192;197;206m=[38;2;192;197;206m lo[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     51[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mwhile[38;2;192;197;206m k [38;2;192;197;206m<[38;2;192;197;206m hi [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     52[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m i [38;2;192;197;206m<[38;2;192;197;206m split [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mj [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m hi [38;2;192;197;206m|[38;2;192;197;206m|[38;2;192;197;206m [38;2;150;181;180msprite_less_than_or_equal[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206msrc[38;2;192;197;206m[[38;2;192;197;206mi [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m][38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206msrc[38;2;192;197;206m[[38;2;192;197;206mj [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m][38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     53[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            dst[38;2;192;197;206m[[38;2;192;197;206mk [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m src[38;2;192;197;206m[[38;2;192;197;206mi [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m][38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     54[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            i [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     55[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            dst[38;2;192;197;206m[[38;2;192;197;206mk [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m src[38;2;192;197;206m[[38;2;192;197;206mj [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m][38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     57[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            j [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     58[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     59[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        k [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     60[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     62[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     63[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `static void spritebatch_internal_merge_sort_recurse(b, lo, hi, a)`[K
-[0m[48;2;40;67;43m[39m+     64[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+     65[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Note how the two buffers swap roles on every level of recursion, exactly as[K
-[0m[48;2;40;67;43m[39m+     66[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m in the C original.[K
-[0m[48;2;40;67;43m[39m+     67[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmerge_sort_recurse[38;2;192;197;206m([K
-[0m[48;2;40;67;43m[39m+     68[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mb[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m [spritebatch_sprite_t],[K
-[0m[48;2;40;67;43m[39m+     69[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mlo[38;2;192;197;206m:[38;2;192;197;206m c_int,[K
-[0m[48;2;40;67;43m[39m+     70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mhi[38;2;192;197;206m:[38;2;192;197;206m c_int,[K
-[0m[48;2;40;67;43m[39m+     71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106ma[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m&[38;2;180;142;173mmut[38;2;192;197;206m [spritebatch_sprite_t],[K
-[0m[48;2;40;67;43m[39m+     72[0m:[39m[48;2;24;38;30m [38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m hi [38;2;192;197;206m-[38;2;192;197;206m lo [38;2;192;197;206m<[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     75[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m split [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mlo [38;2;192;197;206m+[38;2;192;197;206m hi[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     77[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mmerge_sort_recurse[38;2;192;197;206m([38;2;192;197;206ma[38;2;192;197;206m,[38;2;192;197;206m lo[38;2;192;197;206m,[38;2;192;197;206m split[38;2;192;197;206m,[38;2;192;197;206m b[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mmerge_sort_recurse[38;2;192;197;206m([38;2;192;197;206ma[38;2;192;197;206m,[38;2;192;197;206m split[38;2;192;197;206m,[38;2;192;197;206m hi[38;2;192;197;206m,[38;2;192;197;206m b[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     79[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mmerge_sort_iteration[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206m*[38;2;192;197;206mb[38;2;192;197;206m,[38;2;192;197;206m lo[38;2;192;197;206m,[38;2;192;197;206m split[38;2;192;197;206m,[38;2;192;197;206m hi[38;2;192;197;206m,[38;2;192;197;206m a[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     80[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     81[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     82[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `void merge_sort(spritebatch_sprite_t *a, spritebatch_sprite_t *b, int size);`[K
-[0m[48;2;40;67;43m[39m+     83[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     84[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmerge_sort[38;2;192;197;206m([K
-[0m[48;2;40;67;43m[39m+     85[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106ma[38;2;192;197;206m:[38;2;192;197;206m *[38;2;180;142;173mmut[38;2;192;197;206m spritebatch_sprite_t,[K
-[0m[48;2;40;67;43m[39m+     86[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mb[38;2;192;197;206m:[38;2;192;197;206m *[38;2;180;142;173mmut[38;2;192;197;206m spritebatch_sprite_t,[K
-[0m[48;2;40;67;43m[39m+     87[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106msize[38;2;192;197;206m:[38;2;192;197;206m c_int,[K
-[0m[48;2;40;67;43m[39m+     88[0m:[39m[48;2;24;38;30m [38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     89[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m a.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m|[38;2;192;197;206m|[38;2;192;197;206m b.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m|[38;2;192;197;206m|[38;2;192;197;206m size [38;2;192;197;206m<[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     90[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m size == 0 makes the C body a no-op; guard the degenerate cases[K
-[0m[48;2;40;67;43m[39m+     91[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m instead of constructing invalid slices.[K
-[0m[48;2;40;67;43m[39m+     92[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     93[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     94[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     95[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m len [38;2;192;197;206m=[38;2;192;197;206m size [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     96[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m a [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mslice[38;2;192;197;206m::[38;2;192;197;206mfrom_raw_parts_mut[38;2;192;197;206m([38;2;192;197;206ma[38;2;192;197;206m,[38;2;192;197;206m len[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     97[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m b [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mslice[38;2;192;197;206m::[38;2;192;197;206mfrom_raw_parts_mut[38;2;192;197;206m([38;2;192;197;206mb[38;2;192;197;206m,[38;2;192;197;206m len[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     98[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     99[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m memcpy(b, a, sizeof(spritebatch_sprite_t) * size);[K
-[0m[48;2;40;67;43m[39m+    100[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    b.[38;2;150;181;180mcopy_from_slice[38;2;192;197;206m([38;2;192;197;206ma[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    101[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    102[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mmerge_sort_recurse[38;2;192;197;206m([38;2;192;197;206mb[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m,[38;2;192;197;206m size[38;2;192;197;206m,[38;2;192;197;206m a[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    103[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+     24 MISMATCH size=255 flags=2
+    240 MISMATCH size=255 flags=3
+     24 MISMATCH size=256 flags=2
+    240 MISMATCH size=256 flags=3
+     24 MISMATCH size=257 flags=2
+    240 MISMATCH size=257 flags=3
+     24 MISMATCH size=333 flags=2
+    240 MISMATCH size=333 flags=3
+     24 MISMATCH size=511 flags=2
+    240 MISMATCH size=511 flags=3
+     24 MISMATCH size=512 flags=2
+    240 MISMATCH size=512 flags=3
+[38;5;244m - Completed in 0.73s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/dbg-2PVBNZ.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write a focused debug harness to locate first differing index per size
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef struct { unsigned long long texture_id; int sort_bits; } sprite;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m typedef void (*fn_t)(sprite *, sprite *, int);
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     void *ch = dlopen(argv[1], RTLD_NOW), *rh = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     fn_t cfn = (fn_t)dlsym(ch, "merge_sort");
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     fn_t rfn = (fn_t)dlsym(rh, "merge_sort");
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     for (int size = 1; size <= 600; size++) {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m         sprite *ca = calloc(size, sizeof(sprite)), *cb = calloc(size, sizeof(sprite));
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m         sprite *ra = calloc(size, sizeof(sprite)), *rb = calloc(size, sizeof(sprite));
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         for (int i = 0; i < size; i++) {
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m             ca[i].sort_bits = (i * 7919) % 101 - 50;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m             ca[i].texture_id = (unsigned long long)((i * 31) % 17);
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         memcpy(ra, ca, sizeof(sprite) * (size_t)size);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         cfn(ca, cb, size);
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         rfn(ra, rb, size);
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m         int firstA = -1, firstB = -1;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         for (int i = 0; i < size; i++) {
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m             if (firstA < 0 && memcmp(&ca[i], &ra[i], sizeof(sprite))) firstA = i;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m             if (firstB < 0 && memcmp(&cb[i], &rb[i], sizeof(sprite))) firstB = i;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         if (firstA >= 0 || firstB >= 0) {
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m             printf("size=%d firstA=%d firstB=%d", size, firstA, firstB);
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m             if (firstA >= 0)
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m                 printf("  a: C{%llu,%d} R{%llu,%d}", ca[firstA].texture_id,
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m                        ca[firstA].sort_bits, ra[firstA].texture_id, ra[firstA].sort_bits);
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m             if (firstB >= 0)
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m                 printf("  b: C{%llu,%d} R{%llu,%d}", cb[firstB].texture_id,
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m                        cb[firstB].sort_bits, rb[firstB].texture_id, rb[firstB].sort_bits);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m             printf("\n");
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         free(ca); free(cb); free(ra); free(rb);
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/translation/src/lib.rs[0m
+Creating: [38;5;141m/tmp/dbg-2PVBNZ.c[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-Purpose: Build the Rust crate in release mode
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o dbg-2PVBNZ dbg-2PVBNZ.c -ldl && ./dbg-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so | head -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run focused debug harness across sizes 1..600
 
-   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/translation)
-    Finished `release` profile [optimized] target(s) in 0.19s
-[38;5;244m - Completed in 0.214s[0m
+[38;5;244m - Completed in 0.69s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only target/release/libtranslation.so | grep -i merge[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-Purpose: Verify exported symbol name
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141m/tmp/diffharness-2PVBNZ.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Improve mismatch diagnostics to show first differing index
 
-0000000000011ef0 T merge_sort
-[38;5;244m - Completed in 0.24s[0m
+[49m[39m  33, 33[0m:[39m[49m     if (bad) {
+[0m[49m[38;5;9m- 34    [0m:[38;5;9m[49m         printf("MISMATCH size=%d flags=%d\n", size, bad);
+[0m[49m[38;5;9m- 35    [0m:[38;5;9m[49m         for (int i = 0; i < size && i < 24; i++)
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m             printf("  [%2d] C{%llu,%d} R{%llu,%d}\n", i,
+[0m[49m[38;5;9m- 37    [0m:[38;5;9m[49m                    ca[i].texture_id, ca[i].sort_bits,
+[0m[49m[38;5;9m- 38    [0m:[38;5;9m[49m                    ra[i].texture_id, ra[i].sort_bits);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         int fa = -1, fb = -1;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         for (int i = 0; i < size; i++) {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             if (fa < 0 && memcmp(&ca[i], &ra[i], sizeof(sprite))) fa = i;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             if (fb < 0 && memcmp(&cb[i], &rb[i], sizeof(sprite))) fb = i;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         printf("MISMATCH size=%d flags=%d fa=%d fb=%d", size, bad, fa, fb);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         if (fa >= 0)
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m             printf(" a:C{%llu,%d}/R{%llu,%d}", ca[fa].texture_id, ca[fa].sort_bits,
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m                    ra[fa].texture_id, ra[fa].sort_bits);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         if (fb >= 0)
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             printf(" b:C{%llu,%d}/R{%llu,%d}", cb[fb].texture_id, cb[fb].sort_bits,
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m                    rb[fb].texture_id, rb[fb].sort_bits);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         printf("\n");
+[0m[49m[39m  39, 47[0m:[39m[49m     }
+[0m[K
+Updating: [38;5;141m/tmp/diffharness-2PVBNZ.c[0m
+[38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mNow a differential test against the original C (built in /tmp, [38;5;10mc_src[0m untouched):[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mset -e
-SRC=/local/home/scheschb/.harvest/work/harvest-work-jpAAXc/c_src
-cc -O2 -shared -fPIC -I$SRC/include $SRC/src/lib.c -o /tmp/libc_orig.so
-cat > /tmp/harness.c <<'EOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <dlfcn.h>
-typedef struct { unsigned long long texture_id; int sort_bits; } S;
-typedef void (*fn)(S*, S*, int);
-static unsigned long long st;
-static unsigned long long rnd(void){ st ^= st<<13; st ^= st>>7; st ^= st<<17; return st; }
-int main(int argc, char** argv){
-    void* h = dlopen(argv[1], RTLD_NOW);
-    if(!h){ printf("dlopen fail %s\n", dlerror()); return 1; }
-    fn ms = (fn)dlsym(h, "merge_sort");
-    if(!ms){ printf("dlsym fail\n"); return 1; }
-    st = 88172645463325252ULL;
-    for(int t=0;t<200;t++){
-        int n = (int)(rnd()%64);
-        S a[64], b[64];
-        for(int i=0;i<n;i++){ a[i].texture_id = rnd()%10; a[i].sort_bits = (int)(rnd()%7) - 3; }
-        for(int i=0;i<64;i++){ b[i].texture_id = 0xAAAA; b[i].sort_bits = -1; }
-        ms(a,b,n);
-        printf("t=%d n=%d |", t, n);
-        for(int i=0;i<n;i++) printf(" (%llu,%d)", a[i].texture_id, a[i].sort_bits);
-        printf(" ||");
-        for(int i=0;i<n;i++) printf(" (%llu,%d)", b[i].texture_id, b[i].sort_bits);
-        printf("\n");
-    }
-    return 0;
-}
-EOF
-cc -O2 /tmp/harness.c -o /tmp/harness -ldl
-/tmp/harness /tmp/libc_orig.so > /tmp/out_c.txt
-/tmp/harness /local/home/scheschb/.harvest/work/harvest-work-jpAAXc/translation/target/release/libtranslation.so > /tmp/out_rs.txt
-if cmp -s /tmp/out_c.txt /tmp/out_rs.txt; then echo "IDENTICAL ($(wc -l < /tmp/out_c.txt) cases, $(wc -c < /tmp/out_c.txt) bytes)"; else echo DIFF; diff /tmp/out_c.txt /tmp/out_rs.txt | head -20; fi[0m[38;5;244m (using tool: shell)[0m
-Purpose: Differential test: C vs Rust outputs over 200 random cases
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o diffharness-2PVBNZ diffharness-2PVBNZ.c -ldl && ./diffharness-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so 2>&1 | grep MISMATCH | head -8; echo "..."; cd /tmp && ./diffharness-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so 2>&1 | tail -2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run harness with detailed first-diff reporting
 
-IDENTICAL (200 cases, 87072 bytes)
-[38;5;244m - Completed in 0.153s[0m
+MISMATCH size=255 flags=3 fa=23 fb=138 a:C{14797422300479946449,-1760897542}/R{14797422300479946449,-1760897542} b:C{14797422300479946449,-1760897542}/R{14797422300479946449,-1760897542}
+MISMATCH size=255 flags=3 fa=73 fb=158 a:C{0,0}/R{0,0} b:C{0,0}/R{0,0}
+MISMATCH size=255 flags=3 fa=1 fb=128 a:C{4671872226268616672,2}/R{4671872226268616672,2} b:C{4671872226268616672,2}/R{4671872226268616672,2}
+MISMATCH size=255 flags=3 fa=9 fb=129 a:C{5328932130263171741,-1959308679}/R{5328932130263171741,-1959308679} b:C{5328932130263171741,-1959308679}/R{5328932130263171741,-1959308679}
+MISMATCH size=255 flags=3 fa=59 fb=153 a:C{4,0}/R{4,0} b:C{4,0}/R{4,0}
+MISMATCH size=255 flags=2 fa=-1 fb=193 b:C{1344,192}/R{1344,192}
+MISMATCH size=255 flags=3 fa=1 fb=128 a:C{16049008956301236977,2}/R{16049008956301236977,2} b:C{16049008956301236977,2}/R{16049008956301236977,2}
+MISMATCH size=255 flags=3 fa=64 fb=157 a:C{12908724783402197991,-896547094}/R{12908724783402197991,-896547094} b:C{12908724783402197991,-896547094}/R{12908724783402197991,-896547094}
+...
+MISMATCH size=512 flags=2 fa=-1 fb=192 b:C{446545256946982482,42}/R{446545256946982482,42}
+cases=13200 failures=1584
+[38;5;244m - Completed in 0.164s[0m
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean and matches the C byte-for-byte.[0m[0m
+[?25l[0m[38;5;141m> [0mField values are identical — the differences are in struct [3mpadding[23m bytes. Let me check what gcc actually emits for the struct assignment:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild-2PVBNZ && objdump -d --no-show-raw-insn libharvest-work-2PVBNZ.so | sed -n '/<merge_sort>:/,/^$/p' | head -60; echo "=== all funcs ==="; objdump -d libharvest-work-2PVBNZ.so | grep '>:' [0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble the C library to see struct copy width
+
+0000000000001240 <merge_sort>:
+    1240:	push   %r13
+    1242:	movslq %edx,%rdx
+    1245:	mov    %rdi,%r13
+    1248:	mov    %rsi,%rdi
+    124b:	push   %r12
+    124d:	mov    %r13,%rsi
+    1250:	mov    %rdx,%r12
+    1253:	shl    $0x4,%rdx
+    1257:	sub    $0x8,%rsp
+    125b:	call   1030 <memcpy@plt>
+    1260:	add    $0x8,%rsp
+    1264:	mov    %r13,%rcx
+    1267:	mov    %r12d,%edx
+    126a:	mov    %rax,%rdi
+    126d:	pop    %r12
+    126f:	xor    %esi,%esi
+    1271:	pop    %r13
+    1273:	jmp    1110 <spritebatch_internal_merge_sort_recurse>
+
+=== all funcs ===
+0000000000001000 <_init>:
+0000000000001020 <memcpy@plt-0x10>:
+0000000000001030 <memcpy@plt>:
+0000000000001040 <__cxa_finalize@plt>:
+0000000000001050 <deregister_tm_clones>:
+0000000000001080 <register_tm_clones>:
+00000000000010c0 <__do_global_dtors_aux>:
+0000000000001100 <frame_dummy>:
+0000000000001110 <spritebatch_internal_merge_sort_recurse>:
+0000000000001240 <merge_sort>:
+0000000000001278 <_fini>:
+[38;5;244m - Completed in 0.15s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild-2PVBNZ && objdump -d --no-show-raw-insn libharvest-work-2PVBNZ.so | sed -n '/<spritebatch_internal_merge_sort_recurse>:/,/<merge_sort>:/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble the recurse function to inspect struct copy width
+
+0000000000001110 <spritebatch_internal_merge_sort_recurse>:
+    1110:	mov    %edx,%eax
+    1112:	sub    %esi,%eax
+    1114:	cmp    $0x1,%eax
+    1117:	jle    1238 <spritebatch_internal_merge_sort_recurse+0x128>
+    111d:	lea    (%rdx,%rsi,1),%eax
+    1120:	push   %r14
+    1122:	mov    %eax,%r14d
+    1125:	push   %r13
+    1127:	mov    %rcx,%r13
+    112a:	mov    %rdi,%rcx
+    112d:	shr    $0x1f,%r14d
+    1131:	push   %r12
+    1133:	mov    %edx,%r12d
+    1136:	push   %rbp
+    1137:	add    %eax,%r14d
+    113a:	mov    %esi,%ebp
+    113c:	push   %rbx
+    113d:	sar    $1,%r14d
+    1140:	mov    %rdi,%rbx
+    1143:	mov    %r13,%rdi
+    1146:	mov    %r14d,%edx
+    1149:	call   1110 <spritebatch_internal_merge_sort_recurse>
+    114e:	mov    %rbx,%rcx
+    1151:	mov    %r12d,%edx
+    1154:	mov    %r14d,%esi
+    1157:	mov    %r13,%rdi
+    115a:	call   1110 <spritebatch_internal_merge_sort_recurse>
+    115f:	cmp    %ebp,%r12d
+    1162:	jle    1209 <spritebatch_internal_merge_sort_recurse+0xf9>
+    1168:	movslq %ebp,%rsi
+    116b:	mov    %ebp,%eax
+    116d:	mov    %r14d,%edx
+    1170:	shl    $0x4,%rsi
+    1174:	add    %r13,%rsi
+    1177:	cmp    %ebp,%r14d
+    117a:	jle    11c2 <spritebatch_internal_merge_sort_recurse+0xb2>
+    117c:	nopl   0x0(%rax)
+    1180:	movslq %ebp,%rcx
+    1183:	shl    $0x4,%rcx
+    1187:	add    %rbx,%rcx
+    118a:	cmp    %edx,%r12d
+    118d:	jle    1218 <spritebatch_internal_merge_sort_recurse+0x108>
+    1193:	movslq %edx,%rdi
+    1196:	shl    $0x4,%rdi
+    119a:	add    %rbx,%rdi
+    119d:	mov    0x8(%rdi),%r8d
+    11a1:	cmp    %r8d,0x8(%rcx)
+    11a5:	jle    1218 <spritebatch_internal_merge_sort_recurse+0x108>
+    11a7:	movdqu (%rdi),%xmm3
+    11ab:	add    $0x1,%eax
+    11ae:	add    $0x1,%edx
+    11b1:	movups %xmm3,(%rsi)
+    11b4:	cmp    %eax,%r12d
+    11b7:	je     1209 <spritebatch_internal_merge_sort_recurse+0xf9>
+    11b9:	add    $0x10,%rsi
+    11bd:	cmp    %ebp,%r14d
+    11c0:	jg     1180 <spritebatch_internal_merge_sort_recurse+0x70>
+    11c2:	movslq %edx,%rcx
+    11c5:	add    $0x1,%eax
+    11c8:	add    $0x1,%edx
+    11cb:	shl    $0x4,%rcx
+    11cf:	movdqu (%rbx,%rcx,1),%xmm1
+    11d4:	movups %xmm1,(%rsi)
+    11d7:	cmp    %eax,%r12d
+    11da:	je     1209 <spritebatch_internal_merge_sort_recurse+0xf9>
+    11dc:	movslq %edx,%rdx
+    11df:	shl    $0x4,%rdx
+    11e3:	add    %rdx,%rbx
+    11e6:	movslq %eax,%rdx
+    11e9:	shl    $0x4,%rdx
+    11ed:	add    %rdx,%r13
+    11f0:	xor    %edx,%edx
+    11f2:	movdqu (%rbx,%rdx,1),%xmm0
+    11f7:	add    $0x1,%eax
+    11fa:	movups %xmm0,0x0(%r13,%rdx,1)
+    1200:	add    $0x10,%rdx
+    1204:	cmp    %eax,%r12d
+    1207:	jg     11f2 <spritebatch_internal_merge_sort_recurse+0xe2>
+    1209:	pop    %rbx
+    120a:	pop    %rbp
+    120b:	pop    %r12
+    120d:	pop    %r13
+    120f:	pop    %r14
+    1211:	ret
+    1212:	nopw   0x0(%rax,%rax,1)
+    1218:	movdqu (%rcx),%xmm2
+    121c:	add    $0x1,%eax
+    121f:	add    $0x1,%ebp
+    1222:	movups %xmm2,(%rsi)
+    1225:	cmp    %eax,%r12d
+    1228:	jne    11b9 <spritebatch_internal_merge_sort_recurse+0xa9>
+    122a:	pop    %rbx
+    122b:	pop    %rbp
+    122c:	pop    %r12
+    122e:	pop    %r13
+    1230:	pop    %r14
+    1232:	ret
+    1233:	nopl   0x0(%rax,%rax,1)
+    1238:	ret
+    1239:	nopl   0x0(%rax)
+
+0000000000001240 <merge_sort>:
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation && objdump -d --no-show-raw-insn target/release/libharvest_work_2PVBNZ.so | sed -n '/merge_sort/,$p' | grep -E 'mov(dqu|ups|q|l)|<' | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble Rust .so to check struct copy width
+
+00000000000116f0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse>:
+   116f7:	jl     117e1 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xf1>
+   11725:	call   116f0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse>
+   11735:	call   116f0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse>
+   1173d:	jle    117d9 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xe9>
+   11759:	jmp    1177a <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0x8a>
+   11778:	je     117d9 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xe9>
+   1177d:	jge    117b0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xc0>
+   1178c:	jge    11760 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0x70>
+   117a4:	jle    11764 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0x74>
+   117a6:	jmp    117bf <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xcf>
+   117d7:	jne    1177a <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0x8a>
+00000000000117f0 <merge_sort>:
+   117fc:	je     11818 <merge_sort+0x28>
+   11810:	call   *0x3a7f2(%rip)        # 4c008 <memcpy@GLIBC_2.14>
+   11824:	jmp    116f0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse>
+0000000000011830 <_RNvCs9wFQrvczXsK_7___rustc12___rust_alloc>:
+   11830:	jmp    26100 <_RNvCs9wFQrvczXsK_7___rustc11___rdl_alloc>
+0000000000011840 <_RNvCs9wFQrvczXsK_7___rustc14___rust_dealloc>:
+   11840:	jmp    26170 <_RNvCs9wFQrvczXsK_7___rustc13___rdl_dealloc>
+0000000000011850 <_RNvCs9wFQrvczXsK_7___rustc14___rust_realloc>:
+   11850:	jmp    26180 <_RNvCs9wFQrvczXsK_7___rustc13___rdl_realloc>
+0000000000011860 <_RNvCs9wFQrvczXsK_7___rustc19___rust_alloc_zeroed>:
+   11860:	jmp    26250 <_RNvCs9wFQrvczXsK_7___rustc18___rdl_alloc_zeroed>
+0000000000011870 <_RNvCs9wFQrvczXsK_7___rustc35___rust_no_alloc_shim_is_unstable_v2>:
+0000000000011880 <_RNvCs9wFQrvczXsK_7___rustc18___rust_start_panic>:
+   11884:	call   *0x3a75e(%rip)        # 4bfe8 <_DYNAMIC+0x1f8>
+0000000000011890 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtB7_6option6OptionINtNtCscdodAO9FK5_5alloc5boxed3BoxINtNtCsdB6qrhj7hiN_9addr2line4unit7DwoUnitINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB2S_9endianity12LittleEndianEEEENtB2Q_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMB28_INtB28_7ResUnitB2L_E14dwarf_and_units0_0E0zECs2AWtUsOyxgP_3std>:
+   11893:	jne    118a4 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtB7_6option6OptionINtNtCscdodAO9FK5_5alloc5boxed3BoxINtNtCsdB6qrhj7hiN_9addr2line4unit7DwoUnitINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB2S_9endianity12LittleEndianEEEENtB2Q_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMB28_INtB28_7ResUnitB2L_E14dwarf_and_units0_0E0zECs2AWtUsOyxgP_3std+0x14>
+   11898:	movq   $0x0,0x8(%rdi)
+   118af:	call   19820 <_RINvNtCs4NRVxsYgnAr_4core3ptr9drop_glueINtNtB4_6result6ResultRIBC_INtNtB4_6option6OptionINtNtCscdodAO9FK5_5alloc5boxed3BoxINtNtCsdB6qrhj7hiN_9addr2line4unit7DwoUnitINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB2J_9endianity12LittleEndianEEEENtB2H_5ErrorETBX_BY_EEECs2AWtUsOyxgP_3std>
+   118b4:	lea    -0x96f7(%rip),%rdi        # 81c4 <GCC_except_table142+0x18e8>
+   118bb:	lea    0x38e86(%rip),%rdx        # 4a748 <__dso_handle+0x8>
+   118c7:	call   *0x3a90b(%rip)        # 4c1d8 <_DYNAMIC+0x3e8>
+00000000000118d0 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtB7_6option6OptionINtNtCscdodAO9FK5_5alloc5boxed3BoxINtNtCsdB6qrhj7hiN_9addr2line4unit7DwoUnitINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB2S_9endianity12LittleEndianEEEENtB2Q_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMB28_INtB28_7ResUnitB2L_E14dwarf_and_units2_0E0zECs2AWtUsOyxgP_3std>:
+   118dd:	jne    118f5 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtB7_6option6OptionINtNtCscdodAO9FK5_5alloc5boxed3BoxINtNtCsdB6qrhj7hiN_9addr2line4unit7DwoUnitINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB2S_9endianity12LittleEndianEEEENtB2Q_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMB28_INtB28_7ResUnitB2L_E14dwarf_and_units2_0E0zECs2AWtUsOyxgP_3std+0x25>
+   118f8:	jne    118fe <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtB7_6option6OptionINtNtCscdodAO9FK5_5alloc5boxed3BoxINtNtCsdB6qrhj7hiN_9addr2line4unit7DwoUnitINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB2S_9endianity12LittleEndianEEEENtB2Q_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMB28_INtB28_7ResUnitB2L_E14dwarf_and_units2_0E0zECs2AWtUsOyxgP_3std+0x2e>
+   11905:	call   19820 <_RINvNtCs4NRVxsYgnAr_4core3ptr9drop_glueINtNtB4_6result6ResultRIBC_INtNtB4_6option6OptionINtNtCscdodAO9FK5_5alloc5boxed3BoxINtNtCsdB6qrhj7hiN_9addr2line4unit7DwoUnitINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB2J_9endianity12LittleEndianEEEENtB2H_5ErrorETBX_BY_EEECs2AWtUsOyxgP_3std>
+   1190a:	lea    -0x974d(%rip),%rdi        # 81c4 <GCC_except_table142+0x18e8>
+   11911:	lea    0x38e30(%rip),%rdx        # 4a748 <__dso_handle+0x8>
+   1191d:	call   *0x3a8b5(%rip)        # 4c1d8 <_DYNAMIC+0x3e8>
+0000000000011930 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std>:
+   1199c:	je     11a57 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std+0x127>
+   119f6:	movq   $0x0,-0x128(%rbp)
+   11a27:	jne    11a2f <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std+0xff>
+   11a2d:	ja     11a66 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std+0x136>
+   11a42:	jns    11ad7 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std+0x1a7>
+   11a4e:	jne    11a20 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std+0xf0>
+   11a55:	jmp    11a6b <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std+0x13b>
+   11a64:	jmp    11a73 <_RINvMNtNtCs4NRVxsYgnAr_4core4cell4onceINtB3_8OnceCellINtNtB7_6result6ResultINtNtCsdB6qrhj7hiN_9addr2line8function8FunctionINtNtNtCsjd0ZH04R2Z3_5gimli4read12endian_slice11EndianSliceNtNtB23_9endianity12LittleEndianEENtB21_5ErrorEE8try_initNCINvB2_11get_or_initNCNvMs_B1e_INtB1e_12LazyFunctionB1W_E6borrow0E0zECs2AWtUsOyxgP_3std+0x143>
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation && objdump -d --no-show-raw-insn target/release/libharvest_work_2PVBNZ.so | awk '/^00000000000116f0 </,/^$/' | sed -n '1,70p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect Rust recurse function instructions in detail
+
+00000000000116f0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse>:
+   116f0:	mov    %edx,%eax
+   116f2:	sub    %esi,%eax
+   116f4:	cmp    $0x2,%eax
+   116f7:	jl     117e1 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xf1>
+   116fd:	push   %rbp
+   116fe:	push   %r15
+   11700:	push   %r14
+   11702:	push   %r12
+   11704:	push   %rbx
+   11705:	mov    %rcx,%r14
+   11708:	mov    %rdi,%rbx
+   1170b:	lea    (%rdx,%rsi,1),%eax
+   1170e:	mov    %eax,%ebp
+   11710:	shr    $0x1f,%ebp
+   11713:	add    %eax,%ebp
+   11715:	sar    $1,%ebp
+   11717:	mov    %rcx,%rdi
+   1171a:	mov    %rsi,%r15
+   1171d:	mov    %rdx,%r12
+   11720:	mov    %ebp,%edx
+   11722:	mov    %rbx,%rcx
+   11725:	call   116f0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse>
+   1172a:	mov    %r14,%rdi
+   1172d:	mov    %ebp,%esi
+   1172f:	mov    %r12d,%edx
+   11732:	mov    %rbx,%rcx
+   11735:	call   116f0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse>
+   1173a:	cmp    %r15d,%r12d
+   1173d:	jle    117d9 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xe9>
+   11743:	movslq %r15d,%rcx
+   11746:	movslq %r12d,%rax
+   11749:	sub    %rcx,%rax
+   1174c:	shl    $0x4,%rcx
+   11750:	add    %r14,%rcx
+   11753:	add    $0x8,%rcx
+   11757:	mov    %ebp,%edx
+   11759:	jmp    1177a <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0x8a>
+   1175b:	nopl   0x0(%rax,%rax,1)
+   11760:	mov    0x8(%rsi),%r9d
+   11764:	mov    (%rsi),%rsi
+   11767:	mov    %rsi,-0x8(%rcx)
+   1176b:	mov    %r9d,(%rcx)
+   1176e:	inc    %r15d
+   11771:	add    $0x10,%rcx
+   11775:	dec    %rax
+   11778:	je     117d9 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xe9>
+   1177a:	cmp    %ebp,%r15d
+   1177d:	jge    117b0 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xc0>
+   1177f:	movslq %r15d,%rsi
+   11782:	shl    $0x4,%rsi
+   11786:	add    %rbx,%rsi
+   11789:	cmp    %r12d,%edx
+   1178c:	jge    11760 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0x70>
+   1178e:	movslq %edx,%rdi
+   11791:	mov    %rdi,%r8
+   11794:	shl    $0x4,%r8
+   11798:	mov    0x8(%rsi),%r9d
+   1179c:	mov    0x8(%rbx,%r8,1),%r8d
+   117a1:	cmp    %r8d,%r9d
+   117a4:	jle    11764 <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0x74>
+   117a6:	jmp    117bf <_RNvCs3a6BHK5lsgh_19harvest_work_2PVBNZ39spritebatch_internal_merge_sort_recurse+0xcf>
+   117a8:	nopl   0x0(%rax,%rax,1)
+   117b0:	movslq %edx,%rdi
+   117b3:	mov    %rdi,%rsi
+   117b6:	shl    $0x4,%rsi
+   117ba:	mov    0x8(%rbx,%rsi,1),%r8d
+   117bf:	shl    $0x4,%rdi
+   117c3:	mov    (%rbx,%rdi,1),%rsi
+   117c7:	mov    %rsi,-0x8(%rcx)
+[38;5;244m - Completed in 0.66s[0m
+
+[?25l[0m[38;5;141m> [0mFound the difference: gcc copies the struct with [38;5;10mmovdqu[0m/[38;5;10mmovups[0m (full 16 bytes, padding included), while Rust's [38;5;10m*b = *a[0m emits a 12-byte field-wise copy that leaves padding untouched. Fixing to match:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Copy full 16 bytes per element to match gcc's padding-propagating struct copy
+
+[49m[38;5;10m+       74[0m:[38;5;10m[49m /// Byte-for-byte copy of one sprite, matching the code gcc generates for the C
+[0m[49m[38;5;10m+       75[0m:[38;5;10m[49m /// struct assignment `b[k] = a[i]`.
+[0m[49m[38;5;10m+       76[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+       77[0m:[38;5;10m[49m /// This deliberately copies all `SPRITE_SIZE` (16) bytes, including the 4 bytes
+[0m[49m[38;5;10m+       78[0m:[38;5;10m[49m /// of tail padding after `sort_bits`. A plain Rust `*dst = *src` would only copy
+[0m[49m[38;5;10m+       79[0m:[38;5;10m[49m /// the two fields (12 bytes) and leave the destination's padding untouched,
+[0m[49m[38;5;10m+       80[0m:[38;5;10m[49m /// whereas gcc emits a 16-byte `movdqu`/`movups` pair that carries the padding
+[0m[49m[38;5;10m+       81[0m:[38;5;10m[49m /// across. When callers pass arrays whose padding holds indeterminate values,
+[0m[49m[38;5;10m+       82[0m:[38;5;10m[49m /// that distinction is externally visible to anything comparing raw bytes, so it
+[0m[49m[38;5;10m+       83[0m:[38;5;10m[49m /// is reproduced here.
+[0m[49m[38;5;10m+       84[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+       85[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+       86[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+       87[0m:[38;5;10m[49m /// `src` and `dst` must be valid for a 16-byte read / write respectively and
+[0m[49m[38;5;10m+       88[0m:[38;5;10m[49m /// must not overlap.
+[0m[49m[38;5;10m+       89[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+       90[0m:[38;5;10m[49m unsafe fn copy_sprite(dst: *mut spritebatch_sprite_t, src: *const spritebatch_sprite_t) {
+[0m[49m[38;5;10m+       91[0m:[38;5;10m[49m     unsafe { core::ptr::copy_nonoverlapping(src.cast::<u8>(), dst.cast::<u8>(), SPRITE_SIZE) };
+[0m[49m[38;5;10m+       92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+       93[0m:[38;5;10m[49m 
+[0m[49m[39m   74,  94[0m:[39m[49m /// Translation of `spritebatch_internal_merge_sort_iteration`.
+[0m[49m[39m   75,  95[0m:[39m[49m ///
+[0m[49m[39m   76,  96[0m:[39m[49m /// Merges the two adjacent, already-sorted runs `a[lo..split)` and
+[0m[49m[39m   77,  97[0m:[39m[49m /// `a[split..hi)` into `b[lo..hi)`.
+[0m[49m[39m   78,  98[0m:[39m[49m ///
+[0m[49m[39m   79,  99[0m:[39m[49m /// # Safety
+[0m[49m[39m   80, 100[0m:[39m[49m ///
+[0m[49m[39m   81, 101[0m:[39m[49m /// `a` and `b` must be valid for reads / writes respectively over the index
+[0m[49m[39m   82, 102[0m:[39m[49m /// range touched by the loop, exactly as required by the C original.
+[0m[49m[39m   83, 103[0m:[39m[49m unsafe fn spritebatch_internal_merge_sort_iteration(
+[0m[49m[39m   84, 104[0m:[39m[49m     a: *const spritebatch_sprite_t,
+[0m[49m[39m   85, 105[0m:[39m[49m     lo: c_int,
+[0m[49m[39m   86, 106[0m:[39m[49m     split: c_int,
+[0m[49m[39m   87, 107[0m:[39m[49m     hi: c_int,
+[0m[49m[39m   88, 108[0m:[39m[49m     b: *mut spritebatch_sprite_t,
+[0m[49m[39m   89, 109[0m:[39m[49m ) {
+[0m[49m[39m   90, 110[0m:[39m[49m     let mut i = lo;
+[0m[49m[39m   91, 111[0m:[39m[49m     let mut j = split;
+[0m[49m[39m   92, 112[0m:[39m[49m 
+[0m[49m[39m   93, 113[0m:[39m[49m     let mut k = lo;
+[0m[49m[39m   94, 114[0m:[39m[49m     while k < hi {
+[0m[49m[39m   95, 115[0m:[39m[49m         // `i < split && (j >= hi || leq(a + i, a + j))` — note the C code
+[0m[49m[39m   96, 116[0m:[39m[49m         // short-circuits, so `a + j` is only dereferenced when `j < hi`.
+[0m[49m[39m   97, 117[0m:[39m[49m         let take_left = i < split
+[0m[49m[39m   98, 118[0m:[39m[49m             && (j >= hi
+[0m[49m[39m   99, 119[0m:[39m[49m                 || unsafe {
+[0m[49m[39m  100, 120[0m:[39m[49m                     spritebatch_internal_sprite_less_than_or_equal(
+[0m[49m[39m  101, 121[0m:[39m[49m                         a.offset(i as isize),
+[0m[49m[39m  102, 122[0m:[39m[49m                         a.offset(j as isize),
+[0m[49m[39m  103, 123[0m:[39m[49m                     )
+[0m[49m[39m  104, 124[0m:[39m[49m                 } != 0);
+[0m[49m[39m  105, 125[0m:[39m[49m 
+[0m[49m[39m  106, 126[0m:[39m[49m         if take_left {
+[0m[49m[38;5;9m- 107     [0m:[38;5;9m[49m             unsafe { *b.offset(k as isize) = *a.offset(i as isize) };
+[0m[49m[38;5;10m+      127[0m:[38;5;10m[49m             unsafe { copy_sprite(b.offset(k as isize), a.offset(i as isize)) };
+[0m[49m[39m  108, 128[0m:[39m[49m             i = i.wrapping_add(1);
+[0m[49m[39m  109, 129[0m:[39m[49m         } else {
+[0m[49m[38;5;9m- 110     [0m:[38;5;9m[49m             unsafe { *b.offset(k as isize) = *a.offset(j as isize) };
+[0m[49m[38;5;10m+      130[0m:[38;5;10m[49m             unsafe { copy_sprite(b.offset(k as isize), a.offset(j as isize)) };
+[0m[49m[39m  111, 131[0m:[39m[49m             j = j.wrapping_add(1);
+[0m[49m[39m  112, 132[0m:[39m[49m         }
+[0m[49m[39m  113, 133[0m:[39m[49m 
+[0m[49m[39m  114, 134[0m:[39m[49m         k = k.wrapping_add(1);
+[0m[49m[39m  115, 135[0m:[39m[49m     }
+[0m[49m[39m  116, 136[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation && cargo build --release 2>&1 | grep -E 'error|warning: unused|Finished' ; cd /tmp && ./diffharness-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so 2>&1 | tail -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and re-run differential harness including padding comparison
+
+    Finished `release` profile [optimized] target(s) in 0.08s
+cases=13200 failures=0
+[38;5;244m - Completed in 0.166s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation && objdump -d --no-show-raw-insn target/release/libharvest_work_2PVBNZ.so | awk '/spritebatch_internal_merge_sort_recurse>:$/,/^$/' | grep -E 'movdqu|movups|movaps' | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm Rust now emits 16-byte SIMD struct copies
+
+   11764:	movups (%r14,%rdx,1),%xmm0
+   11769:	movups %xmm0,(%rbx)
+   117b7:	movups (%r14,%rsi,1),%xmm0
+   117bc:	movups %xmm0,(%rbx)
+[38;5;244m - Completed in 0.66s[0m
+
+[?25l[0m[38;5;141m> [0mNow a stronger harness with deliberately poisoned padding and large inputs:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/stress-2PVBNZ.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write stress harness with poisoned padding and large sizes
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Stress harness: poisons struct padding with known non-zero bytes, uses large
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m // input sizes, and compares the full byte image of BOTH the sorted array and the
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // scratch buffer.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #include <limits.h>
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m typedef struct { unsigned long long texture_id; int sort_bits; } sprite;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m typedef void (*fn_t)(sprite *, sprite *, int);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m static uint64_t st = 0x2545f4914f6cdd1dULL;
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m static uint64_t rnd(void) { st ^= st << 13; st ^= st >> 7; st ^= st << 17; return st; }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     void *ch = dlopen(argv[1], RTLD_NOW), *rh = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     if (!ch || !rh) { printf("dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     fn_t cfn = (fn_t)dlsym(ch, "merge_sort");
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     fn_t rfn = (fn_t)dlsym(rh, "merge_sort");
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     if (!cfn || !rfn) { printf("dlsym: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     int fails = 0, cases = 0;
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     int sizes[] = {0,1,2,3,4,5,6,7,8,9,10,16,17,63,64,65,100,255,256,257,
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m                    1000,1023,1024,1025,4096,10000,65536,100000};
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     for (unsigned s = 0; s < sizeof(sizes)/sizeof(sizes[0]); s++) {
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         int size = sizes[s];
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         int trials = size > 5000 ? 6 : 200;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         for (int trial = 0; trial < trials; trial++) {
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m             size_t n = size > 0 ? (size_t)size : 1;
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m             unsigned char *seed = malloc(n * sizeof(sprite));
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m             unsigned char *ca = malloc(n * sizeof(sprite));
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m             unsigned char *cb = malloc(n * sizeof(sprite));
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m             unsigned char *ra = malloc(n * sizeof(sprite));
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m             unsigned char *rb = malloc(n * sizeof(sprite));
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m             // Poison every byte, including padding, then overwrite the fields.
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             for (size_t z = 0; z < n * sizeof(sprite); z++) seed[z] = (unsigned char)(rnd() & 0xff);
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m             sprite *sp = (sprite *)seed;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m             for (int i = 0; i < size; i++) {
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m                 switch (trial % 6) {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m                     case 0: sp[i].sort_bits = (int)(uint32_t)rnd(); sp[i].texture_id = rnd(); break;
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m                     case 1: sp[i].sort_bits = (int)(rnd() % 3); sp[i].texture_id = rnd() % 4; break;
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m                     case 2: sp[i].sort_bits = i; sp[i].texture_id = rnd(); break;
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m                     case 3: sp[i].sort_bits = size - i; sp[i].texture_id = rnd(); break;
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m                     case 4: sp[i].sort_bits = 0; sp[i].texture_id = rnd(); break;
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m                     default:
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m                         sp[i].sort_bits = (rnd() & 1) ? INT_MIN : INT_MAX;
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m                         sp[i].texture_id = (rnd() & 1) ? 0ULL : ~0ULL;
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m             // Scratch buffers start out identically poisoned too, so that any
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m             // byte the library leaves alone is still compared meaningfully.
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m             memcpy(ca, seed, n * sizeof(sprite));
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m             memcpy(ra, seed, n * sizeof(sprite));
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m             for (size_t z = 0; z < n * sizeof(sprite); z++) {
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m                 unsigned char v = (unsigned char)(rnd() & 0xff);
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m                 cb[z] = v; rb[z] = v;
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m             cfn((sprite *)ca, (sprite *)cb, size);
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m             rfn((sprite *)ra, (sprite *)rb, size);
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m             if (size > 0) {
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m                 int da = memcmp(ca, ra, n * sizeof(sprite)) != 0;
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m                 int db = memcmp(cb, rb, n * sizeof(sprite)) != 0;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m                 if (da || db) {
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m                     printf("MISMATCH size=%d trial=%d a=%d b=%d\n", size, trial, da, db);
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m                     fails++;
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m                 // Sanity: confirm the C output really is sorted by sort_bits,
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m                 // so we know the harness is exercising a meaningful sort.
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m                 sprite *out = (sprite *)ca;
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m                 for (int i = 1; i < size; i++) {
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m                     if (out[i-1].sort_bits > out[i].sort_bits) {
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m                         printf("NOT_SORTED(C) size=%d at %d\n", size, i);
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m                         fails++;
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m                         break;
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m             cases++;
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m             free(seed); free(ca); free(cb); free(ra); free(rb);
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m     printf("cases=%d failures=%d\n", cases, fails);
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m     return fails != 0;
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/stress-2PVBNZ.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o stress-2PVBNZ stress-2PVBNZ.c -ldl && ./stress-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so 2>&1 | tail -8[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile and run the stress differential harness
+
+cases=5018 failures=0
+[38;5;244m - Completed in 0.483s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/edge-2PVBNZ.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write edge-case harness for size <= 0 behavior
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Confirms C and Rust agree on the degenerate size <= 0 cases, including the
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m // negative-size path where the C code's `sizeof(sprite) * size` becomes a huge
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // unsigned byte count. Each call runs in a forked child so a fault is observed
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m // rather than fatal.
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #include <sys/wait.h>
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m #include <unistd.h>
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m typedef struct { unsigned long long texture_id; int sort_bits; } sprite;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m typedef void (*fn_t)(sprite *, sprite *, int);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m static int probe(fn_t f, int size) {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     pid_t p = fork();
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     if (p == 0) {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         sprite a[8], b[8];
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m         memset(a, 0x5a, sizeof a);
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         memset(b, 0x5a, sizeof b);
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         f(a, b, size);
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         _exit(0);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     int st = 0;
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     waitpid(p, &st, 0);
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     if (WIFSIGNALED(st)) return 1000 + WTERMSIG(st);
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     return WEXITSTATUS(st);
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     void *ch = dlopen(argv[1], RTLD_NOW), *rh = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     fn_t cfn = (fn_t)dlsym(ch, "merge_sort");
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     fn_t rfn = (fn_t)dlsym(rh, "merge_sort");
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     int sizes[] = {0, -1, -2, -8, -1000};
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     int bad = 0;
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(sizes)/sizeof(sizes[0]); i++) {
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         int c = probe(cfn, sizes[i]), r = probe(rfn, sizes[i]);
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         printf("size=%6d  C=%d  Rust=%d  %s\n", sizes[i], c, r,
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m                c == r ? "match" : "DIFFER");
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         if (c != r) bad = 1;
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     return bad;
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/edge-2PVBNZ.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o edge-2PVBNZ edge-2PVBNZ.c -ldl && ./edge-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare degenerate size<=0 behavior between C and Rust
+
+size=     0  C=0  Rust=0  match
+size=    -1  C=1011  Rust=1011  match
+size=    -2  C=1011  Rust=1011  match
+size=    -8  C=1011  Rust=1011  match
+size= -1000  C=0  Rust=0  match
+[38;5;244m - Completed in 2.799s[0m
+
+[?25l[0m[38;5;141m> [0mBoth agree even on the pathological negative-size paths (identical SIGSEGV for -1/-2/-8, identical survival for -1000). Final consolidated verification:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ
+echo "=== c_src untouched? ==="
+find c_src -newer c_src/CMakeLists.txt -type f | grep -v '^$' || true
+md5sum c_src/include/lib.h c_src/src/lib.c c_src/CMakeLists.txt
+echo "=== translation layout ==="
+find translation -maxdepth 2 -not -path '*/target*' -type f
+wc -l translation/src/lib.rs
+echo "=== Cargo.toml ==="
+cat translation/Cargo.toml
+echo "=== clean rebuild ==="
+cd translation && rm -rf target && cargo build --release 2>&1 | tail -3
+echo "=== SYMBOL DIFF (C exports not in Rust) ==="
+nm -D --defined-only /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so | awk '{print $3}' | sort -u > /tmp/c.syms
+nm -D --defined-only target/release/libharvest_work_2PVBNZ.so | awk '{print $3}' | sort -u > /tmp/r.syms
+echo "C exports:"; cat /tmp/c.syms
+echo "missing-from-rust:"; comm -23 /tmp/c.syms /tmp/r.syms; echo "(empty above == complete)"
+echo "=== rust exported merge_sort ==="
+nm -D --defined-only target/release/libharvest_work_2PVBNZ.so | grep -w merge_sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification: c_src integrity, clean rebuild, symbol diff
+
+=== c_src untouched? ===
+607874f8968d93fa10c652696faa7039  c_src/include/lib.h
+c3c1134f307948ed26c6ddaf04568e9c  c_src/src/lib.c
+8889366dbb1535b8a848547af64fbc79  c_src/CMakeLists.txt
+=== translation layout ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+195 translation/src/lib.rs
+=== Cargo.toml ===
+[package]
+name = "harvest-work-2PVBNZ"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+=== clean rebuild ===
+
+warning: `harvest-work-2PVBNZ` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.13s
+=== SYMBOL DIFF (C exports not in Rust) ===
+C exports:
+merge_sort
+missing-from-rust:
+(empty above == complete)
+=== rust exported merge_sort ===
+00000000000117e0 T merge_sort
+[38;5;244m - Completed in 0.210s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Silence crate-name snake_case warning
+
+[49m[38;5;9m- 21    [0m:[38;5;9m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // The crate name is derived from the C library's name, which is not snake case.
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m #![allow(non_camel_case_types, non_snake_case)]
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation && cargo build --release 2>&1 | tail -3 && nm -D --defined-only target/release/libharvest_work_2PVBNZ.so | grep -w merge_sort && cd /tmp && ./stress-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so | tail -3 && ./diffharness-2PVBNZ /tmp/cbuild-2PVBNZ/libharvest-work-2PVBNZ.so /local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation/target/release/libharvest_work_2PVBNZ.so | tail -2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final rebuild and re-run both differential harnesses
+
+   Compiling harvest-work-2PVBNZ v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-2PVBNZ/translation)
+    Finished `release` profile [optimized] target(s) in 0.09s
+00000000000117e0 T merge_sort
+cases=5018 failures=0
+cases=13200 failures=0
+[38;5;244m - Completed in 0.589s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
 [0m[0m
-What was translated: a single public function, [38;5;10mmerge_sort(spritebatch_sprite_t *a, spritebatch_sprite_t *b, int size)[0m, plus three [38;5;10mstatic[0m helpers. The header has no namespace macros, so the linker symbol is plain [38;5;10mmerge_sort[0m — confirmed with [38;5;10mnm[0m on the produced [38;5;10mlibtranslation.so[0m.[0m[0m
+[1mScope[22m: the C library is small — [38;5;10mc_src/CMakeLists.txt[0m compiles only [38;5;10msrc/lib.c[0m, and [38;5;10mnm -D --defined-only[0m on the resulting [38;5;10mlibharvest-work-2PVBNZ.so[0m shows exactly one exported symbol, [38;5;10mmerge_sort[0m. The three helper functions ([38;5;10mspritebatch_internal_sprite_less_than_or_equal[0m, [38;5;10m..._merge_sort_iteration[0m, [38;5;10m..._merge_sort_recurse[0m) are [38;5;10mstatic[0m, so they have internal linkage and are not part of the ABI. No namespace-renaming macros exist in [38;5;10minclude/lib.h[0m. I translated all four functions anyway so the behavior is reproduced, but only [38;5;10mmerge_sort[0m carries [38;5;10m#[unsafe(no_mangle)] extern "C"[0m.[0m[0m
 [0m[0m
-Details worth noting:[0m[0m
+[1mSymbol diff is empty[22m — the Rust [38;5;10m.so[0m exports [38;5;10mmerge_sort[0m and [38;5;10mcomm -23[0m between the two symbol lists yields nothing.[0m[0m
 [0m[0m
-- The comparator's second check is dead code in the C ([38;5;10mif (a->sort_bits <= b->sort_bits) return 1;[0m already covers the [38;5;10m==[0m case), so [38;5;10mtexture_id[0m never influences ordering. I reproduced it verbatim rather than fixing it, per your instruction. This also means the sort is not a true tiebreak-stable sort on texture_id — that's original behavior.[0m[0m
-- The recursion swaps the two buffers on each level, so both output arrays ([38;5;10ma[0m and [38;5;10mb[0m) end up in specific states; my differential harness compares both arrays after each call, not just the sorted one.[0m[0m
-- Internals are safe Rust: the two raw pointers become disjoint [38;5;10m&mut [_][0m slices once, then all indexing is bounds-checked. [38;5;10munsafe[0m is confined to the two [38;5;10mfrom_raw_parts_mut[0m calls.[0m[0m
-- I guard [38;5;10msize <= 0[0m and null pointers with an early return. For [38;5;10msize == 0[0m this is equivalent to the C ([38;5;10mmemcpy[0m of 0 bytes, then the recursion immediately returns). For negative [38;5;10msize[0m the C computes [38;5;10msizeof(T) * size[0m as a huge [38;5;10msize_t[0m and crashes in [38;5;10mmemcpy[0m; I did not reproduce that crash, since building a slice from it would be Rust UB. That is the one intentional divergence, and only on inputs where the C has no defined behavior.[0m[0m
+[1mPreserved quirks[22m (not fixed):[0m[0m
+- [38;5;10mspritebatch_internal_sprite_less_than_or_equal[0m returns [38;5;10m1[0m on [38;5;10ma->sort_bits <= b->sort_bits[0m, making the [38;5;10mtexture_id[0m tiebreak dead code. Confirmed dead in the C disassembly too — gcc only ever compares the [38;5;10msort_bits[0m field.[0m[0m
+- [38;5;10msizeof(sprite) * size[0m sign-extends a negative [38;5;10mint[0m into a huge [38;5;10msize_t[0m; reproduced with [38;5;10msize as usize[0m (which sign-extends in Rust) times [38;5;10mwrapping_mul[0m, matching gcc's [38;5;10mmovslq[0m/[38;5;10mshl $0x4[0m.[0m[0m
+- [38;5;10mhi - lo[0m and [38;5;10mlo + hi[0m use wrapping arithmetic.[0m[0m
 [0m[0m
-Verification: compiled the untouched [38;5;10mc_src[0m into a shared library in [38;5;10m/tmp[0m, ran both through a [38;5;10mdlopen[0m harness over 200 pseudorandom cases (n up to 63, small value ranges to force many ties), and the full dumps of both arrays were identical — 87072 bytes, [38;5;10mcmp[0m clean. [38;5;10mc_src/[0m was not modified.[0m[0m
+[1mOne non-obvious fidelity issue I had to fix.[22m My first version used [38;5;10m*b = *a[0m for the element copy. That compiles to a 12-byte field-wise copy ([38;5;10mmov[0m 8 bytes + [38;5;10mmov[0m 4 bytes), leaving the struct's 4 tail padding bytes in the destination untouched. gcc instead emits [38;5;10mmovdqu[0m/[38;5;10mmovups[0m — a full 16-byte copy that carries padding across. A byte-level differential test caught this: field values matched everywhere, but raw [38;5;10mmemcmp[0m diverged in the padding whenever callers passed arrays with indeterminate padding. I replaced the assignment with an explicit 16-byte [38;5;10mcopy_nonoverlapping[0m, and the Rust disassembly now shows the same [38;5;10mmovups[0m pair.[0m[0m
+[0m[0m
+[1mVerification performed[22m (all against the actual C [38;5;10m.so[0m via [38;5;10mdlopen[0m, comparing raw bytes of both the sorted array and the scratch buffer):[0m[0m
+- 13,200 randomized cases across 33 sizes (0–512): 0 failures.[0m[0m
+- 5,018 cases with padding deliberately poisoned to known non-zero bytes, sizes up to 100,000: 0 failures. This run also asserted the C output is genuinely sorted, so the comparison is not vacuous.[0m[0m
+- Degenerate sizes in forked children: [38;5;10msize = 0, -1, -2, -8, -1000[0m produce identical outcomes, including matching SIGSEGV for -1/-2/-8 and matching survival for -1000.[0m[0m
+- Clean rebuild from scratch ([38;5;10mrm -rf target && cargo build --release[0m) succeeds with no warnings.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is unmodified (md5sums of all three files unchanged; test harnesses live in [38;5;10m/tmp[0m).[0m[0m
 [38;5;8m
- ▸ Credits: 3.04 • Time: 1m 40s
+ ▸ Credits: 14.46 • Time: 6m 22s
 
 [0m[1G[0m[0m[?25h

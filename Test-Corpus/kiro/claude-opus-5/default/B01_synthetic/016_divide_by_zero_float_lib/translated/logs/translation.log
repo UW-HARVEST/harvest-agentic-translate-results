@@ -5,36 +5,452 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 
 
 
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
-[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY[0m [38;5;244m(9 entries)[0m
-[38;5;244m - Completed in 0.0s[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src tree
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
-
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/include/driver.h[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/src/driver.c[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/CMakeLists.txt[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1236 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/include/driver.h
-
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m2139 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/src/driver.c
-
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/CMakeLists.txt
-
- ⋮ 
-
-[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
-[38;5;244m - Completed in 0.0s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
-
-rustc 1.97.1 (8bab26f4f 2026-07-14)
-cargo 1.97.1 (c980f4866 2026-06-30)
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 08:51 .
+drwxr-xr-x. 590 scheschb amazon 81920 Sep  1 08:51 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 08:51 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 08:51 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 08:51 translation
+---
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+---
+3
 [38;5;244m - Completed in 0.31s[0m
 
-[?25l[0m[38;5;141m> [0mNo namespace macros in the header, so symbol names are as written. Writing the crate.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
-Purpose: Cargo manifest for the cdylib translation
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/driver.h c_src/src/driver.c; echo "==="; cat c_src/CMakeLists.txt; echo "==="; cat c_src/include/driver.h[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read CMakeLists and header
+
+  35 c_src/CMakeLists.txt
+  28 c_src/include/driver.h
+  86 c_src/src/driver.c
+ 149 total
+===
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_library(driver SHARED
+    src/driver.c)
+
+target_include_directories(driver PUBLIC include)
+target_include_directories(driver PRIVATE src)
+
+install(TARGETS driver
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#ifndef DRIVER_H_
+#define DRIVER_H_
+
+void driver(float goodData, float badData);
+
+#endif //DRIVER_H_[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat -A c_src/src/driver.c | sed 's/\$$//' | head -0; cat c_src/src/driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read driver.c
+
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "driver.h"
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+void printLine (const char * line)
+{
+    if(line != NULL) 
+    {
+        printf("%s\n", line);
+    }
+}
+
+void printIntLine (int intNumber)
+{
+    printf("%d\n", intNumber);
+}
+
+void bad(float data)
+{
+    int result = (int)(100.0 / data);
+    printIntLine(result);
+}
+
+static void goodG2B()
+{
+    float data;
+    data = 2.0F;
+    {
+        int result = (int)(100.0 / data);
+        printIntLine(result);
+    }
+}
+
+static void goodB2G(float data)
+{
+    if (fabs(data) > 0.000001)
+    {
+        int result = (int)(100.0 / data);
+        printIntLine(result);
+    }
+    else
+    {
+        printLine("This would result in a divide by zero");
+    }
+}
+
+void good(float data)
+{
+    goodG2B();
+    goodB2G(data);
+}
+
+void driver(float goodData, float badData)
+{
+    printLine("Calling good()...");
+    good(goodData);
+    printLine("Finished good()");
+    printLine("Calling bad()...");
+    bad(badData);
+    printLine("Finished bad()");
+}
+[38;5;244m - Completed in 0.18s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake -DCMAKE_BUILD_TYPE=Release /local/home/scheschb/.harvest/work/harvest-work-UmqBH2/c_src > /dev/null 2>&1 && make 2>&1 | tail -5; ls -la /tmp/cbuild/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library with cmake
+
+-rwxr-xr-x. 1 scheschb amazon 15784 Sep  1 06:53 /tmp/cbuild/libSieve.so
+-rwxr-xr-x. 1 scheschb amazon 16000 Sep  1 08:13 /tmp/cbuild/libdriver.so
+[38;5;244m - Completed in 0.16s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && nm -D --defined-only libdriver.so | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: List exported symbols of C library
+
+0000000000001159 T printLine
+000000000000117b T printIntLine
+00000000000011a2 T bad
+00000000000011d6 T good
+0000000000001215 T driver
+[38;5;244m - Completed in 0.29s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cat > t.c <<'EOF'
+#include <stdio.h>
+void driver(float,float); void bad(float); void good(float); void printLine(const char*); void printIntLine(int);
+int main(){
+  float vals[] = {0.0f, -0.0f, 1e-9f, 3.0f, -7.0f, 1e-40f, 1.0f/0.0f, 0.0f/0.0f, 1e-30f, 100.0f, 0.0000005f, 0.0000015f};
+  for (int i=0;i<12;i++){ printf("== %g\n", vals[i]); driver(vals[i], vals[i]); }
+  printLine(0); printIntLine(-5);
+  return 0;
+}
+EOF
+gcc t.c -L. -ldriver -lm -o t && LD_LIBRARY_PATH=. ./t > c_out.txt 2>&1; cat c_out.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run C library to capture reference output
+
+== 0
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== -0
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== 1e-09
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== 3
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== -7
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== 9.99995e-41
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== inf
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== -nan
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== 1e-30
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== 100
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== 5e-07
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+== 1.5e-06
+Calling good()...
+0
+2
+Finished good()
+Calling bad()...
+0
+0
+Finished bad()
+-5
+[38;5;244m - Completed in 0.62s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cb2 && mkdir -p /tmp/cb2 && cd /tmp/cb2 && cmake /local/home/scheschb/.harvest/work/harvest-work-UmqBH2/c_src 2>&1 | tail -3 && make 2>&1 | tail -5 && ls -la *.so && nm -D --defined-only libdriver.so | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fresh clean cmake build of C library
+
+-- Configuring done (0.4s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/cb2
+[ 50%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+-rwxr-xr-x. 1 scheschb amazon 16064 Sep  1 08:52 libdriver.so
+0000000000001159 T printLine
+000000000000117b T printIntLine
+00000000000011a2 T bad
+000000000000127b T good
+00000000000012a1 T driver
+[38;5;244m - Completed in 0.524s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cb2 && cp /tmp/cbuild/t.c . && gcc t.c -L. -ldriver -lm -o t && LD_LIBRARY_PATH=. ./t > c_out.txt 2>&1; cat c_out.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run reference C library, capture output
+
+== 0
+Calling good()...
+50
+This would result in a divide by zero
+Finished good()
+Calling bad()...
+-2147483648
+Finished bad()
+== -0
+Calling good()...
+50
+This would result in a divide by zero
+Finished good()
+Calling bad()...
+-2147483648
+Finished bad()
+== 1e-09
+Calling good()...
+50
+This would result in a divide by zero
+Finished good()
+Calling bad()...
+-2147483648
+Finished bad()
+== 3
+Calling good()...
+50
+33
+Finished good()
+Calling bad()...
+33
+Finished bad()
+== -7
+Calling good()...
+50
+-14
+Finished good()
+Calling bad()...
+-14
+Finished bad()
+== 9.99995e-41
+Calling good()...
+50
+This would result in a divide by zero
+Finished good()
+Calling bad()...
+-2147483648
+Finished bad()
+== inf
+Calling good()...
+50
+0
+Finished good()
+Calling bad()...
+0
+Finished bad()
+== -nan
+Calling good()...
+50
+This would result in a divide by zero
+Finished good()
+Calling bad()...
+-2147483648
+Finished bad()
+== 1e-30
+Calling good()...
+50
+This would result in a divide by zero
+Finished good()
+Calling bad()...
+-2147483648
+Finished bad()
+== 100
+Calling good()...
+50
+1
+Finished good()
+Calling bad()...
+1
+Finished bad()
+== 5e-07
+Calling good()...
+50
+This would result in a divide by zero
+Finished good()
+Calling bad()...
+200000000
+Finished bad()
+== 1.5e-06
+Calling good()...
+50
+66666664
+Finished good()
+Calling bad()...
+66666664
+Finished bad()
+-5
+[38;5;244m - Completed in 0.64s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol surface is 5 exports. I have the exact reference behavior captured, including the x86 out-of-range double→int conversion (yields [38;5;10m-2147483648[0m) that Rust's [38;5;10mas[0m would otherwise saturate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UmqBH2/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
@@ -43,207 +459,347 @@ Purpose: Cargo manifest for the cdylib translation
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
-[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UmqBH2/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-Purpose: Rust translation of driver.c as a cdylib
+[?25l[0m[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UmqBH2/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust with exact C semantics
 
-[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/driver.c
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/driver.c (MIT Lincoln Laboratory, 2025).
 [0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
-[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
-[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to any person obtaining a copy of this software
-[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
-[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to deal in the Software without restriction,
-[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
-[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
-[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // and/or sell copies of the Software,
-[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
-[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // subject to the following conditions:
-[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // The above copyright notice and this permission notice
-[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
-[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
-[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m use std::ffi::{c_char, c_double, c_float, c_int};
-[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m extern "C" {
-[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
-[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // The original C library is compiled by CMake into a single shared object that
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // exports exactly five public symbols:
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //     printLine, printIntLine, bad, good, driver
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // `goodG2B` and `goodB2G` are `static` in the C source, so they are *not*
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // exported; they are kept private here as well.
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // Behavioural notes (deliberately reproduced, not "fixed"):
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //  * `bad()` performs `100.0 / data` with no guard at all, so a zero (or
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //    denormal/tiny) `data` produces an infinite/huge double that is then cast to
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //    `int`. That cast is undefined behaviour in C; on x86-64 the compiler emits
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //    `cvttsd2si`, which returns the "integer indefinite" value `0x80000000`
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //    (`-2147483648`) for NaN and for anything outside the `int` range. The C
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //    reference binary prints `-2147483648` in those cases, so `to_c_int()`
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //    below reproduces that instead of Rust's saturating `as` cast.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m //  * `goodB2G()` guards with `fabs(data) > 0.000001`, which is *not* the same as
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m //    a divide-by-zero check: values such as 5e-07 fall into the "would divide by
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m //    zero" branch even though the division is finite, and NaN also lands there
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //    (all NaN comparisons are false). Left exactly as written.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //  * The division is done in `double`, not `float`: the `float` argument is
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //    promoted to `double` and divided into the `double` literal `100.0`.
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m // All printing goes through libc's `printf` so that this library shares the C
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m // stdio buffer and produces byte-identical, identically-ordered output.
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m #![allow(non_snake_case)]
 [0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m /// Format strings, NUL terminated, exactly as they appear in the C source.
-[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m const FMT_STR_NL: &[u8] = b"%s\n\0";
-[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m const FMT_INT_NL: &[u8] = b"%d\n\0";
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m use std::ffi::c_char;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m use std::ffi::c_float;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m use std::ffi::c_int;
 [0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// Reproduce the C `(int)` cast of a `double`.
-[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// The C source performs `(int)(100.0 / data)`. When `data` is zero the
-[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// quotient is an infinity (or NaN for 0.0/0.0), and converting that to `int`
-[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// is undefined behavior in C. On x86-64 (and AArch64 with the same observable
-[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m /// result) the compiler emits a truncating conversion instruction that yields
-[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// the "integer indefinite" value `INT_MIN` for NaN and for any value outside
-[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// the representable range. Rust's `as` cast instead saturates, so the
-[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// conversion is done explicitly here to keep the original behavior.
-[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m fn double_to_int(value: c_double) -> c_int {
-[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let truncated = value.trunc();
-[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     if truncated >= -2_147_483_648.0f64 && truncated <= 2_147_483_647.0f64 {
-[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         truncated as c_int
-[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     } else {
-[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         c_int::MIN
-[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m pub unsafe extern "C" fn printLine(line: *const c_char) {
-[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     if !line.is_null() {
-[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         printf(FMT_STR_NL.as_ptr() as *const c_char, line);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// `"%s\n"` — the format string used by the C `printLine`.
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m const FMT_STR_NL: &[u8] = b"%s\n\0";
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// `"%d\n"` — the format string used by the C `printIntLine`.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m const FMT_INT_NL: &[u8] = b"%d\n\0";
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// The message emitted by the C `goodB2G` when its guard rejects `data`.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m const DIVIDE_BY_ZERO_MSG: &[u8] = b"This would result in a divide by zero\0";
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// Truncating `double` -> `int` conversion with x86-64 `cvttsd2si` semantics.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// C's `(int)some_double` is undefined when the truncated value does not fit in
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// an `int`; on x86-64 the hardware yields the "integer indefinite" value
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// `INT_MIN`. Rust's `as` cast instead saturates, so it cannot be used directly
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// if the output is to match the C library byte for byte.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m fn to_c_int(value: f64) -> c_int {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     // NaN -> integer indefinite.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     if value.is_nan() {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         return c_int::MIN;
 [0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m pub extern "C" fn printIntLine(int_number: c_int) {
-[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     unsafe {
-[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         printf(FMT_INT_NL.as_ptr() as *const c_char, int_number);
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     // Truncation toward zero must land within [-2^31, 2^31 - 1]. Anything at or
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     // above 2^31, or at or below -(2^31 + 1), is out of range. Note that values
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     // in (-2147483649.0, -2147483648.0] truncate to exactly INT_MIN and are
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     // therefore in range.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     if value >= 2_147_483_648.0 || value <= -2_147_483_649.0 {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         return c_int::MIN;
 [0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// Print a NUL terminated byte literal through `printLine`.
-[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m fn print_literal(line: &[u8]) {
-[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     unsafe { printLine(line.as_ptr() as *const c_char) }
-[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m pub extern "C" fn bad(data: c_float) {
-[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let result = double_to_int(100.0f64 / c_double::from(data));
-[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     printIntLine(result);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     value as c_int
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// C: `void printLine(const char * line)`
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// Prints `line` followed by a newline, but only when the pointer is non-NULL.
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m pub unsafe extern "C" fn printLine(line: *const c_char) {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     if !line.is_null() {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         printf(FMT_STR_NL.as_ptr() as *const c_char, line);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     }
 [0m[49m[38;5;10m+     77[0m:[38;5;10m[49m }
 [0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m fn good_g2b() {
-[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     let data: c_float = 2.0f32;
-[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     {
-[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         let result = double_to_int(100.0f64 / c_double::from(data));
-[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         printIntLine(result);
-[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m fn good_b2g(data: c_float) {
-[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     if c_double::from(data).abs() > 0.000001f64 {
-[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let result = double_to_int(100.0f64 / c_double::from(data));
-[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         printIntLine(result);
-[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     } else {
-[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         print_literal(b"This would result in a divide by zero\0");
-[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m pub extern "C" fn good(data: c_float) {
-[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     good_g2b();
-[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     good_b2g(data);
-[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m pub extern "C" fn driver(good_data: c_float, bad_data: c_float) {
-[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     print_literal(b"Calling good()...\0");
-[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     good(good_data);
-[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     print_literal(b"Finished good()\0");
-[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     print_literal(b"Calling bad()...\0");
-[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     bad(bad_data);
-[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     print_literal(b"Finished bad()\0");
-[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// C: `void printIntLine(int intNumber)`
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m pub unsafe extern "C" fn printIntLine(intNumber: c_int) {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     printf(FMT_INT_NL.as_ptr() as *const c_char, intNumber);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m /// C: `void bad(float data)`
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// Divides by `data` with no validation whatsoever — the flaw under test.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m pub unsafe extern "C" fn bad(data: c_float) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     let result: c_int = to_c_int(100.0f64 / data as f64);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     printIntLine(result);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m /// C: `static void goodG2B(void)`
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m /// Uses a hard-coded, known-safe divisor, so it always prints 50.
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m unsafe fn goodG2B() {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     let data: c_float = 2.0f32;
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     let result: c_int = to_c_int(100.0f64 / data as f64);
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     printIntLine(result);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// C: `static void goodB2G(float data)`
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// Screens `data` with `fabs(data) > 0.000001` before dividing.
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m unsafe fn goodB2G(data: c_float) {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     if (data as f64).abs() > 0.000001 {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         let result: c_int = to_c_int(100.0f64 / data as f64);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         printIntLine(result);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         printLine(DIVIDE_BY_ZERO_MSG.as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// C: `void good(float data)`
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m pub unsafe extern "C" fn good(data: c_float) {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     goodG2B();
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     goodB2G(data);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m /// C: `void driver(float goodData, float badData)`
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m /// The public entry point declared in `include/driver.h`.
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(goodData: c_float, badData: c_float) {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     printLine(b"Calling good()...\0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     good(goodData);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     printLine(b"Finished good()\0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     printLine(b"Calling bad()...\0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     bad(badData);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     printLine(b"Finished bad()\0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9k41VY/translation/src/lib.rs[0m
-[38;5;244m - Completed in 0.0s[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UmqBH2/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.1s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-9k41VY/translation)
-    Finished `release` profile [optimized] target(s) in 0.11s
-[38;5;244m - Completed in 0.133s[0m
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-UmqBH2/translation)
+    Finished `release` profile [optimized] target(s) in 0.15s
+[38;5;244m - Completed in 0.171s[0m
 
-[?25l[0m[38;5;141m> [0mNow verifying byte-identical output against the compiled C library.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mset -e
-cd /tmp && rm -rf drvcheck && mkdir drvcheck && cd drvcheck
-gcc -O2 -shared -fPIC -I /local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/include \
-  -o libdriver_c.so /local/home/scheschb/.harvest/work/harvest-work-9k41VY/c_src/src/driver.c -lm
-cat > main.c <<'EOF'
-#include <stdlib.h>
-void driver(float, float);
-int main(int argc, char** argv){ driver(atof(argv[1]), atof(argv[2])); return 0; }
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol sets.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-UmqBH2
+nm -D --defined-only /tmp/cb2/libdriver.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '$2=="T"||$2=="W"{print $3}' | sort > /tmp/rust_all.txt
+echo "--- C exports ---"; cat /tmp/c_syms.txt
+echo "--- missing from Rust (C - Rust) ---"; comm -23 /tmp/c_syms.txt /tmp/rust_all.txt
+echo "--- (empty above == gate passed) ---"
+echo "--- Rust exports matching C set ---"; comm -12 /tmp/c_syms.txt /tmp/rust_all.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C and Rust exported symbol lists
+
+--- C exports ---
+bad
+driver
+good
+printIntLine
+printLine
+--- missing from Rust (C - Rust) ---
+--- (empty above == gate passed) ---
+--- Rust exports matching C set ---
+bad
+driver
+good
+printIntLine
+printLine
+[38;5;244m - Completed in 0.47s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cb2 && cat > fuzz.c <<'EOF'
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+void driver(float,float); void bad(float); void good(float);
+void printLine(const char*); void printIntLine(int);
+static float f(uint32_t b){ float x; memcpy(&x,&b,4); return x; }
+int main(void){
+  float fixed[] = {0.0f,-0.0f,1e-9f,3.0f,-7.0f,1e-40f,1e-45f,1.0f/0.0f,-1.0f/0.0f,0.0f/0.0f,
+                   1e-30f,100.0f,0.0000005f,0.0000015f,0.000001f,-0.000001f,1e-7f,-1e-7f,
+                   2.0f,-2.0f,1e38f,-1e38f,0.5f,-0.5f,1.0f,-1.0f,1e-6f+1e-13f,
+                   4.6566128e-10f, 2147483648.0f, -2147483648.0f, 4.656613e-8f};
+  for (unsigned i=0;i<sizeof(fixed)/sizeof(fixed[0]);i++){
+    printf("F%u %a\n", i, fixed[i]);
+    driver(fixed[i], fixed[i]); bad(fixed[i]); good(fixed[i]);
+  }
+  /* deterministic bit-pattern sweep, incl. NaNs/inf/denormals */
+  uint32_t s = 123456789u;
+  for (int i=0;i<4000;i++){
+    s = s*1664525u + 1013904223u;
+    float a = f(s), b = f(s ^ 0x5A5A5A5Au);
+    printf("R%d %a %a\n", i, a, b);
+    driver(a,b); bad(a); good(b); bad(b); good(a);
+  }
+  printLine(NULL); printLine(""); printLine("x"); printIntLine(0);
+  printIntLine(-2147483648); printIntLine(2147483647);
+  return 0;
+}
 EOF
-gcc -O2 -o run_c main.c -L. -ldriver_c -Wl,-rpath,.
-cp /local/home/scheschb/.harvest/work/harvest-work-9k41VY/translation/target/release/libdriver.so ./libdriver_rs.so
-gcc -O2 -o run_rs main.c -L. -l:libdriver_rs.so -Wl,-rpath,.
-for a in 2.0 0.0 -0.0 5.0 1e-9 -3.0 1e30 nan inf -inf 0.0000005 7.5; do
-  for b in 2.0 0.0 -0.0 5.0 1e30 nan inf -inf -7.0 0.3; do
-    o1=$(./run_c "$a" "$b" | od -c); o2=$(./run_rs "$a" "$b" | od -c)
-    if [ "$o1" != "$o2" ]; then echo "MISMATCH a=$a b=$b"; echo "C: $o1"; echo "R: $o2"; fi
-  done
-done
-echo "=== comparison done ==="
-./run_c 2.0 0.0; echo "--- rust:"; ./run_rs 2.0 0.0[0m (in [38;5;141m/tmp[0m)[38;5;244m (using tool: shell)[0m
+gcc -O0 fuzz.c -L. -ldriver -lm -o fuzz_c && LD_LIBRARY_PATH=. ./fuzz_c > /tmp/out_c.txt 2>&1
+mkdir -p /tmp/rs && cp /local/home/scheschb/.harvest/work/harvest-work-UmqBH2/translation/target/release/libdriver.so /tmp/rs/
+gcc -O0 fuzz.c -L/tmp/rs -ldriver -lm -o fuzz_rs && LD_LIBRARY_PATH=/tmp/rs ./fuzz_rs > /tmp/out_rs.txt 2>&1
+wc -l /tmp/out_c.txt /tmp/out_rs.txt
+cmp /tmp/out_c.txt /tmp/out_rs.txt && echo "BYTE-IDENTICAL OUTPUT" || { echo "DIFF FOUND"; diff /tmp/out_c.txt /tmp/out_rs.txt | head -30; }
+md5sum /tmp/out_c.txt /tmp/out_rs.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential fuzz test C vs Rust output
 
-=== comparison done ===
-Calling good()...
-50
-50
-Finished good()
-Calling bad()...
--2147483648
-Finished bad()
---- rust:
-Calling good()...
-50
-50
-Finished good()
-Calling bad()...
--2147483648
-Finished bad()
-[38;5;244m - Completed in 0.667s[0m
+  56346 /tmp/out_c.txt
+  56346 /tmp/out_rs.txt
+ 112692 total
+BYTE-IDENTICAL OUTPUT
+8afe7a910e8581982fab408d5a3945fc  /tmp/out_c.txt
+8afe7a910e8581982fab408d5a3945fc  /tmp/out_rs.txt
+[38;5;244m - Completed in 0.156s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only /local/home/scheschb/.harvest/work/harvest-work-9k41VY/translation/target/release/libdriver.so | grep -Ev ' (rust|_|std)' | grep -E ' T '
-echo "--- C:"
-nm -D --defined-only /tmp/drvcheck/libdriver_c.so | grep -E ' T '
-rm -rf /tmp/drvcheck[0m (in [38;5;141m/tmp[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-UmqBH2
+echo "=== full nm -D --defined-only on Rust .so ==="
+nm -D --defined-only translation/target/release/libdriver.so
+echo "=== statics must NOT be exported ==="
+nm -D translation/target/release/libdriver.so | grep -Ei 'goodG2B|goodB2G' || echo "OK: goodG2B/goodB2G not exported (matches C)"
+echo "=== undefined deps ==="
+nm -D --undefined-only translation/target/release/libdriver.so
+echo "=== ldd ==="; ldd translation/target/release/libdriver.so
+echo "=== tree ==="; find translation -maxdepth 2 -not -path 'translation/target*' -type f | sort
+echo "=== c_src untouched? ==="; cd c_src && git status --porcelain . 2>/dev/null || md5sum include/driver.h src/driver.c CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify full symbol table, deps, and that c_src is untouched
 
-0000000000011900 T bad
-0000000000011970 T driver
-0000000000011ad0 T good
-0000000000011b90 T printIntLine
-0000000000011bb0 T printLine
---- C:
-0000000000001190 T bad
-0000000000001210 T driver
-00000000000011b0 T good
-0000000000001180 T printIntLine
-0000000000001160 T printLine
-[38;5;244m - Completed in 0.31s[0m
+=== full nm -D --defined-only on Rust .so ===
+00000000000118d0 T bad
+0000000000011950 T driver
+0000000000011ab0 T good
+0000000000011b60 T printIntLine
+0000000000011b80 T printLine
+=== statics must NOT be exported ===
+OK: goodG2B/goodB2G not exported (matches C)
+=== undefined deps ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U printf@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U puts@GLIBC_2.2.5
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+=== ldd ===
+	linux-vdso.so.1 (0x00007fa5ba0b6000)
+	libgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007fa5ba02b000)
+	libc.so.6 => /lib64/libc.so.6 (0x00007fa5b9e00000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007fa5ba0b8000)
+=== tree ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/lib.rs
+=== c_src untouched? ===
+09aafa8d57406a92bf14bbdd3755c4a3  include/driver.h
+306b3d541d19287f1a6ed74d3fa2260e  src/driver.c
+906e347ae375f5ec943eb7d6ce58946b  CMakeLists.txt
+[38;5;244m - Completed in 0.73s[0m
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean as a [38;5;10mcdylib[0m and matches the C library byte-for-byte across 120 input combinations (including zeros, NaN, infinities, and huge magnitudes).[0m[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cb2 /tmp/rs /tmp/c_syms.txt /tmp/rust_all.txt /tmp/out_c.txt /tmp/out_rs.txt /tmp/cbuild/t.c /tmp/cbuild/t /tmp/cbuild/c_out.txt; echo cleaned; ls /local/home/scheschb/.harvest/work/harvest-work-UmqBH2/translation[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temporary verification artifacts
+
+cleaned
+Cargo.lock
+Cargo.toml
+src
+target
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
 [0m[0m
-What the translation covers:[0m[0m
+[1mScope.[22m The library is small: [38;5;10mc_src/[0m contains only [38;5;10mCMakeLists.txt[0m, [38;5;10minclude/driver.h[0m, and [38;5;10msrc/driver.c[0m (86 lines). The CMake target builds [38;5;10msrc/driver.c[0m into [38;5;10mlibdriver.so[0m. The header contains no namespace-renaming macros, so linker names equal source names.[0m[0m
 [0m[0m
-- Exported symbols match the C shared library exactly: [38;5;10mdriver[0m, [38;5;10mgood[0m, [38;5;10mbad[0m, [38;5;10mprintLine[0m, [38;5;10mprintIntLine[0m. The header has no namespace-renaming macros, so source names are the final linker symbols. [38;5;10mgoodG2B[0m/[38;5;10mgoodB2G[0m were [38;5;10mstatic[0m in C, so they stay private Rust functions.[0m[0m
-- Output goes through the C [38;5;10mprintf[0m with the original [38;5;10m"%s\n"[0m / [38;5;10m"%d\n"[0m format strings rather than Rust's [38;5;10mprintln![0m, so stdout buffering and interleaving with a C caller's own output are preserved.[0m[0m
+[1mSymbol gate — diff is empty.[22m [38;5;10mnm -D --defined-only[0m on the C [38;5;10m.so[0m and on [38;5;10mtranslation/target/release/libdriver.so[0m both yield exactly:[0m[0m
 [0m[0m
-Two details worth flagging, both preserved rather than fixed:[0m[0m
+[38;5;10mbad  driver  good  printIntLine  printLine
+[0m[0m[0m
 [0m[0m
-- The divide-by-zero bug in [38;5;10mbad()[0m is intentionally reproduced. [38;5;10m100.0 / 0.0[0m is an infinity, and casting that to [38;5;10mint[0m is undefined behavior in C; gcc emits a truncating conversion that yields [38;5;10mINT_MIN[0m. Rust's [38;5;10mas[0m cast saturates to [38;5;10mINT_MAX[0m instead, so I wrote an explicit [38;5;10mdouble_to_int[0m helper that returns [38;5;10mi32::MIN[0m for NaN and out-of-range values. Both libraries print [38;5;10m-2147483648[0m.[0m[0m
-- [38;5;10mgoodB2G[0m's guard is [38;5;10mfabs(data) > 0.000001[0m on a [38;5;10mfloat[0m widened to [38;5;10mdouble[0m, so I widen explicitly before [38;5;10m.abs()[0m to keep the same comparison.[0m[0m
+[38;5;10mgoodG2B[0m and [38;5;10mgoodB2G[0m are [38;5;10mstatic[0m in C and therefore not exported; they are private [38;5;10munsafe fn[0ms in Rust, so the Rust [38;5;10m.so[0m doesn't leak them either.[0m[0m
+[0m[0m
+[1mBehavioral equivalence.[22m I built the C library with a fresh CMake dir (an initial attempt reused a stale build dir from another project and gave bogus results), then ran the same harness against both [38;5;10m.so[0ms: 31 hand-picked edge values plus 4000 deterministic random 32-bit patterns — covering NaNs, ±inf, denormals, and the [38;5;10m1e-6[0m guard boundary — driving [38;5;10mdriver[0m, [38;5;10mbad[0m, and [38;5;10mgood[0m, plus direct [38;5;10mprintLine(NULL)[0m/[38;5;10mprintIntLine(INT_MIN)[0m calls. 56,346 lines of output, identical MD5.[0m[0m
+[0m[0m
+The one non-obvious point: C's [38;5;10m(int)(100.0 / data)[0m is undefined on overflow, and the reference binary emits [38;5;10mcvttsd2si[0m, which returns the x86 "integer indefinite" value [38;5;10m-2147483648[0m for NaN and out-of-range doubles. Rust's [38;5;10mas[0m cast saturates to [38;5;10m2147483647[0m instead, so a [38;5;10mto_c_int[0m helper reproduces the hardware behavior explicitly. Two other C quirks were preserved rather than fixed: the [38;5;10mfabs(data) > 0.000001[0m guard in [38;5;10mgoodB2G[0m is not actually a divide-by-zero check (5e-07 is rejected despite dividing fine, and NaN falls through to the else branch), and the division happens in [38;5;10mdouble[0m after the [38;5;10mfloat[0m argument is promoted. Printing goes through libc [38;5;10mprintf[0m so the library shares C's stdio buffer and output ordering.[0m[0m
 [38;5;8m
- ▸ Credits: 2.84 • Time: 1m 15s
+ ▸ Credits: 6.15 • Time: 3m 3s
 
 [0m[1G[0m[0m[?25h

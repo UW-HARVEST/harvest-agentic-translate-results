@@ -5,46 +5,129 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 
 
 
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -200 && echo "---" && du -sh c_src[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -200 && echo "---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and C source tree
 
-./c_src/CMakeLists.txt
-./c_src/include/driver.h
-./c_src/src/driver.c
-./.claude/settings.json
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 09:45 .
+drwxr-xr-x. 620 scheschb amazon 81920 Sep  1 09:45 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 09:45 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 09:45 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 09:45 translation
 ---
-12K	c_src
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/driver.h c_src/src/driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  35 c_src/CMakeLists.txt
+  28 c_src/include/driver.h
+  66 c_src/src/driver.c
+ 129 total
 [38;5;244m - Completed in 0.5s[0m
 
 [?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AlBivN/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AlBivN/c_src/include/driver.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AlBivN/c_src/src/driver.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-AlBivN/c_src/CMakeLists.txt
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src/include/driver.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src/src/driver.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src/CMakeLists.txt
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1212 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-AlBivN/c_src/include/driver.h
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1212 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src/include/driver.h
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m2044 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-AlBivN/c_src/src/driver.c
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2044 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src/src/driver.c
 
  ⋮ 
 
 [38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo --version; rustc --version; ls translation 2>/dev/null || echo "no translation dir"[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mSmall library — 3 files. Let me build the C library and enumerate its exported symbols.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1 && echo BUILD_OK && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
 
-cargo 1.97.1 (c980f4866 2026-06-30)
-rustc 1.97.1 (8bab26f4f 2026-07-14)
-[38;5;244m - Completed in 0.33s[0m
+[38;5;244m - Completed in 0.8s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AlBivN/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
-Purpose: Create Cargo.toml for the cdylib translation crate
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && tail -30 cmake.log; which cmake gcc cc[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cmake build failure
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-rIUNgg/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin/cmake
+/usr/bin/gcc
+/usr/bin/cc
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_qsl3xj && mkdir -p /tmp/cbuild_qsl3xj && cd /tmp/cbuild_qsl3xj && cmake /local/home/scheschb/.harvest/work/harvest-work-qsl3xj/c_src -DCMAKE_BUILD_TYPE=Release > cmake.log 2>&1 && make >> cmake.log 2>&1 && echo BUILD_OK && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in a fresh build dir
+
+BUILD_OK
+-rwxr-xr-x. 1 scheschb amazon 15952 Sep  1 09:46 libdriver.so
+[38;5;244m - Completed in 0.412s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_qsl3xj && echo "=== nm -D ===" && nm -D libdriver.so && echo "=== defined only (T/D/B/R/W) ===" && nm -D --defined-only libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Enumerate exported symbols from C .so
+
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+00000000000011e0 T driver
+                 U printf@GLIBC_2.2.5
+0000000000001120 T run
+=== defined only (T/D/B/R/W) ===
+00000000000011e0 T driver
+0000000000001120 T run
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[38;5;141m> [0mTwo public exports: [38;5;10mdriver[0m and [38;5;10mrun[0m. No namespace macros. Let me verify runtime behavior of the C library to have a reference.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_qsl3xj && cat > t.c <<'EOF'
+#include <stdio.h>
+void driver(int x);
+void run(int x);
+int main(void){ driver(3); run(-1); driver(0); return 0; }
+EOF
+gcc t.c -L. -ldriver -o t && LD_LIBRARY_PATH=. ./t > c_out.txt 2>&1; echo "exit=$?"; cat c_out.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run C library to capture reference output
+
+exit=0
+The house has 2 floors, 5 bedrooms, and 2.5 bathrooms
+The house has 3 floors, 5 bedrooms, and 2.5 bathrooms
+The house has 3 floors, 5 bedrooms, and 3.5 bathrooms
+The house has 3 floors, 8 bedrooms, and 3.5 bathrooms
+The house has 3 floors, 8 bedrooms, and 3.5 bathrooms
+The house has 4 floors, 8 bedrooms, and 3.5 bathrooms
+The house has 4 floors, 8 bedrooms, and 4.5 bathrooms
+The house has 4 floors, 11 bedrooms, and 4.5 bathrooms
+The house has 4 floors, 11 bedrooms, and 4.5 bathrooms
+The house has 5 floors, 11 bedrooms, and 4.5 bathrooms
+The house has 5 floors, 11 bedrooms, and 5.5 bathrooms
+The house has 5 floors, 10 bedrooms, and 5.5 bathrooms
+The house has 5 floors, 10 bedrooms, and 5.5 bathrooms
+The house has 6 floors, 10 bedrooms, and 5.5 bathrooms
+The house has 6 floors, 10 bedrooms, and 6.5 bathrooms
+The house has 6 floors, 10 bedrooms, and 6.5 bathrooms
+The house has 6 floors, 10 bedrooms, and 6.5 bathrooms
+The house has 7 floors, 10 bedrooms, and 6.5 bathrooms
+The house has 7 floors, 10 bedrooms, and 7.5 bathrooms
+The house has 7 floors, 10 bedrooms, and 7.5 bathrooms
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[38;5;141m> [0mNow the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
 [0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
@@ -54,176 +137,324 @@ Purpose: Create Cargo.toml for the cdylib translation crate
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AlBivN/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AlBivN/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-Purpose: Translate driver.c to Rust, preserving global mutable state and printf formatting
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust
 
-[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/driver.c
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of the C library in c_src/.
 [0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
-[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
-[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to any person obtaining a copy of this software
-[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
-[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to deal in the Software without restriction,
-[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
-[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
-[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // and/or sell copies of the Software,
-[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
-[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // subject to the following conditions:
-[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // The above copyright notice and this permission notice
-[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
-[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
-[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m use std::cell::UnsafeCell;
-[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m use std::ffi::{c_char, c_double, c_int};
-[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m // `printf` from libc is used directly so that formatting (`%d`, `%.1f`) and
-[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m // stdout buffering behaviour are byte-for-byte identical to the C original.
-[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m unsafe extern "C" {
-[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     fn printf(fmt: *const c_char, ...) -> c_int;
-[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m /// Mirrors the C `house_t` struct.
-[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m #[repr(C)]
-[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m #[derive(Clone, Copy)]
-[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m struct House {
-[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     floors: c_int,
-[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     bedrooms: c_int,
-[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     bathrooms: c_double,
-[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// Wrapper allowing a mutable file-scope global, matching the C `static house_t`.
-[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// The C code is not thread safe either; this reproduces its semantics.
-[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m struct Global(UnsafeCell<House>);
-[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m unsafe impl Sync for Global {}
-[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// `static house_t the_house = {.floors = 2, .bedrooms = 5, .bathrooms = 2.5};`
-[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m static THE_HOUSE: Global = Global(UnsafeCell::new(House {
-[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     floors: 2,
-[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     bedrooms: 5,
-[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     bathrooms: 2.5,
-[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m }));
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original copyright notice from the C sources:
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m use std::cell::UnsafeCell;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m use std::ffi::{c_char, c_double, c_int};
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     /// libc `printf`. Used directly so that number formatting (`%d`, `%.1f`)
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     /// and stdout buffering are byte-for-byte identical to the C library.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// typedef struct {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m ///     int floors;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m ///     int bedrooms;
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m ///     double bathrooms;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// } house_t;
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m #[derive(Clone, Copy)]
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m struct HouseT {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     floors: c_int,
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     bedrooms: c_int,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     bathrooms: c_double,
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// Mirrors the C file-scope mutable global. The C library is not thread safe;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// this wrapper reproduces that behavior rather than adding synchronization.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m struct Global(UnsafeCell<HouseT>);
 [0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m #[inline]
-[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m fn the_house() -> &'static mut House {
-[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     // Single, process-wide instance, exactly like the C file-scope object.
-[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     unsafe { &mut *THE_HOUSE.0.get() }
-[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// `static void add_floor(house_t *house)`
-[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m fn add_floor(house: &mut House) {
-[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     // C `house->floors++`; wrapping matches the observed behaviour of the
-[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     // original on overflow rather than panicking.
-[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     house.floors = house.floors.wrapping_add(1);
-[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m // SAFETY: matches the (absent) thread-safety guarantees of the original C
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m // translation unit, which mutates `the_house` without any locking.
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m unsafe impl Sync for Global {}
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// static house_t the_house = {.floors = 2, .bedrooms = 5, .bathrooms = 2.5};
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m static THE_HOUSE: Global = Global(UnsafeCell::new(HouseT {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     floors: 2,
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     bedrooms: 5,
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     bathrooms: 2.5,
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m }));
 [0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// `static void add_bedrooms(house_t *house, int extra_bedrooms)`
-[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m fn add_bedrooms(house: &mut House, extra_bedrooms: c_int) {
-[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     house.bedrooms = house.bedrooms.wrapping_add(extra_bedrooms);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m fn the_house() -> *mut HouseT {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     THE_HOUSE.0.get()
 [0m[49m[38;5;10m+     72[0m:[38;5;10m[49m }
 [0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// `static void add_floor_to_the_house()`
-[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m fn add_floor_to_the_house() {
-[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     add_floor(the_house());
-[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// `static void print_the_house()`
-[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m fn print_the_house() {
-[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     let house = the_house();
-[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     unsafe {
-[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         printf(
-[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             c"The house has %d floors, %d bedrooms, and %.1f bathrooms\n".as_ptr(),
-[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             house.floors,
-[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             house.bedrooms,
-[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m             house.bathrooms,
-[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         );
-[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// `void run(int extra_bedrooms)`
-[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m pub extern "C" fn run(extra_bedrooms: c_int) {
-[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     print_the_house();
-[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     add_floor_to_the_house();
-[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     print_the_house();
-[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     the_house().bathrooms += 1.0;
-[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     print_the_house();
-[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     add_bedrooms(the_house(), extra_bedrooms);
-[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     print_the_house();
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// static void add_floor(house_t *house) {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ///     house->floors++;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// The C increment on `int` wraps in practice (and is UB on overflow); use
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// `wrapping_add` to reproduce the observable behavior without panicking.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m unsafe fn add_floor(house: *mut HouseT) {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     (*house).floors = (*house).floors.wrapping_add(1);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// static void add_bedrooms(house_t *house, int extra_bedrooms) {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m ///     house->bedrooms += extra_bedrooms;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m unsafe fn add_bedrooms(house: *mut HouseT, extra_bedrooms: c_int) {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     (*house).bedrooms = (*house).bedrooms.wrapping_add(extra_bedrooms);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m /// static void add_floor_to_the_house() {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m ///     add_floor(&the_house);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m unsafe fn add_floor_to_the_house() {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     add_floor(the_house());
 [0m[49m[38;5;10m+    102[0m:[38;5;10m[49m }
 [0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// `void driver(int x)`
-[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m pub extern "C" fn driver(x: c_int) {
-[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     run(x);
-[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     run(x);
-[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// static void print_the_house() {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m ///     printf("The house has %d floors, %d bedrooms, and %.1f bathrooms\n",
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m ///            the_house.floors, the_house.bedrooms, the_house.bathrooms);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m unsafe fn print_the_house() {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let house = the_house();
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     printf(
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         b"The house has %d floors, %d bedrooms, and %.1f bathrooms\n\0".as_ptr() as *const c_char,
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         (*house).floors,
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         (*house).bedrooms,
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         (*house).bathrooms,
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m /// void run(int extra_bedrooms) {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m ///     print_the_house();
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m ///     add_floor_to_the_house();
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m ///     print_the_house();
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m ///     the_house.bathrooms += 1.0;
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m ///     print_the_house();
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m ///     add_bedrooms(&the_house, extra_bedrooms);
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m ///     print_the_house();
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m pub unsafe extern "C" fn run(extra_bedrooms: c_int) {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     print_the_house();
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     add_floor_to_the_house();
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     print_the_house();
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     let house = the_house();
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     (*house).bathrooms += 1.0;
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     print_the_house();
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     add_bedrooms(the_house(), extra_bedrooms);
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     print_the_house();
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m /// void driver(int x) {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m ///     run(x);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m ///     run(x);
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(x: c_int) {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     run(x);
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     run(x);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AlBivN/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
 [?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-AlBivN/translation)
-    Finished `release` profile [optimized] target(s) in 0.13s
-[38;5;244m - Completed in 0.148s[0m
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-qsl3xj/translation)
+    Finished `release` profile [optimized] target(s) in 0.11s
+[38;5;244m - Completed in 0.136s[0m
 
-[?25l[0m[38;5;141m> [0mNow verifying against the original C.[0m[0m
+[?25l[0m[38;5;141m> [0mCompiles clean. Now the completion gate — symbol diff.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qsl3xj
+nm -D --defined-only /tmp/cbuild_qsl3xj/libdriver.so | awk '{print $NF}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort > /tmp/rs_syms.txt
+echo "=== C exports ==="; cat /tmp/c_syms.txt
+echo "=== Rust exports ==="; cat /tmp/rs_syms.txt
+echo "=== MISSING FROM RUST (C minus Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt
+echo "=== count missing: $(comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt | wc -l) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbol lists between C and Rust .so
+
+=== C exports ===
+driver
+run
+=== Rust exports ===
+driver
+run
+=== MISSING FROM RUST (C minus Rust) ===
+=== count missing: 0 ===
+[38;5;244m - Completed in 0.40s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now verifying byte-identical output against the same test driver.[0m[0m
 [?25l[0m[0mI will run the following command: [38;5;141mset -e
-T=$(mktemp -d)
-cat > $T/main.c <<'EOF'
-#include <stdlib.h>
+cd /tmp/cbuild_qsl3xj
+mkdir -p rs && cp /local/home/scheschb/.harvest/work/harvest-work-qsl3xj/translation/target/release/libdriver.so rs/
+gcc t.c -Lrs -ldriver -o t_rs
+LD_LIBRARY_PATH=rs ./t_rs > rs_out.txt 2>&1
+echo "--- diff c_out vs rs_out ---"
+if diff c_out.txt rs_out.txt; then echo "IDENTICAL ($(wc -c < c_out.txt) bytes)"; fi
+md5sum c_out.txt rs_out.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare Rust .so output to C .so output
+
+--- diff c_out vs rs_out ---
+IDENTICAL (1093 bytes)
+986be9a3126231ab1d8c1c02a353b2c1  c_out.txt
+986be9a3126231ab1d8c1c02a353b2c1  rs_out.txt
+[38;5;244m - Completed in 0.51s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cd /tmp/cbuild_qsl3xj
+cat > t2.c <<'EOF'
+#include <stdio.h>
+#include <limits.h>
 void driver(int x);
-int main(int argc, char **argv) { driver(atoi(argv[1])); return 0; }
+void run(int x);
+int main(void){
+  printf("host line before\n");
+  run(INT_MAX); run(INT_MAX); run(INT_MIN);
+  driver(-7); run(0);
+  printf("host line middle\n");
+  for (int i=0;i<200;i++) driver(i*3-100);
+  run(INT_MIN); run(INT_MAX);
+  printf("host line after\n");
+  return 0;
+}
 EOF
-gcc -O2 -I c_src/include -o $T/c_bin $T/main.c c_src/src/driver.c
-gcc -O2 -o $T/rs_bin $T/main.c -L translation/target/release -ldriver -Wl,-rpath,$PWD/translation/target/release
-for x in 0 3 -7 2147483647; do
-  a=$($T/c_bin $x | md5sum); b=$($T/rs_bin $x | md5sum)
-  [ "$a" = "$b" ] && echo "x=$x MATCH" || { echo "x=$x DIFF"; diff <($T/c_bin $x) <($T/rs_bin $x); }
-done
-echo "--- sample output (x=3) ---"; $T/rs_bin 3
-nm -D --defined-only translation/target/release/libdriver.so | grep -E ' T (driver|run)$'
-rm -rf $T[0m[38;5;244m (using tool: shell)[0m
+gcc t2.c -L. -ldriver -o t2_c
+gcc t2.c -Lrs -ldriver -o t2_rs
+LD_LIBRARY_PATH=.  ./t2_c > c2.txt 2>&1
+LD_LIBRARY_PATH=rs ./t2_rs > rs2.txt 2>&1
+echo "bytes: $(wc -c < c2.txt) / $(wc -c < rs2.txt)"
+if diff c2.txt rs2.txt > /dev/null; then echo "IDENTICAL"; else echo "DIFFERS"; diff c2.txt rs2.txt | head -20; fi
+md5sum c2.txt rs2.txt
+echo "--- tail ---"; tail -4 c2.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Stress test with overflow, negatives, interleaved host output
 
-x=0 MATCH
-x=3 MATCH
-x=-7 MATCH
-x=2147483647 MATCH
---- sample output (x=3) ---
-The house has 2 floors, 5 bedrooms, and 2.5 bathrooms
-The house has 3 floors, 5 bedrooms, and 2.5 bathrooms
-The house has 3 floors, 5 bedrooms, and 3.5 bathrooms
-The house has 3 floors, 8 bedrooms, and 3.5 bathrooms
-The house has 3 floors, 8 bedrooms, and 3.5 bathrooms
-The house has 4 floors, 8 bedrooms, and 3.5 bathrooms
-The house has 4 floors, 8 bedrooms, and 4.5 bathrooms
-The house has 4 floors, 11 bedrooms, and 4.5 bathrooms
-0000000000011770 T driver
-00000000000118b0 T run
-[38;5;244m - Completed in 0.135s[0m
+bytes: 109542 / 109542
+IDENTICAL
+dd5aa7d6d866de95c1900474a7a7289b  c2.txt
+dd5aa7d6d866de95c1900474a7a7289b  rs2.txt
+--- tail ---
+The house has 410 floors, 79389 bedrooms, and 409.5 bathrooms
+The house has 410 floors, 79389 bedrooms, and 410.5 bathrooms
+The house has 410 floors, -2147404260 bedrooms, and 410.5 bathrooms
+host line after
+[38;5;244m - Completed in 0.94s[0m
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds as a cdylib and produces byte-identical output to the C library, verified by linking the same test harness against both and comparing stdout for [38;5;10mx = 0, 3, -7, INT_MAX[0m.[0m[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qsl3xj
+echo "=== c_src unmodified check (mtimes / hashes) ==="
+find c_src -type f -exec md5sum {} \;
+echo "=== translation tree ==="
+find translation -maxdepth 2 -not -path '*/target*' -type f
+echo "=== artifact ==="
+ls -la translation/target/release/libdriver.so
+echo "=== crate-type check ==="
+grep -A3 '^\[lib\]' translation/Cargo.toml
+echo "=== rebuild from scratch ==="
+cd translation && cargo build --release 2>&1 | tail -3[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification of artifacts and that c_src is untouched
+
+=== c_src unmodified check (mtimes / hashes) ===
+906e347ae375f5ec943eb7d6ce58946b  c_src/CMakeLists.txt
+c3574873b8a881eba6bb2966231aced5  c_src/include/driver.h
+ea859da76aa952ac41554d949e5a52f7  c_src/src/driver.c
+=== translation tree ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+=== artifact ===
+-rwxr-xr-x. 2 scheschb amazon 402728 Sep  1 09:47 translation/target/release/libdriver.so
+=== crate-type check ===
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+=== rebuild from scratch ===
+    Finished `release` profile [optimized] target(s) in 0.01s
+[38;5;244m - Completed in 0.44s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
 [0m[0m
-Translation notes:[0m[0m
+[38;5;252m[1m## Scope[0m[0m
 [0m[0m
-- Exported symbols are [38;5;10mdriver[0m and [38;5;10mrun[0m — both are non-[38;5;10mstatic[0m in [38;5;10mdriver.c[0m, so [38;5;10mrun[0m is part of the ABI too. There are no namespace-renaming macros in [38;5;10mdriver.h[0m, so the linker names match the source names.[0m[0m
-- [38;5;10mthe_house[0m is a file-scope mutable global whose state persists across calls, which is observable: [38;5;10mdriver[0m calls [38;5;10mrun[0m twice, and the second run starts from the first run's mutated values (floors 4, bathrooms 4.5). I reproduced this with a [38;5;10mUnsafeCell<House>[0m in a [38;5;10mSync[0m wrapper rather than resetting per call.[0m[0m
-- Printing goes through libc [38;5;10mprintf[0m declared via FFI rather than Rust's formatter. This keeps [38;5;10m%d[0m/[38;5;10m%.1f[0m conversion and stdout buffering identical to the C, so output interleaves the same way if a C caller also writes to stdout.[0m[0m
-- [38;5;10mfloors++[0m and [38;5;10mbedrooms += extra_bedrooms[0m use [38;5;10mwrapping_add[0m so signed overflow behaves like the compiled C instead of panicking in debug builds. With [38;5;10mx = INT_MAX[0m this path is exercised and still matches.[0m[0m
-- Internals ([38;5;10madd_floor[0m, [38;5;10madd_bedrooms[0m, [38;5;10mprint_the_house[0m) are private safe Rust taking [38;5;10m&mut House[0m, mirroring the C pointer parameters.[0m[0m
+The library turned out to be small — [38;5;10mc_src/[0m contains exactly three files ([38;5;10mCMakeLists.txt[0m, [38;5;10minclude/driver.h[0m, [38;5;10msrc/driver.c[0m, 129 lines total), and the CMake build produces a single [38;5;10mlibdriver.so[0m. [38;5;10mnm -D --defined-only[0m on the C [38;5;10m.so[0m exports [1mtwo[22m public symbols:[0m[0m
+[0m[0m
+[38;5;10mdriver
+run
+[0m[0m[0m
+[0m[0m
+[38;5;10mrun[0m is exported even though it isn't declared in [38;5;10mdriver.h[0m (only [38;5;10mdriver[0m is) — it's a non-[38;5;10mstatic[0m definition in [38;5;10mdriver.c[0m, so it must be reproduced. The other four [38;5;10mnm -D[0m entries ([38;5;10m_ITM_*[0m, [38;5;10m__cxa_finalize[0m, [38;5;10m__gmon_start__[0m) are weak/undefined toolchain artifacts, and [38;5;10mprintf[0m is an undefined import. No namespace-renaming macros exist in the headers, so linker names match source names.[0m[0m
+[0m[0m
+[38;5;252m[1m## Translation[0m[0m
+[0m[0m
+[38;5;10mtranslation/src/lib.rs[0m mirrors the C structure one-to-one: [38;5;10mHouseT[0m as [38;5;10m#[repr(C)][0m, the file-scope mutable [38;5;10mthe_house[0m global, and the four [38;5;10mstatic[0m helpers ([38;5;10madd_floor[0m, [38;5;10madd_bedrooms[0m, [38;5;10madd_floor_to_the_house[0m, [38;5;10mprint_the_house[0m) as private Rust functions. The two public entry points use [38;5;10m#[unsafe(no_mangle)] pub unsafe extern "C"[0m.[0m[0m
+[0m[0m
+Two deliberate choices worth calling out:[0m[0m
+[0m[0m
+- **[38;5;10mprintf[0m is called through libc**, not reimplemented with Rust's formatter. This guarantees [38;5;10m%d[0m/[38;5;10m%.1f[0m formatting and stdout buffering behave identically, including interleaving with output from a host program that also writes to stdout.[0m[0m
+- **The global uses [38;5;10mUnsafeCell[0m with an [38;5;10munsafe impl Sync[0m**, reproducing the C's absence of thread safety rather than adding locking that would change behavior. Integer arithmetic uses [38;5;10mwrapping_add[0m so signed overflow matches what GCC emits instead of panicking.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification (my own commands, not a sub-agent's word)[0m[0m
+[0m[0m
+Symbol diff — [38;5;10mcomm -23[0m of the two sorted export lists is [1mempty[22m, 0 symbols missing:[0m[0m
+[0m[0m
+[38;5;10mC exports:    driver, run
+Rust exports: driver, run
+[0m[0m[0m
+[0m[0m
+Output equivalence — I linked the [3msame[23m C test program against each [38;5;10m.so[0m in turn and compared. Both a basic case and a stress case ([38;5;10mINT_MAX[0m/[38;5;10mINT_MIN[0m bedroom deltas to exercise overflow wrap, 200 [38;5;10mdriver[0m calls, negative values, host [38;5;10mprintf[0m calls interleaved before/middle/after) produced byte-identical output:[0m[0m
+[0m[0m
+[38;5;10m109542 / 109542 bytes — IDENTICAL
+dd5aa7d6d866de95c1900474a7a7289b  c2.txt
+dd5aa7d6d866de95c1900474a7a7289b  rs2.txt
+[0m[0m[0m
+[0m[0m
+The overflow path confirms the wrap matches: both print [38;5;10m-2147404260 bedrooms[0m.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is untouched — I only read it; all writes went to [38;5;10mtranslation/[0m.[0m[0m
 [38;5;8m
- ▸ Credits: 2.59 • Time: 1m 16s
+ ▸ Credits: 4.46 • Time: 2m 44s
 
 [0m[1G[0m[0m[?25h

@@ -6,91 +6,59 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 
 
 [38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && ls -la[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -50; echo "---"; wc -l c_src/* 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory files
 
 ./c_src/CMakeLists.txt
 ./c_src/src/main.c
 ./.claude/settings.json
 ---
-total 48
-drwxr-xr-x.   5 scheschb amazon    69 Aug 30 13:27 .
-drwxr-xr-x. 534 scheschb amazon 32768 Aug 30 13:27 ..
-drwxr-xr-x.   2 scheschb amazon    27 Aug 30 13:27 .claude
-drwxr-xr-x.   3 scheschb amazon    39 Aug 30 13:27 c_src
-drwxr-xr-x.   2 scheschb amazon     6 Aug 30 13:27 translation
-[38;5;244m - Completed in 0.7s[0m
+     25 c_src/CMakeLists.txt
+      0 c_src/src
+     25 total
+[38;5;244m - Completed in 0.9s[0m
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/src/main.c; echo "==="; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check main.c size and CMakeLists
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/c_src/src/main.c[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/c_src/CMakeLists.txt[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1476 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-AYhNrF/c_src/src/main.c
+41 c_src/src/main.c
+===
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-AYhNrF/c_src/CMakeLists.txt
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_executable(driver src/main.c)[38;5;244m - Completed in 0.7s[0m
 
- ⋮ 
-
-[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-HTabov/c_src/src/main.c[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1476 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-HTabov/c_src/src/main.c
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O0 -o /tmp/cref/driver c_src/src/main.c 2>&1 && echo built[0m[38;5;244m (using tool: shell)[0m
-
-built
-[38;5;244m - Completed in 0.39s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
-run() { printf "%b" "$2" | ./driver > out.txt 2>err.txt; echo "[$1] rc=$? out=$(od -c out.txt | head -3 | tr '\n' '|')"; }
-run "normal" 'hello world\nlo\n'
-run "empty stdin" ''
-run "one line only" 'abc\n'
-run "one line no nl" 'abc'
-run "empty first line" '\nabc\n'
-run "both empty lines" '\n\n'
-run "no match" 'abc\nxyz\n'
-run "s2 empty after strip" 'abcdef\n\n'
-run "first char match" 'abc\na\n'[0m[38;5;244m (using tool: shell)[0m
-
-[normal] rc=0 out=0000000   2  \n|0000002|
-[empty stdin] rc=0 out=0000000   0  \n|0000002|
-[one line only] rc=0 out=0000000   3  \n|0000002|
-[one line no nl] rc=0 out=0000000   2  \n|0000002|
-[empty first line] rc=0 out=0000000   0  \n|0000002|
-[both empty lines] rc=0 out=0000000   0  \n|0000002|
-[no match] rc=0 out=0000000   3  \n|0000002|
-[s2 empty after strip] rc=0 out=0000000   6  \n|0000002|
-[first char match] rc=0 out=0000000   0  \n|0000002|
-[38;5;244m - Completed in 0.26s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
-py() { python3 -c "$1" | ./driver | od -c | head -2; }
-echo "--- long line1 (105 chars a..then x) then line2=x"
-python3 -c "import sys;sys.stdout.write('a'*100+'X'+'b'*4+'\nX\n')" | ./driver
-echo "--- exactly 99 chars + nl"
-python3 -c "import sys;sys.stdout.write('a'*98+'Z'+'\nZ\n')" | ./driver
-echo "--- exactly 100 chars + nl"
-python3 -c "import sys;sys.stdout.write('a'*99+'Z'+'\nZ\n')" | ./driver
-echo "--- 3 lines"
-printf 'abcdef\nzf\nignored\n' | ./driver[0m[38;5;244m (using tool: shell)[0m
-
---- long line1 (105 chars a..then x) then line2=x
-0
---- exactly 99 chars + nl
-98
---- exactly 100 chars + nl
-98
---- 3 lines
-5
-[38;5;244m - Completed in 0.40s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
-printf 'ab\0cd\nb\n' | ./driver
-printf '\0\nb\n' | ./driver[0m[38;5;244m (using tool: shell)[0m
-
-1
-0
-[38;5;244m - Completed in 0.5s[0m
-
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[38;5;141m> [0mSingle small file — I'll translate it directly rather than delegating.[0m[0m
+[0m[0m
+Key behaviors to preserve: [38;5;10mfgets[0m with size 100 (reads ≤99 bytes, stops after newline, leaves buffer untouched and returns NULL at EOF), the unconditional [38;5;10ms[strlen(s)-1] = '\0'[0m truncation (which strips the last byte even when it isn't a newline, and is an out-of-bounds write when the line is empty), and [38;5;10mstrcspn[0m semantics.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-HTabov/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the translation crate
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
@@ -104,267 +72,278 @@ printf '\0\nb\n' | ./driver[0m[38;5;244m (using tool: shell)[0m
 [0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-HTabov/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-HTabov/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write Rust translation of main.c
 
-[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
-[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original C:
-[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //     void driver(const char *s1, const char *s2) {
-[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //         printf("%zu\n", strcspn(s1, s2));
-[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //     }
-[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //     int main() {
-[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //         char s1[100] = "", s2[100] = "";
-[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //         fgets(s1, sizeof(s1), stdin);
-[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //         fgets(s2, sizeof(s1), stdin);
-[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //         s1[strlen(s1)-1] = '\0';
-[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //         s2[strlen(s2)-1] = '\0';
-[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //         driver(s1, s2);
-[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //         return 0;
-[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //     }
-[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // Behavior is reproduced exactly, including the original's quirks:
-[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m //   * fgets() stops at a newline and never reads past it, so at most one
-[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m //     line (99 bytes) is consumed per call; an over-long line leaves its
-[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m //     remainder for the next fgets() call.
-[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //   * The unconditional `s[strlen(s)-1] = '\0'` blindly deletes the last
-[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //     byte of the buffer even when that byte is not a newline (truncated
-[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //     long line), and underflows the buffer when the string is empty
-[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //     (EOF before any byte was read). The underflowing store targets a
-[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //     byte outside the string and is not observable in the program's
-[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m //     output, so it is emulated as a no-op.
-[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //   * NUL bytes present in the input terminate the string early for
-[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //     strlen()/strcspn() purposes, exactly as in C.
-[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m use std::io::{self, Read, Write};
-[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m const BUF_LEN: usize = 100; // sizeof(s1) == sizeof(s2) == 100
-[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// Emulation of C's `fgets(buf, size, stdin)`.
-[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// Reads at most `size - 1` bytes, stopping after a newline (which is kept
-[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// in the buffer), and NUL-terminates what was read. On immediate EOF the
-[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m /// buffer is left untouched, mirroring fgets() returning NULL.
-[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m fn fgets<R: Read>(buf: &mut [u8; BUF_LEN], size: usize, input: &mut R) -> bool {
-[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     if size == 0 {
-[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         return false;
-[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let mut n = 0usize;
-[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let mut byte = [0u8; 1];
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //! Rust translation of c_src/src/main.c.
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! The C program reads two lines with `fgets` into 100-byte buffers, strips the
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //! final byte of each, and prints `strcspn(s1, s2)`.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m use std::io::{self, Read, Write};
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m /// `strlen`: index of the first NUL byte, or the whole buffer if none exists.
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m fn c_strlen(buf: &[u8]) -> usize {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     buf.iter().position(|&b| b == 0).unwrap_or(buf.len())
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// `strcspn(s1, s2)`: length of the initial run of `s1` containing no byte that
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// appears in `s2`. Both operands are NUL-terminated C strings, so the scan of
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// `s1` stops at its NUL and the reject set excludes `s2`'s terminator.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn c_strcspn(s1: &[u8], s2: &[u8]) -> usize {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let reject = &s2[..c_strlen(s2)];
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let n1 = c_strlen(s1);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     for i in 0..n1 {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         if reject.contains(&s1[i]) {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             return i;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     n1
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m }
 [0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     while n + 1 < size {
-[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         match input.read(&mut byte) {
-[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             Ok(0) => break, // EOF
-[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             Ok(_) => {
-[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m                 buf[n] = byte[0];
-[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m                 n += 1;
-[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                 if byte[0] == b'\n' {
-[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                     break;
-[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             Err(_) => break,
-[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     if n == 0 {
-[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         // fgets() returns NULL and does not modify the buffer.
-[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         return false;
-[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     buf[n] = 0;
-[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     true
-[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// Emulation of C's `strlen`: offset of the first NUL byte.
-[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m fn strlen(buf: &[u8]) -> usize {
-[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     buf.iter().position(|&b| b == 0).unwrap_or(buf.len())
-[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// Emulation of C's `strcspn(s1, s2)`: length of the initial segment of
-[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// `s1` containing no byte from `s2`. Both are NUL-terminated buffers.
-[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m fn strcspn(s1: &[u8], s2: &[u8]) -> usize {
-[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     let reject = &s2[..strlen(s2)];
-[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     let s1 = &s1[..strlen(s1)];
-[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     for (i, c) in s1.iter().enumerate() {
-[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         if reject.contains(c) {
-[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m             return i;
-[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     s1.len()
-[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m fn driver(s1: &[u8], s2: &[u8]) {
-[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     // printf("%zu\n", strcspn(s1, s2));
-[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     let stdout = io::stdout();
-[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let mut out = stdout.lock();
-[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     let _ = write!(out, "{}\n", strcspn(s1, s2));
-[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     let _ = out.flush();
-[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// Emulation of `s[strlen(s)-1] = '\0'`.
-[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// When the string is empty this is an out-of-bounds store at `s[-1]` in
-[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// the original C; that byte lies outside the string and does not affect
-[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// the program's output, so nothing is written here.
-[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m fn chop_last_byte(buf: &mut [u8; BUF_LEN]) {
-[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     let len = strlen(buf);
-[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     if len > 0 {
-[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         buf[len - 1] = 0;
-[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m fn main() {
-[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     // char s1[100] = "", s2[100] = "";  -> zero filled
-[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     let mut s1 = [0u8; BUF_LEN];
-[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     let mut s2 = [0u8; BUF_LEN];
-[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     let stdin = io::stdin();
-[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let mut input = io::BufReader::new(stdin.lock());
-[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     // Return values are ignored by the original program.
-[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     let _ = fgets(&mut s1, BUF_LEN, &mut input);
-[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     let _ = fgets(&mut s2, BUF_LEN, &mut input);
-[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     chop_last_byte(&mut s1);
-[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     chop_last_byte(&mut s2);
-[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     driver(&s1, &s2);
-[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// `fgets(buf, buf.len(), stdin)`.
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// Reads at most `buf.len() - 1` bytes, stopping after a newline (which is kept
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// in the buffer) or at EOF, then NUL-terminates. Returns `false` (C's NULL)
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m /// when EOF is hit before any byte is read; in that case `buf` is left
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// untouched, matching glibc.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m fn c_fgets<R: Read>(buf: &mut [u8], reader: &mut R) -> bool {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     let max = buf.len() - 1;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     let mut n = 0usize;
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     let mut byte = [0u8; 1];
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     while n < max {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         match reader.read(&mut byte) {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m             Ok(0) => break,
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             Ok(_) => {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m                 buf[n] = byte[0];
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m                 n += 1;
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m                 if byte[0] == b'\n' {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m             Err(_) => break,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     if n == 0 {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         return false;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     buf[n] = 0;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     true
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// `s[strlen(s) - 1] = '\0'`.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// When the string is empty the C code computes `s[-1]`, an out-of-bounds
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m /// write. Both buffers are zero-initialized and `fgets` with size 100 never
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m /// stores past index 99, so whichever byte precedes the array already holds
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// zero and the stray store has no observable effect. It is therefore skipped
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// here rather than emulated.
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m fn strip_last_byte(buf: &mut [u8]) {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     let len = c_strlen(buf);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     if len > 0 {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         buf[len - 1] = 0;
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m fn driver(s1: &[u8], s2: &[u8], out: &mut dyn Write) {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     // printf("%zu\n", strcspn(s1, s2));
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     let _ = write!(out, "{}\n", c_strcspn(s1, s2));
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     let mut s1 = [0u8; 100];
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     let mut s2 = [0u8; 100];
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let stdin = io::stdin();
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let mut reader = stdin.lock();
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     c_fgets(&mut s1, &mut reader);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     // The C code passes sizeof(s1) for the second read; both buffers are 100 bytes.
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     c_fgets(&mut s2, &mut reader);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     strip_last_byte(&mut s1);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     strip_last_byte(&mut s2);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let stdout = io::stdout();
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     let mut out = stdout.lock();
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     driver(&s1, &s2, &mut out);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation/src/main.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-HTabov/translation/src/main.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
 [?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation)
-    Finished `release` profile [optimized] target(s) in 0.20s
-[38;5;244m - Completed in 0.220s[0m
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-HTabov/translation)
+    Finished `release` profile [optimized] target(s) in 0.19s
+[38;5;244m - Completed in 0.207s[0m
 
-[?25l[0m[38;5;141m> [0mNow a differential test against the C binary.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
-C=./driver
-R=/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation/target/release/driver
+[?25l[0m[38;5;141m> [0mNow differential-testing against the compiled C.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mset -e
+mkdir -p /tmp/cref && gcc -O2 -o /tmp/cref/driver c_src/src/main.c 2>&1 | tail -5
+C=/tmp/cref/driver
+R=translation/target/release/driver
+run() { desc="$1"; shift; a=$(printf "$1" | $C 2>&1; echo "rc=$?"); b=$(printf "$1" | $R 2>&1; echo "rc=$?"); if [ "$a" = "$b" ]; then echo "OK   $desc  [$a]"; else echo "DIFF $desc  C=[$a] RUST=[$b]"; fi; }
+run "basic abcde/xyzc"        'abcde\nxyzc\n'
+run "no match"                'abcde\nxyz\n'
+run "match first char"        'abcde\na\n'
+run "empty s2 line"           'abcde\n\n'
+run "empty s1 line"           '\nabc\n'
+run "both empty lines"        '\n\n'
+run "totally empty stdin"     ''
+run "only one line, no NL"    'abcde'
+run "one line with NL only"   'abcde\n'
+run "no trailing NL on 2nd"   'abcde\nxc'
+run "spaces"                  'hello world\n \n'
+run "tab set"                 'a\tb\n\t\n'
+run "digits"                  '12345\n5\n'
+run "s2 longer"               'ab\nzzzzzzzzzzb\n'
+run "cr lf"                   'abc\r\nb\r\n'
+[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C vs Rust on edge cases
+
+OK   basic abcde/xyzc  [2
+rc=0]
+OK   no match  [5
+rc=0]
+OK   match first char  [0
+rc=0]
+OK   empty s2 line  [5
+rc=0]
+OK   empty s1 line  [0
+rc=0]
+OK   both empty lines  [0
+rc=0]
+OK   totally empty stdin  [0
+rc=0]
+OK   only one line, no NL  [4
+rc=0]
+OK   one line with NL only  [5
+rc=0]
+OK   no trailing NL on 2nd  [5
+rc=0]
+OK   spaces  [5
+rc=0]
+OK   tab set  [1
+rc=0]
+OK   digits  [4
+rc=0]
+OK   s2 longer  [1
+rc=0]
+OK   cr lf  [1
+rc=0]
+[38;5;244m - Completed in 0.91s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cref/driver; R=translation/target/release/driver
+cmp2() { desc="$1"; f="$2"; a=$($C < "$f" 2>&1; echo "rc=$?"); b=$($R < "$f" 2>&1; echo "rc=$?"); [ "$a" = "$b" ] && echo "OK   $desc [$(echo $a|tr '\n' ' ')]" || echo "DIFF $desc C=[$a] RUST=[$b]"; }
+# 150 'a' then newline, then 'z'
+python3 -c "import sys;sys.stdout.write('a'*150+'\n'+'z\n')" > /tmp/t1
+# 150 chars with a 'z' at index 120 (beyond the 99-byte read window)
+python3 -c "import sys;sys.stdout.write('a'*120+'z'+'a'*29+'\n'+'z\n')" > /tmp/t2
+# exactly 99 chars + newline (line spills: newline becomes start of s2)
+python3 -c "import sys;sys.stdout.write('a'*99+'\n'+'z\n')" > /tmp/t3
+# exactly 98 chars + newline
+python3 -c "import sys;sys.stdout.write('a'*98+'\n'+'a\n')" > /tmp/t4
+# embedded NUL in line 1
+printf 'ab\x00cd\nc\n' > /tmp/t5
+# embedded NUL in line 2 (set becomes empty)
+printf 'abcde\n\x00c\n' > /tmp/t6
+# high bytes / non-UTF8
+printf '\xff\xfe\xfd\n\xfd\n' > /tmp/t7
+# no newline at all, 200 chars
+python3 -c "import sys;sys.stdout.write('b'*200)" > /tmp/t8
+# duplicate chars in s2, s1 last char is the match
+printf 'abcz\nzz\n' > /tmp/t9
+for i in 1 2 3 4 5 6 7 8 9; do cmp2 "t$i" /tmp/t$i; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test long lines, embedded NULs, non-UTF8 bytes
+
+OK   t1 [0 rc=0 ]
+OK   t2 [0 rc=0 ]
+OK   t3 [98 rc=0 ]
+OK   t4 [0 rc=0 ]
+OK   t5 [1 rc=0 ]
+OK   t6 [5 rc=0 ]
+OK   t7 [2 rc=0 ]
+OK   t8 [0 rc=0 ]
+OK   t9 [3 rc=0 ]
+[38;5;244m - Completed in 0.106s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cref/driver; R=translation/target/release/driver
 fail=0
-check() {
-  desc="$1"; shift
-  python3 -c "$1" > in.bin
-  "$C" < in.bin > c.out 2>/dev/null; crc=$?
-  "$R" < in.bin > r.out 2>/dev/null; rrc=$?
-  if cmp -s c.out r.out && [ "$crc" = "$rrc" ]; then echo "PASS  $desc"; else
-    echo "FAIL  $desc  (rc $crc/$rrc)"; echo "  C: $(od -c c.out|head -2|tr '\n' '|')"; echo "  R: $(od -c r.out|head -2|tr '\n' '|')"; fail=1; fi
-}
-w(){ echo "import sys;sys.stdout.buffer.write($1)"; }
+for f in /tmp/t1 /tmp/t2 /tmp/t3 /tmp/t4 /tmp/t5 /tmp/t6 /tmp/t7 /tmp/t8 /tmp/t9; do
+  $C < $f > /tmp/o.c 2>/tmp/e.c; rcc=$?
+  $R < $f > /tmp/o.r 2>/tmp/e.r; rcr=$?
+  cmp -s /tmp/o.c /tmp/o.r && cmp -s /tmp/e.c /tmp/e.r && [ $rcc -eq $rcr ] || { echo "BYTE-DIFF $f"; fail=1; }
+done
+# also raw-byte compare the printf-based cases
+for s in 'abcde\nxyzc\n' '\n\n' '' 'abcde' 'hello world\n \n'; do
+  printf "$s" | $C > /tmp/o.c 2>/dev/null; printf "$s" | $R > /tmp/o.r 2>/dev/null
+  cmp -s /tmp/o.c /tmp/o.r || { echo "BYTE-DIFF literal [$s]"; fail=1; }
+done
+[ $fail -eq 0 ] && echo "ALL BYTE-IDENTICAL"
+echo "--- artifacts ---"; ls -l translation/Cargo.toml translation/src/main.rs translation/target/release/driver
+echo "--- c_src integrity ---"; md5sum c_src/src/main.c c_src/CMakeLists.txt; find c_src -newermt '-2 hours' -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Byte-level stdout/stderr/exit-code comparison and artifact verification
 
-check "normal"            "$(w "b'hello world\nlo\n'")"
-check "empty stdin"       "$(w "b''")"
-check "one line only"     "$(w "b'abc\n'")"
-check "one line no nl"    "$(w "b'abc'")"
-check "empty line1"       "$(w "b'\nabc\n'")"
-check "both empty lines"  "$(w "b'\n\n'")"
-check "no match"          "$(w "b'abc\nxyz\n'")"
-check "s2 empty"          "$(w "b'abcdef\n\n'")"
-check "first char match"  "$(w "b'abc\na\n'")"
-check "3 lines"           "$(w "b'abcdef\nzf\nignored\n'")"
-check "99+nl"             "$(w "b'a'*98+b'Z'+b'\nZ\n'")"
-check "100+nl"           "$(w "b'a'*99+b'Z'+b'\nZ\n'")"
-check "long line 105"     "$(w "b'a'*100+b'X'+b'b'*4+b'\nX\n'")"
-check "very long single"  "$(w "b'q'*250")"
-check "nul mid"           "$(w "b'ab\x00cd\nb\n'")"
-check "nul first"         "$(w "b'\x00\nb\n'")"
-check "nul only s2"       "$(w "b'abc\n\x00xyz\n'")"
-check "crlf"              "$(w "b'abc\r\nc\r\n'")"
-check "high bytes"        "$(w "b'\xff\xfe\xfd\n\xfd\n'")"
-check "tabs spaces"       "$(w "b'  \tabc\n\t\n'")"
-check "s1 nl only s2 eof" "$(w "b'\n'")"
-check "98chars exact"     "$(w "b'a'*97+b'Z\nZ\n'")"
-check "dup chars s2"      "$(w "b'aaabbbccc\ncccbbb\n'")"
-check "s2 long 150"       "$(w "b'zzz\n'+b'y'*150+b'\n'")"
-exit $fail[0m[38;5;244m (using tool: shell)[0m
+ALL BYTE-IDENTICAL
+--- artifacts ---
+-rw-r--r--. 1 scheschb amazon    142 Sep  1 10:04 translation/Cargo.toml
+-rw-r--r--. 1 scheschb amazon   3994 Sep  1 10:04 translation/src/main.rs
+-rwxr-xr-x. 2 scheschb amazon 449512 Sep  1 10:05 translation/target/release/driver
+--- c_src integrity ---
+32f2dc1bff3b56c74eeeda560ad37d21  c_src/src/main.c
+02ba3005fed9b6d7d46c4fe335ac00d8  c_src/CMakeLists.txt
+2
+[38;5;244m - Completed in 0.83s[0m
 
-PASS  normal
-PASS  empty stdin
-PASS  one line only
-PASS  one line no nl
-PASS  empty line1
-PASS  both empty lines
-PASS  no match
-PASS  s2 empty
-PASS  first char match
-PASS  3 lines
-PASS  99+nl
-PASS  100+nl
-PASS  long line 105
-PASS  very long single
-PASS  nul mid
-PASS  nul first
-PASS  nul only s2
-PASS  crlf
-PASS  high bytes
-PASS  tabs spaces
-PASS  s1 nl only s2 eof
-PASS  98chars exact
-PASS  dup chars s2
-PASS  s2 long 150
-[38;5;244m - Completed in 0.364s[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mstat -c '%y %n' c_src/src/main.c c_src/CMakeLists.txt; date[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src mtimes predate this session
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cref
-C=./driver
-R=/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation/target/release/driver
-python3 - <<'EOF' > cases.py
-EOF
-python3 -c "
-import random, subprocess, sys
-random.seed(7)
-alpha=[bytes([c]) for c in list(range(1,256))]
-bad=0
-for t in range(3000):
-    def line():
-        n=random.choice([0,1,2,3,5,20,97,98,99,100,101,150])
-        return b''.join(random.choice(alpha) for _ in range(n)).replace(b'\n',b'#')
-    data=line()
-    if random.random()<0.9: data+=b'\n'+line()
-    if random.random()<0.5: data+=b'\n'
-    if random.random()<0.2: data+=b'\n'+line()+b'\n'
-    c=subprocess.run(['./driver'],input=data,capture_output=True)
-    r=subprocess.run(['$R'],input=data,capture_output=True)
-    if c.stdout!=r.stdout or c.returncode!=r.returncode:
-        bad+=1; print('MISMATCH',repr(data)[:200], c.stdout, r.stdout); 
-        if bad>3: break
-print('done, mismatches =',bad)
-"[0m[38;5;244m (using tool: shell)[0m
+2026-09-01 10:03:50.482550414 +0000 c_src/src/main.c
+2026-09-01 10:03:50.482550414 +0000 c_src/CMakeLists.txt
+Tue Sep  1 10:05:45 UTC 2026
+[38;5;244m - Completed in 0.8s[0m
 
-done, mismatches = 0
-[38;5;244m - Completed in 4.921s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cref && ls -R /local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation --ignore=target[0m[38;5;244m (using tool: shell)[0m
-
-/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation:
-Cargo.lock
-Cargo.toml
-src
-
-/local/home/scheschb/.harvest/work/harvest-work-AYhNrF/translation/src:
-main.rs
-[38;5;244m - Completed in 0.6s[0m
-
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean with [38;5;10mcargo build --release[0m and matches the C binary byte-for-byte on 24 hand-picked edge cases plus 3000 randomized fuzz inputs (including NUL bytes, high bytes, over-long lines, and EOF variants).[0m[0m
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean and matches the C byte-for-byte on every case I tested.[0m[0m
 [0m[0m
-The program itself is tiny — read two lines with [38;5;10mfgets[0m, chop the last byte of each, print [38;5;10mstrcspn(s1, s2)[0m. The translation is safe Rust (fixed [38;5;10m[u8; 100][0m arrays, no [38;5;10munsafe[0m), with C semantics emulated explicitly:[0m[0m
+The program is small (one [38;5;10mstrcspn[0m call), so the work was in the C-isms rather than the logic:[0m[0m
 [0m[0m
-- [38;5;10mfgets[0m reads at most 99 bytes and stops [3mafter[23m a newline, so an over-long line leaves its tail for the second call; on immediate EOF the buffer is left untouched (still all zeros), matching [38;5;10mNULL[0m return.[0m[0m
-- [38;5;10mstrlen[0m/[38;5;10mstrcspn[0m operate on the first NUL, so embedded NUL bytes truncate the strings exactly as in C.[0m[0m
-- [38;5;10ms[strlen(s)-1] = '\0'[0m is reproduced as-is, including the bug where it deletes a real character rather than a newline when a line was truncated at 99 bytes.[0m[0m
+- [38;5;10mfgets[0m emulated byte-at-a-time: reads at most 99 bytes, keeps the newline, NUL-terminates, and on EOF-before-any-byte returns "NULL" leaving the zero-initialized buffer untouched. This is why totally-empty stdin still prints [38;5;10m0[0m.[0m[0m
+- [38;5;10ms[strlen(s)-1] = '\0'[0m strips the last byte unconditionally, not just newlines — so a final line without a newline loses a real character ([38;5;10mabcde[0m alone → [38;5;10mabcd[0m), and a 99-char line loses a real character too. That behavior is preserved, not fixed.[0m[0m
+- The empty-line case makes the C write [38;5;10ms[-1][0m, out of bounds. Since both arrays are zero-initialized and [38;5;10mfgets(…, 100)[0m never stores past index 99, the byte preceding either array already holds zero, so the stray store cannot be observed. I skip it in Rust rather than emulating a specific stack layout, and noted that reasoning in a comment.[0m[0m
+- Buffers are [38;5;10m[u8; 100][0m with explicit [38;5;10mstrlen[0m/[38;5;10mstrcspn[0m over bytes, so embedded NULs and non-UTF-8 input behave like C (verified with [38;5;10m\x00[0m and [38;5;10m\xff[0m inputs).[0m[0m
 [0m[0m
-One deliberate judgment call: when a buffer is empty, that same statement is an out-of-bounds store at [38;5;10ms[-1][0m (undefined behavior in C). I verified against the compiled C that the clobbered stack byte never affects output, so [38;5;10mchop_last_byte[0m treats the empty case as a no-op rather than reproducing an unsound write. That's documented in a comment in [38;5;10msrc/main.rs[0m.[0m[0m
+Verification I ran myself: compiled the original with [38;5;10mgcc -O2[0m, then compared stdout, stderr and exit code with [38;5;10mcmp[0m across 24 inputs — basic matches, no-match, empty lines, empty stdin, missing trailing newlines, 98/99/150/200-char lines, a reject char beyond the 99-byte read window, embedded NULs in each line, high bytes, and CRLF. All byte-identical. [38;5;10mc_src/[0m mtimes still predate the session, so nothing there was touched.[0m[0m
 [38;5;8m
- ▸ Credits: 4.05 • Time: 2m 2s
+ ▸ Credits: 3.93 • Time: 2m 3s
 
 [0m[1G[0m[0m[?25h

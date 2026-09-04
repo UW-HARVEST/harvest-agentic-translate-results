@@ -4,176 +4,317 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
-[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc[0m [38;5;244m(9 entries)[0m
-[38;5;244m - Completed in 0.1s[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind . -maxdepth 2 -type d | head -50; echo "---"; find c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+.
+./c_src
+./c_src/include
+./c_src/src
+./translation
+./.claude
+---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.11s[0m
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/include/lib.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/src/lib.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m489 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/CMakeLists.txt
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c; echo "==="; cat c_src/CMakeLists.txt; echo "==="; cat c_src/include/lib.h[0m[38;5;244m (using tool: shell)[0m
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m58 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/include/lib.h
+  17 c_src/CMakeLists.txt
+   1 c_src/include/lib.h
+  28 c_src/src/lib.c
+  46 total
+===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m641 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/src/lib.c
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
 
- ⋮ 
+target_link_libraries(${project_name} PRIVATE m)
 
-[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
-[38;5;244m - Completed in 0.0s[0m
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
 
-[?25l[0m[38;5;141m> [0mSimple single function, no namespace macros. Writing the crate.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
-Purpose: Create Cargo.toml with cdylib crate type
+===
+void gaussian_kernel(float *dest, int size, float radius);
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat -A c_src/src/lib.c | sed 's/\$$//' | head -40; echo "=== RAW ==="; cat c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+
+#include <math.h>
+
+#include "lib.h"
+
+void gaussian_kernel(float *dest, int size, float radius) {
+    float *k;
+    float rs, s2, sum;
+    float sigma = 1.6f;
+    float tetha = 2.25f;
+    int r, hsize = size / 2;
+    s2 = 1.0f / expf(sigma * sigma * tetha);
+    rs = sigma / radius;
+    k = dest;
+    sum = 0.0f;
+    for (r = -hsize; r <= hsize; r++) {
+        float x = r * rs;
+        float v = (1.0f / expf(x * x)) - s2;
+        v = (((v) > (0)) ? (v) : (0));
+        *k = v;
+        sum += v;
+        k++;
+    }
+    if (sum > 0.0f) {
+        float isum = 1.0f / sum;
+        for (r = 0; r < size; r++)
+            dest[r] *= isum;
+    }
+}
+=== RAW ===
+#include <math.h>
+
+#include "lib.h"
+
+void gaussian_kernel(float *dest, int size, float radius) {
+    float *k;
+    float rs, s2, sum;
+    float sigma = 1.6f;
+    float tetha = 2.25f;
+    int r, hsize = size / 2;
+    s2 = 1.0f / expf(sigma * sigma * tetha);
+    rs = sigma / radius;
+    k = dest;
+    sum = 0.0f;
+    for (r = -hsize; r <= hsize; r++) {
+        float x = r * rs;
+        float v = (1.0f / expf(x * x)) - s2;
+        v = (((v) > (0)) ? (v) : (0));
+        *k = v;
+        sum += v;
+        k++;
+    }
+    if (sum > 0.0f) {
+        float isum = 1.0f / sum;
+        for (r = 0; r < size; r++)
+            dest[r] *= isum;
+    }
+}
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && cmake -S . -B /tmp/cbuild -DCMAKE_BUILD_TYPE=Release > /tmp/cm.log 2>&1 && cmake --build /tmp/cbuild >> /tmp/cm.log 2>&1; tail -5 /tmp/cm.log; ls /tmp/cbuild/*.so[0m[38;5;244m (using tool: shell)[0m
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-hLiFje/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-NhqQBp/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+/tmp/cbuild/libharvest-work-NhqQBp.so
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && rm -rf /tmp/cbuild2 && cmake -S . -B /tmp/cbuild2 -DCMAKE_BUILD_TYPE=Release > /tmp/cm.log 2>&1 && cmake --build /tmp/cbuild2 >> /tmp/cm.log 2>&1; ls /tmp/cbuild2/*.so && nm -D --defined-only /tmp/cbuild2/*.so[0m[38;5;244m (using tool: shell)[0m
+
+/tmp/cbuild2/libharvest-work-hLiFje.so
+0000000000001110 T gaussian_kernel
+[38;5;244m - Completed in 0.432s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfind translation -type f | head; ls -la translation[0m[38;5;244m (using tool: shell)[0m
+
+total 0
+drwxr-xr-x. 2 scheschb amazon  6 Sep  1 05:27 .
+drwxr-xr-x. 5 scheschb amazon 69 Sep  1 05:27 ..
+[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-hLiFje/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
-[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "lib"
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-hLiFje"
 [0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
 [0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
-[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "lib"
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
-[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-hLiFje/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-Purpose: Translate gaussian_kernel to Rust
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-hLiFje/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
 
-[48;2;40;67;43m[39m+     1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Rust translation of `c_src/src/lib.c`.[K
-[0m[48;2;40;67;43m[39m+     2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+     3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Behaviour is reproduced exactly, including the original's quirks:[K
-[0m[48;2;40;67;43m[39m+     4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m  * the first loop always writes `2 * (size / 2) + 1` elements, which is one[K
-[0m[48;2;40;67;43m[39m+     5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m    element past `size` when `size` is even (an out-of-bounds write in the C[K
-[0m[48;2;40;67;43m[39m+     6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m    original — kept as-is on purpose),[K
-[0m[48;2;40;67;43m[39m+     7[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m  * the reciprocal-of-`expf` formulation (`1/expf(x*x)`) is preserved rather[K
-[0m[48;2;40;67;43m[39m+     8[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m    than being rewritten as `expf(-x*x)`, since the two differ in the last[K
-[0m[48;2;40;67;43m[39m+     9[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m    bits,[K
-[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m  * `float` (`f32`) precision is used for every intermediate value.[K
-[0m[48;2;40;67;43m[39m+    11[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    12[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;180;142;173mc_int[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    13[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    14[0m:[39m[48;2;24;38;30m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    15[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m Single-precision exponential from the platform math library, so that the[K
-[0m[48;2;40;67;43m[39m+    16[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m results match the C build bit-for-bit.[K
-[0m[48;2;40;67;43m[39m+    17[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mexpf[38;2;192;197;206m([38;2;191;97;106mx[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    18[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    19[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    20[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `void gaussian_kernel(float *dest, int size, float radius);`[K
-[0m[48;2;40;67;43m[39m+    21[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    22[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mgaussian_kernel[38;2;192;197;206m([38;2;191;97;106mdest[38;2;192;197;206m:[38;2;192;197;206m *[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106msize[38;2;192;197;206m:[38;2;192;197;206m c_int, [38;2;191;97;106mradius[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    23[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m sigma[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m6[38;2;180;142;173mf32[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    24[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m tetha[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m2.[38;2;208;135;112m25[38;2;180;142;173mf32[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    25[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m hsize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m size [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m2[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    26[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    27[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m s2[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mexpf[38;2;192;197;206m([38;2;192;197;206msigma [38;2;192;197;206m*[38;2;192;197;206m sigma [38;2;192;197;206m*[38;2;192;197;206m tetha[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    28[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m rs[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m sigma [38;2;192;197;206m/[38;2;192;197;206m radius[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    29[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    30[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m k[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m dest[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    31[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m sum[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    32[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m r[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206mhsize[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mwhile[38;2;192;197;206m r [38;2;192;197;206m<[38;2;192;197;206m=[38;2;192;197;206m hsize [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m x[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mr [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m rs[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m v[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mexpf[38;2;192;197;206m([38;2;192;197;206mx [38;2;192;197;206m*[38;2;192;197;206m x[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206m s2[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        v [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m v [38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m v [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    38[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    39[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206mk [38;2;192;197;206m=[38;2;192;197;206m v[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    40[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    41[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        sum [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m v[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    42[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        k [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m k.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        r [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    44[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    45[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m sum [38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m isum[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m sum[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m r[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    49[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mwhile[38;2;192;197;206m r [38;2;192;197;206m<[38;2;192;197;206m size [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    50[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    51[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mlet[38;2;192;197;206m p [38;2;192;197;206m=[38;2;192;197;206m dest.[38;2;150;181;180moffset[38;2;192;197;206m([38;2;192;197;206mr [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    52[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206m*[38;2;192;197;206mp [38;2;192;197;206m*[38;2;192;197;206m=[38;2;192;197;206m isum[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    53[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    54[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            r [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    55[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    57[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of c_src/src/lib.c
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Public ABI (from `nm -D` on the C shared library):
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //!   - gaussian_kernel
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! The translation is a literal one: the same arithmetic in the same order,
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! the same libm `expf`, and the same (out of bounds for even `size`) memory
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! writes performed by the original loop `for (r = -hsize; r <= hsize; r++)`.
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m use core::ffi::c_int;
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     /// Use the platform libm `expf` so results match the C build bit for bit.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     fn expf(x: f32) -> f32;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m /// void gaussian_kernel(float *dest, int size, float radius);
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m pub unsafe extern "C" fn gaussian_kernel(dest: *mut f32, size: c_int, radius: f32) {
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     let sigma: f32 = 1.6f32;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     let tetha: f32 = 2.25f32;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     // int hsize = size / 2;  (C integer division truncates toward zero)
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     let hsize: c_int = size / 2;
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     let s2: f32 = 1.0f32 / unsafe { expf(sigma * sigma * tetha) };
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     let rs: f32 = sigma / radius;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     let mut k: *mut f32 = dest;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     let mut sum: f32 = 0.0f32;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     let mut r: c_int = -hsize;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     while r <= hsize {
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         let x: f32 = (r as f32) * rs;
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         let mut v: f32 = (1.0f32 / unsafe { expf(x * x) }) - s2;
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m         // v = ((v) > (0)) ? (v) : (0);  -- NaN compares false, so yields 0.0
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m         v = if v > 0.0f32 { v } else { 0.0f32 };
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m             *k = v;
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         sum += v;
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         k = unsafe { k.add(1) };
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         r += 1;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     if sum > 0.0f32 {
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         let isum: f32 = 1.0f32 / sum;
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         let mut r: c_int = 0;
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         while r < size {
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m                 let p = dest.offset(r as isize);
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m                 *p *= isum;
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             r += 1;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-85qHpc/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-hLiFje/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/cargo-build.log | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-Purpose: Build the Rust cdylib
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
 
-   Compiling lib v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-85qHpc/translation)
-    Finished `release` profile [optimized] target(s) in 0.18s
-[38;5;244m - Completed in 0.213s[0m
+   Compiling harvest-work-hLiFje v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-hLiFje/translation)
+warning: crate `harvest_work_hLiFje` should have a snake case name
+  |
+  = help: convert the identifier to snake case: `harvest_work_h_li_fje`
+  = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
 
-[?25l[0m[38;5;141m> [0mBuilds clean. Verifying the exported symbol and comparing output against the compiled C.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only target/release/liblib.so | grep -i gauss[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-Purpose: Check exported symbol
+warning: `harvest-work-hLiFje` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.150s[0m
 
-0000000000011cd0 T gaussian_kernel
-[38;5;244m - Completed in 0.24s[0m
+[?25l[0m[38;5;141m> [0mNow verify the exported symbol sets match, then check numerical equality.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-hLiFje
+nm -D --defined-only /tmp/cbuild2/*.so | awk '{print $NF}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/*.so | awk '$2=="T"||$2=="W"||$2=="B"||$2=="D"{print $NF}' | sort > /tmp/rs_syms_all.txt
+echo "--- C symbols ---"; cat /tmp/c_syms.txt
+echo "--- MISSING in Rust ---"; comm -23 /tmp/c_syms.txt /tmp/rs_syms_all.txt
+echo "--- (end) ---"; grep -c . /tmp/c_syms.txt[0m[38;5;244m (using tool: shell)[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
-mkdir -p /tmp/gk && cd /tmp/gk
-cp /local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/src/lib.c .
-cp /local/home/scheschb/.harvest/work/harvest-work-85qHpc/c_src/include/lib.h .
-cat > main.c <<'EOF'
+--- C symbols ---
+gaussian_kernel
+--- MISSING in Rust ---
+--- (end) ---
+1
+[38;5;244m - Completed in 0.38s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && cat > drv.c <<'EOF'
 #include <stdio.h>
+#include <stdlib.h>
+#include <dlfcn.h>
 #include <string.h>
-void gaussian_kernel(float *dest, int size, float radius);
-int main(void) {
-    int sizes[] = {1, 2, 3, 5, 7, 9, 15, 16, 33, 0, -1};
-    float radii[] = {0.5f, 1.0f, 1.6f, 2.0f, 3.7f, 10.0f, 1e-3f, 1e6f, -2.0f};
-    static float buf[256];
-    for (unsigned i = 0; i < sizeof(sizes)/sizeof(*sizes); i++)
-        for (unsigned j = 0; j < sizeof(radii)/sizeof(*radii); j++) {
-            memset(buf, 0, sizeof buf);
-            gaussian_kernel(buf, sizes[i], radii[j]);
-            printf("size=%d radius=%a:", sizes[i], radii[j]);
-            for (int r = 0; r < 40; r++) printf(" %a", buf[r]);
-            printf("\n");
-        }
+typedef void (*fn)(float*, int, float);
+int main(int argc, char**argv){
+    void *h = dlopen(argv[1], RTLD_NOW);
+    if(!h){ fprintf(stderr,"%s\n", dlerror()); return 1; }
+    fn f = (fn)dlsym(h, "gaussian_kernel");
+    if(!f){ fprintf(stderr,"nosym\n"); return 1; }
+    int sizes[] = {0,1,2,3,4,5,7,8,9,15,16,31,64,101,-1,-2,-4,-7};
+    float radii[] = {1.0f, 0.5f, 2.0f, 3.7f, 1e-6f, 1e6f, 0.0f, -1.0f, -2.5f, 1.6f, 0.001f, 12345.678f};
+    for(unsigned si=0; si<sizeof(sizes)/sizeof(int); si++){
+      for(unsigned ri=0; ri<sizeof(radii)/sizeof(float); ri++){
+        int size = sizes[si];
+        int cap = (size>0? size:0) + 8;
+        float *buf = malloc(sizeof(float)*cap);
+        for(int i=0;i<cap;i++) buf[i] = -7.25f;  /* sentinel */
+        f(buf, size, radii[ri]);
+        printf("size=%d radius=%a :", size, radii[ri]);
+        for(int i=0;i<cap;i++){ unsigned u; memcpy(&u,&buf[i],4); printf(" %08x", u); }
+        printf("\n");
+        free(buf);
+      }
+    }
     return 0;
 }
 EOF
-gcc -O2 -o c_run main.c lib.c -lm -I.
-gcc -O2 -o rs_run main.c -L/local/home/scheschb/.harvest/work/harvest-work-85qHpc/translation/target/release -l:liblib.so -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-85qHpc/translation/target/release
-./c_run > c.out; ./rs_run > rs.out
-if diff -q c.out rs.out; then echo "IDENTICAL ($(wc -l < c.out) cases)"; else diff c.out rs.out | head -20; fi[0m[38;5;244m (using tool: shell)[0m
-Purpose: Differential test C vs Rust across sizes and radii
+gcc -O0 -o drv drv.c -ldl && ./drv /tmp/cbuild2/libharvest-work-hLiFje.so > /tmp/out_c.txt && ./drv /local/home/scheschb/.harvest/work/harvest-work-hLiFje/translation/target/release/libharvest_work_hLiFje.so > /tmp/out_rs.txt; echo "lines: $(wc -l < /tmp/out_c.txt)"; if diff -q /tmp/out_c.txt /tmp/out_rs.txt; then echo "BYTE-IDENTICAL"; else diff /tmp/out_c.txt /tmp/out_rs.txt | head -20; fi[0m[38;5;244m (using tool: shell)[0m
 
-IDENTICAL (99 cases)
-[38;5;244m - Completed in 0.194s[0m
+lines: 216
+BYTE-IDENTICAL
+[38;5;244m - Completed in 0.55s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/gk[0m[38;5;244m (using tool: shell)[0m
-Purpose: Clean up temp test files
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && cat > fuzz.c <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <dlfcn.h>
+#include <string.h>
+typedef void (*fn)(float*,int,float);
+int main(int argc,char**argv){
+  void*h=dlopen(argv[1],RTLD_NOW); fn f=(fn)dlsym(h,"gaussian_kernel");
+  srand(12345);
+  for(int t=0;t<20000;t++){
+    int size = (rand()%80) - 5;
+    union{unsigned u; float f;} rr; rr.u = ((unsigned)rand()<<17) ^ (unsigned)rand();
+    float radius = rr.f;
+    if(t%3==0) radius = (float)((rand()%2000)-1000)/37.0f;
+    int cap=(size>0?size:0)+6;
+    float*buf=malloc(4*cap); for(int i=0;i<cap;i++) buf[i]=1.5f;
+    f(buf,size,radius);
+    unsigned acc=0; for(int i=0;i<cap;i++){unsigned u;memcpy(&u,&buf[i],4);acc=acc*31u+u;}
+    printf("%d %d %08x %08x\n",t,size,rr.u,acc);
+    free(buf);
+  }
+  return 0;
+}
+EOF
+gcc -O0 -o fuzz fuzz.c -ldl && ./fuzz /tmp/cbuild2/libharvest-work-hLiFje.so > /tmp/f_c.txt && ./fuzz /local/home/scheschb/.harvest/work/harvest-work-hLiFje/translation/target/release/libharvest_work_hLiFje.so > /tmp/f_rs.txt; cmp /tmp/f_c.txt /tmp/f_rs.txt && echo "FUZZ 20000 CASES IDENTICAL"[0m[38;5;244m (using tool: shell)[0m
 
-[38;5;244m - Completed in 0.9s[0m
+FUZZ 20000 CASES IDENTICAL
+[38;5;244m - Completed in 0.77s[0m
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m contains a [38;5;10mcdylib[0m crate exporting [38;5;10mgaussian_kernel[0m with the exact C signature ([38;5;10m*mut f32, c_int, f32[0m), and a differential test against the gcc-compiled original produced bit-identical results (hex float comparison) across 99 size/radius combinations, including edge cases like [38;5;10msize=0[0m, [38;5;10msize=-1[0m, and negative radius.[0m[0m
+[?25l[0m[38;5;141m> [0mDone. The library in [38;5;10mc_src/[0m turned out to be small: one source file, one public header, and exactly one exported symbol.[0m[0m
 [0m[0m
-Notes on fidelity choices:[0m[0m
+Surface enumeration (my own verification, no delegation needed):[0m[0m
+- [38;5;10mnm -D --defined-only[0m on the C [38;5;10m.so[0m ([38;5;10mlibharvest-work-hLiFje.so[0m, built with CMake Release) exports exactly [38;5;10mgaussian_kernel[0m. No namespace/renaming macros in [38;5;10minclude/lib.h[0m.[0m[0m
+- [38;5;10mcomm -23[0m of the C symbol list against the Rust [38;5;10m.so[0m symbol list is empty — the diff gate is satisfied.[0m[0m
 [0m[0m
-- [38;5;10mexpf[0m is called through [38;5;10mextern "C"[0m rather than [38;5;10mf32::exp[0m so the same libm routine is used, avoiding any last-bit divergence.[0m[0m
-- The [38;5;10m1.0f / expf(x * x)[0m formulation is kept verbatim instead of the mathematically equivalent [38;5;10mexpf(-x * x)[0m, which would differ in the low bits.[0m[0m
-- The first loop writes [38;5;10m2 * (size / 2) + 1[0m elements, so for even [38;5;10msize[0m it writes one element past [38;5;10mdest[size - 1][0m. That is an out-of-bounds write in the C original; per the instructions I reproduced it via raw pointer arithmetic rather than fixing it. Callers must keep passing a buffer with the same slack the C version required.[0m[0m
-- The [38;5;10m(v > 0) ? v : 0[0m clamp is translated as a [38;5;10m>[0m comparison, preserving the C behavior of yielding [38;5;10m0[0m for NaN.[0m[0m
+Translation notes:[0m[0m
+- [38;5;10mtranslation/Cargo.toml[0m sets [38;5;10mcrate-type = ["cdylib"][0m; [38;5;10mgaussian_kernel[0m uses [38;5;10m#[unsafe(no_mangle)] pub unsafe extern "C"[0m with [38;5;10m*mut f32, c_int, f32[0m.[0m[0m
+- It calls the platform libm [38;5;10mexpf[0m via [38;5;10mextern "C"[0m rather than [38;5;10mf32::exp[0m, so rounding matches the C build exactly.[0m[0m
+- Preserved the C quirks: [38;5;10msize / 2[0m truncation, the [38;5;10mr = -hsize ..= hsize[0m loop that writes [38;5;10msize + 1[0m elements when [38;5;10msize[0m is even (a real out-of-bounds write in the original — reproduced, not fixed), [38;5;10mv > 0 ? v : 0[0m semantics so NaN becomes [38;5;10m0.0[0m (not [38;5;10mf32::max[0m), and normalization only over [38;5;10m0..size[0m.[0m[0m
 [0m[0m
-The header has no namespace macros, so the linker symbol is plain [38;5;10mgaussian_kernel[0m, confirmed with [38;5;10mnm[0m.[0m[0m
+Equivalence checks against the C [38;5;10m.so[0m through [38;5;10mdlopen[0m, comparing raw 32-bit patterns of the whole buffer including sentinel slots past [38;5;10msize[0m:[0m[0m
+- 216 directed cases (sizes 0–101 plus negatives; radii including 0, negatives, denormal-ish and huge values) — byte-identical.[0m[0m
+- 20,000 randomized cases with random bit-pattern radii (NaN/inf included) — identical hashes.[0m[0m
 [38;5;8m
- ▸ Credits: 2.39 • Time: 1m 8s
+ ▸ Credits: 3.32 • Time: 1m 30s
 
 [0m[1G[0m[0m[?25h

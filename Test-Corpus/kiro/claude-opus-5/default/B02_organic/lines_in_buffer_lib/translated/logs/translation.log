@@ -4,267 +4,547 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && du -sh c_src translation 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -200 && echo "---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src tree
 
-./c_src/CMakeLists.txt
-./c_src/include/lib.h
-./c_src/src/lib.c
-./.claude/settings.json
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 12:56 .
+drwxr-xr-x. 738 scheschb amazon 81920 Sep  1 12:56 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 12:56 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 12:56 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 12:56 translation
 ---
-12K	c_src
-0	translation
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
 [38;5;244m - Completed in 0.13s[0m
 
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  16 c_src/CMakeLists.txt
+   3 c_src/include/lib.h
+  34 c_src/src/lib.c
+  53 total
+[38;5;244m - Completed in 0.6s[0m
+
 [?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/include/lib.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/src/lib.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/CMakeLists.txt
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src/CMakeLists.txt
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m108 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/include/lib.h
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m108 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src/include/lib.h
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1136 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/src/lib.c
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1136 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src/src/lib.c
 
  ⋮ 
 
 [38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mSmall, self-contained: one function, no namespace macros in the header, so the linker symbol is [38;5;10mUTIL_createLinePointers[0m. It returns a [38;5;10mmalloc[0m'd array that the caller frees with [38;5;10mfree[0m, so I'll use libc's allocator directly rather than Rust's.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[38;5;141m> [0mSmall library — a single function. Let me build the C [38;5;10m.so[0m to enumerate the exact export surface.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && echo BUILD_OK && ls -la *.so && echo "=== nm -D ===" && nm -D --defined-only libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
+
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && tail -30 cm.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cmake build log
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-i27hz7/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_yw6 && mkdir -p /tmp/cbuild_yw6 && cd /tmp/cbuild_yw6 && cmake /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && echo BUILD_OK && ls *.so && echo "=== nm -D ===" && nm -D --defined-only libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in clean dir and list symbols
+
+BUILD_OK
+libdriver.so
+=== nm -D ===
+0000000000001120 T UTIL_createLinePointers
+[38;5;244m - Completed in 0.447s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/.claude && cat /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/.claude/* 2>/dev/null | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check .claude directory for harness hints
+
+total 4
+drwxr-xr-x. 2 scheschb amazon  35 Sep  1 12:56 .
+drwxr-xr-x. 5 scheschb amazon  69 Sep  1 12:56 ..
+-rw-r--r--. 1 scheschb amazon 380 Sep  1 12:56 settings.json
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-yw6eKO"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-yw6eKO"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[38;5;244m - Completed in 0.10s[0m
+
+[?25l[0m[38;5;141m> [0mSingle exported symbol: [38;5;10mUTIL_createLinePointers[0m. Now the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib named driver (matches libdriver.so)
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
 [0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
 [0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo --version && rustc --version[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate UTIL_createLinePointers to Rust preserving exact C semantics
 
-cargo 1.94.0 (85eff7c80 2026-01-15)
-rustc 1.94.0 (4a4ef493e 2026-03-02)
-[38;5;244m - Completed in 0.45s[0m
-
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-
-[48;2;40;67;43m[39m+     1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Rust translation of `c_src/src/lib.c`.[K
-[0m[48;2;40;67;43m[39m+     2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+     3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m The single exported function builds an array of pointers to the[K
-[0m[48;2;40;67;43m[39m+     4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m NUL-terminated lines packed inside a caller-owned buffer.[K
-[0m[48;2;40;67;43m[39m+     5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+     6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m The returned array is allocated with libc's `malloc` (and released with[K
-[0m[48;2;40;67;43m[39m+     7[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m libc's `free` on the failure path) because the C contract requires the[K
-[0m[48;2;40;67;43m[39m+     8[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m caller to release it with `free`.[K
-[0m[48;2;40;67;43m[39m+     9[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206m{[38;2;180;142;173mc_char[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_void[38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    11[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    12[0m:[39m[48;2;24;38;30m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    13[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mmalloc[38;2;192;197;206m([38;2;191;97;106msize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_void[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    14[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mfree[38;2;192;197;206m([38;2;191;97;106mptr[38;2;192;197;206m:[38;2;192;197;206m *[38;2;180;142;173mmut[38;2;192;197;206m c_void[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    15[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    16[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    17[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Create an array of pointers to the lines in a buffer.[K
-[0m[48;2;40;67;43m[39m+    18[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    19[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Faithful translation of the original C, including its quirks:[K
-[0m[48;2;40;67;43m[39m+    20[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m * `numLines * sizeof(const char**)` is computed with wrapping arithmetic,[K
-[0m[48;2;40;67;43m[39m+    21[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m   exactly as C `size_t` multiplication does.[K
-[0m[48;2;40;67;43m[39m+    22[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m * The NULL check on the allocation happens after the (harmless) cast.[K
-[0m[48;2;40;67;43m[39m+    23[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m * A zero-size request is forwarded to `malloc` as-is, so `numLines == 0`[K
-[0m[48;2;40;67;43m[39m+    24[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m   returns whatever unique pointer the allocator hands back.[K
-[0m[48;2;40;67;43m[39m+    25[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    26[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m # Safety[K
-[0m[48;2;40;67;43m[39m+    27[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    28[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `buffer` must point to at least `bufferSize` readable bytes (the pointer is[K
-[0m[48;2;40;67;43m[39m+    29[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m only offset and compared, never dereferenced here), and the returned array[K
-[0m[48;2;40;67;43m[39m+    30[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m must be released with `free`.[K
-[0m[48;2;40;67;43m[39m+    31[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    32[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mUTIL_createLinePointers[38;2;192;197;206m([K
-[0m[48;2;40;67;43m[39m+    33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mbuffer[38;2;192;197;206m:[38;2;192;197;206m *[38;2;180;142;173mmut[38;2;192;197;206m c_char,[K
-[0m[48;2;40;67;43m[39m+    34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mnumLines[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mbufferSize[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mc_char[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m line_index[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    38[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m pos[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    39[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    40[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m C: malloc(numLines * sizeof(const char**)) -- wrapping, like size_t math.[K
-[0m[48;2;40;67;43m[39m+    41[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m buffer_ptrs[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;180;142;173mc_void[38;2;192;197;206m [38;2;192;197;206m=[K
-[0m[48;2;40;67;43m[39m+    42[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mmalloc[38;2;192;197;206m([38;2;192;197;206mnumLines.[38;2;150;181;180mwrapping_mul[38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;43;48;59m*[38;2;192;197;206mconst [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mc_char[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m line_pointers [38;2;192;197;206m=[38;2;192;197;206m buffer_ptrs [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mmut[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mc_char[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    44[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m buffer_ptrs.[38;2;150;181;180mis_null[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    47[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mwhile[38;2;192;197;206m line_index [38;2;192;197;206m<[38;2;192;197;206m numLines [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m pos [38;2;192;197;206m<[38;2;192;197;206m bufferSize [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    49[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m len[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173musize[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    50[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    51[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m*[38;2;192;197;206mline_pointers.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206mline_index[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m buffer.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206mpos[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mc_char[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    52[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    53[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        line_index [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    54[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    55[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Find the next null terminator, being careful not to go past the buffer.[K
-[0m[48;2;40;67;43m[39m+    56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mwhile[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mpos [38;2;192;197;206m+[38;2;192;197;206m len [38;2;192;197;206m<[38;2;192;197;206m bufferSize[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206mbuffer.[38;2;150;181;180madd[38;2;192;197;206m([38;2;192;197;206mpos [38;2;192;197;206m+[38;2;192;197;206m len[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m [38;2;192;197;206m![38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    57[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            len [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    58[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    59[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    60[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Move past this string and its null terminator.[K
-[0m[48;2;40;67;43m[39m+    61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        pos [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m len[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    62[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m pos [38;2;192;197;206m<[38;2;192;197;206m bufferSize [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    63[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            pos [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[38;2;192;197;206m [38;2;101;115;126m//[38;2;101;115;126m Skip the null terminator if we're not at buffer end.[K
-[0m[48;2;40;67;43m[39m+    64[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    65[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    66[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    67[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Verify we processed the expected number of lines.[K
-[0m[48;2;40;67;43m[39m+    68[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m line_index [38;2;192;197;206m![38;2;192;197;206m=[38;2;192;197;206m numLines [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    69[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Something went wrong - we didn't find as many lines as expected.[K
-[0m[48;2;40;67;43m[39m+    70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mfree[38;2;192;197;206m([38;2;192;197;206mbuffer_ptrs[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    72[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    73[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    line_pointers [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mc_char[K
-[0m[48;2;40;67;43m[39m+    75[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Public ABI mirrored from `c_src/include/lib.h`:
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //!   const char** UTIL_createLinePointers(char* buffer, size_t numLines, size_t bufferSize);
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! Implementation notes / fidelity constraints:
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //!  * The C code allocates with `malloc` and releases with `free` on the failure
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //!    path. We call the very same libc entry points rather than Rust's global
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //!    allocator so that observable behaviour matches exactly -- in particular
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //!    `malloc(0)` on glibc returns a unique NON-NULL pointer, which the C code
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //!    happily returns when `numLines == 0`. Rust's `alloc` would be UB for a
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //!    zero-sized layout, and its returned pointers could not be `free`d by a
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m //!    caller of the C library.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m //!  * `numLines * sizeof(const char**)` is unsigned `size_t` arithmetic in C and
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m //!    therefore wraps modulo 2^64 on overflow. `wrapping_mul` reproduces that,
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m //!    including the resulting undersized allocation and out-of-bounds stores
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m //!    (a latent bug in the original that we deliberately preserve).
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m //!  * The order of operations is preserved verbatim: the allocation result is
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m //!    cast to `const char**` *before* the NULL check, and the NULL check happens
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m //!    after that cast, exactly as in the C source.
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m use std::ffi::c_void;
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m use std::os::raw::c_char;
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     fn malloc(size: usize) -> *mut c_void;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     fn free(ptr: *mut c_void);
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m /// Create an array of pointers to the lines in a buffer.
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m /// Direct translation of `UTIL_createLinePointers` from `c_src/src/lib.c`.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m /// Same contract (and same lack of one) as the C original: `buffer` must be
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m /// readable for `bufferSize` bytes whenever the scanning loop runs, and the
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m /// returned array is owned by the caller and must be released with `free`.
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m pub unsafe extern "C" fn UTIL_createLinePointers(
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     buffer: *mut c_char,
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     numLines: usize,
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     bufferSize: usize,
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m ) -> *const *const c_char {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     let mut line_index: usize = 0;
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     let mut pos: usize = 0;
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     // void* const bufferPtrs = malloc(numLines * sizeof(const char**));
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     let buffer_ptrs: *mut c_void =
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         malloc(numLines.wrapping_mul(std::mem::size_of::<*const *const c_char>()));
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     // const char** const linePointers = (const char**)bufferPtrs;
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     let line_pointers: *mut *const c_char = buffer_ptrs as *mut *const c_char;
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     // if (bufferPtrs == NULL) return NULL;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     if buffer_ptrs.is_null() {
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m         return std::ptr::null();
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     while line_index < numLines && pos < bufferSize {
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         let mut len: usize = 0;
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         // linePointers[lineIndex++] = buffer+pos;
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         *line_pointers.add(line_index) = buffer.wrapping_add(pos) as *const c_char;
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         line_index += 1;
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         /* Find the next null terminator, being careful not to go past the buffer */
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         while (pos + len < bufferSize) && *buffer.wrapping_add(pos + len) != 0 {
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m             len += 1;
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         /* Move past this string and its null terminator */
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         pos += len;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m         if pos < bufferSize {
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m             pos += 1; /* Skip the null terminator if we're not at buffer end */
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     /* Verify we processed the expected number of lines */
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m     if line_index != numLines {
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m         /* Something went wrong - we didn't find as many lines as expected */
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m         free(buffer_ptrs);
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m         return std::ptr::null();
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m     line_pointers as *const *const c_char
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation)
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation)
 warning: variable `numLines` should have a snake case name
-  --> src/lib.rs:34:5
+  --> src/lib.rs:42:5
    |
-34 |     numLines: usize,
+42 |     numLines: usize,
    |     ^^^^^^^^ help: convert the identifier to snake case: `num_lines`
    |
    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
 
 warning: variable `bufferSize` should have a snake case name
-  --> src/lib.rs:35:5
+  --> src/lib.rs:43:5
    |
-35 |     bufferSize: usize,
+43 |     bufferSize: usize,
    |     ^^^^^^^^^^ help: convert the identifier to snake case: `buffer_size`
 
 warning: `driver` (lib) generated 2 warnings
-    Finished `release` profile [optimized] target(s) in 0.18s
-[38;5;244m - Completed in 0.206s[0m
+    Finished `release` profile [optimized] target(s) in 0.11s
+[38;5;244m - Completed in 0.133s[0m
 
 [?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Allow C-style parameter names
 
-[48;2;43;48;59m[39m  31, 31[0m:[39m[48;2;43;48;59m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     32[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mallow[38;2;192;197;206m([38;2;192;197;206mnon_snake_case[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;43;48;59m[39m  32, 33[0m:[39m[48;2;43;48;59m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mUTIL_createLinePointers[38;2;192;197;206m([K
+[49m[39m  39, 39[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m #[allow(non_snake_case)]
+[0m[49m[39m  40, 41[0m:[39m[49m pub unsafe extern "C" fn UTIL_createLinePointers(
 [0m[K
 Updating: [38;5;141mtranslation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mNow I'll verify the exported symbol and diff the behavior against the compiled C library.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -5 && echo "=== symbols ===" && nm -D --defined-only target/release/libdriver.so | grep -i util[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mNow the completion gate — diffing exported symbols.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation && cargo build --release 2>&1 | tail -5
+echo "=== C exports ==="
+nm -D --defined-only /tmp/cbuild_yw6/libdriver.so | awk '$2 ~ /^[TtWwBbDdRr]$/ {print $3}' | sort > /tmp/c_syms.txt; cat /tmp/c_syms.txt
+echo "=== Rust exports ==="
+RS=/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/target/release/libdriver.so
+ls -la $RS
+nm -D --defined-only $RS | awk '$2 ~ /^[TtWwBbDdRr]$/ {print $3}' | sort > /tmp/rs_syms.txt; grep -v '^_' /tmp/rs_syms.txt
+echo "=== MISSING FROM RUST (C - Rust) ==="
+comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt
+echo "=== (end of diff) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and diff exported symbols between C and Rust .so
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation)
-    Finished `release` profile [optimized] target(s) in 0.11s
-=== symbols ===
-0000000000011c50 T UTIL_createLinePointers
-[38;5;244m - Completed in 0.154s[0m
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+=== C exports ===
+UTIL_createLinePointers
+=== Rust exports ===
+-rwxr-xr-x. 2 scheschb amazon 401984 Sep  1 12:57 /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/target/release/libdriver.so
+UTIL_createLinePointers
+=== MISSING FROM RUST (C - Rust) ===
+=== (end of diff) ===
+[38;5;244m - Completed in 0.139s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/harness.c[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now a differential test against the real C [38;5;10m.so[0m to confirm byte-identical behavior.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest_yw6.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential test harness comparing C and Rust .so behavior
 
-[48;2;40;67;43m[39m+     1[0m:[39m[48;2;24;38;30m [38;2;180;142;173m#include[38;2;192;197;206m [38;2;192;197;206m<[38;2;163;190;140mstdio.h[38;2;192;197;206m>[K
-[0m[48;2;40;67;43m[39m+     2[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#include [38;2;192;197;206m<[38;2;163;190;140mstring.h[38;2;192;197;206m>[K
-[0m[48;2;40;67;43m[39m+     3[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#include [38;2;192;197;206m<[38;2;163;190;140mstdlib.h[38;2;192;197;206m>[K
-[0m[48;2;40;67;43m[39m+     4[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     5[0m:[39m[48;2;24;38;30m [38;2;192;197;206mextern const char** UTIL_createLinePointers(char* buffer, size_t numLines, size_t bufferSize);[K
-[0m[48;2;40;67;43m[39m+     6[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     7[0m:[39m[48;2;24;38;30m [38;2;192;197;206mstatic void run(const char* name, char* buf, size_t numLines, size_t bufferSize)[K
-[0m[48;2;40;67;43m[39m+     8[0m:[39m[48;2;24;38;30m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     9[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    const char** p = UTIL_createLinePointers(buf, numLines, bufferSize);[K
-[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    printf([38;2;192;197;206m"[38;2;163;190;140m%s: numLines=%zu bufferSize=%zu -> [38;2;192;197;206m"[38;2;192;197;206m, name, numLines, bufferSize);[K
-[0m[48;2;40;67;43m[39m+    11[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    if (p == NULL) { printf([38;2;192;197;206m"[38;2;163;190;140mNULL\n[38;2;192;197;206m"[38;2;192;197;206m); return; }[K
-[0m[48;2;40;67;43m[39m+    12[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    printf([38;2;192;197;206m"[38;2;163;190;140mOK [[38;2;192;197;206m"[38;2;192;197;206m);[K
-[0m[48;2;40;67;43m[39m+    13[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    for (size_t i = 0; i [38;2;192;197;206m<[38;2;163;190;140m numLines; i++) {[K
-[0m[48;2;40;67;43m[39m+    14[0m:[39m[48;2;24;38;30m [38;2;163;190;140m        printf("%s(off=%td,\"%s\")", i ? ", " : "", p[i] - buf, p[i]);[K
-[0m[48;2;40;67;43m[39m+    15[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    }[K
-[0m[48;2;40;67;43m[39m+    16[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    printf("]\n");[K
-[0m[48;2;40;67;43m[39m+    17[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    free((void*)p);[K
-[0m[48;2;40;67;43m[39m+    18[0m:[39m[48;2;24;38;30m [38;2;163;190;140m}[K
-[0m[48;2;40;67;43m[39m+    19[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    20[0m:[39m[48;2;24;38;30m [38;2;163;190;140mint main(void)[K
-[0m[48;2;40;67;43m[39m+    21[0m:[39m[48;2;24;38;30m [38;2;163;190;140m{[K
-[0m[48;2;40;67;43m[39m+    22[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    char a[] = "one\0two\0three\0";[K
-[0m[48;2;40;67;43m[39m+    23[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    char b[] = "one\0two\0three";      /* no trailing NUL inside size */[K
-[0m[48;2;40;67;43m[39m+    24[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    char c[] = "\0\0\0";[K
-[0m[48;2;40;67;43m[39m+    25[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    char d[] = "abc";[K
-[0m[48;2;40;67;43m[39m+    26[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    27[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("exact",      a, 3, sizeof(a) - 1);[K
-[0m[48;2;40;67;43m[39m+    28[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("fewer",      a, 2, sizeof(a) - 1);[K
-[0m[48;2;40;67;43m[39m+    29[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("too_many",   a, 5, sizeof(a) - 1);[K
-[0m[48;2;40;67;43m[39m+    30[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("unterm",     b, 3, sizeof(b) - 1);[K
-[0m[48;2;40;67;43m[39m+    31[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("empties",    c, 3, sizeof(c) - 1);[K
-[0m[48;2;40;67;43m[39m+    32[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("zero_lines", d, 0, sizeof(d) - 1);[K
-[0m[48;2;40;67;43m[39m+    33[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("zero_size",  d, 1, 0);[K
-[0m[48;2;40;67;43m[39m+    34[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("zero_both",  d, 0, 0);[K
-[0m[48;2;40;67;43m[39m+    35[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    run("full_nul",   a, 4, sizeof(a));   /* includes final NUL byte */[K
-[0m[48;2;40;67;43m[39m+    36[0m:[39m[48;2;24;38;30m [38;2;163;190;140m    return 0;[K
-[0m[48;2;40;67;43m[39m+    37[0m:[39m[48;2;24;38;30m [38;2;163;190;140m}[K
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m typedef const char** (*fn_t)(char*, size_t, size_t);
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m static fn_t load(const char* path) {
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m     void* h = dlopen(path, RTLD_NOW);
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); exit(2); }
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m     fn_t f = (fn_t)dlsym(h, "UTIL_createLinePointers");
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     if (!f) { fprintf(stderr, "dlsym: %s\n", dlerror()); exit(2); }
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     return f;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m static int failures = 0;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /* Compare results as (nullness, per-line offsets relative to buffer start). */
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m static void check(const char* name, fn_t c, fn_t r,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m                   const char* data, size_t bufSize, size_t numLines)
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     char* b1 = malloc(bufSize ? bufSize : 1);
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     char* b2 = malloc(bufSize ? bufSize : 1);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     memcpy(b1, data, bufSize);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     memcpy(b2, data, bufSize);
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     const char** rc = c(b1, numLines, bufSize);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     const char** rr = r(b2, numLines, bufSize);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     if ((rc == NULL) != (rr == NULL)) {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         printf("FAIL %-34s nullness: C=%s Rust=%s\n", name,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m                rc ? "ptr" : "NULL", rr ? "ptr" : "NULL");
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         failures++;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         goto done;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     if (rc == NULL) {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         printf("ok   %-34s both NULL\n", name);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         goto done;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     for (size_t i = 0; i < numLines; i++) {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         long oc = (long)(rc[i] - b1);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         long or_ = (long)(rr[i] - b2);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         if (oc != or_) {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             printf("FAIL %-34s line %zu offset: C=%ld Rust=%ld\n", name, i, oc, or_);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m             failures++;
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             goto done;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         if (strcmp(rc[i], rr[i]) != 0) {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             printf("FAIL %-34s line %zu content: C='%s' Rust='%s'\n",
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                    name, i, rc[i], rr[i]);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             failures++;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             goto done;
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     printf("ok   %-34s %zu lines match", name, numLines);
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     if (numLines) {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         printf(" [");
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         for (size_t i = 0; i < numLines && i < 6; i++)
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             printf("%s%ld", i ? "," : "", (long)(rc[i] - b1));
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         printf("]");
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     printf("\n");
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m done:
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     free((void*)rc); free((void*)rr);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     free(b1); free(b2);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m int main(int argc, char** argv) {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     if (argc < 3) { fprintf(stderr, "usage: %s c.so rust.so\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     fn_t c = load(argv[1]);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     fn_t r = load(argv[2]);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     /* 1. three well-formed NUL-terminated lines */
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     check("three lines", c, r, "abc\0de\0fghi\0", 12, 3);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     /* 2. exact count consuming whole buffer, no trailing NUL */
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     check("no trailing NUL", c, r, "abc\0de\0fg", 9, 3);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     /* 3. asking for fewer lines than present */
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     check("fewer lines requested", c, r, "abc\0de\0fghi\0", 12, 2);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     /* 4. asking for more lines than present -> NULL + free */
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     check("more lines requested", c, r, "abc\0de\0", 7, 5);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     /* 5. numLines == 0 -> malloc(0), non-NULL on glibc */
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     check("zero lines", c, r, "abc\0", 4, 0);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     /* 6. numLines == 0 and bufferSize == 0 */
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     check("zero lines zero size", c, r, "", 0, 0);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     /* 7. bufferSize == 0 but lines requested -> NULL */
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     check("zero size, 1 line", c, r, "", 0, 1);
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     /* 8. empty strings: consecutive NULs */
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     check("consecutive NULs", c, r, "\0\0\0\0", 4, 4);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     /* 9. leading empty line then data */
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     check("leading empty line", c, r, "\0abc\0x\0", 7, 3);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     /* 10. single byte non-NUL buffer */
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     check("single byte no NUL", c, r, "a", 1, 1);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     /* 11. single NUL byte */
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     check("single NUL", c, r, "\0", 1, 1);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     /* 12. one long line */
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     check("one long line", c, r, "hello world this is one", 23, 1);
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     /* 13. trailing NUL then nothing left, exact lines */
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     check("trailing NUL exact", c, r, "a\0b\0", 4, 2);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     /* 14. more lines than buffer can hold -> NULL */
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     check("2 lines from 'a\\0'", c, r, "a\0", 2, 2);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     /* 15. NULs at very end, extra requested */
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     check("extra after full consume", c, r, "aa\0bb\0cc\0", 9, 4);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     /* 16. large-ish line count over sparse buffer */
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     check("8 empty lines", c, r, "\0\0\0\0\0\0\0\0", 8, 8);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     /* 17. mixed lengths, 5 lines */
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     check("five mixed lines", c, r, "1\022\0333\0\055555\0", 16, 5);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     printf("\n%s (%d failure%s)\n", failures ? "DIFFERENCES FOUND" : "ALL TESTS IDENTICAL",
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m            failures, failures == 1 ? "" : "s");
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     return failures ? 1 : 0;
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/tmp/harness.c[0m
+Creating: [38;5;141m/tmp/difftest_yw6.c[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
-cd /tmp && rm -rf cbuild && mkdir cbuild
-gcc -O2 -shared -fPIC -I/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/include \
-    /local/home/scheschb/.harvest/work/harvest-work-DzQHVP/c_src/src/lib.c -o cbuild/libc_driver.so
-gcc -O2 harness.c -o cbuild/h_c   -Lcbuild -l:libc_driver.so -Wl,-rpath,/tmp/cbuild
-gcc -O2 harness.c -o cbuild/h_rs  -L/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation/target/release -l:libdriver.so -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation/target/release
-./cbuild/h_c  > cbuild/out_c.txt 2>&1 || echo "C exit=$?" >> cbuild/out_c.txt
-./cbuild/h_rs > cbuild/out_rs.txt 2>&1 || echo "RS exit=$?" >> cbuild/out_rs.txt
-diff cbuild/out_c.txt cbuild/out_rs.txt && echo "=== BYTE-IDENTICAL ===" 
-cat cbuild/out_c.txt[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest_yw6 difftest_yw6.c -ldl 2>&1 | head -20 && ./difftest_yw6 /tmp/cbuild_yw6/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/target/release/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test
 
-=== BYTE-IDENTICAL ===
-exact: numLines=3 bufferSize=14 -> OK [(off=0,"one"), (off=4,"two"), (off=8,"three")]
-fewer: numLines=2 bufferSize=14 -> OK [(off=0,"one"), (off=4,"two")]
-too_many: numLines=5 bufferSize=14 -> NULL
-unterm: numLines=3 bufferSize=13 -> OK [(off=0,"one"), (off=4,"two"), (off=8,"three")]
-empties: numLines=3 bufferSize=3 -> OK [(off=0,""), (off=1,""), (off=2,"")]
-zero_lines: numLines=0 bufferSize=3 -> OK []
-zero_size: numLines=1 bufferSize=0 -> NULL
-zero_both: numLines=0 bufferSize=0 -> OK []
-full_nul: numLines=4 bufferSize=15 -> OK [(off=0,"one"), (off=4,"two"), (off=8,"three"), (off=14,"")]
-[38;5;244m - Completed in 0.222s[0m
+ok   three lines                        3 lines match [0,4,7]
+ok   no trailing NUL                    3 lines match [0,4,7]
+ok   fewer lines requested              2 lines match [0,4]
+ok   more lines requested               both NULL
+ok   zero lines                         0 lines match
+ok   zero lines zero size               0 lines match
+ok   zero size, 1 line                  both NULL
+ok   consecutive NULs                   4 lines match [0,1,2,3]
+ok   leading empty line                 3 lines match [0,1,5]
+FAIL single byte no NUL                 line 0 content: C='a��' Rust='a��'
+ok   single NUL                         1 lines match [0]
+ok   one long line                      1 lines match [0]
+ok   trailing NUL exact                 2 lines match [0,2]
+ok   2 lines from 'a\0'                 both NULL
+ok   extra after full consume           both NULL
+ok   8 empty lines                      8 lines match [0,1,2,3,4,5]
+ok   five mixed lines                   both NULL
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild /tmp/harness.c /tmp/build.log && ls /local/home/scheschb/.harvest/work/harvest-work-DzQHVP/translation[0m[38;5;244m (using tool: shell)[0m
+DIFFERENCES FOUND (1 failure)
+[38;5;244m - Completed in 0.61s[0m
 
-Cargo.lock
-Cargo.toml
-src
-target
-[38;5;244m - Completed in 0.12s[0m
+[?25l[0m[38;5;141m> [0mThe single failure is my harness reading past a non-NUL-terminated buffer with [38;5;10mstrcmp[0m (offsets matched). Let me bound the comparison and add overflow-path coverage.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141m/tmp/difftest_yw6.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Bound content comparison to buffer size
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mcargo build --release[0m compiles cleanly with no warnings, and the exported symbol is [38;5;10mUTIL_createLinePointers[0m (no namespace macros in [38;5;10mlib.h[0m, so the source name is the final linker symbol).[0m[0m
+[49m[38;5;9m- 49    [0m:[38;5;9m[49m         if (strcmp(rc[i], rr[i]) != 0) {
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m             printf("FAIL %-34s line %zu content: C='%s' Rust='%s'\n",
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m                    name, i, rc[i], rr[i]);
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         /* Compare the bytes each line points at, but never read past the
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m            end of the buffer: the C code happily hands out pointers to
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m            non-NUL-terminated tails. */
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         size_t remain = (size_t)((long)bufSize - oc);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         if (memcmp(rc[i], rr[i], remain) != 0) {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             printf("FAIL %-34s line %zu content differs\n", name, i);
+[0m[49m[39m  52, 55[0m:[39m[49m             failures++;
+[0m[49m[39m  53, 56[0m:[39m[49m             goto done;
+[0m[49m[39m  54, 57[0m:[39m[49m         }
+[0m[K
+Updating: [38;5;141m/tmp/difftest_yw6.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141m/tmp/difftest_yw6.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Add size_t overflow and malloc-failure test cases
+
+[49m[39m  110, 110[0m:[39m[49m     /* 17. mixed lengths, 5 lines */
+[0m[49m[38;5;9m- 111     [0m:[38;5;9m[49m     check("five mixed lines", c, r, "1\022\0333\0\055555\0", 16, 5);
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m     check("five mixed lines", c, r, "1\022\0333\0\055555\0", 16, 5);
+[0m[49m[38;5;10m+      112[0m:[38;5;10m[49m     /* 18. size_t overflow in numLines*sizeof(ptr): 2^61*8 wraps to 0, so
+[0m[49m[38;5;10m+      113[0m:[38;5;10m[49m            malloc(0) succeeds (non-NULL) and the lineIndex!=numLines path
+[0m[49m[38;5;10m+      114[0m:[38;5;10m[49m            frees and returns NULL. Verifies wrapping multiply fidelity. */
+[0m[49m[38;5;10m+      115[0m:[38;5;10m[49m     check("overflow numLines, size 0", c, r, "", 0, (size_t)1 << 61);
+[0m[49m[38;5;10m+      116[0m:[38;5;10m[49m     /* 19. overflow with 2^64/8 exactly */
+[0m[49m[38;5;10m+      117[0m:[38;5;10m[49m     check("overflow 2^61+1, size 0", c, r, "", 0, ((size_t)1 << 61) + 1);
+[0m[49m[38;5;10m+      118[0m:[38;5;10m[49m     /* 20. huge numLines that does NOT overflow -> malloc fails -> NULL */
+[0m[49m[38;5;10m+      119[0m:[38;5;10m[49m     check("huge numLines, malloc fails", c, r, "a\0", 2, ((size_t)1 << 60) + 3);
+[0m[K
+Updating: [38;5;141m/tmp/difftest_yw6.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest_yw6 difftest_yw6.c -ldl 2>&1 | head -20 && ./difftest_yw6 /tmp/cbuild_yw6/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/target/release/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run differential test with fixes and overflow cases
+
+ok   three lines                        3 lines match [0,4,7]
+ok   no trailing NUL                    3 lines match [0,4,7]
+ok   fewer lines requested              2 lines match [0,4]
+ok   more lines requested               both NULL
+ok   zero lines                         0 lines match
+ok   zero lines zero size               0 lines match
+ok   zero size, 1 line                  both NULL
+ok   consecutive NULs                   4 lines match [0,1,2,3]
+ok   leading empty line                 3 lines match [0,1,5]
+ok   single byte no NUL                 1 lines match [0]
+ok   single NUL                         1 lines match [0]
+ok   one long line                      1 lines match [0]
+ok   trailing NUL exact                 2 lines match [0,2]
+ok   2 lines from 'a\0'                 both NULL
+ok   extra after full consume           both NULL
+ok   8 empty lines                      8 lines match [0,1,2,3,4,5]
+ok   five mixed lines                   5 lines match [0,5,10,11,12]
+ok   overflow numLines, size 0          both NULL
+ok   overflow 2^61+1, size 0            both NULL
+ok   huge numLines, malloc fails        both NULL
+
+ALL TESTS IDENTICAL (0 failures)
+[38;5;244m - Completed in 0.61s[0m
+
+[?25l[0m[38;5;141m> [0mAll identical. One test case had a sloppy length (I declared 16 bytes for an 11-byte literal, so [38;5;10mmemcpy[0m read past the literal — which is why case 17 gave different [3minputs[23m across the two runs while both libraries still agreed). Fixing that for a clean, deterministic result:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141m/tmp/difftest_yw6.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Fix buffer size to match literal length
+
+[49m[38;5;9m- 110     [0m:[38;5;9m[49m     /* 17. mixed lengths, 5 lines */
+[0m[49m[38;5;9m- 111     [0m:[38;5;9m[49m     check("five mixed lines", c, r, "1\022\0333\0\055555\0", 16, 5);
+[0m[49m[38;5;10m+      110[0m:[38;5;10m[49m     /* 17. mixed lengths, 5 lines (11 bytes: '1',0x12,0x1b,'3',NUL,'-','5','5','5','5',NUL) */
+[0m[49m[38;5;10m+      111[0m:[38;5;10m[49m     check("five mixed lines", c, r, "1\022\0333\0\055555\0", 11, 5);
+[0m[K
+Updating: [38;5;141m/tmp/difftest_yw6.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -o difftest_yw6 difftest_yw6.c -ldl && for i in 1 2 3; do echo "--- run $i ---"; ./difftest_yw6 /tmp/cbuild_yw6/libdriver.so /local/home/scheschb/.harvest/work/harvest-work-yw6eKO/translation/target/release/libdriver.so | tail -6; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify deterministic identical results across repeated runs
+
+--- run 1 ---
+ok   five mixed lines                   both NULL
+ok   overflow numLines, size 0          both NULL
+ok   overflow 2^61+1, size 0            both NULL
+ok   huge numLines, malloc fails        both NULL
+
+ALL TESTS IDENTICAL (0 failures)
+--- run 2 ---
+ok   five mixed lines                   both NULL
+ok   overflow numLines, size 0          both NULL
+ok   overflow 2^61+1, size 0            both NULL
+ok   huge numLines, malloc fails        both NULL
+
+ALL TESTS IDENTICAL (0 failures)
+--- run 3 ---
+ok   five mixed lines                   both NULL
+ok   overflow numLines, size 0          both NULL
+ok   overflow 2^61+1, size 0            both NULL
+ok   huge numLines, malloc fails        both NULL
+
+ALL TESTS IDENTICAL (0 failures)
+[38;5;244m - Completed in 0.65s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-yw6eKO
+echo "=== translation/ tree ==="
+find translation -maxdepth 2 -not -path 'translation/target*' | sort
+echo "=== c_src unmodified? ==="
+find c_src -newermt '2026-09-01 12:56:36' -type f | wc -l
+echo "=== crate-type ==="
+grep -A1 'crate-type' translation/Cargo.toml
+echo "=== exported symbol (dynamic, defined) ==="
+nm -D --defined-only translation/target/release/libdriver.so | grep -v ' _'
+echo "=== final symbol diff (C minus Rust) ==="
+diff <(nm -D --defined-only /tmp/cbuild_yw6/libdriver.so | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | grep -v '^_' | sort) \
+  && echo "IDENTICAL EXPORT SETS"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification of artifacts, c_src integrity, and symbol parity
+
+=== translation/ tree ===
+translation
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src
+translation/src/lib.rs
+=== c_src unmodified? ===
+0
+=== crate-type ===
+crate-type = ["cdylib"]
+
+=== exported symbol (dynamic, defined) ===
+00000000000116c0 T UTIL_createLinePointers
+=== final symbol diff (C minus Rust) ===
+IDENTICAL EXPORT SETS
+[38;5;244m - Completed in 0.40s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
 [0m[0m
-The library is a single function that walks a buffer of NUL-packed lines and returns a [38;5;10mmalloc[0m'd array of pointers into it. Two translation decisions mattered for exact fidelity:[0m[0m
+[1mScope.[22m The library in [38;5;10mc_src/[0m is genuinely small: [38;5;10mCMakeLists.txt[0m, [38;5;10minclude/lib.h[0m (3 lines), and [38;5;10msrc/lib.c[0m (34 lines) — 53 lines total. I built the C library with CMake and confirmed via [38;5;10mnm -D[0m that it exports exactly one public symbol, [38;5;10mUTIL_createLinePointers[0m. No namespace-renaming macros are present in the header, so the source-level name is the final linker symbol. That single symbol is the definition of done, and no delegation was warranted.[0m[0m
 [0m[0m
-- **libc allocator, not Rust's.** The C contract makes the caller [38;5;10mfree()[0m the returned array, so I declare [38;5;10mmalloc[0m/[38;5;10mfree[0m as [38;5;10mextern "C"[0m and use them directly. This also preserves the observable [38;5;10mnumLines == 0[0m behavior, where glibc's [38;5;10mmalloc(0)[0m returns a unique non-NULL pointer and the function succeeds with an empty array.[0m[0m
-- **Wrapping multiplication** for [38;5;10mnumLines * sizeof(const char**)[0m, matching C [38;5;10msize_t[0m overflow rather than panicking in debug builds.[0m[0m
+[1mCompletion gate.[22m [38;5;10mnm -D[0m on [38;5;10mtranslation/target/release/libdriver.so[0m exports [38;5;10mUTIL_createLinePointers[0m; diffing the C and Rust export sets is empty. The crate is named [38;5;10mdriver[0m so it produces [38;5;10mlibdriver.so[0m, matching the C artifact name.[0m[0m
 [0m[0m
-The loop, the post-cast NULL check, the [38;5;10mpos < bufferSize[0m guard before skipping a terminator, and the [38;5;10mlineIndex != numLines[0m failure path (which frees and returns NULL) are reproduced as-is, including the unchecked-[38;5;10mbuffer[0m UB the original permits.[0m[0m
+[1mFidelity decisions worth flagging:[22m[0m[0m
 [0m[0m
-I verified equivalence by building both libraries and linking the same C harness against each, covering exact/fewer/too-many line counts, an unterminated final line, all-empty lines, zero lines, zero buffer size, and a size that includes the trailing NUL. Output was byte-identical across all nine cases, and freeing the Rust-returned pointer with libc [38;5;10mfree[0m worked as expected. Temporary test files are cleaned up; [38;5;10mc_src/[0m was not touched.[0m[0m
+- I call libc [38;5;10mmalloc[0m/[38;5;10mfree[0m directly rather than Rust's global allocator. This matters observably: when [38;5;10mnumLines == 0[0m, glibc's [38;5;10mmalloc(0)[0m returns a unique non-NULL pointer, and the C code returns it. Rust's allocator would be UB for a zero-sized layout, and its pointers could not be [38;5;10mfree[0md by a C caller. Test cases "zero lines" and "zero lines zero size" both return non-NULL in each library.[0m[0m
+- [38;5;10mnumLines * sizeof(const char**)[0m is wrapping [38;5;10msize_t[0m arithmetic in C, so I used [38;5;10mwrapping_mul[0m. With [38;5;10mnumLines = 2^61[0m the product wraps to 0, [38;5;10mmalloc(0)[0m succeeds, and the function falls through to the [38;5;10mlineIndex != numLines[0m path. A checked multiply or panic would have diverged here.[0m[0m
+- I preserved the original's operation order verbatim, including the cast to [38;5;10mconst char**[0m happening [3mbefore[23m the NULL check, and the two latent bugs: the undersized allocation on overflow leading to out-of-bounds stores, and [38;5;10msizeof(const char**)[0m where [38;5;10msizeof(const char*)[0m was presumably meant (harmless on LP64, both 8 bytes).[0m[0m
+[0m[0m
+[1mVerification.[22m Beyond the symbol diff, I wrote a [38;5;10mdlopen[0m-based differential harness that loads both [38;5;10m.so[0m files and compares nullness, per-line pointer offsets, and line bytes across 20 inputs: well-formed multi-line buffers, missing trailing NUL, over- and under-requested line counts, consecutive and leading NULs, single-byte buffers, zero-size buffers, the two overflow paths, and a non-overflowing allocation large enough to make [38;5;10mmalloc[0m fail. All 20 agree, stable across three runs.[0m[0m
+[0m[0m
+One caveat on my own process: an initial run showed a failure on "single byte no NUL" and non-deterministic input on "five mixed lines". Both were defects in my test harness — a [38;5;10mstrcmp[0m reading past a deliberately unterminated buffer, and a declared length of 16 for an 11-byte literal, which made [38;5;10mmemcpy[0m read trailing [38;5;10m.rodata[0m. Neither indicated a behavioral difference; the two libraries agreed even on the malformed inputs. I fixed both and confirmed determinism.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is untouched — zero files modified since the session start timestamp.[0m[0m
 [38;5;8m
- ▸ Credits: 2.96 • Time: 1m 15s
+ ▸ Credits: 6.64 • Time: 3m 8s
 
 [0m[1G[0m[0m[?25h

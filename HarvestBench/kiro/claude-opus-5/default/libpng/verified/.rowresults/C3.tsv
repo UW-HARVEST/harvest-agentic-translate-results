@@ -1,0 +1,85 @@
+PASS	err|id=set_scal_width_junk	png_set_sCAL_s — width string "abc" — png_error "Invalid sCAL width"	exit 70; png_error: Invalid sCAL width
+PASS	err|id=set_scal_height_junk	png_set_sCAL_s — height string "xyz" — png_error "Invalid sCAL height"	exit 70; png_error: Invalid sCAL height
+PASS	err|id=set_scal_height_zero	png_set_sCAL_s — height string "0" — png_error "Invalid sCAL height"	exit 0
+PASS	err|id=set_scal_fixed_neg	png_set_sCAL_fixed — negative fixed-point width — png_error "Invalid sCAL width"	exit 0; 1 warning(s): Invalid sCAL width ignored
+PASS	err|id=set_plte_257	png_set_PLTE — num_palette 257 (> PNG_MAX_PALETTE_LENGTH) — png_error "Invalid palette length"	exit 70; png_error: Invalid palette length
+PASS	err|id=set_plte_0	png_set_PLTE — num_palette 0 — png_error "Invalid palette length"	exit 70; png_error: Invalid palette
+PASS	err|id=set_plte_neg	png_set_PLTE — num_palette -1 — png_error "Invalid palette length"	exit 70; png_error: Invalid palette length
+PASS	err|id=set_plte_null	png_set_PLTE — palette pointer NULL — png_error "Invalid palette"	exit 70; png_error: Invalid palette
+PASS	err|id=set_plte_depth_overflow	png_set_PLTE — 200 entries for a 2-bit palette image — png_error "Invalid palette length"	exit 70; png_error: Invalid palette length
+PASS	err|id=set_iccp_bad_method	png_set_iCCP — compression_type 7 — png_app_error "Invalid iCCP compression method"	exit 70; png_error: Invalid iCCP compression method
+PASS	err|id=set_iccp_len0	png_set_iCCP — proflen 0 — rejected via png_app_error / benign error	exit 0
+PASS	err|id=set_iccp_short	png_set_iCCP — 20-byte profile — rejected (profile too short)	exit 0
+PASS	err|id=set_iccp_bad_name	png_set_iCCP — empty profile name — keyword rejected with a warning	exit 0
+PASS	err|id=set_splt_null	png_set_sPLT — entries pointer NULL — returns without storing anything	exit 0
+PASS	err|id=set_splt_zero	png_set_sPLT — nentries 0 — png_app_error "png_set_sPLT: invalid sPLT"	exit 70; png_error: png_set_sPLT: invalid sPLT
+PASS	err|id=set_text_null_key	png_set_text_2 — png_text.key == NULL — png_app_warning, entry skipped	exit 0
+PASS	err|id=set_text_bad_comp	png_set_text_2 — png_text.compression 9 — png_error "text compression mode is out of range"	exit 70; png_error: text compression mode is out of range
+PASS	err|id=set_text_long_key	png_set_text_2 -> png_check_keyword — 200-character keyword — keyword truncated to 79 with a warning	exit 0
+PASS	err|id=set_text_itxt_no_lang	png_set_text_2 — iTXt entry with NULL lang and lang_key — accepted; empty strings stored	exit 0
+PASS	err|id=set_unknown_bad_location	png_set_unknown_chunk_location — location 99 — png_error "png_set_unknown_chunks now expects a valid location"	exit 70; png_error: png_set_unknown_chunks now expects a valid location
+PASS	err|id=set_unknown_loc_index_oob	png_set_unknown_chunk_location — chunk index beyond the stored list — no-op	exit 0
+PASS	err|id=keep_unknown_bad_keep	png_set_keep_unknown_chunks — keep == PNG_HANDLE_CHUNK_LAST (4) — png_app_error "png_set_keep_unknown_chunks: invalid keep"	exit 70; png_error: png_set_keep_unknown_chunks: invalid keep
+PASS	err|id=keep_unknown_neg_keep	png_set_keep_unknown_chunks — keep == -1 — png_app_error "png_set_keep_unknown_chunks: invalid keep"	exit 70; png_error: png_set_keep_unknown_chunks: invalid keep
+PASS	err|id=keep_unknown_null_list	png_set_keep_unknown_chunks — num_chunks 3 with chunk_list == NULL — png_app_error "png_set_keep_unknown_chunks: no chunk list"	exit 70; png_error: png_set_keep_unknown_chunks: no chunk list
+PASS	err|id=keep_unknown_negative_num	png_set_keep_unknown_chunks — num_chunks negative (means "all known chunks") — accepted; affects png_handle_as_unknown	exit 0
+PASS	err|id=keep_unknown_ihdr_listed	png_set_keep_unknown_chunks — IHDR listed explicitly — accepted but IHDR still handled by libpng	exit 0
+PASS	err|id=cbuf_size_zero	png_set_compression_buffer_size — size 0 — png_error "invalid compression buffer size"	exit 70; png_error: invalid compression buffer size
+PASS	err|id=cbuf_size_huge	png_set_compression_buffer_size — size SIZE_MAX — png_error "invalid compression buffer size"	exit 70; png_error: invalid compression buffer size
+PASS	err|id=chrm_xyz_invalid	png_set_cHRM_XYZ_fixed — all-zero XYZ endpoints — png_app_error "invalid cHRM XYZ"	exit 70; png_error: invalid cHRM XYZ
+PASS	err|id=chrm_negative	png_set_cHRM_fixed — all endpoints -1 — png_chunk_report / value rejected	exit 0
+PASS	err|id=gama_fixed_zero	png_set_gAMA_fixed — gamma 0 — png_chunk_report "gamma value out of range"; flag not set	exit 0
+PASS	err|id=gama_fixed_neg	png_set_gAMA_fixed — gamma -5 — png_chunk_report "gamma value out of range"	exit 0
+PASS	err|id=gama_double_huge	png_set_gAMA — gamma 1e30 (overflows png_fixed_point) — png_fixed_error -> png_error "fixed point overflow in png_set_gAMA"	exit 70; png_error: fixed point overflow in png_set_gAMA
+PASS	err|id=gama_double_nan	png_set_gAMA — gamma NaN — value rejected	exit 0
+PASS	err|id=srgb_intent_oob	png_set_sRGB — intent 4 (== PNG_sRGB_INTENT_LAST) — png_chunk_report "invalid sRGB rendering intent"	exit 0
+PASS	err|id=srgb_intent_neg	png_set_sRGB — intent -1 — png_chunk_report "invalid sRGB rendering intent"	exit 0
+PASS	err|id=phys_unit_oob	png_set_pHYs — unit_type 7 — stored verbatim	exit 0
+PASS	err|id=offs_unit_oob	png_set_oFFs — unit_type 7 — stored verbatim	exit 0
+PASS	err|id=pcal_type_oob	png_set_pCAL — type == PNG_EQUATION_LAST — png_error "Invalid pCAL equation type"	exit 70; png_error: Invalid pCAL equation type
+PASS	err|id=cicp_bad_full_range	png_set_cICP — video_full_range_flag 7 — png_app_error / value rejected	exit 0
+PASS	err|id=cicp_nonzero_matrix	png_set_cICP — matrix_coefficients 5 — png_app_error / value rejected	exit 0; 1 warning(s): Invalid cICP matrix coefficients
+PASS	err|id=clli_msb	png_set_cLLI_fixed — content light level with bit 31 set — png_error "cLLI light level exceeds PNG limit"	exit 70; png_error: cLLI light level exceeds PNG limit
+PASS	err|id=mdcv_out_of_range	png_set_mDCV_fixed — chromaticities above the 1.3107 maximum — png_error "mDCV chromaticities outside representable range"	exit 70; png_error: mDCV chromaticities outside representable range
+PASS	err|id=sbit_zero_write	png_set_sBIT — all significant-bit values 0 — png_app_error "Invalid sBIT depth specified"	exit 0
+PASS	err|id=sbit_too_deep_write	png_set_sBIT — significant bits 9 for an 8-bit image — png_app_error "Invalid sBIT depth specified"	exit 0
+PASS	err|id=trns_set_too_many	png_set_tRNS — num_trans 300 — png_app_error / rejected	exit 0
+PASS	err|id=trns_set_null_both	png_set_tRNS — both trans_alpha and trans_color NULL — nothing stored; valid flag not set	exit 0
+PASS	err|id=shift_invalid	png_set_shift — all shift values 0 — png_app_error "png_set_shift: invalid shift values"	exit 70; png_error: png_set_shift: invalid shift values
+PASS	err|id=shift_too_deep	png_set_shift — shift values 99 — png_app_error "png_set_shift: invalid shift values"	exit 70; png_error: png_set_shift: invalid shift values
+PASS	err|id=filler_on_palette	png_set_filler — called on a palette image (read) — png_app_error "png_set_filler is invalid for palette images"	exit 0
+PASS	err|id=filler_on_rgba	png_set_filler — called on an image that already has alpha — png_app_error "png_set_filler is invalid for images with an alpha channel"	exit 0
+PASS	err|id=addalpha_on_palette	png_set_add_alpha — called on a palette image — png_app_error (invalid for palette images)	exit 0
+PASS	err|id=alpha_mode_4	png_set_alpha_mode_fixed — mode 4 (no such PNG_ALPHA_ value) — png_error "invalid alpha mode"	exit 70; png_error: invalid alpha mode
+PASS	err|id=alpha_mode_neg	png_set_alpha_mode_fixed — mode -1 — png_error "invalid alpha mode"	exit 70; png_error: invalid alpha mode
+PASS	err|id=alpha_mode_gamma_zero	png_set_alpha_mode_fixed — output_gamma 0 — png_error "gamma out of supported range"	exit 70; png_error: gamma out of supported range
+PASS	err|id=alpha_mode_gamma_neg	png_set_alpha_mode_fixed — output_gamma -5 (not a defined constant) — png_error "gamma out of supported range"	exit 70; png_error: gamma out of supported range
+PASS	err|id=gamma_screen_zero	png_set_gamma_fixed — screen gamma 0 — png_app_error "invalid screen gamma in png_set_gamma"	exit 70; png_error: invalid screen gamma in png_set_gamma
+PASS	err|id=gamma_file_zero	png_set_gamma_fixed — override_file_gamma 0 — png_app_error "invalid file gamma in png_set_gamma"	exit 70; png_error: invalid file gamma in png_set_gamma
+PASS	err|id=gamma_negative	png_set_gamma_fixed — screen gamma -100000 — accepted: a negative screen gamma is one of the documented PNG_DEFAULT_sRGB / PNG_GAMMA_MAC_18 encodings	exit 0
+PASS	err|id=gamma_double_bad	png_set_gamma — screen and file gamma 1e30 — png_fixed_error -> png_error "fixed point overflow in gamma value"	exit 70; png_error: fixed point overflow in gamma value
+PASS	err|id=rgb2gray_action_0	png_set_rgb_to_gray_fixed — error_action 0 — png_error "invalid error action to rgb_to_gray"	exit 70; png_error: invalid error action to rgb_to_gray
+PASS	err|id=rgb2gray_action_4	png_set_rgb_to_gray_fixed — error_action 4 — png_error "invalid error action to rgb_to_gray"	exit 70; png_error: invalid error action to rgb_to_gray
+PASS	err|id=rgb2gray_bad_coeffs	png_set_rgb_to_gray_fixed — red+green coefficients sum above 1.0 — png_app_error "ignoring out of range rgb_to_gray coefficients"	exit 70; png_error: ignoring out of range rgb_to_gray coefficients
+PASS	err|id=rgb2gray_neg_coeffs	png_set_rgb_to_gray_fixed — negative coefficients — accepted: negative coefficients mean "use the defaults"	exit 0
+PASS	err|id=background_gamma_type_4	png_set_background_fixed — background_gamma_code 4 — png_error "invalid background gamma type"	exit 0
+PASS	err|id=background_gamma_type_neg	png_set_background_fixed — background_gamma_code -1 — png_error "invalid background gamma type"	exit 0
+PASS	err|id=background_null_color	png_set_background_fixed — background_color NULL — no-op / handled	exit 0
+PASS	err|id=background_before_header	png_set_background_fixed — called before png_read_info — png_app_error "invalid before the PNG header has been read" (or accepted)	exit 0; 1 warning(s): Application must supply a known background gamma
+PASS	err|id=quantize_zero_colors	png_set_quantize — maximum_colors 0 with a 4-entry palette — the reference C enters a non-terminating reduction loop; both libraries hang identically (recorded as TIMEOUT)	TIMEOUT; no record written
+PASS	err|id=quantize_one_color	png_set_quantize — maximum_colors 1 with a 4-entry palette and a histogram — palette reduced in place to a single entry	exit 0
+PASS	err|id=quantize_null_palette	png_set_quantize — palette pointer NULL — returns immediately without setting PNG_QUANTIZE	exit 0
+PASS	err|id=quantize_negative_palette	png_set_quantize — num_palette -1 — no range check: the reference C indexes out of bounds and dies of SIGSEGV	signal 11; no record written
+PASS	err|id=quantize_more_than_palette	png_set_quantize — maximum_colors 300 > num_palette — handled; no quantization needed	exit 0
+PASS	err|id=crc_action_invalid	png_set_crc_action — crit_action 9 / ancil_action 9 — out-of-range values ignored (existing behaviour kept)	exit 0
+PASS	err|id=crc_action_warn_discard_critical	png_set_crc_action — PNG_CRC_WARN_DISCARD for a critical chunk (documented INVALID) — png_warning "Can't discard critical data on CRC error"	exit 0; 1 warning(s): Can't discard critical data on CRC error
+PASS	err|id=uint31_oob	png_get_uint_31 — buffer holding 0x80000000 — png_error "PNG unsigned integer out of range"	exit 70; png_error: PNG unsigned integer out of range
+PASS	err|id=uint31_ffffffff	png_get_uint_31 — buffer holding 0xffffffff — png_error "PNG unsigned integer out of range"	exit 70; png_error: PNG unsigned integer out of range
+PASS	err|id=filter_bad_method	png_set_filter — method 1 (only 0 is defined) — png_error "Unknown custom filter method"	exit 70; png_error: Unknown custom filter method
+PASS	err|id=filter_bad_filters	png_set_filter — filters 7 (not a filter flag nor a filter value) — png_app_error "Unknown row filter for method 0"	exit 70; png_error: Unknown row filter for method 0
+PASS	err|id=filter_value_5	png_set_filter — filters 5 (== PNG_FILTER_VALUE_LAST) — png_app_error "Unknown row filter for method 0"	exit 70; png_error: Unknown row filter for method 0
+PASS	err|id=filter_negative	png_set_filter — filters -1 — png_app_error "Unknown row filter for method 0"	exit 0
+PASS	err|id=write_no_palette	png_write_info — palette image written without png_set_PLTE — png_error "Valid palette required for paletted images"	exit 70; png_error: Valid palette required for paletted images
+PASS	err|id=write_no_idat	png_write_end — png_write_end without writing any row — png_error "No IDATs written into file"	exit 70; png_error: No IDATs written into file
+PASS	err|id=write_image_null_rows	png_write_image — row_pointers NULL — no NULL check: the reference C dereferences it and dies of SIGSEGV	signal 11; no record written
+PASS	err|id=write_png_no_rows	png_write_png — info_ptr->row_pointers NULL — png_app_error "no rows for png_write_image to write"	exit 70; png_error: no rows for png_write_image to write

@@ -4,39 +4,88 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && du -sh c_src translation 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -200 && echo "---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src tree
 
-./c_src/CMakeLists.txt
-./c_src/include/lib.h
-./c_src/src/lib.c
-./.claude/settings.json
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:41 .
+drwxr-xr-x. 487 scheschb amazon 81920 Sep  1 05:41 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 05:41 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 05:41 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 05:41 translation
 ---
-12K	c_src
-0	translation
-[38;5;244m - Completed in 0.15s[0m
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---
+3
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  17 c_src/CMakeLists.txt
+   1 c_src/include/lib.h
+  48 c_src/src/lib.c
+  66 total
+[38;5;244m - Completed in 0.7s[0m
 
 [?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/include/lib.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/src/lib.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m489 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/CMakeLists.txt
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m489 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src/CMakeLists.txt
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m47 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/include/lib.h
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m47 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src/include/lib.h
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1167 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/src/lib.c
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1167 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src/src/lib.c
 
  ⋮ 
 
 [38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mNo namespace macros in the header, so the linker symbol is plain [38;5;10mhsl_to_rgb[0m. Note the C has a bug in the third branch ([38;5;10mh < 120.0f && h < 180.0f[0m instead of [38;5;10mh >= 120.0f[0m) — I'll reproduce it verbatim.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== SO ===" && ls *.so && echo "=== SYMBOLS ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
+
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diagnose cmake failure
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-n1xhBi/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_awxPIN && mkdir -p /tmp/cbuild_awxPIN && cd /tmp/cbuild_awxPIN && cmake /local/home/scheschb/.harvest/work/harvest-work-awxPIN/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== SO ===" && ls *.so && echo "=== DYNSYMS (defined) ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library in fresh dir and list symbols
+
+[ 50%] Building C object CMakeFiles/harvest-work-awxPIN.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-awxPIN.so
+[100%] Built target harvest-work-awxPIN
+=== SO ===
+libharvest-work-awxPIN.so
+=== DYNSYMS (defined) ===
+0000000000001110 T hsl_to_rgb
+[38;5;244m - Completed in 0.430s[0m
+
+[?25l[0m[38;5;141m> [0mSingle public symbol: [38;5;10mhsl_to_rgb[0m. Writing the translation.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_awxPIN && objdump -d --no-show-raw-insn libharvest-work-awxPIN.so | sed -n '/<hsl_to_rgb>:/,/ret/p' | grep -iE "fmadd|vfma|fma" ; echo "fma-check-exit:$?"; nm -D --undefined-only libharvest-work-awxPIN.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check for FMA contraction and undefined symbols in C .so
+
+fma-check-exit:1
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U fmodf@GLIBC_2.2.5
+[38;5;244m - Completed in 0.23s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib crate
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
@@ -45,215 +94,851 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m [profile.release]
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m panic = "abort"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m opt-level = 3
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate hsl_to_rgb to Rust, preserving C semantics and bugs
 
-rustc 1.94.0 (4a4ef493e 2026-03-02)
-cargo 1.94.0 (85eff7c80 2026-01-15)
-[38;5;244m - Completed in 0.43s[0m
-
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-
-[48;2;40;67;43m[39m+     1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Rust translation of `c_src/src/lib.c`.[K
-[0m[48;2;40;67;43m[39m+     2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+     3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Behaviour is a faithful, byte-for-byte reproduction of the original C,[K
-[0m[48;2;40;67;43m[39m+     4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m including the bug in the third hue branch (the C source tests[K
-[0m[48;2;40;67;43m[39m+     5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m `h < 120.0f && h < 180.0f` where `h >= 120.0f && h < 180.0f` was clearly[K
-[0m[48;2;40;67;43m[39m+     6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m intended). That branch is therefore only reachable for `h < 0.0f`, which is[K
-[0m[48;2;40;67;43m[39m+     7[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m preserved here deliberately.[K
-[0m[48;2;40;67;43m[39m+     8[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     9[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;180;142;173mc_float[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    11[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Pure computation kernel: HSL triple in, RGB triple out.[K
-[0m[48;2;40;67;43m[39m+    12[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    13[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Mirrors the C statement-for-statement so float rounding matches exactly.[K
-[0m[48;2;40;67;43m[39m+    14[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mhsl_to_rgb_impl[38;2;192;197;206m([38;2;191;97;106msrc[38;2;192;197;206m:[38;2;192;197;206m [c_float; 3][38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;192;197;206m[[38;2;180;142;173mc_float[38;2;192;197;206m;[38;2;192;197;206m [38;2;208;135;112m3[38;2;192;197;206m][38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    15[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m h [38;2;192;197;206m=[38;2;192;197;206m src[38;2;192;197;206m[[38;2;208;135;112m0[38;2;192;197;206m][38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    16[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m s [38;2;192;197;206m=[38;2;192;197;206m src[38;2;192;197;206m[[38;2;208;135;112m1[38;2;192;197;206m][38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    17[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m l [38;2;192;197;206m=[38;2;192;197;206m src[38;2;192;197;206m[[38;2;208;135;112m2[38;2;192;197;206m][38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    18[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    19[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m s [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m0[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    20[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;192;197;206m[[38;2;192;197;206ml[38;2;192;197;206m,[38;2;192;197;206m l[38;2;192;197;206m,[38;2;192;197;206m l[38;2;192;197;206m][38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    21[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    22[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    23[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m c = (1.0f - fabsf(2.0f * l - 1.0f)) * s;[K
-[0m[48;2;40;67;43m[39m+    24[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m2.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m l [38;2;192;197;206m-[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mabs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m s[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    25[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m m = 1.0f * (l - 0.5f * c);[K
-[0m[48;2;40;67;43m[39m+    26[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206ml [38;2;192;197;206m-[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m5[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m c[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    27[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2) - 1.0f));[K
-[0m[48;2;40;67;43m[39m+    28[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Rust's `%` on f32 is truncated remainder, i.e. identical to fmodf.[K
-[0m[48;2;40;67;43m[39m+    29[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m x [38;2;192;197;206m=[38;2;192;197;206m c [38;2;192;197;206m*[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mh [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m60.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m%[38;2;192;197;206m [38;2;208;135;112m2.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m-[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mabs[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    30[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    31[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m h [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m h [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m60.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    32[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m[[38;2;192;197;206mc [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m x [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m m[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m h [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m60.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m h [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m120.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m[[38;2;192;197;206mx [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m c [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m m[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m h [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m120.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m h [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m180.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m Faithful reproduction of the original C condition (see module docs).[K
-[0m[48;2;40;67;43m[39m+    37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m[[38;2;192;197;206mm[38;2;192;197;206m,[38;2;192;197;206m c [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m x [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    38[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m h [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m180.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m h [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m240.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    39[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m[[38;2;192;197;206mm[38;2;192;197;206m,[38;2;192;197;206m x [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m c [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    40[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m h [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m240.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m h [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m300.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    41[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m[[38;2;192;197;206mx [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m c [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    42[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m h [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m300.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m h [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m360.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m[[38;2;192;197;206mc [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m x [38;2;192;197;206m+[38;2;192;197;206m m[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    44[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m[[38;2;192;197;206mm[38;2;192;197;206m,[38;2;192;197;206m m[38;2;192;197;206m,[38;2;192;197;206m m[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    48[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    49[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m C ABI entry point: `void hsl_to_rgb(float *dest, const float *src)`.[K
-[0m[48;2;40;67;43m[39m+    50[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    51[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m # Safety[K
-[0m[48;2;40;67;43m[39m+    52[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    53[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `src` must point to at least 3 readable `float`s and `dest` to at least 3[K
-[0m[48;2;40;67;43m[39m+    54[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m writable `float`s. As in the C original, `dest` and `src` may overlap: the[K
-[0m[48;2;40;67;43m[39m+    55[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m source values are fully consumed before anything is written back.[K
-[0m[48;2;40;67;43m[39m+    56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    57[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mhsl_to_rgb[38;2;192;197;206m([38;2;191;97;106mdest[38;2;192;197;206m:[38;2;192;197;206m *[38;2;180;142;173mmut[38;2;192;197;206m c_float, [38;2;191;97;106msrc[38;2;192;197;206m:[38;2;192;197;206m *const c_float[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    58[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Read the inputs up front (as the C does into locals) so that overlapping[K
-[0m[48;2;40;67;43m[39m+    59[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m `dest`/`src` buffers behave identically and no aliasing slices coexist.[K
-[0m[48;2;40;67;43m[39m+    60[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m input [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m[[K
-[0m[48;2;40;67;43m[39m+    61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206msrc.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    62[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206msrc.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    63[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206msrc.[38;2;150;181;180madd[38;2;192;197;206m([38;2;208;135;112m2[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    64[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m][38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    65[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    66[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m out [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mhsl_to_rgb_impl[38;2;192;197;206m([38;2;192;197;206minput[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    67[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    68[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m dest [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mslice[38;2;192;197;206m::[38;2;192;197;206mfrom_raw_parts_mut[38;2;192;197;206m([38;2;192;197;206mdest[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m3[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    69[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    dest.[38;2;150;181;180mcopy_from_slice[38;2;192;197;206m([38;2;192;197;206m&[38;2;192;197;206mout[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Public ABI (from `nm -D` on the C shared library):
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //!   * `hsl_to_rgb`
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! Translated from `c_src/src/lib.c` / `c_src/include/lib.h`.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //! Behavioural notes — the original C is reproduced verbatim, bugs included:
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //!   * The third branch of the hue cascade reads `h < 120.0f && h < 180.0f`
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //!     instead of `h >= 120.0f && h < 180.0f`. Because the preceding branches
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //!     already consumed `0 <= h < 120`, this branch is only reachable for
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //!     `h < 0`, which means hues in `[120, 180)` fall through to the final
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m //!     `else` and yield the flat grey `(m, m, m)`. This is preserved.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m //!   * The redundant `1.0f *` factor in `m = 1.0f * (l - 0.5f * c)` is an
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m //!     exact identity for every float value (including NaN payloads and
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m //!     signed zeros) and is therefore dropped without any observable change.
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m //!   * `fmodf` maps onto Rust's `%` operator for `f32`, which has identical
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m //!     truncated-remainder semantics (and lowers to the same libm call).
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m //!   * NaN inputs make every comparison in the cascade false, so control
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m //!     reaches the final `else`; Rust behaves the same way.
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m #![allow(clippy::missing_safety_doc)]
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m /// Convert an HSL triple to an RGB triple.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m /// `src` must point to at least 3 readable `f32` values (hue in degrees,
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m /// saturation, lightness); `dest` must point to at least 3 writable `f32`
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m /// values. Exactly mirrors `void hsl_to_rgb(float *dest, const float *src)`.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m pub unsafe extern "C" fn hsl_to_rgb(dest: *mut f32, src: *const f32) {
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     let h: f32 = unsafe { *src.add(0) };
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     let s: f32 = unsafe { *src.add(1) };
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     let l: f32 = unsafe { *src.add(2) };
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     let c: f32;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     let m: f32;
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     let x: f32;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     if s == 0.0f32 {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m             *dest.add(0) = l;
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m             *dest.add(1) = l;
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m             *dest.add(2) = l;
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         return;
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     c = (1.0f32 - (2.0f32 * l - 1.0f32).abs()) * s;
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     m = 1.0f32 * (l - 0.5f32 * c);
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     x = c * (1.0f32 - ((h / 60.0f32) % 2.0f32 - 1.0f32).abs());
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     // The branch order and each individual predicate are kept exactly as in C.
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     let (r, g, b): (f32, f32, f32) = if h >= 0.0f32 && h < 60.0f32 {
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         (c + m, x + m, m)
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     } else if h >= 60.0f32 && h < 120.0f32 {
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         (x + m, c + m, m)
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     } else if h < 120.0f32 && h < 180.0f32 {
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         // NOTE: faithful copy of the original (buggy) predicate.
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         (m, c + m, x + m)
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     } else if h >= 180.0f32 && h < 240.0f32 {
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         (m, x + m, c + m)
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     } else if h >= 240.0f32 && h < 300.0f32 {
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         (x + m, m, c + m)
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     } else if h >= 300.0f32 && h < 360.0f32 {
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         (c + m, m, x + m)
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         (m, m, m)
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         *dest.add(0) = r;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m         *dest.add(1) = g;
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         *dest.add(2) = b;
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
 
-   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation)
-    Finished `release` profile [optimized] target(s) in 0.19s
-[38;5;244m - Completed in 0.217s[0m
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[38;5;244m - Completed in 0.148s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only target/release/libtranslation.so | grep hsl[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mNow verifying the symbol diff and bit-exact output equivalence.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-awxPIN
+nm -D --defined-only /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libtranslation.so | awk '{print $3}' | grep -v '^_' | sort > /tmp/rust_syms_all.txt
+echo "=== C symbols ==="; cat /tmp/c_syms.txt
+echo "=== Rust exported (non-underscore) ==="; cat /tmp/rust_syms_all.txt
+echo "=== MISSING from Rust (C - Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms_all.txt
+echo "=== (end diff) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbol lists between C and Rust .so
 
-0000000000011d40 T hsl_to_rgb
-[38;5;244m - Completed in 0.24s[0m
+=== C symbols ===
+hsl_to_rgb
+=== Rust exported (non-underscore) ===
+hsl_to_rgb
+=== MISSING from Rust (C - Rust) ===
+=== (end diff) ===
+[38;5;244m - Completed in 0.37s[0m
 
-[?25l[0m[38;5;141m> [0mNow a differential test against the compiled C, comparing raw bit patterns.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mset -e
-cd /tmp && rm -rf difftest && mkdir difftest && cd difftest
-cp /local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/src/lib.c ./cimpl.c
-cp /local/home/scheschb/.harvest/work/harvest-work-0LoGfW/c_src/include/lib.h ./lib.h
-gcc -O2 -c cimpl.c -I. -o cimpl.o
-cat > main.c <<'EOF'
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-#include <math.h>
-void hsl_to_rgb(float*,const float*);
-void rust_hsl_to_rgb(float*,const float*);
-static uint32_t bits(float f){uint32_t u;memcpy(&u,&f,4);return u;}
-int main(void){
-  float hs[]={-720,-360,-180,-60,-1,-0.0f,0,1e-8f,30,59.999f,60,90,119.9f,120,150,179.9f,180,210,239.9f,240,270,299.9f,300,330,359.999f,360,400,720,1e9f,NAN,INFINITY,-INFINITY};
-  float ss[]={0,-0.0f,1e-9f,0.25f,0.5f,0.75f,1,2,-0.5f,NAN};
-  float ls[]={0,0.1f,0.25f,0.5f,0.75f,0.9f,1,-0.3f,1.7f,NAN};
-  long n=0,bad=0;
-  for(unsigned i=0;i<sizeof hs/4;i++)for(unsigned j=0;j<sizeof ss/4;j++)for(unsigned k=0;k<sizeof ls/4;k++){
-    float src[3]={hs[i],ss[j],ls[k]};
-    float a[3]={9,9,9},b[3]={9,9,9};
-    hsl_to_rgb(a,src); rust_hsl_to_rgb(b,src);
-    n++;
-    if(memcmp(a,b,12)){bad++;if(bad<10)printf("MISMATCH h=%g s=%g l=%g C=%08x,%08x,%08x R=%08x,%08x,%08x\n",src[0],src[1],src[2],bits(a[0]),bits(a[1]),bits(a[2]),bits(b[0]),bits(b[1]),bits(b[2]));}
-  }
-  /* aliasing / in-place case */
-  for(unsigned i=0;i<sizeof hs/4;i++){
-    float a[3]={hs[i],0.6f,0.4f},b[3]={hs[i],0.6f,0.4f};
-    hsl_to_rgb(a,a); rust_hsl_to_rgb(b,b); n++;
-    if(memcmp(a,b,12)){bad++;printf("ALIAS MISMATCH h=%g\n",hs[i]);}
-  }
-  printf("cases=%ld mismatches=%ld\n",n,bad);
-  return bad!=0;
-}
-EOF
-# rename rust symbol via objcopy so both can link
-cp /local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation/target/release/libtranslation.so .
-objcopy --redefine-sym hsl_to_rgb=rust_hsl_to_rgb libtranslation.so librust.so
-gcc -O2 main.c cimpl.o -I. ./librust.so -lm -o difftest -Wl,-rpath,.
-./difftest[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Differential bit-exactness harness
 
-/usr/bin/ld: /tmp/ccJ8jS3Y.o: in function `main':
-main.c:(.text.startup+0x292): undefined reference to `rust_hsl_to_rgb'
-/usr/bin/ld: main.c:(.text.startup+0x3da): undefined reference to `rust_hsl_to_rgb'
-collect2: error: ld returned 1 exit status
-[38;5;244m - Completed in 0.164s[0m
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <math.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef void (*fn_t)(float *, const float *);
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m static uint64_t st = 0x853c49e6748fea9bULL;
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m static uint32_t rnd(void) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     st = st * 6364136223846793005ULL + 1442695040888963407ULL;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     return (uint32_t)(st >> 32);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m static float rf(void) {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     uint32_t u = rnd();
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     float f;
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     memcpy(&f, &u, 4);
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     return f;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     if (!hc || !hr) { printf("dlopen fail: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     fn_t fc = (fn_t)dlsym(hc, "hsl_to_rgb");
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     fn_t fr = (fn_t)dlsym(hr, "hsl_to_rgb");
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     if (!fc || !fr) { printf("dlsym fail\n"); return 2; }
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     long long n = 0, bad = 0;
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     float edge[] = {0.0f, -0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 59.9999f, 60.0f,
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m                     60.0001f, 119.9999f, 120.0f, 120.0001f, 179.9999f, 180.0f,
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m                     180.0001f, 239.9999f, 240.0f, 240.0001f, 299.9999f, 300.0f,
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m                     300.0001f, 359.9999f, 360.0f, 360.0001f, 720.0f, -720.0f,
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m                     1e-45f, -1e-45f, 1e30f, -1e30f, 3.4028235e38f,
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m                     -3.4028235e38f, INFINITY, -INFINITY, NAN, -NAN, 0.25f,
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m                     0.75f, 1e-8f, 100000.0f};
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     int ne = (int)(sizeof(edge) / sizeof(edge[0]));
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     /* exhaustive over the edge-case cross product */
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     for (int a = 0; a < ne; a++)
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m         for (int b = 0; b < ne; b++)
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m             for (int c = 0; c < ne; c++) {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m                 float src[3] = {edge[a], edge[b], edge[c]};
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m                 float d1[3], d2[3];
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m                 for (int i = 0; i < 3; i++) { d1[i] = 12345.0f; d2[i] = 12345.0f; }
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m                 fc(d1, src);
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m                 fr(d2, src);
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m                 n++;
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m                 if (memcmp(d1, d2, sizeof(d1)) != 0) {
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m                     if (bad < 10)
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m                         printf("MISMATCH src=(%a,%a,%a) c=(%a,%a,%a) r=(%a,%a,%a)\n",
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m                                src[0], src[1], src[2], d1[0], d1[1], d1[2],
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m                                d2[0], d2[1], d2[2]);
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m                     bad++;
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     /* random full-bit-pattern fuzz */
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     for (long long k = 0; k < 3000000; k++) {
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         float src[3] = {rf(), rf(), rf()};
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         float d1[3], d2[3];
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m         fc(d1, src);
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         fr(d2, src);
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         if (memcmp(d1, d2, sizeof(d1)) != 0) {
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m             if (bad < 10)
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m                 printf("MISMATCH src=(%a,%a,%a) c=(%a,%a,%a) r=(%a,%a,%a)\n",
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m                        src[0], src[1], src[2], d1[0], d1[1], d1[2], d2[0],
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m                        d2[1], d2[2]);
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m             bad++;
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     /* realistic HSL sweep */
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     for (int hh = -400; hh <= 800; hh++)
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m         for (int ss = 0; ss <= 100; ss++)
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m             for (int ll = 0; ll <= 100; ll += 5) {
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m                 float src[3] = {(float)hh, ss / 100.0f, ll / 100.0f};
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m                 float d1[3], d2[3];
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m                 fc(d1, src);
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m                 fr(d2, src);
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m                 n++;
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m                 if (memcmp(d1, d2, sizeof(d1)) != 0) {
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m                     if (bad < 10)
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m                         printf("MISMATCH src=(%a,%a,%a)\n", src[0], src[1], src[2]);
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m                     bad++;
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m     printf("compared=%lld mismatches=%lld\n", n, bad);
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m     return bad != 0;
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
-cd /tmp/difftest
-cat > main.c <<'EOF'
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-#include <math.h>
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o difftest difftest.c -ldl -lm 2>&1 | tail -5 && ./difftest /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so /local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/target/release/libtranslation.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential bit-exactness test
+
+MISMATCH src=(0x0p+0,0x1p+0,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,-0x1p+0,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,0x1p-1,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,-0x1p-1,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,0x1.dfffccp+5,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,0x1.ep+5,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,0x1.e00034p+5,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,0x1.dfffe6p+6,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,0x1.ep+6,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+MISMATCH src=(0x0p+0,0x1.e0001ap+6,-nan) c=(nan,nan,-nan) r=(nan,nan,nan)
+compared=5611321 mismatches=7521
+exit=1
+[38;5;244m - Completed in 0.233s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "=== C ==="; objdump -d --no-show-raw-insn /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so | sed -n '/<hsl_to_rgb>:/,/^$/p'
+echo "=== RUST ==="; objdump -d --no-show-raw-insn /local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/target/release/libtranslation.so | sed -n '/<hsl_to_rgb>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble both implementations
+
+=== C ===
+0000000000001110 <hsl_to_rgb>:
+    1110:	push   %rbx
+    1111:	pxor   %xmm7,%xmm7
+    1115:	mov    %rdi,%rbx
+    1118:	sub    $0x10,%rsp
+    111c:	movss  0x4(%rsi),%xmm1
+    1121:	movss  0x8(%rsi),%xmm2
+    1126:	ucomiss %xmm7,%xmm1
+    1129:	jp     1148 <hsl_to_rgb+0x38>
+    112b:	jne    1148 <hsl_to_rgb+0x38>
+    112d:	movaps %xmm2,%xmm0
+    1130:	movaps %xmm2,%xmm1
+    1133:	unpcklps %xmm1,%xmm0
+    1136:	movss  %xmm2,0x8(%rbx)
+    113b:	movlps %xmm0,(%rbx)
+    113e:	add    $0x10,%rsp
+    1142:	pop    %rbx
+    1143:	ret
+    1144:	nopl   0x0(%rax)
+    1148:	movaps %xmm2,%xmm0
+    114b:	movss  0xead(%rip),%xmm3        # 2000 <_fini+0xd04>
+    1153:	movss  0xed5(%rip),%xmm6        # 2030 <_fini+0xd34>
+    115b:	movss  (%rsi),%xmm4
+    115f:	addss  %xmm2,%xmm0
+    1163:	movaps %xmm3,%xmm5
+    1166:	movss  %xmm4,0x4(%rsp)
+    116c:	subss  %xmm3,%xmm0
+    1170:	andps  %xmm6,%xmm0
+    1173:	subss  %xmm0,%xmm5
+    1177:	mulss  %xmm1,%xmm5
+    117b:	movss  0xe89(%rip),%xmm1        # 200c <_fini+0xd10>
+    1183:	movaps %xmm5,%xmm0
+    1186:	movss  %xmm5,0xc(%rsp)
+    118c:	mulss  0xe70(%rip),%xmm0        # 2004 <_fini+0xd08>
+    1194:	subss  %xmm0,%xmm2
+    1198:	movaps %xmm4,%xmm0
+    119b:	divss  0xe65(%rip),%xmm0        # 2008 <_fini+0xd0c>
+    11a3:	movss  %xmm2,0x8(%rsp)
+    11a9:	call   1030 <fmodf@plt>
+    11ae:	movss  0x4(%rsp),%xmm4
+    11b4:	pxor   %xmm7,%xmm7
+    11b8:	movss  0xe40(%rip),%xmm3        # 2000 <_fini+0xd04>
+    11c0:	movss  0xe68(%rip),%xmm6        # 2030 <_fini+0xd34>
+    11c8:	movss  0xc(%rsp),%xmm5
+    11ce:	movss  0x8(%rsp),%xmm2
+    11d4:	subss  %xmm3,%xmm0
+    11d8:	comiss %xmm7,%xmm4
+    11db:	andps  %xmm6,%xmm0
+    11de:	subss  %xmm0,%xmm3
+    11e2:	mulss  %xmm5,%xmm3
+    11e6:	jb     1210 <hsl_to_rgb+0x100>
+    11e8:	movss  0xe18(%rip),%xmm6        # 2008 <_fini+0xd0c>
+    11f0:	comiss %xmm4,%xmm6
+    11f3:	jbe    1210 <hsl_to_rgb+0x100>
+    11f5:	addss  %xmm2,%xmm5
+    11f9:	movaps %xmm3,%xmm1
+    11fc:	addss  %xmm2,%xmm1
+    1200:	movaps %xmm5,%xmm0
+    1203:	jmp    1133 <hsl_to_rgb+0x23>
+    1208:	nopl   0x0(%rax,%rax,1)
+    1210:	comiss 0xdf1(%rip),%xmm4        # 2008 <_fini+0xd0c>
+    1217:	movss  0xdf1(%rip),%xmm0        # 2010 <_fini+0xd14>
+    121f:	jae    1250 <hsl_to_rgb+0x140>
+    1221:	comiss %xmm4,%xmm0
+    1224:	jbe    1270 <hsl_to_rgb+0x160>
+    1226:	movss  0xde6(%rip),%xmm0        # 2014 <_fini+0xd18>
+    122e:	comiss %xmm4,%xmm0
+    1231:	jbe    1270 <hsl_to_rgb+0x160>
+    1233:	movaps %xmm5,%xmm1
+    1236:	movaps %xmm2,%xmm0
+    1239:	addss  %xmm2,%xmm1
+    123d:	addss  %xmm3,%xmm2
+    1241:	jmp    1133 <hsl_to_rgb+0x23>
+    1246:	cs nopw 0x0(%rax,%rax,1)
+    1250:	comiss %xmm4,%xmm0
+    1253:	jbe    1270 <hsl_to_rgb+0x160>
+    1255:	addss  %xmm2,%xmm3
+    1259:	movaps %xmm5,%xmm1
+    125c:	addss  %xmm2,%xmm1
+    1260:	movaps %xmm3,%xmm0
+    1263:	jmp    1133 <hsl_to_rgb+0x23>
+    1268:	nopl   0x0(%rax,%rax,1)
+    1270:	comiss 0xd9d(%rip),%xmm4        # 2014 <_fini+0xd18>
+    1277:	jb     1286 <hsl_to_rgb+0x176>
+    1279:	movss  0xd97(%rip),%xmm0        # 2018 <_fini+0xd1c>
+    1281:	comiss %xmm4,%xmm0
+    1284:	ja     12d0 <hsl_to_rgb+0x1c0>
+    1286:	comiss 0xd8b(%rip),%xmm4        # 2018 <_fini+0xd1c>
+    128d:	jb     129c <hsl_to_rgb+0x18c>
+    128f:	movss  0xd85(%rip),%xmm0        # 201c <_fini+0xd20>
+    1297:	comiss %xmm4,%xmm0
+    129a:	ja     12e8 <hsl_to_rgb+0x1d8>
+    129c:	comiss 0xd79(%rip),%xmm4        # 201c <_fini+0xd20>
+    12a3:	jb     112d <hsl_to_rgb+0x1d>
+    12a9:	movss  0xd6f(%rip),%xmm0        # 2020 <_fini+0xd24>
+    12b1:	comiss %xmm4,%xmm0
+    12b4:	jbe    112d <hsl_to_rgb+0x1d>
+    12ba:	addss  %xmm2,%xmm5
+    12be:	movaps %xmm2,%xmm1
+    12c1:	addss  %xmm3,%xmm2
+    12c5:	movaps %xmm5,%xmm0
+    12c8:	jmp    1133 <hsl_to_rgb+0x23>
+    12cd:	nopl   (%rax)
+    12d0:	addss  %xmm2,%xmm3
+    12d4:	movaps %xmm2,%xmm0
+    12d7:	addss  %xmm5,%xmm2
+    12db:	movaps %xmm3,%xmm1
+    12de:	jmp    1133 <hsl_to_rgb+0x23>
+    12e3:	nopl   0x0(%rax,%rax,1)
+    12e8:	addss  %xmm2,%xmm3
+    12ec:	movaps %xmm2,%xmm1
+    12ef:	addss  %xmm5,%xmm2
+    12f3:	movaps %xmm3,%xmm0
+    12f6:	jmp    1133 <hsl_to_rgb+0x23>
+
+=== RUST ===
+0000000000011920 <hsl_to_rgb>:
+   11920:	push   %rbx
+   11921:	sub    $0x10,%rsp
+   11925:	mov    %rdi,%rbx
+   11928:	movss  0x4(%rsi),%xmm3
+   1192d:	movss  0x8(%rsi),%xmm0
+   11932:	xorps  %xmm1,%xmm1
+   11935:	ucomiss %xmm1,%xmm3
+   11938:	jne    11947 <hsl_to_rgb+0x27>
+   1193a:	jp     11947 <hsl_to_rgb+0x27>
+   1193c:	movaps %xmm0,%xmm3
+   1193f:	movaps %xmm0,%xmm2
+   11942:	jmp    11ade <hsl_to_rgb+0x1be>
+   11947:	movss  (%rsi),%xmm4
+   1194b:	movss  %xmm4,0x8(%rsp)
+   11951:	movaps %xmm0,%xmm1
+   11954:	addss  %xmm0,%xmm1
+   11958:	addss  -0xdac0(%rip),%xmm1        # 3ea0 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e58>
+   11960:	andps  -0xd977(%rip),%xmm1        # 3ff0 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3fa8>
+   11967:	movss  -0xdaeb(%rip),%xmm2        # 3e84 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e3c>
+   1196f:	subss  %xmm1,%xmm2
+   11973:	mulss  %xmm2,%xmm3
+   11977:	movss  %xmm3,0xc(%rsp)
+   1197d:	movss  -0xdadd(%rip),%xmm1        # 3ea8 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e60>
+   11985:	mulss  %xmm3,%xmm1
+   11989:	addss  %xmm0,%xmm1
+   1198d:	movss  %xmm1,0x4(%rsp)
+   11993:	movaps %xmm4,%xmm0
+   11996:	divss  -0xdaf2(%rip),%xmm0        # 3eac <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e64>
+   1199e:	movss  -0xdb02(%rip),%xmm1        # 3ea4 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e5c>
+   119a6:	call   *0x3aeec(%rip)        # 4c898 <_DYNAMIC+0x218>
+   119ac:	movss  0x8(%rsp),%xmm1
+   119b2:	movss  0xc(%rsp),%xmm4
+   119b8:	movss  -0xdb3c(%rip),%xmm3        # 3e84 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e3c>
+   119c0:	addss  -0xdb28(%rip),%xmm0        # 3ea0 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e58>
+   119c8:	andps  -0xd9df(%rip),%xmm0        # 3ff0 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3fa8>
+   119cf:	subss  %xmm0,%xmm3
+   119d3:	mulss  %xmm4,%xmm3
+   119d7:	xorps  %xmm0,%xmm0
+   119da:	ucomiss %xmm0,%xmm1
+   119dd:	jb     11a02 <hsl_to_rgb+0xe2>
+   119df:	movss  -0xdb3b(%rip),%xmm0        # 3eac <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e64>
+   119e7:	ucomiss %xmm1,%xmm0
+   119ea:	jbe    11a02 <hsl_to_rgb+0xe2>
+   119ec:	movss  0x4(%rsp),%xmm2
+   119f2:	addss  %xmm2,%xmm4
+   119f6:	addss  %xmm2,%xmm3
+   119fa:	movaps %xmm4,%xmm0
+   119fd:	jmp    11ade <hsl_to_rgb+0x1be>
+   11a02:	ucomiss -0xdb5d(%rip),%xmm1        # 3eac <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e64>
+   11a09:	jb     11a31 <hsl_to_rgb+0x111>
+   11a0b:	movss  -0xdb53(%rip),%xmm0        # 3ec0 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e78>
+   11a13:	ucomiss %xmm1,%xmm0
+   11a16:	jbe    11a31 <hsl_to_rgb+0x111>
+   11a18:	movss  0x4(%rsp),%xmm2
+   11a1e:	addss  %xmm2,%xmm3
+   11a22:	addss  %xmm2,%xmm4
+   11a26:	movaps %xmm3,%xmm0
+   11a29:	movaps %xmm4,%xmm3
+   11a2c:	jmp    11ade <hsl_to_rgb+0x1be>
+   11a31:	movss  -0xdb79(%rip),%xmm0        # 3ec0 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e78>
+   11a39:	ucomiss %xmm1,%xmm0
+   11a3c:	movss  0x4(%rsp),%xmm2
+   11a42:	jbe    11a5d <hsl_to_rgb+0x13d>
+   11a44:	addss  %xmm2,%xmm4
+   11a48:	movaps %xmm3,%xmm1
+   11a4b:	addss  %xmm2,%xmm1
+   11a4f:	movaps %xmm2,%xmm0
+   11a52:	movaps %xmm1,%xmm2
+   11a55:	movaps %xmm4,%xmm3
+   11a58:	jmp    11ade <hsl_to_rgb+0x1be>
+   11a5d:	ucomiss -0xdb98(%rip),%xmm1        # 3ecc <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e84>
+   11a64:	jb     11a83 <hsl_to_rgb+0x163>
+   11a66:	movss  -0xdbaa(%rip),%xmm0        # 3ec4 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e7c>
+   11a6e:	ucomiss %xmm1,%xmm0
+   11a71:	jbe    11a83 <hsl_to_rgb+0x163>
+   11a73:	addss  %xmm2,%xmm3
+   11a77:	addss  %xmm2,%xmm4
+   11a7b:	movaps %xmm2,%xmm0
+   11a7e:	movaps %xmm4,%xmm2
+   11a81:	jmp    11ade <hsl_to_rgb+0x1be>
+   11a83:	ucomiss -0xdbc6(%rip),%xmm1        # 3ec4 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e7c>
+   11a8a:	jb     11aac <hsl_to_rgb+0x18c>
+   11a8c:	movss  -0xdbc0(%rip),%xmm0        # 3ed4 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e8c>
+   11a94:	ucomiss %xmm1,%xmm0
+   11a97:	jbe    11aac <hsl_to_rgb+0x18c>
+   11a99:	addss  %xmm2,%xmm3
+   11a9d:	addss  %xmm2,%xmm4
+   11aa1:	movaps %xmm3,%xmm0
+   11aa4:	movaps %xmm2,%xmm3
+   11aa7:	movaps %xmm4,%xmm2
+   11aaa:	jmp    11ade <hsl_to_rgb+0x1be>
+   11aac:	ucomiss -0xdbdf(%rip),%xmm1        # 3ed4 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e8c>
+   11ab3:	jb     11ad8 <hsl_to_rgb+0x1b8>
+   11ab5:	movss  -0xdbf5(%rip),%xmm0        # 3ec8 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x3e80>
+   11abd:	ucomiss %xmm1,%xmm0
+   11ac0:	jbe    11ad8 <hsl_to_rgb+0x1b8>
+   11ac2:	addss  %xmm2,%xmm4
+   11ac6:	movaps %xmm3,%xmm1
+   11ac9:	addss  %xmm2,%xmm1
+   11acd:	movaps %xmm4,%xmm0
+   11ad0:	movaps %xmm2,%xmm3
+   11ad3:	movaps %xmm1,%xmm2
+   11ad6:	jmp    11ade <hsl_to_rgb+0x1be>
+   11ad8:	movaps %xmm2,%xmm0
+   11adb:	movaps %xmm2,%xmm3
+   11ade:	movss  %xmm0,(%rbx)
+   11ae2:	movss  %xmm3,0x4(%rbx)
+   11ae7:	movss  %xmm2,0x8(%rbx)
+   11aec:	add    $0x10,%rsp
+   11af0:	pop    %rbx
+   11af1:	ret
+   11af2:	int3
+   11af3:	int3
+   11af4:	int3
+   11af5:	int3
+   11af6:	int3
+   11af7:	int3
+   11af8:	int3
+   11af9:	int3
+   11afa:	int3
+   11afb:	int3
+   11afc:	int3
+   11afd:	int3
+   11afe:	int3
+   11aff:	int3
+
+[38;5;244m - Completed in 0.73s[0m
+
+[?25l[0m[38;5;141m> [0mAll mismatches involve NaN inputs — LLVM reordered operands, changing which NaN's sign bit propagates. Let me check whether non-NaN inputs are fully clean, then model SSE NaN propagation exactly.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && cat > nonan.c <<'EOF'
 #include <dlfcn.h>
-void hsl_to_rgb(float*,const float*);
-static uint32_t bits(float f){uint32_t u;memcpy(&u,&f,4);return u;}
-int main(void){
-  void *h=dlopen("./libtranslation.so",RTLD_NOW);
-  if(!h){printf("dlopen: %s\n",dlerror());return 2;}
-  void (*rust)(float*,const float*)=dlsym(h,"hsl_to_rgb");
-  if(!rust){printf("dlsym failed\n");return 2;}
-  float hs[]={-720,-360,-180,-60,-1,-0.0f,0,1e-8f,30,59.999f,60,90,119.9f,120,150,179.9f,180,210,239.9f,240,270,299.9f,300,330,359.999f,360,400,720,1e9f,NAN,INFINITY,-INFINITY};
-  float ss[]={0,-0.0f,1e-9f,0.25f,0.5f,0.75f,1,2,-0.5f,NAN};
-  float ls[]={0,0.1f,0.25f,0.5f,0.75f,0.9f,1,-0.3f,1.7f,NAN};
-  long n=0,bad=0;
-  for(unsigned i=0;i<sizeof hs/4;i++)for(unsigned j=0;j<sizeof ss/4;j++)for(unsigned k=0;k<sizeof ls/4;k++){
-    float src[3]={hs[i],ss[j],ls[k]};
-    float a[3]={9,9,9},b[3]={9,9,9};
-    hsl_to_rgb(a,src); rust(b,src);
-    n++;
-    if(memcmp(a,b,12)){bad++;if(bad<10)printf("MISMATCH h=%g s=%g l=%g C=%08x,%08x,%08x R=%08x,%08x,%08x\n",src[0],src[1],src[2],bits(a[0]),bits(a[1]),bits(a[2]),bits(b[0]),bits(b[1]),bits(b[2]));}
-  }
-  for(unsigned i=0;i<sizeof hs/4;i++){
-    float a[3]={hs[i],0.6f,0.4f},b[3]={hs[i],0.6f,0.4f};
-    hsl_to_rgb(a,a); rust(b,b); n++;
-    if(memcmp(a,b,12)){bad++;printf("ALIAS MISMATCH h=%g\n",hs[i]);}
-  }
-  printf("cases=%ld mismatches=%ld\n",n,bad);
-  return bad!=0;
-}
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+typedef void (*fn_t)(float*,const float*);
+static uint64_t st=0x853c49e6748fea9bULL;
+static uint32_t rnd(void){st=st*6364136223846793005ULL+1442695040888963407ULL;return (uint32_t)(st>>32);}
+static float rf(void){uint32_t u=rnd();float f;memcpy(&f,&u,4);return f;}
+int main(int argc,char**argv){
+ void*hc=dlopen(argv[1],RTLD_NOW),*hr=dlopen(argv[2],RTLD_NOW);
+ fn_t fc=(fn_t)dlsym(hc,"hsl_to_rgb"),fr=(fn_t)dlsym(hr,"hsl_to_rgb");
+ long long n=0,bad=0;
+ for(long long k=0;k<8000000;k++){
+   float src[3]={rf(),rf(),rf()};
+   if(isnan(src[0])||isnan(src[1])||isnan(src[2]))continue;
+   float d1[3],d2[3]; fc(d1,src); fr(d2,src); n++;
+   if(memcmp(d1,d2,12)){ if(bad<5)printf("MM src=(%a,%a,%a) c=(%a,%a,%a) r=(%a,%a,%a)\n",src[0],src[1],src[2],d1[0],d1[1],d1[2],d2[0],d2[1],d2[2]); bad++; }
+ }
+ printf("non-NaN compared=%lld mismatches=%lld\n",n,bad); return bad!=0;}
 EOF
-gcc -O2 main.c cimpl.o -I. -ldl -lm -o difftest
-./difftest[0m[38;5;244m (using tool: shell)[0m
+gcc -O2 -o nonan nonan.c -ldl -lm && ./nonan /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so /local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/target/release/libtranslation.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check mismatches restricted to non-NaN inputs
 
-cases=3232 mismatches=0
-[38;5;244m - Completed in 0.146s[0m
+non-NaN compared=7906336 mismatches=0
+[38;5;244m - Completed in 0.338s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/difftest /tmp/build.log && ls -R /local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation --ignore=target && cd /local/home/scheschb/.harvest/work/harvest-work-0LoGfW && git status --short 2>/dev/null | head[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mNon-NaN inputs are already bit-exact. Now I'll make NaN propagation exact too by modeling the SSE operand semantics the C compiles to.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Model SSE NaN operand propagation to match C bit-for-bit
 
-/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation:
-Cargo.lock
-Cargo.toml
-src
+[49m[39m   1,   1[0m:[39m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[39m   2,   2[0m:[39m[49m //!
+[0m[49m[38;5;9m-  3     [0m:[38;5;9m[49m //! Public ABI (from `nm -D` on the C shared library):
+[0m[49m[38;5;10m+       3[0m:[38;5;10m[49m //! Public ABI (verified against `nm -D` on the C shared library):
+[0m[49m[39m   4,   4[0m:[39m[49m //!   * `hsl_to_rgb`
+[0m[49m[39m   5,   5[0m:[39m[49m //!
+[0m[49m[38;5;9m-  6     [0m:[38;5;9m[49m //! Translated from `c_src/src/lib.c` / `c_src/include/lib.h`.
+[0m[49m[38;5;10m+       6[0m:[38;5;10m[49m //! Source: `c_src/src/lib.c`, `c_src/include/lib.h`. There are no namespace or
+[0m[49m[38;5;10m+       7[0m:[38;5;10m[49m //! renaming macros in the public header, so the linker symbol equals the source
+[0m[49m[38;5;10m+       8[0m:[38;5;10m[49m //! name.
+[0m[49m[39m   7,   9[0m:[39m[49m //!
+[0m[49m[38;5;9m-  8     [0m:[38;5;9m[49m //! Behavioural notes — the original C is reproduced verbatim, bugs included:
+[0m[49m[38;5;9m-  9     [0m:[38;5;9m[49m //!   * The third branch of the hue cascade reads `h < 120.0f && h < 180.0f`
+[0m[49m[38;5;9m- 10     [0m:[38;5;9m[49m //!     instead of `h >= 120.0f && h < 180.0f`. Because the preceding branches
+[0m[49m[38;5;9m- 11     [0m:[38;5;9m[49m //!     already consumed `0 <= h < 120`, this branch is only reachable for
+[0m[49m[38;5;9m- 12     [0m:[38;5;9m[49m //!     `h < 0`, which means hues in `[120, 180)` fall through to the final
+[0m[49m[38;5;9m- 13     [0m:[38;5;9m[49m //!     `else` and yield the flat grey `(m, m, m)`. This is preserved.
+[0m[49m[38;5;9m- 14     [0m:[38;5;9m[49m //!   * The redundant `1.0f *` factor in `m = 1.0f * (l - 0.5f * c)` is an
+[0m[49m[38;5;9m- 15     [0m:[38;5;9m[49m //!     exact identity for every float value (including NaN payloads and
+[0m[49m[38;5;9m- 16     [0m:[38;5;9m[49m //!     signed zeros) and is therefore dropped without any observable change.
+[0m[49m[38;5;9m- 17     [0m:[38;5;9m[49m //!   * `fmodf` maps onto Rust's `%` operator for `f32`, which has identical
+[0m[49m[38;5;9m- 18     [0m:[38;5;9m[49m //!     truncated-remainder semantics (and lowers to the same libm call).
+[0m[49m[38;5;9m- 19     [0m:[38;5;9m[49m //!   * NaN inputs make every comparison in the cascade false, so control
+[0m[49m[38;5;9m- 20     [0m:[38;5;9m[49m //!     reaches the final `else`; Rust behaves the same way.
+[0m[49m[38;5;10m+      10[0m:[38;5;10m[49m //! # Fidelity notes
+[0m[49m[38;5;10m+      11[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      12[0m:[38;5;10m[49m //! The original C is reproduced verbatim, bugs included:
+[0m[49m[38;5;10m+      13[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      14[0m:[38;5;10m[49m //! * The third arm of the hue cascade reads `h < 120.0f && h < 180.0f` instead
+[0m[49m[38;5;10m+      15[0m:[38;5;10m[49m //!   of `h >= 120.0f && h < 180.0f`. The two preceding arms already consume
+[0m[49m[38;5;10m+      16[0m:[38;5;10m[49m //!   `0 <= h < 120`, so this arm is only reachable for `h < 0`; hues in
+[0m[49m[38;5;10m+      17[0m:[38;5;10m[49m //!   `[120, 180)` therefore fall through to the final `else` and come out as
+[0m[49m[38;5;10m+      18[0m:[38;5;10m[49m //!   the flat grey `(m, m, m)`. This is preserved, not fixed.
+[0m[49m[38;5;10m+      19[0m:[38;5;10m[49m //! * The redundant `1.0f *` in `m = 1.0f * (l - 0.5f * c)` is an exact identity
+[0m[49m[38;5;10m+      20[0m:[38;5;10m[49m //!   for every `f32` bit pattern, and the C compiler elides it; it is dropped
+[0m[49m[38;5;10m+      21[0m:[38;5;10m[49m //!   here with no observable change.
+[0m[49m[38;5;10m+      22[0m:[38;5;10m[49m //! * `fmodf` maps onto Rust's `%` for `f32`, which is the same truncated
+[0m[49m[38;5;10m+      23[0m:[38;5;10m[49m //!   remainder and lowers to the same libm call.
+[0m[49m[38;5;10m+      24[0m:[38;5;10m[49m //! * A NaN hue makes every predicate in the cascade false, so control reaches
+[0m[49m[38;5;10m+      25[0m:[38;5;10m[49m //!   the final `else`, exactly as in C.
+[0m[49m[38;5;10m+      26[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      27[0m:[38;5;10m[49m //! ## Why the arithmetic goes through helper functions
+[0m[49m[38;5;10m+      28[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      29[0m:[38;5;10m[49m //! Naive `a - b` / `a * b` expressions are bit-identical to the C for every
+[0m[49m[38;5;10m+      30[0m:[38;5;10m[49m //! non-NaN input, but they are *not* bit-identical when both operands of an
+[0m[49m[38;5;10m+      31[0m:[38;5;10m[49m //! operation are NaN. On x86-64 a two-operand SSE instruction such as
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m //! `subss dst, src` returns the *destination* operand's NaN (quieted) when both
+[0m[49m[38;5;10m+      33[0m:[38;5;10m[49m //! operands are NaN, so the result's sign bit and payload depend on which
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m //! operand the compiler placed in the destination register. LLVM and GCC make
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m //! different (equally legal) choices: LLVM rewrites `l - 0.5 * c` into
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m //! `(-0.5) * c + l`, which flips the destination operand and hence the returned
+[0m[49m[38;5;10m+      37[0m:[38;5;10m[49m //! NaN.
+[0m[49m[38;5;10m+      38[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      39[0m:[38;5;10m[49m //! The `add`/`sub`/`mul`/`div` helpers below make that choice explicit instead
+[0m[49m[38;5;10m+      40[0m:[38;5;10m[49m //! of leaving it to the optimiser: the first argument is the SSE destination
+[0m[49m[38;5;10m+      41[0m:[38;5;10m[49m //! operand. Operand roles were read off the compiled C. For every input where
+[0m[49m[38;5;10m+      42[0m:[38;5;10m[49m //! at most one operand is NaN the helpers are plain IEEE arithmetic, so this
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m //! costs nothing in fidelity elsewhere.
+[0m[49m[39m  21,  44[0m:[39m[49m 
+[0m[49m[39m  22,  45[0m:[39m[49m #![allow(clippy::missing_safety_doc)]
+[0m[49m[39m  23,  46[0m:[39m[49m 
+[0m[49m[38;5;10m+      47[0m:[38;5;10m[49m /// Quiet a NaN the way SSE does when it propagates an operand: set the quiet
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m /// bit and leave the sign and the rest of the payload alone.
+[0m[49m[38;5;10m+      49[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m fn quiet(x: f32) -> f32 {
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m     f32::from_bits(x.to_bits() | 0x0040_0000)
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m /// `a + b` with `a` as the SSE destination operand.
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m fn add(a: f32, b: f32) -> f32 {
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m     if a.is_nan() {
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m         quiet(a)
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m     } else if b.is_nan() {
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m         quiet(b)
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m         a + b
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m /// `a - b` with `a` as the SSE destination operand.
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m fn sub(a: f32, b: f32) -> f32 {
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m     if a.is_nan() {
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m         quiet(a)
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m     } else if b.is_nan() {
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m         quiet(b)
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m         a - b
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m /// `a * b` with `a` as the SSE destination operand.
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m fn mul(a: f32, b: f32) -> f32 {
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m     if a.is_nan() {
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m         quiet(a)
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m     } else if b.is_nan() {
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m         quiet(b)
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m         a * b
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m /// `a / b` with `a` as the SSE destination operand.
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m fn div(a: f32, b: f32) -> f32 {
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m     if a.is_nan() {
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m         quiet(a)
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m     } else if b.is_nan() {
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m         quiet(b)
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m         a / b
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m /// `fabsf`: a pure bit operation (`andps`), so it never quiets a NaN.
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m fn fabsf(x: f32) -> f32 {
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m     f32::from_bits(x.to_bits() & 0x7fff_ffff)
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m /// `fmodf(a, b)`. Rust's `%` on `f32` is C's `fmodf`.
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m #[inline(always)]
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m fn fmodf(a: f32, b: f32) -> f32 {
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m     a % b
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m 
+[0m[49m[39m  24, 114[0m:[39m[49m /// Convert an HSL triple to an RGB triple.
+[0m[49m[39m  25, 115[0m:[39m[49m ///
+[0m[49m[39m  26, 116[0m:[39m[49m /// `src` must point to at least 3 readable `f32` values (hue in degrees,
+[0m[49m[38;5;9m- 27     [0m:[38;5;9m[49m /// saturation, lightness); `dest` must point to at least 3 writable `f32`
+[0m[49m[38;5;9m- 28     [0m:[38;5;9m[49m /// values. Exactly mirrors `void hsl_to_rgb(float *dest, const float *src)`.
+[0m[49m[38;5;10m+     117[0m:[38;5;10m[49m /// saturation, lightness). `dest` must point to at least 3 writable `f32`
+[0m[49m[38;5;10m+     118[0m:[38;5;10m[49m /// values. Mirrors `void hsl_to_rgb(float *dest, const float *src)`.
+[0m[49m[39m  29, 119[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[39m  30, 120[0m:[39m[49m pub unsafe extern "C" fn hsl_to_rgb(dest: *mut f32, src: *const f32) {
+[0m[49m[39m  31, 121[0m:[39m[49m     let h: f32 = unsafe { *src.add(0) };
+[0m[49m[39m  32, 122[0m:[39m[49m     let s: f32 = unsafe { *src.add(1) };
+[0m[49m[39m  33, 123[0m:[39m[49m     let l: f32 = unsafe { *src.add(2) };
+[0m[49m[39m  34, 124[0m:[39m[49m 
+[0m[49m[39m  35, 125[0m:[39m[49m     let c: f32;
+[0m[49m[39m  36, 126[0m:[39m[49m     let m: f32;
+[0m[49m[39m  37, 127[0m:[39m[49m     let x: f32;
+[0m[49m[39m  38, 128[0m:[39m[49m 
+[0m[49m[39m  39, 129[0m:[39m[49m     if s == 0.0f32 {
+[0m[49m[39m  40, 130[0m:[39m[49m         unsafe {
+[0m[49m[39m  41, 131[0m:[39m[49m             *dest.add(0) = l;
+[0m[49m[39m  42, 132[0m:[39m[49m             *dest.add(1) = l;
+[0m[49m[39m  43, 133[0m:[39m[49m             *dest.add(2) = l;
+[0m[49m[39m  44, 134[0m:[39m[49m         }
+[0m[49m[39m  45, 135[0m:[39m[49m         return;
+[0m[49m[39m  46, 136[0m:[39m[49m     }
+[0m[49m[39m  47, 137[0m:[39m[49m 
+[0m[49m[38;5;9m- 48     [0m:[38;5;9m[49m     c = (1.0f32 - (2.0f32 * l - 1.0f32).abs()) * s;
+[0m[49m[38;5;9m- 49     [0m:[38;5;9m[49m     m = 1.0f32 * (l - 0.5f32 * c);
+[0m[49m[38;5;9m- 50     [0m:[38;5;9m[49m     x = c * (1.0f32 - ((h / 60.0f32) % 2.0f32 - 1.0f32).abs());
+[0m[49m[38;5;10m+     138[0m:[38;5;10m[49m     // c = (1.0f - fabsf(2.0f * l - 1.0f)) * s;
+[0m[49m[38;5;10m+     139[0m:[38;5;10m[49m     // `2.0f * l` is emitted as `l + l`.
+[0m[49m[38;5;10m+     140[0m:[38;5;10m[49m     c = mul(sub(1.0f32, fabsf(sub(add(l, l), 1.0f32))), s);
+[0m[49m[38;5;10m+     141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     142[0m:[38;5;10m[49m     // m = 1.0f * (l - 0.5f * c);  (the `1.0f *` is an exact no-op)
+[0m[49m[38;5;10m+     143[0m:[38;5;10m[49m     m = sub(l, mul(c, 0.5f32));
+[0m[49m[38;5;10m+     144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     145[0m:[38;5;10m[49m     // x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2) - 1.0f));
+[0m[49m[38;5;10m+     146[0m:[38;5;10m[49m     // The literal `2` is an int converted to 2.0f for the fmodf call.
+[0m[49m[38;5;10m+     147[0m:[38;5;10m[49m     x = mul(sub(1.0f32, fabsf(sub(fmodf(div(h, 60.0f32), 2.0f32), 1.0f32))), c);
+[0m[49m[39m  51, 148[0m:[39m[49m 
+[0m[49m[38;5;9m- 52     [0m:[38;5;9m[49m     // The branch order and each individual predicate are kept exactly as in C.
+[0m[49m[38;5;10m+     149[0m:[38;5;10m[49m     // Branch order and each individual predicate are kept exactly as in C.
+[0m[49m[39m  53, 150[0m:[39m[49m     let (r, g, b): (f32, f32, f32) = if h >= 0.0f32 && h < 60.0f32 {
+[0m[49m[38;5;9m- 54     [0m:[38;5;9m[49m         (c + m, x + m, m)
+[0m[49m[38;5;10m+     151[0m:[38;5;10m[49m         (add(c, m), add(x, m), m)
+[0m[49m[39m  55, 152[0m:[39m[49m     } else if h >= 60.0f32 && h < 120.0f32 {
+[0m[49m[38;5;9m- 56     [0m:[38;5;9m[49m         (x + m, c + m, m)
+[0m[49m[38;5;10m+     153[0m:[38;5;10m[49m         (add(x, m), add(c, m), m)
+[0m[49m[39m  57, 154[0m:[39m[49m     } else if h < 120.0f32 && h < 180.0f32 {
+[0m[49m[38;5;9m- 58     [0m:[38;5;9m[49m         // NOTE: faithful copy of the original (buggy) predicate.
+[0m[49m[38;5;9m- 59     [0m:[38;5;9m[49m         (m, c + m, x + m)
+[0m[49m[38;5;10m+     155[0m:[38;5;10m[49m         // NOTE: faithful copy of the original (buggy) predicate; the C says
+[0m[49m[38;5;10m+     156[0m:[38;5;10m[49m         // `h < 120.0f`, not `h >= 120.0f`.
+[0m[49m[38;5;10m+     157[0m:[38;5;10m[49m         (m, add(c, m), add(m, x))
+[0m[49m[39m  60, 158[0m:[39m[49m     } else if h >= 180.0f32 && h < 240.0f32 {
+[0m[49m[38;5;9m- 61     [0m:[38;5;9m[49m         (m, x + m, c + m)
+[0m[49m[38;5;10m+     159[0m:[38;5;10m[49m         (m, add(x, m), add(m, c))
+[0m[49m[39m  62, 160[0m:[39m[49m     } else if h >= 240.0f32 && h < 300.0f32 {
+[0m[49m[38;5;9m- 63     [0m:[38;5;9m[49m         (x + m, m, c + m)
+[0m[49m[38;5;10m+     161[0m:[38;5;10m[49m         (add(x, m), m, add(m, c))
+[0m[49m[39m  64, 162[0m:[39m[49m     } else if h >= 300.0f32 && h < 360.0f32 {
+[0m[49m[38;5;9m- 65     [0m:[38;5;9m[49m         (c + m, m, x + m)
+[0m[49m[38;5;10m+     163[0m:[38;5;10m[49m         (add(c, m), m, add(m, x))
+[0m[49m[39m  66, 164[0m:[39m[49m     } else {
+[0m[49m[39m  67, 165[0m:[39m[49m         (m, m, m)
+[0m[49m[39m  68, 166[0m:[39m[49m     };
+[0m[49m[39m  69, 167[0m:[39m[49m 
+[0m[49m[39m  70, 168[0m:[39m[49m     unsafe {
+[0m[49m[39m  71, 169[0m:[39m[49m         *dest.add(0) = r;
+[0m[49m[39m  72, 170[0m:[39m[49m         *dest.add(1) = g;
+[0m[49m[39m  73, 171[0m:[39m[49m         *dest.add(2) = b;
+[0m[49m[39m  74, 172[0m:[39m[49m     }
+[0m[49m[39m  75, 173[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
 
-/local/home/scheschb/.harvest/work/harvest-work-0LoGfW/translation/src:
-lib.rs
-[38;5;244m - Completed in 0.18s[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation && cargo build --release 2>&1 | tail -20 && cd /tmp && ./difftest /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so /local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/target/release/libtranslation.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and re-run full differential test
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean as a [38;5;10mcdylib[0m exporting the symbol [38;5;10mhsl_to_rgb[0m, and a differential test against the gcc-compiled C confirmed bit-identical results on 3232 input combinations (0 mismatches), covering NaN/±inf, out-of-range saturation and lightness, negative hues, and the in-place [38;5;10mdest == src[0m aliasing case.[0m[0m
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+bash: line 1: ./difftest: No such file or directory
+exit=127
+[38;5;244m - Completed in 0.106s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mls -la /tmp/difftest* /tmp/nonan* /tmp/cbuild_awxPIN/*.so 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check test artifacts still exist
+
+-rwxr-xr-x. 1 scheschb amazon 15792 Sep  1 05:42 /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so
+-rwxr-xr-x. 1 scheschb amazon 17232 Sep  1 05:08 /tmp/difftest_h2
+-rw-r--r--. 1 scheschb amazon  3385 Sep  1 05:08 /tmp/difftest_h2.c
+-rwxr-xr-x. 1 scheschb amazon 16832 Sep  1 05:45 /tmp/nonan
+-rw-r--r--. 1 scheschb amazon   963 Sep  1 05:45 /tmp/nonan.c
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/vt_awxPIN && cp /tmp/nonan.c /tmp/vt_awxPIN/ 2>/dev/null; cat > /tmp/vt_awxPIN/dt.c <<'EOF'
+#include <dlfcn.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+typedef void (*fn_t)(float*,const float*);
+static uint64_t st=0x853c49e6748fea9bULL;
+static uint32_t rnd(void){st=st*6364136223846793005ULL+1442695040888963407ULL;return (uint32_t)(st>>32);}
+static float rf(void){uint32_t u=rnd();float f;memcpy(&f,&u,4);return f;}
+static fn_t fc,fr;
+static long long n=0,bad=0;
+static void chk(float a,float b,float c){
+  float src[3]={a,b,c},d1[3],d2[3];
+  for(int i=0;i<3;i++){d1[i]=12345.0f;d2[i]=54321.0f;}
+  fc(d1,src); fr(d2,src); n++;
+  if(memcmp(d1,d2,12)){ if(bad<12) printf("MM src=(%a,%a,%a) c=(%a,%a,%a) r=(%a,%a,%a)\n",
+    src[0],src[1],src[2],d1[0],d1[1],d1[2],d2[0],d2[1],d2[2]); bad++; }
+}
+int main(int argc,char**argv){
+ void*hc=dlopen(argv[1],RTLD_NOW),*hr=dlopen(argv[2],RTLD_NOW);
+ if(!hc||!hr){printf("dlopen: %s\n",dlerror());return 2;}
+ fc=(fn_t)dlsym(hc,"hsl_to_rgb"); fr=(fn_t)dlsym(hr,"hsl_to_rgb");
+ if(!fc||!fr){printf("dlsym failed\n");return 2;}
+ /* NaN bit patterns: quiet/signaling, both signs, varied payloads */
+ uint32_t nanbits[]={0x7fc00000,0xffc00000,0x7f800001,0xff800001,0x7fbfffff,
+                     0xffbfffff,0x7fffffff,0xffffffff,0x7fc12345,0xffc12345};
+ float nans[10]; for(int i=0;i<10;i++) memcpy(&nans[i],&nanbits[i],4);
+ float edge[]={0.0f,-0.0f,1.0f,-1.0f,0.5f,-0.5f,59.9999f,60.0f,60.0001f,
+   119.9999f,120.0f,120.0001f,179.9999f,180.0f,180.0001f,239.9999f,240.0f,
+   240.0001f,299.9999f,300.0f,300.0001f,359.9999f,360.0f,360.0001f,720.0f,
+   -720.0f,-1.0f/0.0f*0.0f*0+1e-45f,-1e-45f,1e30f,-1e30f,3.4028235e38f,
+   -3.4028235e38f,INFINITY,-INFINITY,0.25f,0.75f,1e-8f,100000.0f,-60.0f,-180.0f};
+ int ne=(int)(sizeof(edge)/sizeof(edge[0]));
+ /* full cross product of edge values */
+ for(int a=0;a<ne;a++)for(int b=0;b<ne;b++)for(int c=0;c<ne;c++) chk(edge[a],edge[b],edge[c]);
+ /* every NaN pattern in every slot, crossed with edge values and other NaNs */
+ for(int i=0;i<10;i++){
+   for(int b=0;b<ne;b++)for(int c=0;c<ne;c++){chk(nans[i],edge[b],edge[c]);chk(edge[b],nans[i],edge[c]);chk(edge[b],edge[c],nans[i]);}
+   for(int j=0;j<10;j++){
+     for(int c=0;c<ne;c++){chk(nans[i],nans[j],edge[c]);chk(nans[i],edge[c],nans[j]);chk(edge[c],nans[i],nans[j]);}
+     for(int k=0;k<10;k++) chk(nans[i],nans[j],nans[k]);
+   }
+ }
+ /* random full-bit-pattern fuzz */
+ for(long long k=0;k<4000000;k++) chk(rf(),rf(),rf());
+ /* realistic HSL sweep */
+ for(int hh=-400;hh<=800;hh++)for(int ss=0;ss<=100;ss++)for(int ll=0;ll<=100;ll+=5)
+   chk((float)hh,ss/100.0f,ll/100.0f);
+ printf("compared=%lld mismatches=%lld\n",n,bad); return bad!=0;}
+EOF
+cd /tmp/vt_awxPIN && gcc -O2 -o dt dt.c -ldl -lm 2>&1|tail -5 && ./dt /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so /local/home/scheschb/.harvest/work/harvest-work-awxPIN/translation/target/release/libtranslation.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Comprehensive differential test including NaN bit-pattern coverage
+
+compared=6672321 mismatches=0
+exit=0
+[38;5;244m - Completed in 0.331s[0m
+
+[?25l[0m[38;5;141m> [0mZero mismatches across 6.67M comparisons including exhaustive NaN bit patterns. Final gate checks:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-awxPIN
+echo "=== c_src untouched (git/mtime) ==="; ls -la c_src/src c_src/include | grep -E 'lib\.(c|h)'
+echo "=== translation tree ==="; find translation -maxdepth 2 -not -path '*/target*' -type f
+echo "=== crate-type ==="; grep -A2 '^\[lib\]' translation/Cargo.toml
+echo
+echo "=== C exports ==="; nm -D --defined-only /tmp/cbuild_awxPIN/libharvest-work-awxPIN.so | awk '$2=="T"||$2=="W"{print $3}' | sort > /tmp/vt_awxPIN/c.txt; cat /tmp/vt_awxPIN/c.txt
+echo "=== Rust exports (excluding Rust runtime internals) ==="; nm -D --defined-only translation/target/release/libtranslation.so | awk '$2=="T"||$2=="W"{print $3}' | sort > /tmp/vt_awxPIN/r.txt; grep -v '^_' /tmp/vt_awxPIN/r.txt
+echo "=== C-minus-Rust diff (must be empty) ==="; comm -23 /tmp/vt_awxPIN/c.txt /tmp/vt_awxPIN/r.txt
+echo "=== end (empty above == complete) ==="
+echo "=== rebuild from clean ==="; cd translation && cargo build --release 2>&1 | tail -3[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification of symbols, config, and clean build
+
+=== c_src untouched (git/mtime) ===
+-rw-r--r--. 1 scheschb amazon 48 Sep  1 05:41 lib.h
+-rw-r--r--. 1 scheschb amazon 1168 Sep  1 05:41 lib.c
+=== translation tree ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+=== crate-type ===
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+=== C exports ===
+hsl_to_rgb
+=== Rust exports (excluding Rust runtime internals) ===
+hsl_to_rgb
+=== C-minus-Rust diff (must be empty) ===
+=== end (empty above == complete) ===
+=== rebuild from clean ===
+    Finished `release` profile [optimized] target(s) in 0.01s
+[38;5;244m - Completed in 0.68s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
 [0m[0m
-Notes on the translation:[0m[0m
+[1mScope.[22m The C library in [38;5;10mc_src/[0m turned out to be genuinely small — one CMake target globbing [38;5;10msrc/lib.c[0m (48 lines) with a single-line public header. I built it ([38;5;10mlibharvest-work-awxPIN.so[0m) and [38;5;10mnm -D[0m shows exactly one exported symbol: [38;5;10mhsl_to_rgb[0m. No namespace/renaming macros in the header, so the linker symbol equals the source name. That one symbol is the full definition of done, and the Rust [38;5;10m.so[0m exports it — the C-minus-Rust symbol diff is empty.[0m[0m
 [0m[0m
-- The header has no namespace macro, so the linker symbol is plain [38;5;10mhsl_to_rgb[0m. Verified with [38;5;10mnm[0m.[0m[0m
-- The C's third hue branch reads [38;5;10mh < 120.0f && h < 180.0f[0m rather than [38;5;10mh >= 120.0f && ...[0m, which makes hues in [120, 180) fall through to the final [38;5;10melse[0m (gray) and makes that branch reachable only for negative [38;5;10mh[0m. I reproduced this verbatim and documented it rather than fixing it.[0m[0m
-- [38;5;10mfmodf(h/60.0f, 2)[0m maps directly to Rust's [38;5;10m%[0m on [38;5;10mf32[0m, which is truncated remainder with the same semantics; [38;5;10mfabsf[0m maps to [38;5;10m.abs()[0m. The redundant [38;5;10m1.0f *[0m in the [38;5;10mm[0m computation is kept for structural fidelity.[0m[0m
-- Internals are safe Rust: a pure [38;5;10m[f32; 3] -> [f32; 3][0m kernel. The [38;5;10munsafe extern "C"[0m shim reads all three source floats into an array before writing anything back, which both avoids overlapping slices and preserves the C's tolerance for [38;5;10mdest[0m and [38;5;10msrc[0m pointing at the same buffer.[0m[0m
+[1mArtifacts.[22m [38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m) and [38;5;10mtranslation/src/lib.rs[0m, with [38;5;10m#[unsafe(no_mangle)] pub unsafe extern "C" fn hsl_to_rgb(dest: *mut f32, src: *const f32)[0m. Nothing in [38;5;10mc_src/[0m was touched.[0m[0m
+[0m[0m
+[1mBug preserved.[22m The C's third hue arm reads [38;5;10mh < 120.0f && h < 180.0f[0m instead of [38;5;10mh >= 120.0f[0m. Since earlier arms already consume [38;5;10m0 <= h < 120[0m, that arm is only reachable for negative hue, and hues in [38;5;10m[120, 180)[0m fall through to the final [38;5;10melse[0m and render as flat grey. Reproduced as-is.[0m[0m
+[0m[0m
+[1mVerification.[22m A [38;5;10mdlopen[0m harness compared both [38;5;10m.so[0ms by raw bytes over 6,672,321 input triples — the full cross product of ~40 boundary values, 4M random full-bit-pattern floats, a dense realistic HSL sweep over [38;5;10mh ∈ [-400, 800][0m, and every one of 10 NaN bit patterns (quiet/signaling, both signs, varied payloads) in every slot and combination. Zero mismatches.[0m[0m
+[0m[0m
+One thing worth flagging, since it changed the implementation: a straightforward expression-for-expression translation was already bit-exact for all 7.9M non-NaN inputs, but differed on 7,521 NaN cases. The cause was codegen, not logic — when both operands of an SSE op are NaN, the result is the [3mdestination[23m operand's NaN, and LLVM rewrote [38;5;10ml - 0.5*c[0m into [38;5;10m(-0.5)*c + l[0m, flipping which NaN's sign bit survived. I replaced the bare operators with [38;5;10madd[0m/[38;5;10msub[0m/[38;5;10mmul[0m/[38;5;10mdiv[0m helpers whose first argument is the destination operand, with roles read off the compiled C. For inputs where at most one operand is NaN these are plain IEEE arithmetic, so nothing else is affected. Note this pins NaN sign/payload behavior to GCC's codegen for this machine; that aspect is inherently compiler-dependent, whereas the non-NaN equivalence is not.[0m[0m
 [38;5;8m
- ▸ Credits: 3.19 • Time: 1m 28s
+ ▸ Credits: 10.07 • Time: 5m 10s
 
 [0m[1G[0m[0m[?25h

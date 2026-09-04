@@ -5,41 +5,133 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 
 
 
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -200; echo "---"; du -sh c_src translation 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "--- c_src ---" && ls -la c_src/ && echo "--- translation ---" && ls -la translation/ 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory structure
 
-./c_src/CMakeLists.txt
-./c_src/include/driver.h
-./c_src/src/driver.c
-./.claude/settings.json
----
-12K	c_src
-0	translation
-[38;5;244m - Completed in 0.6s[0m
+/local/home/scheschb/.harvest/work/harvest-work-SygCQk
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 10:02 .
+drwxr-xr-x. 635 scheschb amazon 81920 Sep  1 10:02 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 10:02 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 10:02 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 10:02 translation
+--- c_src ---
+total 4
+drwxr-xr-x. 4 scheschb amazon   54 Sep  1 10:02 .
+drwxr-xr-x. 5 scheschb amazon   69 Sep  1 10:02 ..
+-rw-r--r--. 1 scheschb amazon 1406 Sep  1 10:02 CMakeLists.txt
+drwxr-xr-x. 2 scheschb amazon   22 Sep  1 10:02 include
+drwxr-xr-x. 2 scheschb amazon   22 Sep  1 10:02 src
+--- translation ---
+total 0
+drwxr-xr-x. 2 scheschb amazon  6 Sep  1 10:02 .
+drwxr-xr-x. 5 scheschb amazon 69 Sep  1 10:02 ..
+[38;5;244m - Completed in 0.14s[0m
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/CMakeLists.txt && echo "=== include ===" && ls -la c_src/include/ && echo "=== src ===" && ls -la c_src/src/ && echo "=== wc ===" && find c_src -type f | xargs wc -l | sort -n[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read CMakeLists and list all source files
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/include/driver.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/src/driver.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/CMakeLists.txt
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1221 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/include/driver.h
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_library(driver SHARED
+    src/driver.c)
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1447 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/src/driver.c
+target_include_directories(driver PUBLIC include)
+target_include_directories(driver PRIVATE src)
+
+install(TARGETS driver
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+=== include ===
+total 4
+drwxr-xr-x. 2 scheschb amazon   22 Sep  1 10:02 .
+drwxr-xr-x. 4 scheschb amazon   54 Sep  1 10:02 ..
+-rw-r--r--. 1 scheschb amazon 1221 Sep  1 10:02 driver.h
+=== src ===
+total 4
+drwxr-xr-x. 2 scheschb amazon   22 Sep  1 10:02 .
+drwxr-xr-x. 4 scheschb amazon   54 Sep  1 10:02 ..
+-rw-r--r--. 1 scheschb amazon 1448 Sep  1 10:02 driver.c
+=== wc ===
+  28 c_src/include/driver.h
+  35 c_src/CMakeLists.txt
+  40 c_src/src/driver.c
+ 103 total
+[38;5;244m - Completed in 0.16s[0m
+
+[?25l[0m[38;5;141m> [0mSmall library — just two files.[0m[0m
+[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read the C header and source
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SygCQk/c_src/include/driver.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SygCQk/c_src/src/driver.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1221 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-SygCQk/c_src/include/driver.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1447 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-SygCQk/c_src/src/driver.c
 
  ⋮ 
 
-[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo --version; rustc --version[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild && mkdir cbuild && cd cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-SygCQk/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && echo BUILD_OK && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C library with cmake
 
-cargo 1.97.1 (c980f4866 2026-06-30)
-rustc 1.97.1 (8bab26f4f 2026-07-14)
+BUILD_OK
+-rwxr-xr-x. 1 scheschb amazon 15880 Sep  1 10:03 libdriver.so
+[38;5;244m - Completed in 0.408s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && echo "=== nm -D ===" && nm -D libdriver.so && echo "=== defined global (T/D/B/R) ===" && nm -D --defined-only libdriver.so | awk '$2 ~ /^[TDBRW]$/ {print $3}' | sort[0m[38;5;244m (using tool: shell)[0m
+Purpose: Enumerate exported symbols of the C shared library
+
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001160 T driver
+0000000000001130 T foo
+                 U printf@GLIBC_2.2.5
+                 U strchr@GLIBC_2.2.5
+=== defined global (T/D/B/R) ===
+driver
+foo
 [38;5;244m - Completed in 0.31s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SygCQk/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the cdylib crate
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
@@ -48,149 +140,496 @@ rustc 1.97.1 (8bab26f4f 2026-07-14)
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
 [0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SygCQk/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SygCQk/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust cdylib
 
-[49m[38;5;10m+     1[0m:[38;5;10m[49m // Rust translation of c_src/src/driver.c
-[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // Original C (MIT Lincoln Laboratory, 2025) is a small shared library exposing
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m // `driver()` (declared in include/driver.h) and, as a side effect of having
-[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m // external linkage, `foo()`.
-[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m // Both symbols are reproduced here with their original linker names. The header
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m // contains no namespace/renaming macros, so the source-level names are the
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m // final linker symbols.
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
-[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m use std::ptr;
-[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m unsafe extern "C" {
-[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     // Used so that formatting and stdout buffering behave exactly like the C
-[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     // library's, byte for byte.
-[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
-[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m /// Equivalent of C `strchr`: returns a pointer to the first occurrence of `c`
-[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m /// in the NUL-terminated string `s`, or NULL if not found.
-[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m /// Note that, exactly as in C, a `c` of `'\0'` matches the terminator itself
-[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m /// and therefore yields a pointer to it rather than NULL.
-[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m unsafe fn strchr(s: *const c_char, c: c_char) -> *const c_char {
-[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     let mut p = s;
-[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     loop {
-[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         let b = unsafe { *p };
-[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         if b == c {
-[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m             return p;
-[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         if b == 0 {
-[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m             return ptr::null();
-[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m         p = unsafe { p.add(1) };
-[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m /// int foo(const char *in, char c)
-[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m /// Counts the occurrences of `c` in `in`.
-[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m pub unsafe extern "C" fn foo(in_: *const c_char, c: c_char) -> c_int {
-[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     let mut res: c_int = 0;
-[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     let mut s: *const c_char = in_;
-[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     loop {
-[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         s = unsafe { strchr(s, c) };
-[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         if s.is_null() {
-[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m             break;
-[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         res = res.wrapping_add(1);
-[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         s = unsafe { s.add(1) };
-[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     res
-[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m /// void driver(const char *in)
-[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(in_: *const c_char) {
-[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     unsafe {
-[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         printf(c"A: %d\n".as_ptr(), foo(in_, b'A' as c_char));
-[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         printf(c"x: %d\n".as_ptr(), foo(in_, b'x' as c_char));
-[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m }
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of the MIT Lincoln Laboratory `driver` C library.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original copyright notice from c_src (reproduced for attribution):
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m // The complete public ABI of the C shared library, as reported by
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m // `nm -D libdriver.so` (defined, global symbols), is:
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //     T driver
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m //     T foo
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m // `foo` is not declared in include/driver.h, but it has external linkage in
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m // src/driver.c and is therefore part of the exported ABI; it is reproduced here.
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m use core::ffi::{c_char, c_int};
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     /// The C library formats its output with `printf` from libc. We reuse it
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     /// verbatim so that the produced bytes *and* the stdio stream buffering
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     /// behaviour are identical to the original library.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     #[link_name = "printf"]
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// Faithful reimplementation of C `strchr`.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// Semantics preserved from the C standard / glibc:
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// * the comparison is performed on `char`-sized values,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// * the terminating NUL is part of the searched string, so `strchr(s, 0)`
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m ///   returns a pointer to that terminator rather than NULL,
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// * a NULL / invalid `s` is dereferenced, exactly as the C code would.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// # Safety
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// `s` must point to a NUL-terminated string (or, for bug-compatibility with
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// the original, to whatever the caller passed).
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m unsafe fn strchr(mut s: *const c_char, c: c_char) -> *const c_char {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         let v = unsafe { *s };
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         if v == c {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             return s;
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         if v == 0 {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m             return core::ptr::null();
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         s = unsafe { s.add(1) };
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// int foo(const char *in, char c) {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m ///     int res = 0;
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m ///     for (const char *s = in; s = strchr(s, c); s++) {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ///         res++;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m ///     return res;
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m /// Note: the original increments `s` past every match, including the case where
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// `c == '\0'` and the match is the terminator (walking off the end of the
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m /// buffer). That behaviour is intentionally reproduced rather than "fixed".
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m pub unsafe extern "C" fn foo(in_: *const c_char, c: c_char) -> c_int {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     let mut res: c_int = 0;
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     let mut s: *const c_char = in_;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         s = unsafe { strchr(s, c) };
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         if s.is_null() {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         res = res.wrapping_add(1);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         s = unsafe { s.add(1) };
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     res
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// void driver(const char *in) {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m ///     printf("A: %d\n", foo(in, 'A'));
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m ///     printf("x: %d\n", foo(in, 'x'));
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(in_: *const c_char) {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         c_printf(c"A: %d\n".as_ptr(), foo(in_, b'A' as c_char));
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         c_printf(c"x: %d\n".as_ptr(), foo(in_, b'x' as c_char));
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-SygCQk/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/translation)
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-SygCQk/translation)
     Finished `release` profile [optimized] target(s) in 0.13s
 [38;5;244m - Completed in 0.150s[0m
 
-[?25l[0m[38;5;141m> [0mNow verifying the exported symbols and comparing runtime output against the original C.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mset -e
-nm -D --defined-only target/release/libdriver.so | grep -E ' (driver|foo)$'
-cd /tmp && rm -rf xcheck && mkdir xcheck && cd xcheck
-cc -shared -fPIC -I /local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/include \
-   /local/home/scheschb/.harvest/work/harvest-work-cXKp7o/c_src/src/driver.c -o libc_driver.so
-cat > main.c <<'EOF'
-#include <stdio.h>
-void driver(const char *in);
-int foo(const char *in, char c);
-int main(int argc, char **argv) {
-    const char *cases[] = {"", "A", "x", "AxAxA", "no match here", "AAAAAAAAAA",
-                           "xX Ax aA\n\tAx", "AAAxxxAAAxxx", "the quick brown fox"};
-    for (int i = 0; i < 9; i++) {
-        printf("--- case %d ---\n", i);
-        driver(cases[i]);
-        printf("foo=%d %d\n", foo(cases[i], 'A'), foo(cases[i], 'z'));
-    }
-    return 0;
-}
-EOF
-cc main.c -o run_c  -L. -lc_driver -Wl,-rpath,.
-cc main.c -o run_rs -L/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/translation/target/release -ldriver -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-cXKp7o/translation/target/release
-./run_c  > out_c.txt
-./run_rs > out_rs.txt
-cmp out_c.txt out_rs.txt && echo "BYTE-IDENTICAL"
-head -8 out_c.txt[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol lists.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-SygCQk
+nm -D --defined-only /tmp/cbuild/libdriver.so | awk '$2 ~ /^[TDBRW]$/ {print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '$2 ~ /^[TDBRW]$/ {print $3}' | sort > /tmp/rust_syms.txt
+echo "=== C symbols ==="; cat /tmp/c_syms.txt
+echo "=== Rust symbols ==="; cat /tmp/rust_syms.txt
+echo "=== MISSING FROM RUST (C - Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== EXTRA IN RUST (Rust - C) ==="; comm -13 /tmp/c_syms.txt /tmp/rust_syms.txt
+echo "=== full nm -D on rust .so ==="; nm -D translation/target/release/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust shared libraries
 
+=== C symbols ===
+driver
+foo
+=== Rust symbols ===
+driver
+foo
+=== MISSING FROM RUST (C - Rust) ===
+=== EXTRA IN RUST (Rust - C) ===
+=== full nm -D on rust .so ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
 0000000000011730 T driver
 00000000000117c0 T foo
-BYTE-IDENTICAL
---- case 0 ---
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U printf@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+[38;5;244m - Completed in 0.54s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now a differential test to confirm byte-identical output.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness comparing C and Rust libraries
+
+[49m[38;5;9m-   1    [0m:[38;5;9m[49m // Differential test harness: dlopen the C .so and the Rust .so, call
+[0m[49m[38;5;9m-   2    [0m:[38;5;9m[49m // smallestValue on identical inputs, and require byte-identical results.
+[0m[49m[38;5;10m+       1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+       2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[39m    3,  3[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m    4,  4[0m:[39m[49m #include <stdlib.h>
+[0m[49m[39m    5,  5[0m:[39m[49m #include <string.h>
+[0m[49m[38;5;9m-   6    [0m:[38;5;9m[49m #include <dlfcn.h>
+[0m[49m[38;5;9m-   7    [0m:[38;5;9m[49m #include <limits.h>
+[0m[49m[39m    8,  6[0m:[39m[49m 
+[0m[49m[38;5;9m-   9    [0m:[38;5;9m[49m struct ListNode {
+[0m[49m[38;5;9m-  10    [0m:[38;5;9m[49m     int value;
+[0m[49m[38;5;9m-  11    [0m:[38;5;9m[49m     struct ListNode* next;
+[0m[49m[38;5;10m+       7[0m:[38;5;10m[49m typedef void (*driver_fn)(const char *);
+[0m[49m[38;5;10m+       8[0m:[38;5;10m[49m typedef int  (*foo_fn)(const char *, char);
+[0m[49m[38;5;10m+       9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      10[0m:[38;5;10m[49m static const char *inputs[] = {
+[0m[49m[38;5;10m+      11[0m:[38;5;10m[49m     "",
+[0m[49m[38;5;10m+      12[0m:[38;5;10m[49m     "A",
+[0m[49m[38;5;10m+      13[0m:[38;5;10m[49m     "x",
+[0m[49m[38;5;10m+      14[0m:[38;5;10m[49m     "Ax",
+[0m[49m[38;5;10m+      15[0m:[38;5;10m[49m     "xA",
+[0m[49m[38;5;10m+      16[0m:[38;5;10m[49m     "AAAA",
+[0m[49m[38;5;10m+      17[0m:[38;5;10m[49m     "xxxx",
+[0m[49m[38;5;10m+      18[0m:[38;5;10m[49m     "AxAxAxAx",
+[0m[49m[38;5;10m+      19[0m:[38;5;10m[49m     "no matches here",
+[0m[49m[38;5;10m+      20[0m:[38;5;10m[49m     "aAbBxXyY",
+[0m[49m[38;5;10m+      21[0m:[38;5;10m[49m     "\x01\x02\x41\x78\xff\xfe",
+[0m[49m[38;5;10m+      22[0m:[38;5;10m[49m     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+[0m[49m[38;5;10m+      23[0m:[38;5;10m[49m     "trailing A",
+[0m[49m[38;5;10m+      24[0m:[38;5;10m[49m     "A leading",
+[0m[49m[38;5;10m+      25[0m:[38;5;10m[49m     "mixed \xe2\x82\xac utf8 A x A",
+[0m[49m[38;5;10m+      26[0m:[38;5;10m[49m     " ",
+[0m[49m[38;5;10m+      27[0m:[38;5;10m[49m     "\t\n\r A x",
+[0m[49m[38;5;10m+      28[0m:[38;5;10m[49m     "xAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxAxA",
+[0m[49m[38;5;10m+      29[0m:[38;5;10m[49m     "The quick brown fox jumps over the lazy dog",
+[0m[49m[38;5;10m+      30[0m:[38;5;10m[49m     "AXAXAXaxaxax",
+[0m[49m[39m   12, 31[0m:[39m[49m };
+[0m[49m[38;5;10m+      32[0m:[38;5;10m[49m static const int n_inputs = (int)(sizeof(inputs) / sizeof(inputs[0]));
+[0m[49m[39m   13, 33[0m:[39m[49m 
+[0m[49m[38;5;9m-  14    [0m:[38;5;9m[49m typedef int (*fn_t)(struct ListNode*);
+[0m[49m[38;5;10m+      34[0m:[38;5;10m[49m /* chars to exercise foo() directly. '\0' is deliberately excluded: the C
+[0m[49m[38;5;10m+      35[0m:[38;5;10m[49m    original walks past the terminator for that value (undefined behaviour). */
+[0m[49m[38;5;10m+      36[0m:[38;5;10m[49m static const char chars[] = {
+[0m[49m[38;5;10m+      37[0m:[38;5;10m[49m     'A', 'x', 'a', 'X', 'Z', '0', ' ', '\n', '\t', '~',
+[0m[49m[38;5;10m+      38[0m:[38;5;10m[49m     (char)0x01, (char)0x7f, (char)0x80, (char)0xff, (char)0xfe, (char)-1, (char)-128,
+[0m[49m[38;5;10m+      39[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+      40[0m:[38;5;10m[49m static const int n_chars = (int)(sizeof(chars) / sizeof(chars[0]));
+[0m[49m[39m   15, 41[0m:[39m[49m 
+[0m[49m[38;5;9m-  16    [0m:[38;5;9m[49m static struct ListNode* build(const int* vals, size_t n) {
+[0m[49m[38;5;9m-  17    [0m:[38;5;9m[49m     struct ListNode* head = NULL;
+[0m[49m[38;5;9m-  18    [0m:[38;5;9m[49m     struct ListNode* tail = NULL;
+[0m[49m[38;5;9m-  19    [0m:[38;5;9m[49m     for (size_t i = 0; i < n; i++) {
+[0m[49m[38;5;9m-  20    [0m:[38;5;9m[49m         struct ListNode* nd = malloc(sizeof(*nd));
+[0m[49m[38;5;9m-  21    [0m:[38;5;9m[49m         nd->value = vals[i];
+[0m[49m[38;5;9m-  22    [0m:[38;5;9m[49m         nd->next = NULL;
+[0m[49m[38;5;9m-  23    [0m:[38;5;9m[49m         if (!head) { head = nd; tail = nd; }
+[0m[49m[38;5;9m-  24    [0m:[38;5;9m[49m         else { tail->next = nd; tail = nd; }
+[0m[49m[38;5;10m+      42[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+      43[0m:[38;5;10m[49m     if (argc != 3) {
+[0m[49m[38;5;10m+      44[0m:[38;5;10m[49m         fprintf(stderr, "usage: %s <lib.so> <foo|driver>\n", argv[0]);
+[0m[49m[38;5;10m+      45[0m:[38;5;10m[49m         return 2;
+[0m[49m[39m   25, 46[0m:[39m[49m     }
+[0m[49m[38;5;9m-  26    [0m:[38;5;9m[49m     return head;
+[0m[49m[38;5;9m-  27    [0m:[38;5;9m[49m }
+[0m[49m[38;5;10m+      47[0m:[38;5;10m[49m     void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+      48[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[39m   28, 49[0m:[39m[49m 
+[0m[49m[38;5;9m-  29    [0m:[38;5;9m[49m static void freelist(struct ListNode* h) {
+[0m[49m[38;5;9m-  30    [0m:[38;5;9m[49m     while (h) { struct ListNode* n = h->next; free(h); h = n; }
+[0m[49m[38;5;9m-  31    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  32    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  33    [0m:[38;5;9m[49m static unsigned long fails = 0, total = 0;
+[0m[49m[38;5;9m-  34    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  35    [0m:[38;5;9m[49m static void check(fn_t c, fn_t r, const int* vals, size_t n, const char* label) {
+[0m[49m[38;5;9m-  36    [0m:[38;5;9m[49m     struct ListNode* l1 = build(vals, n);
+[0m[49m[38;5;9m-  37    [0m:[38;5;9m[49m     struct ListNode* l2 = build(vals, n);
+[0m[49m[38;5;9m-  38    [0m:[38;5;9m[49m     int a = c(l1);
+[0m[49m[38;5;9m-  39    [0m:[38;5;9m[49m     int b = r(l2);
+[0m[49m[38;5;9m-  40    [0m:[38;5;9m[49m     total++;
+[0m[49m[38;5;9m-  41    [0m:[38;5;9m[49m     if (a != b) {
+[0m[49m[38;5;9m-  42    [0m:[38;5;9m[49m         fails++;
+[0m[49m[38;5;9m-  43    [0m:[38;5;9m[49m         if (fails <= 20) {
+[0m[49m[38;5;9m-  44    [0m:[38;5;9m[49m             printf("MISMATCH [%s] n=%zu: C=%d Rust=%d\n", label, n, a, b);
+[0m[49m[38;5;10m+      50[0m:[38;5;10m[49m     if (strcmp(argv[2], "driver") == 0) {
+[0m[49m[38;5;10m+      51[0m:[38;5;10m[49m         driver_fn driver = (driver_fn)dlsym(h, "driver");
+[0m[49m[38;5;10m+      52[0m:[38;5;10m[49m         if (!driver) { fprintf(stderr, "dlsym driver: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+      53[0m:[38;5;10m[49m         for (int i = 0; i < n_inputs; i++) {
+[0m[49m[38;5;10m+      54[0m:[38;5;10m[49m             printf("--- input[%d] len=%zu ---\n", i, strlen(inputs[i]));
+[0m[49m[38;5;10m+      55[0m:[38;5;10m[49m             driver(inputs[i]);
+[0m[49m[38;5;10m+      56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m         foo_fn foo = (foo_fn)dlsym(h, "foo");
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m         if (!foo) { fprintf(stderr, "dlsym foo: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m         for (int i = 0; i < n_inputs; i++) {
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m             for (int j = 0; j < n_chars; j++) {
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m                 printf("foo(input[%d], %d) = %d\n",
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m                        i, (int)chars[j], foo(inputs[i], chars[j]));
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m             }
+[0m[49m[39m   45, 65[0m:[39m[49m         }
+[0m[49m[38;5;9m-  46    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m-  47    [0m:[38;5;9m[49m     freelist(l1);
+[0m[49m[38;5;9m-  48    [0m:[38;5;9m[49m     freelist(l2);
+[0m[49m[38;5;9m-  49    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  50    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  51    [0m:[38;5;9m[49m // xorshift for deterministic pseudo-random input
+[0m[49m[38;5;9m-  52    [0m:[38;5;9m[49m static unsigned long long st = 0x123456789abcdefULL;
+[0m[49m[38;5;9m-  53    [0m:[38;5;9m[49m static unsigned int nextr(void) {
+[0m[49m[38;5;9m-  54    [0m:[38;5;9m[49m     st ^= st << 13; st ^= st >> 7; st ^= st << 17;
+[0m[49m[38;5;9m-  55    [0m:[38;5;9m[49m     return (unsigned int)(st >> 32);
+[0m[49m[38;5;9m-  56    [0m:[38;5;9m[49m }
+[0m[49m[38;5;9m-  57    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  58    [0m:[38;5;9m[49m int main(int argc, char** argv) {
+[0m[49m[38;5;9m-  59    [0m:[38;5;9m[49m     if (argc < 3) { fprintf(stderr, "usage: %s <c.so> <rust.so>\n", argv[0]); return 2; }
+[0m[49m[38;5;9m-  60    [0m:[38;5;9m[49m     void* hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;9m-  61    [0m:[38;5;9m[49m     if (!hc) { fprintf(stderr, "dlopen C: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m-  62    [0m:[38;5;9m[49m     void* hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;9m-  63    [0m:[38;5;9m[49m     if (!hr) { fprintf(stderr, "dlopen Rust: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m-  64    [0m:[38;5;9m[49m     fn_t c = (fn_t)dlsym(hc, "smallestValue");
+[0m[49m[38;5;9m-  65    [0m:[38;5;9m[49m     fn_t r = (fn_t)dlsym(hr, "smallestValue");
+[0m[49m[38;5;9m-  66    [0m:[38;5;9m[49m     if (!c) { fprintf(stderr, "dlsym C smallestValue: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m-  67    [0m:[38;5;9m[49m     if (!r) { fprintf(stderr, "dlsym Rust smallestValue: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;9m-  68    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  69    [0m:[38;5;9m[49m     // NULL head
+[0m[49m[38;5;9m-  70    [0m:[38;5;9m[49m     total++;
+[0m[49m[38;5;9m-  71    [0m:[38;5;9m[49m     { int a = c(NULL), b = r(NULL);
+[0m[49m[38;5;9m-  72    [0m:[38;5;9m[49m       if (a != b) { fails++; printf("MISMATCH [NULL]: C=%d Rust=%d\n", a, b); }
+[0m[49m[38;5;9m-  73    [0m:[38;5;9m[49m       else printf("NULL head: both return %d\n", a); }
+[0m[49m[38;5;9m-  74    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m-  75    [0m:[38;5;9m[49m     // Hand-picked edge cases
+[0m[49m[38;5;9m-  76    [0m:[38;5;9m[49m     int e1[] = {0};
+[0m[49m[38;5;9m-  77    [0m:[38;5;9m[49m     int e2[] = {-1};
+[0m[49m[38;5;9m-  78    [0m:[38;5;9m[49m     int e3[] = {INT_MIN};
+[0m[49m[38;5;9m-  79    [0m:[38;5;9m[49m     int e4[] = {INT_MAX};
+[0m[49m[38;5;9m-  80    [0m:[38;5;9m[49m     int e5[] = {5, 5, 5, 5};
+[0m[49m[38;5;9m-  81    [0m:[38;5;9m[49m     int e6[] = {1, 2, 3, 4, 5};
+[0m[49m[38;5;9m-  82    [0m:[38;5;9m[49m     int e7[] = {5, 4, 3, 2, 1};
+[0m[49m[38;5;9m-  83    [0m:[38;5;9m[49m     int e8[] = {INT_MAX, INT_MIN, 0};
+[0m[49m[38;5;9m-  84    [0m:[38;5;9m[49m     int e9[] = {-1, -1, 0, 7};          // NULL-vs-minus-one ambiguity
+[0m[49m[38;5;9m-  85    [0m:[38;5;9m[49m     int e10[] = {3, -7, 3, -7, 100};    // duplicate minima (strict < keeps first)
+[0m[49m[38;5;9m-  86    [0m:[38;5;9m[49m     int e11[] = {INT_MIN, INT_MIN};
+[0m[49m[38;5;9m-  87    [0m:[38;5;9m[49m     int e12[] = {0, INT_MIN, INT_MAX, -1, 1};
+[0m[49m[38;5;9m-  88    [0m:[38;5;9m[49m     check(c, r, e1, 1, "single 0");
+[0m[49m[38;5;9m-  89    [0m:[38;5;9m[49m     check(c, r, e2, 1, "single -1");
+[0m[49m[38;5;9m-  90    [0m:[38;5;9m[49m     check(c, r, e3, 1, "single INT_MIN");
+[0m[49m[38;5;9m-  91    [0m:[38;5;9m[49m     check(c, r, e4, 1, "single INT_MAX");
+[0m[49m[38;5;9m-  92    [0m:[38;5;9m[49m     check(c, r, e5, 4, "all equal");
+[0m[49m[38;5;9m-  93    [0m:[38;5;9m[49m     check(c, r, e6, 5, "ascending");
+[0m[49m[38;5;9m-  94    [0m:[38;5;9m[49m     check(c, r, e7, 5, "descending");
+[0m[49m[38;5;9m-  95    [0m:[38;5;9m[49m     check(c, r, e8, 3, "extremes");
+[0m[49m[38;5;9m-  96    [0m:[38;5;9m[49m     check(c, r, e9, 4, "leading -1");
+[0m[49m[38;5;9m-  97    [0m:[38;5;9m[49m     check(c, r, e10, 5, "dup minima");
+[0m[49m[38;5;9m-  98    [0m:[38;5;9m[49m     check(c, r, e11, 2, "dup INT_MIN");
+[0m[49m[38;5;9m-  99    [0m:[38;5;9m[49m     check(c, r, e12, 5, "mixed extremes");
+[0m[49m[38;5;9m- 100    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 101    [0m:[38;5;9m[49m     // Randomized fuzzing over lengths and value ranges
+[0m[49m[38;5;9m- 102    [0m:[38;5;9m[49m     int buf[512];
+[0m[49m[38;5;9m- 103    [0m:[38;5;9m[49m     for (int iter = 0; iter < 200000; iter++) {
+[0m[49m[38;5;9m- 104    [0m:[38;5;9m[49m         size_t n = (size_t)(nextr() % 64) + 1;
+[0m[49m[38;5;9m- 105    [0m:[38;5;9m[49m         int mode = nextr() % 4;
+[0m[49m[38;5;9m- 106    [0m:[38;5;9m[49m         for (size_t i = 0; i < n; i++) {
+[0m[49m[38;5;9m- 107    [0m:[38;5;9m[49m             unsigned int v = nextr();
+[0m[49m[38;5;9m- 108    [0m:[38;5;9m[49m             switch (mode) {
+[0m[49m[38;5;9m- 109    [0m:[38;5;9m[49m                 case 0: buf[i] = (int)v; break;                    // full int range
+[0m[49m[38;5;9m- 110    [0m:[38;5;9m[49m                 case 1: buf[i] = (int)(v % 21) - 10; break;         // tiny range, many ties
+[0m[49m[38;5;9m- 111    [0m:[38;5;9m[49m                 case 2: buf[i] = -(int)(v % 5); break;              // negatives incl. -1
+[0m[49m[38;5;9m- 112    [0m:[38;5;9m[49m                 default: buf[i] = (v % 2) ? INT_MIN : INT_MAX; break; // extremes only
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m         /* stress: pseudo-random strings, deterministic seed */
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m         unsigned int seed = 12345u;
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m         char buf[257];
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m         for (int t = 0; t < 500; t++) {
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m             int len = (int)(seed % 256u);
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m             for (int k = 0; k < len; k++) {
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m                 seed = seed * 1103515245u + 12345u;
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m                 char v = (char)((seed >> 16) & 0xffu);
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m                 buf[k] = v ? v : 'Q';   /* avoid embedded NUL */
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+      76[0m:[38;5;10m[49m             buf[len] = '\0';
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m             seed = seed * 1103515245u + 12345u;
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m             for (int j = 0; j < n_chars; j++) {
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m                 printf("rand[%d] foo(.., %d) = %d\n", t, (int)chars[j], foo(buf, chars[j]));
+[0m[49m[39m  113, 80[0m:[39m[49m             }
+[0m[49m[39m  114, 81[0m:[39m[49m         }
+[0m[49m[38;5;9m- 115    [0m:[38;5;9m[49m         check(c, r, buf, n, "fuzz");
+[0m[49m[39m  116, 82[0m:[39m[49m     }
+[0m[49m[38;5;9m- 117    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 118    [0m:[38;5;9m[49m     // Long list
+[0m[49m[38;5;9m- 119    [0m:[38;5;9m[49m     for (int i = 0; i < 500; i++) buf[i % 512] = 0;
+[0m[49m[38;5;9m- 120    [0m:[38;5;9m[49m     int* big = malloc(sizeof(int) * 100000);
+[0m[49m[38;5;9m- 121    [0m:[38;5;9m[49m     for (int i = 0; i < 100000; i++) big[i] = (int)(nextr());
+[0m[49m[38;5;9m- 122    [0m:[38;5;9m[49m     check(c, r, big, 100000, "long 100k");
+[0m[49m[38;5;9m- 123    [0m:[38;5;9m[49m     free(big);
+[0m[49m[38;5;9m- 124    [0m:[38;5;9m[49m 
+[0m[49m[38;5;9m- 125    [0m:[38;5;9m[49m     printf("\n%lu cases, %lu mismatches\n", total, fails);
+[0m[49m[38;5;9m- 126    [0m:[38;5;9m[49m     printf(fails == 0 ? "RESULT: IDENTICAL\n" : "RESULT: DIFFERENT\n");
+[0m[49m[38;5;9m- 127    [0m:[38;5;9m[49m     return fails != 0;
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m     return 0;
+[0m[49m[39m  128, 84[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o difftest difftest.c -ldl && \
+C_SO=/tmp/cbuild/libdriver.so
+R_SO=/local/home/scheschb/.harvest/work/harvest-work-SygCQk/translation/target/release/libdriver.so
+for mode in driver foo; do
+  ./difftest $C_SO $mode > out_c_$mode.txt 2>&1; ec=$?
+  ./difftest $R_SO $mode > out_r_$mode.txt 2>&1; er=$?
+  echo "mode=$mode exit_c=$ec exit_r=$er lines=$(wc -l < out_c_$mode.txt)"
+  if cmp -s out_c_$mode.txt out_r_$mode.txt; then echo "  IDENTICAL (byte-for-byte)"; else echo "  *** DIFFERS ***"; diff out_c_$mode.txt out_r_$mode.txt | head -20; fi
+done
+echo "=== md5 ==="; md5sum out_c_*.txt out_r_*.txt
+echo "=== sample driver output ==="; head -12 out_c_driver.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential tests comparing C and Rust outputs
+
+mode=driver exit_c=0 exit_r=0 lines=60
+  IDENTICAL (byte-for-byte)
+mode=foo exit_c=0 exit_r=0 lines=8840
+  IDENTICAL (byte-for-byte)
+=== md5 ===
+a52181add322fd78b49f6e4dde2b7c32  out_c_driver.txt
+b466b39f535bcde3a38fdc1701765102  out_c_foo.txt
+a52181add322fd78b49f6e4dde2b7c32  out_r_driver.txt
+b466b39f535bcde3a38fdc1701765102  out_r_foo.txt
+=== sample driver output ===
+--- input[0] len=0 ---
 A: 0
 x: 0
-foo=0 0
---- case 1 ---
+--- input[1] len=1 ---
 A: 1
 x: 0
-foo=1 0
-[38;5;244m - Completed in 0.126s[0m
+--- input[2] len=1 ---
+A: 0
+x: 1
+--- input[3] len=2 ---
+A: 1
+x: 1
+[38;5;244m - Completed in 0.84s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/xcheck[0m[38;5;244m (using tool: shell)[0m
-Purpose: Remove temporary cross-check directory
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-SygCQk
+echo "=== c_src unmodified? ==="; find c_src -type f -newermt "$(date -d '@0' 2>/dev/null || echo 1970-01-01)" -printf "%T@ %p\n" | sort
+echo "=== translation tree ==="; find translation -type f -not -path '*/target/*' | sort
+echo "=== crate-type check ==="; grep -A2 '\[lib\]' translation/Cargo.toml
+echo "=== so file ==="; ls -la translation/target/release/libdriver.so
+echo "=== cleanup ==="; rm -f /tmp/difftest /tmp/difftest.c /tmp/out_*.txt /tmp/c_syms.txt /tmp/rust_syms.txt; rm -rf /tmp/cbuild; echo done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final verification of artifacts and cleanup of temp files
 
-[38;5;244m - Completed in 0.4s[0m
+=== c_src unmodified? ===
+1788256963.4024465480 c_src/CMakeLists.txt
+1788256963.4024465480 c_src/include/driver.h
+1788256963.4024465480 c_src/src/driver.c
+=== translation tree ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/lib.rs
+=== crate-type check ===
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+=== so file ===
+-rwxr-xr-x. 2 scheschb amazon 402176 Sep  1 10:04 translation/target/release/libdriver.so
+=== cleanup ===
+done
+[38;5;244m - Completed in 0.24s[0m
 
-[?25l[0m[38;5;141m> [0mDone. The C source is a single small shared library: [38;5;10mfoo(in, c)[0m counts occurrences of a character via a [38;5;10mstrchr[0m walk, and [38;5;10mdriver(in)[0m prints the counts for [38;5;10m'A'[0m and [38;5;10m'x'[0m.[0m[0m
+[?25l[0m[38;5;141m> [0mDone. The library turned out to be small — a single translation unit, no namespace macros.[0m[0m
 [0m[0m
-Translation at [38;5;10mtranslation/[0m:[0m[0m
-- [38;5;10mCargo.toml[0m — [38;5;10mcrate-type = ["cdylib"][0m, crate name [38;5;10mdriver[0m.[0m[0m
-- [38;5;10msrc/lib.rs[0m — [38;5;10mdriver[0m and [38;5;10mfoo[0m exported with [38;5;10m#[unsafe(no_mangle)][0m + [38;5;10mextern "C"[0m, original signatures ([38;5;10m*const c_char[0m, [38;5;10mc_char[0m, [38;5;10mc_int[0m). [38;5;10mdriver.h[0m has no namespace macros, so the source names are the final linker symbols; [38;5;10mnm[0m confirms [38;5;10mdriver[0m and [38;5;10mfoo[0m are exported. [38;5;10mfoo[0m is public in the C too (external linkage), so it's exposed as well.[0m[0m
+[1mFull C surface (from [38;5;10mnm -D[0m on the C [38;5;10m.so[0m, defined globals):[22m [38;5;10mdriver[0m, [38;5;10mfoo[0m. Two symbols, both now exported by the Rust cdylib. [38;5;10mcomm[0m diff in both directions is empty. Note [38;5;10mfoo[0m is [3mnot[23m declared in [38;5;10minclude/driver.h[0m but has external linkage in [38;5;10msrc/driver.c[0m, so it is part of the exported ABI and is reproduced.[0m[0m
 [0m[0m
-Two fidelity details worth noting:[0m[0m
-- I call libc [38;5;10mprintf[0m directly rather than Rust's [38;5;10mprintln![0m, so formatting and stdout buffering interleave with C stdio identically.[0m[0m
-- The [38;5;10mstrchr[0m helper reproduces C semantics exactly, including that a [38;5;10m'\0'[0m search character matches the terminator and makes the original loop walk past the end of the string. That latent bug is preserved, not fixed (it is unreachable from [38;5;10mdriver[0m, which only passes [38;5;10m'A'[0m/[38;5;10m'x'[0m).[0m[0m
+I confirmed [38;5;10mc_src/CMakeLists.txt[0m builds only [38;5;10msrc/driver.c[0m, and [38;5;10mfind c_src -type f[0m returns exactly three files (28 + 40 + 35 lines) — there is no larger hidden surface.[0m[0m
 [0m[0m
-Verified by building both the C library and the Rust cdylib, linking the same test driver against each over 9 inputs (empty string, no-match, repeats, whitespace/mixed case) plus direct [38;5;10mfoo[0m calls; outputs compared byte-for-byte with [38;5;10mcmp[0m and matched.[0m[0m
+Translation notes:[0m[0m
+- [38;5;10mfoo[0m reimplements [38;5;10mstrchr[0m inline rather than linking libc's, preserving the exact semantics that matter: [38;5;10mchar[0m-width comparison, and [38;5;10mstrchr(s, '\0')[0m returning a pointer to the terminator. The original then does [38;5;10ms++[0m past that terminator, walking off the buffer — that bug is reproduced, not fixed, so I excluded [38;5;10mc == '\0'[0m from the differential test since both sides are equally undefined there.[0m[0m
+- [38;5;10mdriver[0m calls libc [38;5;10mprintf[0m via an [38;5;10mextern "C"[0m variadic declaration instead of [38;5;10mprintln![0m. This matters for byte-identical output: Rust's [38;5;10mstd::io::Stdout[0m has its own buffer, so mixing it with a C caller's stdio stream could reorder writes.[0m[0m
+[0m[0m
+Verification I ran myself (not delegated): built the C lib with cmake, built the Rust crate with [38;5;10mcargo build --release[0m (clean, no warnings), diffed both symbol lists, then ran a [38;5;10mdlopen[0m-based differential harness against both [38;5;10m.so[0m files — 20 hand-picked inputs through [38;5;10mdriver[0m (60 lines) and 20 inputs × 17 char values plus 500 seeded pseudo-random strings through [38;5;10mfoo[0m (8840 lines). Both modes matched byte-for-byte with identical md5s. [38;5;10mc_src/[0m mtimes are unchanged; temp build and test artifacts cleaned up.[0m[0m
 [38;5;8m
- ▸ Credits: 2.34 • Time: 1m 0s
+ ▸ Credits: 4.51 • Time: 2m 17s
 
 [0m[1G[0m[0m[?25h

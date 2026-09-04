@@ -5,36 +5,57 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 
 
 
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by reading the C source.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && ls -la[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src translation -type f | head -100; echo "---"; wc -l c_src/* 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: List files in c_src and translation
 
-./c_src/CMakeLists.txt
-./c_src/src/main.c
-./.claude/settings.json
+c_src/CMakeLists.txt
+c_src/src/main.c
 ---
-total 48
-drwxr-xr-x.   5 scheschb amazon    69 Aug 30 10:46 .
-drwxr-xr-x. 502 scheschb amazon 32768 Aug 30 10:46 ..
-drwxr-xr-x.   2 scheschb amazon    35 Aug 30 10:46 .claude
-drwxr-xr-x.   3 scheschb amazon    51 Aug 30 10:46 c_src
-drwxr-xr-x.   2 scheschb amazon    10 Aug 30 10:46 translation
-[38;5;244m - Completed in 0.6s[0m
+     25 c_src/CMakeLists.txt
+      0 c_src/src
+     25 total
+[38;5;244m - Completed in 0.126s[0m
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/src/main.c; echo "---"; cat c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check main.c size and CMakeLists
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/c_src/src/main.c[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/c_src/CMakeLists.txt[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1680 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-G4ueF2/c_src/src/main.c
+57 c_src/src/main.c
+---
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1200 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-G4ueF2/c_src/CMakeLists.txt
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_executable(driver src/main.c)[38;5;244m - Completed in 0.120s[0m
 
- ⋮ 
-
-[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-15yeqO/c_src/src/main.c[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1680 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-15yeqO/c_src/src/main.c
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mSimple program, but the control flow with [38;5;10mgoto[0m into/around the loop body needs a state machine to reproduce exactly.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[38;5;141m> [0mSmall program (57 lines) with [38;5;10mgoto[0m-based control flow inside a loop. No need for sub-agents. Let me write the Rust translation.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-15yeqO/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for the driver binary
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
@@ -48,631 +69,364 @@ drwxr-xr-x.   2 scheschb amazon    10 Aug 30 10:46 translation
 [0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/translation/Cargo.toml[0m
-[38;5;244m - Completed in 0.0s[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-15yeqO/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.21s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-15yeqO/translation/src/main.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate main.c to Rust preserving goto control flow and scanf semantics
 
-[49m[38;5;10m+      1[0m:[38;5;10m[49m // Rust translation of c_src/src/main.c
-[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // Original C:
-[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //   Copyright 2025 MIT Lincoln Laboratory (MIT-style license, see c_src/src/main.c)
-[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // Behavior is reproduced exactly, including the original control flow that uses
-[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // `goto` to jump backwards into the middle of a `while` body (which bypasses the
-[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // loop condition test) and forwards past a label.
-[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::io::{self, Read, Write};
-[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Minimal emulation of the parts of C's `scanf` that this program uses.
-[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// Reads bytes from stdin one at a time so that only the characters actually
-[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m /// consumed by a conversion are taken from the stream, matching C's behavior of
-[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m /// skipping whitespace (including newlines) before a `%d` conversion.
-[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m struct Scanner {
-[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     input: io::Stdin,
-[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     /// One-byte pushback slot, standing in for `ungetc`.
-[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     peeked: Option<u8>,
-[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     eof: bool,
-[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m }
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the “Software”),
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 [0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m impl Scanner {
-[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     fn new() -> Self {
-[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         Scanner {
-[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             input: io::stdin(),
-[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             peeked: None,
-[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m             eof: false,
-[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     fn next_byte(&mut self) -> Option<u8> {
-[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         if let Some(b) = self.peeked.take() {
-[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             return Some(b);
-[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         if self.eof {
-[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             return None;
-[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         let mut buf = [0u8; 1];
-[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         loop {
-[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             match self.input.read(&mut buf) {
-[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m                 Ok(0) => {
-[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m                     self.eof = true;
-[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m                     return None;
-[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m                 Ok(_) => return Some(buf[0]),
-[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m                 Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 Err(_) => {
-[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m                     self.eof = true;
-[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m                     return None;
-[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     fn unread(&mut self, b: u8) {
-[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         self.peeked = Some(b);
-[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     /// C `isspace` for the "C" locale.
-[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     fn is_space(b: u8) -> bool {
-[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
-[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     /// Performs a single `%d` conversion.
-[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     ///
-[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     /// Returns `Some(value)` on success, `None` on input failure or a matching
-[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     /// failure (in which case the caller must not attempt further conversions,
-[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     /// just as `scanf` stops at the first failing directive).
-[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     fn scan_i32(&mut self) -> Option<i32> {
-[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         // Skip leading whitespace.
-[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         let mut b = loop {
-[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m             match self.next_byte() {
-[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m                 Some(c) if Self::is_space(c) => continue,
-[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m                 Some(c) => break c,
-[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m                 None => return None,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m use std::io::{Read, Write};
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m /// Minimal stdin byte reader with single-byte pushback, mirroring the
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m /// getc/ungetc behavior that `scanf` relies on.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m struct Scanner {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     input: std::io::Stdin,
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     pushback: Option<u8>,
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     eof: bool,
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m impl Scanner {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     fn new() -> Self {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         Scanner {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             input: std::io::stdin(),
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             pushback: None,
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             eof: false,
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     fn getc(&mut self) -> Option<u8> {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         if let Some(b) = self.pushback.take() {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             return Some(b);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         if self.eof {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         let mut buf = [0u8; 1];
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             match self.input.read(&mut buf) {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m                 Ok(0) => {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m                     self.eof = true;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m                     return None;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                 Ok(_) => return Some(buf[0]),
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m                 Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m                 Err(_) => {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m                     self.eof = true;
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m                     return None;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     fn ungetc(&mut self, b: u8) {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         self.pushback = Some(b);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     /// A literal whitespace directive in a scanf format string: consume any
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     /// (possibly zero) run of whitespace characters.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     fn skip_whitespace(&mut self) {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         while let Some(b) = self.getc() {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m             if !is_space(b) {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m                 self.ungetc(b);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m                 break;
 [0m[49m[38;5;10m+     78[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         };
-[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         // Optional sign.
-[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         let mut negative = false;
-[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         if b == b'+' || b == b'-' {
-[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             negative = b == b'-';
-[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             match self.next_byte() {
-[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m                 Some(c) => b = c,
-[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                 None => return None,
-[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         if !b.is_ascii_digit() {
-[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             // Matching failure: push the offending character back.
-[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             self.unread(b);
-[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             return None;
-[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         // Accumulate digits. glibc converts the digit string with `strtol`
-[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         // (which saturates) and then assigns the result to an `int`, so
-[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         // saturate at the 64-bit bounds and truncate to 32 bits.
-[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         let mut acc: i64 = 0;
-[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         loop {
-[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             let digit = (b - b'0') as i64;
-[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             acc = acc
-[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 .checked_mul(10)
-[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 .and_then(|v| {
-[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                     if negative {
-[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                         v.checked_sub(digit)
-[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m                     } else {
-[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                         v.checked_add(digit)
-[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m                     }
-[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                 })
-[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                 .unwrap_or(if negative { i64::MIN } else { i64::MAX });
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     /// The `%d` conversion: skip leading whitespace, then convert an optionally
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     /// signed decimal integer. Returns `None` on input failure (EOF before any
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     /// character) or matching failure (no digits), leaving the caller's
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     /// variable untouched, exactly as C `scanf` does.
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     ///
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     /// glibc performs the conversion at `long` width and then narrows to `int`,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     /// saturating at `LONG_MIN`/`LONG_MAX` on overflow; that is reproduced here
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     /// with an `i64` accumulator saturated and then truncated to `i32`.
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     fn scan_i32(&mut self) -> Option<i32> {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         self.skip_whitespace();
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         let mut negative = false;
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         let first = self.getc()?;
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         let mut cur = match first {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             b'+' => {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m                 let c = self.getc();
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m                 match c {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                     Some(c) => c,
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m                     None => return None,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             b'-' => {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m                 negative = true;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 let c = self.getc();
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                 match c {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                     Some(c) => c,
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m                     None => return None,
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             c => c,
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         };
 [0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             match self.next_byte() {
-[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                 Some(c) if c.is_ascii_digit() => b = c,
-[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                 Some(c) => {
-[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                     self.unread(c);
-[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                     break;
-[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m                 None => break,
-[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         Some(acc as i32)
-[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m /// The label a jump targets in `foo`'s reconstructed control flow.
-[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m enum State {
-[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     /// Evaluate the `while` condition.
-[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     LoopCond,
-[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     /// Start of the loop body (`printf("loop\n")`).
-[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     LoopTop,
-[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     /// `label1:`
-[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     Label1,
-[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     /// `label2:`
-[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     Label2,
-[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m fn foo(out: &mut impl Write, mut x: i32, mut y: i32) {
-[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     let mut state = State::LoopCond;
-[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     loop {
-[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         match state {
-[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             State::LoopCond => {
-[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m                 if !(x > 0 || y > 0) {
-[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m                     return;
-[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m                 state = State::LoopTop;
-[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             State::LoopTop => {
-[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m                 let _ = write!(out, "loop\n");
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         if !cur.is_ascii_digit() {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             self.ungetc(cur);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m             return None;
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         let mut acc: i64 = 0;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         let mut overflow = false;
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             let digit = (cur - b'0') as i64;
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             if !overflow {
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m                 match acc.checked_mul(10).and_then(|v| v.checked_add(digit)) {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m                     Some(v) => acc = v,
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m                     None => overflow = true,
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             match self.getc() {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m                 Some(c) if c.is_ascii_digit() => cur = c,
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m                 Some(c) => {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m                     self.ungetc(c);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                     break;
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                 None => break,
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         let value: i64 = if overflow {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m             if negative {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m                 i64::MIN
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m                 i64::MAX
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         } else if negative {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m             -acc
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m             acc
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         Some(value as i32)
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m }
 [0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m                 if x == 1 && y == 4 {
-[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m                     state = State::Label2; // goto label2;
-[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                 } else {
-[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m                     state = State::Label1; // fall through to label1
-[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m             State::Label1 => {
-[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m                 if x > 0 {
-[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m                     let _ = write!(out, "x\n");
-[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m                     x = x.wrapping_sub(1);
-[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m                 state = State::Label2; // fall through to label2
-[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m fn is_space(b: u8) -> bool {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m /// Faithful translation of the C `foo`, including its `goto` control flow.
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m /// `label1` and `label2` are both inside the `while` body, so `goto label1`
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m /// re-enters the body without re-testing the loop condition, while `continue`
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m /// jumps back to the condition test. The inner `loop` below plays the role of
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m /// the label region; `entry_at_label1` selects whether control lands on
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m /// `label1` or falls through directly to `label2`.
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m fn foo(mut x: i32, mut y: i32) {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     let stdout = std::io::stdout();
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     let mut out = stdout.lock();
 [0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m             State::Label2 => {
-[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m                 if y == 0 {
-[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m                     state = State::LoopCond; // continue;
-[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m                     continue;
-[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m                 let _ = write!(out, "y\n");
-[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m                 y = y.wrapping_sub(1);
-[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m                 if x < 3 {
-[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m                     state = State::Label1; // goto label1;
-[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m                 } else {
-[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m                     state = State::LoopCond; // end of body
-[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m                 }
-[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m             }
-[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m fn main() {
-[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     let mut x: i32 = 0;
-[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     let mut y: i32 = 0;
-[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     let mut scanner = Scanner::new();
-[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     // scanf("%d %d", &x, &y): the whitespace directive between the two
-[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     // conversions is redundant here because %d already skips leading
-[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     // whitespace. If the first conversion fails, the second is not attempted,
-[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     // leaving the corresponding variable at its initial value.
-[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     if let Some(v) = scanner.scan_i32() {
-[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         x = v;
-[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         if let Some(v) = scanner.scan_i32() {
-[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m             y = v;
-[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     'while_loop: while x > 0 || y > 0 {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         let _ = out.write_all(b"loop\n");
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         // if (x == 1 && y == 4) goto label2;
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         let mut entry_at_label1 = !(x == 1 && y == 4);
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m             if entry_at_label1 {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m                 // label1:
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m                 if x > 0 {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m                     let _ = out.write_all(b"x\n");
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m                     x = x.wrapping_sub(1);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             // label2:
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m             if y == 0 {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m                 continue 'while_loop;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m             let _ = out.write_all(b"y\n");
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m             y = y.wrapping_sub(1);
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m             if x < 3 {
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m                 // goto label1;
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m                 entry_at_label1 = true;
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m                 continue;
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let _ = out.flush();
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m }
 [0m[49m[38;5;10m+    202[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     let stdout = io::stdout();
-[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     let mut out = io::BufWriter::new(stdout.lock());
-[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     foo(&mut out, x, y);
-[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     let _ = out.flush();
-[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m fn main() {
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     let mut x: i32 = 0;
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     let mut y: i32 = 0;
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     // scanf("%d %d", &x, &y);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     let mut scanner = Scanner::new();
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     if let Some(v) = scanner.scan_i32() {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         x = v;
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         scanner.skip_whitespace();
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         if let Some(v) = scanner.scan_i32() {
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m             y = v;
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     foo(x, y);
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/translation/src/main.rs[0m
-[38;5;244m - Completed in 0.0s[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-15yeqO/translation/src/main.rs[0m
+[38;5;244m - Completed in 0.19s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate in release mode
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/translation)
-    Finished `release` profile [optimized] target(s) in 0.19s
-[38;5;244m - Completed in 0.207s[0m
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-15yeqO/translation)
+    Finished `release` profile [optimized] target(s) in 0.70s
+[38;5;244m - Completed in 0.846s[0m
 
-[?25l[0m[38;5;141m> [0mBuilds clean. Now let me verify against the original C.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O2 -o /tmp/cref/driver c_src/src/main.c 2>&1 | tail -5 && echo "compiled"[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mBuilds clean. Now let me verify byte-identical output against the compiled C.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cref && gcc -O0 -o /tmp/cref/driver c_src/src/main.c 2>&1 && echo "C built"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile reference C binary outside c_src
 
-compiled
-[38;5;244m - Completed in 0.46s[0m
+C built
+[38;5;244m - Completed in 0.481s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mC=/tmp/cref/driver
-R=translation/target/release/driver
-fail=0
-run() {
-  local desc="$1"; shift
-  local input="$1"
-  a=$(printf '%s' "$input" | timeout 5 $C 2>&1; echo "rc=$?")
-  b=$(printf '%s' "$input" | timeout 5 $R 2>&1; echo "rc=$?")
-  if [ "$a" == "$b" ]; then
-    echo "PASS  $desc"
-  else
-    echo "FAIL  $desc"
-    diff <(echo "$a") <(echo "$b") | head -10
-    fail=1
-  fi
-}
-# exhaustive small grid
-for i in $(seq -3 8); do for j in $(seq -3 8); do run "grid $i $j" "$i $j"; done; done | grep -c PASS
-echo "--- targeted ---"
-run "1 4 (goto label2 path)" "1 4"
-run "5 5" "5 5"
-run "0 0" "0 0"
-run "newline separated" $'7\n2\n'
-run "leading whitespace/tabs" $'   \t\n  6\t\t\n 3 '
-run "empty input" ""
-run "only one number" "4"
-run "one number + newline" $'4\n'
-run "non-numeric" "abc"
-run "partial: num then junk" "3 zz"
-run "signs" "+5 -2"
-run "big x" "100 2"
-run "int overflow input" "99999999999999999999 3"
-run "INT_MAX" "2147483647 1"
-run "INT_MIN y" "5 -2147483648"
-run "extra tokens ignored" "2 3 9 9 9"
-run "cr lf" $'6\r\n3\r\n'
-echo "exit: $fail"[0m[38;5;244m (using tool: shell)[0m
-
-93
---- targeted ---
-FAIL  1 4 (goto label2 path)
-1,2c1,7
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> y
-> x
-> y
-> y
-> y
-FAIL  5 5
-1,2c1,14
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> y
-FAIL  0 0
-1,2c1
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> rc=0
-FAIL  newline separated
-1,2c1,17
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> y
-FAIL  leading whitespace/tabs
-1,2c1,16
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> y
-FAIL  empty input
-1,2c1
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> rc=0
-FAIL  only one number
-1,2c1,9
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> loop
-> x
-> loop
-> x
-FAIL  one number + newline
-1,2c1,9
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> loop
-> x
-> loop
-> x
-FAIL  non-numeric
-1,2c1
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> rc=0
-FAIL  partial: num then junk
-1,2c1,7
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> loop
-> x
-> loop
-> x
-FAIL  signs
-1,2c1,727805948
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> y
-FAIL  big x
-1,2c1,203
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> y
-FAIL  int overflow input
-1,2c1,5
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> y
-> y
-> y
-> rc=0
-FAIL  INT_MAX
-1,2c1,413885162
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> loop
-FAIL  INT_MIN y
-1,2c1,526051324
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> y
-FAIL  extra tokens ignored
-1,2c1,7
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> x
-> y
-> y
-FAIL  cr lf
-1,2c1,16
-< timeout: failed to run command '/tmp/cref/driver': No such file or directory
-< rc=127
----
-> loop
-> x
-> y
-> loop
-> x
-> y
-exit: 1
-[38;5;244m - Completed in 1064.97s[0m
-
-[?25l[0m[38;5;141m> [0mThe C binary vanished from /tmp (likely sandbox cleanup). Let me rebuild it locally and use bounded-prefix comparison, since some inputs legitimately loop forever.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /local/home/scheschb/.harvest/work/harvest-work-G4ueF2/.ref && gcc -O2 -o .ref/driver c_src/src/main.c && ls -la .ref/[0m[38;5;244m (using tool: shell)[0m
-
-total 20
-drwxr-xr-x. 2 scheschb amazon    28 Aug 30 11:05 .
-drwxr-xr-x. 6 scheschb amazon    85 Aug 30 11:05 ..
--rwxr-xr-x. 1 scheschb amazon 16752 Aug 30 11:05 driver
-[38;5;244m - Completed in 0.50s[0m
-
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/.ref/cmp.sh[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cref/cmp.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test script
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m #!/bin/bash
-[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Compare C reference and Rust translation on a given stdin payload.
-[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # Output is compared as a bounded prefix so that inputs which make the original
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m # program loop forever can still be checked for byte-identical behavior.
-[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m C=.ref/driver
-[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m R=translation/target/release/driver
-[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m LIMIT=${LIMIT:-200000}
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m fail=0
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m pass=0
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m run() {
-[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   local desc="$1"
-[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   local input="$2"
-[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m   local ao bo ar br
-[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m   ao=$(printf '%s' "$input" | timeout 5 "$C" 2>/dev/null | head -c "$LIMIT" | od -An -tx1 | md5sum)
-[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m   ar=${PIPESTATUS[1]}
-[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m   bo=$(printf '%s' "$input" | timeout 5 "$R" 2>/dev/null | head -c "$LIMIT" | od -An -tx1 | md5sum)
-[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m   br=${PIPESTATUS[1]}
-[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m   if [ "$ao" == "$bo" ]; then
-[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     pass=$((pass+1))
-[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   else
-[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     echo "FAIL  $desc   (input=$(printf '%q' "$input"))"
-[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     diff <(printf '%s' "$input" | timeout 5 "$C" 2>/dev/null | head -c "$LIMIT") \
-[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m          <(printf '%s' "$input" | timeout 5 "$R" 2>/dev/null | head -c "$LIMIT") | head -8
-[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     fail=$((fail+1))
-[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m   fi
-[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m C=/tmp/cref/driver
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m R=/local/home/scheschb/.harvest/work/harvest-work-15yeqO/translation/target/release/driver
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m fail=0
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m run() {
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m   desc="$1"; shift
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m   co=$(printf '%s' "$1" | timeout 5 $C 2>/dev/null | md5sum)
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m   cs=$?
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   ro=$(printf '%s' "$1" | timeout 5 $R 2>/dev/null | md5sum)
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   rs=$?
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m   if [ "$co" == "$ro" ]; then
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     echo "PASS [$desc]"
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     echo "FAIL [$desc] input=<<$1>> C=$co RUST=$ro"
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     fail=1
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m run "empty" ""
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m run "0 0" "0 0"
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m run "1 4" "1 4"
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m run "1 1" "1 1"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m run "3 3" "3 3"
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m run "5 2" "5 2"
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m run "2 5" "2 5"
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m run "0 3" "0 3"
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m run "3 0" "3 0"
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m run "4 4" "4 4"
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m run "10 10" "10 10"
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m run "newlines" $'7\n9\n'
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m run "tabs/spaces" $'  \t 6 \t\n 8'
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m run "only-one" "5"
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m run "one+garbage" "5 abc"
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m run "garbage-first" "abc 5"
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m run "negatives" "-3 -4"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m run "neg-y-pos-x" "0 -5"
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m run "plus signs" "+2 +6"
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m run "big overflow" "4294967297 2"
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m run "huge overflow" "99999999999999999999999 1"
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m run "neg huge" "-99999999999999999999999 1"
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m run "1 5" "1 5"
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m run "2 4" "2 4"
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m run "1 3" "1 3"
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m run "6 4" "6 4"
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m run "4 6" "4 6"
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m run "20 7" "20 7"
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m run "3 4" "3 4"
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m run "0 1" "0 1"
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m run "1 0" "1 0"
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m run "8 15" "8 15"
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m run "15 8" "15 8"
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m run "100 100" "100 100"
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m for i in $(seq 0 12); do
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m   for j in $(seq 0 12); do
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     run "grid $i $j" "$i $j"
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m exit $fail
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-G4ueF2/.ref/cmp.sh[0m
-[38;5;244m - Completed in 0.0s[0m
+Creating: [38;5;141m/tmp/cref/cmp.sh[0m
+[38;5;244m - Completed in 0.22s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141msource .ref/cmp.sh
-for i in $(seq -4 10); do for j in $(seq -4 10); do run "grid $i $j" "$i $j"; done; done
-echo "grid: pass=$pass fail=$fail"[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mbash /tmp/cref/cmp.sh > /tmp/cref/out.txt 2>&1; echo "exit=$?"; grep -c PASS /tmp/cref/out.txt; grep FAIL /tmp/cref/out.txt | head -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential tests C vs Rust
 
-grid: pass=225 fail=0
-[38;5;244m - Completed in 201.161s[0m
+exit=0
+203
+[38;5;244m - Completed in 5.518s[0m
 
-[?25l[0m[38;5;141m> [0mAll 225 grid cases match. Now the scanf edge cases and larger values.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141msource .ref/cmp.sh
-run "empty input" ""
-run "only whitespace" $'  \n\t\n'
-run "single number no newline" "4"
-run "single number newline" $'4\n'
-run "non-numeric" "abc"
-run "leading junk" "  zz 4 5"
-run "num then junk" "3 zz"
-run "newline separated" $'7\n2\n'
-run "tabs and blank lines" $'\n\n \t 6 \n\t 3 \n'
-run "cr lf" $'6\r\n3\r\n'
-run "explicit signs" "+5 +2"
-run "negative both" "-5 -2"
-run "sign alone" "- 5"
-run "plus alone then digits" $'+\n5'
-run "extra tokens ignored" "2 3 9 9 9"
-run "no space between? 12" "12 3"
-run "leading zeros" "007 004"
-run "goto label2 path 1 4" "1 4"
-run "1 5" "1 5"
-run "2 4" "2 4"
-run "x>=3 branch 3 3" "3 3"
-run "4 1" "4 1"
-run "big-ish 50 50" "50 50"
-run "100 200" "100 200"
-run "1000 1000" "1000 1000"
-run "int overflow digits" "99999999999999999999 3"
-run "INT_MAX 1" "2147483647 1"
-run "1 INT_MAX" "1 2147483647"
-run "INT_MIN" "-2147483648 -2147483648"
-run "x pos y INT_MIN" "5 -2147483648"
-run "0 5" "0 5"
-run "5 0" "5 0"
-run "0 -5" "0 -5"
-run "-5 0" "-5 0"
-run "huge negative digits" "-99999999999999999999 4"
-echo "targeted: pass=$pass fail=$fail"[0m[38;5;244m (using tool: shell)[0m
-
-targeted: pass=35 fail=0
-[38;5;244m - Completed in 15.204s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141msource .ref/cmp.sh
-# randomized numeric fuzz over a wide range
-for n in $(seq 1 250); do
-  i=$(( (RANDOM % 400) - 100 ))
-  j=$(( (RANDOM % 400) - 100 ))
-  run "rand $i $j" "$i $j"
-done
-echo "numeric fuzz: pass=$pass fail=$fail"[0m[38;5;244m (using tool: shell)[0m
-
-numeric fuzz: pass=250 fail=0
-[38;5;244m - Completed in 211.324s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141msource .ref/cmp.sh
-# random malformed / textual inputs to stress the scanf emulation
-inputs=( "" " " "+" "-" "++5 5" "5" "5 " "5 -" "5 +" ".5 3" "5.9 2.9" "0x10 3" "  -0 -0 " "1e3 2" "	9	9	" "5,3" "'5' 3" "%d 5" "00000000000000000005 3" "2147483648 1" "-2147483649 1" "4294967296 2" "9223372036854775807 1" "9223372036854775808 1" "18446744073709551616 1" "1 4extra" "1 04" "1  4" $'1\t\t4' $'\r\n1 4' "nan inf" "6 3 junk" "6junk 3" )
-for s in "${inputs[@]}"; do run "malformed [$(printf '%q' "$s")]" "$s"; done
-echo "malformed: pass=$pass fail=$fail"
-echo "--- exit codes ---"
-for s in "" "abc" "2 3" "1 4"; do
-  printf '%s' "$s" | timeout 5 .ref/driver >/dev/null 2>&1; a=$?
-  printf '%s' "$s" | timeout 5 translation/target/release/driver >/dev/null 2>&1; b=$?
-  echo "input=$(printf '%q' "$s") c_rc=$a rust_rc=$b $([ $a == $b ] && echo OK || echo MISMATCH)"
-done[0m[38;5;244m (using tool: shell)[0m
-
-malformed: pass=33 fail=0
---- exit codes ---
-input='' c_rc=0 rust_rc=0 OK
-input=abc c_rc=0 rust_rc=0 OK
-input=2\ 3 c_rc=0 rust_rc=0 OK
-input=1\ 4 c_rc=0 rust_rc=0 OK
-[38;5;244m - Completed in 5.261s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-G4ueF2
-# Full, unbounded byte comparison for inputs that terminate
-for s in "1 4" "5 5" "100 200" "2000 3000" "0 5000" "5000 0" "3 100000" "100000 3"; do
-  printf '%s' "$s" | timeout 60 .ref/driver > /tmp/a.out 2>&1; ra=$?
-  printf '%s' "$s" | timeout 60 translation/target/release/driver > /tmp/b.out 2>&1; rb=$?
-  if cmp -s /tmp/a.out /tmp/b.out && [ $ra == $rb ]; then
-    echo "PASS  full-bytes [$s]  size=$(stat -c%s /tmp/a.out) rc=$ra"
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-15yeqO
+for inp in "7 7" "1 4" "" "abc"; do
+  printf '%s' "$inp" | /tmp/cref/driver > /tmp/cref/c.out 2>/tmp/cref/c.err; cs=$?
+  printf '%s' "$inp" | translation/target/release/driver > /tmp/cref/r.out 2>/tmp/cref/r.err; rs=$?
+  if cmp -s /tmp/cref/c.out /tmp/cref/r.out && cmp -s /tmp/cref/c.err /tmp/cref/r.err && [ $cs -eq $rs ]; then
+    echo "BYTE-EXACT+exit($cs) OK: <<$inp>> ($(wc -c < /tmp/cref/c.out) bytes)"
   else
-    echo "FAIL  full-bytes [$s] rc=$ra/$rb"; cmp /tmp/a.out /tmp/b.out | head -3
+    echo "MISMATCH <<$inp>> exit c=$cs r=$rs"; diff /tmp/cref/c.out /tmp/cref/r.out | head
   fi
 done
-# stdin from a real file rather than a pipe
-printf '7 2\n' > /tmp/in.txt
-.ref/driver < /tmp/in.txt > /tmp/a.out; translation/target/release/driver < /tmp/in.txt > /tmp/b.out
-cmp -s /tmp/a.out /tmp/b.out && echo "PASS  redirected file stdin" || echo "FAIL  redirected file stdin"
-rm -f /tmp/a.out /tmp/b.out /tmp/in.txt[0m[38;5;244m (using tool: shell)[0m
+echo "--- artifacts ---"; ls -l translation/Cargo.toml translation/src/main.rs translation/target/release/driver; git -C c_src status 2>/dev/null | head -3; md5sum c_src/src/main.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify byte-exact stdout/stderr and exit codes, confirm artifacts
 
-PASS  full-bytes [1 4]  size=15 rc=0
-PASS  full-bytes [5 5]  size=35 rc=0
-PASS  full-bytes [100 200]  size=1090 rc=0
-PASS  full-bytes [2000 3000]  size=19990 rc=0
-PASS  full-bytes [0 5000]  size=10005 rc=0
-PASS  full-bytes [5000 0]  size=35000 rc=0
-PASS  full-bytes [3 100000]  size=200011 rc=0
-PASS  full-bytes [100000 3]  size=700006 rc=0
-PASS  redirected file stdin
-[38;5;244m - Completed in 0.68s[0m
+BYTE-EXACT+exit(0) OK: <<7 7>> (53 bytes)
+BYTE-EXACT+exit(0) OK: <<1 4>> (15 bytes)
+BYTE-EXACT+exit(0) OK: <<>> (0 bytes)
+BYTE-EXACT+exit(0) OK: <<abc>> (0 bytes)
+--- artifacts ---
+-rw-r--r--. 1 scheschb amazon    142 Sep  1 09:30 translation/Cargo.toml
+-rw-r--r--. 1 scheschb amazon   6491 Sep  1 09:31 translation/src/main.rs
+-rwxr-xr-x. 2 scheschb amazon 446304 Sep  1 09:31 translation/target/release/driver
+f4e3dd0d69949f9d93eac57a853d930d  c_src/src/main.c
+[38;5;244m - Completed in 0.69s[0m
 
-[?25l[0m[38;5;141m> [0mEverything matches byte-for-byte. Cleaning up the scratch reference files:[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-G4ueF2 && rm -rf .ref && cargo build --release --manifest-path translation/Cargo.toml 2>&1 | tail -3 && echo "--- tree ---" && find . -path ./translation/target -prune -o -type f -print | sort && git status --short 2>/dev/null | head[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cref; ls /local/home/scheschb/.harvest/work/harvest-work-15yeqO/c_src /local/home/scheschb/.harvest/work/harvest-work-15yeqO/c_src/src[0m[38;5;244m (using tool: shell)[0m
+Purpose: Clean up temp verification artifacts and confirm c_src untouched
 
-    Finished `release` profile [optimized] target(s) in 0.01s
---- tree ---
-./.claude/settings.json
-./c_src/CMakeLists.txt
-./c_src/src/main.c
-./translation/Cargo.lock
-./translation/Cargo.toml
-./translation/src/main.rs
-[38;5;244m - Completed in 0.40s[0m
+/local/home/scheschb/.harvest/work/harvest-work-15yeqO/c_src:
+CMakeLists.txt
+src
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean with [38;5;10mcargo build --release[0m and produces byte-identical output to the C program.[0m[0m
+/local/home/scheschb/.harvest/work/harvest-work-15yeqO/c_src/src:
+main.c
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean with [38;5;10mcargo build --release[0m and produces byte-identical output to the compiled C across 203 differential test inputs (plus byte-exact stdout/stderr/exit-code checks). I did the work directly rather than delegating — the source is a single 57-line file, so a sub-agent would have added no coverage.[0m[0m
 [0m[0m
-The whole program is one [38;5;10mfoo[0m function whose control flow can't be expressed with structured Rust loops, because the original C jumps in ways that skip and re-enter parts of the loop body:[0m[0m
+The two things that needed care:[0m[0m
 [0m[0m
-- [38;5;10mgoto label2[0m skips the [38;5;10mx[0m decrement block entirely (only when [38;5;10mx == 1 && y == 4[0m).[0m[0m
-- [38;5;10mgoto label1[0m jumps [3mbackwards into the middle of the [38;5;10mwhile[0m body[23m, so the [38;5;10mx > 0 || y > 0[0m condition is [1mnot[22m re-tested — this is what makes some inputs loop forever.[0m[0m
-- [38;5;10mcontinue[0m does re-test the condition.[0m[0m
+[1mThe [38;5;10mgoto[0m control flow in [38;5;10mfoo[0m.[22m Both [38;5;10mlabel1[0m and [38;5;10mlabel2[0m sit inside the [38;5;10mwhile[0m body, so [38;5;10mgoto label1[0m re-enters the body [3mwithout[23m re-testing the loop condition, while [38;5;10mcontinue[0m jumps back to the condition. I modeled this as an inner [38;5;10mloop[0m acting as the label region, with a [38;5;10mentry_at_label1[0m flag choosing whether control lands on [38;5;10mlabel1[0m or falls straight through to [38;5;10mlabel2[0m (the [38;5;10mx == 1 && y == 4[0m case). [38;5;10mcontinue 'while_loop[0m handles the [38;5;10my == 0[0m case. Decrements use [38;5;10mwrapping_sub[0m so the negative-[38;5;10my[0m runaway path wraps like the C build instead of panicking.[0m[0m
 [0m[0m
-I translated this into an explicit four-state machine ([38;5;10mLoopCond[0m, [38;5;10mLoopTop[0m, [38;5;10mLabel1[0m, [38;5;10mLabel2[0m) where each state transition mirrors one C label/fallthrough, so the condition-test skipping is preserved rather than "fixed."[0m[0m
+[1m[38;5;10mscanf("%d %d", ...)[0m.[22m Implemented a byte-level reader with single-byte pushback so whitespace-skipping crosses newlines the way [38;5;10mscanf[0m does. [38;5;10mx[0m and [38;5;10my[0m stay at their initialized [38;5;10m0[0m when a conversion fails, and the second variable is left untouched if the first fails — matching C, where a partial match like [38;5;10m5 abc[0m leaves [38;5;10my == 0[0m. Overflow follows glibc: conversion at [38;5;10mlong[0m width, saturating at [38;5;10mi64[0m bounds, then truncated to [38;5;10mi32[0m, so [38;5;10m4294967297[0m yields [38;5;10m1[0m and [38;5;10m99999999999999999999999[0m yields [38;5;10m-1[0m.[0m[0m
 [0m[0m
-Two other behaviors I reproduced deliberately rather than cleaned up:[0m[0m
-[0m[0m
-- **[38;5;10mscanf[0m semantics.** I wrote a small byte-at-a-time reader instead of using [38;5;10mread_line[0m, because [38;5;10m%d[0m skips arbitrary whitespace [3mincluding newlines[23m, so [38;5;10m7\n2[0m and [38;5;10m7 2[0m must behave identically. On a failed first conversion the second is never attempted, leaving [38;5;10mx[0m/[38;5;10my[0m at their initial [38;5;10m0[0m — e.g. [38;5;10mabc[0m prints nothing, and a lone [38;5;10m4[0m runs with [38;5;10my == 0[0m. Overflowing digit strings follow glibc's saturate-with-[38;5;10mstrtol[0m-then-truncate-to-[38;5;10mint[0m path, so [38;5;10m2147483648[0m becomes [38;5;10m-2147483648[0m and [38;5;10m9223372036854775808[0m becomes [38;5;10m-1[0m.[0m[0m
-- **Non-terminating inputs.** With [38;5;10mx > 0[0m and [38;5;10my < 0[0m the program loops forever in the original; [38;5;10mwrapping_sub[0m keeps that as an infinite loop instead of a release-mode wrap surprise or a debug panic.[0m[0m
-[0m[0m
-Verification against a [38;5;10mgcc -O2[0m build of [38;5;10mc_src/src/main.c[0m: an exhaustive −4..10 × −4..10 grid (225 cases), 250 randomized numeric inputs, 33 malformed/edge stdin payloads (empty, bare signs, floats, hex, [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m, 64-bit overflow, CRLF), plus full unbounded byte comparison on terminating cases up to 700 KB of output, and exit codes. All matched. Inputs that loop forever were compared as bounded output prefixes, since neither program terminates on them.[0m[0m
-[0m[0m
-One note on my test methodology: the infinite-loop cases can only be checked as prefixes, so they confirm the two programs emit the same bytes in the same order but can't prove the loops diverge identically forever — that rests on reading the state machine, which I did verify by hand against the labels.[0m[0m
+I did not fix the original's quirks: the unreachable-looking [38;5;10mlabel1[0m fallthrough, the ignored [38;5;10mscanf[0m return value, and the possibility of an infinite loop on inputs like [38;5;10m1 -5[0m all behave as they do in C.[0m[0m
 [38;5;8m
- ▸ Credits: 5.06 • Time: 27m 10s
+ ▸ Credits: 3.78 • Time: 2m 0s
 
 [0m[1G[0m[0m[?25h

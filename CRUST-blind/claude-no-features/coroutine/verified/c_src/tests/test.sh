@@ -1,1 +1,0 @@
-gcc test/main.c coroutine.c -o main && ./main

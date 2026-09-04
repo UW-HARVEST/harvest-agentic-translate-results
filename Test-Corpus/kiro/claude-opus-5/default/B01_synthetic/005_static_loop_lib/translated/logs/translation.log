@@ -4,40 +4,77 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -200 && echo "---" && du -sh c_src translation 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
 
-./c_src/CMakeLists.txt
-./c_src/include/staticloop.h
-./c_src/src/staticloop.c
-./.claude/settings.json
+c_src/CMakeLists.txt
+c_src/include/staticloop.h
+c_src/src/staticloop.c
 ---
-12K	c_src
-0	translation
-[38;5;244m - Completed in 0.25s[0m
+3
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/staticloop.h c_src/src/staticloop.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  35 c_src/CMakeLists.txt
+  30 c_src/include/staticloop.h
+  43 c_src/src/staticloop.c
+ 108 total
+[38;5;244m - Completed in 0.5s[0m
 
 [?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/c_src/include/staticloop.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/c_src/src/staticloop.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1429 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-MLqrdI/c_src/CMakeLists.txt
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src/include/staticloop.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src/src/staticloop.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1429 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src/CMakeLists.txt
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1257 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-MLqrdI/c_src/include/staticloop.h
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1257 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src/include/staticloop.h
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1441 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-MLqrdI/c_src/src/staticloop.c
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1441 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src/src/staticloop.c
 
  ⋮ 
 
 [38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mSimple single-module library: a running total in a function-local [38;5;10mstatic[0m, plus a driver that prints via [38;5;10mprintf[0m. I'll declare [38;5;10mprintf[0m directly so formatting and stdio buffering match C exactly. The header has no namespace macros, so symbols are [38;5;10mstatic_sum[0m and [38;5;10mdriver[0m.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
-Purpose: Create Cargo.toml for the cdylib translation crate
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1 && echo OK && ls -la *.so && echo "=== nm -D ===" && nm -D libStaticLoop.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and dump dynamic symbols
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && tail -30 cm.log; which cmake gcc cc make[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check cmake failure reason
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-vEncB1/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin/cmake
+/usr/bin/gcc
+/usr/bin/cc
+/usr/bin/make
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_sl && mkdir -p /tmp/cbuild_sl && cd /tmp/cbuild_sl && cmake /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/c_src > cm.log 2>&1 && make >> cm.log 2>&1 && echo BUILD_OK && ls *.so && echo "=== nm -D ===" && nm -D libStaticLoop.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild C library in clean dir
+
+BUILD_OK
+libStaticLoop.so
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001139 T driver
+                 U printf@GLIBC_2.2.5
+0000000000001119 T static_sum
+[38;5;244m - Completed in 0.411s[0m
+
+[?25l[0m[38;5;141m> [0mTwo exported symbols: [38;5;10mdriver[0m, [38;5;10mstatic_sum[0m. No namespace macros. Now the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "staticloop"
@@ -47,181 +84,258 @@ Purpose: Create Cargo.toml for the cdylib translation crate
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "StaticLoop"
 [0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
-[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/translation/Cargo.toml[0m
-[38;5;244m - Completed in 0.30s[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo --version && rustc --version[0m[38;5;244m (using tool: shell)[0m
-
-cargo 1.94.0 (85eff7c80 2026-01-15)
-rustc 1.94.0 (4a4ef493e 2026-03-02)
-[38;5;244m - Completed in 0.51s[0m
-
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
 Purpose: Translate staticloop.c to Rust
 
-[48;2;40;67;43m[39m+     1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m Rust translation of c_src/src/staticloop.c[K
-[0m[48;2;40;67;43m[39m+     2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[K
-[0m[48;2;40;67;43m[39m+     3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m Original copyright notice from the C sources:[K
-[0m[48;2;40;67;43m[39m+     4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[K
-[0m[48;2;40;67;43m[39m+     5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m Copyright 2025 MIT Lincoln Laboratory[K
-[0m[48;2;40;67;43m[39m+     6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m Permission is hereby granted, free of charge,[K
-[0m[48;2;40;67;43m[39m+     7[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m to any person obtaining a copy of this software[K
-[0m[48;2;40;67;43m[39m+     8[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m and associated documentation files (the "Software"),[K
-[0m[48;2;40;67;43m[39m+     9[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m to deal in the Software without restriction,[K
-[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m including without limitation the rights to use, copy,[K
-[0m[48;2;40;67;43m[39m+    11[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m modify, merge, publish, distribute, sublicense,[K
-[0m[48;2;40;67;43m[39m+    12[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m and/or sell copies of the Software,[K
-[0m[48;2;40;67;43m[39m+    13[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m and to permit persons to whom the Software is furnished to do so,[K
-[0m[48;2;40;67;43m[39m+    14[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m subject to the following conditions:[K
-[0m[48;2;40;67;43m[39m+    15[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[K
-[0m[48;2;40;67;43m[39m+    16[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m The above copyright notice and this permission notice[K
-[0m[48;2;40;67;43m[39m+    17[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m shall be included in all copies or substantial portions of the Software.[K
-[0m[48;2;40;67;43m[39m+    18[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[K
-[0m[48;2;40;67;43m[39m+    19[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,[K
-[0m[48;2;40;67;43m[39m+    20[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO[K
-[0m[48;2;40;67;43m[39m+    21[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m THE WARRANTIES OF MERCHANTABILITY,[K
-[0m[48;2;40;67;43m[39m+    22[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.[K
-[0m[48;2;40;67;43m[39m+    23[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE[K
-[0m[48;2;40;67;43m[39m+    24[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,[K
-[0m[48;2;40;67;43m[39m+    25[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE[K
-[0m[48;2;40;67;43m[39m+    26[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.[K
-[0m[48;2;40;67;43m[39m+    27[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    28[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;180;142;173mc_int[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    29[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206msync[38;2;192;197;206m::[38;2;192;197;206matomic[38;2;192;197;206m::[38;2;192;197;206m{[38;2;192;197;206mAtomicI32[38;2;192;197;206m,[38;2;192;197;206m Ordering[38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    30[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    31[0m:[39m[48;2;24;38;30m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    32[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m Use C's `printf` directly so that output formatting *and* stdio[K
-[0m[48;2;40;67;43m[39m+    33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m buffering behaviour are byte-for-byte identical to the original[K
-[0m[48;2;40;67;43m[39m+    34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m library (including interleaving with any other C stdio output in the[K
-[0m[48;2;40;67;43m[39m+    35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m hosting process).[K
-[0m[48;2;40;67;43m[39m+    36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mprintf[38;2;192;197;206m([38;2;191;97;106mformat[38;2;192;197;206m:[38;2;192;197;206m *const [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206mc_char, ...[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    38[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    39[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m The function-local `static int sum = 0;` from `static_sum`.[K
-[0m[48;2;40;67;43m[39m+    40[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    41[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m The C original is a plain, non-atomic `int` with static storage duration[K
-[0m[48;2;40;67;43m[39m+    42[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m that is zero-initialised once for the lifetime of the process. `AtomicI32`[K
-[0m[48;2;40;67;43m[39m+    43[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m gives the same single-instance, process-wide lifetime while letting the[K
-[0m[48;2;40;67;43m[39m+    44[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Rust code stay free of `static mut`.[K
-[0m[48;2;40;67;43m[39m+    45[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstatic[38;2;192;197;206m [38;2;208;135;112mSUM[38;2;192;197;206m:[38;2;192;197;206m AtomicI32 [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mAtomicI32[38;2;192;197;206m::[38;2;192;197;206mnew[38;2;192;197;206m([38;2;208;135;112m0[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    46[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    47[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m ```c[K
-[0m[48;2;40;67;43m[39m+    48[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m int static_sum(int update);[K
-[0m[48;2;40;67;43m[39m+    49[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m ```[K
-[0m[48;2;40;67;43m[39m+    50[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    51[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Adds `update` to the running total and returns the new total.[K
-[0m[48;2;40;67;43m[39m+    52[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    53[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mstatic_sum[38;2;192;197;206m([38;2;191;97;106mupdate[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    54[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m `sum += update;` — C signed overflow is undefined behaviour, but every[K
-[0m[48;2;40;67;43m[39m+    55[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m mainstream C implementation wraps on two's-complement hardware, which is[K
-[0m[48;2;40;67;43m[39m+    56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m what the original library does in practice. `wrapping_add` reproduces[K
-[0m[48;2;40;67;43m[39m+    57[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m that observable behaviour instead of panicking.[K
-[0m[48;2;40;67;43m[39m+    58[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m sum [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mSUM[K
-[0m[48;2;40;67;43m[39m+    59[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mload[38;2;192;197;206m([38;2;192;197;206mOrdering[38;2;192;197;206m::[38;2;192;197;206mRelaxed[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    60[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        .[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;192;197;206mupdate[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112mSUM[38;2;192;197;206m.[38;2;150;181;180mstore[38;2;192;197;206m([38;2;192;197;206msum[38;2;192;197;206m,[38;2;192;197;206m [38;2;192;197;206mOrdering[38;2;192;197;206m::[38;2;192;197;206mRelaxed[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    62[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    sum[K
-[0m[48;2;40;67;43m[39m+    63[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    64[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    65[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m ```c[K
-[0m[48;2;40;67;43m[39m+    66[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m void driver(int update);   /* declared as `stride` in the definition */[K
-[0m[48;2;40;67;43m[39m+    67[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m ```[K
-[0m[48;2;40;67;43m[39m+    68[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    69[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Maintain a running total using a static variable.[K
-[0m[48;2;40;67;43m[39m+    70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    71[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mdriver[38;2;192;197;206m([38;2;191;97;106mstride[38;2;192;197;206m:[38;2;192;197;206m c_int[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    72[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m i[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mc_int[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m0[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mwhile[38;2;192;197;206m i [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m10[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m printf("%d\n", static_sum(i * stride));[K
-[0m[48;2;40;67;43m[39m+    75[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m value [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mstatic_sum[38;2;192;197;206m([38;2;192;197;206mi.[38;2;150;181;180mwrapping_mul[38;2;192;197;206m([38;2;192;197;206mstride[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    77[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mprintf[38;2;192;197;206m([38;2;192;197;206mc[38;2;192;197;206m"[38;2;163;190;140m%d[38;2;150;181;180m\n[38;2;192;197;206m"[38;2;192;197;206m.[38;2;150;181;180mas_ptr[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m value[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    79[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        i [38;2;192;197;206m+[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    80[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    81[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[49m[38;5;10m+     1[0m:[38;5;10m[49m // Rust translation of c_src/src/staticloop.c
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // Original C library: StaticLoop (Copyright 2025 MIT Lincoln Laboratory, MIT license).
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m // This file reproduces the exact public ABI and observable behavior of the C
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m // shared library, including the function-local `static` accumulator in
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m // `static_sum` and the stdout formatting/buffering performed by libc `printf`.
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     /// libc `printf`. Called directly so that stdout formatting *and* buffering
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     /// (and therefore interleaving with any other C stdio output in the process)
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     /// are byte-for-byte identical to the original C library.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     fn printf(fmt: *const std::ffi::c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m /// Translation of the function-local `static int sum = 0;` inside `static_sum`.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m /// C semantics: a single process-wide instance with static storage duration,
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m /// zero-initialized, mutated without synchronization. Reproduced faithfully
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m /// (i.e. it is likewise not thread-safe) rather than "fixed".
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m static mut SUM: c_int = 0;
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m /// int
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m /// static_sum(int update) {
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m ///   static int sum = 0;
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m ///   sum += update;
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m ///   return sum;
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m pub unsafe extern "C" fn static_sum(update: c_int) -> c_int {
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     // `wrapping_add` matches the two's-complement wraparound emitted by the
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     // reference C compilers for `sum += update` (signed overflow is UB in C,
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     // but the generated code wraps).
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     let sum = unsafe { SUM.wrapping_add(update) };
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     unsafe { SUM = sum };
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     sum
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m /// Maintain a running total using a static variable.
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m /// void
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m /// driver(int stride) {
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m ///   for (int i = 0; i < 10; i++) {
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m ///     printf("%d\n", static_sum(i * stride));
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m ///   }
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m ///   return;
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m /// Note: the public header declares this as `void driver(int update);` while the
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m /// definition names the parameter `stride`. Only the name differs, so the ABI is
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m /// unaffected.
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(stride: c_int) {
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     for i in 0..10 as c_int {
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m         // `wrapping_mul` mirrors the C `i * stride` multiplication.
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         let value = unsafe { static_sum(i.wrapping_mul(stride)) };
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         unsafe { printf(c"%d\n".as_ptr(), value) };
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/translation/src/lib.rs[0m
-[38;5;244m - Completed in 0.4s[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
 
-   Compiling staticloop v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/translation)
+   Compiling staticloop v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation)
 warning: crate `StaticLoop` should have a snake case name
   |
   = help: convert the identifier to snake case: `static_loop`
   = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
 
 warning: `staticloop` (lib) generated 1 warning
-    Finished `release` profile [optimized] target(s) in 0.22s
-[38;5;244m - Completed in 0.256s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
-cd /tmp && rm -rf slverify && mkdir slverify && cd slverify
-W=/local/home/scheschb/.harvest/work/harvest-work-MLqrdI
-gcc -shared -fPIC -I$W/c_src/include -o libC.so $W/c_src/src/staticloop.c
-cat > main.c <<'EOF'
-#include <stdio.h>
-int static_sum(int update);
-void driver(int update);
-int main(void) {
-  driver(1);
-  driver(3);
-  printf("sum=%d\n", static_sum(0));
-  printf("s=%d\n", static_sum(5));
-  driver(-2);
-  printf("s=%d\n", static_sum(2147483647));
-  driver(2147483647);
-  driver(0);
-  return 0;
-}
-EOF
-gcc -o mainC main.c -L. -lC -Wl,-rpath,.
-gcc -o mainR main.c -L$W/translation/target/release -lStaticLoop -Wl,-rpath,$W/translation/target/release
-./mainC > outC.txt; ./mainR > outR.txt
-cmp outC.txt outR.txt && echo "BYTE-IDENTICAL ($(wc -l < outC.txt) lines)"
-nm -D --defined-only $W/translation/target/release/libStaticLoop.so | grep -iE 'static_sum|driver'[0m[38;5;244m (using tool: shell)[0m
-
-BYTE-IDENTICAL (53 lines)
-0000000000011ce0 T driver
-0000000000011e00 T static_sum
-[38;5;244m - Completed in 0.199s[0m
+    Finished `release` profile [optimized] target(s) in 0.14s
+[38;5;244m - Completed in 0.164s[0m
 
 [?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Allow non-snake-case crate name
 
-[48;2;40;67;43m[39m+     28[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m The crate is named `StaticLoop` so the produced shared object is[K
-[0m[48;2;40;67;43m[39m+     29[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m `libStaticLoop.so`, matching the CMake target of the original library.[K
-[0m[48;2;40;67;43m[39m+     30[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#![38;2;192;197;206m[[38;2;191;97;106mallow[38;2;192;197;206m([38;2;192;197;206mnon_snake_case[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     31[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;43;48;59m[39m  28, 32[0m:[39m[48;2;43;48;59m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mstd[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;180;142;173mc_int[38;2;192;197;206m;[K
+[49m[38;5;10m+     8[0m:[38;5;10m[49m // The crate/library name matches the C target name (`libStaticLoop.so`).
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[39m  8, 11[0m:[39m[49m use std::ffi::c_int;
 [0m[K
 Updating: [38;5;141mtranslation/src/lib.rs[0m
-[38;5;244m - Completed in 0.4s[0m
+[38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/slverify
-cd /local/home/scheschb/.harvest/work/harvest-work-MLqrdI/translation && touch src/lib.rs && cargo build --release 2>&1 | tail -5[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mNow verifying the symbol diff and runtime byte-equality myself.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation && cargo build --release 2>&1 | tail -5
+RS=/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation/target/release/libStaticLoop.so
+C=/tmp/cbuild_sl/libStaticLoop.so
+ls -la $RS
+echo "=== C defined dynamic symbols ==="
+nm -D --defined-only $C | awk '$2=="T"||$2=="D"||$2=="B"||$2=="W"{print $2, $3}' | sort | tee /tmp/c.syms
+echo "=== Rust defined dynamic symbols ==="
+nm -D --defined-only $RS | awk '$2=="T"||$2=="D"||$2=="B"||$2=="W"{print $2, $3}' | sort | tee /tmp/r.syms
+echo "=== MISSING FROM RUST (C exports not in Rust) ==="
+comm -23 <(cut -d' ' -f2 /tmp/c.syms) <(cut -d' ' -f2 /tmp/r.syms)
+echo "=== (end diff) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff dynamic symbol lists between C and Rust .so
 
-   Compiling staticloop v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-MLqrdI/translation)
-    Finished `release` profile [optimized] target(s) in 0.10s
-[38;5;244m - Completed in 0.139s[0m
+   Compiling staticloop v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+-rwxr-xr-x. 2 scheschb amazon 402344 Sep  1 07:00 /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation/target/release/libStaticLoop.so
+=== C defined dynamic symbols ===
+T driver
+T static_sum
+=== Rust defined dynamic symbols ===
+T driver
+T static_sum
+=== MISSING FROM RUST (C exports not in Rust) ===
+=== (end diff) ===
+[38;5;244m - Completed in 0.131s[0m
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds warning-free and produces [38;5;10mlibStaticLoop.so[0m exporting [38;5;10mstatic_sum[0m and [38;5;10mdriver[0m.[0m[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/sl_harness.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write dlopen-based differential harness
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m /* Standalone ABI/behavior harness: dlopen()s a StaticLoop .so and exercises
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m    both public symbols, so the same binary can drive the C and Rust libraries. */
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m     void *h = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     if (!h) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     int (*static_sum)(int) = dlsym(h, "static_sum");
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     void (*driver)(int)    = dlsym(h, "driver");
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     if (!static_sum || !driver) { fprintf(stderr, "dlsym failed\n"); return 1; }
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     /* static_sum accumulates across calls; exercise ordinary values, negatives,
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m        zero, and values that overflow the accumulator. */
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     int probes[] = {0, 1, -1, 7, 100, -250, 2147483647, 1, 2147483647,
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m                     -2147483648, -1, 12345, 0};
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(probes)/sizeof(*probes); i++)
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         printf("static_sum(%d) = %d\n", probes[i], static_sum(probes[i]));
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     /* driver() prints via printf and shares the same accumulator. */
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     int strides[] = {0, 1, 3, -4, 1000000, 715827883, -2147483648, 2147483647};
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(strides)/sizeof(*strides); i++) {
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         printf("driver(%d):\n", strides[i]);
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         driver(strides[i]);
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(probes)/sizeof(*probes); i++)
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         printf("post static_sum(%d) = %d\n", probes[i], static_sum(probes[i]));
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     dlclose(h);
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     return 0;
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/sl_harness.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cd /tmp
+gcc -O1 -fwrapv -o sl_harness sl_harness.c -ldl
+./sl_harness /tmp/cbuild_sl/libStaticLoop.so > out_c.txt 2>&1
+./sl_harness /local/home/scheschb/.harvest/work/harvest-work-jUQpP6/translation/target/release/libStaticLoop.so > out_rs.txt 2>&1
+echo "C bytes: $(wc -c < out_c.txt)  Rust bytes: $(wc -c < out_rs.txt)"
+if cmp -s out_c.txt out_rs.txt; then echo "BYTE-IDENTICAL: PASS"; else echo "DIFF:"; diff out_c.txt out_rs.txt | head -40; fi
+md5sum out_c.txt out_rs.txt
+echo "--- sample of output ---"; head -20 out_c.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential byte-comparison of C vs Rust library output
+
+C bytes: 1820  Rust bytes: 1820
+BYTE-IDENTICAL: PASS
+6763230890b17a8a6dd984f1d8481c14  out_c.txt
+6763230890b17a8a6dd984f1d8481c14  out_rs.txt
+--- sample of output ---
+static_sum(0) = 0
+static_sum(1) = 1
+static_sum(-1) = 0
+static_sum(7) = 7
+static_sum(100) = 107
+static_sum(-250) = -143
+static_sum(2147483647) = 2147483504
+static_sum(1) = 2147483505
+static_sum(2147483647) = -144
+static_sum(-2147483648) = 2147483504
+static_sum(-1) = 2147483503
+static_sum(12345) = -2147471448
+static_sum(0) = -2147471448
+driver(0):
+-2147471448
+-2147471448
+-2147471448
+-2147471448
+-2147471448
+-2147471448
+[38;5;244m - Completed in 0.72s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-jUQpP6
+echo "=== c_src unmodified check ==="
+find c_src -type f -newermt '-2 hours' | wc -l   # 0 => nothing touched recently
+find c_src -type f -exec md5sum {} \;
+echo "=== translation tree ==="
+find translation -type f -not -path '*/target/*'
+rm -f /tmp/sl_harness /tmp/sl_harness.c /tmp/out_c.txt /tmp/out_rs.txt /tmp/c.syms /tmp/r.syms
+rm -rf /tmp/cbuild_sl
+echo cleaned[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src untouched, list deliverables, clean temp artifacts
+
+=== c_src unmodified check ===
+3
+442eea3de13ca6a26e6b7aeedde34167  c_src/CMakeLists.txt
+8dc553b37b6bec5aeb8a1c697a9c317d  c_src/include/staticloop.h
+2176706638bfa850d903b18426924116  c_src/src/staticloop.c
+=== translation tree ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+cleaned
+[38;5;244m - Completed in 0.22s[0m
+
+[?25l[0m[38;5;141m> [0mDone and verified.[0m[0m
 [0m[0m
-The C library is one file: [38;5;10mstatic_sum[0m accumulates into a function-local [38;5;10mstatic int[0m, and [38;5;10mdriver(stride)[0m loops [38;5;10mi[0m from 0..9 printing [38;5;10mstatic_sum(i * stride)[0m.[0m[0m
+The library turned out to be small: [38;5;10mc_src[0m contains exactly three files (CMakeLists.txt, [38;5;10minclude/staticloop.h[0m, [38;5;10msrc/staticloop.c[0m, 108 lines total), and the C shared library exports two functions. No namespace-renaming macros in the header, so linker names equal source names.[0m[0m
 [0m[0m
-Translation decisions:[0m[0m
+Deliverables in [38;5;10mtranslation/[0m:[0m[0m
+- [38;5;10mCargo.toml[0m — [38;5;10mcrate-type = ["cdylib"][0m, [38;5;10mname = "StaticLoop"[0m so the artifact is [38;5;10mlibStaticLoop.so[0m like the C target.[0m[0m
+- [38;5;10msrc/lib.rs[0m — both functions as [38;5;10m#[unsafe(no_mangle)] pub unsafe extern "C"[0m with [38;5;10mc_int[0m signatures.[0m[0m
 [0m[0m
-- **Output**: I declared C's variadic [38;5;10mprintf[0m via [38;5;10munsafe extern "C"[0m rather than using [38;5;10mprintln![0m. Rust's [38;5;10mstd::io::Stdout[0m has its own line-buffered [38;5;10mLineWriter[0m independent of C's [38;5;10mFILE *stdout[0m, so a Rust-side print would reorder relative to any C stdio output in the host process and flush at different points. Calling [38;5;10mprintf[0m directly makes both formatting and buffering identical.[0m[0m
-- **The [38;5;10mstatic[0m**: [38;5;10mAtomicI32[0m with [38;5;10mRelaxed[0m ordering. Same process-wide, zero-initialized single instance as the C [38;5;10mstatic[0m, without needing [38;5;10mstatic mut[0m.[0m[0m
-- **Overflow**: [38;5;10mwrapping_add[0m / [38;5;10mwrapping_mul[0m. Signed overflow is UB in C, but the original wraps on real hardware; Rust would panic in debug and I did not want to introduce a behavioral difference.[0m[0m
-- No namespace macros in [38;5;10mstaticloop.h[0m, so the linker symbols are the plain source names.[0m[0m
+Translation notes:[0m[0m
+- The function-local [38;5;10mstatic int sum[0m became a process-wide [38;5;10mstatic mut SUM: c_int[0m, preserving the original's shared, unsynchronized accumulator rather than making it thread-safe.[0m[0m
+- [38;5;10mprintf[0m is called through libc rather than reimplemented with Rust formatting, so stdout formatting and buffering (and interleaving with other C stdio in the process) match exactly.[0m[0m
+- Signed arithmetic uses [38;5;10mwrapping_add[0m/[38;5;10mwrapping_mul[0m to reproduce the two's-complement wraparound the C compilers emit.[0m[0m
+- The header names the [38;5;10mdriver[0m parameter [38;5;10mupdate[0m while the definition names it [38;5;10mstride[0m; name-only difference, no ABI impact.[0m[0m
 [0m[0m
-Verified by building the original C with gcc and linking the same test driver against each library in turn, exercising repeated [38;5;10mdriver[0m calls (accumulated state across calls), negative strides, and [38;5;10mi32::MAX[0m overflow. Output was byte-identical across 53 lines; [38;5;10mnm[0m confirms both symbols are exported. I removed the temporary verification directory afterward, so that harness is not part of the deliverable.[0m[0m
+Verification I ran myself:[0m[0m
+- [38;5;10mcargo build --release[0m succeeds with no warnings.[0m[0m
+- Symbol diff is empty. C defines [38;5;10mT driver[0m, [38;5;10mT static_sum[0m; Rust defines [38;5;10mT driver[0m, [38;5;10mT static_sum[0m. [38;5;10mcomm -23[0m of the two [38;5;10mnm -D --defined-only[0m lists produced no output.[0m[0m
+- Behavioral equality: a [38;5;10mdlopen[0m-based harness exercised both symbols against each [38;5;10m.so[0m — accumulator sequences including negatives, zero, and [38;5;10mINT_MAX[0m/[38;5;10mINT_MIN[0m overflow, then [38;5;10mdriver[0m across strides [38;5;10m0, 1, 3, -4, 1000000, 715827883, INT_MIN, INT_MAX[0m, then further accumulator calls to confirm state carried over. Both outputs were 1820 bytes with identical MD5 ([38;5;10m6763230890b17a8a6dd984f1d8481c14[0m); [38;5;10mcmp[0m reported no difference.[0m[0m
+[0m[0m
+[38;5;10mc_src[0m was only read; its file contents are unchanged. Temporary build and harness files under [38;5;10m/tmp[0m were removed.[0m[0m
 [38;5;8m
- ▸ Credits: 2.64 • Time: 1m 22s
+ ▸ Credits: 3.74 • Time: 3m 7s
 
 [0m[1G[0m[0m[?25h

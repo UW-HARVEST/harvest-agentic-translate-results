@@ -1,1 +1,0 @@
-gcc -o main test/test_vec.c vec.c && ./main

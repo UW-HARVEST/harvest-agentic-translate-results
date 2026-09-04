@@ -1,0 +1,42 @@
+| aead2-1 | crypto_aead_aes256gcm_keybytes, _nsecbytes, _npubbytes, _abytes, _messagebytes_max | constant getters, values compared C vs Rust and against the header macros (32/0/12/16, min(SIZE_MAX-16, 16*(2^32-2))) | [x] |
+| aead2-2 | crypto_aead_aes256gcm_statebytes | `(sizeof(crypto_aead_aes256gcm_state)+15) & ~15` with `CRYPTO_ALIGN(16) unsigned char opaque[512]` → 512 on both; state buffer 16-byte aligned by the caller | [x] |
+| aead2-3 | crypto_aead_aes256gcm_is_available | no HAVE_TMMINTRIN_H/HAVE_WMMINTRIN_H/HAVE_ARMCRYPTO → stub branch compiled → returns 0 on both | [x] |
+| aead2-4 | crypto_aead_aes256gcm_encrypt | stub: mlen=64, adlen=20, clen_p non-NULL; verifies rc=-1, errno=ENOSYS, c/clen_p untouched | [x] |
+| aead2-5 | crypto_aead_aes256gcm_decrypt | stub: clen=64, adlen=20, mlen_p non-NULL, nsec=NULL; rc=-1, errno=ENOSYS, m/mlen_p untouched | [x] |
+| aead2-6 | crypto_aead_aes256gcm_encrypt_detached | stub: mac buffer + maclen_p non-NULL; rc=-1, errno=ENOSYS, c/mac/maclen_p untouched | [x] |
+| aead2-7 | crypto_aead_aes256gcm_decrypt_detached | stub: mac non-NULL, nsec=NULL; rc=-1, errno=ENOSYS, m untouched | [x] |
+| aead2-8 | crypto_aead_aes256gcm_beforenm | stub: 512-byte 16-aligned state, key=32B; rc=-1, errno=ENOSYS, whole state buffer byte-identical to the 0xA5 canary (no write at all) | [x] |
+| aead2-9 | crypto_aead_aes256gcm_encrypt_afternm | stub: precomputed-state form, clen_p non-NULL; rc=-1, errno=ENOSYS, no buffer writes | [x] |
+| aead2-10 | crypto_aead_aes256gcm_decrypt_afternm | stub: precomputed-state form, mlen_p non-NULL; rc=-1, errno=ENOSYS, no buffer writes | [x] |
+| aead2-11 | crypto_aead_aes256gcm_encrypt_detached_afternm | stub: precomputed-state form, mac + maclen_p; rc=-1, errno=ENOSYS, no buffer writes | [x] |
+| aead2-12 | crypto_aead_aes256gcm_decrypt_detached_afternm | stub: precomputed-state form, mac non-NULL; rc=-1, errno=ENOSYS, no buffer writes | [x] |
+| aead2-13 | crypto_aead_aes256gcm_encrypt, crypto_aead_aes256gcm_decrypt | argument-insensitivity of the stub: clen_p/mlen_p/m/nsec/ad all NULL, mlen/clen ∈ {0,1,16,17,2^61,u64::MAX}; always rc=-1 + errno=ENOSYS | [x] |
+| aead2-14 | crypto_aead_aes256gcm_keygen | deterministic `randombytes_implementation` injected in both libraries; writes exactly 32 bytes, canary tail intact, 8 rounds | [x] |
+| aead2-15 | crypto_aead_aegis128l_keybytes, _nsecbytes, _npubbytes, _abytes, _messagebytes_max | constant getters: 16/0/16/32 and min(SIZE_MAX-32, 2^61-1) = 2^61-1 | [x] |
+| aead2-16 | crypto_aead_aegis256_keybytes, _nsecbytes, _npubbytes, _abytes, _messagebytes_max | constant getters: 32/0/32/32 and min(SIZE_MAX-32, 2^61-1) = 2^61-1 | [x] |
+| aead2-17 | _crypto_aead_aegis128l_pick_best_implementation, _crypto_aead_aegis256_pick_best_implementation | no HAVE_ARMCRYPTO / HAVE_AVXINTRIN_H+HAVE_WMMINTRIN_H → always selects `*_soft_implementation`, returns 0; called 3× and encryption re-verified after each call | [x] |
+| aead2-18 | crypto_aead_aegis128l_encrypt, crypto_aead_aegis128l_decrypt | full size matrix mlen × adlen over {0,1,15,16,17,31,32,33,63,64,65,127,128,129,1000} (RATE=32: straddles 32/64-byte absorb, absorb2 and partial-block branches), 3 random k/npub/m/ad per cell = 675 cases; clen_p/mlen_p checked, output canary checked, plaintext round-trips | [x] |
+| aead2-19 | crypto_aead_aegis256_encrypt, crypto_aead_aegis256_decrypt | same full size matrix (RATE=16: straddles 16/32-byte absorb, absorb2 and partial-block branches), 675 cases | [x] |
+| aead2-20 | crypto_aead_aegis128l_encrypt, crypto_aead_aegis256_encrypt | clen_p == NULL and nsec != NULL (must be ignored); output compared against the clen_p != NULL run | [x] |
+| aead2-21 | crypto_aead_aegis128l_encrypt_detached, crypto_aead_aegis256_encrypt_detached | maclen_p non-NULL (must be set to ABYTES=32) and maclen_p == NULL; detached (c,mac) compared against the combined ciphertext, over the whole size matrix | [x] |
+| aead2-22 | crypto_aead_aegis128l_decrypt, crypto_aead_aegis256_decrypt | mlen_p == NULL, and m == NULL (ciphertext verified but not written out — takes the `else` branch of `if (m != NULL)` in the soft impl), over the whole size matrix | [x] |
+| aead2-23 | crypto_aead_aegis128l_decrypt_detached, crypto_aead_aegis256_decrypt_detached | mac supplied separately, nsec != NULL (ignored and left untouched), and m == NULL variant, over the whole size matrix | [x] |
+| aead2-24 | crypto_aead_aegis128l_encrypt/_decrypt, crypto_aead_aegis256_encrypt/_decrypt | ad == NULL with adlen == 0 (all adlen==0 cells of the matrix pass a NULL ad pointer) | [x] |
+| aead2-25 | crypto_aead_aegis128l_encrypt/_decrypt, crypto_aead_aegis256_encrypt/_decrypt | fully in-place: c == m for encrypt and m == c for decrypt, whole size matrix; result compared against the out-of-place ciphertext | [x] |
+| aead2-26 | crypto_aead_aegis128l_decrypt, crypto_aead_aegis256_decrypt | authentication failure via wrong key, wrong nonce and wrong adlen (adlen+1); rc=-1, m zeroed for exactly mlen bytes, canary tail intact | [x] |
+| aead2-27 | aegis128l_soft_implementation (data object), .encrypt_detached / .decrypt_detached | both function pointers of the exported struct called directly through both .so's; maclen ∈ {0,1,8,15,16,17,31,32,33,48} × mlen ∈ {0,1,15,16,17,31,32,33,63,64,65,129} × adlen ∈ {0,1,16,17,32,33,64,65}; exercises the maclen==16, maclen==32 and `else` branches of aegis128l_mac() | [x] |
+| aead2-28 | aegis256_soft_implementation (data object), .encrypt_detached / .decrypt_detached | same maclen × mlen × adlen sweep through the exported struct's function pointers; exercises all three branches of aegis256_mac() | [x] |
+| aead2-29 | aegis128l_soft_implementation.decrypt_detached, aegis256_soft_implementation.decrypt_detached | implementation-level decrypt with m == NULL for every maclen/mlen/adlen combination | [x] |
+| aead2-30 | crypto_aead_aegis128l_keygen, crypto_aead_aegis256_keygen | deterministic `randombytes_implementation` injected in both libraries; writes exactly 16 / 32 bytes, canary tail intact, 8 rounds each | [x] |
+| aead2-31 | _sodium_softaes_expand_key128 | AES-128 key schedule: keys 0x00*16, 0xFF*16, 0..15 and 64 random keys; all 11 round keys compared byte-for-byte + 2 canary blocks past the end | [x] |
+| aead2-32 | _sodium_softaes_expand_key256 | AES-256 key schedule (both the `i%8==0` RCON and the `i%8==4` sub_word branch): 3 fixed + 64 random keys; all 15 round keys compared + canary block | [x] |
+| aead2-33 | _sodium_softaes_invert_key_schedule128 | in-place inverse-MixColumns over rkeys[1..10) (indices 0 and 10 must stay untouched); applied to every expanded 128-bit schedule above | [x] |
+| aead2-34 | _sodium_softaes_invert_key_schedule256 | in-place inverse-MixColumns over rkeys[1..14) (indices 0 and 14 must stay untouched); applied to every expanded 256-bit schedule above | [x] |
+| aead2-35 | _sodium_softaes_inv_mix_columns | struct-by-value in/out; 0, all-ones, every byte value 0..255 in each of the four byte positions, plus 2000 random blocks | [x] |
+| aead2-36 | _sodium_softaes_block_encrypt | non-FAVOR_PERFORMANCE SRM-1R bitsliced round (the `#else` branch); 3028 (block, rk) pairs: edge values, all 256 byte values × 4 positions, 2000 random | [x] |
+| aead2-37 | _sodium_softaes_block_decrypt | INV_SBOX + inv_mix_column round; same 3028 (block, rk) pairs | [x] |
+| aead2-38 | _sodium_softaes_block_encryptlast | SOFTAES_STRIDE=16 stride-table SBOX form (HAVE_INLINE_ASM undefined → no barriers); same 3028 (block, rk) pairs | [x] |
+| aead2-39 | _sodium_softaes_block_decryptlast | INV_SBOX-only last round; same 3028 (block, rk) pairs | [x] |
+| aead2-40 | _sodium_softaes_expand_key128 + _sodium_softaes_block_encrypt + _block_encryptlast + _invert_key_schedule128 + _block_decrypt + _block_decryptlast | full 10-round AES-128 encrypt and decrypt composed from the exported primitives, 32 random key/block pairs, round-trip verified | [x] |
+| aead2-41 | _sodium_softaes_expand_key256 + _sodium_softaes_block_encrypt + _block_encryptlast + _invert_key_schedule256 + _block_decrypt + _block_decryptlast | full 14-round AES-256 encrypt and decrypt composed from the exported primitives, 32 random key/block pairs, round-trip verified | [x] |
+| aead2-42 | _sodium_softaes_expand_key128 + _sodium_softaes_block_encrypt + _block_encryptlast | FIPS-197 C.1 known-answer vector checked independently against BOTH libraries (pins softaes to real AES, not just C↔Rust agreement) | [x] |

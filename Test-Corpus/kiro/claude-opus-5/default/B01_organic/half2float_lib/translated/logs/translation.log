@@ -4,169 +4,315 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iEBGBl[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
-[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iEBGBl[0m [38;5;244m(9 entries)[0m
-[38;5;244m - Completed in 0.1s[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "--- c_src ---" && find c_src -type f | head -200 && echo "--- count ---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src tree
+
+/local/home/scheschb/.harvest/work/harvest-work-80NsSC
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:27 .
+drwxr-xr-x. 479 scheschb amazon 81920 Sep  1 05:27 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 05:27 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 05:27 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 05:27 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+--- count ---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+   15 c_src/CMakeLists.txt
+    3 c_src/include/lib.h
+  376 c_src/src/lib.c
+  394 total
+[38;5;244m - Completed in 0.6s[0m
 
 [?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iEBGBl/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iEBGBl/c_src/include/lib.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-iEBGBl/c_src/src/lib.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-iEBGBl/c_src/CMakeLists.txt
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src/CMakeLists.txt
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m50 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-iEBGBl/c_src/include/lib.h
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m50 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src/include/lib.h
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m27639 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-iEBGBl/c_src/src/lib.c
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m27639 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src/src/lib.c
 
  ⋮ 
 
 [38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mpython3 - <<'EOF'
+[?25l[0m[38;5;141m> [0mSingle small library — one public function [38;5;10mhalf2float[0m plus three static lookup tables. Let me build the C lib to enumerate the exported surface.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; echo "exit=$?"; tail -5 cm.log; ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the C shared library with cmake
+
+exit=1
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-NhqQBp/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+-rwxr-xr-x. 1 scheschb amazon 15712 Sep  1 05:20 libharvest-work-NhqQBp.so
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild80 && mkdir -p /tmp/cbuild80 && cd /tmp/cbuild80 && cmake /local/home/scheschb/.harvest/work/harvest-work-80NsSC/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; echo "exit=$?"; ls -la *.so && echo "=== nm -D ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C lib in fresh dir and list exported symbols
+
+exit=0
+-rwxr-xr-x. 1 scheschb amazon 24040 Sep  1 05:28 libharvest-work-80NsSC.so
+=== nm -D ===
+0000000000001100 T half2float
+[38;5;244m - Completed in 0.417s[0m
+
+[?25l[0m[38;5;141m> [0mExactly one exported symbol: [38;5;10mhalf2float[0m. Now I'll extract the three lookup tables verbatim from the C source and generate the Rust crate.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-80NsSC && python3 - <<'EOF'
 import re
-src=open('c_src/src/lib.c').read()
-for name in ['m__mantissa','m__offset','m__exponent']:
-    m=re.search(re.escape(name)+r'\[(\d+)\]\s*=\s*\{(.*?)\};', src, re.S)
-    vals=[v.strip() for v in m.group(2).split(',')]
-    print(name, 'declared', m.group(1), 'init count', len(vals))
-EOF[0m[38;5;244m (using tool: shell)[0m
-Purpose: Count table entries in C source
+src = open('c_src/src/lib.c').read()
 
-m__mantissa declared 2048 init count 2048
-m__offset declared 64 init count 64
-m__exponent declared 64 init count 64
-[38;5;244m - Completed in 0.33s[0m
+def grab(name):
+    # find "name[N] = { ... };"
+    m = re.search(re.escape(name) + r'\[(\d+)\]\s*=\s*\{(.*?)\};', src, re.S)
+    n = int(m.group(1))
+    vals = re.findall(r'0x[0-9a-fA-F]+', m.group(2))
+    print(name, 'declared', n, 'found', len(vals))
+    assert len(vals) == n, (name, n, len(vals))
+    return n, vals
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p translation/src && python3 - <<'EOF'
-import re, textwrap
-src=open('c_src/src/lib.c').read()
-def tab(name):
-    m=re.search(re.escape(name)+r'\[(\d+)\]\s*=\s*\{(.*?)\};', src, re.S)
-    return int(m.group(1)), [v.strip() for v in m.group(2).split(',')]
+mant = grab('m__mantissa')
+off  = grab('m__offset')
+exp  = grab('m__exponent')
 
-def fmt(name, ty, vals, per):
-    n=len(vals)
-    lines=[]
-    for i in range(0,n,per):
-        lines.append('    '+', '.join(vals[i:i+per])+',')
-    return f"static {name}: [{ty}; {n}] = [\n"+"\n".join(lines)+"\n];\n"
+def emit(name, ty, n, vals, per):
+    lines = [f'static {name}: [{ty}; {n}] = [']
+    for i in range(0, n, per):
+        lines.append('    ' + ', '.join(vals[i:i+per]) + ',')
+    lines.append('];')
+    return '\n'.join(lines)
 
-_,mant=tab('m__mantissa')
-_,off=tab('m__offset')
-_,exp=tab('m__exponent')
-
-out = []
-out.append("""//! Translation of c_src/src/lib.c (half-precision -> single-precision conversion).
+body = f'''//! Rust translation of c_src/src/lib.c
 //!
-//! Behaviour is reproduced bit-for-bit, including the quirks of the original
-//! lookup tables (e.g. the second half of the mantissa table repeating a
-//! different stride). No bugs are "fixed".
+//! Public ABI: `float half2float(uint16_t h)`
+//!
+//! The three lookup tables below are copied verbatim from the C source so the
+//! conversion is bit-for-bit identical.
 
-""")
-out.append(fmt('M_MANTISSA','u32',mant,6))
-out.append("\n")
-out.append(fmt('M_OFFSET','u16',off,8))
-out.append("\n")
-out.append(fmt('M_EXPONENT','u32',exp,6))
-out.append("""
-/// `float half2float(uint16_t h)`
-///
-/// Mirrors the C implementation exactly:
+#![allow(non_upper_case_globals)]
+
+use std::ffi::{{c_float, c_ushort}};
+
+{emit('M__MANTISSA', 'u32', mant[0], mant[1], 6)}
+
+{emit('M__OFFSET', 'u16', off[0], off[1], 8)}
+
+{emit('M__EXPONENT', 'u32', exp[0], exp[1], 6)}
+
+/// Translation of:
 /// ```c
-/// int n = h >> 10;
-/// out.num = m__mantissa[(h & 0x3ff) + m__offset[n]] + m__exponent[n];
-/// return out.flt;
+/// float half2float(uint16_t h) {{
+///     union {{ float flt; uint32_t num; }} out;
+///     int n = h >> 10;
+///     out.num = m__mantissa[(h & 0x3ff) + m__offset[n]] + m__exponent[n];
+///     return out.flt;
+/// }}
 /// ```
-/// The addition is unsigned 32-bit and wraps, matching C's `uint32_t`
-/// arithmetic, and the result is reinterpreted as a `float`.
+///
+/// `n` is in 0..=63 because `h` is 16 bits, and
+/// `(h & 0x3ff) + m__offset[n]` is at most 0x3ff + 0x400 = 0x7ff, so both
+/// table accesses are in bounds for every possible input.
+///
+/// The C addition of the mantissa and exponent words is plain `uint32_t`
+/// arithmetic, which wraps; `wrapping_add` reproduces that exactly.
 #[unsafe(no_mangle)]
-pub extern "C" fn half2float(h: u16) -> core::ffi::c_float {
+pub extern "C" fn half2float(h: c_ushort) -> c_float {{
     let n = (h >> 10) as usize;
-    let idx = (h & 0x3ff) as usize + M_OFFSET[n] as usize;
-    let num = M_MANTISSA[idx].wrapping_add(M_EXPONENT[n]);
+    let num = M__MANTISSA[((h & 0x3ff) as usize) + (M__OFFSET[n] as usize)]
+        .wrapping_add(M__EXPONENT[n]);
     f32::from_bits(num)
-}
-""")
-open('translation/src/lib.rs','w').write(''.join(out))
-EOF
-cat > translation/Cargo.toml <<'EOF'
-[package]
-name = "translation"
-version = "0.1.0"
-edition = "2024"
+}}
+'''
+import os
+os.makedirs('translation/src', exist_ok=True)
+open('translation/src/lib.rs','w').write(body)
+print('wrote translation/src/lib.rs')
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Extract tables from C source and generate Rust lib.rs
 
-[lib]
-crate-type = ["cdylib"]
-path = "src/lib.rs"
+m__mantissa declared 2048 found 2048
+m__offset declared 64 found 64
+m__exponent declared 64 found 64
+wrote translation/src/lib.rs
+[38;5;244m - Completed in 0.24s[0m
 
-[profile.release]
-panic = "abort"
-EOF
-echo done[0m[38;5;244m (using tool: shell)[0m
-Purpose: Generate Rust lib.rs and Cargo.toml
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-80NsSC/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
 
-done
+[49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-80NsSC/translation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-80NsSC/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-80NsSC/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+[38;5;244m - Completed in 0.145s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles. Now the completion gate — symbol diff between the two [38;5;10m.so[0m files.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-80NsSC && \
+nm -D --defined-only /tmp/cbuild80/libharvest-work-80NsSC.so | awk '{print $3}' | sort > /tmp/c_syms.txt && \
+nm -D --defined-only translation/target/release/libtranslation.so | awk '{print $3}' | sort > /tmp/rust_syms.txt && \
+echo "=== C symbols ($(wc -l < /tmp/c_syms.txt)) ===" && cat /tmp/c_syms.txt && \
+echo "=== Rust symbols ($(wc -l < /tmp/rust_syms.txt)) ===" && cat /tmp/rust_syms.txt && \
+echo "=== MISSING from Rust (in C, not in Rust) ===" && comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt && echo "[end]"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust shared libraries
+
+=== C symbols (1) ===
+half2float
+=== Rust symbols (1) ===
+half2float
+=== MISSING from Rust (in C, not in Rust) ===
+[end]
 [38;5;244m - Completed in 0.41s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-
-   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-iEBGBl/translation)
-    Finished `release` profile [optimized] target(s) in 0.17s
-[38;5;244m - Completed in 0.197s[0m
-
-[?25l[0m[38;5;141m> [0mBuilds clean. Now verifying against the C for all 65536 possible inputs.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only translation/target/release/libtranslation.so | grep -i half
-mkdir -p /tmp/ver && gcc -O2 -shared -fPIC -Ic_src/include -o /tmp/ver/libc_ref.so c_src/src/lib.c && cat > /tmp/ver/cmp.c <<'EOF'
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now exhaustive behavioral verification — all 65536 possible inputs, comparing raw bit patterns from both libraries loaded side by side.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/verify.c <<'EOF'
+#include <dlfcn.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <dlfcn.h>
-int main(void){
-    void *a=dlopen("/tmp/ver/libc_ref.so",RTLD_NOW);
-    void *b=dlopen("/local/home/scheschb/.harvest/work/harvest-work-iEBGBl/translation/target/release/libtranslation.so",RTLD_NOW);
-    if(!a||!b){fprintf(stderr,"dlopen: %s\n",dlerror());return 2;}
-    float (*fa)(uint16_t)=dlsym(a,"half2float");
-    float (*fb)(uint16_t)=dlsym(b,"half2float");
-    if(!fa||!fb){fprintf(stderr,"dlsym failed\n");return 2;}
-    int bad=0;
-    for(int i=0;i<65536;i++){
-        float x=fa((uint16_t)i), y=fb((uint16_t)i);
-        uint32_t ux,uy; __builtin_memcpy(&ux,&x,4); __builtin_memcpy(&uy,&y,4);
-        if(ux!=uy){ if(bad<5) printf("MISMATCH h=0x%04x c=0x%08x rust=0x%08x\n",i,ux,uy); bad++; }
+#include <string.h>
+
+typedef float (*fn_t)(uint16_t);
+
+int main(void) {
+    void *hc = dlopen("/tmp/cbuild80/libharvest-work-80NsSC.so", RTLD_NOW);
+    if (!hc) { printf("dlopen C failed: %s\n", dlerror()); return 2; }
+    void *hr = dlopen("/local/home/scheschb/.harvest/work/harvest-work-80NsSC/translation/target/release/libtranslation.so", RTLD_NOW);
+    if (!hr) { printf("dlopen Rust failed: %s\n", dlerror()); return 2; }
+
+    fn_t fc = (fn_t)dlsym(hc, "half2float");
+    fn_t fr = (fn_t)dlsym(hr, "half2float");
+    if (!fc || !fr) { printf("dlsym failed\n"); return 2; }
+
+    long mismatch = 0;
+    for (long i = 0; i <= 0xFFFF; i++) {
+        uint16_t h = (uint16_t)i;
+        float a = fc(h), b = fr(h);
+        uint32_t ba, bb;
+        memcpy(&ba, &a, 4);
+        memcpy(&bb, &b, 4);
+        if (ba != bb) {
+            if (mismatch < 10)
+                printf("MISMATCH h=0x%04x  C=0x%08x  Rust=0x%08x\n", h, ba, bb);
+            mismatch++;
+        }
     }
-    printf(bad? "FAIL: %d mismatches\n":"OK: all 65536 inputs byte-identical (%d mismatches)\n", bad);
-    return bad!=0;
+    printf("tested 65536 inputs, mismatches=%ld\n", mismatch);
+    return mismatch != 0;
 }
 EOF
-gcc -O2 -o /tmp/ver/cmp /tmp/ver/cmp.c -ldl && /tmp/ver/cmp[0m[38;5;244m (using tool: shell)[0m
+gcc -O2 -o /tmp/verify /tmp/verify.c -ldl && /tmp/verify; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Exhaustively compare C vs Rust over all 65536 inputs via dlopen
 
-0000000000013dd0 T half2float
-OK: all 65536 inputs byte-identical (0 mismatches)
-[38;5;244m - Completed in 0.137s[0m
+tested 65536 inputs, mismatches=0
+exit=0
+[38;5;244m - Completed in 0.51s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/ver /tmp/build.log; git -C . status --short 2>/dev/null | head; ls translation[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mIndependent check that the tables in Rust match the C source value-for-value (not just count):[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-80NsSC && python3 - <<'EOF'
+import re
+c = open('c_src/src/lib.c').read()
+r = open('translation/src/lib.rs').read()
 
-Cargo.lock
-Cargo.toml
-src
-target
-[38;5;244m - Completed in 0.16s[0m
+def grab(src, name, arr_re):
+    m = re.search(arr_re, src, re.S)
+    return [int(v, 16) for v in re.findall(r'0x[0-9a-fA-F]+', m.group(1))]
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds as a cdylib exporting [38;5;10mhalf2float[0m, and I verified it against the compiled C reference over all 65536 possible [38;5;10muint16_t[0m inputs — zero bit-level mismatches.[0m[0m
+pairs = [('m__mantissa','M__MANTISSA'), ('m__offset','M__OFFSET'), ('m__exponent','M__EXPONENT')]
+ok = True
+for cn, rn in pairs:
+    cv = grab(c, cn, re.escape(cn) + r'\[\d+\]\s*=\s*\{(.*?)\};')
+    rv = grab(r, rn, re.escape(rn) + r'\s*:\s*\[\w+;\s*\d+\]\s*=\s*\[(.*?)\];')
+    same = cv == rv
+    ok &= same
+    print(f'{cn:14s} C={len(cv):5d} Rust={len(rv):5d} identical={same}')
+print('ALL TABLES IDENTICAL:', ok)
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify Rust tables match C tables element by element
+
+m__mantissa    C= 2048 Rust= 2048 identical=True
+m__offset      C=   64 Rust=   64 identical=True
+m__exponent    C=   64 Rust=   64 identical=True
+ALL TABLES IDENTICAL: True
+[38;5;244m - Completed in 0.25s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-80NsSC && rm -f /tmp/verify /tmp/verify.c && \
+echo "=== c_src unmodified? ===" && (cd c_src && git status --short 2>/dev/null || echo "(not a git repo)") && \
+find c_src -newermt "-20 minutes" -type f | sed 's/^/MODIFIED: /' ; echo "[none above = clean]" && \
+echo "=== translation tree ===" && find translation -maxdepth 2 -not -path '*/target*' -type f && \
+wc -l translation/src/lib.rs && \
+echo "=== final symbol check ===" && nm -D --defined-only translation/target/release/libtranslation.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src untouched and list final artifacts
+
+=== c_src unmodified? ===
+(not a git repo)
+MODIFIED: c_src/CMakeLists.txt
+MODIFIED: c_src/include/lib.h
+MODIFIED: c_src/src/lib.c
+[none above = clean]
+=== translation tree ===
+translation/src/lib.rs
+translation/Cargo.toml
+translation/Cargo.lock
+404 translation/src/lib.rs
+=== final symbol check ===
+0000000000013820 T half2float
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-80NsSC && stat -c '%y  %n' c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c translation/src/lib.rs && echo "--- md5 of c_src vs pristine cmake copy ---" && md5sum c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check c_src mtimes to confirm they predate my work
+
+2026-09-01 05:27:53.095958680 +0000  c_src/CMakeLists.txt
+2026-09-01 05:27:53.095958680 +0000  c_src/include/lib.h
+2026-09-01 05:27:53.095958680 +0000  c_src/src/lib.c
+2026-09-01 05:28:40.936037285 +0000  translation/src/lib.rs
+--- md5 of c_src vs pristine cmake copy ---
+418d0d994ba15bc641b8094a02efaa31  c_src/src/lib.c
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0mDone and verified.[0m[0m
 [0m[0m
-What the translation contains:[0m[0m
-- [38;5;10msrc/lib.rs[0m — the three lookup tables ([38;5;10mM_MANTISSA[0m 2048×u32, [38;5;10mM_OFFSET[0m 64×u16, [38;5;10mM_EXPONENT[0m 64×u32) transcribed mechanically from the C initializers, plus the conversion function. Tables were extracted by script rather than by hand, so no transcription drift.[0m[0m
-- The function body mirrors the C exactly: [38;5;10mn = h >> 10[0m, index [38;5;10m(h & 0x3ff) + offset[n][0m, [38;5;10mwrapping_add[0m for the C [38;5;10muint32_t[0m addition, then [38;5;10mf32::from_bits[0m in place of the C union type-pun. Indexing is safe Rust; the bounds are provably in range (max index 0x3ff + 0x400 = 2047).[0m[0m
+The library turned out to be small: [38;5;10mc_src/[0m contains exactly three files, one translation unit, and the C [38;5;10m.so[0m exports exactly one public symbol — [38;5;10mhalf2float[0m. No namespace-renaming macros in the header ([38;5;10mlib.h[0m is three lines: an [38;5;10m<stdint.h>[0m include and the one prototype). The three lookup tables ([38;5;10mm__mantissa[2048][0m, [38;5;10mm__offset[64][0m, [38;5;10mm__exponent[64][0m) are [38;5;10mstatic[0m, so they are not part of the ABI, but they are what determines the output.[0m[0m
 [0m[0m
-Two things worth noting about the original C that I reproduced rather than corrected: the mantissa table's upper half (indices 1024+) restarts at [38;5;10m0x38000000[0m with a 0x2000 stride instead of continuing the pattern, and [38;5;10mm__exponent[31][0m/[38;5;10m[63][0m hold [38;5;10m0x47800000[0m/[38;5;10m0xc7800000[0m, which means inf/NaN half values do not map to float inf/NaN. Both are preserved as-is.[0m[0m
+What I did:[0m[0m
 [0m[0m
-No symbol renaming was needed — [38;5;10minclude/lib.h[0m declares [38;5;10mhalf2float[0m plainly with no namespace macro, so the linker symbol matches the source name.[0m[0m
+- Built the C library with cmake and ran [38;5;10mnm -D[0m to fix the definition of done: one export, [38;5;10mhalf2float[0m.[0m[0m
+- Generated [38;5;10mtranslation/src/lib.rs[0m by machine-extracting all 2176 table constants directly from [38;5;10mc_src/src/lib.c[0m rather than retyping them, so there is no transcription risk.[0m[0m
+- Translated the function body faithfully. The C does a [38;5;10muint32_t[0m add of a mantissa word and an exponent word and then type-puns through a union; the Rust uses [38;5;10mwrapping_add[0m plus [38;5;10mf32::from_bits[0m, which reproduces the wrap-on-overflow and the bit reinterpretation exactly. Both table indices are provably in bounds for every 16-bit input ([38;5;10mn ≤ 63[0m, and [38;5;10m(h & 0x3ff) + offset ≤ 0x7ff[0m), so the safe indexing never panics.[0m[0m
+[0m[0m
+Verification I ran myself, not delegated:[0m[0m
+[0m[0m
+- Symbol diff: [38;5;10mcomm -23[0m of the C and Rust export lists is empty; both export exactly [38;5;10mhalf2float[0m.[0m[0m
+- Exhaustive equivalence: a C harness [38;5;10mdlopen[0ms both shared objects side by side and compares the raw 32-bit patterns of the results for all 65536 possible [38;5;10muint16_t[0m inputs. Zero mismatches — including the NaN, infinity, and subnormal cases, which is why I compared bit patterns rather than float values.[0m[0m
+- Table equality: re-parsed both sources and compared element by element, not just by length. All three arrays identical.[0m[0m
+- [38;5;10mc_src/[0m is untouched; its mtimes still match the original checkout timestamp, several seconds before I wrote anything.[0m[0m
+[0m[0m
+[38;5;10mcargo build --release[0m succeeds with [38;5;10mcrate-type = ["cdylib"][0m, and the export uses [38;5;10m#[unsafe(no_mangle)] pub extern "C"[0m with [38;5;10mc_ushort[0m/[38;5;10mc_float[0m from [38;5;10mstd::ffi[0m to match the C signature.[0m[0m
 [38;5;8m
- ▸ Credits: 2.64 • Time: 2m 59s
+ ▸ Credits: 4.50 • Time: 1m 41s
 
 [0m[1G[0m[0m[?25h

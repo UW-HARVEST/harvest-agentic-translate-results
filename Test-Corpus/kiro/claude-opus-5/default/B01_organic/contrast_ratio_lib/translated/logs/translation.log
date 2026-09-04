@@ -4,255 +4,303 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -100 && echo "---" && du -sh c_src[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "---C_SRC---" && find c_src -type f | head -200 && echo "---COUNT---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
 
-./c_src/CMakeLists.txt
-./c_src/include/lib.h
-./c_src/src/lib.c
-./.claude/settings.json
----
-12K	c_src
+/local/home/scheschb/.harvest/work/harvest-work-9YCTFl
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:06 .
+drwxr-xr-x. 469 scheschb amazon 81920 Sep  1 05:06 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 05:06 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 05:06 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 05:06 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---COUNT---
+3
 [38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+
+  17 c_src/CMakeLists.txt
+   7 c_src/include/lib.h
+  29 c_src/src/lib.c
+  53 total
+[38;5;244m - Completed in 0.6s[0m
 
 [?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/c_src/include/lib.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/c_src/src/lib.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m489 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TiWZlV/c_src/CMakeLists.txt
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/include/lib.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m489 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/CMakeLists.txt
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m155 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TiWZlV/c_src/include/lib.h
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m155 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/include/lib.h
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1023 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TiWZlV/c_src/src/lib.c
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1023 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/src/lib.c
 
  ⋮ 
 
 [38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mSmall, self-contained library. Key C semantics to preserve: the [38;5;10mpow[0m/division branches compute in [38;5;10mdouble[0m then truncate to [38;5;10mfloat[0m, the luminance sum is [38;5;10mfloat[0m arithmetic, and there's no [38;5;10m+0.05[0m offset nor divide-by-zero guard in the ratio (so black-on-black yields [38;5;10minf[0m) — reproducing that as-is.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; tail -5 cm.log; ls -la /tmp/cbuild/*.so[0m[38;5;244m (using tool: shell)[0m
+
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-g46BHm/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+-rwxr-xr-x. 1 scheschb amazon 233656 Aug 31 05:04 /tmp/cbuild/liblz4.so
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cb9Y && mkdir -p /tmp/cb9Y && cd /tmp/cb9Y && cmake /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src > cm.log 2>&1 && make >> cm.log 2>&1; tail -3 cm.log; ls *.so; echo "=== nm -D ==="; nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+
+[ 50%] Building C object CMakeFiles/harvest-work-9YCTFl.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-9YCTFl.so
+[100%] Built target harvest-work-9YCTFl
+libharvest-work-9YCTFl.so
+=== nm -D ===
+0000000000001369 T contrast_ratio
+[38;5;244m - Completed in 0.431s[0m
+
+[?25l[0m[38;5;141m> [0mOne public symbol: [38;5;10mcontrast_ratio[0m. Now the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
-[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "translation"
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest_translation"
 [0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m [profile.release]
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m panic = "abort"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m [profile.release]
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo --version; rustc --version[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
 
-cargo 1.94.0 (85eff7c80 2026-01-15)
-rustc 1.94.0 (4a4ef493e 2026-03-02)
-[38;5;244m - Completed in 0.44s[0m
-
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-
-[48;2;40;67;43m[39m+     1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Rust translation of `c_src/src/lib.c` (WCAG-style contrast ratio).[K
-[0m[48;2;40;67;43m[39m+     2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+     3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m The C code is reproduced verbatim, including its quirks:[K
-[0m[48;2;40;67;43m[39m+     4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   * The linear-ization branches promote the `float` channel to `double`,[K
-[0m[48;2;40;67;43m[39m+     5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m     do the work in `double`, then truncate the result back to `float`.[K
-[0m[48;2;40;67;43m[39m+     6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   * The luminance sum is evaluated purely in `float`, left to right.[K
-[0m[48;2;40;67;43m[39m+     7[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   * The ratio is a bare `High / Low` with no `+ 0.05` offset and no guard[K
-[0m[48;2;40;67;43m[39m+     8[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m     against a zero denominator, so pure black inputs yield `inf`/`NaN`[K
-[0m[48;2;40;67;43m[39m+     9[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m     exactly as the original does.[K
-[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    11[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Mirrors `cb_rgb_255` from `include/lib.h`: three tightly packed bytes,[K
-[0m[48;2;40;67;43m[39m+    12[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m passed by value across the C ABI.[K
-[0m[48;2;40;67;43m[39m+    13[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    14[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mderive[38;2;192;197;206m([38;2;192;197;206mClone[38;2;192;197;206m,[38;2;192;197;206m Copy[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    15[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mcb_rgb_255[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    16[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mR[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mcore[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206mc_uchar,[K
-[0m[48;2;40;67;43m[39m+    17[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mG[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mcore[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206mc_uchar,[K
-[0m[48;2;40;67;43m[39m+    18[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mB[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206mcore[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206mc_uchar,[K
-[0m[48;2;40;67;43m[39m+    19[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    20[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    21[0m:[39m[48;2;24;38;30m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    22[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m Use libm's `pow` directly so the double-precision results are[K
-[0m[48;2;40;67;43m[39m+    23[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m///[38;2;101;115;126m bit-for-bit those of the C build.[K
-[0m[48;2;40;67;43m[39m+    24[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mpow[38;2;192;197;206m([38;2;191;97;106mx[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m, [38;2;191;97;106my[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    25[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    26[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    27[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `R = ((float)(R > 0.04045 ? pow((R + 0.055) / 1.055, 2.4) : R / 12.92));`[K
-[0m[48;2;40;67;43m[39m+    28[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[K
-[0m[48;2;40;67;43m[39m+    29[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m The comparison and both arithmetic branches happen in `double` because the[K
-[0m[48;2;40;67;43m[39m+    30[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m literals are `double`; only the final store narrows back to `float`.[K
-[0m[48;2;40;67;43m[39m+    31[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106minline[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    32[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mlinearize[38;2;192;197;206m([38;2;191;97;106mchannel[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    33[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m c [38;2;192;197;206m=[38;2;192;197;206m channel [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    34[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m c [38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m04045[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    35[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[38;2;192;197;206m [38;2;150;181;180mpow[38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mc [38;2;192;197;206m+[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m055[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m1.[38;2;208;135;112m055[38;2;192;197;206m,[38;2;192;197;206m [38;2;208;135;112m2.[38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    36[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;192;197;206mc [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m12.[38;2;208;135;112m92[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mf32[K
-[0m[48;2;40;67;43m[39m+    38[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    39[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    40[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    41[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Port of `static float cbLuminance(float, float, float)`.[K
-[0m[48;2;40;67;43m[39m+    42[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mcb_luminance[38;2;192;197;206m([38;2;191;97;106mr[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106mg[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106mb[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m r [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mlinearize[38;2;192;197;206m([38;2;192;197;206mr[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    44[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m g [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mlinearize[38;2;192;197;206m([38;2;192;197;206mg[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m b [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mlinearize[38;2;192;197;206m([38;2;192;197;206mb[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m Single-precision, left-to-right: ((0.2126*R) + (0.7152*G)) + (0.0722*B).[K
-[0m[48;2;40;67;43m[39m+    47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;208;135;112m0.[38;2;208;135;112m2126[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m r [38;2;192;197;206m+[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m7152[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m g [38;2;192;197;206m+[38;2;192;197;206m [38;2;208;135;112m0.[38;2;208;135;112m0722[38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m*[38;2;192;197;206m b[K
-[0m[48;2;40;67;43m[39m+    48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    49[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    50[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Port of `static float cbContrastRatio(float, float, float, float, float, float)`.[K
-[0m[48;2;40;67;43m[39m+    51[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mcb_contrast_ratio[38;2;192;197;206m([38;2;191;97;106mra[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106mga[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106mba[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106mrb[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106mgb[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m, [38;2;191;97;106mbb[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    52[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m lum_a [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mcb_luminance[38;2;192;197;206m([38;2;192;197;206mra[38;2;192;197;206m,[38;2;192;197;206m ga[38;2;192;197;206m,[38;2;192;197;206m ba[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    53[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m lum_b [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mcb_luminance[38;2;192;197;206m([38;2;192;197;206mrb[38;2;192;197;206m,[38;2;192;197;206m gb[38;2;192;197;206m,[38;2;192;197;206m bb[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    54[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    55[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m high [38;2;192;197;206m=[38;2;192;197;206m lum_a[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    56[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m low [38;2;192;197;206m=[38;2;192;197;206m lum_b[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    57[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m A false (e.g. NaN) comparison leaves the initial assignment in place,[K
-[0m[48;2;40;67;43m[39m+    58[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;101;115;126m//[38;2;101;115;126m matching C.[K
-[0m[48;2;40;67;43m[39m+    59[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m high [38;2;192;197;206m<[38;2;192;197;206m low [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    60[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        high [38;2;192;197;206m=[38;2;192;197;206m lum_b[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        low [38;2;192;197;206m=[38;2;192;197;206m lum_a[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    62[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    63[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    64[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    high [38;2;192;197;206m/[38;2;192;197;206m low[K
-[0m[48;2;40;67;43m[39m+    65[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    66[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    67[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `float contrast_ratio(cb_rgb_255 A, cb_rgb_255 B);`[K
-[0m[48;2;40;67;43m[39m+    68[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    69[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mcontrast_ratio[38;2;192;197;206m([38;2;191;97;106mA[38;2;192;197;206m:[38;2;192;197;206m cb_rgb_255, [38;2;191;97;106mB[38;2;192;197;206m:[38;2;192;197;206m cb_rgb_255[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mf32[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mcb_contrast_ratio[38;2;192;197;206m([K
-[0m[48;2;40;67;43m[39m+    71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mf32[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206mA.R[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m255.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    72[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mf32[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206mA.G[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m255.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mf32[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206mA.B[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m255.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    74[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mf32[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206mB.R[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m255.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    75[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mf32[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206mB.G[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m255.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mf32[38;2;192;197;206m::[38;2;192;197;206mfrom[38;2;192;197;206m([38;2;192;197;206mB.B[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m/[38;2;192;197;206m [38;2;208;135;112m255.[38;2;208;135;112m0[38;2;180;142;173mf32[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    77[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Rust translation of the C library in `c_src/`.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //! Public ABI surface (as reported by `nm -D` on the C shared object):
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //!   * `contrast_ratio`
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! The floating point evaluation order and precision of the original C is
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! reproduced exactly:
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //!   * The linearization step promotes the `float` channel to `double`
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //!     (C usual arithmetic conversions against the `double` literals
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //!     `0.04045`, `0.055`, `1.055`, `2.4`, `12.92`), performs the work in
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m //!     double precision, then narrows back to `float`.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m //!   * The luminance weighting is done entirely in single precision, left to
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m //!     right, matching `0.2126f * R + 0.7152f * G + 0.0722f * B`.
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m //!   * The high/low selection uses a strict `<` comparison, so NaN inputs take
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m //!     the no-swap path exactly as the C does.
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m /// Mirror of the C `cb_rgb_255` struct (three `unsigned char` channels).
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m #[derive(Clone, Copy)]
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m pub struct cb_rgb_255 {
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     pub R: u8,
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     pub G: u8,
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     pub B: u8,
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m /// sRGB -> linear transfer function for one channel.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m /// Translation of the ternary expression applied to each channel in
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m /// `cbLuminance`:
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m /// `(float)(C > 0.04045 ? pow((C + 0.055) / 1.055, 2.4) : C / 12.92)`
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m fn cb_linearize(channel: f32) -> f32 {
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     // `channel` is promoted to `double` for the comparison and the arithmetic,
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     // then the `double` result is truncated back to `float`.
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     let c = channel as f64;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     let linear = if c > 0.04045 {
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         ((c + 0.055) / 1.055).powf(2.4)
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         c / 12.92
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     linear as f32
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m /// Translation of the static C helper `cbLuminance`.
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m fn cbLuminance(R: f32, G: f32, B: f32) -> f32 {
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     let R = cb_linearize(R);
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     let G = cb_linearize(G);
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     let B = cb_linearize(B);
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     // Single precision, left-to-right accumulation, as in the C source.
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     let Result = 0.2126f32 * R + 0.7152f32 * G + 0.0722f32 * B;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     Result
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m /// Translation of the static C helper `cbContrastRatio`.
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m fn cbContrastRatio(RA: f32, GA: f32, BA: f32, RB: f32, GB: f32, BB: f32) -> f32 {
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     let LumA = cbLuminance(RA, GA, BA);
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     let LumB = cbLuminance(RB, GB, BB);
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     let mut High = LumA;
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     let mut Low = LumB;
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     if High < Low {
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         High = LumB;
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         Low = LumA;
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     // No division-by-zero guard in the C original; the IEEE-754 result
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     // (+/-inf or NaN) is propagated verbatim.
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     let Ratio = High / Low;
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     Ratio
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m /// Public C entry point: WCAG-style contrast ratio between two 8-bit sRGB
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m /// colors.
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m pub extern "C" fn contrast_ratio(A: cb_rgb_255, B: cb_rgb_255) -> f32 {
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m     cbContrastRatio(
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m         A.R as f32 / 255.0f32,
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m         A.G as f32 / 255.0f32,
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m         A.B as f32 / 255.0f32,
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m         B.R as f32 / 255.0f32,
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m         B.G as f32 / 255.0f32,
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m         B.B as f32 / 255.0f32,
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation && cargo build --release 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
 
-   |         ^ help: convert the identifier to snake case: `r`
-   |
-   = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
-
-warning: structure field `G` should have a snake case name
-  --> src/lib.rs:17:9
-   |
-17 |     pub G: core::ffi::c_uchar,
-   |         ^ help: convert the identifier to snake case: `g`
-
-warning: structure field `B` should have a snake case name
-  --> src/lib.rs:18:9
-   |
-18 |     pub B: core::ffi::c_uchar,
-   |         ^ help: convert the identifier to snake case: `b`
-
-warning: variable `A` should have a snake case name
-  --> src/lib.rs:69:34
-   |
-69 | pub extern "C" fn contrast_ratio(A: cb_rgb_255, B: cb_rgb_255) -> f32 {
-   |                                  ^ help: convert the identifier to snake case: `a`
-
-warning: variable `B` should have a snake case name
-  --> src/lib.rs:69:49
-   |
-69 | pub extern "C" fn contrast_ratio(A: cb_rgb_255, B: cb_rgb_255) -> f32 {
-   |                                                 ^ help: convert the identifier to snake case: `b`
-
-warning: `translation` (lib) generated 5 warnings
-    Finished `release` profile [optimized] target(s) in 0.19s
-[38;5;244m - Completed in 0.216s[0m
-
-[?25l[0m[38;5;141m> [0mBuilds clean apart from naming lints (I'm keeping the C spelling deliberately), so I'll silence those.[0m[0m
-[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-
-[48;2;43;48;59m[39m  9,  9[0m:[39m[48;2;43;48;59m [38;2;101;115;126m//![38;2;101;115;126m     exactly as the original does.[K
-[0m[48;2;40;67;43m[39m+    10[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    11[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m The C identifiers are kept verbatim so the FFI surface reads like the header.[K
-[0m[48;2;40;67;43m[39m+    12[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#![38;2;192;197;206m[[38;2;191;97;106mallow[38;2;192;197;206m([38;2;192;197;206mnon_snake_case[38;2;192;197;206m,[38;2;192;197;206m non_camel_case_types[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[K
-Updating: [38;5;141mtranslation/src/lib.rs[0m
-[38;5;244m - Completed in 0.0s[0m
-
-[?25l[0m[38;5;141m> [0mNow I'll verify against the real C build rather than assume the float semantics match.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mset -e
-cargo build --release 2>&1 | tail -3
-mkdir -p /tmp/verify && cd /tmp/verify
-gcc -O2 -shared -fPIC -I ~/.harvest/work/harvest-work-TiWZlV/c_src/include \
-    ~/.harvest/work/harvest-work-TiWZlV/c_src/src/lib.c -o libc_ref.so -lm
-cat > driver.c <<'EOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <dlfcn.h>
-typedef struct { unsigned char R,G,B; } rgb;
-typedef float (*fn)(rgb, rgb);
-int main(int argc, char**argv){
-    void*h=dlopen(argv[1],RTLD_NOW); if(!h){fprintf(stderr,"%s\n",dlerror());return 1;}
-    fn f=(fn)dlsym(h,"contrast_ratio"); if(!f){fprintf(stderr,"no sym\n");return 1;}
-    unsigned s=12345;
-    for(int i=0;i<200000;i++){
-        rgb a,b;
-        s=s*1103515245u+12345u; a.R=s>>16; s=s*1103515245u+12345u; a.G=s>>16;
-        s=s*1103515245u+12345u; a.B=s>>16; s=s*1103515245u+12345u; b.R=s>>16;
-        s=s*1103515245u+12345u; b.G=s>>16; s=s*1103515245u+12345u; b.B=s>>16;
-        if(i<64){ a.R=a.G=a.B=(i%2)?0:255; b.R=b.G=b.B=(i%4<2)?0:255; }
-        float v=f(a,b);
-        unsigned bits; __builtin_memcpy(&bits,&v,4);
-        printf("%02x%02x%02x %02x%02x%02x %08x\n",a.R,a.G,a.B,b.R,b.G,b.B,bits);
-    }
-    return 0;
-}
-EOF
-gcc -O2 driver.c -o driver -ldl
-./driver ./libc_ref.so > c.txt
-./driver ~/.harvest/work/harvest-work-TiWZlV/translation/target/release/libtranslation.so > rs.txt
-if cmp -s c.txt rs.txt; then echo "BYTE-IDENTICAL over $(wc -l < c.txt) cases"; else echo DIFF; diff c.txt rs.txt | head; fi
-grep -c 'ffff\|7f80' c.txt || true
-head -4 c.txt[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-
-   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TiWZlV/translation)
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation)
     Finished `release` profile [optimized] target(s) in 0.11s
-BYTE-IDENTICAL over 200000 cases
-124
-ffffff 000000 7f800000
-000000 000000 ffc00000
-ffffff ffffff 3f800000
-000000 ffffff 7f800000
-[38;5;244m - Completed in 0.543s[0m
+[38;5;244m - Completed in 0.133s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/verify /tmp/build.log; ls /local/home/scheschb/.harvest/work/harvest-work-TiWZlV/translation[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mNow verifying the symbol diff and byte-identical output.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation && nm -D --defined-only target/release/*.so | awk '{print $3}' | grep -v '^_' | sort > /tmp/rust.syms
+nm -D --defined-only /tmp/cb9Y/libharvest-work-9YCTFl.so | awk '{print $3}' | sort > /tmp/c.syms
+echo "C syms:"; cat /tmp/c.syms; echo "Rust syms:"; cat /tmp/rust.syms
+echo "=== MISSING FROM RUST ==="; comm -23 /tmp/c.syms /tmp/rust.syms; echo "(end)"[0m[38;5;244m (using tool: shell)[0m
 
+C syms:
+contrast_ratio
+Rust syms:
+contrast_ratio
+=== MISSING FROM RUST ===
+(end)
+[38;5;244m - Completed in 0.40s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/cmp.c[0m[38;5;244m (using tool: write)[0m
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m typedef struct { unsigned char R, G, B; } rgb;
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m typedef float (*fn_t)(rgb, rgb);
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m static uint64_t s = 0x123456789abcdefULL;
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m static uint32_t rnd(void) {
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     return (uint32_t)(s >> 11);
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     void *hc = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     void *hr = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m     if (!hc || !hr) { printf("dlopen fail: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     fn_t fc = (fn_t)dlsym(hc, "contrast_ratio");
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     fn_t fr = (fn_t)dlsym(hr, "contrast_ratio");
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     if (!fc || !fr) { printf("dlsym fail\n"); return 2; }
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     long long n = 0, bad = 0;
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     /* exhaustive over all grayscale pairs */
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     for (int a = 0; a < 256; a++) for (int b = 0; b < 256; b++) {
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         rgb A = {(unsigned char)a,(unsigned char)a,(unsigned char)a};
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         rgb B = {(unsigned char)b,(unsigned char)b,(unsigned char)b};
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         float x = fc(A,B), y = fr(A,B);
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         uint32_t ux, uy; memcpy(&ux,&x,4); memcpy(&uy,&y,4);
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m         if (ux != uy) { if (bad < 10) printf("MISMATCH gray %d %d: %08x vs %08x\n", a,b,ux,uy); bad++; }
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     /* exhaustive over one channel varying, others fixed at edges */
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     const unsigned char edges[] = {0,1,10,11,12,13,255,254,128,127};
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     for (unsigned i = 0; i < sizeof(edges); i++)
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     for (int c = 0; c < 256; c++) {
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         rgb A = {(unsigned char)c, edges[i], (unsigned char)(255-c)};
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         rgb B = {edges[i], (unsigned char)c, edges[i]};
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         float x = fc(A,B), y = fr(A,B);
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m         uint32_t ux, uy; memcpy(&ux,&x,4); memcpy(&uy,&y,4);
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         if (ux != uy) { if (bad < 10) printf("MISMATCH edge %d %d: %08x vs %08x\n", i,c,ux,uy); bad++; }
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     /* random sweep */
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     for (long long k = 0; k < 20000000LL; k++) {
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         uint32_t r1 = rnd(), r2 = rnd();
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         rgb A = {(unsigned char)r1, (unsigned char)(r1>>8), (unsigned char)(r1>>16)};
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         rgb B = {(unsigned char)r2, (unsigned char)(r2>>8), (unsigned char)(r2>>16)};
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m         float x = fc(A,B), y = fr(A,B);
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         uint32_t ux, uy; memcpy(&ux,&x,4); memcpy(&uy,&y,4);
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m         n++;
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         if (ux != uy) { if (bad < 10) printf("MISMATCH rnd %02x%02x%02x/%02x%02x%02x: %08x vs %08x\n",
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m             A.R,A.G,A.B,B.R,B.G,B.B,ux,uy); bad++; }
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     printf("compared=%lld mismatches=%lld\n", n, bad);
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     return bad != 0;
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/cmp.c[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O2 -o cmp cmp.c -ldl && ./cmp /tmp/cb9Y/libharvest-work-9YCTFl.so /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation/target/release/libharvest_translation.so; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+
+compared=20068096 mismatches=0
+exit=0
+[38;5;244m - Completed in 5.581s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O0 -shared -fPIC -o libc_O0.so /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/src/lib.c -I/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/include -lm && gcc -O3 -shared -fPIC -o libc_O3.so /local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/src/lib.c -I/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/c_src/include -lm && R=/local/home/scheschb/.harvest/work/harvest-work-9YCTFl/translation/target/release/libharvest_translation.so && for l in libc_O0.so libc_O3.so; do echo "-- $l"; ./cmp ./$l $R; done[0m[38;5;244m (using tool: shell)[0m
+
+-- libc_O0.so
+compared=20068096 mismatches=0
+-- libc_O3.so
+compared=20068096 mismatches=0
+[38;5;244m - Completed in 10.696s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-9YCTFl && ls -R translation --ignore=target && echo "--- final symbols ---" && nm -D --defined-only translation/target/release/libharvest_translation.so && rm -f /tmp/cmp /tmp/cmp.c /tmp/libc_O0.so /tmp/libc_O3.so /tmp/c.syms /tmp/rust.syms && rm -rf /tmp/cb9Y[0m[38;5;244m (using tool: shell)[0m
+
+translation:
 Cargo.lock
 Cargo.toml
 src
-target
-[38;5;244m - Completed in 0.13s[0m
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds a cdylib exporting [38;5;10mcontrast_ratio[0m, and I verified it bit-for-bit against a gcc build of [38;5;10mc_src/[0m across 200,000 inputs (random plus black/white edge cases) — every returned float matched exactly, compared as raw IEEE-754 bit patterns rather than printed decimals.[0m[0m
+translation/src:
+lib.rs
+--- final symbols ---
+0000000000011780 T contrast_ratio
+[38;5;244m - Completed in 0.25s[0m
+
+[?25l[0m[38;5;141m> [0mDone. The library in [38;5;10mc_src/[0m turned out to be small — one source file ([38;5;10msrc/lib.c[0m, 29 lines) plus one public header — and the C [38;5;10m.so[0m exports exactly one public symbol, [38;5;10mcontrast_ratio[0m. No namespace-renaming macros are present in the header, so the linker name matches the source name. I did the work directly rather than delegating, since there was nothing to fan out.[0m[0m
 [0m[0m
-What the C actually does, and what I preserved:[0m[0m
+The Rust crate is at [38;5;10mtranslation/[0m with [38;5;10mcrate-type = ["cdylib"][0m and [38;5;10mcontrast_ratio[0m declared [38;5;10m#[unsafe(no_mangle)] pub extern "C"[0m, taking two [38;5;10m#[repr(C)][0m [38;5;10mcb_rgb_255[0m structs by value and returning [38;5;10mf32[0m. The two static helpers ([38;5;10mcbLuminance[0m, [38;5;10mcbContrastRatio[0m) stay private, matching the C.[0m[0m
 [0m[0m
-- The sRGB linearization mixes precisions. [38;5;10mR > 0.04045[0m, [38;5;10mpow((R + 0.055) / 1.055, 2.4)[0m and [38;5;10mR / 12.92[0m all promote the [38;5;10mfloat[0m channel to [38;5;10mdouble[0m because the literals are doubles; only the final assignment narrows back to [38;5;10mfloat[0m. Doing this naively in [38;5;10mf32[0m throughout would drift in the low mantissa bits, so [38;5;10mlinearize[0m casts to [38;5;10mf64[0m and back.[0m[0m
-- The luminance sum is genuinely single-precision ([38;5;10m0.2126f * R + ...[0m), left to right, so that stays in [38;5;10mf32[0m.[0m[0m
-- I call libm's [38;5;10mpow[0m through an [38;5;10mextern "C"[0m declaration instead of [38;5;10mf64::powf[0m, which removes any question of the two resolving to different implementations.[0m[0m
-- The ratio is a bare [38;5;10mHigh / Low[0m. There's no [38;5;10m+ 0.05[0m offset (the WCAG formula has one) and no zero-denominator guard, so white-on-black returns [38;5;10m+inf[0m and black-on-black returns [38;5;10mNaN[0m. Per your instructions I reproduced this rather than fixing it; the verification run confirms those exact bit patterns ([38;5;10m0x7f800000[0m, [38;5;10m0xffc00000[0m). The [38;5;10mif (High < Low)[0m swap also stays a plain [38;5;10m<[0m, preserving C's behavior when a comparison against [38;5;10mNaN[0m is false.[0m[0m
+The subtle part was float precision. The C linearization step promotes each [38;5;10mfloat[0m channel to [38;5;10mdouble[0m (the literals [38;5;10m0.04045[0m, [38;5;10m0.055[0m, [38;5;10m1.055[0m, [38;5;10m2.4[0m, [38;5;10m12.92[0m are all doubles), computes in double, then truncates back to [38;5;10mfloat[0m — while the luminance weighting [38;5;10m0.2126f * R + 0.7152f * G + 0.0722f * B[0m runs entirely in single precision, left to right. The translation reproduces both, and preserves the strict [38;5;10m<[0m in the high/low swap so NaN inputs take the same no-swap branch, plus the absence of any divide-by-zero guard.[0m[0m
 [0m[0m
-The header has no namespace macros, so the linker symbol is plain [38;5;10mcontrast_ratio[0m. [38;5;10mcb_rgb_255[0m is [38;5;10m#[repr(C)][0m with three [38;5;10mu8[0ms and is passed by value, matching the SysV ABI's packing of the 3-byte struct into a register.[0m[0m
+Verification I ran myself:[0m[0m
+- [38;5;10mnm -D[0m symbol lists for the C and Rust [38;5;10m.so[0m diffed to empty in both directions.[0m[0m
+- A [38;5;10mdlopen[0m harness comparing raw 32-bit bit patterns (not approximate equality) across 20,068,096 input pairs: all 65,536 grayscale pairs exhaustively, channel sweeps pinned at the 0.04045-threshold boundary values, and 20M pseudorandom pairs. Zero mismatches against the CMake-built C library and against C rebuilt at both [38;5;10m-O0[0m and [38;5;10m-O3[0m, confirming the match isn't optimization-dependent.[0m[0m
 [0m[0m
-One note: I set [38;5;10mpanic = "abort"[0m in the release profile, since unwinding out of an [38;5;10mextern "C"[0m function would be undefined behavior. Nothing here can panic, so it's belt-and-braces.[0m[0m
+Temporary build and test files outside the workspace were cleaned up; nothing in [38;5;10mc_src/[0m was modified.[0m[0m
 [38;5;8m
- ▸ Credits: 3.05 • Time: 1m 44s
+ ▸ Credits: 3.84 • Time: 1m 58s
 
 [0m[1G[0m[0m[?25h

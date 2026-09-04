@@ -1,0 +1,24 @@
+| mac-E1 | crypto_onetimeauth_poly1305_donna_verify (via crypto_onetimeauth_poly1305_verify) | `return crypto_verify_16(h, correct)` — tag mismatch (any of the 128 bits flipped) | returns -1 | [x] |
+| mac-E2 | crypto_onetimeauth_poly1305_donna_verify (via crypto_onetimeauth_poly1305_verify) | `crypto_verify_16(h, correct)` — tag matches | returns 0 | [x] |
+| mac-E3 | crypto_onetimeauth_poly1305_verify | wrong key (any of the 32 key bytes altered; key[16..32] zeroed) ⇒ tag mismatch | returns -1 (0 iff the altered bit lands in a masked-off `r` bit) | [x] |
+| mac-E4 | crypto_onetimeauth_verify | pure delegation to crypto_onetimeauth_poly1305_verify — mismatch | returns -1 | [x] |
+| mac-E5 | crypto_onetimeauth_verify | pure delegation to crypto_onetimeauth_poly1305_verify — match | returns 0 | [x] |
+| mac-E6 | crypto_onetimeauth_poly1305 / _init / _update / _final / crypto_onetimeauth{,_init,_update,_final} | no rejection site at all — every path unconditionally `return 0` (including inlen == 0 and `in == NULL, inlen == 0`) | returns 0 | [x] |
+| mac-E7 | crypto_onetimeauth_poly1305_donna_init | `COMPILER_ASSERT(sizeof(crypto_onetimeauth_poly1305_state) >= sizeof(poly1305_state_internal_t))` | compile-time only; mirrored in Rust by a `const _: () = assert!(...)`; verified at runtime by statebytes()==256 vs the observed 144-byte internal footprint | [x] |
+| mac-E8 | _crypto_onetimeauth_poly1305_pick_best_implementation | no failure path (HAVE_TI_MODE/HAVE_EMMINTRIN_H undefined ⇒ donna unconditionally) | returns 0 | [x] |
+| mac-E9 | crypto_auth_hmacsha256_init | `keylen > 64` ⇒ key replaced by SHA-256(key), keylen := 32 (not an error return, but the only branch in the function) | returns 0, MAC == HMAC(SHA256(key), m) | [x] |
+| mac-E10 | crypto_auth_hmacsha256_init | `key == NULL && keylen > 0` ⇒ `sodium_misuse()` | abort — not testable in-process; Rust calls the same `sodium_misuse() -> !` in the identical `else if key.is_null() { if keylen > 0 { … } }` position (verified by inspection) | [x] SIGABRT in both, verified out-of-process by `tests/gaps.rs::abort_parity` |
+| mac-E11 | crypto_auth_hmacsha256_init | `key == NULL && keylen == 0` ⇒ explicitly NOT a misuse (the `if (keylen > 0)` guard) | returns 0, same state/MAC as init(non-NULL, 0) | [x] |
+| mac-E12 | crypto_auth_hmacsha512_init | `keylen > 128` ⇒ key replaced by SHA-512(key), keylen := 64 | returns 0, MAC == HMAC(SHA512(key), m) | [x] |
+| mac-E13 | crypto_auth_hmacsha512_init | `key == NULL && keylen > 0` ⇒ `sodium_misuse()` | abort — not testable in-process; Rust identical (verified by inspection) | [x] SIGABRT in both, verified out-of-process by `tests/gaps.rs::abort_parity` |
+| mac-E14 | crypto_auth_hmacsha512_init | `key == NULL && keylen == 0` ⇒ allowed | returns 0 | [x] |
+| mac-E15 | crypto_auth_hmacsha512256_init | plain cast onto crypto_auth_hmacsha512_init ⇒ inherits E12/E13/E14 (`sodium_misuse()` for key==NULL && keylen>0) | returns 0; abort case not testable in-process | [x] SIGABRT in both, verified out-of-process by `tests/gaps.rs::abort_parity` |
+| mac-E16 | crypto_auth_hmacsha512256_init | `key == NULL && keylen == 0` ⇒ allowed | returns 0 | [x] |
+| mac-E17 | crypto_auth_hmacsha256_verify | `crypto_verify_32(h, correct) | (-(h == correct)) | sodium_memcmp(correct, h, 32)` — tag mismatch (any byte XOR 0xff, any single bit flipped, wrong key, altered message, shortened inlen) | returns -1 | [x] |
+| mac-E18 | crypto_auth_hmacsha256_verify | same expression — tag matches | returns 0 | [x] |
+| mac-E19 | crypto_auth_hmacsha512_verify | `crypto_verify_64(h, correct) | (-(h == correct)) | sodium_memcmp(correct, h, 64)` — mismatch / match | returns -1 / 0 | [x] |
+| mac-E20 | crypto_auth_hmacsha512256_verify | `crypto_verify_32(h, correct) | (-(h == correct)) | sodium_memcmp(correct, h, 32)` — mismatch / match | returns -1 / 0 | [x] |
+| mac-E21 | crypto_auth_verify | pure delegation to crypto_auth_hmacsha512256_verify — mismatch / match | returns -1 / 0 | [x] |
+| mac-E22 | crypto_auth_hmacsha{256,512,512256}_verify | the `(-(h == correct))` term: `correct` is a function-local array, so `h == correct` can never hold for a caller-supplied `h` | not reachable from outside the library; Rust reproduces the identical `0i32.wrapping_sub((h == correct.as_ptr()) as i32)` term (verified by inspection) | [x] |
+| mac-E23 | crypto_auth_hmacsha256_update/_final, crypto_auth_hmacsha512_update/_final, crypto_auth_hmacsha512256_update/_final, crypto_auth_hmacsha{256,512,512256}, crypto_auth | no rejection site — every path unconditionally `return 0` (incl. inlen == 0 and `in == NULL, inlen == 0`, which crypto_hash_sha*_update short-circuits) | returns 0 | [x] |
+| mac-E24 | crypto_auth_hmacsha{256,512,512256}_keygen, crypto_auth_keygen, crypto_onetimeauth{,_poly1305}_keygen | `void`, no failure path; the only observable contract is that exactly KEYBYTES(=32) bytes are written | writes 32 bytes, nothing past | [x] |

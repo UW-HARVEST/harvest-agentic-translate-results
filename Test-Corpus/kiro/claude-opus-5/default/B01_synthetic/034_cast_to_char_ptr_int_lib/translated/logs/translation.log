@@ -5,47 +5,169 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 
 
 
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -200 && echo "---" && ls -la[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---" && find c_src -type f | head -200 && echo "---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working dir and c_src contents
 
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 10:37 .
+drwxr-xr-x. 659 scheschb amazon 81920 Sep  1 10:37 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 10:37 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 10:37 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 10:37 translation
+---
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+---
+3
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/driver.h c_src/src/driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  35 c_src/CMakeLists.txt
+  28 c_src/include/driver.h
+  37 c_src/src/driver.c
+ 100 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mfind . -not -path './translation/*' -type f | sort; echo "=== CMakeLists ==="; cat c_src/CMakeLists.txt; echo "=== driver.h ==="; cat c_src/include/driver.h; echo "=== driver.c ==="; cat c_src/src/driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read all C sources and config
+
+./.claude/settings.json
 ./c_src/CMakeLists.txt
 ./c_src/include/driver.h
 ./c_src/src/driver.c
-./.claude/settings.json
----
-total 48
-drwxr-xr-x.   5 scheschb amazon    69 Aug 30 15:10 .
-drwxr-xr-x. 556 scheschb amazon 32768 Aug 30 15:10 ..
-drwxr-xr-x.   2 scheschb amazon    35 Aug 30 15:10 .claude
-drwxr-xr-x.   4 scheschb amazon    70 Aug 30 15:10 c_src
-drwxr-xr-x.   2 scheschb amazon    10 Aug 30 15:10 translation
-[38;5;244m - Completed in 0.7s[0m
+=== CMakeLists ===
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_library(driver SHARED
+    src/driver.c)
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/c_src/include/driver.h[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-WkLhqt/c_src/CMakeLists.txt
+target_include_directories(driver PUBLIC include)
+target_include_directories(driver PRIVATE src)
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1212 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-WkLhqt/c_src/include/driver.h
+install(TARGETS driver
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+=== driver.h ===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
- ⋮ 
+#ifndef DRIVER_H_
+#define DRIVER_H_
 
-[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
-[38;5;244m - Completed in 0.0s[0m
+void driver(int x);
 
-[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/c_src/src/driver.c[0m, all lines[38;5;244m (using tool: read)[0m
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1390 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-WkLhqt/c_src/src/driver.c
-[38;5;244m - Completed in 0.0s[0m
+#endif //DRIVER_H_=== driver.c ===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-[?25l[0m[38;5;141m> [0mNo namespace macros in the header — the exported symbol is plain [38;5;10mdriver[0m.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
-Purpose: Create Cargo.toml for the cdylib translation crate
+#include "driver.h"
+
+#include <stdio.h>
+
+static void print_hex(unsigned char *p, int len) {
+    for (int i = 0; i < len; i++) {
+        printf("%02x", p[i]);
+    }
+    printf("\n");
+}
+
+void driver(int x) {
+    print_hex((unsigned char *)&x, sizeof(x));
+}
+[38;5;244m - Completed in 0.11s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat .claude/settings.json; mkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-g4MBqy/c_src > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== nm -D ===" && nm -D libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
+
+{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,"filesystem":{"allowRead":["/local/home/scheschb/.harvest/work/harvest-work-g4MBqy"],"allowWrite":["/local/home/scheschb/.harvest/work/harvest-work-g4MBqy"],"denyRead":["/local/home/scheschb/research/CToRust/ACTOR","/local/home/scheschb/.harvest/work","/local/home/scheschb/research/CToRust"]}}}[ 50%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001173 T driver
+                 U printf@GLIBC_2.2.5
+                 U putchar@GLIBC_2.2.5
+[38;5;244m - Completed in 0.412s[0m
+
+[?25l[0m[38;5;141m> [0mFull surface is a single exported symbol: [38;5;10mdriver[0m. Writing the crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml with cdylib crate type
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
 [0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
@@ -55,151 +177,186 @@ Purpose: Create Cargo.toml for the cdylib translation crate
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo --version; rustc --version[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-
-cargo 1.97.1 (c980f4866 2026-06-30)
-rustc 1.97.1 (8bab26f4f 2026-07-14)
-[38;5;244m - Completed in 0.32s[0m
-
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-Purpose: Translate driver.c to Rust, exporting `driver` as a C symbol
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m // Rust translation of c_src/src/driver.c
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
-[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m // to any person obtaining a copy of this software
-[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
-[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m // to deal in the Software without restriction,
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
-[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m // and/or sell copies of the Software,
-[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
-[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m // subject to the following conditions:
-[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m // The above copyright notice and this permission notice
-[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
-[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
-[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, c_uchar};
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m // Original copyright notice from the C sources:
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m // to any person obtaining a copy of this software
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m // to deal in the Software without restriction,
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m // and/or sell copies of the Software,
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m // and to permit persons to whom the Software is furnished to do so,
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m // subject to the following conditions:
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m // The above copyright notice and this permission notice
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m // IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m // FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 [0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m unsafe extern "C" {
-[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     /// C `printf` from the platform libc. Used instead of Rust's `std::io::stdout`
-[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     /// so that output goes through the exact same C stdio stream (and buffering)
-[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     /// as the original implementation.
-[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     #[link_name = "printf"]
-[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
-[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m /// Translation of the C `static void print_hex(unsigned char *p, int len)`.
-[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m /// Static in C, so it is not exported from the shared object; here it is a
-[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m /// private Rust function taking the byte slice the caller would have pointed at.
-[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m fn print_hex(p: &[c_uchar], len: c_int) {
-[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     // `for (int i = 0; i < len; i++) printf("%02x", p[i]);`
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m use core::ffi::{c_char, c_int, c_uchar};
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m // The C code writes with printf(3). Go through libc's printf so that the
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m // output shares the exact same stdout FILE buffer, flush points and
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m // interleaving behaviour as the original library.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     fn printf(fmt: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m /// `static void print_hex(unsigned char *p, int len)`
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m /// Not exported by the C shared object (it is `static`), so it stays private
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m /// here as well.
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m unsafe fn print_hex(p: *const c_uchar, len: c_int) {
 [0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     let mut i: c_int = 0;
 [0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     while i < len {
-[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         // `p[i]` is an `unsigned char`, promoted to `int` for the variadic call.
-[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         let byte: c_uchar = p[i as usize];
-[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         unsafe {
-[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m             c_printf(c"%02x".as_ptr(), byte as c_int);
-[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         // printf("%02x", p[i]) -- the unsigned char argument is promoted to int.
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         printf(
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m             b"%02x\0".as_ptr() as *const c_char,
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m             *p.offset(i as isize) as c_int,
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m         );
 [0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         i += 1;
 [0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     // `printf("\n");`
-[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     unsafe {
-[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m         c_printf(c"\n".as_ptr());
-[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m /// Translation of the C `void driver(int x)`.
-[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m /// The C code reinterprets the storage of the `int` parameter as
-[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m /// `unsigned char[sizeof(int)]`, so the output is the native-endian byte
-[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m /// representation of `x` (little-endian on x86-64/aarch64).
-[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m pub extern "C" fn driver(x: c_int) {
-[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     // `print_hex((unsigned char *)&x, sizeof(x));`
-[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     let bytes: [c_uchar; size_of::<c_int>()] = x.to_ne_bytes();
-[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     print_hex(&bytes, size_of::<c_int>() as c_int);
-[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     printf(b"\n\0".as_ptr() as *const c_char);
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m /// `void driver(int x)`
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m /// Prints the object representation of `x` (4 bytes on the target ABI, in the
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m /// host's byte order) as lowercase hex, followed by a newline.
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m pub extern "C" fn driver(x: c_int) {
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m     // print_hex((unsigned char *)&x, sizeof(x));
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     let x = x;
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         print_hex(
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m             &x as *const c_int as *const c_uchar,
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m             core::mem::size_of::<c_int>() as c_int,
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-WkLhqt/translation)
-    Finished `release` profile [optimized] target(s) in 0.13s
-[38;5;244m - Completed in 0.149s[0m
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation)
+    Finished `release` profile [optimized] target(s) in 0.10s
+[38;5;244m - Completed in 0.126s[0m
 
-[?25l[0m[38;5;141m> [0mBuilds clean. Verifying the exported symbol and comparing output against the real C library:[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mset -e
-nm -D --defined-only target/release/libdriver.so | grep -i driver
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-g4MBqy
+nm -D --defined-only /tmp/cbuild/libdriver.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/c.syms
+nm -D --defined-only translation/target/release/libdriver.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/r.syms
+echo "--- C exports ---"; cat /tmp/c.syms
+echo "--- Rust exports ---"; cat /tmp/r.syms
+echo "--- missing in Rust (C minus Rust) ---"; comm -23 /tmp/c.syms /tmp/r.syms
+echo "--- extra in Rust ---"; comm -13 /tmp/c.syms /tmp/r.syms[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff exported symbols between C and Rust shared objects
 
-TMP=$(mktemp -d)
-gcc -shared -fPIC -o $TMP/libdriver_c.so -I../c_src/include ../c_src/src/driver.c
+--- C exports ---
+driver
+--- Rust exports ---
+driver
+--- missing in Rust (C minus Rust) ---
+--- extra in Rust ---
+[38;5;244m - Completed in 0.40s[0m
 
-cat > $TMP/main.c <<'EOF'
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now verifying byte-identical output with a differential test harness.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/harness.c <<'EOF'
+#include <stdio.h>
 #include <stdlib.h>
 void driver(int x);
 int main(int argc, char **argv) {
-    for (int i = 1; i < argc; i++) driver((int)strtol(argv[i], 0, 0));
+    for (int i = 1; i < argc; i++) driver((int)strtol(argv[i], NULL, 0));
     return 0;
 }
 EOF
-gcc -o $TMP/c_bin   $TMP/main.c -L$TMP -l:libdriver_c.so -Wl,-rpath,$TMP
-gcc -o $TMP/rs_bin  $TMP/main.c target/release/libdriver.so -Wl,-rpath,$PWD/target/release
+cd /tmp
+gcc -o h_c harness.c -L/tmp/cbuild -ldriver -Wl,-rpath,/tmp/cbuild
+gcc -o h_r harness.c -L/local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation/target/release -ldriver -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation/target/release
+ARGS="0 1 -1 255 256 65535 65536 -2147483648 2147483647 42 -42 0x7f 0xdeadbeef 1000000 -1000000 3 -3 128 -128 32767 -32768 16777216 -16777216"
+./h_c $ARGS > out_c.txt 2>&1
+./h_r $ARGS > out_r.txt 2>&1
+if cmp -s out_c.txt out_r.txt; then echo "IDENTICAL ($(wc -l < out_c.txt) lines)"; else echo "DIFFER"; diff out_c.txt out_r.txt; fi
+echo "--- sample ---"; head -6 out_c.txt
+echo "--- md5 ---"; md5sum out_c.txt out_r.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test: compare C vs Rust output byte-for-byte
 
-ARGS="0 1 -1 255 256 65535 305419896 -305419896 2147483647 -2147483648 42 -2 1000000"
-$TMP/c_bin  $ARGS > $TMP/c.out  2>&1
-$TMP/rs_bin $ARGS > $TMP/rs.out 2>&1
-echo "--- output ---"; cat $TMP/c.out
-if cmp -s $TMP/c.out $TMP/rs.out; then echo "BYTE-IDENTICAL: PASS"; else echo "MISMATCH"; diff $TMP/c.out $TMP/rs.out; fi
-rm -rf $TMP[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-
-0000000000011730 T driver
---- output ---
+IDENTICAL (23 lines)
+--- sample ---
 00000000
 01000000
 ffffffff
 ff000000
 00010000
 ffff0000
-78563412
-88a9cbed
-ffffff7f
-00000080
-2a000000
-feffffff
-40420f00
-BYTE-IDENTICAL: PASS
-[38;5;244m - Completed in 0.129s[0m
+--- md5 ---
+2ee8e54b18e5e8a2b79e647cf783b47d  out_c.txt
+2ee8e54b18e5e8a2b79e647cf783b47d  out_r.txt
+[38;5;244m - Completed in 0.93s[0m
 
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m now holds the Rust crate, and it produces byte-identical output to the C library.[0m[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp
+# exhaustive random sweep
+python3 -c "
+import random
+random.seed(1)
+print(' '.join(str(random.randint(-2**31,2**31-1)) for _ in range(5000)))
+" > args.txt
+xargs ./h_c < args.txt > o_c.txt
+xargs ./h_r < args.txt > o_r.txt
+cmp o_c.txt o_r.txt && echo "IDENTICAL over $(wc -l < o_c.txt) random inputs"
+# piped (fully-buffered stdout) case
+./h_c 1 2 3 | cat > p_c.txt; ./h_r 1 2 3 | cat > p_r.txt; cmp p_c.txt p_r.txt && echo "IDENTICAL when piped"
+# no-arg case
+./h_c > e_c.txt; ./h_r > e_r.txt; cmp e_c.txt e_r.txt && echo "IDENTICAL empty"
+rm -f h_c h_r harness.c args.txt o_c.txt o_r.txt out_c.txt out_r.txt p_c.txt p_r.txt e_c.txt e_r.txt
+rm -rf /tmp/cbuild
+ls /local/home/scheschb/.harvest/work/harvest-work-g4MBqy/translation[0m[38;5;244m (using tool: shell)[0m
+Purpose: Exhaustive random differential test and cleanup
+
+IDENTICAL over 5000 random inputs
+IDENTICAL when piped
+IDENTICAL empty
+Cargo.lock
+Cargo.toml
+src
+target
+[38;5;244m - Completed in 0.58s[0m
+
+[?25l[0m[38;5;141m> [0mDone and verified.[0m[0m
 [0m[0m
-The C source is a single translation unit with two functions:[0m[0m
+The library in [38;5;10mc_src/[0m is genuinely tiny — three files ([38;5;10mCMakeLists.txt[0m, [38;5;10minclude/driver.h[0m, [38;5;10msrc/driver.c[0m, 100 lines total including license headers). I built the C shared object with CMake and ran [38;5;10mnm -D[0m on it: the complete public ABI is exactly one symbol, [38;5;10mdriver[0m (everything else was weak CRT plumbing or undefined glibc imports). [38;5;10mprint_hex[0m is [38;5;10mstatic[0m, so it is not part of the ABI.[0m[0m
 [0m[0m
-- [38;5;10mdriver(int x)[0m — the only exported symbol. [38;5;10mdriver.h[0m has no namespace/renaming macros, so the linker symbol is plain [38;5;10mdriver[0m, confirmed present in [38;5;10mlibdriver.so[0m via [38;5;10mnm[0m.[0m[0m
-- [38;5;10mprint_hex(unsigned char *p, int len)[0m — [38;5;10mstatic[0m, so it stays private in Rust too.[0m[0m
+The Rust crate at [38;5;10mtranslation/[0m:[0m[0m
+- [38;5;10mCargo.toml[0m with [38;5;10mcrate-type = ["cdylib"][0m[0m[0m
+- [38;5;10msrc/lib.rs[0m exporting [38;5;10mdriver(c_int)[0m with [38;5;10m#[unsafe(no_mangle)] extern "C"[0m, plus a private [38;5;10mprint_hex[0m mirroring the static helper[0m[0m
 [0m[0m
-The behavior is a type-punned dump: [38;5;10mdriver[0m casts [38;5;10m&x[0m to [38;5;10munsigned char *[0m and prints [38;5;10msizeof(int)[0m bytes as [38;5;10m%02x[0m, followed by a newline. That means the output is the [3mnative-endian[23m byte layout, so [38;5;10mdriver(305419896)[0m prints [38;5;10m78563412[0m on x86-64 rather than the big-endian [38;5;10m12345678[0m. I reproduced this with [38;5;10mx.to_ne_bytes()[0m rather than normalizing byte order.[0m[0m
+One deliberate implementation choice: [38;5;10mprint_hex[0m calls libc's [38;5;10mprintf[0m via an [38;5;10mextern "C"[0m variadic declaration rather than Rust's [38;5;10mstd::io::stdout[0m. That keeps the output on the same [38;5;10mFILE*[0m buffer as the original, so flush timing and interleaving with any C-side printing match — relevant because the C code's output is unterminated per-byte writes followed by a newline.[0m[0m
 [0m[0m
-One deliberate choice worth calling out: I bound the platform's C [38;5;10mprintf[0m via [38;5;10mextern "C"[0m instead of using [38;5;10mstd::io::stdout[0m. Rust's stdout is a separate [38;5;10mLineWriter[0m with its own buffer, so a caller that mixes its own [38;5;10mprintf[0m output with calls into this library would see interleaving differ from the C version. Going through the same C stdio stream keeps the buffering and flush points identical, not just the final bytes.[0m[0m
+Verification I ran myself:[0m[0m
+- Symbol diff between the C [38;5;10m.so[0m and the Rust [38;5;10m.so[0m (defined [38;5;10mT[0m/[38;5;10mD[0m/[38;5;10mB[0m/[38;5;10mR[0m symbols) is empty in both directions.[0m[0m
+- Differential harness linked against each [38;5;10m.so[0m in turn: identical output on 23 hand-picked edge cases (0, ±1, INT_MIN, INT_MAX, byte/word boundaries), 5000 seeded-random [38;5;10mint[0m values, the piped/fully-buffered stdout case, and the zero-call case. Same md5 in every comparison.[0m[0m
 [0m[0m
-Verification: I compiled the original C into its own shared object, linked the same driver program against each library, and compared output across 13 inputs (zero, ±1, byte/word boundaries, [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m, negatives). [38;5;10mcmp[0m reports the streams identical. [38;5;10mcargo build --release[0m is clean with no warnings.[0m[0m
+No files in [38;5;10mc_src/[0m were modified; temporary build and harness artifacts were removed.[0m[0m
 [38;5;8m
- ▸ Credits: 2.34 • Time: 1m 1s
+ ▸ Credits: 2.90 • Time: 1m 13s
 
 [0m[1G[0m[0m[?25h

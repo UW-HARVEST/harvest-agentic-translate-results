@@ -5,103 +5,215 @@ Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-tr
 
 
 
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mfind . -type f | head -200 && echo "---" && du -sh c_src[0m[38;5;244m (using tool: shell)[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mfind c_src -type f | head -200; echo "---"; find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: List all files in c_src
 
-./c_src/CMakeLists.txt
-./c_src/include/driver.h
-./c_src/src/driver.c
-./.claude/settings.json
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
 ---
-12K	c_src
+3
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/driver.h c_src/src/driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Line counts
+
+  35 c_src/CMakeLists.txt
+  28 c_src/include/driver.h
+  68 c_src/src/driver.c
+ 131 total
 [38;5;244m - Completed in 0.5s[0m
 
 [?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read all C sources
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/CMakeLists.txt[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/include/driver.h[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/CMakeLists.txt
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/CMakeLists.txt[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/include/driver.h[0m, all lines
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/src/driver.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1405 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/CMakeLists.txt
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1218 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/include/driver.h
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1218 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/include/driver.h
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m1686 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1686 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/src/driver.c
 
  ⋮ 
 
 [38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[38;5;141m> [0mClassic CWE-562 (returning address of a stack local). Let me check what the C actually outputs in practice.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/ctest && cd /tmp/ctest && cat > main.c <<'EOF'
-#include <stdio.h>
-void driver(int useGood);
-int main(int argc, char**argv){ driver(argc>1); return 0; }
-EOF
-gcc -c -I/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/include /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c -o driver.o 2>&1 | tail -5
-gcc main.c driver.o -o t && echo "== bad ==" && ./t | xxd && echo "== good ==" && ./t x | xxd[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mmkdir -p /tmp/cbuild && cd /tmp/cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src -DCMAKE_BUILD_TYPE=Release > cm.log 2>&1 && make >> cm.log 2>&1; tail -5 cm.log; ls -la; echo "=== nm -D ==="; nm -D libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list dynamic symbols
 
-/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c: In function 'helperBad':
-/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c:39:12: warning: function returns address of local variable [-Wreturn-local-addr]
-   39 |     return charString;
+CMake Error: The source "/local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/CMakeLists.txt" does not match the source "/local/home/scheschb/.harvest/work/harvest-work-vEncB1/c_src/CMakeLists.txt" used to generate cache.  Re-run cmake with a different source directory.
+total 300
+drwxr-xr-x.    3 scheschb amazon   580 Sep  1 08:14 .
+drwxrwxrwt. 1101 root     root   82300 Sep  1 08:40 ..
+-rw-r--r--.    1 scheschb amazon 14491 Sep  1 06:53 CMakeCache.txt
+drwxr-xr-x.    5 scheschb amazon   240 Sep  1 06:59 CMakeFiles
+-rw-r--r--.    1 scheschb amazon  7657 Sep  1 06:53 Makefile
+-rw-r--r--.    1 scheschb amazon     2 Sep  1 07:56 c.out
+-rw-r--r--.    1 scheschb amazon   145 Sep  1 08:14 c_out.txt
+-rw-r--r--.    1 scheschb amazon   279 Sep  1 08:40 cm.log
+-rw-r--r--.    1 scheschb amazon   279 Sep  1 07:13 cmake.log
+-rw-r--r--.    1 scheschb amazon  2938 Sep  1 06:53 cmake_install.cmake
+-rwxr-xr-x.    1 scheschb amazon 16848 Sep  1 07:54 d-O0
+-rwxr-xr-x.    1 scheschb amazon 16848 Sep  1 07:54 d-O1
+-rwxr-xr-x.    1 scheschb amazon 16848 Sep  1 07:54 d-O2
+-rwxr-xr-x.    1 scheschb amazon 16848 Sep  1 07:54 d-O3
+-rwxr-xr-x.    1 scheschb amazon 16848 Sep  1 07:54 d-Os
+-rwxr-xr-x.    1 scheschb amazon 16848 Sep  1 07:54 driver
+-rwxr-xr-x.    1 scheschb amazon 16840 Sep  1 07:40 driver_O0
+-rwxr-xr-x.    1 scheschb amazon 16840 Sep  1 07:40 driver_O2
+-rwxr-xr-x.    1 scheschb amazon 16856 Sep  1 06:55 driver_c
+-rw-r--r--.    1 scheschb amazon     0 Sep  1 07:54 err.txt
+-rwxr-xr-x.    1 scheschb amazon 16944 Sep  1 08:14 harness
+-rw-r--r--.    1 scheschb amazon   943 Sep  1 08:14 harness.c
+-rw-r--r--.    1 scheschb amazon    12 Sep  1 07:56 in.bin
+-rwxr-xr-x.    1 scheschb amazon 15784 Sep  1 06:53 libSieve.so
+-rwxr-xr-x.    1 scheschb amazon 16000 Sep  1 08:13 libdriver.so
+-rw-r--r--.    1 scheschb amazon     2 Sep  1 07:54 o
+-rw-r--r--.    1 scheschb amazon     2 Sep  1 07:54 out.txt
+-rw-r--r--.    1 scheschb amazon     2 Sep  1 07:56 r.out
+-rw-r--r--.    1 scheschb amazon   145 Sep  1 08:14 rust_out.txt
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+00000000000011a2 T bad
+0000000000001215 T driver
+00000000000011d6 T good
+000000000000117b T printIntLine
+0000000000001159 T printLine
+                 U printf@GLIBC_2.2.5
+                 U puts@GLIBC_2.2.5
+[38;5;244m - Completed in 0.27s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/cbuild_wctzJW && mkdir -p /tmp/cbuild_wctzJW && cd /tmp/cbuild_wctzJW && cmake /local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src > cm.log 2>&1 && make >> cm.log 2>&1; tail -3 cm.log; echo "=== nm -D ==="; nm -D libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fresh C build and symbol list
+
       |            ^~~~~~~~~~
-== bad ==
-== good ==
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+=== nm -D ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+0000000000001186 T bad
+00000000000011c5 T driver
+00000000000011ac T good
+0000000000001139 T printLine
+                 U puts@GLIBC_2.2.5
+[38;5;244m - Completed in 0.425s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_wctzJW && cat > h.c <<'EOF'
+#include <stdio.h>
+void driver(int);
+void bad(void); void good(void); void printLine(const char*);
+int main(int argc,char**argv){ driver(atoi(argv[1])); return 0; }
+EOF
+gcc -o h h.c -L. -ldriver -Wl,-rpath,. 2>&1 | tail -3
+./h 1 | xxd | head -3; echo "--- bad:"; ./h 0 | xxd | head -5; echo "exit=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test C library runtime behavior
+
+h.c:4:39: warning: implicit declaration of function ‘atoi’ [-Wimplicit-function-declaration]
+    4 | int main(int argc,char**argv){ driver(atoi(argv[1])); return 0; }
+      |                                       ^~~~
 00000000: 6865 6c70 6572 476f 6f64 3120 7374 7269  helperGood1 stri
 00000010: 6e67 0a                                  ng.
-[38;5;244m - Completed in 0.58s[0m
+--- bad:
+exit=0
+[38;5;244m - Completed in 0.45s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ctest && for O in 0 1 2 3 s; do gcc -O$O -c -I/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/include /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c -o d$O.o 2>/dev/null; gcc main.c d$O.o -o t$O; echo -n "O$O bad: [$(./t$O)]  good: [$(./t$O x)]"; echo; done
-echo "--- disas helperBad (O0) ---"
-objdump -d d0.o --disassemble=helperBad 2>/dev/null | tail -20[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_wctzJW && ./h 0 > b.out 2> b.err; echo "rc=$?"; wc -c b.out b.err; xxd b.out; echo "STDERR:"; cat b.err; echo "=== objdump helperBad/bad ==="; objdump -d --no-show-raw-insn libdriver.so | sed -n '/<bad>:/,/ret/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect bad() output bytes and disassembly
 
-O0 bad: []  good: [helperGood1 string]
-O1 bad: []  good: [helperGood1 string]
-O2 bad: []  good: [helperGood1 string]
-O3 bad: []  good: [helperGood1 string]
-Os bad: []  good: [helperGood1 string]
---- disas helperBad (O0) ---
+rc=0
+0 b.out
+0 b.err
+0 total
+STDERR:
+=== objdump helperBad/bad ===
+0000000000001186 <bad>:
+    1186:	push   %rbp
+    1187:	mov    %rsp,%rbp
+    118a:	mov    $0x0,%eax
+    118f:	call   115b <helperBad>
+    1194:	mov    %rax,%rdi
+    1197:	call   1060 <printLine@plt>
+    119c:	nop
+    119d:	pop    %rbp
+    119e:	ret
+[38;5;244m - Completed in 0.15s[0m
 
-d0.o:     file format elf64-x86-64
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_wctzJW && objdump -d --no-show-raw-insn libdriver.so | sed -n '/<helperBad>:/,/^$/p'; echo "=== printLine ==="; objdump -d --no-show-raw-insn libdriver.so | sed -n '/<printLine>:/,/^$/p'; echo "=== build flags ==="; grep -i "C_FLAGS" CMakeFiles/driver.dir/flags.make[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble helperBad and printLine
 
+000000000000115b <helperBad>:
+    115b:	push   %rbp
+    115c:	mov    %rsp,%rbp
+    115f:	movabs $0x61427265706c6568,%rax
+    1169:	movabs $0x676e697274732064,%rdx
+    1173:	mov    %rax,-0x20(%rbp)
+    1177:	mov    %rdx,-0x18(%rbp)
+    117b:	movb   $0x0,-0x10(%rbp)
+    117f:	mov    $0x0,%eax
+    1184:	pop    %rbp
+    1185:	ret
 
-Disassembly of section .text:
+=== printLine ===
+0000000000001139 <printLine>:
+    1139:	push   %rbp
+    113a:	mov    %rsp,%rbp
+    113d:	sub    $0x10,%rsp
+    1141:	mov    %rdi,-0x8(%rbp)
+    1145:	cmpq   $0x0,-0x8(%rbp)
+    114a:	je     1158 <printLine+0x1f>
+    114c:	mov    -0x8(%rbp),%rax
+    1150:	mov    %rax,%rdi
+    1153:	call   1040 <puts@plt>
+    1158:	nop
+    1159:	leave
+    115a:	ret
 
-0000000000000022 <helperBad>:
-  22:	55                   	push   %rbp
-  23:	48 89 e5             	mov    %rsp,%rbp
-  26:	48 b8 68 65 6c 70 65 	movabs $0x61427265706c6568,%rax
-  2d:	72 42 61 
-  30:	48 ba 64 20 73 74 72 	movabs $0x676e697274732064,%rdx
-  37:	69 6e 67 
-  3a:	48 89 45 e0          	mov    %rax,-0x20(%rbp)
-  3e:	48 89 55 e8          	mov    %rdx,-0x18(%rbp)
-  42:	c6 45 f0 00          	movb   $0x0,-0x10(%rbp)
-  46:	b8 00 00 00 00       	mov    $0x0,%eax
-  4b:	5d                   	pop    %rbp
-  4c:	c3                   	ret
-[38;5;244m - Completed in 0.274s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ctest && (clang --version >/dev/null 2>&1 && for O in 0 2; do clang -O$O -c -I/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/include /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c -o cd$O.o 2>/dev/null; clang main.c cd$O.o -o ct$O; echo "clang O$O bad: [$(./ct$O)] good: [$(./ct$O x)]"; done) || echo "no clang"
-nm -g --defined-only d0.o[0m[38;5;244m (using tool: shell)[0m
-
-no clang
-000000000000004d T bad
-000000000000008a T driver
-0000000000000071 T good
-0000000000000000 T printLine
+=== build flags ===
+C_FLAGS = -fPIC
 [38;5;244m - Completed in 0.17s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-ptIy7l && rustc --version && cargo --version && ls -a translation 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_wctzJW && for o in 0 1 2 3 s; do gcc -O$o -fPIC -shared -I/local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/include -o t$o.so /local/home/scheschb/.harvest/work/harvest-work-wctzJW/c_src/src/driver.c 2>/dev/null; gcc -o th$o h.c -L. -l:t$o.so -Wl,-rpath,. 2>/dev/null; printf "O%s bad=[" "$o"; ./th$o 0 | xxd -p; printf "] good=["; ./th$o 1 | xxd -p; echo "]"; done; gcc --version | head -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check bad() behavior across optimization levels
 
-rustc 1.97.1 (8bab26f4f 2026-07-14)
-cargo 1.97.1 (c980f4866 2026-06-30)
-.
-..
-[38;5;244m - Completed in 0.32s[0m
+O0 bad=[] good=[68656c706572476f6f643120737472696e670a
+]
+O1 bad=[] good=[68656c706572476f6f643120737472696e670a
+]
+O2 bad=[] good=[68656c706572476f6f643120737472696e670a
+]
+O3 bad=[] good=[68656c706572476f6f643120737472696e670a
+]
+Os bad=[] good=[68656c706572476f6f643120737472696e670a
+]
+gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)
+[38;5;244m - Completed in 0.378s[0m
 
-[?25l[0m[38;5;141m> [0mRust 1.97 supports [38;5;10m#[unsafe(no_mangle)][0m and edition 2024. Writing the crate now.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-wctzJW && ls -la; ls -la translation 2>/dev/null[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check working dir layout
+
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 08:39 .
+drwxr-xr-x. 589 scheschb amazon 81920 Sep  1 08:40 ..
+drwxr-xr-x.   2 scheschb amazon    35 Sep  1 08:39 .claude
+drwxr-xr-x.   4 scheschb amazon    70 Sep  1 08:39 c_src
+drwxr-xr-x.   2 scheschb amazon    10 Sep  1 08:39 translation
+total 0
+drwxr-xr-x. 2 scheschb amazon 10 Sep  1 08:39 .
+drwxr-xr-x. 5 scheschb amazon 69 Sep  1 08:39 ..
+[38;5;244m - Completed in 0.12s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-wctzJW/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
 [0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "driver"
@@ -110,21 +222,30 @@ cargo 1.97.1 (c980f4866 2026-06-30)
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
 [0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "driver"
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
 [0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-wctzJW/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version; cargo --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain version
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+[38;5;244m - Completed in 0.32s[0m
+
+[?25l[0m[38;5;141m> [0mNow the Rust translation:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-wctzJW/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate driver.c to Rust
 
 [49m[38;5;10m+      1[0m:[38;5;10m[49m // Copyright 2025 MIT Lincoln Laboratory
 [0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // Permission is hereby granted, free of charge,
 [0m[49m[38;5;10m+      3[0m:[38;5;10m[49m // to any person obtaining a copy of this software
-[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the “Software”),
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // and associated documentation files (the "Software"),
 [0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // to deal in the Software without restriction,
 [0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // including without limitation the rights to use, copy,
 [0m[49m[38;5;10m+      7[0m:[38;5;10m[49m // modify, merge, publish, distribute, sublicense,
@@ -135,7 +256,7 @@ Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/tran
 [0m[49m[38;5;10m+     12[0m:[38;5;10m[49m // The above copyright notice and this permission notice
 [0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // shall be included in all copies or substantial portions of the Software.
 [0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //
-[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 [0m[49m[38;5;10m+     16[0m:[38;5;10m[49m // EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 [0m[49m[38;5;10m+     17[0m:[38;5;10m[49m // THE WARRANTIES OF MERCHANTABILITY,
 [0m[49m[38;5;10m+     18[0m:[38;5;10m[49m // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
@@ -146,183 +267,300 @@ Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/tran
 [0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     24[0m:[38;5;10m[49m //! Rust translation of `c_src/src/driver.c`.
 [0m[49m[38;5;10m+     25[0m:[38;5;10m[49m //!
-[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! The C translation unit exports four symbols with external linkage:
-[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //! `printLine`, `bad`, `good` and `driver`. `driver.h` declares only `driver`
-[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //! and contains no namespace/renaming macros, so the linker symbols are the
-[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m //! source-level names verbatim.
-[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //!
-[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //! Output is emitted through libc's `printf` so that formatting *and* stdio
-[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m //! buffering semantics match the C library byte for byte.
-[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m #![allow(non_snake_case)]
-[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m use std::ffi::{c_char, c_int};
-[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m use std::ptr;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m //! Public ABI surface (matches `nm -D` of the C `libdriver.so`):
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m //!   * `printLine`
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m //!   * `bad`
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m //!   * `good`
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m //!   * `driver`
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m //! `helperBad` and `helperGood1` are `static` in the C translation unit and
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m //! therefore are *not* exported; they stay private here as well.
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m #![allow(non_snake_case)]
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m use core::ffi::{c_char, c_int};
 [0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m unsafe extern "C" {
-[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
-[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// Compile-time conversion of a byte literal (including its NUL) into a
-[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// `[c_char; N]`, mirroring C's `char x[] = "...";` initialization.
-[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m const fn to_c_array<const N: usize>(bytes: &[u8; N]) -> [c_char; N] {
-[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let mut out = [0 as c_char; N];
-[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let mut i = 0;
-[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     while i < N {
-[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         out[i] = bytes[i] as c_char;
-[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         i += 1;
-[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     out
-[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// C: `void printLine(const char *line)`
-[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m pub extern "C" fn printLine(line: *const c_char) {
-[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     if !line.is_null() {
-[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         // printf("%s\n", line);
-[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         unsafe {
-[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             printf(c"%s\n".as_ptr(), line);
-[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         }
-[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// C: `static char *helperBad()` — returns the address of an automatic array.
-[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m /// This is the CWE-562 defect of the original program and it is preserved, not
-[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// fixed. GCC diagnoses `-Wreturn-local-addr` here and, at every optimization
-[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// level (`-O0` through `-O3`, `-Os`), substitutes a null pointer for the
-[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// return value (`mov $0x0,%eax`). The observable behaviour of the compiled C
-[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// library is therefore `printLine(NULL)`, which prints nothing at all, and
-[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// that is what this translation reproduces.
-[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m fn helperBad() -> *mut c_char {
-[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     // char charString[] = "helperBad string";
-[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     let mut charString: [c_char; 17] = to_c_array(b"helperBad string\0");
-[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     // The local is materialized (and then discarded) exactly as in C; its
-[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     // address never escapes, because the compiled C does not return it either.
-[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     let _ = std::hint::black_box(&mut charString);
-[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     // return charString;  /* -> null after the compiler's substitution */
-[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     ptr::null_mut()
-[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// C: `void bad()`
-[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m pub extern "C" fn bad() {
-[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     printLine(helperBad());
-[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// Storage backing `helperGood1`'s `static char charString[]`.
-[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m ///
-[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m /// The C object lives in static storage and is never written by this library,
-[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m /// so an immutable Rust `static` is behaviourally equivalent while keeping the
-[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m /// internals free of `static mut`.
-[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m static HELPER_GOOD1_STRING: [c_char; 19] = to_c_array(b"helperGood1 string\0");
-[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m /// C: `static char *helperGood1()`
-[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m fn helperGood1() -> *mut c_char {
-[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     // static char charString[] = "helperGood1 string"; return charString;
-[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     HELPER_GOOD1_STRING.as_ptr() as *mut c_char
-[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// C: `void good()`
-[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m pub extern "C" fn good() {
-[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     printLine(helperGood1());
-[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
-[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
-[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// C: `void driver(int useGood)`
-[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m #[unsafe(no_mangle)]
-[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m pub extern "C" fn driver(useGood: c_int) {
-[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     if useGood != 0 {
-[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         good();
-[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     } else {
-[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         bad();
-[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     }
-[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m // The C code performs its output through C stdio (`printf`). We call straight
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m // into libc so that buffering, flushing and interleaving with any C code in the
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m // same process are bit-for-bit identical to the original library rather than
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m // going through Rust's own `std::io::Stdout` buffer.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m unsafe extern "C" {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     fn printf(format: *const c_char, ...) -> c_int;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// `void printLine(const char *line)`
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// void printLine(const char *line)
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m ///     if (line != NULL)
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m ///     {
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m ///         printf("%s\n", line);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m pub unsafe extern "C" fn printLine(line: *const c_char) {
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     if !line.is_null() {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m             printf(c"%s\n".as_ptr(), line);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m /// `static char *helperBad()`
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// static char *helperBad()
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m ///     char charString[] = "helperBad string";
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m ///     return charString;
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// This returns the address of an automatic (stack) array whose lifetime ends
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// when the function returns — CWE-562, "Return of Stack Variable Address", and
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// undefined behaviour in C. It is *not* a bug to be fixed here: the reference
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// library's observable behaviour must be reproduced exactly.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m /// GCC (verified for `-O0` through `-O3` and `-Os`, which covers the flags the
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m /// reference CMake build uses) diagnoses the dead reference and materialises a
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m /// null pointer for the return value — the emitted body is literally
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m /// `mov $0x0,%eax; ret`. Consequently `bad()` calls `printLine(NULL)` and the
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m /// library prints nothing at all on this path. Returning a genuinely dangling
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m /// pointer here instead would make `printLine` emit whatever bytes happened to
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// be left on the stack, which is *not* what the C library does.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m fn helperBad() -> *mut c_char {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     core::ptr::null_mut()
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// `void bad()`
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m /// void bad()
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m ///     printLine(helperBad());
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m pub unsafe extern "C" fn bad() {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         printLine(helperBad());
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m /// `static char *helperGood1()`
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// static char *helperGood1()
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m ///     static char charString[] = "helperGood1 string";
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m ///     return charString;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m /// The array has static storage duration, so returning it is well defined. The
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m /// C version hands back a writable `char *` into a single shared object; the
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m /// `static mut` below reproduces that storage class and mutability faithfully.
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m fn helperGood1() -> *mut c_char {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     static mut CHAR_STRING: [c_char; 19] = [
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         b'h' as c_char,
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         b'e' as c_char,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         b'l' as c_char,
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         b'p' as c_char,
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         b'e' as c_char,
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         b'r' as c_char,
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         b'G' as c_char,
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m         b'o' as c_char,
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         b'o' as c_char,
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         b'd' as c_char,
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         b'1' as c_char,
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         b' ' as c_char,
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         b's' as c_char,
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         b't' as c_char,
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         b'r' as c_char,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         b'i' as c_char,
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         b'n' as c_char,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         b'g' as c_char,
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         0,
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     // Address-of on a `static mut` does not read or write the value, so taking
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     // the pointer is sound; any aliasing concerns belong to the C caller, just
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     // as in the original.
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     (&raw mut CHAR_STRING) as *mut c_char
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m /// `void good()`
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m /// void good()
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m ///     printLine(helperGood1());
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m pub unsafe extern "C" fn good() {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         printLine(helperGood1());
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m /// `void driver(int useGood)`
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m /// ```c
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m /// void driver(int useGood)
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m /// {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m ///     if (useGood)
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m ///     {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m ///         good();
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m ///     else
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m ///     {
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m ///         bad();
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m ///     }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m /// }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m pub unsafe extern "C" fn driver(useGood: c_int) {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         if useGood != 0 {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m             good();
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m             bad();
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-wctzJW/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tail -20[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-wctzJW/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust cdylib
 
-   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation)
-    Finished `release` profile [optimized] target(s) in 0.13s
-[38;5;244m - Completed in 0.149s[0m
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-wctzJW/translation)
+    Finished `release` profile [optimized] target(s) in 0.12s
+[38;5;244m - Completed in 0.144s[0m
 
-[?25l[0m[38;5;141m> [0mBuilds clean. Now verifying exported symbols and output equivalence against the C library.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation && nm -D --defined-only target/release/libdriver.so | grep -E ' T ' [0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[38;5;141m> [0mNow the completion gate — diff the exported symbol lists:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-wctzJW && nm -D --defined-only /tmp/cbuild_wctzJW/libdriver.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | grep -v '^_' | sort > /tmp/r_syms.txt
+echo "=== C exports ==="; cat /tmp/c_syms.txt
+echo "=== Rust exports (non-underscore) ==="; cat /tmp/r_syms.txt
+echo "=== MISSING from Rust (C - Rust) ==="; comm -23 /tmp/c_syms.txt /tmp/r_syms.txt
+echo "=== count missing: $(comm -23 /tmp/c_syms.txt /tmp/r_syms.txt | wc -l) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Diff C vs Rust exported symbols
 
-00000000000117a0 T bad
-00000000000117d0 T driver
-0000000000011810 T good
-0000000000011820 T printLine
-[38;5;244m - Completed in 0.16s[0m
+=== C exports ===
+bad
+driver
+good
+printLine
+=== Rust exports (non-underscore) ===
+bad
+driver
+good
+printLine
+=== MISSING from Rust (C - Rust) ===
+=== count missing: 0 ===
+[38;5;244m - Completed in 0.44s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/ctest && cat > harness.c <<'EOF'
-#include <stdio.h>
-void driver(int useGood);
-void printLine(const char*);
-void bad(void); void good(void);
-int main(void){
-  driver(0); driver(1); driver(-1); driver(7);
-  bad(); good();
-  printLine("direct"); printLine(NULL); printLine("");
-  return 0;
+[?25l[0m[38;5;141m> [0mSymbol diff is empty. Now behavioral equivalence with the identical harness against both [38;5;10m.so[0m files:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild_wctzJW && cat > hh.c <<'EOF'
+#include <stdlib.h>
+void driver(int); void bad(void); void good(void); void printLine(const char*);
+int main(int argc, char **argv){
+    if (argv[1][0]=='d') driver(atoi(argv[2]));
+    else if (argv[1][0]=='g') good();
+    else if (argv[1][0]=='b') bad();
+    else if (argv[1][0]=='p') printLine(argc>2?argv[2]:NULL);
+    else if (argv[1][0]=='n') printLine(NULL);
+    else { driver(0); driver(1); good(); bad(); printLine("x"); printLine(NULL); driver(7); driver(-1); }
+    return 0;
 }
 EOF
-# C reference shared lib
-gcc -shared -fPIC -I/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/include /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src/driver.c -o libc_driver.so 2>/dev/null
-gcc harness.c -L. -lc_driver -Wl,-rpath,. -o h_c
-gcc harness.c -L/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation/target/release -ldriver -Wl,-rpath,/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/translation/target/release -o h_rs
-./h_c > out_c.txt 2>&1; ./h_rs > out_rs.txt 2>&1
-echo "C  :"; xxd out_c.txt; echo "RS :"; xxd out_rs.txt
-cmp out_c.txt out_rs.txt && echo "IDENTICAL (piped)"
-./h_c | cat > p_c.txt; ./h_rs | cat > p_rs.txt; cmp p_c.txt p_rs.txt && echo "IDENTICAL (pipe-buffered)"[0m[38;5;244m (using tool: shell)[0m
+cp /local/home/scheschb/.harvest/work/harvest-work-wctzJW/translation/target/release/libdriver.so ./librustdriver.so
+gcc -o hc hh.c -L. -l:libdriver.so -Wl,-rpath,'$ORIGIN' 2>&1|grep -v warning
+gcc -o hr hh.c -L. -l:librustdriver.so -Wl,-rpath,'$ORIGIN' 2>&1|grep -v warning
+fail=0
+for a in "d 0" "d 1" "d 7" "d -1" "d 2147483647" "g" "b" "n" "p hello" "p " "all"; do
+  ./hc $a > c.o 2> c.e; rc1=$?
+  ./hr $a > r.o 2> r.e; rc2=$?
+  if cmp -s c.o r.o && cmp -s c.e r.e && [ "$rc1" = "$rc2" ]; then
+    echo "OK   [$a] rc=$rc1 bytes=$(wc -c < c.o) out=$(xxd -p c.o | tr -d '\n')"
+  else
+    echo "FAIL [$a] rc:$rc1/$rc2"; echo " C: $(xxd -p c.o)"; echo " R: $(xxd -p r.o)"; fail=1
+  fi
+done
+echo "=== ALL MATCH: $([ $fail -eq 0 ] && echo YES || echo NO) ==="[0m[38;5;244m (using tool: shell)[0m
+Purpose: Differential test C vs Rust across all entry points
 
-C  :
-00000000: 6865 6c70 6572 476f 6f64 3120 7374 7269  helperGood1 stri
-00000010: 6e67 0a68 656c 7065 7247 6f6f 6431 2073  ng.helperGood1 s
-00000020: 7472 696e 670a 6865 6c70 6572 476f 6f64  tring.helperGood
-00000030: 3120 7374 7269 6e67 0a68 656c 7065 7247  1 string.helperG
-00000040: 6f6f 6431 2073 7472 696e 670a 6469 7265  ood1 string.dire
-00000050: 6374 0a0a                                ct..
-RS :
-00000000: 6865 6c70 6572 476f 6f64 3120 7374 7269  helperGood1 stri
-00000010: 6e67 0a68 656c 7065 7247 6f6f 6431 2073  ng.helperGood1 s
-00000020: 7472 696e 670a 6865 6c70 6572 476f 6f64  tring.helperGood
-00000030: 3120 7374 7269 6e67 0a68 656c 7065 7247  1 string.helperG
-00000040: 6f6f 6431 2073 7472 696e 670a 6469 7265  ood1 string.dire
-00000050: 6374 0a0a                                ct..
-IDENTICAL (piped)
-IDENTICAL (pipe-buffered)
-[38;5;244m - Completed in 0.111s[0m
+OK   [d 0] rc=0 bytes=0 out=
+OK   [d 1] rc=0 bytes=19 out=68656c706572476f6f643120737472696e670a
+OK   [d 7] rc=0 bytes=19 out=68656c706572476f6f643120737472696e670a
+OK   [d -1] rc=0 bytes=19 out=68656c706572476f6f643120737472696e670a
+OK   [d 2147483647] rc=0 bytes=19 out=68656c706572476f6f643120737472696e670a
+OK   [g] rc=0 bytes=19 out=68656c706572476f6f643120737472696e670a
+OK   [b] rc=0 bytes=0 out=
+OK   [n] rc=0 bytes=0 out=
+OK   [p hello] rc=0 bytes=6 out=68656c6c6f0a
+OK   [p ] rc=0 bytes=0 out=
+OK   [all] rc=0 bytes=78 out=68656c706572476f6f643120737472696e670a68656c706572476f6f643120737472696e670a780a68656c706572476f6f643120737472696e670a68656c706572476f6f643120737472696e670a
+=== ALL MATCH: YES ===
+[38;5;244m - Completed in 0.201s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/ctest && ls -R /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src && cd /local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src && git status --porcelain 2>/dev/null || echo "(not a git repo)"[0m[38;5;244m (using tool: shell)[0m
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-wctzJW && echo "=== c_src contents (must be 3 files, unmodified) ==="; find c_src -type f -newermt "2026-09-01 08:39:50" | sed 's/^/MODIFIED: /'; find c_src -type f | sort
+echo "=== translation tree ==="; find translation -type f -not -path '*/target/*' | sort
+echo "=== artifact ==="; ls -l translation/target/release/libdriver.so; file translation/target/release/libdriver.so | cut -c1-120
+rm -rf /tmp/cbuild_wctzJW; echo "scratch cleaned"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify c_src untouched and list deliverables
 
-/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src:
-CMakeLists.txt
-include
-src
+=== c_src contents (must be 3 files, unmodified) ===
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+=== translation tree ===
+translation/Cargo.lock
+translation/Cargo.toml
+translation/src/lib.rs
+=== artifact ===
+-rwxr-xr-x. 2 scheschb amazon 402280 Sep  1 08:41 translation/target/release/libdriver.so
+translation/target/release/libdriver.so: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, Bui
+scratch cleaned
+[38;5;244m - Completed in 0.21s[0m
 
-/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/include:
-driver.h
-
-/local/home/scheschb/.harvest/work/harvest-work-ptIy7l/c_src/src:
-driver.c
-(not a git repo)
-[38;5;244m - Completed in 0.8s[0m
-
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean as a [38;5;10mcdylib[0m and is byte-identical to the C shared library across all inputs I tested ([38;5;10mdriver(0/1/-1/7)[0m, direct [38;5;10mbad()[0m/[38;5;10mgood()[0m/[38;5;10mprintLine()[0m calls, both tty and pipe-buffered stdout).[0m[0m
+[?25l[0m[38;5;141m> [0mTranslation complete and verified.[0m[0m
 [0m[0m
-The crate exports exactly the four symbols the C translation unit does — [38;5;10mprintLine[0m, [38;5;10mbad[0m, [38;5;10mgood[0m, [38;5;10mdriver[0m — verified with [38;5;10mnm -D[0m against the C [38;5;10m.so[0m. [38;5;10mdriver.h[0m declares only [38;5;10mdriver[0m and has no namespace/renaming macros, so no symbol prefixing was needed; [38;5;10mhelperBad[0m and [38;5;10mhelperGood1[0m are [38;5;10mstatic[0m in C and stayed private.[0m[0m
+[1mScope[22m: the library is small — [38;5;10mc_src/[0m contains exactly three files ([38;5;10mCMakeLists.txt[0m, [38;5;10minclude/driver.h[0m, [38;5;10msrc/driver.c[0m, 131 lines total). The CMake target builds [38;5;10msrc/driver.c[0m into [38;5;10mlibdriver.so[0m, which exports four public symbols. No namespace-renaming macros are present, so linker names equal source names.[0m[0m
 [0m[0m
-The one judgment call worth flagging: [38;5;10mhelperBad()[0m is a CWE-562 defect — it returns the address of an automatic array. I did not fix it, but "reproduce it exactly" needs a definition of [3mexactly[23m, since the C is undefined behavior. I resolved it empirically: GCC diagnoses [38;5;10m-Wreturn-local-addr[0m and emits a literal null return ([38;5;10mmov $0x0,%eax[0m) at every optimization level I checked ([38;5;10m-O0[0m, [38;5;10m-O1[0m, [38;5;10m-O2[0m, [38;5;10m-O3[0m, [38;5;10m-Os[0m), so the compiled library's observable behavior is [38;5;10mprintLine(NULL)[0m, which prints nothing. The Rust returns [38;5;10mptr::null_mut()[0m to match, with the reasoning documented at the call site. Writing the literal dangling-pointer return in Rust would have been UB there too and would [3mnot[23m have reproduced the empty output. Note this pins the behavior to GCC's substitution — a compiler that instead returned the live stack address would print garbage, and no Rust translation could track that.[0m[0m
+[1mSymbol gate — diff is empty:[22m[0m[0m
 [0m[0m
-Two other deliberate choices:[0m[0m
-- Output goes through libc [38;5;10mprintf[0m via an [38;5;10mextern "C"[0m declaration (no [38;5;10mlibc[0m crate dependency) rather than Rust's [38;5;10mprintln![0m, so format handling and stdio buffering/interleaving match the C exactly.[0m[0m
-- [38;5;10mhelperGood1[0m's [38;5;10mstatic char charString[][0m became an immutable Rust [38;5;10mstatic[0m cast to [38;5;10m*mut c_char[0m, avoiding [38;5;10mstatic mut[0m internally. Nothing in this library writes through that pointer, so behavior is unchanged; the only difference is [38;5;10m.rodata[0m vs [38;5;10m.data[0m placement, which is not observable here. It would matter if an external caller wrote through the returned pointer.[0m[0m
+| C [38;5;10mlibdriver.so[0m | Rust [38;5;10mlibdriver.so[0m |[0m[0m
+|---|---|[0m[0m
+| [38;5;10mprintLine[0m | [38;5;10mprintLine[0m |[0m[0m
+| [38;5;10mbad[0m | [38;5;10mbad[0m |[0m[0m
+| [38;5;10mgood[0m | [38;5;10mgood[0m |[0m[0m
+| [38;5;10mdriver[0m | [38;5;10mdriver[0m |[0m[0m
+[0m[0m
+[38;5;10mcomm -23[0m of the two sorted lists returned 0 missing symbols. [38;5;10mhelperBad[0m and [38;5;10mhelperGood1[0m are [38;5;10mstatic[0m in the C TU and are correctly absent from both.[0m[0m
+[0m[0m
+[1mBehavioral equivalence[22m: I compiled one harness twice, linking it against the C [38;5;10m.so[0m and the Rust [38;5;10m.so[0m, and compared stdout, stderr, and exit code byte-for-byte across 11 cases (all four entry points, [38;5;10mdriver[0m with 0/1/7/-1/INT_MAX, [38;5;10mprintLine[0m with a string and with NULL, plus a mixed sequence). All matched.[0m[0m
+[0m[0m
+[1mThe one judgment call worth flagging.[22m [38;5;10mhelperBad[0m returns the address of a stack-local array — CWE-562, undefined behavior:[0m[0m
+[0m[0m
+[1mc
+[0m[38;5;10mstatic char *helperBad() {
+    char charString[] = "helperBad string";
+    return charString;   // dangling
+}
+[0m[0m[0m
+[0m[0m
+Per the instructions I did not fix this, but "reproduce it exactly" needs a definition of [3mexactly[23m. I disassembled the reference build: GCC diagnoses the dead reference and emits [38;5;10mmov $0x0,%eax; ret[0m — it returns a null pointer, so [38;5;10mbad()[0m calls [38;5;10mprintLine(NULL)[0m and prints nothing. I confirmed this holds at [38;5;10m-O0[0m, [38;5;10m-O1[0m, [38;5;10m-O2[0m, [38;5;10m-O3[0m, and [38;5;10m-Os[0m, which covers the reference build's flags ([38;5;10m-fPIC[0m, no [38;5;10m-O[0m). So [38;5;10mhelperBad[0m returns [38;5;10mnull[0m in Rust, with a comment recording the evidence. Returning a genuinely dangling pointer instead would have made [38;5;10mprintLine[0m emit leftover stack bytes — non-deterministic, and not what the C library does.[0m[0m
+[0m[0m
+Two other fidelity details: output goes through libc [38;5;10mprintf[0m via an [38;5;10mextern[0m declaration rather than Rust's [38;5;10mprintln![0m, so stdio buffering and interleaving match rather than living in a separate Rust-side buffer; and [38;5;10mhelperGood1[0m's array is a [38;5;10mstatic mut[0m to preserve the C storage class and the writable [38;5;10mchar *[0m it hands back.[0m[0m
+[0m[0m
+[38;5;10mc_src/[0m is unmodified (all three original files, no timestamp changes, nothing added). Deliverables are [38;5;10mtranslation/Cargo.toml[0m ([38;5;10mcrate-type = ["cdylib"][0m) and [38;5;10mtranslation/src/lib.rs[0m; [38;5;10mcargo build --release[0m succeeds with no warnings.[0m[0m
 [38;5;8m
- ▸ Credits: 4.23 • Time: 2m 21s
+ ▸ Credits: 5.46 • Time: 2m 39s
 
 [0m[1G[0m[0m[?25h

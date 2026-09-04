@@ -4,754 +4,1140 @@ Agents can sometimes do unexpected things so understand the risks.
 Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
 
 
-[38;5;12mCheckpoints are not available in this directory. Use '/checkpoint init' to enable checkpoints.
 
-[39m
-[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
-[?25l[0m[0mReading directory: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ[0m[38;5;244m (using tool: read, max depth: 3, max entries: 1000, excluding: defaults)[0m
-[38;5;10m ✓ [0mSuccessfully read directory [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ[0m [38;5;244m(9 entries)[0m
-[38;5;244m - Completed in 0.0s[0m
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the C source tree to understand the scope.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mpwd && ls -la && echo "--- c_src ---" && find c_src -type f | head -200 && echo "--- count ---" && find c_src -type f | wc -l[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory and c_src
 
-[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
-Purpose: Read the C source, header, and build config
+/local/home/scheschb/.harvest/work/harvest-work-UWirmA
+total 80
+drwxr-xr-x.   5 scheschb amazon    69 Sep  1 05:47 .
+drwxr-xr-x. 491 scheschb amazon 81920 Sep  1 05:47 ..
+drwxr-xr-x.   2 scheschb amazon    27 Sep  1 05:47 .claude
+drwxr-xr-x.   4 scheschb amazon    54 Sep  1 05:47 c_src
+drwxr-xr-x.   2 scheschb amazon     6 Sep  1 05:47 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+--- count ---
+3
+[38;5;244m - Completed in 0.12s[0m
 
-↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src/include/lib.h[0m, all lines
-↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src/src/lib.c[0m, all lines
-↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src/CMakeLists.txt[0m, all lines
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m452 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src/include/lib.h
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && wc -l CMakeLists.txt include/lib.h src/lib.c && echo "=== CMakeLists ===" && cat CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes and CMakeLists
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m4179 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src/src/lib.c
+  15 CMakeLists.txt
+  21 include/lib.h
+ 131 src/lib.c
+ 167 total
+=== CMakeLists ===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
 
-[38;5;10m ✓ [0mSuccessfully read [38;5;244m439 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src/CMakeLists.txt
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read header and source
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m452 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m4179 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/src/lib.c
 
  ⋮ 
 
-[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version && uname -m[0m[38;5;244m (using tool: shell)[0m
-Purpose: Check Rust toolchain version and architecture
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild && mkdir cbuild && cd cbuild && cmake /local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && make 2>&1 | tail -5 && echo "=== SO ===" && ls -la *.so && echo "=== nm -D ===" && nm -D --defined-only *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C library and list exported symbols
 
-rustc 1.94.0 (4a4ef493e 2026-03-02)
-cargo 1.94.0 (85eff7c80 2026-01-15)
-x86_64
-[38;5;244m - Completed in 0.47s[0m
+[ 50%] Building C object CMakeFiles/harvest-work-UWirmA.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-UWirmA.so
+[100%] Built target harvest-work-UWirmA
+=== SO ===
+-rwxr-xr-x. 1 scheschb amazon 15736 Sep  1 05:47 libharvest-work-UWirmA.so
+=== nm -D ===
+0000000000001100 T ima_parse
+[38;5;244m - Completed in 0.419s[0m
 
-[?25l[0m[38;5;141m> [0mLet me verify the C struct layouts empirically before writing the Rust.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mcat > /tmp/layout.c <<'EOF'
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/cbuild && objdump -d --no-show-raw-insn libharvest-work-UWirmA.so | sed -n '/<ima_parse>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble ima_parse
+
+0000000000001100 <ima_parse>:
+    1100:	cmpl   $0x66666163,(%rsi)
+    1106:	mov    %rdi,%r8
+    1109:	lea    0x8(%rsi),%rax
+    110d:	jne    11e4 <ima_parse+0xe4>
+    1113:	cmpw   $0x100,0x4(%rsi)
+    1119:	jne    11de <ima_parse+0xde>
+    111f:	xor    %r9d,%r9d
+    1122:	xor    %edi,%edi
+    1124:	jmp    1145 <ima_parse+0x45>
+    1126:	cs nopw 0x0(%rax,%rax,1)
+    1130:	cmp    $0x70616b74,%esi
+    1136:	je     1160 <ima_parse+0x60>
+    1138:	cmp    $0x64617461,%esi
+    113e:	je     1170 <ima_parse+0x70>
+    1140:	lea    0x10(%rax,%rdx,1),%rax
+    1145:	mov    (%rax),%ecx
+    1147:	mov    0x8(%rax),%rdx
+    114b:	mov    %ecx,%esi
+    114d:	bswap  %rdx
+    1150:	bswap  %esi
+    1152:	cmp    $0x63736564,%ecx
+    1158:	jne    1130 <ima_parse+0x30>
+    115a:	lea    0x10(%rax),%rdi
+    115e:	jmp    1140 <ima_parse+0x40>
+    1160:	lea    0x10(%rax),%r9
+    1164:	jmp    1140 <ima_parse+0x40>
+    1166:	cs nopw 0x0(%rax,%rax,1)
+    1170:	add    $0x14,%rax
+    1174:	cmpl   $0x34616d69,0x8(%rdi)
+    117b:	jne    11d8 <ima_parse+0xd8>
+    117d:	movsd  0xe7b(%rip),%xmm1        # 2000 <_fini+0xe14>
+    1185:	movsd  (%rdi),%xmm0
+    1189:	mov    %rax,(%r8)
+    118c:	mov    %rdx,0x8(%r8)
+    1190:	mov    0x8(%r9),%rax
+    1194:	comisd %xmm1,%xmm0
+    1198:	bswap  %rax
+    119b:	mov    %rax,0x18(%r8)
+    119f:	mov    0x18(%rdi),%eax
+    11a2:	bswap  %eax
+    11a4:	mov    %eax,0x20(%r8)
+    11a8:	jae    11c0 <ima_parse+0xc0>
+    11aa:	cvttsd2si %xmm0,%rax
+    11af:	bswap  %rax
+    11b2:	mov    %rax,0x10(%r8)
+    11b6:	xor    %eax,%eax
+    11b8:	ret
+    11b9:	nopl   0x0(%rax)
+    11c0:	subsd  %xmm1,%xmm0
+    11c4:	cvttsd2si %xmm0,%rax
+    11c9:	btc    $0x3f,%rax
+    11ce:	bswap  %rax
+    11d1:	mov    %rax,0x10(%r8)
+    11d5:	xor    %eax,%eax
+    11d7:	ret
+    11d8:	mov    $0xfffffffd,%eax
+    11dd:	ret
+    11de:	mov    $0xfffffffe,%eax
+    11e3:	ret
+    11e4:	mov    $0xffffffff,%eax
+    11e9:	ret
+
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && rm -rf cbuild0 && mkdir cbuild0 && cd cbuild0 && cmake /local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src >/dev/null 2>&1 && make >/dev/null 2>&1 && objdump -d --no-show-raw-insn libharvest-work-UWirmA.so | sed -n '/<ima_parse>:/,/^$/p' | grep -n -A6 -B6 "cvttsd2si" ; echo "=== consts ==="; objdump -s -j .rodata libharvest-work-UWirmA.so 2>/dev/null | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check -O0 build codegen for double to u64 conversion
+
+89-    1380:	mov    -0x48(%rbp),%rdx
+90-    1384:	mov    %eax,0x20(%rdx)
+91-    1387:	mov    -0x10(%rbp),%rax
+92-    138b:	movsd  (%rax),%xmm0
+93-    138f:	comisd 0xc69(%rip),%xmm0        # 2000 <_fini+0xc14>
+94-    1397:	jae    13a0 <ima_parse+0x173>
+95:    1399:	cvttsd2si %xmm0,%rax
+96-    139e:	jmp    13be <ima_parse+0x191>
+97-    13a0:	movsd  0xc58(%rip),%xmm1        # 2000 <_fini+0xc14>
+98-    13a8:	subsd  %xmm1,%xmm0
+99:    13ac:	cvttsd2si %xmm0,%rax
+100-    13b1:	movabs $0x8000000000000000,%rdx
+101-    13bb:	xor    %rdx,%rax
+102-    13be:	mov    %rax,-0x40(%rbp)
+103-    13c2:	lea    -0x40(%rbp),%rax
+104-    13c6:	mov    (%rax),%rax
+105-    13c9:	mov    %rax,%rdi
+=== consts ===
+
+libharvest-work-UWirmA.so:     file format elf64-x86-64
+
+Contents of section .rodata:
+ 2000 00000000 0000e043                    .......C        
+[38;5;244m - Completed in 0.406s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrustc --version && cargo --version && cat > /tmp/sz.c <<'EOF'
 #include <stdio.h>
 #include <stddef.h>
 #include "lib.h"
-typedef signed int ima_s32_t;
-typedef signed long long ima_s64_t;
+typedef signed int ima_s32_t; typedef signed long long ima_s64_t;
 struct caf_header { ima_u32_t type; ima_u16_t version; ima_u16_t flags; };
 struct caf_chunk { ima_u32_t type; ima_s64_t size; };
 struct caf_audio_description { ima_f64_t sample_rate; ima_u32_t format_id; ima_u32_t format_flags; ima_u32_t bytes_per_packet; ima_u32_t frames_per_packet; ima_u32_t channels_per_frame; ima_u32_t bits_per_channel; };
 struct caf_packet_table { ima_s64_t packet_count; ima_s64_t frame_count; ima_s32_t priming_frames; ima_s32_t remainder_frames; };
 struct caf_data { ima_u32_t edit_count; };
 int main(void){
-  printf("caf_header size=%zu ver_off=%zu flags_off=%zu\n", sizeof(struct caf_header), offsetof(struct caf_header,version), offsetof(struct caf_header,flags));
-  printf("caf_chunk size=%zu size_off=%zu\n", sizeof(struct caf_chunk), offsetof(struct caf_chunk,size));
-  printf("desc size=%zu fmt=%zu ch=%zu\n", sizeof(struct caf_audio_description), offsetof(struct caf_audio_description,format_id), offsetof(struct caf_audio_description,channels_per_frame));
-  printf("pakt size=%zu frame_off=%zu\n", sizeof(struct caf_packet_table), offsetof(struct caf_packet_table,frame_count));
-  printf("caf_data size=%zu\n", sizeof(struct caf_data));
-  printf("ima_block size=%zu align=%zu data_off=%zu\n", sizeof(struct ima_block), _Alignof(struct ima_block), offsetof(struct ima_block,data));
-  printf("ima_info size=%zu blocks=%zu size=%zu sr=%zu fc=%zu cc=%zu\n", sizeof(struct ima_info), offsetof(struct ima_info,blocks), offsetof(struct ima_info,size), offsetof(struct ima_info,sample_rate), offsetof(struct ima_info,frame_count), offsetof(struct ima_info,channel_count));
-  return 0;
-}
+ printf("header %zu/%zu ver@%zu flags@%zu\n", sizeof(struct caf_header), _Alignof(struct caf_header), offsetof(struct caf_header,version), offsetof(struct caf_header,flags));
+ printf("chunk %zu/%zu size@%zu\n", sizeof(struct caf_chunk), _Alignof(struct caf_chunk), offsetof(struct caf_chunk,size));
+ printf("desc %zu/%zu ch@%zu bits@%zu\n", sizeof(struct caf_audio_description), _Alignof(struct caf_audio_description), offsetof(struct caf_audio_description,channels_per_frame), offsetof(struct caf_audio_description,bits_per_channel));
+ printf("pakt %zu/%zu frame@%zu rem@%zu\n", sizeof(struct caf_packet_table), _Alignof(struct caf_packet_table), offsetof(struct caf_packet_table,frame_count), offsetof(struct caf_packet_table,remainder_frames));
+ printf("cafdata %zu/%zu\n", sizeof(struct caf_data), _Alignof(struct caf_data));
+ printf("block %zu/%zu data@%zu\n", sizeof(struct ima_block), _Alignof(struct ima_block), offsetof(struct ima_block,data));
+ printf("info %zu/%zu size@%zu sr@%zu fc@%zu cc@%zu\n", sizeof(struct ima_info), _Alignof(struct ima_info), offsetof(struct ima_info,size), offsetof(struct ima_info,sample_rate), offsetof(struct ima_info,frame_count), offsetof(struct ima_info,channel_count));
+ return 0;}
 EOF
-gcc -I /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src/include /tmp/layout.c -o /tmp/layout && /tmp/layout[0m[38;5;244m (using tool: shell)[0m
-Purpose: Compile a probe program to print C struct offsets and sizes
+gcc -I/local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/include /tmp/sz.c -o /tmp/sz && /tmp/sz[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check toolchain versions and C struct layouts
 
-caf_header size=8 ver_off=4 flags_off=6
-caf_chunk size=16 size_off=8
-desc size=32 fmt=8 ch=24
-pakt size=24 frame_off=8
-caf_data size=4
-ima_block size=34 align=2 data_off=2
-ima_info size=40 blocks=0 size=8 sr=16 fc=24 cc=32
-[38;5;244m - Completed in 0.59s[0m
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+header 8/4 ver@4 flags@6
+chunk 16/8 size@8
+desc 32/8 ch@24 bits@28
+pakt 24/8 frame@8 rem@20
+cafdata 4/4
+block 34/2 data@2
+info 40/8 size@8 sr@16 fc@24 cc@32
+[38;5;244m - Completed in 0.68s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src && gcc -O2 -Iinclude -S -o /tmp/lib.s src/lib.c && sed -n '/ima_parse:/,/ret/p' /tmp/lib.s | grep -n -i "cvt\|comisd\|subsd\|btc\|xor\|movabs" | head -40[0m[38;5;244m (using tool: shell)[0m
-Purpose: Inspect generated assembly for the float-to-unsigned conversion
-
-10:	xorl	%r9d, %r9d
-11:	xorl	%esi, %esi
-50:	comisd	%xmm1, %xmm0
-54:	cvttsd2siq	%xmm0, %rdi
-57:	xorl	%eax, %eax
-[38;5;244m - Completed in 0.37s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mgrep -n -A6 -B12 "cvttsd2siq" /tmp/lib.s | head -60[0m[38;5;244m (using tool: shell)[0m
-Purpose: Show context around the float-to-unsigned conversion assembly
-
-58-	movq	%rcx, (%r8)
-59-	movq	8(%r9), %rdi
-60-	movq	%rax, 8(%r8)
-61-	call	ima_bswap64
-62-	movsd	.LC0(%rip), %xmm1
-63-	movsd	(%rsi), %xmm0
-64-	movq	%rax, 24(%r8)
-65-	movl	24(%rsi), %eax
-66-	comisd	%xmm1, %xmm0
-67-	bswap	%eax
-68-	movl	%eax, 32(%r8)
-69-	jnb	.L10
-70:	cvttsd2siq	%xmm0, %rdi
-71-	call	ima_bswap64
-72-	movq	%rax, 16(%r8)
-73-	xorl	%eax, %eax
-74-	ret
-75-	.p2align 4,,10
-76-	.p2align 3
-77-.L10:
-78-	subsd	%xmm1, %xmm0
-79:	cvttsd2siq	%xmm0, %rdi
-80-	btcq	$63, %rdi
-81-	call	ima_bswap64
-82-	movq	%rax, 16(%r8)
-83-	xorl	%eax, %eax
-84-	ret
-85-.L18:
-[38;5;244m - Completed in 0.10s[0m
-
-[?25l[0m[38;5;141m> [0mLayout and codegen confirmed (including the padded 16-byte [38;5;10mcaf_chunk[0m and the [38;5;10mf64[0m→[38;5;10mu64[0m numeric conversion bug). Writing the Rust crate.[0m[0m
-[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
-Purpose: Create Cargo.toml with cdylib crate type
+[?25l[0m[38;5;141m> [0mLayouts confirmed. The C library exports exactly one public symbol: [38;5;10mima_parse[0m. Writing the Rust crate.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Cargo.toml for cdylib
 
 [49m[38;5;10m+     1[0m:[38;5;10m[49m [package]
-[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "ima"
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m name = "harvest-work-UWirmA"
 [0m[49m[38;5;10m+     3[0m:[38;5;10m[49m version = "0.1.0"
-[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2024"
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m edition = "2021"
 [0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+     6[0m:[38;5;10m[49m [lib]
-[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "ima"
-[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m path = "src/lib.rs"
-[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m name = "harvest_work_UWirmA"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m crate-type = ["cdylib"]
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m path = "src/lib.rs"
 [0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
 [0m[49m[38;5;10m+    11[0m:[38;5;10m[49m [profile.release]
 [0m[49m[38;5;10m+    12[0m:[38;5;10m[49m panic = "abort"
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/Cargo.toml[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/Cargo.toml[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
-Purpose: Write the Rust translation of the CAF parser
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Translate lib.c to Rust
 
-[48;2;40;67;43m[39m+      1[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m Rust translation of `c_src/src/lib.c` — a minimal CAF (Core Audio Format)[K
-[0m[48;2;40;67;43m[39m+      2[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m header parser for IMA4 streams.[K
-[0m[48;2;40;67;43m[39m+      3[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+      4[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m This is a faithful, bug-for-bug translation. In particular:[K
-[0m[48;2;40;67;43m[39m+      5[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![K
-[0m[48;2;40;67;43m[39m+      6[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m * `struct caf_chunk` is **padded**: `type` sits at offset 0 and `size` at[K
-[0m[48;2;40;67;43m[39m+      7[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   offset 8, giving `sizeof == 16`. The original C therefore walks chunks[K
-[0m[48;2;40;67;43m[39m+      8[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   using a 16-byte header (and reads the 64-bit size from offset 8) even[K
-[0m[48;2;40;67;43m[39m+      9[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   though the real CAF on-disk chunk header is 12 bytes. Reproduced as-is.[K
-[0m[48;2;40;67;43m[39m+     10[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m * `ima_btoh*` are unconditional byte swaps, i.e. the C assumes a[K
-[0m[48;2;40;67;43m[39m+     11[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   little-endian host. Reproduced as-is.[K
-[0m[48;2;40;67;43m[39m+     12[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m * The sample rate is passed through a `union { double f; uint64_t u; }`[K
-[0m[48;2;40;67;43m[39m+     13[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   but is written via `conv64.u = desc->sample_rate`, which is a *numeric*[K
-[0m[48;2;40;67;43m[39m+     14[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   `double` -> `uint64_t` conversion, not a bit reinterpretation. The[K
-[0m[48;2;40;67;43m[39m+     15[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   truncated integer is then byte-swapped and read back as a `double`.[K
-[0m[48;2;40;67;43m[39m+     16[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   Reproduced as-is, including x86-64 `cvttsd2si` out-of-range semantics.[K
-[0m[48;2;40;67;43m[39m+     17[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m * `desc` / `pakt` may still be null after the chunk loop; the C[K
-[0m[48;2;40;67;43m[39m+     18[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//![38;2;101;115;126m   dereferences them unconditionally. Reproduced as-is.[K
-[0m[48;2;40;67;43m[39m+     19[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     20[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#![38;2;192;197;206m[[38;2;191;97;106mallow[38;2;192;197;206m([38;2;192;197;206mnon_camel_case_types[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     21[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     22[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mcore[38;2;192;197;206m::[38;2;192;197;206mffi[38;2;192;197;206m::[38;2;192;197;206m{[38;2;180;142;173mc_int[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mc_void[38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     23[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mcore[38;2;192;197;206m::[38;2;192;197;206mmem[38;2;192;197;206m::[38;2;192;197;206m{[38;2;192;197;206moffset_of[38;2;192;197;206m,[38;2;192;197;206m size_of[38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     24[0m:[39m[48;2;24;38;30m [38;2;180;142;173muse[38;2;192;197;206m [38;2;192;197;206mcore[38;2;192;197;206m::[38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206m{[38;2;191;97;106mself[38;2;192;197;206m,[38;2;192;197;206m addr_of[38;2;192;197;206m,[38;2;192;197;206m addr_of_mut[38;2;192;197;206m}[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     25[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     26[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+     27[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m include/lib.h[K
-[0m[48;2;40;67;43m[39m+     28[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+     29[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     30[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mima_u32_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mu32[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     31[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mima_u64_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mu64[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     32[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mima_f64_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     33[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     34[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mima_u8_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     35[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mima_u16_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mu16[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     36[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     37[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     38[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mima_block[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     39[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mpreamble[38;2;192;197;206m:[38;2;192;197;206m ima_u16_t,[K
-[0m[48;2;40;67;43m[39m+     40[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mdata[38;2;192;197;206m:[38;2;192;197;206m [ima_u8_t; 32],[K
-[0m[48;2;40;67;43m[39m+     41[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     42[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     43[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     44[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mima_info[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     45[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mblocks[38;2;192;197;206m:[38;2;192;197;206m *const ima_block,[K
-[0m[48;2;40;67;43m[39m+     46[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106msize[38;2;192;197;206m:[38;2;192;197;206m ima_u64_t,[K
-[0m[48;2;40;67;43m[39m+     47[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106msample_rate[38;2;192;197;206m:[38;2;192;197;206m ima_f64_t,[K
-[0m[48;2;40;67;43m[39m+     48[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mframe_count[38;2;192;197;206m:[38;2;192;197;206m ima_u64_t,[K
-[0m[48;2;40;67;43m[39m+     49[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mpub[38;2;192;197;206m [38;2;191;97;106mchannel_count[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     50[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     51[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     52[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+     53[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m src/lib.c local types[K
-[0m[48;2;40;67;43m[39m+     54[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+     55[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     56[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mima_s32_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mi32[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     57[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173mtype[38;2;192;197;206m [38;2;192;197;206mima_s64_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+     58[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     59[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     60[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mcaf_header[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     61[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mtype_[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     62[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mversion[38;2;192;197;206m:[38;2;192;197;206m ima_u16_t,[K
-[0m[48;2;40;67;43m[39m+     63[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     64[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mflags[38;2;192;197;206m:[38;2;192;197;206m ima_u16_t,[K
-[0m[48;2;40;67;43m[39m+     65[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     66[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     67[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     68[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mcaf_chunk[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     69[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mtype_[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     70[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106msize[38;2;192;197;206m:[38;2;192;197;206m ima_s64_t,[K
-[0m[48;2;40;67;43m[39m+     71[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     72[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     73[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     74[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mcaf_audio_description[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     75[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106msample_rate[38;2;192;197;206m:[38;2;192;197;206m ima_f64_t,[K
-[0m[48;2;40;67;43m[39m+     76[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mformat_id[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     77[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     78[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mformat_flags[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     79[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     80[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mbytes_per_packet[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     81[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     82[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mframes_per_packet[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     83[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mchannels_per_frame[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     84[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     85[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mbits_per_channel[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+     86[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     87[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     88[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+     89[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mcaf_packet_table[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+     90[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     91[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mpacket_count[38;2;192;197;206m:[38;2;192;197;206m ima_s64_t,[K
-[0m[48;2;40;67;43m[39m+     92[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mframe_count[38;2;192;197;206m:[38;2;192;197;206m ima_s64_t,[K
-[0m[48;2;40;67;43m[39m+     93[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     94[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mpriming_frames[38;2;192;197;206m:[38;2;192;197;206m ima_s32_t,[K
-[0m[48;2;40;67;43m[39m+     95[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+     96[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106mremainder_frames[38;2;192;197;206m:[38;2;192;197;206m ima_s32_t,[K
-[0m[48;2;40;67;43m[39m+     97[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+     98[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+     99[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106mrepr[38;2;192;197;206m([38;2;192;197;206mC[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    100[0m:[39m[48;2;24;38;30m [38;2;180;142;173mstruct[38;2;192;197;206m [38;2;192;197;206mcaf_data[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    101[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    #[allow(dead_code)][K
-[0m[48;2;40;67;43m[39m+    102[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;191;97;106medit_count[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t,[K
-[0m[48;2;40;67;43m[39m+    103[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    104[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    105[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m Layout assertions: these must match the C ABI exactly, because every read[K
-[0m[48;2;40;67;43m[39m+    106[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m below is a raw reinterpretation of the caller's buffer.[K
-[0m[48;2;40;67;43m[39m+    107[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mcaf_header[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    108[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mcaf_header[38;2;192;197;206m,[38;2;192;197;206m version[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    109[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mcaf_chunk[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m16[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    110[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mcaf_chunk[38;2;192;197;206m,[38;2;192;197;206m size[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    111[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mcaf_audio_description[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m32[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    112[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mcaf_audio_description[38;2;192;197;206m,[38;2;192;197;206m format_id[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    113[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mcaf_audio_description[38;2;192;197;206m,[38;2;192;197;206m channels_per_frame[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m24[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    114[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mcaf_packet_table[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m24[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    115[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mcaf_packet_table[38;2;192;197;206m,[38;2;192;197;206m frame_count[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    116[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mcaf_data[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m4[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    117[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mima_block[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m34[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    118[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206msize_of[38;2;192;197;206m::[38;2;192;197;206m<[38;2;192;197;206mima_info[38;2;192;197;206m>[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m40[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    119[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mima_info[38;2;192;197;206m,[38;2;192;197;206m size[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    120[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mima_info[38;2;192;197;206m,[38;2;192;197;206m sample_rate[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m16[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    121[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mima_info[38;2;192;197;206m,[38;2;192;197;206m frame_count[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m24[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    122[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;192;197;206m_[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206massert![38;2;192;197;206m([38;2;192;197;206moffset_of![38;2;192;197;206m([38;2;192;197;206mima_info[38;2;192;197;206m,[38;2;192;197;206m channel_count[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m32[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    123[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    124[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    125[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m Byte swapping (written to mirror the C expressions)[K
-[0m[48;2;40;67;43m[39m+    126[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    127[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    128[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mima_bswap16[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m ima_u16_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u16_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    129[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m0x08[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0xff00[38;2;180;142;173mu16[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0x08[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x00ff[38;2;180;142;173mu16[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    130[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    131[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    132[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mima_bswap32[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u32_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    133[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m0x18[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0xff000000[38;2;180;142;173mu32[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    134[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m0x08[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x00ff0000[38;2;180;142;173mu32[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    135[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0x08[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x0000ff00[38;2;180;142;173mu32[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    136[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0x18[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x000000ff[38;2;180;142;173mu32[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    137[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    138[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    139[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mima_bswap64[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m ima_u64_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u64_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    140[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m0x38[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0xff00000000000000[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    141[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m0x28[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x00ff000000000000[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    142[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m0x18[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x0000ff0000000000[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    143[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m0x08[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x000000ff00000000[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    144[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0x08[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x00000000ff000000[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    145[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0x18[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x0000000000ff0000[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    146[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0x28[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x000000000000ff00[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    147[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m>[38;2;192;197;206m>[38;2;192;197;206m [38;2;208;135;112m0x38[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m [38;2;208;135;112m0x00000000000000ff[38;2;180;142;173mu64[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    148[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    149[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    150[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mima_btoh16[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m ima_u16_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u16_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    151[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mima_bswap16[38;2;192;197;206m([38;2;192;197;206mv[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    152[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    153[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    154[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mima_btoh32[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m ima_u32_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u32_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    155[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mima_bswap32[38;2;192;197;206m([38;2;192;197;206mv[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    156[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    157[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    158[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mima_btoh64[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m ima_u64_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u64_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    159[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;150;181;180mima_bswap64[38;2;192;197;206m([38;2;192;197;206mv[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    160[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    161[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    162[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    163[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m FourCC helpers[K
-[0m[48;2;40;67;43m[39m+    164[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    165[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    166[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m `(u32)(u8)a | ((u32)(u8)b << 8) | ((u32)(u8)c << 16) | ((u32)(u8)d << 24)`[K
-[0m[48;2;40;67;43m[39m+    167[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mfourcc[38;2;192;197;206m([38;2;191;97;106ma[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;191;97;106mb[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;191;97;106mc[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m, [38;2;191;97;106md[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mu8[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u32_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    168[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m([38;2;192;197;206ma [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mb [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m8[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206mc [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m16[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m|[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206md [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m24[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    169[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    170[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    171[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mCAF_FILE_TYPE[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mfourcc[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mf[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mf[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140ma[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mc[38;2;192;197;206m'[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    172[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mCAF_CHUNK_DESC[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mfourcc[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mc[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140ms[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140me[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140md[38;2;192;197;206m'[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    173[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mCAF_CHUNK_PAKT[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mfourcc[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mt[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mk[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140ma[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mp[38;2;192;197;206m'[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    174[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mCAF_CHUNK_DATA[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mfourcc[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140ma[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mt[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140ma[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140md[38;2;192;197;206m'[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    175[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mCAF_FORMAT_IMA4[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mima_u32_t[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mfourcc[38;2;192;197;206m([38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140m4[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140ma[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mm[38;2;192;197;206m'[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mb[38;2;192;197;206m'[38;2;163;190;140mi[38;2;192;197;206m'[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    176[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    177[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    178[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m double -> uint64_t conversion, matching x86-64 codegen[K
-[0m[48;2;40;67;43m[39m+    179[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    180[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    181[0m:[39m[48;2;24;38;30m [38;2;180;142;173mconst[38;2;192;197;206m [38;2;208;135;112mTWO_POW_63[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m [38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m9223372036854775808.[38;2;208;135;112m0[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    182[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    183[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Emulates the x86-64 `cvttsd2si` instruction: truncate toward zero, yielding[K
-[0m[48;2;40;67;43m[39m+    184[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m the "integer indefinite" value `i64::MIN` when the source is NaN or the[K
-[0m[48;2;40;67;43m[39m+    185[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m truncated result does not fit in a signed 64-bit integer.[K
-[0m[48;2;40;67;43m[39m+    186[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mcvttsd2si[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    187[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m v.[38;2;150;181;180mis_nan[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    188[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;180;142;173mi64[38;2;192;197;206m::[38;2;208;135;112mMIN[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    189[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    190[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mlet[38;2;192;197;206m t [38;2;192;197;206m=[38;2;192;197;206m v.[38;2;150;181;180mtrunc[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    191[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m t [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112mTWO_POW_63[38;2;192;197;206m [38;2;192;197;206m&[38;2;192;197;206m&[38;2;192;197;206m t [38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112mTWO_POW_63[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    192[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m In range, so this cast is exact (no saturation takes effect).[K
-[0m[48;2;40;67;43m[39m+    193[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        t [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mi64[K
-[0m[48;2;40;67;43m[39m+    194[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    195[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mi64[38;2;192;197;206m::[38;2;208;135;112mMIN[K
-[0m[48;2;40;67;43m[39m+    196[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    197[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    198[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    199[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m Emulates the `double` -> `unsigned long long` conversion gcc emits on[K
-[0m[48;2;40;67;43m[39m+    200[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m x86-64: compare against 2^63, and for values at or above it subtract 2^63,[K
-[0m[48;2;40;67;43m[39m+    201[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m truncate, then flip the sign bit. NaN fails the `>=` comparison and so[K
-[0m[48;2;40;67;43m[39m+    202[0m:[39m[48;2;24;38;30m [38;2;101;115;126m///[38;2;101;115;126m takes the plain `cvttsd2si` path, exactly as the generated `jnb` does.[K
-[0m[48;2;40;67;43m[39m+    203[0m:[39m[48;2;24;38;30m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mf64_to_u64[38;2;192;197;206m([38;2;191;97;106mv[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m ima_u64_t[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    204[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173mif[38;2;192;197;206m v [38;2;192;197;206m>[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mTWO_POW_63[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    205[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m([38;2;150;181;180mcvttsd2si[38;2;192;197;206m([38;2;192;197;206mv [38;2;192;197;206m-[38;2;192;197;206m [38;2;208;135;112mTWO_POW_63[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u64_t[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m^[38;2;192;197;206m [38;2;192;197;206m([38;2;208;135;112m1[38;2;180;142;173mu64[38;2;192;197;206m [38;2;192;197;206m<[38;2;192;197;206m<[38;2;192;197;206m [38;2;208;135;112m63[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    206[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    207[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;150;181;180mcvttsd2si[38;2;192;197;206m([38;2;192;197;206mv[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u64_t[K
-[0m[48;2;40;67;43m[39m+    208[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    209[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    210[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    211[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    212[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ima_parse[K
-[0m[48;2;40;67;43m[39m+    213[0m:[39m[48;2;24;38;30m [38;2;101;115;126m//[38;2;101;115;126m ---------------------------------------------------------------------------[K
-[0m[48;2;40;67;43m[39m+    214[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    215[0m:[39m[48;2;24;38;30m [38;2;192;197;206m#[38;2;192;197;206m[[38;2;191;97;106munsafe[38;2;192;197;206m([38;2;192;197;206mno_mangle[38;2;192;197;206m)[38;2;192;197;206m][K
-[0m[48;2;40;67;43m[39m+    216[0m:[39m[48;2;24;38;30m [38;2;180;142;173mpub[38;2;192;197;206m [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;180;142;173mextern[38;2;192;197;206m [38;2;192;197;206m"[38;2;163;190;140mC[38;2;192;197;206m"[38;2;192;197;206m [38;2;180;142;173mfn[38;2;192;197;206m [38;2;143;161;179mima_parse[38;2;192;197;206m([38;2;191;97;106minfo[38;2;192;197;206m:[38;2;192;197;206m *[38;2;180;142;173mmut[38;2;192;197;206m ima_info, [38;2;191;97;106mdata[38;2;192;197;206m:[38;2;192;197;206m *const c_void[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m->[38;2;192;197;206m c_int[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    217[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;180;142;173munsafe[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    218[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m header [38;2;192;197;206m=[38;2;192;197;206m data [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_header[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    219[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m chunk [38;2;192;197;206m=[38;2;192;197;206m header.[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_chunk[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    220[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m desc[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_audio_description [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    221[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m [38;2;180;142;173mmut[38;2;192;197;206m pakt[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_packet_table [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mnull[38;2;192;197;206m([38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    222[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m blocks[38;2;192;197;206m:[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m ima_block[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    223[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m chunk_size[38;2;192;197;206m:[38;2;192;197;206m [38;2;180;142;173mima_s64_t[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    224[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    225[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m [38;2;150;181;180mima_btoh32[38;2;192;197;206m([38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mheader[38;2;192;197;206m)[38;2;192;197;206m.type_[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m![38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mCAF_FILE_TYPE[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    226[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m1[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    227[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    228[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m [38;2;150;181;180mima_btoh16[38;2;192;197;206m([38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mheader[38;2;192;197;206m)[38;2;192;197;206m.version[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m![38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112m1[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    229[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m2[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    230[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    231[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    232[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mloop[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    233[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m chunk_type [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mima_btoh32[38;2;192;197;206m([38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mchunk[38;2;192;197;206m)[38;2;192;197;206m.type_[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    234[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mlet[38;2;192;197;206m size [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mima_btoh64[38;2;192;197;206m([38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mchunk[38;2;192;197;206m)[38;2;192;197;206m.size[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u64_t[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    235[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_s64_t[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    236[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    237[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mif[38;2;192;197;206m chunk_type [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mCAF_CHUNK_DESC[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    238[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                desc [38;2;192;197;206m=[38;2;192;197;206m chunk.[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_audio_description[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    239[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m chunk_type [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mCAF_CHUNK_PAKT[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    240[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                pakt [38;2;192;197;206m=[38;2;192;197;206m chunk.[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_packet_table[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    241[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[38;2;192;197;206m [38;2;180;142;173melse[38;2;192;197;206m [38;2;180;142;173mif[38;2;192;197;206m chunk_type [38;2;192;197;206m=[38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mCAF_CHUNK_DATA[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    242[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;101;115;126m//[38;2;101;115;126m &((const struct caf_data *)&chunk[1])[1][K
-[0m[48;2;40;67;43m[39m+    243[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                blocks [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mchunk.[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_data[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    244[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                    [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m ima_block[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    245[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                chunk_size [38;2;192;197;206m=[38;2;192;197;206m size[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    246[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;180;142;173mbreak[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    247[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    248[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    249[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;101;115;126m//[38;2;101;115;126m chunk = (const struct caf_chunk *)((const ima_u8_t *)&chunk[1] + chunk_size);[K
-[0m[48;2;40;67;43m[39m+    250[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            chunk [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206m([38;2;192;197;206mchunk.[38;2;150;181;180mwrapping_add[38;2;192;197;206m([38;2;208;135;112m1[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m [38;2;180;142;173mima_u8_t[38;2;192;197;206m)[38;2;192;197;206m.[38;2;150;181;180mwrapping_offset[38;2;192;197;206m([38;2;192;197;206msize [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173misize[38;2;192;197;206m)[K
-[0m[48;2;40;67;43m[39m+    251[0m:[39m[48;2;24;38;30m [38;2;192;197;206m                [38;2;192;197;206mas[38;2;192;197;206m [38;2;192;197;206m*[38;2;180;142;173mconst[38;2;192;197;206m caf_chunk[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    252[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    253[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    254[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mif[38;2;192;197;206m [38;2;150;181;180mima_btoh32[38;2;192;197;206m([38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mdesc[38;2;192;197;206m)[38;2;192;197;206m.format_id[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206m![38;2;192;197;206m=[38;2;192;197;206m [38;2;208;135;112mCAF_FORMAT_IMA4[38;2;192;197;206m [38;2;192;197;206m{[K
-[0m[48;2;40;67;43m[39m+    255[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;180;142;173mreturn[38;2;192;197;206m [38;2;192;197;206m-[38;2;208;135;112m3[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    256[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    257[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    258[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mwrite_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of_mut![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206minfo[38;2;192;197;206m)[38;2;192;197;206m.blocks[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m blocks[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    259[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mwrite_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of_mut![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206minfo[38;2;192;197;206m)[38;2;192;197;206m.size[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m chunk_size [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u64_t[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    260[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mwrite_unaligned[38;2;192;197;206m([K
-[0m[48;2;40;67;43m[39m+    261[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206maddr_of_mut![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206minfo[38;2;192;197;206m)[38;2;192;197;206m.frame_count[38;2;192;197;206m)[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    262[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mima_btoh64[38;2;192;197;206m([38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mpakt[38;2;192;197;206m)[38;2;192;197;206m.frame_count[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m [38;2;192;197;206mas[38;2;192;197;206m [38;2;180;142;173mima_u64_t[38;2;192;197;206m)[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    263[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    264[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mwrite_unaligned[38;2;192;197;206m([K
-[0m[48;2;40;67;43m[39m+    265[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;192;197;206maddr_of_mut![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206minfo[38;2;192;197;206m)[38;2;192;197;206m.channel_count[38;2;192;197;206m)[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    266[0m:[39m[48;2;24;38;30m [38;2;192;197;206m            [38;2;150;181;180mima_btoh32[38;2;192;197;206m([38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mdesc[38;2;192;197;206m)[38;2;192;197;206m.channels_per_frame[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m,[K
-[0m[48;2;40;67;43m[39m+    267[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    268[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    269[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m conv64.u = desc->sample_rate;                          (numeric conversion)[K
-[0m[48;2;40;67;43m[39m+    270[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m conv64.u = ima_btoh64(*(const ima_u64_t *)&conv64.u);  (byte swap)[K
-[0m[48;2;40;67;43m[39m+    271[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;101;115;126m//[38;2;101;115;126m info->sample_rate = conv64.f;                          (bit reinterpretation)[K
-[0m[48;2;40;67;43m[39m+    272[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m raw [38;2;192;197;206m=[38;2;192;197;206m [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mread_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206mdesc[38;2;192;197;206m)[38;2;192;197;206m.sample_rate[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    273[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m converted [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mf64_to_u64[38;2;192;197;206m([38;2;192;197;206mraw[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    274[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;180;142;173mlet[38;2;192;197;206m swapped [38;2;192;197;206m=[38;2;192;197;206m [38;2;150;181;180mima_btoh64[38;2;192;197;206m([38;2;192;197;206mconverted[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    275[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;192;197;206mptr[38;2;192;197;206m::[38;2;192;197;206mwrite_unaligned[38;2;192;197;206m([38;2;192;197;206maddr_of_mut![38;2;192;197;206m([38;2;192;197;206m([38;2;192;197;206m*[38;2;192;197;206minfo[38;2;192;197;206m)[38;2;192;197;206m.sample_rate[38;2;192;197;206m)[38;2;192;197;206m,[38;2;192;197;206m [38;2;180;142;173mf64[38;2;192;197;206m::[38;2;192;197;206mfrom_bits[38;2;192;197;206m([38;2;192;197;206mswapped[38;2;192;197;206m)[38;2;192;197;206m)[38;2;192;197;206m;[K
-[0m[48;2;40;67;43m[39m+    276[0m:[39m[48;2;24;38;30m [K
-[0m[48;2;40;67;43m[39m+    277[0m:[39m[48;2;24;38;30m [38;2;192;197;206m        [38;2;208;135;112m0[K
-[0m[48;2;40;67;43m[39m+    278[0m:[39m[48;2;24;38;30m [38;2;192;197;206m    [38;2;192;197;206m}[K
-[0m[48;2;40;67;43m[39m+    279[0m:[39m[48;2;24;38;30m [38;2;192;197;206m}[K
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Rust translation of the C `ima` library (`c_src/`).
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C library consists of a single translation unit (`src/lib.c`) with a
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! single public header (`include/lib.h`). It exports exactly one public
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! symbol: `ima_parse`. Everything else in the C source is `static` (internal
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! linkage) and therefore not part of the ABI, but is reproduced here because
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! `ima_parse` depends on it.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m //! Behaviour is reproduced bit-for-bit, including the quirks of the original:
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m //! * `struct caf_*` layouts (and hence the pointer arithmetic that walks the
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m //!   chunk list) follow the C ABI exactly.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m //! * The `desc`/`pakt` pointers may still be NULL when the `data` chunk is
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m //!   reached; the C code dereferences them unconditionally afterwards. That is
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m //!   reproduced (it faults, just like the C).
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m //! * `conv64.u = desc->sample_rate;` in the C is an *arithmetic* conversion
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m //!   from `double` to `unsigned long long` (not a bit reinterpretation). The
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m //!   result is then byte-swapped and finally read back as a `double`. This is
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m //!   reproduced faithfully, including the out-of-range / NaN behaviour of the
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m //!   x86-64 code GCC generates for that conversion.
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m use core::ffi::{c_int, c_void};
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m // include/lib.h
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m pub type ima_u32_t = u32;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m pub type ima_u64_t = u64;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m pub type ima_f64_t = f64;
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m pub type ima_u8_t = u8;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m pub type ima_u16_t = u16;
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// `struct ima_block` — size 34, align 2.
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m pub struct ima_block {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     pub preamble: ima_u16_t,
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     pub data: [ima_u8_t; 32],
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// `struct ima_info` — size 40, align 8.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m pub struct ima_info {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     pub blocks: *const ima_block,
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     pub size: ima_u64_t,
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     pub sample_rate: ima_f64_t,
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     pub frame_count: ima_u64_t,
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     pub channel_count: ima_u32_t,
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m // src/lib.c — private types
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m type ima_s32_t = i32;
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m type ima_s64_t = i64;
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// `struct caf_header` — size 8, align 4.
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m struct caf_header {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     r#type: ima_u32_t,
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     version: ima_u16_t,
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     flags: ima_u16_t,
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m /// `struct caf_chunk` — size 16, align 8 (`size` at offset 8).
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m struct caf_chunk {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     r#type: ima_u32_t,
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     size: ima_s64_t,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// `struct caf_audio_description` — size 32, align 8.
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m struct caf_audio_description {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     sample_rate: ima_f64_t,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     format_id: ima_u32_t,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     format_flags: ima_u32_t,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     bytes_per_packet: ima_u32_t,
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     frames_per_packet: ima_u32_t,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     channels_per_frame: ima_u32_t,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     bits_per_channel: ima_u32_t,
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// `struct caf_packet_table` — size 24, align 8.
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m struct caf_packet_table {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     packet_count: ima_s64_t,
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     frame_count: ima_s64_t,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     priming_frames: ima_s32_t,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     remainder_frames: ima_s32_t,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m /// `struct caf_data` — size 4, align 4.
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m struct caf_data {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     edit_count: ima_u32_t,
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m // Layout assertions mirroring the C ABI (verified against the C compiler).
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m const _: () = {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     use core::mem::{align_of, size_of};
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     assert!(size_of::<caf_header>() == 8 && align_of::<caf_header>() == 4);
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     assert!(size_of::<caf_chunk>() == 16 && align_of::<caf_chunk>() == 8);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     assert!(size_of::<caf_audio_description>() == 32 && align_of::<caf_audio_description>() == 8);
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     assert!(size_of::<caf_packet_table>() == 24 && align_of::<caf_packet_table>() == 8);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     assert!(size_of::<caf_data>() == 4 && align_of::<caf_data>() == 4);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     assert!(size_of::<ima_block>() == 34 && align_of::<ima_block>() == 2);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     assert!(size_of::<ima_info>() == 40 && align_of::<ima_info>() == 8);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m // Byte-swap helpers (`static` in the C — reproduced verbatim)
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m fn ima_bswap16(v: ima_u16_t) -> ima_u16_t {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     (v << 0x08 & 0xff00u16) | (v >> 0x08 & 0x00ffu16)
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m fn ima_bswap32(v: ima_u32_t) -> ima_u32_t {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     (v << 0x18 & 0xff000000u32)
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         | (v << 0x08 & 0x00ff0000u32)
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         | (v >> 0x08 & 0x0000ff00u32)
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         | (v >> 0x18 & 0x000000ffu32)
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m fn ima_bswap64(v: ima_u64_t) -> ima_u64_t {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     (v << 0x38 & 0xff00000000000000u64)
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         | (v << 0x28 & 0x00ff000000000000u64)
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         | (v << 0x18 & 0x0000ff0000000000u64)
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         | (v << 0x08 & 0x000000ff00000000u64)
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         | (v >> 0x08 & 0x00000000ff000000u64)
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         | (v >> 0x18 & 0x0000000000ff0000u64)
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         | (v >> 0x28 & 0x000000000000ff00u64)
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         | (v >> 0x38 & 0x00000000000000ffu64)
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m fn ima_btoh16(v: ima_u16_t) -> ima_u16_t {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     ima_bswap16(v)
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m fn ima_btoh32(v: ima_u32_t) -> ima_u32_t {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     ima_bswap32(v)
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m fn ima_btoh64(v: ima_u64_t) -> ima_u64_t {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     ima_bswap64(v)
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m // FourCC constants, spelled exactly as in the C source
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> ima_u32_t {
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     (a as ima_u32_t) | ((b as ima_u32_t) << 8) | ((c as ima_u32_t) << 16) | ((d as ima_u32_t) << 24)
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m /// `'f' | 'f' << 8 | 'a' << 16 | 'c' << 24`
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m const CAF_HEADER_TYPE: ima_u32_t = fourcc(b'f', b'f', b'a', b'c');
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m /// `'c' | 's' << 8 | 'e' << 16 | 'd' << 24`
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m const CAF_CHUNK_DESC: ima_u32_t = fourcc(b'c', b's', b'e', b'd');
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m /// `'t' | 'k' << 8 | 'a' << 16 | 'p' << 24`
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m const CAF_CHUNK_PAKT: ima_u32_t = fourcc(b't', b'k', b'a', b'p');
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m /// `'a' | 't' << 8 | 'a' << 16 | 'd' << 24`
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m const CAF_CHUNK_DATA: ima_u32_t = fourcc(b'a', b't', b'a', b'd');
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m /// `'4' | 'a' << 8 | 'm' << 16 | 'i' << 24`
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m const CAF_FORMAT_IMA4: ima_u32_t = fourcc(b'4', b'a', b'm', b'i');
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m // `double` -> `unsigned long long` conversion, x86-64 semantics
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m /// `cvttsd2si` (64-bit form): truncate toward zero; produce the "integer
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m /// indefinite" value `0x8000_0000_0000_0000` for NaN, infinities and any value
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m /// outside the signed 64-bit range.
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m fn cvttsd2si64(x: ima_f64_t) -> ima_s64_t {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     const MIN: ima_f64_t = -9223372036854775808.0; // -2^63, exactly representable
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     const LIMIT: ima_f64_t = 9223372036854775808.0; //  2^63, exactly representable
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     if x.is_nan() {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         return ima_s64_t::MIN;
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     let t = x.trunc();
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     if t >= LIMIT || t < MIN {
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         return ima_s64_t::MIN;
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     t as ima_s64_t
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m /// The C expression `(ima_u64_t)some_double`.
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m /// This is *not* a bit reinterpretation. GCC/Clang emit, on x86-64:
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m /// ```text
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m ///     comisd 2^63, x        ; unordered (NaN) leaves CF set
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m ///     jae    big
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m ///     cvttsd2si x -> rax
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m ///     jmp    done
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m /// big:
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m ///     subsd  2^63, x
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m ///     cvttsd2si x -> rax
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m ///     xor    0x8000000000000000, rax
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m /// done:
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m /// ```
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m /// which is reproduced here verbatim, including the out-of-range results the
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m /// C standard leaves undefined.
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m fn double_to_u64(x: ima_f64_t) -> ima_u64_t {
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     const TWO63: ima_f64_t = 9223372036854775808.0;
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     // `jae` is taken only when the comparison is ordered and x >= 2^63.
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     if x >= TWO63 {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         (cvttsd2si64(x - TWO63) as ima_u64_t) ^ 0x8000_0000_0000_0000u64
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         cvttsd2si64(x) as ima_u64_t
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m // Raw, unaligned field reads. x86-64 loads tolerate misalignment, so the C
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m // compiles to plain loads; `read_unaligned` matches that byte for byte.
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m const fn byte_add<T>(p: *const T, n: usize) -> *const u8 {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     (p as *const u8).wrapping_add(n)
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m unsafe fn load<T>(p: *const u8) -> T {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     (p as *const T).read_unaligned()
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m // Public ABI
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m /// `int ima_parse(struct ima_info *info, const void *data);`
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m pub unsafe extern "C" fn ima_parse(info: *mut ima_info, data: *const c_void) -> c_int {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     // const struct caf_header *header = (const struct caf_header *)data;
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     let header: *const caf_header = data as *const caf_header;
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     // const struct caf_chunk *chunk = (const struct caf_chunk *)&header[1];
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     let mut chunk: *const caf_chunk =
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         byte_add(header, core::mem::size_of::<caf_header>()) as *const caf_chunk;
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     let mut desc: *const caf_audio_description = core::ptr::null();
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     let mut pakt: *const caf_packet_table = core::ptr::null();
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     let mut blocks: *const ima_block = core::ptr::null();
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     let chunk_size: ima_s64_t;
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     let mut chunk_type: core::ffi::c_uint;
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     // if (ima_btoh32(header->type) != 'caff') return -1;
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     if ima_btoh32(load::<ima_u32_t>(byte_add(header, 0))) != CAF_HEADER_TYPE {
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         return -1;
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     // if (ima_btoh16(header->version) != 1) return -2;
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     if ima_btoh16(load::<ima_u16_t>(byte_add(header, 4))) != 1 {
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m         return -2;
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     loop {
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m         chunk_type = ima_btoh32(load::<ima_u32_t>(byte_add(chunk, 0)));
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         let size = ima_btoh64(load::<ima_u64_t>(byte_add(chunk, 8))) as ima_s64_t;
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m         if chunk_type == CAF_CHUNK_DESC {
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m             desc = byte_add(chunk, 16) as *const caf_audio_description;
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         } else if chunk_type == CAF_CHUNK_PAKT {
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m             pakt = byte_add(chunk, 16) as *const caf_packet_table;
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m         } else if chunk_type == CAF_CHUNK_DATA {
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m             // blocks = &((const struct caf_data *)&chunk[1])[1];
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m             blocks = byte_add(chunk, 16 + core::mem::size_of::<caf_data>()) as *const ima_block;
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m             chunk_size = size;
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m             break;
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m         // chunk = (const struct caf_chunk *)((const ima_u8_t *)&chunk[1] + chunk_size);
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m         chunk = byte_add(chunk, 16).wrapping_offset(size as isize) as *const caf_chunk;
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m     // if (ima_btoh32(desc->format_id) != 'ima4') return -3;
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     if ima_btoh32(load::<ima_u32_t>(byte_add(desc, 8))) != CAF_FORMAT_IMA4 {
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m         return -3;
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m     // info->blocks = blocks;
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     (*info).blocks = blocks;
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m     // info->size = chunk_size;
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m     (*info).size = chunk_size as ima_u64_t;
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m     // info->frame_count = ima_btoh64(pakt->frame_count);
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     (*info).frame_count = ima_btoh64(load::<ima_u64_t>(byte_add(pakt, 8)));
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     // info->channel_count = ima_btoh32(desc->channels_per_frame);
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m     (*info).channel_count = ima_btoh32(load::<ima_u32_t>(byte_add(desc, 24)));
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m     // conv64.u = desc->sample_rate;                              /* double -> u64 */
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m     // conv64.u = ima_btoh64(*(const ima_u64_t *)&conv64.u);      /* byte swap     */
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     // info->sample_rate = conv64.f;                              /* u64 bits -> double */
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     let raw = load::<ima_f64_t>(byte_add(desc, 0));
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     let u = ima_btoh64(double_to_u64(raw));
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     (*info).sample_rate = ima_f64_t::from_bits(u);
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m     0
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m }
 [0m[K
-Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/src/lib.rs[0m
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/src/lib.rs[0m
 [38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcargo build --release 2>&1 | tee /tmp/build.log | tail -30[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-Purpose: Build the Rust crate in release mode
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation && cargo build --release 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build the Rust crate
 
-   Compiling ima v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation)
-    Finished `release` profile [optimized] target(s) in 0.18s
-[38;5;244m - Completed in 0.212s[0m
+   Compiling harvest-work-UWirmA v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation)
+warning: value assigned to `blocks` is never read
+   --> src/lib.rs:267:40
+    |
+267 |     let mut blocks: *const ima_block = core::ptr::null();
+    |                                        ^^^^^^^^^^^^^^^^^ this value is reassigned later and never used
+...
+291 |             blocks = byte_add(chunk, 16 + core::mem::size_of::<caf_data>()) as *const ima_block;
+    |             ----------------------------------------------------------------------------------- `blocks` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
 
-[?25l[0m[38;5;141m> [0mBuilds clean. Now a differential test against the real C library.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mnm -D --defined-only target/release/libima.so | grep -i ima[0m (in [38;5;141mtranslation[0m)[38;5;244m (using tool: shell)[0m
-Purpose: Verify exported symbol name
+warning: crate `harvest_work_UWirmA` should have a snake case name
+  |
+  = help: convert the identifier to snake case: `harvest_work_uwirm_a`
+  = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
 
-0000000000011c90 T ima_parse
-[38;5;244m - Completed in 0.24s[0m
+warning: `harvest-work-UWirmA` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.12s
+[38;5;244m - Completed in 0.138s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
-mkdir -p /tmp/diff && cd /tmp/diff
-SRC=/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src
-gcc -O2 -I$SRC/include -shared -fPIC -o libc_ima.so $SRC/src/lib.c
-cat > harness.c <<'EOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <dlfcn.h>
-#include "lib.h"
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation && ls -la target/release/*.so && echo "=== RUST nm -D ===" && nm -D --defined-only target/release/libharvest_work_UWirmA.so && echo "=== DIFF (C vs RUST exported names) ===" && nm -D --defined-only /tmp/cbuild/libharvest-work-UWirmA.so | awk '{print $3}' | sort -u > /tmp/c.syms && nm -D --defined-only target/release/libharvest_work_UWirmA.so | awk '{print $3}' | sort -u > /tmp/r.syms && diff /tmp/c.syms /tmp/r.syms && echo "NO MISSING SYMBOLS" ; echo "--- C-only missing from Rust ---" ; comm -23 /tmp/c.syms /tmp/r.syms[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported symbols between C and Rust .so
 
-typedef int (*parse_fn)(struct ima_info *, const void *);
+-rwxr-xr-x. 2 scheschb amazon 402424 Sep  1 05:49 target/release/libharvest_work_UWirmA.so
+=== RUST nm -D ===
+00000000000116f0 T ima_parse
+=== DIFF (C vs RUST exported names) ===
+NO MISSING SYMBOLS
+--- C-only missing from Rust ---
+[38;5;244m - Completed in 0.52s[0m
 
-static unsigned char buf[4096];
-static size_t pos;
+[?25l[0m[38;5;141m> [0mSymbol surface matches exactly. Now a differential test to confirm byte-identical behavior.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/difftest.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Write differential test harness comparing C and Rust .so
 
-static void put8(unsigned char v){ buf[pos++]=v; }
-static void put16be(unsigned v){ put8(v>>8); put8(v&0xff); }
-static void put32be(unsigned v){ put8(v>>24); put8(v>>16); put8(v>>8); put8(v); }
-static void put64be(unsigned long long v){ for(int i=7;i>=0;i--) put8((v>>(i*8))&0xff); }
-static void putf64be(double d){ unsigned long long u; memcpy(&u,&d,8); put64be(u); }
-static void tag(const char *s){ put8(s[0]);put8(s[1]);put8(s[2]);put8(s[3]); }
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m #include <stdio.h>
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m #include <stdlib.h>
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m #include <string.h>
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m typedef unsigned int ima_u32_t;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m typedef unsigned long long ima_u64_t;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m typedef double ima_f64_t;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m typedef unsigned char ima_u8_t;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m typedef unsigned short ima_u16_t;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m struct ima_block { ima_u16_t preamble; ima_u8_t data[32]; };
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m struct ima_info {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     const struct ima_block *blocks;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     ima_u64_t size;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     ima_f64_t sample_rate;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     ima_u64_t frame_count;
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     ima_u32_t channel_count;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m };
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m typedef int (*parse_fn)(struct ima_info *, const void *);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /* ---------------- little CAF builder (big-endian on the wire) -------------- */
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m static ima_u8_t buf[4096];
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m static size_t len;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m static void w8(ima_u8_t v) { buf[len++] = v; }
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m static void w16(ima_u16_t v) { w8(v >> 8); w8(v & 0xff); }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m static void w32(ima_u32_t v) { w16(v >> 16); w16(v & 0xffff); }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m static void w64(ima_u64_t v) { w32((ima_u32_t)(v >> 32)); w32((ima_u32_t)v); }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m static void wpad(size_t n) { while (n--) w8(0); }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m static void wcc(const char *s) { w8(s[0]); w8(s[1]); w8(s[2]); w8(s[3]); }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /* raw 8 bytes for the sample-rate slot (written verbatim, big-endian order) */
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m static void wraw64(ima_u64_t bits) { w64(bits); }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m static void hdr(const char *magic, ima_u16_t ver) { wcc(magic); w16(ver); w16(0); }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m static void desc_chunk(ima_u64_t sr_bits, const char *fmt, ima_u32_t chans) {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     wcc("desc"); w64(32);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     wraw64(sr_bits);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     wcc(fmt);            /* format_id      */
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     w32(0);              /* format_flags   */
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     w32(34);             /* bytes_per_pkt  */
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     w32(64);             /* frames_per_pkt */
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     w32(chans);          /* channels       */
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     w32(16);             /* bits           */
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m static void pakt_chunk(ima_u64_t pkts, ima_u64_t frames) {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     wcc("pakt"); w64(24);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     w64(pkts); w64(frames); w32(0); w32(0);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m static void junk_chunk(const char *cc, size_t n) {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     wcc(cc); w64((ima_u64_t)n);
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     for (size_t i = 0; i < n; i++) w8((ima_u8_t)(i * 7 + 3));
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m static void data_chunk(ima_u64_t declared_size, size_t payload) {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     wcc("data"); w64(declared_size);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     w32(0);                                   /* edit_count */
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     for (size_t i = 0; i < payload; i++) w8((ima_u8_t)(i * 13 + 1));
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /* ------------------------------- comparison ------------------------------- */
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m static int failures, cases;
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m static void run(parse_fn a, parse_fn b, const char *name) {
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     struct ima_info ia, ib;
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     unsigned char *pa = (unsigned char *)&ia, *pb = (unsigned char *)&ib;
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     memset(&ia, 0xA5, sizeof ia);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     memset(&ib, 0xA5, sizeof ib);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     int ra = a(&ia, buf);
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     int rb = b(&ib, buf);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     cases++;
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     int bad = (ra != rb) || memcmp(pa, pb, sizeof ia) != 0;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     if (bad) {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         failures++;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         printf("FAIL %-34s ret C=%d Rust=%d\n", name, ra, rb);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         printf("   C   bytes:");
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         for (size_t i = 0; i < sizeof ia; i++) printf(" %02x", pa[i]);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         printf("\n   Rust bytes:");
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         for (size_t i = 0; i < sizeof ib; i++) printf(" %02x", pb[i]);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         printf("\n");
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         printf("   C   sr=%.17g size=%llu fc=%llu cc=%u\n", ia.sample_rate,
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                (unsigned long long)ia.size, (unsigned long long)ia.frame_count,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m                ia.channel_count);
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         printf("   Rust sr=%.17g size=%llu fc=%llu cc=%u\n", ib.sample_rate,
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m                (unsigned long long)ib.size, (unsigned long long)ib.frame_count,
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                ib.channel_count);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         printf("ok   %-34s ret=%d sr_bits=%016llx size=%llu fc=%llu cc=%u\n", name, ra,
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m                (unsigned long long)*(ima_u64_t *)&ia.sample_rate,
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m                (unsigned long long)ia.size, (unsigned long long)ia.frame_count,
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m                ia.channel_count);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m int main(int argc, char **argv) {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     if (argc != 3) { fprintf(stderr, "usage: %s c.so rust.so\n", argv[0]); return 2; }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     void *ha = dlopen(argv[1], RTLD_NOW);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     void *hb = dlopen(argv[2], RTLD_NOW);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     if (!ha || !hb) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     parse_fn a = (parse_fn)dlsym(ha, "ima_parse");
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     parse_fn b = (parse_fn)dlsym(hb, "ima_parse");
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     if (!a || !b) { fprintf(stderr, "dlsym: %s\n", dlerror()); return 2; }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     /* ---- bad magic ---- */
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     len = 0; hdr("caf?", 1); desc_chunk(0x40E5888000000000ull, "ima4", 2);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     pakt_chunk(10, 640); data_chunk(200, 200);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     run(a, b, "bad magic");
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     len = 0; hdr("ffac", 1); desc_chunk(0x40E5888000000000ull, "ima4", 2);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     run(a, b, "byteswapped magic");
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     /* ---- bad version ---- */
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     len = 0; hdr("caff", 0); desc_chunk(0x40E5888000000000ull, "ima4", 2);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     pakt_chunk(10, 640); data_chunk(200, 200);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     run(a, b, "version 0");
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     len = 0; hdr("caff", 2); desc_chunk(0x40E5888000000000ull, "ima4", 2);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     run(a, b, "version 2");
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     len = 0; hdr("caff", 0x0100); desc_chunk(0x40E5888000000000ull, "ima4", 2);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     run(a, b, "version 0x0100");
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     /* ---- bad format id -> -3 ---- */
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     len = 0; hdr("caff", 1); desc_chunk(0x40E5888000000000ull, "alaw", 2);
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     pakt_chunk(10, 640); data_chunk(200, 200);
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     run(a, b, "wrong format_id");
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     len = 0; hdr("caff", 1); desc_chunk(0x40E5888000000000ull, "4ami", 2);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     pakt_chunk(10, 640); data_chunk(200, 200);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     run(a, b, "byteswapped format_id");
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     /* ---- happy paths, various raw sample-rate bit patterns ---- */
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     struct { ima_u64_t bits; const char *why; } srs[] = {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         { 0x40E5888000000000ull, "44100 BE"        },
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         { 0x40BF400000000000ull, "8000 BE"         },
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m         { 0x0000000000000000ull, "zero"            },
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         { 0x000000008088E540ull, "44100 LE-in-BE"  },
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         { 0x7FF0000000000000ull, "+inf"            },
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         { 0xFFF0000000000000ull, "-inf"            },
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         { 0x7FF8000000000001ull, "NaN"             },
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         { 0xFFFFFFFFFFFFFFFFull, "all ones"        },
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         { 0x43E0000000000000ull, "exactly 2^63"    },
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         { 0x43E0000000000001ull, "just above 2^63" },
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         { 0x43DFFFFFFFFFFFFFull, "just below 2^63" },
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         { 0x4340000000000000ull, "2^53"            },
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         { 0xC3E0000000000000ull, "-2^63"           },
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         { 0xC3E0000000000001ull, "below -2^63"     },
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         { 0xBFF0000000000000ull, "-1.0"            },
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         { 0x3FF8000000000000ull, "1.5"             },
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         { 0xBFF8000000000000ull, "-1.5"            },
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         { 0x0000000000000001ull, "min subnormal"   },
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         { 0x47EFFFFFFFFFFFFFull, "huge finite"     },
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         { 0xC7EFFFFFFFFFFFFFull, "-huge finite"    },
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         { 0x4530000000000000ull, "2^83"            },
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         { 0x8000000000000000ull, "-0.0"            },
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     char nm[80];
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     for (size_t i = 0; i < sizeof srs / sizeof *srs; i++) {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         len = 0; hdr("caff", 1);
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         desc_chunk(srs[i].bits, "ima4", 2);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         pakt_chunk(37, 2368);
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         data_chunk(1234, 128);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         snprintf(nm, sizeof nm, "ok sr=%s", srs[i].why);
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         run(a, b, nm);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     /* ---- chunk ordering / skipping ---- */
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     len = 0; hdr("caff", 1);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     pakt_chunk(5, 320);
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     desc_chunk(0x40E5888000000000ull, "ima4", 1);
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     data_chunk(999, 64);
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     run(a, b, "pakt before desc");
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     len = 0; hdr("caff", 1);
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     junk_chunk("free", 40);
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     desc_chunk(0x40E5888000000000ull, "ima4", 2);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     junk_chunk("strg", 7);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     pakt_chunk(9, 576);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     junk_chunk("info", 0);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     data_chunk(0x7fffffff, 96);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     run(a, b, "junk chunks skipped");
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     len = 0; hdr("caff", 1);
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     desc_chunk(0x40E5888000000000ull, "ima4", 8);
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     pakt_chunk(0xFFFFFFFFFFFFFFFFull, 0xFFFFFFFFFFFFFFFFull);
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     data_chunk(0xFFFFFFFFFFFFFFFFull, 64);
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     run(a, b, "negative/huge sizes & counts");
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     len = 0; hdr("caff", 1);
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     desc_chunk(0x40E5888000000000ull, "ima4", 0);
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     pakt_chunk(0, 0);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     data_chunk(0, 0);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     run(a, b, "zero everything");
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     /* duplicate desc/pakt: last one wins */
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     len = 0; hdr("caff", 1);
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     desc_chunk(0x40BF400000000000ull, "junk", 3);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     pakt_chunk(1, 2);
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     desc_chunk(0x40E5888000000000ull, "ima4", 6);
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     pakt_chunk(77, 4928);
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     data_chunk(555, 34);
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     run(a, b, "duplicate desc/pakt");
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     /* data chunk first: desc/pakt never seen -> NULL deref in C; skipped here */
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     /* misaligned buffer: shift the whole image by one byte */
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     len = 0; hdr("caff", 1);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     desc_chunk(0x40E5888000000000ull, "ima4", 2);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     pakt_chunk(11, 704);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     data_chunk(321, 40);
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m         static ima_u8_t shifted[4096];
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         memcpy(shifted + 1, buf, len);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         struct ima_info ia, ib;
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         memset(&ia, 0x5A, sizeof ia); memset(&ib, 0x5A, sizeof ib);
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         int ra = a(&ia, shifted + 1);
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         int rb = b(&ib, shifted + 1);
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         cases++;
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         if (ra != rb || memcmp(&ia, &ib, sizeof ia)) {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m             failures++; printf("FAIL %-34s\n", "misaligned input");
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         } else {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m             printf("ok   %-34s ret=%d\n", "misaligned input", ra);
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     printf("\n%d cases, %d failures\n", cases, failures);
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     return failures ? 1 : 0;
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/tmp/difftest.c[0m
+[38;5;244m - Completed in 0.0s[0m
 
-/* Chunk header as the C code actually reads it: 4-byte type, 4 pad, 8-byte size */
-static void chunk_hdr(const char *t, long long size){ tag(t); put32be(0); put64be(size); }
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 -Wall difftest.c -o difftest -ldl 2>&1 | head -20 && ./difftest /tmp/cbuild/libharvest-work-UWirmA.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test
 
-static void show(const char *name, int rc, struct ima_info *i, const unsigned char *base){
-    unsigned long long srbits; memcpy(&srbits,&i->sample_rate,8);
-    printf("%-6s rc=%d", name, rc);
-    if(rc==0) printf(" blocks=+%ld size=%llu sr_bits=0x%016llx sr=%g frames=%llu ch=%u",
-        i->blocks?(long)((const unsigned char*)i->blocks-base):-1,
-        (unsigned long long)i->size, srbits, i->sample_rate,
-        (unsigned long long)i->frame_count, i->channel_count);
-    printf("\n");
-}
+difftest.c:31:13: warning: ‘wpad’ defined but not used [-Wunused-function]
+   31 | static void wpad(size_t n) { while (n--) w8(0); }
+      |             ^~~~
+[38;5;244m - Completed in 0.449s[0m
 
-int main(int argc, char **argv){
-    void *h1=dlopen(argv[1],RTLD_NOW), *h2=dlopen(argv[2],RTLD_NOW);
-    if(!h1||!h2){ printf("dlopen: %s\n", dlerror()); return 1; }
-    parse_fn f1=(parse_fn)dlsym(h1,"ima_parse"), f2=(parse_fn)dlsym(h2,"ima_parse");
-    if(!f1||!f2){ printf("dlsym failed\n"); return 1; }
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && ./difftest /tmp/cbuild/libharvest-work-UWirmA.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so; echo "EXIT=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run difftest separately
 
-    struct { const char *name; double sr; unsigned ch; long long frames; int bad_type; int bad_ver; int bad_fmt; int no_pakt_order; }
-    cases[] = {
-        {"44100 stereo", 44100.0, 2, 100000, 0,0,0,0},
-        {"8000 mono",     8000.0, 1,   1234, 0,0,0,0},
-        {"48000 5.1",    48000.0, 6, 999999, 0,0,0,0},
-        {"22050.5",      22050.5, 2,      7, 0,0,0,0},
-        {"1e300",          1e300, 2,      7, 0,0,0,0},
-        {"tiny",          1e-300, 2,      7, 0,0,0,0},
-        {"neg",         -44100.0, 2,      7, 0,0,0,0},
-        {"badtype",      44100.0, 2,      7, 1,0,0,0},
-        {"badver",       44100.0, 2,      7, 0,1,0,0},
-        {"badfmt",       44100.0, 2,      7, 0,0,1,0},
-        {"paktfirst",    44100.0, 2,     42, 0,0,0,1},
-    };
-    int fails=0;
-    for(unsigned c=0;c<sizeof cases/sizeof *cases;c++){
-        pos=0; memset(buf,0,sizeof buf);
-        tag(cases[c].bad_type?"cafX":"caff"); put16be(cases[c].bad_ver?2:1); put16be(0);
+EXIT=139
+bash: line 1: 2933933 Segmentation fault      (core dumped) ./difftest /tmp/cbuild/libharvest-work-UWirmA.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so
+[38;5;244m - Completed in 0.457s[0m
 
-        if(cases[c].no_pakt_order){
-            chunk_hdr("pakt",24); put64be(11); put64be(cases[c].frames); put32be(0); put32be(0);
-            chunk_hdr("free",8);  put64be(0);
-            chunk_hdr("desc",32); putf64be(cases[c].sr); tag(cases[c].bad_fmt?"XXXX":"ima4");
-            put32be(0); put32be(34); put32be(64); put32be(cases[c].ch); put32be(4);
-        } else {
-            chunk_hdr("desc",32); putf64be(cases[c].sr); tag(cases[c].bad_fmt?"XXXX":"ima4");
-            put32be(0); put32be(34); put32be(64); put32be(cases[c].ch); put32be(4);
-            chunk_hdr("pakt",24); put64be(11); put64be(cases[c].frames); put32be(0); put32be(0);
-        }
-        chunk_hdr("data",374); put32be(0);
-        for(int k=0;k<340;k++) put8((unsigned char)(k*7+3));
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && sed -i 's|if (argc != 3)|setvbuf(stdout, NULL, _IONBF, 0);\n    if (argc != 3)|' difftest.c && gcc -O1 difftest.c -o difftest -ldl 2>/dev/null && ./difftest /tmp/cbuild/libharvest-work-UWirmA.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so; echo "EXIT=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rerun difftest with unbuffered output
 
-        struct ima_info a, b;
-        memset(&a,0xAA,sizeof a); memset(&b,0xAA,sizeof b);
-        int r1=f1(&a,buf), r2=f2(&b,buf);
-        int same = (r1==r2) && (r1!=0 || memcmp(&a,&b,sizeof a)==0);
-        printf("[%-12s] %s\n", cases[c].name, same?"MATCH":"*** MISMATCH ***");
-        if(!same){ fails++; show("C",r1,&a,buf); show("Rust",r2,&b,buf); }
-        else show("both",r1,&a,buf);
-    }
-    printf("\n%s\n", fails?"FAILURES":"all cases identical");
-    return fails!=0;
-}
+ok   bad magic                          ret=-1 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   byteswapped magic                  ret=-1 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   version 0                          ret=-2 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   version 2                          ret=-2 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   version 0x0100                     ret=-2 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+EXIT=139
+bash: line 1: 2935660 Segmentation fault      (core dumped) ./difftest /tmp/cbuild/libharvest-work-UWirmA.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so
+[38;5;244m - Completed in 0.456s[0m
+
+[?25l[0m[38;5;141m> [0mThe harness needs fixing: the C struct [38;5;10mcaf_chunk[0m has 4 bytes of padding between [38;5;10mtype[0m and [38;5;10msize[0m (size at offset 8, stride 16), so chunk headers on the wire are 16 bytes, not 12.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && python3 - <<'EOF'
+import re
+s=open('difftest.c').read()
+s=s.replace('static void wcc(const char *s) { w8(s[0]); w8(s[1]); w8(s[2]); w8(s[3]); }',
+            'static void wcc(const char *s) { w8(s[0]); w8(s[1]); w8(s[2]); w8(s[3]); }\n'
+            '/* struct caf_chunk is { u32 type; <4 pad>; s64 size; } -> 16-byte stride */\n'
+            'static void wchunk(const char *cc, ima_u64_t size) { wcc(cc); wpad(4); w64(size); }')
+s=s.replace('wcc("desc"); w64(32);','wchunk("desc", 32);')
+s=s.replace('wcc("pakt"); w64(24);','wchunk("pakt", 24);')
+s=s.replace('wcc(cc); w64((ima_u64_t)n);','wchunk(cc, (ima_u64_t)n);')
+s=s.replace('wcc("data"); w64(declared_size);','wchunk("data", declared_size);')
+open('difftest.c','w').write(s)
 EOF
-gcc -O2 -I$SRC/include harness.c -o harness -ldl
-./harness ./libc_ima.so /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/target/release/libima.so[0m[38;5;244m (using tool: shell)[0m
-Purpose: Build C reference lib and run differential test harness comparing C vs Rust
+grep -n 'wchunk\|wcc("' difftest.c && gcc -O1 difftest.c -o difftest -ldl 2>/dev/null && ./difftest /tmp/cbuild/libharvest-work-UWirmA.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so; echo "EXIT=$?"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix chunk header padding in harness and rerun
 
-[44100 stereo] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=100000 ch=2
-[8000 mono   ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=1234 ch=1
-[48000 5.1   ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=999999 ch=6
-[22050.5     ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[1e300       ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[tiny        ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[neg         ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[badtype     ] MATCH
-both   rc=-1
-[badver      ] MATCH
-both   rc=-2
-[badfmt      ] MATCH
-both   rc=-3
-[paktfirst   ] MATCH
-both   rc=0 blocks=+140 size=374 sr_bits=0x0000000000000000 sr=0 frames=42 ch=2
+34:static void wchunk(const char *cc, ima_u64_t size) { wcc(cc); wpad(4); w64(size); }
+42:    wchunk("desc", 32);
+53:    wchunk("pakt", 24);
+58:    wchunk(cc, (ima_u64_t)n);
+63:    wchunk("data", declared_size);
+ok   bad magic                          ret=-1 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   byteswapped magic                  ret=-1 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   version 0                          ret=-2 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   version 2                          ret=-2 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   version 0x0100                     ret=-2 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   wrong format_id                    ret=-3 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   byteswapped format_id              ret=-3 sr_bits=a5a5a5a5a5a5a5a5 size=11936128518282651045 fc=11936128518282651045 cc=2779096485
+ok   ok sr=44100 BE                     ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=8000 BE                      ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=zero                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=44100 LE-in-BE               ret=0 sr_bits=44ac000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=+inf                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=-inf                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=NaN                          ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=all ones                     ret=0 sr_bits=0000000000000080 size=1234 fc=2368 cc=2
+ok   ok sr=exactly 2^63                 ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=just above 2^63              ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=just below 2^63              ret=0 sr_bits=0000000000000080 size=1234 fc=2368 cc=2
+ok   ok sr=2^53                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=-2^63                        ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=below -2^63                  ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=-1.0                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=1.5                          ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=-1.5                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=min subnormal                ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=huge finite                  ret=0 sr_bits=0000000000000080 size=1234 fc=2368 cc=2
+ok   ok sr=-huge finite                 ret=0 sr_bits=0000000000000080 size=1234 fc=2368 cc=2
+ok   ok sr=2^83                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   ok sr=-0.0                         ret=0 sr_bits=0000000000000000 size=1234 fc=2368 cc=2
+ok   pakt before desc                   ret=0 sr_bits=0000000000000000 size=999 fc=320 cc=1
+ok   junk chunks skipped                ret=0 sr_bits=0000000000000000 size=2147483647 fc=576 cc=2
+ok   negative/huge sizes & counts       ret=0 sr_bits=0000000000000000 size=18446744073709551615 fc=18446744073709551615 cc=8
+ok   zero everything                    ret=0 sr_bits=0000000000000000 size=0 fc=0 cc=0
+ok   duplicate desc/pakt                ret=0 sr_bits=0000000000000000 size=555 fc=4928 cc=6
+ok   misaligned input                   ret=0
 
-all cases identical
-[38;5;244m - Completed in 0.197s[0m
+35 cases, 0 failures
+EXIT=0
+[38;5;244m - Completed in 0.105s[0m
 
-[?25l[0m[38;5;141m> [0mAll match, though the sample-rate path always yields 0 for realistic rates. Let me stress the [38;5;10mdouble[0m→[38;5;10muint64_t[0m conversion directly with raw bit patterns.[0m[0m
-[?25l[0m[0mI will run the following command: [38;5;141mset -e
-cd /tmp/diff
-SRC=/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src
-cat > harness2.c <<'EOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <dlfcn.h>
-#include "lib.h"
-typedef int (*parse_fn)(struct ima_info *, const void *);
-static unsigned char buf[4096];
-static size_t pos;
-static void put8(unsigned char v){ buf[pos++]=v; }
-static void put16be(unsigned v){ put8(v>>8); put8(v&0xff); }
-static void put32be(unsigned v){ put8(v>>24);put8(v>>16);put8(v>>8);put8(v); }
-static void put64be(unsigned long long v){ for(int i=7;i>=0;i--) put8((v>>(i*8))&0xff); }
-static void tag(const char*s){ put8(s[0]);put8(s[1]);put8(s[2]);put8(s[3]); }
-static void chunk_hdr(const char*t,long long s){ tag(t); put32be(0); put64be(s); }
+[?25l[0m[38;5;141m> [0mAll 35 cases byte-identical. Now verify against the unoptimized C build and add randomized fuzzing.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && ./difftest /tmp/cbuild0/libharvest-work-UWirmA.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so 2>&1 | tail -3
+# also -O3 and clang builds
+gcc -O3 -shared -fPIC -I/local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/include /local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/src/lib.c -o /tmp/libO3.so && ./difftest /tmp/libO3.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so 2>&1 | tail -2
+which clang && clang -O2 -shared -fPIC -I/local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/include /local/home/scheschb/.harvest/work/harvest-work-UWirmA/c_src/src/lib.c -o /tmp/libclang.so && ./difftest /tmp/libclang.so /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so 2>&1 | tail -2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Cross-check against -O0, -O3 and clang C builds
 
-/* raw: the 8 bytes stored on disk for sample_rate, MSB-first as written */
-int main(int argc,char**argv){
-    void *h1=dlopen(argv[1],RTLD_NOW),*h2=dlopen(argv[2],RTLD_NOW);
-    parse_fn f1=(parse_fn)dlsym(h1,"ima_parse"),f2=(parse_fn)dlsym(h2,"ima_parse");
-    /* These are chosen so that the LITTLE-endian reinterpretation of the
-       on-disk bytes is a large / negative / NaN / inf double, exercising every
-       branch of the double->uint64 conversion. */
-    unsigned long long raws[] = {
-        0x0000000000000000ull,
-        0x000000000000F03Full, /* LE-read -> 1.0 */
-        0x0000000000004440ull, /* LE-read -> 40.0 */
-        0x00000000000000C0ull, /* LE-read -> -2.0 */
-        0x000000000000F0C3ull, /* LE-read -> -2^62-ish */
-        0x000000000000F043ull, /* LE-read -> 2^62-ish */
-        0x000000000000F07Full, /* LE-read -> +inf */
-        0x000000000000F0FFull, /* LE-read -> -inf */
-        0x000000000000F87Full, /* LE-read -> NaN */
-        0x010000000000E043ull, /* LE-read -> ~2^63 exactly */
-        0x000000000000E043ull, /* LE-read -> 2^63 exactly */
-        0x000000000000E143ull, /* LE-read -> 2^64 */
-        0xFFFFFFFFFFFFFFFFull,
-        0x0123456789ABCDEFull,
-        0x000000000080B441ull, /* LE-read -> 342000.0 */
-    };
-    int fails=0;
-    for(unsigned c=0;c<sizeof raws/sizeof *raws;c++){
-        pos=0; memset(buf,0,sizeof buf);
-        tag("caff"); put16be(1); put16be(0);
-        chunk_hdr("desc",32); put64be(raws[c]); tag("ima4");
-        put32be(0);put32be(34);put32be(64);put32be(2);put32be(4);
-        chunk_hdr("pakt",24); put64be(11); put64be(5555); put32be(0); put32be(0);
-        chunk_hdr("data",100); put32be(0);
-        for(int k=0;k<96;k++) put8((unsigned char)k);
-        struct ima_info a,b; memset(&a,0xAA,sizeof a); memset(&b,0xAA,sizeof b);
-        int r1=f1(&a,buf), r2=f2(&b,buf);
-        int same=(r1==r2)&&(r1!=0||memcmp(&a,&b,sizeof a)==0);
-        unsigned long long ba,bb; memcpy(&ba,&a.sample_rate,8); memcpy(&bb,&b.sample_rate,8);
-        double le; memcpy(&le,&raws[c],8); /* host LE read of those bytes reversed */
-        printf("raw=0x%016llx  C sr_bits=0x%016llx  Rust sr_bits=0x%016llx  %s\n",
-               raws[c], ba, bb, same?"MATCH":"*** MISMATCH ***");
-        if(!same) fails++;
-    }
-    printf("\n%s\n", fails?"FAILURES":"all conversion cases identical");
-    return fails!=0;
-}
-EOF
-gcc -O2 -I$SRC/include harness2.c -o harness2 -ldl
-./harness2 ./libc_ima.so /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/target/release/libima.so[0m[38;5;244m (using tool: shell)[0m
-Purpose: Differential test of the double-to-uint64 conversion edge cases
+ok   misaligned input                   ret=0
 
-raw=0x0000000000000000  C sr_bits=0x0000000000000000  Rust sr_bits=0x0000000000000000  MATCH
-raw=0x000000000000f03f  C sr_bits=0x0100000000000000  Rust sr_bits=0x0100000000000000  MATCH
-raw=0x0000000000004440  C sr_bits=0x2800000000000000  Rust sr_bits=0x2800000000000000  MATCH
-raw=0x00000000000000c0  C sr_bits=0xfeffffffffffffff  Rust sr_bits=0xfeffffffffffffff  MATCH
-raw=0x000000000000f0c3  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000000f043  C sr_bits=0x0000000000000000  Rust sr_bits=0x0000000000000000  MATCH
-raw=0x000000000000f07f  C sr_bits=0x0000000000000000  Rust sr_bits=0x0000000000000000  MATCH
-raw=0x000000000000f0ff  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000000f87f  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x010000000000e043  C sr_bits=0x0008000000000080  Rust sr_bits=0x0008000000000080  MATCH
-raw=0x000000000000e043  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000000e143  C sr_bits=0x0000000000000088  Rust sr_bits=0x0000000000000088  MATCH
-raw=0xffffffffffffffff  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x0123456789abcdef  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000080b441  C sr_bits=0x0000801400000000  Rust sr_bits=0x0000801400000000  MATCH
+35 cases, 0 failures
 
-all conversion cases identical
-[38;5;244m - Completed in 0.109s[0m
+35 cases, 0 failures
+/usr/bin/which: no clang in (/home/scheschb/.aim/mcp-servers:/home/scheschb/.toolbox/bin:/home/scheschb/.local/bin:/home/scheschb/bin:/home/scheschb/.local/opt/cmake-3.28.6-linux-x86_64/bin:/home/scheschb/.local/share/mise/installs/python/3.12/bin:/home/scheschb/.cargo/bin:/local/home/scheschb/.toolbox/bin:/home/scheschb/.nix-profile/bin:/home/scheschb/.local/bin:/home/scheschb/.toolbox/bin:/home/scheschb/.aim/mcp-servers:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin)
+[38;5;244m - Completed in 0.47s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/diff
-SRC=/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/c_src
-RUST=/local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/target/release/libima.so
-for opt in -O0 -O1 -O3 -Os; do
-  gcc $opt -I$SRC/include -shared -fPIC -o libc_$opt.so $SRC/src/lib.c
-  r1=$(./harness  ./libc_$opt.so $RUST >/dev/null 2>&1; echo $?)
-  r2=$(./harness2 ./libc_$opt.so $RUST >/dev/null 2>&1; echo $?)
-  echo "gcc $opt : harness=$([ $r1 = 0 ] && echo OK || echo FAIL) harness2=$([ $r2 = 0 ] && echo OK || echo FAIL)"
-done
-if command -v clang >/dev/null; then
-  clang -O2 -I$SRC/include -shared -fPIC -o libclang.so $SRC/src/lib.c
-  ./harness ./libclang.so $RUST >/dev/null 2>&1 && echo "clang -O2 : harness=OK" || echo "clang -O2 : harness=FAIL"
-  ./harness2 ./libclang.so $RUST >/dev/null 2>&1 && echo "clang -O2 : harness2=OK" || echo "clang -O2 : harness2=FAIL"
-else echo "clang not present"; fi[0m[38;5;244m (using tool: shell)[0m
-Purpose: Verify parity across multiple C optimization levels and compilers
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/tmp/fuzz.c[0m[38;5;244m (using tool: write)[0m
+Purpose: Randomized differential fuzzer
 
-gcc -O0 : harness=OK harness2=OK
-gcc -O1 : harness=OK harness2=OK
-gcc -O3 : harness=OK harness2=OK
-gcc -Os : harness=OK harness2=OK
-clang -O2 : harness=FAIL
-clang -O2 : harness2=FAIL
-[38;5;244m - Completed in 0.319s[0m
+[49m[38;5;10m+      1[0m:[38;5;10m[49m #define _GNU_SOURCE
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m #include <dlfcn.h>
+[0m[49m[39m   1,  3[0m:[39m[49m #include <stdio.h>
+[0m[49m[39m   2,  4[0m:[39m[49m #include <stdlib.h>
+[0m[49m[38;5;9m-  3    [0m:[38;5;9m[49m #include <dlfcn.h>
+[0m[49m[39m   4,  5[0m:[39m[49m #include <string.h>
+[0m[49m[38;5;9m-  5    [0m:[38;5;9m[49m typedef void (*fn)(float*,int,float);
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m typedef unsigned int ima_u32_t; typedef unsigned long long ima_u64_t;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m typedef double ima_f64_t; typedef unsigned char ima_u8_t; typedef unsigned short ima_u16_t;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m struct ima_block { ima_u16_t preamble; ima_u8_t data[32]; };
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m struct ima_info { const struct ima_block *blocks; ima_u64_t size; ima_f64_t sample_rate;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m                   ima_u64_t frame_count; ima_u32_t channel_count; };
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m typedef int (*parse_fn)(struct ima_info *, const void *);
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m static ima_u8_t buf[8192];
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m static size_t len;
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m static void w8(ima_u8_t v){buf[len++]=v;}
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m static void w16(ima_u16_t v){w8(v>>8);w8(v&0xff);}
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m static void w32(ima_u32_t v){w16(v>>16);w16(v&0xffff);}
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m static void w64(ima_u64_t v){w32((ima_u32_t)(v>>32));w32((ima_u32_t)v);}
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m static void wpad(size_t n){while(n--)w8(0);}
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m static void wcc(const char*s){w8(s[0]);w8(s[1]);w8(s[2]);w8(s[3]);}
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m static void wchunk(const char*cc,ima_u64_t sz){wcc(cc);wpad(4);w64(sz);}
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m static uint64_t st = 0x243F6A8885A308D3ull;
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m static uint64_t rnd(void){ st^=st<<13; st^=st>>7; st^=st<<17; return st; }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[39m   6, 28[0m:[39m[49m int main(int argc,char**argv){
+[0m[49m[38;5;9m-  7    [0m:[38;5;9m[49m   void*h=dlopen(argv[1],RTLD_NOW); fn f=(fn)dlsym(h,"gaussian_kernel");
+[0m[49m[38;5;9m-  8    [0m:[38;5;9m[49m   srand(12345);
+[0m[49m[38;5;9m-  9    [0m:[38;5;9m[49m   for(int t=0;t<20000;t++){
+[0m[49m[38;5;9m- 10    [0m:[38;5;9m[49m     int size = (rand()%80) - 5;
+[0m[49m[38;5;9m- 11    [0m:[38;5;9m[49m     union{unsigned u; float f;} rr; rr.u = ((unsigned)rand()<<17) ^ (unsigned)rand();
+[0m[49m[38;5;9m- 12    [0m:[38;5;9m[49m     float radius = rr.f;
+[0m[49m[38;5;9m- 13    [0m:[38;5;9m[49m     if(t%3==0) radius = (float)((rand()%2000)-1000)/37.0f;
+[0m[49m[38;5;9m- 14    [0m:[38;5;9m[49m     int cap=(size>0?size:0)+6;
+[0m[49m[38;5;9m- 15    [0m:[38;5;9m[49m     float*buf=malloc(4*cap); for(int i=0;i<cap;i++) buf[i]=1.5f;
+[0m[49m[38;5;9m- 16    [0m:[38;5;9m[49m     f(buf,size,radius);
+[0m[49m[38;5;9m- 17    [0m:[38;5;9m[49m     unsigned acc=0; for(int i=0;i<cap;i++){unsigned u;memcpy(&u,&buf[i],4);acc=acc*31u+u;}
+[0m[49m[38;5;9m- 18    [0m:[38;5;9m[49m     printf("%d %d %08x %08x\n",t,size,rr.u,acc);
+[0m[49m[38;5;9m- 19    [0m:[38;5;9m[49m     free(buf);
+[0m[49m[38;5;9m- 20    [0m:[38;5;9m[49m   }
+[0m[49m[38;5;9m- 21    [0m:[38;5;9m[49m   return 0;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     setvbuf(stdout,NULL,_IONBF,0);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     if(argc!=4){fprintf(stderr,"usage: %s c.so rust.so iters\n",argv[0]);return 2;}
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     void*ha=dlopen(argv[1],RTLD_NOW),*hb=dlopen(argv[2],RTLD_NOW);
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     if(!ha||!hb){fprintf(stderr,"dlopen: %s\n",dlerror());return 2;}
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     parse_fn a=(parse_fn)dlsym(ha,"ima_parse"),b=(parse_fn)dlsym(hb,"ima_parse");
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     long iters=atol(argv[3]); long fails=0;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     for(long it=0; it<iters; it++){
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         memset(buf,0,sizeof buf); len=0;
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         /* header: mostly valid */
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         ima_u64_t r=rnd();
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         if((r&0x3f)==0) wcc("cxff"); else wcc("caff");
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         w16(((r>>8)&0x3f)==0 ? (ima_u16_t)(r>>16) : 1);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         w16((ima_u16_t)(r>>32));                    /* flags: ignored */
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         /* random number of leading junk chunks */
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         int nj = (int)((rnd()>>3)&3);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         for(int j=0;j<nj;j++){ size_t n=(size_t)((rnd()>>5)&31); wchunk("free",n);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             for(size_t k=0;k<n;k++) w8((ima_u8_t)rnd()); }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         int order = (int)((rnd()>>7)&1);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         ima_u64_t srbits = rnd();
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         /* bias toward interesting exponents */
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         switch((rnd()>>11)&7){
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         case 0: srbits = (srbits & 0x800FFFFFFFFFFFFFull) | 0x43E0000000000000ull; break;
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         case 1: srbits = (srbits & 0x800FFFFFFFFFFFFFull) | 0x43D0000000000000ull; break;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         case 2: srbits = (srbits & 0x800FFFFFFFFFFFFFull) | 0x7FF0000000000000ull; break;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         case 3: srbits = (srbits & 0x800FFFFFFFFFFFFFull) | 0x4330000000000000ull; break;
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         case 4: srbits = (srbits & 0x800FFFFFFFFFFFFFull) | 0x47E0000000000000ull; break;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         default: break;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         ima_u64_t pkts=rnd(), frames=rnd(); ima_u32_t chans=(ima_u32_t)rnd();
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         const char *fmt = ((rnd()>>13)&15)==0 ? "xma4" : "ima4";
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         for(int p=0;p<2;p++){
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m             if((p==0)==(order==0)){
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m                 wchunk("desc",32); w64(srbits); wcc(fmt); w32(0); w32(34); w32(64);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m                 w32(chans); w32(16);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             } else {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m                 wchunk("pakt",24); w64(pkts); w64(frames); w32(0); w32(0);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         if((rnd()>>17&15)==0){ size_t n=(size_t)((rnd()>>5)&15); wchunk("strg",n);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             for(size_t k=0;k<n;k++) w8((ima_u8_t)rnd()); }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         wchunk("data", rnd());
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m         w32((ima_u32_t)rnd());                       /* edit_count */
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         for(int k=0;k<40;k++) w8((ima_u8_t)rnd());
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         size_t shift = (size_t)((rnd()>>19)&7);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         static ima_u8_t sh[8192];
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         memset(sh,0,sizeof sh); memcpy(sh+shift,buf,len);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m         struct ima_info ia,ib;
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         memset(&ia,0xC3,sizeof ia); memset(&ib,0xC3,sizeof ib);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         int ra=a(&ia,sh+shift), rb=b(&ib,sh+shift);
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         if(ra!=rb||memcmp(&ia,&ib,sizeof ia)){
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m             fails++;
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m             printf("MISMATCH it=%ld ret C=%d R=%d srbits=%016llx\n",it,ra,rb,
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m                    (unsigned long long)srbits);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             unsigned char*pa=(unsigned char*)&ia,*pb=(unsigned char*)&ib;
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             printf("  C :");for(size_t i=0;i<sizeof ia;i++)printf(" %02x",pa[i]);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             printf("\n  R :");for(size_t i=0;i<sizeof ib;i++)printf(" %02x",pb[i]);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m             printf("\n");
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             if(fails>5) break;
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     printf("%ld iterations, %ld mismatches\n",iters,fails);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     return fails?1:0;
+[0m[49m[39m  22, 93[0m:[39m[49m }
+[0m[K
+Replacing: [38;5;141m/tmp/fuzz.c[0m
+[38;5;244m - Completed in 0.0s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/diff && ./harness2 ./libclang.so /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/target/release/libima.so; echo "---"; ./harness ./libclang.so /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation/target/release/libima.so 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
-Purpose: Inspect clang mismatch details
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp && gcc -O1 fuzz.c -o fuzz -ldl 2>&1 | grep -v unused | head && for so in /tmp/cbuild/libharvest-work-UWirmA.so /tmp/cbuild0/libharvest-work-UWirmA.so /tmp/libO3.so; do echo "--- vs $so"; ./fuzz "$so" /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation/target/release/libharvest_work_UWirmA.so 200000 | tail -8; done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run 200k-iteration fuzz against three C builds
 
-raw=0x0000000000000000  C sr_bits=0x0000000000000000  Rust sr_bits=0x0000000000000000  MATCH
-raw=0x000000000000f03f  C sr_bits=0x0100000000000000  Rust sr_bits=0x0100000000000000  MATCH
-raw=0x0000000000004440  C sr_bits=0x2800000000000000  Rust sr_bits=0x2800000000000000  MATCH
-raw=0x00000000000000c0  C sr_bits=0xfeffffffffffffff  Rust sr_bits=0xfeffffffffffffff  MATCH
-raw=0x000000000000f0c3  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000000f043  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000000  *** MISMATCH ***
-raw=0x000000000000f07f  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000000  *** MISMATCH ***
-raw=0x000000000000f0ff  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000000f87f  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x010000000000e043  C sr_bits=0x0008000000000080  Rust sr_bits=0x0008000000000080  MATCH
-raw=0x000000000000e043  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000000e143  C sr_bits=0x0000000000000088  Rust sr_bits=0x0000000000000088  MATCH
-raw=0xffffffffffffffff  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x0123456789abcdef  C sr_bits=0x0000000000000080  Rust sr_bits=0x0000000000000080  MATCH
-raw=0x000000000080b441  C sr_bits=0x0000801400000000  Rust sr_bits=0x0000801400000000  MATCH
+--- vs /tmp/cbuild/libharvest-work-UWirmA.so
+200000 iterations, 0 mismatches
+--- vs /tmp/cbuild0/libharvest-work-UWirmA.so
+200000 iterations, 0 mismatches
+--- vs /tmp/libO3.so
+200000 iterations, 0 mismatches
+[38;5;244m - Completed in 0.551s[0m
 
-FAILURES
----
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=999999 ch=6
-[22050.5     ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[1e300       ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[tiny        ] *** MISMATCH ***
-C      rc=0 blocks=+116 size=374 sr_bits=0x0000000000000080 sr=6.32404e-322 frames=7 ch=2
-Rust   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[neg         ] MATCH
-both   rc=0 blocks=+116 size=374 sr_bits=0x0000000000000000 sr=0 frames=7 ch=2
-[badtype     ] MATCH
-both   rc=-1
-[badver      ] MATCH
-both   rc=-2
-[badfmt      ] MATCH
-both   rc=-3
-[paktfirst   ] MATCH
-both   rc=0 blocks=+140 size=374 sr_bits=0x0000000000000000 sr=0 frames=42 ch=2
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
 
-FAILURES
+[49m[38;5;9m- 22    [0m:[38;5;9m[49m #![allow(non_camel_case_types)]
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m #![allow(non_camel_case_types, non_snake_case)]
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+
+[49m[39m  257, 257[0m:[39m[49m /// `int ima_parse(struct ima_info *info, const void *data);`
+[0m[49m[39m  258, 258[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;10m+      259[0m:[38;5;10m[49m #[allow(unused_assignments)] // the NULL initialisers mirror the C source
+[0m[49m[39m  259, 260[0m:[39m[49m pub unsafe extern "C" fn ima_parse(info: *mut ima_info, data: *const c_void) -> c_int {
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation && cargo build --release 2>&1 | tail -10 && echo "=== tree ===" && find . -path ./target -prune -o -type f -print && echo "=== SYMBOL DIFF ===" && nm -D --defined-only /tmp/cbuild/libharvest-work-UWirmA.so | awk '{print $3}' | sort -u > /tmp/c.syms && nm -D --defined-only target/release/libharvest_work_UWirmA.so | awk '{print $3}' | sort -u > /tmp/r.syms && diff /tmp/c.syms /tmp/r.syms && echo "SYMBOL LISTS IDENTICAL:" && cat /tmp/r.syms && echo "=== retest ===" && /tmp/difftest /tmp/cbuild/libharvest-work-UWirmA.so target/release/libharvest_work_UWirmA.so | tail -2 && /tmp/fuzz /tmp/cbuild/libharvest-work-UWirmA.so target/release/libharvest_work_UWirmA.so 200000 | tail -2[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final build, symbol diff, and retest
+
+   Compiling harvest-work-UWirmA v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-UWirmA/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+=== tree ===
+./Cargo.toml
+./src/lib.rs
+./Cargo.lock
+=== SYMBOL DIFF ===
+SYMBOL LISTS IDENTICAL:
+ima_parse
+=== retest ===
+
+35 cases, 0 failures
+200000 iterations, 0 mismatches
+[38;5;244m - Completed in 0.300s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-UWirmA && git status --porcelain c_src 2>/dev/null; echo "c_src mtimes:"; find c_src -type f -newermt '2026-09-01 05:48' | wc -l; md5sum c_src/src/lib.c c_src/include/lib.h c_src/CMakeLists.txt[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm c_src untouched
+
+c_src mtimes:
+0
+cca1431b41af39c046aa3d15b312e989  c_src/src/lib.c
+54c1220e585bd9e0c68a167176f3dce6  c_src/include/lib.h
+8889366dbb1535b8a848547af64fbc79  c_src/CMakeLists.txt
 [38;5;244m - Completed in 0.11s[0m
 
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /tmp/diff && (cmake --version | head -1) 2>/dev/null; readlink -f "$(command -v cc)"; echo "CC env=[${CC:-unset}]"[0m[38;5;244m (using tool: shell)[0m
-Purpose: Determine which compiler CMake would default to
-
-cmake version 3.22.2
-/usr/bin/gcc
-CC env=[unset]
-[38;5;244m - Completed in 0.20s[0m
-
-[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mrm -rf /tmp/diff /tmp/layout.c /tmp/layout /tmp/lib.s /tmp/build.log && cd /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ/translation && cargo build --release 2>&1 | tail -5 && ls -R . | head -20 && git -C /local/home/scheschb/.harvest/work/harvest-work-d3LPyZ status --short 2>/dev/null | head[0m[38;5;244m (using tool: shell)[0m
-Purpose: Clean up temp artifacts and confirm final build
-
-    Finished `release` profile [optimized] target(s) in 0.01s
-.:
-Cargo.lock
-Cargo.toml
-src
-target
-
-./src:
-lib.rs
-
-./target:
-CACHEDIR.TAG
-release
-
-./target/release:
-build
-deps
-examples
-incremental
-libima.d
-libima.so
-[38;5;244m - Completed in 0.51s[0m
-
-[?25l[0m[38;5;141m> [0mDone. [38;5;10mtranslation/[0m builds clean as a [38;5;10mcdylib[0m exporting [38;5;10mima_parse[0m, and matches the C bit-for-bit on a differential harness (correct parses, all three error returns, chunk-order variations, and sample-rate edge cases) across gcc [38;5;10m-O0/-O1/-O2/-O3/-Os[0m.[0m[0m
+[?25l[0m[38;5;141m> [0mDone. The translation is complete and verified.[0m[0m
 [0m[0m
-The C is a CAF header parser with several quirks that had to be preserved rather than fixed:[0m[0m
+[38;5;252m[1m## Surface enumeration[0m[0m
 [0m[0m
-- [38;5;10mstruct caf_chunk[0m is [38;5;10m{u32 type; s64 size;}[0m, so ABI padding puts [38;5;10msize[0m at offset 8 and makes the header 16 bytes — not the 12-byte header real CAF uses. The chunk walk is reproduced with those offsets. I verified all layouts by compiling an [38;5;10moffsetof[0m probe against the real header, and locked them in with [38;5;10mconst _: () = assert!(...)[0m on [38;5;10moffset_of![0m/[38;5;10msize_of[0m so a layout drift is a compile error.[0m[0m
-- [38;5;10mima_btoh*[0m are unconditional byte swaps, i.e. the code assumes a little-endian host. Kept as-is.[0m[0m
-- The sample rate goes through [38;5;10mconv64.u = desc->sample_rate[0m, which is a [3mnumeric[23m [38;5;10mdouble[0m→[38;5;10mu64[0m truncation, not the bit reinterpretation the union suggests. The truncated integer is then byte-swapped and read back as a [38;5;10mdouble[0m. For any normal big-endian sample rate this yields [38;5;10m0.0[0m, and that is what both libraries produce.[0m[0m
-- [38;5;10mdesc[0m/[38;5;10mpakt[0m can still be null after the loop and are dereferenced unconditionally; the loop also has no bounds check and no termination other than finding a [38;5;10mdata[0m chunk. Reproduced.[0m[0m
+The C library is a single translation unit ([38;5;10mc_src/src/lib.c[0m, 131 lines) plus one public header. [38;5;10mnm -D[0m on the built C [38;5;10m.so[0m exports exactly one symbol:[0m[0m
 [0m[0m
-One thing worth flagging: that [38;5;10mdouble[0m→[38;5;10mu64[0m conversion is undefined behavior in C whenever the operand is negative, NaN, or ≥ 2^64, which is reachable from crafted input. I matched gcc's x86-64 codegen exactly ([38;5;10mcomisd[0m against 2^63, then [38;5;10msubsd[0m/[38;5;10mcvttsd2si[0m/[38;5;10mbtc[0m, with NaN falling through the [38;5;10mjnb[0m), since [38;5;10mcc[0m here resolves to gcc and that is what the CMake build would use. clang chooses a different sequence for those out-of-range cases, so C-vs-Rust output diverges for such inputs if the reference is built with clang — the underlying C has no defined answer there. Inputs with ordinary sample rates agree under both compilers.[0m[0m
+[38;5;10mima_parse
+[0m[0m[0m
+[0m[0m
+Everything else in the source ([38;5;10mima_bswap16/32/64[0m, [38;5;10mima_btoh16/32/64[0m) is [38;5;10mstatic[0m, so it has internal linkage and is not part of the ABI. There are no namespace-renaming macros in the header. My Rust [38;5;10m.so[0m exports the same single symbol — [38;5;10mdiff[0m of the two sorted [38;5;10mnm -D[0m lists is empty.[0m[0m
+[0m[0m
+[38;5;252m[1m## Behavioral quirks reproduced deliberately[0m[0m
+[0m[0m
+Two things in this C are load-bearing and easy to get wrong:[0m[0m
+[0m[0m
+[1m[38;5;10mstruct caf_chunk[0m is padded.[22m It's [38;5;10m{ u32 type; s64 size; }[0m, so [38;5;10msize[0m sits at offset 8 and the struct stride is 16 — not the 12-byte chunk header a real CAF file uses. The chunk-walking arithmetic ([38;5;10m&chunk[1] + chunk_size[0m) therefore advances by 16 + size, and [38;5;10mblocks[0m lands at [38;5;10mchunk + 20[0m. I verified all struct sizes/offsets against the C compiler and encoded them as [38;5;10mconst[0m assertions in the Rust.[0m[0m
+[0m[0m
+[1m[38;5;10mconv64.u = desc->sample_rate;[0m is an arithmetic conversion, not a bit cast.[22m The C assigns a [38;5;10mdouble[0m into the [38;5;10munsigned long long[0m union member, byte-swaps that integer, then reads it back as [38;5;10mdouble[0m. Since the on-disk value is big-endian, the natively-read [38;5;10mdouble[0m is usually a garbage tiny subnormal, so the common result is [38;5;10m0.0[0m. For out-of-range or NaN inputs the conversion is UB; GCC emits the standard x86-64 sequence ([38;5;10mcomisd[0m against 2^63, then either [38;5;10mcvttsd2si[0m or [38;5;10msubsd[0m/[38;5;10mcvttsd2si[0m/[38;5;10mbtc[0m). Rust's [38;5;10mas u64[0m saturates instead, which would diverge, so I emulate [38;5;10mcvttsd2si[0m semantics explicitly — including the [38;5;10m0x8000000000000000[0m integer-indefinite result. I confirmed the same codegen at [38;5;10m-O0[0m, [38;5;10m-O2[0m, and [38;5;10m-O3[0m.[0m[0m
+[0m[0m
+I also preserved the null-pointer dereference of [38;5;10mdesc[0m/[38;5;10mpakt[0m when a [38;5;10mdata[0m chunk appears before them, the error-check ordering ([38;5;10m-1[0m magic, [38;5;10m-2[0m version, [38;5;10m-3[0m format), and the fact that [38;5;10minfo->size[0m receives the [38;5;10mdata[0m chunk's declared size rather than an actual byte count.[0m[0m
+[0m[0m
+[38;5;252m[1m## Verification[0m[0m
+[0m[0m
+Beyond the symbol diff, I built a [38;5;10mdlopen[0m-based differential harness that loads both [38;5;10m.so[0m files and [38;5;10mmemcmp[0ms the full 40-byte [38;5;10mima_info[0m output plus the return code:[0m[0m
+[0m[0m
+- 35 hand-written cases: all three error paths, chunk reordering, skipped unknown chunks, duplicate [38;5;10mdesc[0m/[38;5;10mpakt[0m, zero/max sizes, misaligned input, and 22 raw sample-rate bit patterns chosen to hit every branch of the [38;5;10mdouble[0m→[38;5;10mu64[0m conversion (±inf, NaN, exactly 2^63, just above/below, ±2^63, subnormals, huge finites).[0m[0m
+- 200,000 randomized iterations with biased exponents, random chunk counts/order, and buffer shifts of 0–7 bytes.[0m[0m
+[0m[0m
+Zero mismatches, run against the CMake [38;5;10mRelease[0m build, an unoptimized build, and a [38;5;10m-O3[0m build. [38;5;10mc_src/[0m is unmodified (checksums and mtimes unchanged).[0m[0m
 [38;5;8m
- ▸ Credits: 9.86 • Time: 5m 3s
+ ▸ Credits: 12.65 • Time: 5m 51s
 
 [0m[1G[0m[0m[?25h

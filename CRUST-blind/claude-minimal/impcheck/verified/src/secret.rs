@@ -1,1 +1,0 @@
-// This file is empty as per the provided C header file.
