@@ -1,0 +1,27 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "underhanded_c_nuke_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+
+# This crate deliberately mirrors the C library's raw-pointer semantics: a caller
+# that passes NULL with a positive length must fault exactly where the C faults.
+# Rust's debug-only UB checks turn that segfault into an abort, which would make
+# the dev-profile `.so` diverge from both the release `.so` and the C. They are
+# therefore disabled so every build profile is ABI- and trap-identical.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

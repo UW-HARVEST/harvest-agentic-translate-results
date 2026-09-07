@@ -1,0 +1,264 @@
+// ---------------------------------------------------------------------------
+// C15..C28 — rows whose result depends on heap ADDRESSES.
+//
+// `compute_hash` compares `mb1->data` vs `mb2->data` and `mb1` vs `mb2`, so
+// `betagamma`'s return value is a function of the allocator's history as well
+// as of its arguments.  These rows are therefore compared OUT OF PROCESS: the
+// test binary re-executes itself twice, loading only the C `.so` in one child
+// and only the Rust `.so` in the other, so both libraries observe an identical,
+// pristine heap.  (In-process, whichever library ran second would pop the
+// chunks the first just freed off glibc's LIFO tcache and see the opposite
+// pointer ordering — an artefact of the harness, not of the translation.)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cfg_c15_compute_hash_real_heap() {
+    let mut rng = Rng::new(SEED ^ 15);
+    let mut ops = Vec::new();
+    for _ in 0..400 {
+        ops.push(Op::Pipeline {
+            count: rng.range_usize(0, 32),
+            init1: rng.i32(),
+            init2: rng.i32(),
+        });
+    }
+    for count in [0usize, 1, 2, 5, 14, 64, 4096] {
+        ops.push(Op::Pipeline {
+            count,
+            init1: 1,
+            init2: 2,
+        });
+        ops.push(Op::Pipeline {
+            count,
+            init1: i32::MAX,
+            init2: i32::MIN,
+        });
+    }
+    oracle::assert_same("c15", &ops);
+}
+
+#[test]
+fn cfg_c16_betagamma_residue_sweep() {
+    let mut rng = Rng::new(SEED ^ 16);
+    let mut ops = Vec::new();
+    // Every residue of param1 % 10 in {-9..9} => block_size in {-4..14}.
+    for r in -9i32..=9 {
+        let mut hits = 0;
+        for k in 0..60 {
+            let p1 = r + 10 * k * if r < 0 { -1 } else { 1 };
+            if p1 % 10 != r {
+                continue;
+            }
+            hits += 1;
+            ops.push(Op::Betagamma(p1, rng.i32(), rng.i32(), rng.i32()));
+            ops.push(Op::Betagamma(
+                p1,
+                rng.range_i32(-40, 40),
+                rng.range_i32(-40, 40),
+                rng.range_i32(-40, 40),
+            ));
+        }
+        assert!(hits > 0, "residue {} was never exercised", r);
+    }
+    oracle::assert_same("c16", &ops);
+
+    // The rows that must take the error path do so identically (C19).
+    let l = libs();
+    for r in -9i32..=-5 {
+        for k in 0..5 {
+            let p1 = r - 10 * k;
+            assert_eq!(p1 % 10, r);
+            unsafe {
+                assert_eq!((l.c.betagamma)(p1, 1, 2, 3), -1, "C: p1={}", p1);
+                assert_eq!((l.rs.betagamma)(p1, 1, 2, 3), -1, "Rust: p1={}", p1);
+            }
+        }
+    }
+}
+
+#[test]
+fn cfg_c20_betagamma_corner_vectors() {
+    let vals = [
+        0i32,
+        1,
+        -1,
+        2,
+        -2,
+        10,
+        -10,
+        i32::MAX,
+        i32::MIN,
+        i32::MAX - 1,
+        i32::MIN + 1,
+    ];
+    let mut ops = vec![Op::Betagamma(0, 0, 0, 0)];
+    for &a in &vals {
+        for &b in &vals {
+            ops.push(Op::Betagamma(a, b, 0, 0));
+            ops.push(Op::Betagamma(a, 0, b, 0));
+            ops.push(Op::Betagamma(a, 0, 0, b));
+            ops.push(Op::Betagamma(0, a, b, 0));
+            ops.push(Op::Betagamma(0, 0, a, b));
+        }
+    }
+    oracle::assert_same("c20", &ops);
+}
+
+#[test]
+fn cfg_c23_betagamma_negative_division() {
+    // sum1 - sum2 negative and not a multiple of 10 => C truncates toward zero.
+    let mut rng = Rng::new(SEED ^ 23);
+    let mut ops = Vec::new();
+    for _ in 0..1500 {
+        let p1 = rng.range_i32(0, 9) + 10 * rng.range_i32(0, 5); // block_size 5..14
+        let p2 = p1 + rng.range_i32(1, 97); // sum2 > sum1 => negative numerator
+        ops.push(Op::Betagamma(
+            p1,
+            p2,
+            rng.range_i32(-20, 20),
+            rng.range_i32(-20, 20),
+        ));
+    }
+    for d in 1..=19 {
+        ops.push(Op::Betagamma(5, 5 + d, 0, 0));
+        ops.push(Op::Betagamma(5, 5 - d, 0, 0));
+    }
+    oracle::assert_same("c23", &ops);
+}
+
+#[test]
+fn cfg_c24_betagamma_equal_params() {
+    // param1 == param2 => identical element sums => (sum1-sum2)/10 == 0.
+    let mut ops = Vec::new();
+    for p in [0i32, 1, -1, 5, -5, 9, -9, 1234, -1234, i32::MAX, i32::MIN] {
+        ops.push(Op::Betagamma(p, p, p, p));
+        ops.push(Op::Betagamma(p, p, 0, 0));
+    }
+    oracle::assert_same("c24", &ops);
+}
+
+#[test]
+fn cfg_c25_betagamma_overflow_sums() {
+    // Large magnitudes so sum1/sum2 and result overflow inside the C loops.
+    let big = [
+        1 << 30,
+        -(1 << 30),
+        1 << 24,
+        -(1 << 24),
+        i32::MAX,
+        i32::MIN,
+        i32::MAX / 3,
+        i32::MIN / 3,
+    ];
+    let mut ops = Vec::new();
+    for &a in &big {
+        for &b in &big {
+            for &c in &big {
+                ops.push(Op::Betagamma(a, b, c, 0));
+                ops.push(Op::Betagamma(a, b, 0, c));
+            }
+        }
+    }
+    oracle::assert_same("c25", &ops);
+}
+
+#[test]
+fn cfg_c26_betagamma_random_full_range() {
+    let mut rng = Rng::new(SEED ^ 26);
+    let ops: Vec<Op> = (0..4000)
+        .map(|_| Op::Betagamma(rng.i32(), rng.i32(), rng.i32(), rng.i32()))
+        .collect();
+    oracle::assert_same("c26", &ops);
+}
+
+#[test]
+fn cfg_c27_betagamma_random_small() {
+    let mut rng = Rng::new(SEED ^ 27);
+    let mut ops: Vec<Op> = (0..4000)
+        .map(|_| {
+            Op::Betagamma(
+                rng.range_i32(-50, 50),
+                rng.range_i32(-50, 50),
+                rng.range_i32(-50, 50),
+                rng.range_i32(-50, 50),
+            )
+        })
+        .collect();
+    // Exhaustive over the small square that drives every flags mask.
+    for a in -12i32..=12 {
+        for b in -3i32..=3 {
+            ops.push(Op::Betagamma(a, b, -b, b));
+        }
+    }
+    oracle::assert_same("c27", &ops);
+}
+
+#[test]
+fn cfg_c28_manual_pipeline() {
+    // Re-drive the exact low-level pipeline `betagamma` composes — allocate,
+    // hash, sum, free — and then the one-shot wrapper, in the same child, so
+    // the composed path and the wrapper are both covered end to end.
+    let mut rng = Rng::new(SEED ^ 28);
+    let mut ops = Vec::new();
+    for _ in 0..500 {
+        let p1 = rng.range_i32(-1000, 1000);
+        let p2 = rng.range_i32(-1000, 1000);
+        let bs = (p1 % 10) + 5;
+        if bs < 0 {
+            continue;
+        }
+        ops.push(Op::Pipeline {
+            count: bs as usize,
+            init1: p1,
+            init2: p2,
+        });
+        ops.push(Op::Betagamma(
+            p1,
+            p2,
+            rng.range_i32(-9, 9),
+            rng.range_i32(-9, 9),
+        ));
+    }
+    oracle::assert_same("c28", &ops);
+}
+
+#[test]
+fn cfg_c28b_hash_matrix() {
+    // Many live blocks at once: the full n x n compute_hash matrix must be
+    // identical, which pins down the whole allocation ORDER, not just one pair.
+    let mut ops = Vec::new();
+    for n in [2usize, 3, 5, 8] {
+        for count in [0usize, 1, 5, 14, 40] {
+            ops.push(Op::HashMatrix { n, count, init: 1 });
+        }
+    }
+    oracle::assert_same("c28b", &ops);
+}
+
+#[test]
+fn cfg_c9b_allocate_out_of_process() {
+    // allocate_block re-verified out of process too (element values are
+    // address-independent, but this also pins `size` and data null-ness).
+    let mut rng = Rng::new(SEED ^ 91);
+    let mut ops = Vec::new();
+    for _ in 0..300 {
+        ops.push(Op::Allocate {
+            count: rng.range_usize(0, 40),
+            init: rng.i32(),
+        });
+    }
+    for &init in &[0i32, -1, i32::MAX, i32::MIN, i32::MAX - 5] {
+        for &count in &[0usize, 1, 2, 7, 14, 33] {
+            ops.push(Op::Allocate { count, init });
+        }
+    }
+    oracle::assert_same("c9b", &ops);
+}
+
+/// Child process entry point used by `common::oracle`.
+/// A no-op when the oracle env vars are absent (i.e. during a normal run).
+#[test]
+fn zz_oracle_child() {
+    common::oracle::maybe_run_as_child();
+}
+

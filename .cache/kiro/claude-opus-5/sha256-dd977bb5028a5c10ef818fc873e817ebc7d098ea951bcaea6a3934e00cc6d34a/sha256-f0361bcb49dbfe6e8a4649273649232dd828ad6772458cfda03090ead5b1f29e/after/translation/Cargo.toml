@@ -1,0 +1,33 @@
+[package]
+name = "harvest_work_6PXE3p"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[lib]
+name = "str_dups_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+# The C code relies on wrap-around size_t/int arithmetic throughout, so keep
+# Rust's overflow checks off in every profile (not just release).
+#
+# `debug-assertions` must be off for the same reason: rustc's debug assertions
+# insert null-pointer-dereference and alignment checks that abort (SIGABRT)
+# where the C code simply faults (SIGSEGV) — e.g. `stbds_stralloc` on an arena
+# whose `storage` is NULL, or when `realloc` returns NULL for an absurd
+# blocksize. Leaving them on makes the dev build diverge from the C library on
+# exactly those inputs.
+[profile.release]
+panic = "abort"
+overflow-checks = false
+debug-assertions = false
+
+[profile.dev]
+panic = "abort"
+overflow-checks = false
+debug-assertions = false
+
+[workspace]

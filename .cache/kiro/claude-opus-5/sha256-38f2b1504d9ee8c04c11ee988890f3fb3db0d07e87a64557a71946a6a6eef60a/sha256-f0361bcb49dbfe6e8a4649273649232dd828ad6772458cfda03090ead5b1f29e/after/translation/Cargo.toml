@@ -1,0 +1,36 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "buffapp_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# This crate intentionally reproduces the C source's undefined behaviour so the
+# observable results match byte-for-byte: the NULL dereferences the C never
+# guards (`append_to_buffer(NULL, ..)`, `perform_operation(.., NULL)`), the
+# 1-byte out-of-bounds write in `create_buffer(0)`, and signed integer
+# overflow. rustc's `-Cdebug-assertions` UB instrumentation turns those into
+# Rust panics ("null pointer dereference occurred"), which in a `cdylib`
+# becomes SIGABRT where the C raises SIGSEGV. Disabling the instrumentation in
+# the dev profile makes the debug artifact behave like the release artifact and
+# like the C. (`assert!`/`assert_eq!` in the tests are unaffected.)
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

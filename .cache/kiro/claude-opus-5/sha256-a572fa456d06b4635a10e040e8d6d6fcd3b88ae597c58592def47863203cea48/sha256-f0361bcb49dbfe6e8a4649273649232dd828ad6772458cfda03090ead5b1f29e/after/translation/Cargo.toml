@@ -1,0 +1,32 @@
+[package]
+name = "harvest-work-UWirmA"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ima_parse_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The C this crate translates deliberately performs accesses the Rust abstract
+# machine calls UB: it dereferences `info`/`data` without a NULL check and walks
+# the chunk list with attacker-controlled (possibly negative) offsets. Rust's
+# `-C debug-assertions` also switches on `-C ub-checks`, which turns those
+# faithful faults into `panic!("null pointer dereference occurred")` -> a
+# non-unwinding panic across `extern "C"` -> `SIGABRT`, where the C raises
+# `SIGSEGV`. Byte-identical behaviour therefore requires the checks off in every
+# profile, not just `release`. (Verified by tests/phase_c.rs `crash::crash_parity`,
+# which compares the fatal signal of the C and Rust `.so`s side by side.)
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

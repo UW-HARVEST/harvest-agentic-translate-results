@@ -1,0 +1,31 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "dequantize_granule_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+# This crate is a bit-exact replica of C code that deliberately performs
+# accesses Rust classifies as UB (the C indexes `sci->bitalloc[i]` past the end
+# of its 64-byte array, walks `grbuf` past its end, and has no null checks).
+# Rust's `debug_assertions`-gated UB checks turn those into a panic/`SIGABRT`,
+# whereas the C faults with `SIGSEGV` -- an observable behavioural difference
+# across the FFI boundary. They are therefore disabled in every profile so the
+# library behaves identically however it is built.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

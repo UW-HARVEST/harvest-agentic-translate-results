@@ -1,0 +1,30 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# `harness = false`: these binaries redirect the process-global fd 1 to capture
+# what the two `.so`s print. libtest's own parallel progress output would land
+# in that capture, so each phase runs its rows sequentially from its own `main`.
+[[test]]
+name = "phase_b_valid_paths"
+path = "tests/phase_b_valid_paths.rs"
+harness = false
+
+[[test]]
+name = "phase_c_error_paths"
+path = "tests/phase_c_error_paths.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

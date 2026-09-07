@@ -1,0 +1,1922 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---C_SRC---" && find c_src -type f | head -100 && echo "---TRANSLATION---" && find translation -type f -not -path '*/target/*' | head -100[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory structure
+
+total 160
+drwxr-xr-x.    4 scheschb amazon     50 Sep  5 04:54 .
+drwxr-xr-x. 2708 scheschb amazon 114688 Sep  5 04:54 ..
+drwxr-xr-x.    4 scheschb amazon     70 Sep  5 04:54 c_src
+drwxr-xr-x.    3 scheschb amazon     69 Sep  5 04:54 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/simplestruct.h
+c_src/src/simplestruct.c
+---TRANSLATION---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "===CMakeLists==="; cat c_src/CMakeLists.txt; echo "===header==="; cat c_src/include/simplestruct.h; echo "===LINES==="; wc -l c_src/src/simplestruct.c translation/src/lib.rs translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read CMakeLists, header, line counts
+
+===CMakeLists===
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(SimpleList)
+add_library(SimpleList SHARED
+    src/simplestruct.c)
+
+target_include_directories(SimpleList PUBLIC include)
+target_include_directories(SimpleList PRIVATE src)
+
+install(TARGETS SimpleList
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+===header===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#ifndef SIMPLESTRUCT_H_
+#define SIMPLESTRUCT_H_
+
+struct ListNode {
+    int value;
+    struct ListNode* next;
+};
+
+int smallestValue (struct ListNode *date);
+
+#endif //SIMPLESTRUCT_H_===LINES===
+  37 c_src/src/simplestruct.c
+  74 translation/src/lib.rs
+  14 translation/Cargo.toml
+ 125 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mecho "===C==="; sed -n '24,40p' c_src/src/simplestruct.c; echo "===RUST==="; cat translation/src/lib.rs; echo "===CARGO==="; cat translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C source and Rust lib
+
+===C===
+#include "simplestruct.h"
+
+int smallestValue (struct ListNode *head) {
+    if (head) {
+        int smallest = head->value;
+        while (head->next) {
+            head = head->next;
+            if (head->value < smallest) {
+                smallest = head->value;
+            }
+        }
+        return smallest;
+    }
+    else return -1; 
+}===RUST===
+// Rust translation of the SimpleList C library (c_src/).
+//
+// Original C library: Copyright 2025 MIT Lincoln Laboratory (MIT-style license,
+// see c_src/include/simplestruct.h for the full notice).
+//
+// The complete public ABI of the C shared library consists of exactly one
+// exported symbol, `smallestValue`, as declared in `c_src/include/simplestruct.h`.
+// There are no namespace/renaming preprocessor macros in the public header, so
+// the linker symbol name is identical to the source-level name.
+
+#![allow(non_snake_case)]
+
+use std::ffi::c_int;
+
+/// Mirrors the C declaration:
+///
+/// ```c
+/// struct ListNode {
+///     int value;
+///     struct ListNode* next;
+/// };
+/// ```
+#[repr(C)]
+pub struct ListNode {
+    pub value: c_int,
+    pub next: *mut ListNode,
+}
+
+/// Safe core of `smallestValue`, operating on a non-null head node.
+///
+/// Reproduces the exact C traversal and comparison order:
+/// the running minimum is seeded from the head node, then the list is advanced
+/// while `next` is non-null, replacing the minimum only on a strict `<`
+/// comparison (so the earliest occurrence of the minimum is the one retained).
+fn smallest_value_from(head: &ListNode) -> c_int {
+    let mut node: &ListNode = head;
+    let mut smallest: c_int = node.value;
+
+    while !node.next.is_null() {
+        // SAFETY: `node.next` was just checked to be non-null. As in the C
+        // original, the caller is responsible for the pointer being a valid,
+        // properly aligned `ListNode` that outlives this call.
+        node = unsafe { &*node.next };
+
+        if node.value < smallest {
+            smallest = node.value;
+        }
+    }
+
+    smallest
+}
+
+/// C signature: `int smallestValue (struct ListNode *date);`
+///
+/// Returns the smallest `value` in the singly linked list, or `-1` when the
+/// head pointer is NULL. Note that `-1` is also a legitimate list value, so a
+/// NULL list is indistinguishable from a list whose minimum is `-1`; this
+/// behavior is preserved from the C original rather than "fixed".
+///
+/// # Safety
+///
+/// `date` must either be NULL or point to a valid, null-terminated chain of
+/// `ListNode` values that remains valid for the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn smallestValue(date: *mut ListNode) -> c_int {
+    if !date.is_null() {
+        // SAFETY: `date` was just checked to be non-null; validity is the
+        // caller's responsibility, exactly as in the C original.
+        let head: &ListNode = unsafe { &*date };
+        smallest_value_from(head)
+    } else {
+        -1
+    }
+}
+===CARGO===
+[package]
+name = "simplelist"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "SimpleList"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[?25l[0m[0mI will run the following command: [38;5;141mcd translation && rustc --version && cargo --version && timeout 600 cargo check 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run cargo check
+
+I will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null && cmake --build . 2>&1 | tail -10 && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+    Checking simplelist v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+[38;5;244m - Completed in 0.134s[0m
+
+[ 50%] Building C object CMakeFiles/SimpleList.dir/src/simplestruct.c.o
+[100%] Linking C shared library libSimpleList.so
+[100%] Built target SimpleList
+-rwxr-xr-x. 1 scheschb amazon 15680 Sep  5 04:55 libSimpleList.so
+[38;5;244m - Completed in 0.403s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -5 && ls -la target/release/*.so && echo "=== C nm -D ===" && nm -D --defined-only ../c_src/build/libSimpleList.so && echo "=== RUST nm -D ===" && nm -D --defined-only target/release/libSimpleList.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust cdylib and compare exported symbols
+
+   Compiling simplelist v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+-rwxr-xr-x. 2 scheschb amazon 401816 Sep  5 04:55 target/release/libSimpleList.so
+=== C nm -D ===
+00000000000010f9 T smallestValue
+=== RUST nm -D ===
+00000000000116a0 T smallestValue
+[38;5;244m - Completed in 0.130s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && echo "=== RUST undefined ===" && nm -D --undefined-only target/release/libSimpleList.so | sed 's/^/  /' && echo "=== C undefined ===" && nm -D --undefined-only ../c_src/build/libSimpleList.so | sed 's/^/  /'; echo "=== grep error-ish constructs in C ==="; grep -nE 'return|assert|NULL|if|while|for|switch|<|>|#if' c_src/src/simplestruct.c 2>/dev/null; grep -nE 'return|assert|NULL|if|while|for|switch|#if' ../c_src/src/simplestruct.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check undefined symbols and grep C control flow
+
+=== RUST undefined ===
+                   w _ITM_deregisterTMCloneTable
+                   w _ITM_registerTMCloneTable
+                   U _Unwind_Backtrace@GCC_3.3
+                   U _Unwind_GetDataRelBase@GCC_3.0
+                   U _Unwind_GetIP@GCC_3.0
+                   U _Unwind_GetIPInfo@GCC_4.2.0
+                   U _Unwind_GetLanguageSpecificData@GCC_3.0
+                   U _Unwind_GetRegionStart@GCC_3.0
+                   U _Unwind_GetTextRelBase@GCC_3.0
+                   U _Unwind_Resume@GCC_3.0
+                   U _Unwind_SetGR@GCC_3.0
+                   U _Unwind_SetIP@GCC_3.0
+                   w __cxa_finalize@GLIBC_2.2.5
+                   w __cxa_thread_atexit_impl@GLIBC_2.18
+                   U __errno_location@GLIBC_2.2.5
+                   w __gmon_start__
+                   U __tls_get_addr@GLIBC_2.3
+                   U abort@GLIBC_2.2.5
+                   U bcmp@GLIBC_2.2.5
+                   U calloc@GLIBC_2.2.5
+                   U close@GLIBC_2.2.5
+                   U dl_iterate_phdr@GLIBC_2.2.5
+                   U free@GLIBC_2.2.5
+                   U fstat64@GLIBC_2.33
+                   U getcwd@GLIBC_2.2.5
+                   U getenv@GLIBC_2.2.5
+                   w gettid@GLIBC_2.30
+                   U lseek64@GLIBC_2.2.5
+                   U malloc@GLIBC_2.2.5
+                   U memcpy@GLIBC_2.14
+                   U memmove@GLIBC_2.2.5
+                   U memset@GLIBC_2.2.5
+                   U mmap64@GLIBC_2.2.5
+                   U munmap@GLIBC_2.2.5
+                   U open64@GLIBC_2.2.5
+                   U posix_memalign@GLIBC_2.2.5
+                   U pthread_key_create@GLIBC_2.34
+                   U pthread_key_delete@GLIBC_2.34
+                   U pthread_setspecific@GLIBC_2.34
+                   U read@GLIBC_2.2.5
+                   U readlink@GLIBC_2.2.5
+                   U realloc@GLIBC_2.2.5
+                   U realpath@GLIBC_2.3
+                   U stat64@GLIBC_2.33
+                   w statx@GLIBC_2.28
+                   U strlen@GLIBC_2.2.5
+                   U syscall@GLIBC_2.2.5
+                   U write@GLIBC_2.2.5
+                   U writev@GLIBC_2.2.5
+=== C undefined ===
+                   w _ITM_deregisterTMCloneTable
+                   w _ITM_registerTMCloneTable
+                   w __cxa_finalize@GLIBC_2.2.5
+                   w __gmon_start__
+=== grep error-ish constructs in C ===
+7:// modify, merge, publish, distribute, sublicense,
+27:    if (head) {
+29:        while (head->next) {
+31:            if (head->value < smallest) {
+35:        return smallest;
+37:    else return -1; 
+[38;5;244m - Completed in 0.33s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity is already exact (one symbol). Now writing Phase A artifacts.[0m[0m
+[?25l[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create SYMBOLS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — Public symbol parity (Phase A / Phase D)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `nm -D` on both shared libraries.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m Build commands used:
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m cd c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #   -> c_src/build/libSimpleList.so
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m cd translation && cargo build --release
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m #   -> translation/target/release/libSimpleList.so
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m ## C `.so` exported (defined) dynamic symbols
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m `nm -D --defined-only c_src/build/libSimpleList.so`
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m | # | symbol | type | source of truth | present in Rust `.so`? |
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m |---|--------|------|-----------------|------------------------|
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m | 1 | `smallestValue` | `T` (global text) | `c_src/src/simplestruct.c:26`, declared `c_src/include/simplestruct.h:31` | YES — `T smallestValue` |
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m There are no other C translation units (`CMakeLists.txt` lists exactly
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m `src/simplestruct.c`), no macro-generated / renamed exports, no versioned
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m aliases, and no exported data objects. The public header declares exactly one
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m function and no global variables, so the complete public ABI surface is the
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m single row above.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m ## Rust `.so` exported (defined) dynamic symbols
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m `nm -D --defined-only translation/target/release/libSimpleList.so`
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | # | symbol | type | Rust definition |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m |---|--------|------|-----------------|
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | 1 | `smallestValue` | `T` (global text) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn smallestValue` in `src/lib.rs` |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m `crate-type = ["cdylib"]` means Rust internals are not exported, so the Rust
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m export set is exactly the one C symbol — no extra public symbols leak.
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m ## Symbol diff
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m comm -23 <(nm -D --defined-only c_src/build/libSimpleList.so    | awk '{print $NF}' | sort -u) \
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m          <(nm -D --defined-only translation/.../libSimpleList.so | awk '{print $NF}' | sort -u)
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m Result: **empty**. Missing-symbol count = **0**.
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m No symbol required translation work: the single C function is fully translated
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m (not stubbed, no `unimplemented!()`), and no C module was skipped.
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m ## Undefined (imported) symbols
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m * C `.so` undefined: only the four standard glibc/toolchain weak/undef entries
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m   (`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m   `__cxa_finalize`, `__gmon_start__`).
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m * Rust `.so` undefined: the same four, plus only libc / libgcc-unwind imports
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m   pulled in by the Rust standard library (`malloc`, `free`, `memcpy`, `mmap64`,
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m   `pthread_key_create`, `_Unwind_*`, …).
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m **0 missing/undefined non-libc symbols in the Rust `.so`.** ✅
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m `translation/Cargo.toml` declares **no `[features]` table**, so there is exactly
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m one build configuration (the default, which is also `--no-default-features`).
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m Symbol parity and all tests were re-checked under both invocations; see
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m `CONFIGS.md` / `ERRORS.md` for results.
+[0m[K
+I'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create ERRORS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — Error-surface table (Phase A → gates Phase C)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Mechanically derived from the complete C source. The whole library body is:
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m int smallestValue (struct ListNode *head) {   // simplestruct.c:26
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m     if (head) {                               // :27  <- the only rejection check
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m         int smallest = head->value;            // :28
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m         while (head->next) {                   // :29
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m             head = head->next;                 // :30
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m             if (head->value < smallest) {      // :31
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m                 smallest = head->value;        // :32
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m         return smallest;                       // :35
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     else return -1;                            // :37 <- the only error return
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m Grep inventory of every rejection-capable construct in `c_src/`:
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m * `return` statements: 2 total (`return smallest;` = success, `return -1;` = error).
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m * `assert` / `abort` / `exit`: **none**.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m * error enums / error macros (`RETURN_ERROR`, `errno`, out-params): **none**.
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m * explicit range / bounds / min-max constants: **none** (no `INT_MAX`, no length
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   cap, no size argument at all).
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m * null checks: exactly one — `if (head)` on the single parameter.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m * `#if` / `#ifdef` conditional compilation in the library body: **none**
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m   (only the `SIMPLESTRUCT_H_` include guard).
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m So the C code has exactly **one** distinct way to reject input.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m ## Error-surface table
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m |---|----------|----------------------------------------------|-------------------|------|--------|
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | E1 | `smallestValue` | `head == NULL` (the `if (head)` check at `simplestruct.c:27` fails) | returns `-1` (`simplestruct.c:37`); no memory is dereferenced | `err_e1_null_head` | [x] |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m ## Generic FFI-boundary boundaries also covered (not C-table rows)
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m These are not distinct C rejection branches — the C function has no length,
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m size, enum, or mode parameter — but they are the generic boundaries required for
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m any C API, so they are still tested differentially.
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | # | boundary | why it is a boundary here | expected identical behavior | test | status |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m |---|----------|---------------------------|-----------------------------|------|--------|
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | G1 | NULL pointer argument | the only pointer parameter | both return `-1` | `err_e1_null_head` | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | G2 | "zero length" list | a 0-node list is *representable only* as `head == NULL`; there is no separate count argument | both return `-1` | `err_g2_zero_length_is_null` | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | G3 | `-1` as a legitimate list value | collides with the NULL sentinel; a real caller cannot distinguish them. C does **not** treat this as an error | both return `-1` for a list containing `-1` as its minimum, i.e. same value as the NULL case | `err_g3_minus_one_sentinel_collision` | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | G4 | one step past the value range: `INT_MIN`, `INT_MAX` | `int` field with a `<` comparison; `INT_MIN` is the extreme of the signed-comparison path | both return the same `int`; no UB/overflow path exists in C (`<` only, no arithmetic) | `err_g4_extreme_int_values` | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | G5 | `INT_MIN` / `INT_MAX` at head vs. tail vs. interior | position-dependent update of `smallest` | identical results | `err_g5_extremes_by_position` | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | G6 | oversized length (very long list, 1,000,000 nodes) | no length cap in C; iterative loop in both — checks neither side stack-overflows or diverges | identical minimum, no crash | `err_g6_oversized_length` | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | G7 | out-of-range "enum" value across FFI | **N/A by construction** — `smallestValue` takes no enum, mode, flag, or `int` selector parameter; the only argument is `struct ListNode *`. Documented here explicitly so the omission is a derived conclusion, not an oversight. The nearest analogue (an `int` field holding any bit pattern, including ones no "valid variant" would use) is covered by G4/G5 and by the randomized `i32` fuzz in `CONFIGS.md`. | — | (see G4/G5) | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | G8 | unaligned / garbage non-NULL pointer | C would dereference it (UB) — **deliberately not tested**: the C ground truth crashes, so there is no defined behavior to match. Both implementations dereference any non-NULL `head` identically. | UB in both | not tested (by design) | n/a |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | G9 | cyclic list (`next` forms a loop) | `while (head->next)` never terminates in C — infinite loop, not an error return. **Deliberately not tested** (the C ground truth hangs); the Rust loop has the identical structure. | hang in both | not tested (by design) | n/a |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m All rows E1 and G1–G7 have passing differential tests. G7 is a derived
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m non-applicability; G8/G9 are documented C-undefined/non-terminating cases.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create CONFIGS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — Configuration-surface table (Phase A → gates Phase B)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Mechanically derived from the C source and public header, not from assumptions.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ## Axes the C code actually branches on
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m **Runtime options / modes / flags:** **none.** The public header
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m (`c_src/include/simplestruct.h`) declares exactly one function and no setters,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m context struct, option bitmask, or global configuration variable. There is no
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m `#ifdef` in the library body other than the include guard. So the option axis is
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m a single point.
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m **Public entry points (full set, including the lowest level):**
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m `smallestValue` is simultaneously the highest- and lowest-level entry point —
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m there are no convenience wrappers layered over an internal API, and no `static`
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m helpers in `simplestruct.c`. It is called directly in every row below (never
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m through a wrapper), through the `.so` export.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m **Input shapes the code special-cases** (from the three branch points):
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m | axis | values, from the branch it comes from |
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m |------|----------------------------------------|
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m | `head` nullness — `if (head)` at `:27` | NULL / non-NULL (NULL case is `ERRORS.md` E1) |
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m | list length — `while (head->next)` at `:29` | 0 (= NULL), 1 (loop body never runs), 2 (loop runs once), 3, many, very many |
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m | position of the minimum — `if (head->value < smallest)` at `:31` | at head (never updated), at second node, interior, at tail, everywhere-equal |
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m | strictness of `<` at `:31` | duplicate minima (first occurrence retained — `<` not `<=`); equal-adjacent values |
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m | value distribution of the `int` field | all-positive, all-negative, mixed sign, all-zero, all-equal, monotone increasing, monotone decreasing, extremes (`INT_MIN`/`INT_MAX`), full random `i32` |
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m | memory layout of the chain | contiguous (array-backed, ascending addresses), reversed/descending addresses, shuffled/non-contiguous individually-allocated nodes — confirms nothing depends on address order, only on `next` |
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m Rows below are the pruned cross-product: every combination the three C branch
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m points actually distinguish. Every row is run against **many randomized inputs
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m with a fixed seed** (deterministic SplitMix64 PRNG in the test file), except
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m where the shape is exact by definition.
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m ## Configuration-surface table
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | test | [ ] |
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m |---|----------------|--------------------------------------------|------|-----|
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | C1 | `smallestValue` | len 1, random `i32` value — loop body never executes, returns head value | `cfg_c1_single_node` | [x] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m | C2 | `smallestValue` | len 2, minimum at head (`v0 < v1`) — `<` never fires | `cfg_c2_len2_min_at_head` | [x] |
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | C3 | `smallestValue` | len 2, minimum at tail (`v1 < v0`) — `<` fires once | `cfg_c3_len2_min_at_tail` | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | C4 | `smallestValue` | len 2, both values equal — `<` must *not* fire (strictness) | `cfg_c4_len2_equal` | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | C5 | `smallestValue` | len 3, minimum in interior position | `cfg_c5_len3_min_interior` | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | C6 | `smallestValue` | len 3..=8, minimum forced at head | `cfg_c6_min_at_head_various_len` | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | C7 | `smallestValue` | len 3..=8, minimum forced at tail | `cfg_c7_min_at_tail_various_len` | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | C8 | `smallestValue` | len 3..=64, minimum at a random interior index | `cfg_c8_min_random_interior` | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | C9 | `smallestValue` | duplicate minima at several indices (first-occurrence retention under `<`) | `cfg_c9_duplicate_minima` | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | C10 | `smallestValue` | all elements equal, len 1..=32 | `cfg_c10_all_equal` | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | C11 | `smallestValue` | strictly increasing values (minimum at head, `<` never fires) | `cfg_c11_monotone_increasing` | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | C12 | `smallestValue` | strictly decreasing values (`<` fires on every iteration) | `cfg_c12_monotone_decreasing` | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | C13 | `smallestValue` | all-positive values, random len 1..=64 | `cfg_c13_all_positive` | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | C14 | `smallestValue` | all-negative values, random len 1..=64 | `cfg_c14_all_negative` | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | C15 | `smallestValue` | mixed-sign values incl. zeros, random len 1..=64 | `cfg_c15_mixed_sign` | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | C16 | `smallestValue` | all zeros, random len 1..=32 | `cfg_c16_all_zero` | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | C17 | `smallestValue` | unrestricted random `i32` (full 32-bit range), random len 1..=128 — the broad property-style fuzz | `cfg_c17_full_random_i32` | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | C18 | `smallestValue` | values drawn from a boundary pool (`INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `INT_MAX-1`, `INT_MAX`) | `cfg_c18_boundary_value_pool` | [x] |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m | C19 | `smallestValue` | `INT_MIN` present exactly once at a random index | `cfg_c19_int_min_random_index` | [x] |
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m | C20 | `smallestValue` | every value `INT_MAX` except one smaller value | `cfg_c20_all_int_max_but_one` | [x] |
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m | C21 | `smallestValue` | nodes laid out contiguously in ascending memory order | `cfg_c21_layout_ascending` | [x] |
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m | C22 | `smallestValue` | nodes chained in *descending* memory order (chain order ≠ address order) | `cfg_c22_layout_descending` | [x] |
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m | C23 | `smallestValue` | nodes individually heap-allocated and chained in shuffled address order | `cfg_c23_layout_shuffled_boxes` | [x] |
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m | C24 | `smallestValue` | long list, 100_000 nodes, random values (loop-count / no-stack-growth) | `cfg_c24_long_list` | [x] |
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m | C25 | `smallestValue` | the *same* node graph passed to C and then Rust, and again in reverse call order — confirms neither implementation mutates the caller's list | `cfg_c25_no_mutation_of_input` | [x] |
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m ## Binary / driver executable
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m `c_src/CMakeLists.txt` contains only `add_library(SimpleList SHARED src/simplestruct.c)`
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m — no `add_executable`. `translation/Cargo.toml` has only `[lib] crate-type = ["cdylib"]`
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m and no `[[bin]]` / `src/main.rs`. **Neither side builds a binary**, so the
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m "compare stdout byte-for-byte" gate is not applicable.
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m No `[features]` in `Cargo.toml` → the only combination is the default, which is
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m identical to `--no-default-features`. Both were exercised.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the differential test harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the differential FFI test suite covering all CONFIGS.md and ERRORS.md rows
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential test harness: loads BOTH the C `.so` and the Rust `.so` via
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `libloading` and compares `smallestValue` results through the FFI boundary.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! Neither implementation is ever called directly as a Rust function — both go
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! through `dlopen`/`dlsym`, exactly as an external C consumer would, so the
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! `#[no_mangle] extern "C"` export wrapper is under test too.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use std::ffi::c_int;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m // The C ABI type, mirrored from c_src/include/simplestruct.h
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m #[repr(C)]
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m #[derive(Clone, Copy)]
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m pub struct ListNode {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     pub value: c_int,
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     pub next: *mut ListNode,
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m impl ListNode {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     pub fn new(value: c_int) -> Self {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         ListNode {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             value,
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             next: std::ptr::null_mut(),
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m pub type SmallestValueFn = unsafe extern "C" fn(*mut ListNode) -> c_int;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m // Locating and loading the two shared libraries
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn workspace_root() -> PathBuf {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR = <root>/translation
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         .expect("translation/ must have a parent")
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m fn c_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let p = workspace_root().join("c_src/build/libSimpleList.so");
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         p.is_file(),
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         "C shared library not found at {}\nBuild it with:\n  cd c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m          && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         p.display()
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     p
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// Find the Rust cdylib. Prefer the profile directory the test binary itself
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// lives in (so `cargo test` and `cargo test --release` both work), then fall
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// back to the other profile.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     let mut candidates: Vec<PathBuf> = Vec::new();
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     if let Ok(exe) = std::env::current_exe() {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         // .../target/<profile>/deps/<test binary>
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         if let Some(profile_dir) = exe.parent().and_then(|p| p.parent()) {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             candidates.push(profile_dir.join("libSimpleList.so"));
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     candidates.push(target.join("debug/libSimpleList.so"));
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     candidates.push(target.join("release/libSimpleList.so"));
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     for c in &candidates {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         if c.is_file() {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m             return c.clone();
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         "Rust cdylib libSimpleList.so not found. Looked in:\n{}\nBuild it with: cargo build (and/or cargo build --release)",
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         candidates
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             .iter()
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             .map(|p| format!("  {}", p.display()))
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             .collect::<Vec<_>>()
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m             .join("\n")
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// Both libraries, kept alive for the process lifetime.
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m struct Impls {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     _c_lib: Library,
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     _rust_lib: Library,
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     c: SmallestValueFn,
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     rust: SmallestValueFn,
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m impl Impls {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     fn load() -> Self {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         // SAFETY: loading two plain C-ABI libraries with no constructors that
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         // run arbitrary code beyond libc/libstd init.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m             let c_lib = Library::new(c_so_path()).expect("dlopen C libSimpleList.so");
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             let rust_lib = Library::new(rust_so_path()).expect("dlopen Rust libSimpleList.so");
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             let c_sym: Symbol<SmallestValueFn> = c_lib
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m                 .get(b"smallestValue\0")
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                 .expect("dlsym smallestValue in C .so");
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             let rust_sym: Symbol<SmallestValueFn> = rust_lib
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                 .get(b"smallestValue\0")
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                 .expect("dlsym smallestValue in Rust .so");
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m             let c = *c_sym;
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m             let rust = *rust_sym;
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m             Impls {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m                 _c_lib: c_lib,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m                 _rust_lib: rust_lib,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m                 c,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m                 rust,
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m fn impls() -> &'static Impls {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     use std::sync::OnceLock;
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     static IMPLS: OnceLock<Impls> = OnceLock::new();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     IMPLS.get_or_init(Impls::load)
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m // `Impls` holds raw fn pointers + Library; sharing across threads is fine here
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m // because the C function is pure and reentrant (no globals, no allocation).
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m unsafe impl Sync for Impls {}
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m unsafe impl Send for Impls {}
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m // List construction helpers (three distinct memory layouts)
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m /// Storage backing a chain; keeps nodes alive while the head pointer is used.
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m enum Storage {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     Contig(Vec<ListNode>),
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     Boxes(Vec<Box<ListNode>>),
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m struct Chain {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     _storage: Storage,
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     head: *mut ListNode,
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m impl Chain {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     fn head(&self) -> *mut ListNode {
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         self.head
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m /// Contiguous `Vec`, chained in ascending address order (values in order).
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m fn chain_ascending(values: &[c_int]) -> Chain {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let mut nodes: Vec<ListNode> = values.iter().map(|&v| ListNode::new(v)).collect();
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     if nodes.is_empty() {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         return Chain {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m             _storage: Storage::Contig(nodes),
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m             head: std::ptr::null_mut(),
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     let base = nodes.as_mut_ptr();
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     for i in 0..nodes.len() - 1 {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         // SAFETY: i+1 is in bounds.
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         nodes[i].next = unsafe { base.add(i + 1) };
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     let head = base;
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     Chain {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         _storage: Storage::Contig(nodes),
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         head,
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m /// Contiguous `Vec`, but chained from the LAST slot to the FIRST, so traversal
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m /// order runs against increasing addresses. `values[k]` is still the k-th node
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m /// visited.
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m fn chain_descending(values: &[c_int]) -> Chain {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     let n = values.len();
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     let mut nodes: Vec<ListNode> = vec![ListNode::new(0); n];
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     if n == 0 {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         return Chain {
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             _storage: Storage::Contig(nodes),
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m             head: std::ptr::null_mut(),
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     // node at slot (n-1-k) is the k-th visited node.
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     for (k, &v) in values.iter().enumerate() {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         nodes[n - 1 - k].value = v;
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     let base = nodes.as_mut_ptr();
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     for k in 0..n - 1 {
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         let cur = n - 1 - k;
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         let nxt = n - 1 - (k + 1);
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         // SAFETY: both indices are in bounds.
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         nodes[cur].next = unsafe { base.add(nxt) };
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     let head = unsafe { base.add(n - 1) };
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     Chain {
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         _storage: Storage::Contig(nodes),
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         head,
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m /// Individually heap-allocated nodes, chained in an order determined by the
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m /// PRNG so that traversal order is unrelated to allocation/address order.
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m fn chain_shuffled_boxes(values: &[c_int], rng: &mut Rng) -> Chain {
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     let n = values.len();
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     if n == 0 {
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m         return Chain {
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m             _storage: Storage::Boxes(Vec::new()),
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m             head: std::ptr::null_mut(),
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     // Allocate n boxes, then decide a random permutation `order` such that
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     // order[k] is the box index used for the k-th visited node.
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     let mut boxes: Vec<Box<ListNode>> = (0..n).map(|_| Box::new(ListNode::new(0))).collect();
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     let mut order: Vec<usize> = (0..n).collect();
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m     // Fisher-Yates with the seeded PRNG.
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     for i in (1..n).rev() {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         order.swap(i, j);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     for (k, &v) in values.iter().enumerate() {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         boxes[order[k]].value = v;
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m     for k in 0..n - 1 {
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         let next_ptr: *mut ListNode = &mut *boxes[order[k + 1]] as *mut ListNode;
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         boxes[order[k]].next = next_ptr;
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     let head: *mut ListNode = &mut *boxes[order[0]] as *mut ListNode;
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     Chain {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         _storage: Storage::Boxes(boxes),
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         head,
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m // Deterministic PRNG (fixed seed, SplitMix64) — reproducible property tests
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m struct Rng(u64);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     fn new(seed: u64) -> Self {
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         Rng(seed)
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         let mut z = self.0;
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m         z ^ (z >> 31)
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     fn i32(&mut self) -> c_int {
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         self.next_u64() as u32 as i32
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     /// Uniform in `[lo, hi]`.
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m     fn range(&mut self, lo: u64, hi: u64) -> u64 {
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m         debug_assert!(lo <= hi);
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m         lo + self.next_u64() % (hi - lo + 1)
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     fn i32_in(&mut self, lo: i32, hi: i32) -> c_int {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         let span = (hi as i64 - lo as i64 + 1) as u64;
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m         (lo as i64 + (self.next_u64() % span) as i64) as i32
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m /// Number of randomized inputs per configuration row.
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m const ITERS: usize = 400;
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m // The core differential assertion
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m /// Calls BOTH `.so` exports on the same head pointer and asserts the returned
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m /// bytes are identical. Also re-runs in the opposite order to prove neither
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m /// implementation mutated the list.
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m fn assert_same(head: *mut ListNode, ctx: &str) -> c_int {
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m     let im = impls();
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     // SAFETY: `head` is NULL or a valid null-terminated ListNode chain that
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     // outlives these calls (owned by the caller's `Chain`).
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     let c_out = unsafe { (im.c)(head) };
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m     let rust_out = unsafe { (im.rust)(head) };
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         c_out.to_ne_bytes(),
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m         rust_out.to_ne_bytes(),
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m         "divergence [{ctx}]: C returned {c_out}, Rust returned {rust_out}"
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     // Reverse call order: catches any hidden mutation of the input chain.
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m     let rust_out2 = unsafe { (im.rust)(head) };
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     let c_out2 = unsafe { (im.c)(head) };
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     assert_eq!(c_out2, c_out, "C not idempotent [{ctx}]");
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m     assert_eq!(rust_out2, rust_out, "Rust not idempotent [{ctx}]");
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m     c_out
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m /// Convenience: build an ascending-layout chain from `values` and diff it.
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m fn diff_values(values: &[c_int], ctx: &str) -> c_int {
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     let chain = chain_ascending(values);
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m     assert_same(chain.head(), ctx)
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m /// Independent oracle: the C contract is "minimum, or -1 for an empty list".
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m fn assert_matches_oracle(values: &[c_int], got: c_int, ctx: &str) {
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m     let expected = values.iter().copied().min().unwrap_or(-1);
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m     assert_eq!(expected, got, "oracle mismatch [{ctx}] for {values:?}");
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m // PHASE B — valid-path differential tests, one per CONFIGS.md row
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m fn cfg_c1_single_node() {
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC001);
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m         let v = rng.i32();
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m         let got = diff_values(&[v], &format!("C1 iter={i} v={v}"));
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m         assert_matches_oracle(&[v], got, "C1");
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m fn cfg_c2_len2_min_at_head() {
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC002);
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m         let a = rng.i32_in(i32::MIN, i32::MAX - 1);
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m         let b = rng.i32_in(a.saturating_add(1), i32::MAX);
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m         let vals = [a, b];
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C2 iter={i} {vals:?}"));
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C2");
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m         assert_eq!(got, a);
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m fn cfg_c3_len2_min_at_tail() {
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC003);
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m         let a = rng.i32_in(i32::MIN + 1, i32::MAX);
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m         let b = rng.i32_in(i32::MIN, a - 1);
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m         let vals = [a, b];
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C3 iter={i} {vals:?}"));
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C3");
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m         assert_eq!(got, b);
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m fn cfg_c4_len2_equal() {
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC004);
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         let v = rng.i32();
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         let vals = [v, v];
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C4 iter={i} v={v}"));
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C4");
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m fn cfg_c5_len3_min_interior() {
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC005);
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m         let m = rng.i32_in(i32::MIN, i32::MAX - 1);
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m         let a = rng.i32_in(m + 1, i32::MAX);
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m         let c = rng.i32_in(m + 1, i32::MAX);
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m         let vals = [a, m, c];
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C5 iter={i} {vals:?}"));
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C5");
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m         assert_eq!(got, m);
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m fn cfg_c6_min_at_head_various_len() {
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC006);
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m         let n = rng.range(3, 8) as usize;
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m         let m = rng.i32_in(i32::MIN, i32::MAX - 1);
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m         let mut vals = vec![m];
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m         for _ in 1..n {
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m             vals.push(rng.i32_in(m + 1, i32::MAX));
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C6 iter={i} n={n}"));
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C6");
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m         assert_eq!(got, m);
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m fn cfg_c7_min_at_tail_various_len() {
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC007);
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m         let n = rng.range(3, 8) as usize;
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         let m = rng.i32_in(i32::MIN, i32::MAX - 1);
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m         let mut vals: Vec<c_int> = (0..n - 1).map(|_| rng.i32_in(m + 1, i32::MAX)).collect();
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m         vals.push(m);
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C7 iter={i} n={n}"));
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C7");
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m         assert_eq!(got, m);
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m fn cfg_c8_min_random_interior() {
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC008);
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m         let n = rng.range(3, 64) as usize;
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m         let m = rng.i32_in(i32::MIN, i32::MAX - 1);
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m         let idx = rng.range(1, n as u64 - 2) as usize;
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m         let mut vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(m + 1, i32::MAX)).collect();
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m         vals[idx] = m;
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C8 iter={i} n={n} idx={idx}"));
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C8");
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m         assert_eq!(got, m);
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m fn cfg_c9_duplicate_minima() {
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC009);
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m         let n = rng.range(2, 32) as usize;
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m         let m = rng.i32_in(i32::MIN, i32::MAX - 1);
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m         let mut vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(m + 1, i32::MAX)).collect();
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m         // Sprinkle the same minimum at 2..=n random indices.
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m         let dups = rng.range(2, n as u64) as usize;
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m         for _ in 0..dups {
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m             let idx = rng.range(0, n as u64 - 1) as usize;
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m             vals[idx] = m;
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C9 iter={i} n={n} dups={dups}"));
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C9");
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m         assert_eq!(got, m);
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m fn cfg_c10_all_equal() {
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC010);
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m         let n = rng.range(1, 32) as usize;
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m         let v = rng.i32();
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m         let vals = vec![v; n];
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C10 iter={i} n={n} v={v}"));
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C10");
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m fn cfg_c11_monotone_increasing() {
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC011);
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m         let n = rng.range(1, 64) as usize;
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m         let mut v = rng.i32_in(i32::MIN, 0);
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m         let mut vals = Vec::with_capacity(n);
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m         for _ in 0..n {
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m             vals.push(v);
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m             v = v.saturating_add(rng.i32_in(1, 1_000_000));
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C11 iter={i} n={n}"));
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C11");
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m fn cfg_c12_monotone_decreasing() {
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC012);
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m         let n = rng.range(1, 64) as usize;
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m         let mut v = rng.i32_in(0, i32::MAX);
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m         let mut vals = Vec::with_capacity(n);
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m         for _ in 0..n {
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m             vals.push(v);
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m             v = v.saturating_sub(rng.i32_in(1, 1_000_000));
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C12 iter={i} n={n}"));
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C12");
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m fn cfg_c13_all_positive() {
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC013);
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    499[0m:[38;5;10m[49m         let n = rng.range(1, 64) as usize;
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(1, i32::MAX)).collect();
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C13 iter={i} n={n}"));
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C13");
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m fn cfg_c14_all_negative() {
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC014);
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m         let n = rng.range(1, 64) as usize;
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(i32::MIN, -1)).collect();
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C14 iter={i} n={n}"));
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C14");
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m fn cfg_c15_mixed_sign() {
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC015);
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m         let n = rng.range(1, 64) as usize;
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(-1000, 1000)).collect();
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C15 iter={i} n={n}"));
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C15");
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m fn cfg_c16_all_zero() {
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC016);
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m         let n = rng.range(1, 32) as usize;
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m         let vals = vec![0; n];
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C16 iter={i} n={n}"));
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C16");
+[0m[49m[38;5;10m+    536[0m:[38;5;10m[49m         assert_eq!(got, 0);
+[0m[49m[38;5;10m+    537[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    538[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    539[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    540[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    541[0m:[38;5;10m[49m fn cfg_c17_full_random_i32() {
+[0m[49m[38;5;10m+    542[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC017);
+[0m[49m[38;5;10m+    543[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    544[0m:[38;5;10m[49m         let n = rng.range(1, 128) as usize;
+[0m[49m[38;5;10m+    545[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32()).collect();
+[0m[49m[38;5;10m+    546[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C17 iter={i} n={n}"));
+[0m[49m[38;5;10m+    547[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C17");
+[0m[49m[38;5;10m+    548[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    549[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    550[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    551[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    552[0m:[38;5;10m[49m fn cfg_c18_boundary_value_pool() {
+[0m[49m[38;5;10m+    553[0m:[38;5;10m[49m     const POOL: [c_int; 7] = [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX];
+[0m[49m[38;5;10m+    554[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC018);
+[0m[49m[38;5;10m+    555[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    556[0m:[38;5;10m[49m         let n = rng.range(1, 24) as usize;
+[0m[49m[38;5;10m+    557[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n)
+[0m[49m[38;5;10m+    558[0m:[38;5;10m[49m             .map(|_| POOL[rng.range(0, POOL.len() as u64 - 1) as usize])
+[0m[49m[38;5;10m+    559[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+    560[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C18 iter={i} {vals:?}"));
+[0m[49m[38;5;10m+    561[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C18");
+[0m[49m[38;5;10m+    562[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    563[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    564[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    565[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    566[0m:[38;5;10m[49m fn cfg_c19_int_min_random_index() {
+[0m[49m[38;5;10m+    567[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC019);
+[0m[49m[38;5;10m+    568[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    569[0m:[38;5;10m[49m         let n = rng.range(1, 48) as usize;
+[0m[49m[38;5;10m+    570[0m:[38;5;10m[49m         let idx = rng.range(0, n as u64 - 1) as usize;
+[0m[49m[38;5;10m+    571[0m:[38;5;10m[49m         let mut vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(i32::MIN + 1, i32::MAX)).collect();
+[0m[49m[38;5;10m+    572[0m:[38;5;10m[49m         vals[idx] = i32::MIN;
+[0m[49m[38;5;10m+    573[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C19 iter={i} n={n} idx={idx}"));
+[0m[49m[38;5;10m+    574[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C19");
+[0m[49m[38;5;10m+    575[0m:[38;5;10m[49m         assert_eq!(got, i32::MIN);
+[0m[49m[38;5;10m+    576[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    577[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    578[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    579[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    580[0m:[38;5;10m[49m fn cfg_c20_all_int_max_but_one() {
+[0m[49m[38;5;10m+    581[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC020);
+[0m[49m[38;5;10m+    582[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    583[0m:[38;5;10m[49m         let n = rng.range(2, 48) as usize;
+[0m[49m[38;5;10m+    584[0m:[38;5;10m[49m         let idx = rng.range(0, n as u64 - 1) as usize;
+[0m[49m[38;5;10m+    585[0m:[38;5;10m[49m         let m = rng.i32_in(i32::MIN, i32::MAX - 1);
+[0m[49m[38;5;10m+    586[0m:[38;5;10m[49m         let mut vals = vec![i32::MAX; n];
+[0m[49m[38;5;10m+    587[0m:[38;5;10m[49m         vals[idx] = m;
+[0m[49m[38;5;10m+    588[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C20 iter={i} n={n} idx={idx} m={m}"));
+[0m[49m[38;5;10m+    589[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C20");
+[0m[49m[38;5;10m+    590[0m:[38;5;10m[49m         assert_eq!(got, m);
+[0m[49m[38;5;10m+    591[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    592[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    593[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    594[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    595[0m:[38;5;10m[49m fn cfg_c21_layout_ascending() {
+[0m[49m[38;5;10m+    596[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC021);
+[0m[49m[38;5;10m+    597[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    598[0m:[38;5;10m[49m         let n = rng.range(1, 40) as usize;
+[0m[49m[38;5;10m+    599[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32()).collect();
+[0m[49m[38;5;10m+    600[0m:[38;5;10m[49m         let chain = chain_ascending(&vals);
+[0m[49m[38;5;10m+    601[0m:[38;5;10m[49m         let got = assert_same(chain.head(), &format!("C21 iter={i} n={n}"));
+[0m[49m[38;5;10m+    602[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C21");
+[0m[49m[38;5;10m+    603[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    604[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    605[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    606[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    607[0m:[38;5;10m[49m fn cfg_c22_layout_descending() {
+[0m[49m[38;5;10m+    608[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC022);
+[0m[49m[38;5;10m+    609[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    610[0m:[38;5;10m[49m         let n = rng.range(1, 40) as usize;
+[0m[49m[38;5;10m+    611[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32()).collect();
+[0m[49m[38;5;10m+    612[0m:[38;5;10m[49m         let chain = chain_descending(&vals);
+[0m[49m[38;5;10m+    613[0m:[38;5;10m[49m         let got = assert_same(chain.head(), &format!("C22 iter={i} n={n}"));
+[0m[49m[38;5;10m+    614[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C22");
+[0m[49m[38;5;10m+    615[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    616[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    617[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    618[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    619[0m:[38;5;10m[49m fn cfg_c23_layout_shuffled_boxes() {
+[0m[49m[38;5;10m+    620[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC023);
+[0m[49m[38;5;10m+    621[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    622[0m:[38;5;10m[49m         let n = rng.range(1, 40) as usize;
+[0m[49m[38;5;10m+    623[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32()).collect();
+[0m[49m[38;5;10m+    624[0m:[38;5;10m[49m         let chain = chain_shuffled_boxes(&vals, &mut rng);
+[0m[49m[38;5;10m+    625[0m:[38;5;10m[49m         let got = assert_same(chain.head(), &format!("C23 iter={i} n={n}"));
+[0m[49m[38;5;10m+    626[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C23");
+[0m[49m[38;5;10m+    627[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    628[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    629[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    630[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    631[0m:[38;5;10m[49m fn cfg_c24_long_list() {
+[0m[49m[38;5;10m+    632[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC024);
+[0m[49m[38;5;10m+    633[0m:[38;5;10m[49m     let n = 100_000usize;
+[0m[49m[38;5;10m+    634[0m:[38;5;10m[49m     for i in 0..3 {
+[0m[49m[38;5;10m+    635[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32()).collect();
+[0m[49m[38;5;10m+    636[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("C24 iter={i} n={n}"));
+[0m[49m[38;5;10m+    637[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C24");
+[0m[49m[38;5;10m+    638[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    639[0m:[38;5;10m[49m     // Also: minimum at the very last node of a long list.
+[0m[49m[38;5;10m+    640[0m:[38;5;10m[49m     let mut vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(0, i32::MAX)).collect();
+[0m[49m[38;5;10m+    641[0m:[38;5;10m[49m     *vals.last_mut().unwrap() = i32::MIN;
+[0m[49m[38;5;10m+    642[0m:[38;5;10m[49m     let got = diff_values(&vals, "C24 min-at-tail");
+[0m[49m[38;5;10m+    643[0m:[38;5;10m[49m     assert_eq!(got, i32::MIN);
+[0m[49m[38;5;10m+    644[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    645[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    646[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    647[0m:[38;5;10m[49m fn cfg_c25_no_mutation_of_input() {
+[0m[49m[38;5;10m+    648[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC025);
+[0m[49m[38;5;10m+    649[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    650[0m:[38;5;10m[49m         let n = rng.range(1, 32) as usize;
+[0m[49m[38;5;10m+    651[0m:[38;5;10m[49m         let vals: Vec<c_int> = (0..n).map(|_| rng.i32()).collect();
+[0m[49m[38;5;10m+    652[0m:[38;5;10m[49m         let chain = chain_ascending(&vals);
+[0m[49m[38;5;10m+    653[0m:[38;5;10m[49m         let head = chain.head();
+[0m[49m[38;5;10m+    654[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    655[0m:[38;5;10m[49m         // `assert_same` already calls C, Rust, Rust, C. Now verify the chain
+[0m[49m[38;5;10m+    656[0m:[38;5;10m[49m         // itself is bit-identical to what we built.
+[0m[49m[38;5;10m+    657[0m:[38;5;10m[49m         let got = assert_same(head, &format!("C25 iter={i} n={n}"));
+[0m[49m[38;5;10m+    658[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "C25");
+[0m[49m[38;5;10m+    659[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    660[0m:[38;5;10m[49m         let mut cur = head;
+[0m[49m[38;5;10m+    661[0m:[38;5;10m[49m         let mut k = 0usize;
+[0m[49m[38;5;10m+    662[0m:[38;5;10m[49m         while !cur.is_null() {
+[0m[49m[38;5;10m+    663[0m:[38;5;10m[49m             // SAFETY: cur is a live node from `chain`.
+[0m[49m[38;5;10m+    664[0m:[38;5;10m[49m             let node = unsafe { &*cur };
+[0m[49m[38;5;10m+    665[0m:[38;5;10m[49m             assert_eq!(node.value, vals[k], "C25: node {k} value was mutated");
+[0m[49m[38;5;10m+    666[0m:[38;5;10m[49m             cur = node.next;
+[0m[49m[38;5;10m+    667[0m:[38;5;10m[49m             k += 1;
+[0m[49m[38;5;10m+    668[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    669[0m:[38;5;10m[49m         assert_eq!(k, n, "C25: chain length changed");
+[0m[49m[38;5;10m+    670[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    671[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    672[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    673[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    674[0m:[38;5;10m[49m // PHASE C — error-path differential tests, one per ERRORS.md row
+[0m[49m[38;5;10m+    675[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    676[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    677[0m:[38;5;10m[49m /// E1 / G1: `head == NULL` — the only rejection branch in the C source.
+[0m[49m[38;5;10m+    678[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    679[0m:[38;5;10m[49m fn err_e1_null_head() {
+[0m[49m[38;5;10m+    680[0m:[38;5;10m[49m     let im = impls();
+[0m[49m[38;5;10m+    681[0m:[38;5;10m[49m     // SAFETY: NULL is explicitly handled by both implementations.
+[0m[49m[38;5;10m+    682[0m:[38;5;10m[49m     let c_out = unsafe { (im.c)(std::ptr::null_mut()) };
+[0m[49m[38;5;10m+    683[0m:[38;5;10m[49m     let rust_out = unsafe { (im.rust)(std::ptr::null_mut()) };
+[0m[49m[38;5;10m+    684[0m:[38;5;10m[49m     assert_eq!(c_out, -1, "C must return the -1 sentinel for NULL");
+[0m[49m[38;5;10m+    685[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    686[0m:[38;5;10m[49m         rust_out, c_out,
+[0m[49m[38;5;10m+    687[0m:[38;5;10m[49m         "NULL sentinel divergence: C={c_out}, Rust={rust_out}"
+[0m[49m[38;5;10m+    688[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    689[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    690[0m:[38;5;10m[49m     // Repeat many times: the sentinel must be stable, not incidental.
+[0m[49m[38;5;10m+    691[0m:[38;5;10m[49m     for i in 0..1000 {
+[0m[49m[38;5;10m+    692[0m:[38;5;10m[49m         let c2 = unsafe { (im.c)(std::ptr::null_mut()) };
+[0m[49m[38;5;10m+    693[0m:[38;5;10m[49m         let r2 = unsafe { (im.rust)(std::ptr::null_mut()) };
+[0m[49m[38;5;10m+    694[0m:[38;5;10m[49m         assert_eq!((c2, r2), (-1, -1), "NULL sentinel unstable at iter {i}");
+[0m[49m[38;5;10m+    695[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    696[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    697[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    698[0m:[38;5;10m[49m /// G2: a zero-length list is only representable as NULL (no count parameter).
+[0m[49m[38;5;10m+    699[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    700[0m:[38;5;10m[49m fn err_g2_zero_length_is_null() {
+[0m[49m[38;5;10m+    701[0m:[38;5;10m[49m     let chain = chain_ascending(&[]);
+[0m[49m[38;5;10m+    702[0m:[38;5;10m[49m     assert!(chain.head().is_null(), "empty chain must be a NULL head");
+[0m[49m[38;5;10m+    703[0m:[38;5;10m[49m     let got = assert_same(chain.head(), "G2 zero-length");
+[0m[49m[38;5;10m+    704[0m:[38;5;10m[49m     assert_eq!(got, -1);
+[0m[49m[38;5;10m+    705[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    706[0m:[38;5;10m[49m     // Same for the other two layout builders.
+[0m[49m[38;5;10m+    707[0m:[38;5;10m[49m     assert_eq!(assert_same(chain_descending(&[]).head(), "G2 desc"), -1);
+[0m[49m[38;5;10m+    708[0m:[38;5;10m[49m     let mut rng = Rng::new(0x62);
+[0m[49m[38;5;10m+    709[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    710[0m:[38;5;10m[49m         assert_same(chain_shuffled_boxes(&[], &mut rng).head(), "G2 boxes"),
+[0m[49m[38;5;10m+    711[0m:[38;5;10m[49m         -1
+[0m[49m[38;5;10m+    712[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    713[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    714[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    715[0m:[38;5;10m[49m /// G3: `-1` is a legitimate value that collides with the NULL sentinel.
+[0m[49m[38;5;10m+    716[0m:[38;5;10m[49m /// The C code does NOT treat it as an error; Rust must agree.
+[0m[49m[38;5;10m+    717[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    718[0m:[38;5;10m[49m fn err_g3_minus_one_sentinel_collision() {
+[0m[49m[38;5;10m+    719[0m:[38;5;10m[49m     let im = impls();
+[0m[49m[38;5;10m+    720[0m:[38;5;10m[49m     let null_result = unsafe { (im.c)(std::ptr::null_mut()) };
+[0m[49m[38;5;10m+    721[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    722[0m:[38;5;10m[49m     // Single node holding -1.
+[0m[49m[38;5;10m+    723[0m:[38;5;10m[49m     let got = diff_values(&[-1], "G3 single -1");
+[0m[49m[38;5;10m+    724[0m:[38;5;10m[49m     assert_eq!(got, -1);
+[0m[49m[38;5;10m+    725[0m:[38;5;10m[49m     assert_eq!(got, null_result, "the -1/NULL ambiguity is preserved");
+[0m[49m[38;5;10m+    726[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    727[0m:[38;5;10m[49m     // -1 as the minimum among larger values, at many positions/lengths.
+[0m[49m[38;5;10m+    728[0m:[38;5;10m[49m     let mut rng = Rng::new(0x63);
+[0m[49m[38;5;10m+    729[0m:[38;5;10m[49m     for i in 0..ITERS {
+[0m[49m[38;5;10m+    730[0m:[38;5;10m[49m         let n = rng.range(1, 32) as usize;
+[0m[49m[38;5;10m+    731[0m:[38;5;10m[49m         let idx = rng.range(0, n as u64 - 1) as usize;
+[0m[49m[38;5;10m+    732[0m:[38;5;10m[49m         let mut vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(0, i32::MAX)).collect();
+[0m[49m[38;5;10m+    733[0m:[38;5;10m[49m         vals[idx] = -1;
+[0m[49m[38;5;10m+    734[0m:[38;5;10m[49m         let got = diff_values(&vals, &format!("G3 iter={i} n={n} idx={idx}"));
+[0m[49m[38;5;10m+    735[0m:[38;5;10m[49m         assert_eq!(got, -1);
+[0m[49m[38;5;10m+    736[0m:[38;5;10m[49m         assert_matches_oracle(&vals, got, "G3");
+[0m[49m[38;5;10m+    737[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    738[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    739[0m:[38;5;10m[49m     // And a list whose minimum is -2: proves -1 is not special-cased.
+[0m[49m[38;5;10m+    740[0m:[38;5;10m[49m     let got = diff_values(&[-1, -2, -1], "G3 min -2");
+[0m[49m[38;5;10m+    741[0m:[38;5;10m[49m     assert_eq!(got, -2);
+[0m[49m[38;5;10m+    742[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    743[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    744[0m:[38;5;10m[49m /// G4: extreme `int` values — one step past every practical range boundary.
+[0m[49m[38;5;10m+    745[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    746[0m:[38;5;10m[49m fn err_g4_extreme_int_values() {
+[0m[49m[38;5;10m+    747[0m:[38;5;10m[49m     let cases: &[&[c_int]] = &[
+[0m[49m[38;5;10m+    748[0m:[38;5;10m[49m         &[i32::MIN],
+[0m[49m[38;5;10m+    749[0m:[38;5;10m[49m         &[i32::MAX],
+[0m[49m[38;5;10m+    750[0m:[38;5;10m[49m         &[i32::MIN, i32::MAX],
+[0m[49m[38;5;10m+    751[0m:[38;5;10m[49m         &[i32::MAX, i32::MIN],
+[0m[49m[38;5;10m+    752[0m:[38;5;10m[49m         &[i32::MIN, i32::MIN],
+[0m[49m[38;5;10m+    753[0m:[38;5;10m[49m         &[i32::MAX, i32::MAX],
+[0m[49m[38;5;10m+    754[0m:[38;5;10m[49m         &[i32::MIN + 1, i32::MIN],
+[0m[49m[38;5;10m+    755[0m:[38;5;10m[49m         &[i32::MIN, i32::MIN + 1],
+[0m[49m[38;5;10m+    756[0m:[38;5;10m[49m         &[i32::MAX - 1, i32::MAX],
+[0m[49m[38;5;10m+    757[0m:[38;5;10m[49m         &[i32::MAX, i32::MAX - 1],
+[0m[49m[38;5;10m+    758[0m:[38;5;10m[49m         &[0, i32::MIN, 0],
+[0m[49m[38;5;10m+    759[0m:[38;5;10m[49m         &[0, i32::MAX, 0],
+[0m[49m[38;5;10m+    760[0m:[38;5;10m[49m         &[i32::MIN, 0, i32::MAX],
+[0m[49m[38;5;10m+    761[0m:[38;5;10m[49m         &[i32::MAX, 0, i32::MIN],
+[0m[49m[38;5;10m+    762[0m:[38;5;10m[49m         &[-1, i32::MIN],
+[0m[49m[38;5;10m+    763[0m:[38;5;10m[49m         &[i32::MIN, -1],
+[0m[49m[38;5;10m+    764[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    765[0m:[38;5;10m[49m     for (i, vals) in cases.iter().enumerate() {
+[0m[49m[38;5;10m+    766[0m:[38;5;10m[49m         let got = diff_values(vals, &format!("G4 case={i} {vals:?}"));
+[0m[49m[38;5;10m+    767[0m:[38;5;10m[49m         assert_matches_oracle(vals, got, "G4");
+[0m[49m[38;5;10m+    768[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    769[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    770[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    771[0m:[38;5;10m[49m /// G5: extremes specifically at head / interior / tail of longer lists.
+[0m[49m[38;5;10m+    772[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    773[0m:[38;5;10m[49m fn err_g5_extremes_by_position() {
+[0m[49m[38;5;10m+    774[0m:[38;5;10m[49m     let mut rng = Rng::new(0x65);
+[0m[49m[38;5;10m+    775[0m:[38;5;10m[49m     for extreme in [i32::MIN, i32::MAX] {
+[0m[49m[38;5;10m+    776[0m:[38;5;10m[49m         for n in 1..=12usize {
+[0m[49m[38;5;10m+    777[0m:[38;5;10m[49m             for idx in 0..n {
+[0m[49m[38;5;10m+    778[0m:[38;5;10m[49m                 let mut vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(-100, 100)).collect();
+[0m[49m[38;5;10m+    779[0m:[38;5;10m[49m                 vals[idx] = extreme;
+[0m[49m[38;5;10m+    780[0m:[38;5;10m[49m                 let got =
+[0m[49m[38;5;10m+    781[0m:[38;5;10m[49m                     diff_values(&vals, &format!("G5 extreme={extreme} n={n} idx={idx}"));
+[0m[49m[38;5;10m+    782[0m:[38;5;10m[49m                 assert_matches_oracle(&vals, got, "G5");
+[0m[49m[38;5;10m+    783[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    784[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    785[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    786[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    787[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    788[0m:[38;5;10m[49m /// G6: oversized length — the C code caps nothing.
+[0m[49m[38;5;10m+    789[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    790[0m:[38;5;10m[49m fn err_g6_oversized_length() {
+[0m[49m[38;5;10m+    791[0m:[38;5;10m[49m     let mut rng = Rng::new(0x66);
+[0m[49m[38;5;10m+    792[0m:[38;5;10m[49m     let n = 1_000_000usize;
+[0m[49m[38;5;10m+    793[0m:[38;5;10m[49m     let vals: Vec<c_int> = (0..n).map(|_| rng.i32_in(-1_000_000, i32::MAX)).collect();
+[0m[49m[38;5;10m+    794[0m:[38;5;10m[49m     let got = diff_values(&vals, "G6 1M nodes");
+[0m[49m[38;5;10m+    795[0m:[38;5;10m[49m     assert_matches_oracle(&vals, got, "G6");
+[0m[49m[38;5;10m+    796[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    797[0m:[38;5;10m[49m     // Extreme value buried deep in the middle of a huge list.
+[0m[49m[38;5;10m+    798[0m:[38;5;10m[49m     let mut vals2: Vec<c_int> = vec![7; n];
+[0m[49m[38;5;10m+    799[0m:[38;5;10m[49m     vals2[n / 2] = i32::MIN;
+[0m[49m[38;5;10m+    800[0m:[38;5;10m[49m     let got2 = diff_values(&vals2, "G6 1M nodes, INT_MIN mid");
+[0m[49m[38;5;10m+    801[0m:[38;5;10m[49m     assert_eq!(got2, i32::MIN);
+[0m[49m[38;5;10m+    802[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    803[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    804[0m:[38;5;10m[49m /// G7 (documented N/A): there is no enum / mode / flag parameter, so an
+[0m[49m[38;5;10m+    805[0m:[38;5;10m[49m /// out-of-range enum value cannot be constructed. The closest analogue is an
+[0m[49m[38;5;10m+    806[0m:[38;5;10m[49m /// arbitrary bit pattern in the `int` field, which no "valid variant" restricts;
+[0m[49m[38;5;10m+    807[0m:[38;5;10m[49m /// this test drives every byte pattern class through the field.
+[0m[49m[38;5;10m+    808[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    809[0m:[38;5;10m[49m fn err_g7_arbitrary_bit_patterns_in_int_field() {
+[0m[49m[38;5;10m+    810[0m:[38;5;10m[49m     let patterns: [u32; 12] = [
+[0m[49m[38;5;10m+    811[0m:[38;5;10m[49m         0x0000_0000,
+[0m[49m[38;5;10m+    812[0m:[38;5;10m[49m         0xFFFF_FFFF,
+[0m[49m[38;5;10m+    813[0m:[38;5;10m[49m         0x8000_0000,
+[0m[49m[38;5;10m+    814[0m:[38;5;10m[49m         0x7FFF_FFFF,
+[0m[49m[38;5;10m+    815[0m:[38;5;10m[49m         0xAAAA_AAAA,
+[0m[49m[38;5;10m+    816[0m:[38;5;10m[49m         0x5555_5555,
+[0m[49m[38;5;10m+    817[0m:[38;5;10m[49m         0xDEAD_BEEF,
+[0m[49m[38;5;10m+    818[0m:[38;5;10m[49m         0xCAFE_BABE,
+[0m[49m[38;5;10m+    819[0m:[38;5;10m[49m         0x0000_00FF,
+[0m[49m[38;5;10m+    820[0m:[38;5;10m[49m         0xFF00_0000,
+[0m[49m[38;5;10m+    821[0m:[38;5;10m[49m         0x0000_0001,
+[0m[49m[38;5;10m+    822[0m:[38;5;10m[49m         0xFFFF_FFFE,
+[0m[49m[38;5;10m+    823[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    824[0m:[38;5;10m[49m     // Every ordered pair, plus every triple built from the pattern list.
+[0m[49m[38;5;10m+    825[0m:[38;5;10m[49m     for (i, &a) in patterns.iter().enumerate() {
+[0m[49m[38;5;10m+    826[0m:[38;5;10m[49m         for (j, &b) in patterns.iter().enumerate() {
+[0m[49m[38;5;10m+    827[0m:[38;5;10m[49m             let vals = [a as i32, b as i32];
+[0m[49m[38;5;10m+    828[0m:[38;5;10m[49m             let got = diff_values(&vals, &format!("G7 pair {i},{j}"));
+[0m[49m[38;5;10m+    829[0m:[38;5;10m[49m             assert_matches_oracle(&vals, got, "G7 pair");
+[0m[49m[38;5;10m+    830[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    831[0m:[38;5;10m[49m             let vals3 = [b as i32, a as i32, b as i32];
+[0m[49m[38;5;10m+    832[0m:[38;5;10m[49m             let got3 = diff_values(&vals3, &format!("G7 triple {i},{j}"));
+[0m[49m[38;5;10m+    833[0m:[38;5;10m[49m             assert_matches_oracle(&vals3, got3, "G7 triple");
+[0m[49m[38;5;10m+    834[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    835[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    836[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    837[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    838[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    839[0m:[38;5;10m[49m // PHASE D — export-surface check performed through dlsym itself
+[0m[49m[38;5;10m+    840[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    841[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    842[0m:[38;5;10m[49m /// The Rust `.so` must export the C `.so`'s complete public symbol set under
+[0m[49m[38;5;10m+    843[0m:[38;5;10m[49m /// the exact same names. Verified here at runtime via `dlsym` (the `nm -D` diff
+[0m[49m[38;5;10m+    844[0m:[38;5;10m[49m /// is recorded in SYMBOLS.md).
+[0m[49m[38;5;10m+    845[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    846[0m:[38;5;10m[49m fn symbols_rust_so_exports_every_c_symbol() {
+[0m[49m[38;5;10m+    847[0m:[38;5;10m[49m     // The C public ABI, from `nm -D --defined-only` on the C .so.
+[0m[49m[38;5;10m+    848[0m:[38;5;10m[49m     const C_PUBLIC_SYMBOLS: &[&[u8]] = &[b"smallestValue\0"];
+[0m[49m[38;5;10m+    849[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    850[0m:[38;5;10m[49m     // SAFETY: plain C-ABI libraries.
+[0m[49m[38;5;10m+    851[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    852[0m:[38;5;10m[49m         let c_lib = Library::new(c_so_path()).expect("dlopen C .so");
+[0m[49m[38;5;10m+    853[0m:[38;5;10m[49m         let rust_lib = Library::new(rust_so_path()).expect("dlopen Rust .so");
+[0m[49m[38;5;10m+    854[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    855[0m:[38;5;10m[49m         for sym in C_PUBLIC_SYMBOLS {
+[0m[49m[38;5;10m+    856[0m:[38;5;10m[49m             let name = String::from_utf8_lossy(&sym[..sym.len() - 1]).to_string();
+[0m[49m[38;5;10m+    857[0m:[38;5;10m[49m             c_lib
+[0m[49m[38;5;10m+    858[0m:[38;5;10m[49m                 .get::<SmallestValueFn>(sym)
+[0m[49m[38;5;10m+    859[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("C .so missing {name}: {e}"));
+[0m[49m[38;5;10m+    860[0m:[38;5;10m[49m             rust_lib.get::<SmallestValueFn>(sym).unwrap_or_else(|e| {
+[0m[49m[38;5;10m+    861[0m:[38;5;10m[49m                 panic!("Rust .so does NOT export {name} (symbol parity failure): {e}")
+[0m[49m[38;5;10m+    862[0m:[38;5;10m[49m             });
+[0m[49m[38;5;10m+    863[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    864[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    865[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build 2>&1 | tail -5 && timeout 600 cargo test 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build dev cdylib and run differential tests
+
+      Adding cfg-if v1.0.4
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+   Compiling simplelist v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+   --> tests/differential.rs:145:11
+    |
+145 |     Boxes(Vec<Box<ListNode>>),
+    |     ----- ^^^^^^^^^^^^^^^^^^
+    |     |
+    |     field in this variant
+    |
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+145 -     Boxes(Vec<Box<ListNode>>),
+145 +     Boxes(()),
+    |
+
+warning: `simplelist` (test "differential") generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.49s
+     Running unittests src/lib.rs (target/debug/deps/SimpleList-9e6a2f946884cef8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-3f12786596f53c71)
+
+running 33 tests
+test cfg_c10_all_equal ... ok
+test cfg_c16_all_zero ... ok
+test cfg_c4_len2_equal ... ok
+test err_e1_null_head ... ok
+test err_g2_zero_length_is_null ... ok
+test cfg_c11_monotone_increasing ... ok
+test cfg_c1_single_node ... ok
+test cfg_c12_monotone_decreasing ... ok
+test cfg_c13_all_positive ... ok
+test err_g4_extreme_int_values ... ok
+test cfg_c14_all_negative ... ok
+test cfg_c20_all_int_max_but_one ... ok
+test cfg_c25_no_mutation_of_input ... ok
+test cfg_c19_int_min_random_index ... ok
+test cfg_c21_layout_ascending ... ok
+test err_g5_extremes_by_position ... ok
+test cfg_c15_mixed_sign ... ok
+test symbols_rust_so_exports_every_c_symbol ... ok
+test cfg_c22_layout_descending ... ok
+test cfg_c2_len2_min_at_head ... ok
+test cfg_c9_duplicate_minima ... ok
+test err_g3_minus_one_sentinel_collision ... ok
+test cfg_c17_full_random_i32 ... ok
+test cfg_c3_len2_min_at_tail ... ok
+test err_g7_arbitrary_bit_patterns_in_int_field ... ok
+test cfg_c8_min_random_interior ... ok
+test cfg_c7_min_at_tail_various_len ... ok
+test cfg_c23_layout_shuffled_boxes ... ok
+test cfg_c6_min_at_head_various_len ... ok
+test cfg_c5_len3_min_interior ... ok
+test cfg_c18_boundary_value_pool ... ok
+test cfg_c24_long_list ... ok
+test err_g6_oversized_length ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+[38;5;244m - Completed in 0.763s[0m
+
+[?25l[0m[38;5;141m> [0mAll 33 pass. Now a negative control to prove the harness can actually detect divergence.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && python3 - <<'EOF'
+p='src/lib.rs'
+s=open(p).read()
+s=s.replace("        if node.value < smallest {","        if node.value <= smallest {")
+open(p,'w').write(s)
+EOF
+grep -n "<= smallest" src/lib.rs && timeout 600 cargo test 2>&1 | grep -E "^test result|FAILED|panicked" | head -20; echo "--- restore ---"; cp /tmp/lib.rs.bak src/lib.rs && grep -n "< smallest" src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Negative control: inject a subtle bug and confirm tests fail
+
+45:        if node.value <= smallest {
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+--- restore ---
+45:        if node.value < smallest {
+[38;5;244m - Completed in 0.289s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && run_inj() { python3 -c "
+import sys
+p='src/lib.rs'
+s=open('/tmp/lib.rs.bak').read()
+s=s.replace(sys.argv[1], sys.argv[2])
+assert s!=open('/tmp/lib.rs.bak').read(), 'no-op injection'
+open(p,'w').write(s)
+" "$1" "$2"; echo "### INJECTION: $1  ->  $2"; timeout 600 cargo test 2>&1 | grep -E "^test result:|^test .*FAILED|divergence|oracle mismatch|sentinel" | head -8; cp /tmp/lib.rs.bak src/lib.rs; }
+run_inj 'if node.value < smallest {' 'if node.value > smallest {'
+run_inj '        -1
+    }' '        0
+    }'
+run_inj 'let mut smallest: c_int = node.value;' 'let mut smallest: c_int = c_int::MAX;'
+echo "=== final restore check ==="; diff -q /tmp/lib.rs.bak src/lib.rs && echo IDENTICAL[0m[38;5;244m (using tool: shell)[0m
+Purpose: Negative control with three real behavioral bug injections
+
+### INJECTION: if node.value < smallest {  ->  if node.value > smallest {
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test err_g3_minus_one_sentinel_collision ... ok
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+### INJECTION:         -1
+    }  ->          0
+    }
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test err_g3_minus_one_sentinel_collision ... ok
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+### INJECTION: let mut smallest: c_int = node.value;  ->  let mut smallest: c_int = c_int::MAX;
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test err_g3_minus_one_sentinel_collision ... ok
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+=== final restore check ===
+IDENTICAL
+[38;5;244m - Completed in 0.694s[0m
+
+[?25l[0m[38;5;141m> [0mFound a real harness defect: [38;5;10mcargo test[0m does not rebuild the [38;5;10mcdylib[0m, so the tests were loading a stale [38;5;10m.so[0m. Fixing the harness to build the Rust [38;5;10m.so[0m itself.[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Make the test harness build the Rust cdylib itself to avoid loading a stale .so
+
+[49m[38;5;9m- 58     [0m:[38;5;9m[49m /// Find the Rust cdylib. Prefer the profile directory the test binary itself
+[0m[49m[38;5;9m- 59     [0m:[38;5;9m[49m /// lives in (so `cargo test` and `cargo test --release` both work), then fall
+[0m[49m[38;5;9m- 60     [0m:[38;5;9m[49m /// back to the other profile.
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m /// Build and locate the Rust cdylib.
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m /// IMPORTANT: `cargo test` does **not** rebuild a `crate-type = ["cdylib"]`
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m /// artifact (it only builds the lib-test rlib), so simply pointing at
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m /// `target/debug/libSimpleList.so` can silently load a STALE library and make
+[0m[49m[38;5;10m+      63[0m:[38;5;10m[49m /// every differential test vacuously pass. We therefore invoke
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m /// `cargo build --lib` ourselves into a dedicated target directory (a separate
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m /// dir avoids contending on the outer cargo's `target/` lock) and load that
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m /// artifact, so the `.so` under test always matches the current `src/lib.rs`.
+[0m[49m[39m  61,  67[0m:[39m[49m fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;9m- 62     [0m:[38;5;9m[49m     let mut candidates: Vec<PathBuf> = Vec::new();
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m     let target_dir = manifest.join("target/ffi-so");
+[0m[49m[38;5;10m+      70[0m:[38;5;10m[49m     let profile_dir = if cfg!(debug_assertions) {
+[0m[49m[38;5;10m+      71[0m:[38;5;10m[49m         target_dir.join("debug")
+[0m[49m[38;5;10m+      72[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+      73[0m:[38;5;10m[49m         target_dir.join("release")
+[0m[49m[38;5;10m+      74[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+      75[0m:[38;5;10m[49m     let so = profile_dir.join("libSimpleList.so");
+[0m[49m[39m  63,  76[0m:[39m[49m 
+[0m[49m[38;5;9m- 64     [0m:[38;5;9m[49m     if let Ok(exe) = std::env::current_exe() {
+[0m[49m[38;5;9m- 65     [0m:[38;5;9m[49m         // .../target/<profile>/deps/<test binary>
+[0m[49m[38;5;9m- 66     [0m:[38;5;9m[49m         if let Some(profile_dir) = exe.parent().and_then(|p| p.parent()) {
+[0m[49m[38;5;9m- 67     [0m:[38;5;9m[49m             candidates.push(profile_dir.join("libSimpleList.so"));
+[0m[49m[38;5;9m- 68     [0m:[38;5;9m[49m         }
+[0m[49m[38;5;10m+      77[0m:[38;5;10m[49m     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+[0m[49m[38;5;10m+      78[0m:[38;5;10m[49m     let mut cmd = std::process::Command::new(cargo);
+[0m[49m[38;5;10m+      79[0m:[38;5;10m[49m     cmd.current_dir(manifest)
+[0m[49m[38;5;10m+      80[0m:[38;5;10m[49m         .arg("build")
+[0m[49m[38;5;10m+      81[0m:[38;5;10m[49m         .arg("--lib")
+[0m[49m[38;5;10m+      82[0m:[38;5;10m[49m         .arg("--target-dir")
+[0m[49m[38;5;10m+      83[0m:[38;5;10m[49m         .arg(&target_dir);
+[0m[49m[38;5;10m+      84[0m:[38;5;10m[49m     if !cfg!(debug_assertions) {
+[0m[49m[38;5;10m+      85[0m:[38;5;10m[49m         cmd.arg("--release");
+[0m[49m[39m  69,  86[0m:[39m[49m     }
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m     // Don't let the outer cargo's environment redirect the nested build.
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m     cmd.env_remove("CARGO_TARGET_DIR")
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m         .env_remove("RUSTC_WORKSPACE_WRAPPER")
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m         .env_remove("RUSTC_WRAPPER");
+[0m[49m[39m  70,  91[0m:[39m[49m 
+[0m[49m[38;5;9m- 71     [0m:[38;5;9m[49m     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+[0m[49m[38;5;9m- 72     [0m:[38;5;9m[49m     candidates.push(target.join("debug/libSimpleList.so"));
+[0m[49m[38;5;9m- 73     [0m:[38;5;9m[49m     candidates.push(target.join("release/libSimpleList.so"));
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m     let out = cmd.output().expect("failed to spawn `cargo build --lib`");
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m         out.status.success(),
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m         "nested `cargo build --lib` failed:\n{}",
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m         String::from_utf8_lossy(&out.stderr)
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m         so.is_file(),
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m         "Rust cdylib not produced at {}\ncargo stderr:\n{}",
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m         so.display(),
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m         String::from_utf8_lossy(&out.stderr)
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m     );
+[0m[49m[39m  74, 104[0m:[39m[49m 
+[0m[49m[38;5;9m- 75     [0m:[38;5;9m[49m     for c in &candidates {
+[0m[49m[38;5;9m- 76     [0m:[38;5;9m[49m         if c.is_file() {
+[0m[49m[38;5;9m- 77     [0m:[38;5;9m[49m             return c.clone();
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m     // Belt-and-braces staleness check: the .so must be at least as new as the
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m     // newest Rust source input.
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m     let so_mtime = std::fs::metadata(&so)
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m         .and_then(|m| m.modified())
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m         .expect("stat cdylib");
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m     for src in ["src/lib.rs", "Cargo.toml"] {
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m         let p = manifest.join(src);
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m         if let Ok(m) = std::fs::metadata(&p).and_then(|md| md.modified()) {
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m             assert!(
+[0m[49m[38;5;10m+     114[0m:[38;5;10m[49m                 so_mtime >= m,
+[0m[49m[38;5;10m+     115[0m:[38;5;10m[49m                 "STALE Rust .so: {} is newer than {}",
+[0m[49m[38;5;10m+     116[0m:[38;5;10m[49m                 p.display(),
+[0m[49m[38;5;10m+     117[0m:[38;5;10m[49m                 so.display()
+[0m[49m[38;5;10m+     118[0m:[38;5;10m[49m             );
+[0m[49m[39m  78, 119[0m:[39m[49m         }
+[0m[49m[39m  79, 120[0m:[39m[49m     }
+[0m[49m[39m  80, 121[0m:[39m[49m 
+[0m[49m[38;5;9m- 81     [0m:[38;5;9m[49m     panic!(
+[0m[49m[38;5;9m- 82     [0m:[38;5;9m[49m         "Rust cdylib libSimpleList.so not found. Looked in:\n{}\nBuild it with: cargo build (and/or cargo build --release)",
+[0m[49m[38;5;9m- 83     [0m:[38;5;9m[49m         candidates
+[0m[49m[38;5;9m- 84     [0m:[38;5;9m[49m             .iter()
+[0m[49m[38;5;9m- 85     [0m:[38;5;9m[49m             .map(|p| format!("  {}", p.display()))
+[0m[49m[38;5;9m- 86     [0m:[38;5;9m[49m             .collect::<Vec<_>>()
+[0m[49m[38;5;9m- 87     [0m:[38;5;9m[49m             .join("\n")
+[0m[49m[38;5;9m- 88     [0m:[38;5;9m[49m     );
+[0m[49m[38;5;10m+     122[0m:[38;5;10m[49m     so
+[0m[49m[39m  89, 123[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mRe-running the negative control against the fixed harness.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && run_inj() { python3 -c "
+import sys
+s=open('/tmp/lib.rs.bak').read()
+n=s.replace(sys.argv[1], sys.argv[2])
+assert n!=s, 'no-op injection'
+open('src/lib.rs','w').write(n)
+" "$1" "$2"; echo \"### INJECTION: $3\"; timeout 600 cargo test 2>&1 | grep -E "^test result:|FAILED|divergence|oracle mismatch|sentinel" | head -6; cp /tmp/lib.rs.bak src/lib.rs; }
+run_inj 'if node.value < smallest {' 'if node.value > smallest {' 'min->max'
+run_inj '        -1
+    }' '        0
+    }' 'NULL sentinel -1 -> 0'
+run_inj 'let mut smallest: c_int = node.value;' 'let mut smallest: c_int = c_int::MAX;' 'seed INT_MAX instead of head'
+run_inj 'while !node.next.is_null() {' 'while false && !node.next.is_null() {' 'no traversal'
+echo "=== restore ==="; diff -q /tmp/lib.rs.bak src/lib.rs && echo IDENTICAL[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run negative control with four bug injections against fixed harness
+
+"### INJECTION: min->max"
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test cfg_c21_layout_ascending ... FAILED
+test cfg_c2_len2_min_at_head ... FAILED
+test cfg_c11_monotone_increasing ... FAILED
+test cfg_c14_all_negative ... FAILED
+test cfg_c15_mixed_sign ... FAILED
+"### INJECTION: NULL sentinel -1 -> 0"
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test err_e1_null_head ... FAILED
+test err_g2_zero_length_is_null ... FAILED
+test err_g3_minus_one_sentinel_collision ... ok
+assertion `left == right` failed: NULL sentinel divergence: C=-1, Rust=0
+assertion `left == right` failed: divergence [G2 zero-length]: C returned -1, Rust returned 0
+"### INJECTION: seed INT_MAX instead of head"
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test cfg_c11_monotone_increasing ... FAILED
+test cfg_c2_len2_min_at_head ... FAILED
+test cfg_c1_single_node ... FAILED
+test cfg_c14_all_negative ... FAILED
+test err_g5_extremes_by_position ... FAILED
+"### INJECTION: no traversal"
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test cfg_c23_layout_shuffled_boxes ... FAILED
+test cfg_c20_all_int_max_but_one ... FAILED
+test cfg_c21_layout_ascending ... FAILED
+test cfg_c22_layout_descending ... FAILED
+test cfg_c13_all_positive ... FAILED
+=== restore ===
+IDENTICAL
+[38;5;244m - Completed in 1.458s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Silence dead_code warnings on storage-owning types
+
+[49m[39m  176, 176[0m:[39m[49m /// Storage backing a chain; keeps nodes alive while the head pointer is used.
+[0m[49m[38;5;10m+      177[0m:[38;5;10m[49m /// The payloads are intentionally never read — they exist only to own the
+[0m[49m[38;5;10m+      178[0m:[38;5;10m[49m /// memory the `head` pointer walks.
+[0m[49m[38;5;10m+      179[0m:[38;5;10m[49m #[allow(dead_code)]
+[0m[49m[39m  177, 180[0m:[39m[49m enum Storage {
+[0m[49m[39m  178, 181[0m:[39m[49m     Contig(Vec<ListNode>),
+[0m[49m[39m  179, 182[0m:[39m[49m     Boxes(Vec<Box<ListNode>>),
+[0m[49m[39m  180, 183[0m:[39m[49m }
+[0m[49m[39m  181, 184[0m:[39m[49m 
+[0m[49m[39m  182, 185[0m:[39m[49m struct Chain {
+[0m[49m[38;5;10m+      186[0m:[38;5;10m[49m     #[allow(dead_code)]
+[0m[49m[39m  183, 187[0m:[39m[49m     _storage: Storage,
+[0m[49m[39m  184, 188[0m:[39m[49m     head: *mut ListNode,
+[0m[49m[39m  185, 189[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow running the full matrix of feature combinations and profiles via a script.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/run_all_configs.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Script to run tests and symbol parity across all feature combos and profiles
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Runs the differential suite across EVERY feature combination x profile.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # Feature combos are extracted from Cargo.toml rather than hardcoded.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m cd "$(dirname "$0")"
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m # --- enumerate feature combinations -----------------------------------------
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m # Collect declared features (excluding "default"); build the powerset.
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m mapfile -t FEATS < <(
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   awk '
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m     /^\[features\]/ {inf=1; next}
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     /^\[/ {inf=0}
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     inf && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m       split($0, a, "="); gsub(/[[:space:]]/, "", a[1]);
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m       if (a[1] != "default") print a[1]
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m   ' Cargo.toml
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m COMBOS=()
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m if [ "${#FEATS[@]}" -eq 0 ]; then
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   echo "No [features] declared in Cargo.toml -> single configuration."
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m   COMBOS+=("--no-default-features")   # identical to default when no features exist
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   COMBOS+=("")                        # plain default build
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m   n=${#FEATS[@]}
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   for ((mask = 0; mask < (1 << n); mask++)); do
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     combo=""
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     for ((i = 0; i < n; i++)); do
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m       if (((mask >> i) & 1)); then combo="${combo:+$combo,}${FEATS[$i]}"; fi
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     COMBOS+=("--no-default-features --features ${combo}")
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m   COMBOS+=("")            # default features
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m   COMBOS+=("--all-features")
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m # --- rebuild the C ground truth ---------------------------------------------
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m ( cd ../c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m   && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m nm -D --defined-only ../c_src/build/libSimpleList.so | awk '{print $NF}' | sort -u > /tmp/c_syms.txt
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m FAIL=0
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m for profile in "" "--release"; do
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m   for combo in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     label="cargo test ${profile:-<dev>} ${combo:-<default-features>}"
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     echo "=================================================================="
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     echo "### $label"
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     # shellcheck disable=SC2086
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m     timeout 600 cargo check --quiet $profile $combo 2>&1 | tail -5
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m     # shellcheck disable=SC2086
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     timeout 600 cargo build --quiet --lib $profile $combo 2>&1 | tail -5
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     # symbol parity for this configuration
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     pdir=$([ -n "$profile" ] && echo release || echo debug)
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m     so="target/${pdir}/libSimpleList.so"
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     if [ -f "$so" ]; then
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m       nm -D --defined-only "$so" | awk '{print $NF}' | sort -u > /tmp/r_syms.txt
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m       missing=$(comm -23 /tmp/c_syms.txt /tmp/r_syms.txt)
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m       if [ -n "$missing" ]; then
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         echo "SYMBOL PARITY FAILURE, missing from Rust .so:"; echo "$missing"; FAIL=1
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m       else
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         echo "symbol parity: OK (0 missing)"
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m       fi
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m       echo "MISSING cdylib $so"; FAIL=1
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m     # shellcheck disable=SC2086
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m     if timeout 600 cargo test --quiet $profile $combo 2>&1 | tail -12; then
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m       echo "tests: OK"
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m       echo "TESTS FAILED for: $label"; FAIL=1
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m echo "=================================================================="
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m if [ "$FAIL" -eq 0 ]; then echo "ALL CONFIGURATIONS PASSED"; else echo "SOME CONFIGURATIONS FAILED"; fi
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m exit "$FAIL"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-YT5PM0/translation/run_all_configs.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x run_all_configs.sh && timeout 600 ./run_all_configs.sh 2>&1 | tail -70[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run all configurations
+
+No [features] declared in Cargo.toml -> single configuration.
+==================================================================
+### cargo test <dev> --no-default-features
+symbol parity: OK (0 missing)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 33 tests
+.................................
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+tests: OK
+==================================================================
+### cargo test <dev> <default-features>
+symbol parity: OK (0 missing)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 33 tests
+.................................
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+tests: OK
+==================================================================
+### cargo test --release --no-default-features
+symbol parity: OK (0 missing)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 33 tests
+.................................
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+tests: OK
+==================================================================
+### cargo test --release <default-features>
+symbol parity: OK (0 missing)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 33 tests
+.................................
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+tests: OK
+==================================================================
+ALL CONFIGURATIONS PASSED
+[38;5;244m - Completed in 2.611s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && echo "=== artifacts ===" && wc -l SYMBOLS.md ERRORS.md CONFIGS.md tests/differential.rs && echo "=== row/test counts ===" && echo "CONFIGS rows: $(grep -cE '^\| C[0-9]+ ' CONFIGS.md)  unchecked: $(grep -c '\[ \]' CONFIGS.md)" && echo "ERRORS rows: $(grep -cE '^\| (E|G)[0-9]+ ' ERRORS.md)  unchecked: $(grep -c '\[ \]' ERRORS.md)" && echo "cfg_ tests: $(grep -c 'fn cfg_c' tests/differential.rs)  err_ tests: $(grep -c 'fn err_' tests/differential.rs)" && echo "=== symbol diff (must be empty) ===" && comm -23 <(nm -D --defined-only ../c_src/build/libSimpleList.so | awk '{print $NF}' | sort -u) <(nm -D --defined-only target/release/libSimpleList.so | awk '{print $NF}' | sort -u) && echo "(empty above = parity)" && echo "=== warnings ===" && timeout 600 cargo test --no-run 2>&1 | grep -c warning; echo "=== binary targets ===" ; grep -c 'add_executable' ../c_src/CMakeLists.txt; ls src/main.rs 2>&1 | tail -1; grep -c '\[\[bin\]\]' Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final independent verification of artifacts, rows, symbol parity, warnings
+
+=== artifacts ===
+   69 SYMBOLS.md
+   59 ERRORS.md
+   75 CONFIGS.md
+  903 tests/differential.rs
+ 1106 total
+=== row/test counts ===
+CONFIGS rows: 25  unchecked: 1
+ERRORS rows: 10  unchecked: 0
+cfg_ tests: 25  err_ tests: 7
+=== symbol diff (must be empty) ===
+(empty above = parity)
+=== warnings ===
+0
+=== binary targets ===
+0
+ls: cannot access 'src/main.rs': No such file or directory
+0
+[38;5;244m - Completed in 0.57s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && grep -n '\[ \]' CONFIGS.md[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm the single unchecked box is the table header
+
+37:| # | entry point(s) | configuration (options set + input shape) | test | [ ] |
+[38;5;244m - Completed in 0.4s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete. All four phases pass.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+The entire C library is one 12-line function in one translation unit: [38;5;10mint smallestValue(struct ListNode *head)[0m — returns the minimum [38;5;10mvalue[0m in a singly linked list, or [38;5;10m-1[0m if [38;5;10mhead[0m is NULL. No options, no enums, no size parameters, no [38;5;10m#ifdef[0ms, no second source file. Given that scope I did the work directly rather than dispatching sub-agents; there was no large C file for a sub-agent to read on my behalf.[0m[0m
+[0m[0m
+[38;5;252m[1m## The one real defect found — in the test harness, not the translation[0m[0m
+[0m[0m
+[38;5;10mcargo test[0m does [1mnot[22m rebuild a [38;5;10mcrate-type = ["cdylib"][0m artifact (it only builds the lib-test rlib). My first harness pointed at [38;5;10mtarget/debug/libSimpleList.so[0m, so it silently loaded a stale [38;5;10m.so[0m. I caught this with a negative control: I injected four genuine behavioral bugs into [38;5;10msrc/lib.rs[0m ([38;5;10m<[0m → [38;5;10m>[0m, NULL sentinel [38;5;10m-1[0m → [38;5;10m0[0m, seeding [38;5;10msmallest[0m from [38;5;10mINT_MAX[0m instead of the head, and disabling traversal) and [1mall 33 tests still passed[22m. That means the suite was vacuous.[0m[0m
+[0m[0m
+The harness now shells out to [38;5;10mcargo build --lib --target-dir target/ffi-so[0m itself before [38;5;10mdlopen[0m, plus asserts the [38;5;10m.so[0m mtime is newer than [38;5;10msrc/lib.rs[0m. Re-running the same four injections now fails loudly and specifically (e.g. [38;5;10mNULL sentinel divergence: C=-1, Rust=0[0m). Then restored and confirmed [38;5;10msrc/lib.rs[0m byte-identical to the original.[0m[0m
+[0m[0m
+The Rust translation itself required [1mzero fixes[22m — it was already correct, including the strict [38;5;10m<[0m (earliest minimum retained) and the [38;5;10m-1[0m/NULL sentinel ambiguity, which it preserves rather than "fixes".[0m[0m
+[0m[0m
+[38;5;252m[1m## Completion gate[0m[0m
+[0m[0m
+- **[38;5;10mSYMBOLS.md[0m** — C [38;5;10m.so[0m exports exactly one symbol, [38;5;10msmallestValue[0m; Rust exports the same name. [38;5;10mcomm -23[0m symbol diff is empty. Rust's undefined imports are libc/libgcc-unwind only. [1m0 missing non-libc symbols.[22m[0m[0m
+- **[38;5;10mCONFIGS.md[0m** — 25 rows, all [38;5;10m[x][0m, derived from the three branch points in the C ([38;5;10mif (head)[0m, [38;5;10mwhile (head->next)[0m, [38;5;10mif (value < smallest)[0m): list lengths 0/1/2/3/many/100k, minimum at head/interior/tail, duplicate minima, all-equal, monotone up/down, sign classes, boundary-value pool, [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m placement, and three distinct memory layouts (contiguous ascending, chained [3magainst[23m address order, shuffled individual [38;5;10mBox[0m allocations). Each row runs 400 randomized inputs from a fixed-seed SplitMix64 PRNG, checked against both the C [38;5;10m.so[0m and an independent oracle, with calls issued in both orders to prove neither side mutates the input.[0m[0m
+- **Phase C** — 10 [38;5;10mERRORS.md[0m rows. Only one is an actual C rejection branch ([38;5;10mhead == NULL[0m → [38;5;10m-1[0m). The rest are the generic FFI boundaries: NULL, zero length (representable only as NULL here), the [38;5;10m-1[0m-value/sentinel collision, [38;5;10mINT_MIN[0m/[38;5;10mINT_MAX[0m by position, a 1,000,000-node list, and arbitrary bit patterns in the [38;5;10mint[0m field. Out-of-range enum values are documented as [1mN/A by derivation[22m — the function takes no enum, flag, or mode parameter, only [38;5;10mstruct ListNode *[0m; I recorded that as a conclusion rather than an omission. Cyclic lists and garbage non-NULL pointers are excluded by design: the C ground truth hangs or is UB, so there is no defined behavior to match.[0m[0m
+- **Binary comparison** — not applicable. [38;5;10mCMakeLists.txt[0m has no [38;5;10madd_executable[0m and the crate has no [38;5;10m[[bin]][0m or [38;5;10msrc/main.rs[0m.[0m[0m
+- **Feature combinations** — [38;5;10mCargo.toml[0m declares no [38;5;10m[features][0m, so [38;5;10mrun_all_configs.sh[0m enumerates them from the manifest and falls back to default and [38;5;10m--no-default-features[0m, crossed with dev and release profiles. All 4 configurations: symbol parity OK, 33/33 tests pass, 0 compiler warnings.[0m[0m
+[38;5;8m
+ ▸ Credits: 13.50 • Time: 6m 16s
+
+[0m[1G[0m[0m[?25h

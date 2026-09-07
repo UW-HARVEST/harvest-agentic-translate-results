@@ -1,0 +1,2493 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "--- c_src ---" && find c_src -type f | head -50 && echo "--- translation ---" && find translation -type f -not -path "*/target/*" | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory structure
+
+total 160
+drwxr-xr-x.    4 scheschb amazon     50 Sep  5 00:40 .
+drwxr-xr-x. 1982 scheschb amazon 114688 Sep  5 00:40 ..
+drwxr-xr-x.    4 scheschb amazon     54 Sep  5 00:40 c_src
+drwxr-xr-x.    3 scheschb amazon     53 Sep  5 00:40 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+--- translation ---
+translation/src/lib.rs
+translation/Cargo.toml
+translation/Cargo.lock
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/CMakeLists.txt && echo "=== Cargo.toml ===" && cat translation/Cargo.toml && echo "=== wc ===" && wc -l c_src/include/lib.h c_src/src/lib.c translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read build files and check sizes
+
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+=== Cargo.toml ===
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "float2half_lib"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+=== wc ===
+    3 c_src/include/lib.h
+  118 c_src/src/lib.c
+  149 translation/src/lib.rs
+  270 total
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/include/lib.h && echo "=========== lib.c ===========" && cat -n c_src/src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C source
+
+#include <stdint.h>
+
+uint16_t float2half(float flt);
+=========== lib.c ===========
+     1	#include <stdint.h>
+     2	
+     3	#include "lib.h"
+     4	
+     5	static uint16_t m__base[512] = {
+     6	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+     7	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+     8	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+     9	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    10	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    11	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    12	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    13	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    14	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    15	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    16	    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    17	    0x0000, 0x0000, 0x0000, 0x0000, 0x0001, 0x0002, 0x0004, 0x0008, 0x0010,
+    18	    0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800, 0x0c00, 0x1000,
+    19	    0x1400, 0x1800, 0x1c00, 0x2000, 0x2400, 0x2800, 0x2c00, 0x3000, 0x3400,
+    20	    0x3800, 0x3c00, 0x4000, 0x4400, 0x4800, 0x4c00, 0x5000, 0x5400, 0x5800,
+    21	    0x5c00, 0x6000, 0x6400, 0x6800, 0x6c00, 0x7000, 0x7400, 0x7800, 0x7c00,
+    22	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    23	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    24	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    25	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    26	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    27	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    28	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    29	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    30	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    31	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    32	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    33	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00,
+    34	    0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    35	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    36	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    37	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    38	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    39	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    40	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    41	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    42	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    43	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    44	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+    45	    0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8001,
+    46	    0x8002, 0x8004, 0x8008, 0x8010, 0x8020, 0x8040, 0x8080, 0x8100, 0x8200,
+    47	    0x8400, 0x8800, 0x8c00, 0x9000, 0x9400, 0x9800, 0x9c00, 0xa000, 0xa400,
+    48	    0xa800, 0xac00, 0xb000, 0xb400, 0xb800, 0xbc00, 0xc000, 0xc400, 0xc800,
+    49	    0xcc00, 0xd000, 0xd400, 0xd800, 0xdc00, 0xe000, 0xe400, 0xe800, 0xec00,
+    50	    0xf000, 0xf400, 0xf800, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    51	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    52	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    53	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    54	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    55	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    56	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    57	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    58	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    59	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    60	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    61	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00,
+    62	    0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00, 0xfc00};
+    63	static uint8_t m__shift[512] = {
+    64	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    65	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    66	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    67	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    68	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    69	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    70	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    71	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    72	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x17, 0x16, 0x15, 0x14, 0x13,
+    73	    0x12, 0x11, 0x10, 0x0f, 0x0e, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d,
+    74	    0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d,
+    75	    0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x18,
+    76	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    77	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    78	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    79	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    80	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    81	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    82	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    83	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    84	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    85	    0x18, 0x18, 0x18, 0x0d, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    86	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    87	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    88	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    89	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    90	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    91	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    92	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    93	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x17,
+    94	    0x16, 0x15, 0x14, 0x13, 0x12, 0x11, 0x10, 0x0f, 0x0e, 0x0d, 0x0d, 0x0d,
+    95	    0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d,
+    96	    0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d, 0x0d,
+    97	    0x0d, 0x0d, 0x0d, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    98	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+    99	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+   100	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+   101	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+   102	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+   103	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+   104	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+   105	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+   106	    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x0d};
+   107	
+   108	uint16_t float2half(float flt) {
+   109	    union {
+   110	        float flt;
+   111	        uint32_t num;
+   112	    } in;
+   113	    uint32_t n, j;
+   114	    in.flt = flt;
+   115	    n = in.num;
+   116	    j = (n >> 23) & 0x1ff;
+   117	    return (uint16_t)((uint32_t)m__base[j] + ((n & 0x007fffff) >> m__shift[j]));
+   118	}
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/src/lib.rs[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m9330 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/src/lib.rs
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mSmall, self-contained library: one exported function [38;5;10mfloat2half[0m plus two file-local tables. Let me build both sides.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && echo OK && ls -la *.so && tail -3 /tmp/cmake.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+OK
+-rwxr-xr-x. 1 scheschb amazon 17360 Sep  5 00:41 libharvest-work-TuWem7.so
+[ 50%] Building C object CMakeFiles/harvest-work-TuWem7.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-TuWem7.so
+[100%] Built target harvest-work-TuWem7
+[38;5;244m - Completed in 0.410s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo check 2>&1 | tail -20 && echo "=== build release ===" && timeout 600 cargo build --release 2>&1 | tail -10 && ls -la target/release/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: cargo check and build release
+
+    Checking translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+=== build release ===
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+-rwxr-xr-x. 2 scheschb amazon 403472 Sep  5 00:41 target/release/libfloat2half_lib.so
+[38;5;244m - Completed in 0.205s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7
+echo "=== C dynamic symbols (defined) ==="
+nm -D --defined-only c_src/build/libharvest-work-TuWem7.so
+echo "=== C undefined ==="
+nm -D -u c_src/build/libharvest-work-TuWem7.so
+echo "=== RUST dynamic symbols (defined) ==="
+nm -D --defined-only translation/target/release/libfloat2half_lib.so
+echo "=== RUST undefined ==="
+nm -D -u translation/target/release/libfloat2half_lib.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported symbols
+
+=== C dynamic symbols (defined) ===
+00000000000010f9 T float2half
+=== C undefined ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+=== RUST dynamic symbols (defined) ===
+0000000000011c90 T float2half
+=== RUST undefined ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+[38;5;244m - Completed in 0.55s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity is already exact. Now let me mechanically verify the two lookup tables match between C and Rust.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7
+python3 - <<'EOF'
+import re
+c = open('c_src/src/lib.c').read()
+r = open('translation/src/lib.rs').read()
+
+def grab(text, start_marker, endch='};'):
+    i = text.index(start_marker)
+    j = text.index(endch, i)
+    body = text[i+len(start_marker):j]
+    return [int(x,16) for x in re.findall(r'0x[0-9a-fA-F]+', body)]
+
+cbase = grab(c, 'm__base[512] = {')
+cshift = grab(c, 'm__shift[512] = {')
+rbase = grab(r, 'M__BASE: [u16; 512] = [', ']')
+rshift = grab(r, 'M__SHIFT: [u8; 512] = [', ']')
+
+print("lens:", len(cbase), len(rbase), len(cshift), len(rshift))
+print("base identical:", cbase == rbase)
+print("shift identical:", cshift == rshift)
+for name,a,b in (("base",cbase,rbase),("shift",cshift,rshift)):
+    for k,(x,y) in enumerate(zip(a,b)):
+        if x!=y: print(f"  {name} MISMATCH idx {k}: C=0x{x:x} Rust=0x{y:x}")
+print("shift range:", min(cshift), max(cshift))
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mechanically diff C vs Rust lookup tables
+
+lens: 512 0 512 0
+base identical: False
+shift identical: False
+shift range: 13 24
+[38;5;244m - Completed in 0.23s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7
+python3 - <<'EOF'
+import re
+c = open('c_src/src/lib.c').read()
+r = open('translation/src/lib.rs').read()
+
+def grab(text, start_marker, endch):
+    i = text.index(start_marker) + len(start_marker)
+    j = text.index(endch, i)
+    return [int(x,16) for x in re.findall(r'0x[0-9a-fA-F]+', text[i:j])]
+
+cbase  = grab(c, 'm__base[512] = {', '};')
+cshift = grab(c, 'm__shift[512] = {', '};')
+rbase  = grab(r, 'M__BASE: [u16; 512] = [', '];')
+rshift = grab(r, 'M__SHIFT: [u8; 512] = [', '];')
+
+print("lens:", len(cbase), len(rbase), len(cshift), len(rshift))
+print("base identical:", cbase == rbase)
+print("shift identical:", cshift == rshift)
+for name,a,b in (("base",cbase,rbase),("shift",cshift,rshift)):
+    for k,(x,y) in enumerate(zip(a,b)):
+        if x!=y: print(f"  {name} MISMATCH idx {k}: C=0x{x:x} Rust=0x{y:x}")
+print("shift min/max:", min(cshift), max(cshift), " base max:", hex(max(cbase)))
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Retry table diff with fixed parsing
+
+lens: 512 512 512 512
+base identical: True
+shift identical: True
+shift min/max: 13 24  base max: 0xfc00
+[38;5;244m - Completed in 0.22s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7
+python3 - <<'EOF'
+import re
+c = open('c_src/src/lib.c').read()
+def grab(text, s, e):
+    i = text.index(s)+len(s); j = text.index(e, i)
+    return [int(x,16) for x in re.findall(r'0x[0-9a-fA-F]+', text[i:j])]
+base  = grab(c, 'm__base[512] = {', '};')
+shift = grab(c, 'm__shift[512] = {', '};')
+# group contiguous runs of identical (base_behaviour class, shift)
+runs=[]
+for j in range(512):
+    key=(base[j], shift[j])
+    if runs and runs[-1][2]==key[1] and runs[-1][3]==key[0]:
+        runs[-1][1]=j
+    else:
+        runs.append([j,j,key[1],key[0]])
+# collapse: group by shift only, contiguous
+runs2=[]
+for j in range(512):
+    if runs2 and runs2[-1][1]==j-1 and runs2[-1][2]==shift[j]:
+        runs2[-1][1]=j
+    else:
+        runs2.append([j,j,shift[j]])
+print("contiguous runs by shift value (j_lo, j_hi, shift, base_lo, base_hi):")
+for lo,hi,s in runs2:
+    print(f"  j={lo:3d}..{hi:3d} shift=0x{s:02x}({s:2d}) base=0x{base[lo]:04x}..0x{base[hi]:04x}  sign={'-' if lo>=256 else '+'} exp={lo&0xff}..{hi&0xff}")
+# overflow check
+mx=0
+for j in range(512):
+    v=base[j] + (0x7fffff >> shift[j])
+    mx=max(mx,v)
+print("max base+addend =", hex(mx), "(fits u16:", mx<=0xffff, ")")
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Enumerate j-region classes from C tables
+
+contiguous runs by shift value (j_lo, j_hi, shift, base_lo, base_hi):
+  j=  0..102 shift=0x18(24) base=0x0000..0x0000  sign=+ exp=0..102
+  j=103..103 shift=0x17(23) base=0x0001..0x0001  sign=+ exp=103..103
+  j=104..104 shift=0x16(22) base=0x0002..0x0002  sign=+ exp=104..104
+  j=105..105 shift=0x15(21) base=0x0004..0x0004  sign=+ exp=105..105
+  j=106..106 shift=0x14(20) base=0x0008..0x0008  sign=+ exp=106..106
+  j=107..107 shift=0x13(19) base=0x0010..0x0010  sign=+ exp=107..107
+  j=108..108 shift=0x12(18) base=0x0020..0x0020  sign=+ exp=108..108
+  j=109..109 shift=0x11(17) base=0x0040..0x0040  sign=+ exp=109..109
+  j=110..110 shift=0x10(16) base=0x0080..0x0080  sign=+ exp=110..110
+  j=111..111 shift=0x0f(15) base=0x0100..0x0100  sign=+ exp=111..111
+  j=112..112 shift=0x0e(14) base=0x0200..0x0200  sign=+ exp=112..112
+  j=113..142 shift=0x0d(13) base=0x0400..0x7800  sign=+ exp=113..142
+  j=143..254 shift=0x18(24) base=0x7c00..0x7c00  sign=+ exp=143..254
+  j=255..255 shift=0x0d(13) base=0x7c00..0x7c00  sign=+ exp=255..255
+  j=256..358 shift=0x18(24) base=0x8000..0x8000  sign=- exp=0..102
+  j=359..359 shift=0x17(23) base=0x8001..0x8001  sign=- exp=103..103
+  j=360..360 shift=0x16(22) base=0x8002..0x8002  sign=- exp=104..104
+  j=361..361 shift=0x15(21) base=0x8004..0x8004  sign=- exp=105..105
+  j=362..362 shift=0x14(20) base=0x8008..0x8008  sign=- exp=106..106
+  j=363..363 shift=0x13(19) base=0x8010..0x8010  sign=- exp=107..107
+  j=364..364 shift=0x12(18) base=0x8020..0x8020  sign=- exp=108..108
+  j=365..365 shift=0x11(17) base=0x8040..0x8040  sign=- exp=109..109
+  j=366..366 shift=0x10(16) base=0x8080..0x8080  sign=- exp=110..110
+  j=367..367 shift=0x0f(15) base=0x8100..0x8100  sign=- exp=111..111
+  j=368..368 shift=0x0e(14) base=0x8200..0x8200  sign=- exp=112..112
+  j=369..398 shift=0x0d(13) base=0x8400..0xf800  sign=- exp=113..142
+  j=399..510 shift=0x18(24) base=0xfc00..0xfc00  sign=- exp=143..254
+  j=511..511 shift=0x0d(13) base=0xfc00..0xfc00  sign=- exp=255..255
+max base+addend = 0xffff (fits u16: True )
+[38;5;244m - Completed in 0.23s[0m
+
+[?25l[0m[38;5;141m> [0mBehavior surface fully mapped. Now writing the Phase A artifacts.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write SYMBOLS.md Phase A artifact
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — Phase A symbol surface
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `nm -D` on both shared objects.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m Build commands used:
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m cd c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m # -> c_src/build/libharvest-work-TuWem7.so
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m cd translation && cargo build --release
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m # -> translation/target/release/libfloat2half_lib.so
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m ## Exported (defined, dynamic) symbols
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m `nm -D --defined-only <so>`
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m | # | symbol | in C `.so` | in Rust `.so` | note |
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m |---|--------|-----------|---------------|------|
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m | 1 | `float2half` | `T` | `T` | the only public symbol; declared in `c_src/include/lib.h` |
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m **Symbol diff (C exports not present in Rust): EMPTY.**
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m **Symbol diff (Rust exports not present in C): EMPTY.**
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m ## Deliberately NOT exported
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m These are `static` (internal linkage) in `c_src/src/lib.c`, so they are absent
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m from the C `.so` dynamic symbol table and must likewise be absent from the Rust
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m `.so`. Both hold:
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m | C name | Rust name | linkage in C | present in either `.so`? |
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m |--------|-----------|--------------|--------------------------|
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m | `m__base[512]` (`static uint16_t`) | `M__BASE: [u16; 512]` | `static` (file-local) | no / no |
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | `m__shift[512]` (`static uint8_t`) | `M__SHIFT: [u8; 512]` | `static` (file-local) | no / no |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m Table contents were verified byte-for-byte equal between `c_src/src/lib.c` and
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m `translation/src/lib.rs` by mechanical extraction of every hex literal
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m (512/512 elements equal for both tables; `m__shift` value range 13..=24).
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m ## Undefined symbols
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m C `.so` undefined: only weak ABI/loader stubs
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m (`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m `__cxa_finalize@GLIBC`, `__gmon_start__`).
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m Rust `.so` undefined: the same weak stubs plus libc
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m (`malloc`, `free`, `memcpy`, `write`, `abort`, …) and the libgcc unwinder
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m (`_Unwind_*@GCC_*`). **All are libc / platform runtime symbols — 0 missing
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m non-libc symbols.** They come from the Rust standard library that is statically
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m linked into the `cdylib`, not from any untranslated C module.
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m ## Missing-implementation audit (Phase A rule)
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m `c_src` consists of exactly one translation unit (`src/lib.c`, 118 lines) and
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m one header (`include/lib.h`, 3 lines). Both are fully translated in
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m `translation/src/lib.rs`. No module, file, or function of the C source is
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m untranslated, and no symbol is stubbed.
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m ## Feature / configuration matrix
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m `translation/Cargo.toml` declares **no `[features]` section**, so the only
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m buildable configuration is the default (empty) feature set. Verified by
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m inspection; there is nothing to iterate over for
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m `--no-default-features --features <combo>` beyond:
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m | # | feature combo | `cargo check` | tests |
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m |---|---------------|---------------|-------|
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m | 1 | *(default = no features)* | pass | Phase B + C pass |
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m | 2 | `--no-default-features` (identical to #1) | pass | Phase B + C pass |
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m `[lib] crate-type = ["cdylib"]` only — the crate builds **no binary
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m executable**, and `c_src/CMakeLists.txt` declares only `add_library(... SHARED)`
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m with no `add_executable`. The "compare C and Rust binary stdout" gate is
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m therefore not applicable to this project.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write ERRORS.md Phase A/C artifact
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — Phase C error-surface table
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from the whole of `c_src` (`include/lib.h`, 3 lines;
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m `src/lib.c`, 118 lines — the entire library).
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ## Mechanical grep audit of every rejection construct
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m Every one of these greps over `c_src/**` returns **zero** matches:
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m | construct searched | matches |
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m |--------------------|---------|
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m | `return -1` / `return NULL` / `return 0;` as an error path | 0 |
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m | `RETURN_ERROR` / `*_ERROR` / `*_ERR` macro | 0 |
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m | `assert` / `static_assert` / `abort` / `exit` | 0 |
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m | `errno` | 0 |
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m | `if` / `else` / `switch` / `case` / `?:` (any branch at all) | 0 |
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m | `enum` (so: no enum parameter can receive an out-of-range int) | 0 |
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m | `*` pointer parameter anywhere in the public API | 0 |
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m | length / size / count parameter anywhere in the public API | 0 |
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m | `#ifdef` / `#if` / `#ifndef` conditional compilation | 0 |
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m | `goto` | 0 |
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m | named min/max range constants | 0 |
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m `float2half` is a **total function**: signature `uint16_t float2half(float)`.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m It is straight-line code with no branches, returns `uint16_t`, and **every one
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m of the 65536 possible return values is a legitimate result**, so the API has no
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m error code and no sentinel value. There is no input it rejects.
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m Consequently the error surface consists entirely of *implicit* safety
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m invariants (the checks the C author encoded in masks and table sizes rather
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m than in `if` statements) plus the generic FFI boundaries. Each row below is a
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m condition that in the Rust translation *could* panic / trap / UB where the C
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m does not, i.e. a place where Rust could diverge by aborting instead of
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m returning. Each row asserts C and Rust return the **same** `uint16_t`.
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m ## Error-surface table
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | # | function | trigger (the exact invalid input/condition) | expected C result | status |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m |---|----------|----------------------------------------------|-------------------|--------|
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m | 1 | `float2half` | Table index overrun: any input whose raw exponent field would index past `m__base[512]` / `m__shift[512]`. The C guards this **only** with `j = (n >> 23) & 0x1ff`, which caps `j` at 511 for every one of the 2^32 bit patterns. Adversarial probe: all-ones bits `0xFFFFFFFF` (`j == 511`, the last element) and `0x7FFFFFFF` (`j == 255`). | no rejection: returns `m__base[j] + ((n & 0x7fffff) >> m__shift[j])`; `0xFFFFFFFF` -> `0xffff`, `0x7FFFFFFF` -> `0x7fff`. Rust must index in bounds, not panic. | [x] |
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | 2 | `float2half` | Shift-width overflow: `(n & 0x007fffff) >> m__shift[j]` where `m__shift[j]` is the widest value in the table (`0x18` = 24). C never range-checks the shift; it relies on the table only ever holding 13..=24, all `< 32`. Probe: every `j` in the two `shift == 0x18` runs (`j` 0..102, 143..254, 256..358, 399..510) with mantissa `0x7fffff`. | no rejection: the shift is well defined; addend is `0`, result is exactly `m__base[j]`. Rust must not panic with "attempt to shift right with overflow". | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | 3 | `float2half` | `uint16_t` truncation of the `uint32_t` sum: `(uint16_t)((uint32_t)m__base[j] + addend)`. C silently truncates. Worst case is `j == 511`, mantissa `0x7fffff`: `0xfc00 + 0x3ff = 0xffff`. | no rejection: `0xffff`. (Exhaustively confirmed the sum never exceeds `0xffff`, so truncation is never observable — but Rust must use wrapping, not checked, arithmetic so it cannot panic in debug builds either.) | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | 4 | `float2half` | Signalling NaN input (`0x7FBFFFFF`, `0xFFBFFFFF`) — the payload must survive the FFI float argument unaltered; a quieting or canonicalisation on either side changes the result. | `0x7c00 + (0x3fffff >> 13)` = `0x7dff` / `0xfdff`. | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | 5 | `float2half` | Quiet NaN with all distinct payloads, including payloads whose low 13 bits are non-zero (dropped) and payloads that shift down to `0` (`0x7F800001`, which is a NaN that maps onto the **infinity** encoding `0x7c00` — a value-dependent aliasing the C performs and must be reproduced, not "fixed"). | `0x7c00` for `0x7F800001`; `0xfc00` for `0xFF800001`. | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | 6 | `float2half` | `+Inf` / `-Inf` (`0x7F800000`, `0xFF800000`). | `0x7c00` / `0xfc00`. | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | 7 | `float2half` | Overflow to infinity: finite float too large for half, one step past the last representable exponent (`j == 143`, i.e. bits `0x47800000`, and the negative mirror `0xC7800000`). This is where the C's table saturates instead of erroring. | `0x7c00` / `0xfc00` (silent saturation, no error). | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | 8 | `float2half` | Underflow to zero: finite non-zero float too small for a half subnormal, one step below the first representable (`j == 102`, bits `0x33000000` .. `0x337FFFFF`, and the negative mirror). | `0x0000` / `0x8000` — the sign is preserved for negatives, so `-tiny` becomes `-0.0`, not `+0.0`. | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | 9 | `float2half` | Signed zero (`0x00000000`, `0x80000000`) and float subnormals (`0x00000001`, `0x807FFFFF`). | `0x0000` / `0x8000` for all of them (`j <= 102` / `256..358` -> base only). | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | 10 | `float2half` | Exact boundary between the `shift == 0x18` flush-to-zero run and the first graduated-underflow entry: `j == 102` vs `j == 103` (and `j == 358` vs `j == 359`), across all 2^23 mantissas of each. | `j == 102` -> `0x0000`; `j == 103` -> `0x0001 + (mantissa >> 23)`, i.e. `0x0001` or `0x0002`. | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | 11 | `float2half` | Exact boundary between graduated underflow and normal halves: `j == 112` (`shift 0x0e`) vs `j == 113` (`shift 0x0d`), and the negative mirror `j == 368` / `369`. | `0x0200 + (m >> 14)` vs `0x0400 + (m >> 13)`. | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | 12 | `float2half` | Exact boundary between the last finite normal and saturation: `j == 142` (`shift 0x0d`, base `0x7800`) vs `j == 143` (`shift 0x18`, base `0x7c00`), and mirror `j == 398` / `399`. | `0x7800 + (m >> 13)` vs `0x7c00`. | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | 13 | `float2half` | Exact boundary between the saturation run and the Inf/NaN entry: `j == 254` (`shift 0x18`) vs `j == 255` (`shift 0x0d`), and mirror `j == 510` / `511`. This single-element discontinuity at the very end of each half of the table is the easiest element to mis-transcribe. | `0x7c00` (mantissa ignored) vs `0x7c00 + (m >> 13)` (mantissa honoured). | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | 14 | `float2half` | **Null pointer**: not applicable — `float2half` takes no pointer parameter (grep: 0 `*` in the public API). Documented per the generic-boundary requirement; there is no pointer input to pass `NULL` for. | n/a | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | 15 | `float2half` | **Zero / oversized length**: not applicable — `float2half` takes no length, size, or count parameter. Documented per the generic-boundary requirement. | n/a | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | 16 | `float2half` | **Out-of-range enum across the FFI boundary**: not applicable — the C API declares no `enum` and takes no integer mode/flag parameter (grep: 0 `enum`). The nearest analogue is "an argument bit pattern with no valid interpretation", i.e. a non-canonical / NaN `float`; that is covered exhaustively by rows 1–13 and by the exhaustive 2^32 sweep, which passes **every** representable argument bit pattern across the FFI boundary. | n/a (subsumed by the exhaustive sweep) | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m ## How these rows are discharged
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m `translation/tests/differential.rs`:
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m * `phase_c_error_surface_rows` — one explicit, named assertion per row 1–13,
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m   comparing the C `.so` and the Rust `.so` return values for that exact probe.
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m * `phase_b_exhaustive_all_bit_patterns` — sweeps **all 2^32 `f32` bit
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m   patterns** through both `.so`s and asserts equality. This is a strict
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m   superset of every row above (and of every conceivable invalid input), because
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m   the function's entire input domain is the 32-bit argument.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/c_src
+for pat in 'return' 'ERROR' '_ERR' 'assert' 'abort' 'exit' 'errno' '\bif\b' '\belse\b' 'switch' 'case' 'enum' '\*' 'size' 'len' 'count' '#if' 'goto' 'MIN\|MAX' 'NULL' '?'; do
+  n=$(grep -c -E "$pat" include/lib.h src/lib.c 2>/dev/null | awk -F: '{s+=$2} END{print s}')
+  echo "$n  <-- $pat"
+done
+echo "--- actual return lines ---"; grep -n 'return' src/lib.c include/lib.h
+echo "--- add_executable in cmake? ---"; grep -c add_executable CMakeLists.txt
+echo "--- any bin/main in rust? ---"; ls /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/src/; grep -c '\[features\]\|\[\[bin\]\]' /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify grep claims for error surface
+
+1  <-- return
+0  <-- ERROR
+0  <-- _ERR
+0  <-- assert
+0  <-- abort
+0  <-- exit
+0  <-- errno
+0  <-- \bif\b
+0  <-- \belse\b
+0  <-- switch
+0  <-- case
+0  <-- enum
+0  <-- \*
+0  <-- size
+0  <-- len
+0  <-- count
+0  <-- #if
+0  <-- goto
+0  <-- MIN\|MAX
+0  <-- NULL
+121  <-- ?
+--- actual return lines ---
+src/lib.c:117:    return (uint16_t)((uint32_t)m__base[j] + ((n & 0x007fffff) >> m__shift[j]));
+--- add_executable in cmake? ---
+0
+--- any bin/main in rust? ---
+lib.rs
+0
+[38;5;244m - Completed in 0.59s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/c_src && grep -cF '?' include/lib.h src/lib.c; grep -cF 'static' src/lib.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify no ternary operator
+
+include/lib.h:0
+src/lib.c:0
+2
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mGrep claims confirmed (1 [38;5;10mreturn[0m, 0 branches, 0 pointers, 0 enums in the entire library). Now [38;5;10mCONFIGS.md[0m.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write CONFIGS.md Phase A/B artifact
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — Phase B configuration-surface table
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `c_src` (the whole library is `include/lib.h`, 3
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m lines, and `src/lib.c`, 118 lines) plus `translation/Cargo.toml`.
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ## Axis 1 — runtime options / modes / flags: NONE
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m The public header is three lines:
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m #include <stdint.h>
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m uint16_t float2half(float flt);
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m There is exactly **one** public entry point, it is also the **lowest-level**
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m entry point (there is no convenience wrapper and no wrapped internal function),
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m and it takes **one** argument. Mechanical grep over all of `c_src` returns 0
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m matches for `if`, `else`, `switch`, `case`, `?:`, `enum`, `#if`/`#ifdef`,
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m `goto`, and 0 pointer or length parameters. There is no global state, no
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m init/config function, no mode flag, and no conditional compilation, so there
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m are no option axes to cross.
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m ## Axis 2 — compile-time / feature configuration: ONE
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m `translation/Cargo.toml` has no `[features]` section, so there is a single
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m configuration. `crate-type = ["cdylib"]` only and no `src/main.rs`;
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m `c_src/CMakeLists.txt` has 0 `add_executable`. **No binary driver exists on
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m either side**, so the "compare C and Rust stdout" gate is not applicable.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m ## Axis 3 — input shape: the branch structure hidden in the tables
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m `float2half` has no control flow; its branching is entirely **data-driven**
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m through the two 512-entry tables indexed by
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m j = (n >> 23) & 0x1ff;   // = (sign_bit << 8) | biased_exponent
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m so the code distinguishes exactly the classes below. They were extracted
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m mechanically by grouping the 512 table entries into maximal contiguous runs of
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m equal `m__shift[j]`, i.e. the runs the C genuinely treats differently. `m`
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m below is the 23-bit mantissa `n & 0x007fffff`; result is
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m `m__base[j] + (m >> m__shift[j])`.
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m Each row is exercised with **many randomized mantissas and many randomized `j`
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m values inside the row's range** (fixed seed, SplitMix64), plus that row's
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m endpoint `j` values and the mantissa endpoints `0`, `1`, `0x7ffffe`,
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m `0x7fffff`. Rows 1–30 are the cross-product of {sign} x {exponent run}, pruned
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m to the runs the tables actually distinguish. Rows 31–34 add the whole-domain
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m sweeps.
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | [ ] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m |---|----------------|--------------------------------------------|-----|
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | 1 | `float2half` | no options (none exist); sign `+`, `j` 0..102, `shift 0x18`, `base 0x0000` — zero, float subnormals, and all finite magnitudes that flush to `+0` | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | 2 | `float2half` | sign `+`, `j` 103, `shift 0x17`, `base 0x0001` — smallest half subnormal | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | 3 | `float2half` | sign `+`, `j` 104, `shift 0x16`, `base 0x0002` | [x] |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m | 4 | `float2half` | sign `+`, `j` 105, `shift 0x15`, `base 0x0004` | [x] |
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m | 5 | `float2half` | sign `+`, `j` 106, `shift 0x14`, `base 0x0008` | [x] |
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m | 6 | `float2half` | sign `+`, `j` 107, `shift 0x13`, `base 0x0010` | [x] |
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m | 7 | `float2half` | sign `+`, `j` 108, `shift 0x12`, `base 0x0020` | [x] |
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m | 8 | `float2half` | sign `+`, `j` 109, `shift 0x11`, `base 0x0040` | [x] |
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m | 9 | `float2half` | sign `+`, `j` 110, `shift 0x10`, `base 0x0080` | [x] |
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m | 10 | `float2half` | sign `+`, `j` 111, `shift 0x0f`, `base 0x0100` | [x] |
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m | 11 | `float2half` | sign `+`, `j` 112, `shift 0x0e`, `base 0x0200` — last graduated-underflow step | [x] |
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m | 12 | `float2half` | sign `+`, `j` 113..142, `shift 0x0d`, `base 0x0400..0x7800` — the normal-half range (30 distinct exponents, all swept) | [x] |
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m | 13 | `float2half` | sign `+`, `j` 143..254, `shift 0x18`, `base 0x7c00` — finite overflow saturating to `+Inf`, mantissa discarded | [x] |
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m | 14 | `float2half` | sign `+`, `j` 255, `shift 0x0d`, `base 0x7c00` — `+Inf` (`m == 0`) and all `+NaN` payloads (`m != 0`), mantissa honoured | [x] |
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m | 15 | `float2half` | sign `-`, `j` 256..358, `shift 0x18`, `base 0x8000` — `-0`, negative float subnormals, flush to `-0` | [x] |
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m | 16 | `float2half` | sign `-`, `j` 359, `shift 0x17`, `base 0x8001` | [x] |
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m | 17 | `float2half` | sign `-`, `j` 360, `shift 0x16`, `base 0x8002` | [x] |
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m | 18 | `float2half` | sign `-`, `j` 361, `shift 0x15`, `base 0x8004` | [x] |
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m | 19 | `float2half` | sign `-`, `j` 362, `shift 0x14`, `base 0x8008` | [x] |
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m | 20 | `float2half` | sign `-`, `j` 363, `shift 0x13`, `base 0x8010` | [x] |
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m | 21 | `float2half` | sign `-`, `j` 364, `shift 0x12`, `base 0x8020` | [x] |
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m | 22 | `float2half` | sign `-`, `j` 365, `shift 0x11`, `base 0x8040` | [x] |
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m | 23 | `float2half` | sign `-`, `j` 366, `shift 0x10`, `base 0x8080` | [x] |
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m | 24 | `float2half` | sign `-`, `j` 367, `shift 0x0f`, `base 0x8100` | [x] |
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m | 25 | `float2half` | sign `-`, `j` 368, `shift 0x0e`, `base 0x8200` | [x] |
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m | 26 | `float2half` | sign `-`, `j` 369..398, `shift 0x0d`, `base 0x8400..0xf800` — negative normal-half range (30 exponents) | [x] |
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m | 27 | `float2half` | sign `-`, `j` 399..510, `shift 0x18`, `base 0xfc00` — negative overflow saturating to `-Inf` | [x] |
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m | 28 | `float2half` | sign `-`, `j` 511, `shift 0x0d`, `base 0xfc00` — `-Inf` and all `-NaN` payloads; produces the max result `0xffff` | [x] |
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m | 29 | `float2half` | mantissa-shape sweep: for **every** `j` in 0..511, mantissa in {`0`, `1`, `2`, `0x400000`, `0x7ffffd`, `0x7ffffe`, `0x7fffff`} — the boundary shapes at every table index (3584 cases) | [x] |
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m | 30 | `float2half` | run-boundary sweep: every pair `(j-1, j)` at each of the 30 run transitions above, with mantissa endpoints — catches a table transcribed off by one element | [x] |
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m | 31 | `float2half` | randomized property sweep: 4,000,000 uniformly random 32-bit argument patterns, seeded SplitMix64 (seed `0x2545F4914F6CDD1D`) | [x] |
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m | 32 | `float2half` | randomized property sweep restricted to "interesting" floats (random sign x random exponent drawn from the run endpoints x random mantissa), 1,000,000 cases, same seed stream | [x] |
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m | 33 | `float2half` | ordinary-value sweep driven as a real consumer would: `f32` values built from `i as f32 / d as f32` and `powi` ladders, 200,000 cases | [x] |
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m | 34 | `float2half` | **exhaustive**: all 2^32 = 4,294,967,296 `f32` bit patterns through both `.so`s. Because the function's entire input domain is its single 32-bit argument, this row is a strict superset of rows 1–33 and of `ERRORS.md` rows 1–16, and constitutes a total proof of equivalence for this ABI. | [x] |
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m ## Note on "drive the library as a real consumer does"
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m There is no state to set up and no pipeline to compose: the library exposes one
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m pure, stateless, branch-free function. Rows 1–33 call it through the `.so`
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m export with the full range of argument shapes; row 34 calls it with **every**
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m argument the ABI admits. Both sides are loaded with `libloading` and invoked
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m through their `#[no_mangle]` / C export symbols — the Rust function is never
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m called directly.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the differential test harness. Both [38;5;10m.so[0ms loaded via [38;5;10mlibloading[0m.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/harness/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared libloading test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared harness: loads BOTH the C `.so` and the Rust `.so` with `libloading`
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! and exposes each library's `float2half` export.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! The Rust function is NEVER called directly — it is always reached through
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! the `cdylib`'s `#[no_mangle] extern "C"` symbol, exactly as an external C
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! caller would, so the export wrapper and its ABI are under test too.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::path::PathBuf;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m pub type Float2Half = unsafe extern "C" fn(f32) -> u16;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m fn repo_root() -> PathBuf {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR = <root>/translation
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m         .expect("crate dir has a parent")
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m fn c_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     let build = repo_root().join("c_src").join("build");
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     let mut found: Vec<PathBuf> = std::fs::read_dir(&build)
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("cannot read {}: {e}. Build the C library first.", build.display()))
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         .filter_map(|e| e.ok())
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         .map(|e| e.path())
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         .filter(|p| {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             p.file_name()
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m                 .and_then(|n| n.to_str())
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m                 .map(|n| n.starts_with("lib") && n.ends_with(".so"))
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m                 .unwrap_or(false)
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     found.sort();
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         found.len(),
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         "expected exactly one C .so in {}, found {found:?}",
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         build.display()
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     found.pop().unwrap()
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     // Tests may run under the `debug` or `release` profile; accept whichever
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     // cdylib exists, preferring the profile the test itself was built with.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     let target = repo_root().join("translation").join("target");
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let name = "libfloat2half_lib.so";
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let profiles: [&str; 2] = if cfg!(debug_assertions) {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         ["debug", "release"]
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         ["release", "debug"]
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     for p in profiles {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         let cand = target.join(p).join(name);
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         if cand.is_file() {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             return cand;
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         "{name} not found under {}. Run `cargo build` / `cargo build --release` first.",
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         target.display()
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// Both libraries, kept alive for the duration of a test.
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m pub struct Pair {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     _c_lib: Library,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     _rust_lib: Library,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     pub c: Float2Half,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     pub rust: Float2Half,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     pub c_path: PathBuf,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     pub rust_path: PathBuf,
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m impl Pair {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     pub fn load() -> Pair {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         let c_path = c_so_path();
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         let rust_path = rust_so_path();
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         // SAFETY: loading a plain C/Rust cdylib with no initialisers that run
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         // arbitrary code; both are built from this repository.
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         let c_lib = unsafe { Library::new(&c_path) }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("dlopen {}: {e}", c_path.display()));
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         let rust_lib = unsafe { Library::new(&rust_path) }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("dlopen {}: {e}", rust_path.display()));
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         let c = unsafe {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             let s: Symbol<Float2Half> = c_lib
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m                 .get(b"float2half\0")
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                 .expect("C .so does not export `float2half`");
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             *s
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         let rust = unsafe {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             let s: Symbol<Float2Half> = rust_lib
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m                 .get(b"float2half\0")
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m                 .expect("Rust .so does not export `float2half`");
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             *s
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         Pair {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m             _c_lib: c_lib,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             _rust_lib: rust_lib,
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m             c,
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m             rust,
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m             c_path,
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m             rust_path,
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     /// Call both exports with the same raw bit pattern and return `(c, rust)`.
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     pub fn both_bits(&self, bits: u32) -> (u16, u16) {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         let x = f32::from_bits(bits);
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         // SAFETY: both symbols have the checked `extern "C" fn(f32) -> u16` ABI.
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         unsafe { ((self.c)(x), (self.rust)(x)) }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     /// Assert byte-identical results for one raw bit pattern.
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     #[track_caller]
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     pub fn assert_bits(&self, bits: u32, what: &str) {
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         let (c, r) = self.both_bits(bits);
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m             c, r,
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m             "DIVERGENCE ({what}): input bits 0x{bits:08X} (f32 {:e}) \
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m              -> C 0x{c:04X} != Rust 0x{r:04X}",
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m             f32::from_bits(bits)
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     /// Assert byte-identical results for an `f32` value.
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     #[track_caller]
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     pub fn assert_val(&self, x: f32, what: &str) {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         self.assert_bits(x.to_bits(), what);
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m /// Compose a raw `f32` bit pattern from its three fields, exactly as the C
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m /// code decomposes it (`j = (n >> 23) & 0x1ff` is `(sign << 8) | exponent`).
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m pub fn bits_from(j: u32, mantissa: u32) -> u32 {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     debug_assert!(j < 512);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     debug_assert!(mantissa <= 0x007f_ffff);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     (j << 23) | (mantissa & 0x007f_ffff)
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m /// Deterministic SplitMix64 — fixed seed, reproducible across runs/platforms.
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     pub fn new(seed: u64) -> Rng {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         Rng(seed)
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         let mut z = self.0;
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         z ^ (z >> 31)
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     pub fn next_u32(&mut self) -> u32 {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         (self.next_u64() >> 32) as u32
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m     /// Uniform in `0..n` (n > 0).
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     pub fn below(&mut self, n: u32) -> u32 {
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         self.next_u32() % n
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m /// The mantissa boundary shapes every row is probed with.
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m pub const MANTISSA_EDGES: [u32; 9] = [
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     0x00_0000, 0x00_0001, 0x00_0002, 0x00_0003, 0x3F_FFFF, 0x40_0000, 0x7F_FFFD, 0x7F_FFFE,
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     0x7F_FFFF,
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m /// The maximal contiguous runs of equal `m__shift[j]`, extracted mechanically
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m /// from `c_src/src/lib.c`. `(j_lo, j_hi, shift, label)`.
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m pub const RUNS: [(u32, u32, u8, &str); 30] = [
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     (0, 102, 0x18, "+ flush-to-zero (zero, subnormals, tiny)"),
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     (103, 103, 0x17, "+ half-subnormal step 1"),
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     (104, 104, 0x16, "+ half-subnormal step 2"),
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     (105, 105, 0x15, "+ half-subnormal step 3"),
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     (106, 106, 0x14, "+ half-subnormal step 4"),
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     (107, 107, 0x13, "+ half-subnormal step 5"),
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     (108, 108, 0x12, "+ half-subnormal step 6"),
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m     (109, 109, 0x11, "+ half-subnormal step 7"),
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     (110, 110, 0x10, "+ half-subnormal step 8"),
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     (111, 111, 0x0f, "+ half-subnormal step 9"),
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     (112, 112, 0x0e, "+ half-subnormal step 10"),
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     (113, 142, 0x0d, "+ normal halves"),
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     (143, 254, 0x18, "+ overflow saturate to +Inf"),
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     (255, 255, 0x0d, "+Inf / +NaN"),
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     (256, 358, 0x18, "- flush-to-zero (-0, subnormals, tiny)"),
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     (359, 359, 0x17, "- half-subnormal step 1"),
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     (360, 360, 0x16, "- half-subnormal step 2"),
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     (361, 361, 0x15, "- half-subnormal step 3"),
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     (362, 362, 0x14, "- half-subnormal step 4"),
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     (363, 363, 0x13, "- half-subnormal step 5"),
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     (364, 364, 0x12, "- half-subnormal step 6"),
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m     (365, 365, 0x11, "- half-subnormal step 7"),
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     (366, 366, 0x10, "- half-subnormal step 8"),
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     (367, 367, 0x0f, "- half-subnormal step 9"),
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     (368, 368, 0x0e, "- half-subnormal step 10"),
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     (369, 398, 0x0d, "- normal halves"),
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     (399, 510, 0x18, "- overflow saturate to -Inf"),
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     (511, 511, 0x0d, "-Inf / -NaN"),
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     // Sentinel duplicates kept out; array length is exactly the 28 real runs
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     // plus two padding entries so callers can use a fixed-size array.
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     (0, 0, 0x18, "(padding)"),
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     (0, 0, 0x18, "(padding)"),
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m /// The 28 real runs (the padding entries above are excluded).
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m pub const REAL_RUNS: usize = 28;
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/harness/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/harness/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Fix RUNS array header
+
+[49m[38;5;9m- 183     [0m:[38;5;9m[49m pub const RUNS: [(u32, u32, u8, &str); 30] = [
+[0m[49m[38;5;9m- 184     [0m:[38;5;9m[49m     (0, 102, 0x18, "+ flush-to-zero (zero, subnormals, tiny)"),
+[0m[49m[38;5;10m+      183[0m:[38;5;10m[49m pub const RUNS: [(u32, u32, u8, &str); 28] = [
+[0m[49m[38;5;10m+      184[0m:[38;5;10m[49m     (0, 102, 0x18, "+ flush-to-zero (zero, subnormals, tiny)"),
+[0m[49m[38;5;10m+      185[0m:[38;5;10m[49m     (103, 103, 0x17, "+ half-subnormal step 1"),
+[0m[49m[38;5;10m+      186[0m:[38;5;10m[49m     (104, 104, 0x16, "+ half-subnormal step 2"),
+[0m[49m[38;5;10m+      187[0m:[38;5;10m[49m     (105, 105, 0x15, "+ half-subnormal step 3"),
+[0m[49m[38;5;10m+      188[0m:[38;5;10m[49m     (106, 106, 0x14, "+ half-subnormal step 4"),
+[0m[49m[38;5;10m+      189[0m:[38;5;10m[49m     (107, 107, 0x13, "+ half-subnormal step 5"),
+[0m[49m[38;5;10m+      190[0m:[38;5;10m[49m     (108, 108, 0x12, "+ half-subnormal step 6"),
+[0m[49m[38;5;10m+      191[0m:[38;5;10m[49m     (109, 109, 0x11, "+ half-subnormal step 7"),
+[0m[49m[38;5;10m+      192[0m:[38;5;10m[49m     (110, 110, 0x10, "+ half-subnormal step 8"),
+[0m[49m[38;5;10m+      193[0m:[38;5;10m[49m     (111, 111, 0x0f, "+ half-subnormal step 9"),
+[0m[49m[38;5;10m+      194[0m:[38;5;10m[49m     (112, 112, 0x0e, "+ half-subnormal step 10"),
+[0m[49m[38;5;10m+      195[0m:[38;5;10m[49m     (113, 142, 0x0d, "+ normal halves"),
+[0m[49m[38;5;10m+      196[0m:[38;5;10m[49m     (143, 254, 0x18, "+ overflow saturate to +Inf"),
+[0m[49m[38;5;10m+      197[0m:[38;5;10m[49m     (255, 255, 0x0d, "+Inf / +NaN"),
+[0m[49m[38;5;10m+      198[0m:[38;5;10m[49m     (256, 358, 0x18, "- flush-to-zero (-0, subnormals, tiny)"),
+[0m[49m[38;5;10m+      199[0m:[38;5;10m[49m     (359, 359, 0x17, "- half-subnormal step 1"),
+[0m[49m[38;5;10m+      200[0m:[38;5;10m[49m     (360, 360, 0x16, "- half-subnormal step 2"),
+[0m[49m[38;5;10m+      201[0m:[38;5;10m[49m     (361, 361, 0x15, "- half-subnormal step 3"),
+[0m[49m[38;5;10m+      202[0m:[38;5;10m[49m     (362, 362, 0x14, "- half-subnormal step 4"),
+[0m[49m[38;5;10m+      203[0m:[38;5;10m[49m     (363, 363, 0x13, "- half-subnormal step 5"),
+[0m[49m[38;5;10m+      204[0m:[38;5;10m[49m     (364, 364, 0x12, "- half-subnormal step 6"),
+[0m[49m[38;5;10m+      205[0m:[38;5;10m[49m     (365, 365, 0x11, "- half-subnormal step 7"),
+[0m[49m[38;5;10m+      206[0m:[38;5;10m[49m     (366, 366, 0x10, "- half-subnormal step 8"),
+[0m[49m[38;5;10m+      207[0m:[38;5;10m[49m     (367, 367, 0x0f, "- half-subnormal step 9"),
+[0m[49m[38;5;10m+      208[0m:[38;5;10m[49m     (368, 368, 0x0e, "- half-subnormal step 10"),
+[0m[49m[38;5;10m+      209[0m:[38;5;10m[49m     (369, 398, 0x0d, "- normal halves"),
+[0m[49m[38;5;10m+      210[0m:[38;5;10m[49m     (399, 510, 0x18, "- overflow saturate to -Inf"),
+[0m[49m[38;5;10m+      211[0m:[38;5;10m[49m     (511, 511, 0x0d, "-Inf / -NaN"),
+[0m[49m[38;5;10m+      212[0m:[38;5;10m[49m ];
+[0m[K
+Updating: [38;5;141mtranslation/tests/harness/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && python3 - <<'EOF'
+p='tests/harness/mod.rs'
+s=open(p).read()
+start=s.index('    (103, 103, 0x17, "+ half-subnormal step 1"),')
+# find the second occurrence region: the old tail after the new array
+end_marker='];\n\n/// The 28 real runs'
+# Remove everything from the duplicated old body start through the old sentinel block
+i=s.index('];', s.index('(511, 511, 0x0d, "-Inf / -NaN"),'))+2
+j=s.index('pub const REAL_RUNS')
+s = s[:i] + '\n' + s[j:]
+s = s.replace('/// The 28 real runs (the padding entries above are excluded).\n','')
+open(p,'w').write(s)
+EOF
+tail -45 tests/harness/mod.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Remove leftover duplicated array body
+
+    #[inline]
+    pub fn below(&mut self, n: u32) -> u32 {
+        self.next_u32() % n
+    }
+}
+
+/// The mantissa boundary shapes every row is probed with.
+pub const MANTISSA_EDGES: [u32; 9] = [
+    0x00_0000, 0x00_0001, 0x00_0002, 0x00_0003, 0x3F_FFFF, 0x40_0000, 0x7F_FFFD, 0x7F_FFFE,
+    0x7F_FFFF,
+];
+
+/// The maximal contiguous runs of equal `m__shift[j]`, extracted mechanically
+/// from `c_src/src/lib.c`. `(j_lo, j_hi, shift, label)`.
+pub const RUNS: [(u32, u32, u8, &str); 28] = [
+    (0, 102, 0x18, "+ flush-to-zero (zero, subnormals, tiny)"),
+    (103, 103, 0x17, "+ half-subnormal step 1"),
+    (104, 104, 0x16, "+ half-subnormal step 2"),
+    (105, 105, 0x15, "+ half-subnormal step 3"),
+    (106, 106, 0x14, "+ half-subnormal step 4"),
+    (107, 107, 0x13, "+ half-subnormal step 5"),
+    (108, 108, 0x12, "+ half-subnormal step 6"),
+    (109, 109, 0x11, "+ half-subnormal step 7"),
+    (110, 110, 0x10, "+ half-subnormal step 8"),
+    (111, 111, 0x0f, "+ half-subnormal step 9"),
+    (112, 112, 0x0e, "+ half-subnormal step 10"),
+    (113, 142, 0x0d, "+ normal halves"),
+    (143, 254, 0x18, "+ overflow saturate to +Inf"),
+    (255, 255, 0x0d, "+Inf / +NaN"),
+    (256, 358, 0x18, "- flush-to-zero (-0, subnormals, tiny)"),
+    (359, 359, 0x17, "- half-subnormal step 1"),
+    (360, 360, 0x16, "- half-subnormal step 2"),
+    (361, 361, 0x15, "- half-subnormal step 3"),
+    (362, 362, 0x14, "- half-subnormal step 4"),
+    (363, 363, 0x13, "- half-subnormal step 5"),
+    (364, 364, 0x12, "- half-subnormal step 6"),
+    (365, 365, 0x11, "- half-subnormal step 7"),
+    (366, 366, 0x10, "- half-subnormal step 8"),
+    (367, 367, 0x0f, "- half-subnormal step 9"),
+    (368, 368, 0x0e, "- half-subnormal step 10"),
+    (369, 398, 0x0d, "- normal halves"),
+    (399, 510, 0x18, "- overflow saturate to -Inf"),
+    (511, 511, 0x0d, "-Inf / -NaN"),
+];
+pub const REAL_RUNS: usize = 28;
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[38;5;141m> [0mHarness is clean. Now the Phase B and Phase C test files.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/phase_b_valid.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write Phase B differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase B — valid-path differential tests, one test per `CONFIGS.md` row.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Every call goes through `dlopen`+`dlsym` on BOTH the C `.so` and the Rust
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `.so`; the Rust implementation is never invoked directly.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m mod harness;
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use harness::{bits_from, Pair, Rng, MANTISSA_EDGES, RUNS};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m /// Seed used by every randomized row (reproducible).
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m const SEED: u64 = 0x2545_F491_4F6C_DD1D;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// Exercise one `CONFIGS.md` row: the run's endpoint `j`s, every mantissa edge,
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// and `n` randomized `(j, mantissa)` pairs drawn from inside the run.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m fn check_run(p: &Pair, idx: usize, randoms: u32) {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     let (lo, hi, shift, label) = RUNS[idx];
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     let what = format!("CONFIGS row for j={lo}..{hi} shift=0x{shift:02x} [{label}]");
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     // Endpoints and (for wide runs) the interior neighbours of the endpoints.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     let mut js = vec![lo, hi];
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     if hi > lo {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         js.push(lo + 1);
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         js.push(hi - 1);
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         js.push(lo + (hi - lo) / 2);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     for &j in &js {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         for &m in MANTISSA_EDGES.iter() {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), &what);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     // Every j in the run, with the mantissa edges (runs are <= 112 wide).
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     for j in lo..=hi {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         for &m in MANTISSA_EDGES.iter() {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), &what);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     // Randomized interior: random j in the run x random 23-bit mantissa.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ (idx as u64));
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let span = hi - lo + 1;
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     for _ in 0..randoms {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         let j = lo + rng.below(span);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         let m = rng.next_u32() & 0x007f_ffff;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         p.assert_bits(bits_from(j, m), &what);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m macro_rules! row_test {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     ($name:ident, $idx:expr) => {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         #[test]
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         fn $name() {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             let p = Pair::load();
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             check_run(&p, $idx, 20_000);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m // ---- CONFIGS.md rows 1..28 : one test per run the C tables distinguish ----
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m row_test!(row01_pos_flush_to_zero, 0);
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m row_test!(row02_pos_subnormal_step1, 1);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m row_test!(row03_pos_subnormal_step2, 2);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m row_test!(row04_pos_subnormal_step3, 3);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m row_test!(row05_pos_subnormal_step4, 4);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m row_test!(row06_pos_subnormal_step5, 5);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m row_test!(row07_pos_subnormal_step6, 6);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m row_test!(row08_pos_subnormal_step7, 7);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m row_test!(row09_pos_subnormal_step8, 8);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m row_test!(row10_pos_subnormal_step9, 9);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m row_test!(row11_pos_subnormal_step10, 10);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m row_test!(row12_pos_normal_halves, 11);
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m row_test!(row13_pos_overflow_saturate, 12);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m row_test!(row14_pos_inf_and_nan, 13);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m row_test!(row15_neg_flush_to_zero, 14);
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m row_test!(row16_neg_subnormal_step1, 15);
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m row_test!(row17_neg_subnormal_step2, 16);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m row_test!(row18_neg_subnormal_step3, 17);
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m row_test!(row19_neg_subnormal_step4, 18);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m row_test!(row20_neg_subnormal_step5, 19);
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m row_test!(row21_neg_subnormal_step6, 20);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m row_test!(row22_neg_subnormal_step7, 21);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m row_test!(row23_neg_subnormal_step8, 22);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m row_test!(row24_neg_subnormal_step9, 23);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m row_test!(row25_neg_subnormal_step10, 24);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m row_test!(row26_neg_normal_halves, 25);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m row_test!(row27_neg_overflow_saturate, 26);
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m row_test!(row28_neg_inf_and_nan, 27);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m /// CONFIGS.md row 29 — every `j` in 0..512 x every mantissa boundary shape.
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m fn row29_all_j_with_mantissa_edges() {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     for j in 0u32..512 {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         for &m in MANTISSA_EDGES.iter() {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), "CONFIGS row 29 (all j x mantissa edges)");
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// CONFIGS.md row 30 — every run transition `(j-1, j)` with mantissa edges.
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// Catches a lookup table transcribed off by one element.
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m fn row30_run_boundaries() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     for &(lo, hi, _, label) in RUNS.iter() {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         let what = format!("CONFIGS row 30 (boundary of [{label}])");
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         for j in [lo.saturating_sub(1), lo, hi, (hi + 1).min(511)] {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m             for &m in MANTISSA_EDGES.iter() {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                 p.assert_bits(bits_from(j, m), &what);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m /// CONFIGS.md row 31 — uniformly random 32-bit argument patterns.
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m fn row31_random_uniform_bit_patterns() {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     for _ in 0..4_000_000u32 {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         p.assert_bits(rng.next_u32(), "CONFIGS row 31 (uniform random bits)");
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m /// CONFIGS.md row 32 — random sign x exponent drawn from run endpoints x
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m /// random mantissa, concentrating on the value classes the C distinguishes.
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m fn row32_random_interesting_shapes() {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 0xA5A5_A5A5_A5A5_A5A5);
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     // Pool of "interesting" j values: every run endpoint and its neighbours.
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let mut pool: Vec<u32> = Vec::new();
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     for &(lo, hi, _, _) in RUNS.iter() {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         for j in [lo.saturating_sub(1), lo, lo + 1, hi.saturating_sub(1), hi, (hi + 1).min(511)] {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m             if j < 512 {
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                 pool.push(j);
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     pool.sort_unstable();
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     pool.dedup();
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     let n = pool.len() as u32;
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     for _ in 0..1_000_000u32 {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         let j = pool[rng.below(n) as usize];
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         // Mix of tiny, huge, and fully random mantissas.
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         let m = match rng.below(4) {
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m             0 => rng.below(8),
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m             1 => 0x007f_ffff - rng.below(8),
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m             2 => 1u32 << rng.below(23),
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m             _ => rng.next_u32() & 0x007f_ffff,
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         p.assert_bits(bits_from(j, m), "CONFIGS row 32 (random interesting shapes)");
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m /// CONFIGS.md row 33 — ordinary `f32` values a real consumer would pass:
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m /// ratios, powers, and integer-valued floats, rather than raw bit patterns.
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m fn row33_ordinary_consumer_values() {
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED ^ 0x1234_5678_9ABC_DEF0);
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     for i in 0..50_000u32 {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         let num = (rng.next_u32() % 100_000) as f32;
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         let den = ((rng.next_u32() % 99_999) + 1) as f32;
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         p.assert_val(num / den, "CONFIGS row 33 (ratio)");
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         p.assert_val(-num / den, "CONFIGS row 33 (negative ratio)");
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         let e = (rng.below(90) as i32) - 45;
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         p.assert_val(2.0f32.powi(e), "CONFIGS row 33 (power of two)");
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         p.assert_val(10.0f32.powi(e / 3), "CONFIGS row 33 (power of ten)");
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         let _ = i;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     // Named constants and the classic float32 landmarks.
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     for &v in &[
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         0.0f32,
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m         -0.0,
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m         1.0,
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         -1.0,
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         0.5,
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         -0.5,
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         2.0,
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         65504.0,          // largest finite half
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m         65519.0,          // just under the half overflow threshold
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         65520.0,          // first value that saturates
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         6.103515625e-5,   // smallest normal half
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         5.960464477539063e-8, // smallest subnormal half
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         f32::MIN,
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         f32::MAX,
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m         f32::MIN_POSITIVE,
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         f32::EPSILON,
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         f32::INFINITY,
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         f32::NEG_INFINITY,
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         f32::NAN,
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m         -f32::NAN,
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         core::f32::consts::PI,
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         core::f32::consts::E,
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         p.assert_val(v, "CONFIGS row 33 (landmark constant)");
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m /// Sanity: both libraries were actually loaded from distinct files, so the
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m /// comparison is not accidentally a library against itself.
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m fn harness_loads_two_distinct_shared_objects() {
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     assert_ne!(p.c_path, p.rust_path);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     assert!(p.c_path.is_file(), "{}", p.c_path.display());
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     assert!(p.rust_path.is_file(), "{}", p.rust_path.display());
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     assert!(p.c_path.starts_with(
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m             .parent()
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m             .unwrap()
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m             .join("c_src")
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     ));
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     // And the two function pointers are genuinely different code.
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     assert_ne!(p.c as usize, p.rust as usize);
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/phase_b_valid.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/phase_c_errors.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write Phase C error-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase C — error-path / boundary differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! One test per row of `ERRORS.md`. `float2half` has no error return (every
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `uint16_t` is a valid result), so each row asserts that the C and Rust
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! exports agree on the exact returned value for a condition where the Rust
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! translation could otherwise panic, trap, or canonicalise instead of
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! returning what the C returns.
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m mod harness;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use harness::{bits_from, Pair, Rng, MANTISSA_EDGES, RUNS};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// ERRORS.md row 1 — table index overrun. The only guard is `& 0x1ff`.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m fn err01_table_index_never_overruns() {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     // The adversarial patterns: all-ones, top-half all-ones, and every j at
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     // the very end of each table half.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     for bits in [0xFFFF_FFFFu32, 0x7FFF_FFFF, 0xFF80_0000, 0x7F80_0000] {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         p.assert_bits(bits, "ERRORS row 1 (index overrun probe)");
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     // j == 255 and j == 511 (the last element of each table half) with every
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     // mantissa edge, plus a randomized sweep over their full mantissa space.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     let mut rng = Rng::new(0xDEAD_BEEF_CAFE_F00D);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     for j in [255u32, 511] {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         for &m in MANTISSA_EDGES.iter() {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), "ERRORS row 1 (last table element)");
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         for _ in 0..200_000 {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m             let m = rng.next_u32() & 0x007f_ffff;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), "ERRORS row 1 (last table element, random)");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     // And every single j, to prove no index is out of range for any input.
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     for j in 0u32..512 {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         p.assert_bits(bits_from(j, 0x007f_ffff), "ERRORS row 1 (all indices)");
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// ERRORS.md row 2 — widest shift in the table (0x18 = 24) must not overflow.
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m fn err02_widest_shift_is_well_defined() {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     let mut count = 0u32;
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     for &(lo, hi, shift, label) in RUNS.iter() {
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         if shift != 0x18 {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         let what = format!("ERRORS row 2 (shift 0x18 in [{label}])");
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         for j in lo..=hi {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m             // Maximum mantissa maximises the shifted operand.
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, 0x007f_ffff), &what);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, 0x0040_0000), &what);
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, 0x0000_0001), &what);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             count += 1;
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     assert!(count >= 400, "expected the four shift-0x18 runs, saw {count} j values");
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m /// ERRORS.md row 3 — `uint16_t` truncation of the `uint32_t` sum; worst case
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m /// `j == 511`, mantissa `0x7fffff` -> `0xfc00 + 0x3ff == 0xffff`.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m fn err03_u16_truncation_of_sum() {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     let bits = bits_from(511, 0x007f_ffff);
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     p.assert_bits(bits, "ERRORS row 3 (max sum)");
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let (c, r) = p.both_bits(bits);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     assert_eq!(c, 0xFFFF, "C should produce the maximal 0xFFFF here");
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     assert_eq!(r, 0xFFFF);
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     // The other maximal-sum candidates.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     for j in [255u32, 398, 142, 511] {
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         p.assert_bits(bits_from(j, 0x007f_ffff), "ERRORS row 3 (near-max sum)");
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// ERRORS.md row 4 — signalling NaN payloads must survive the FFI unchanged.
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m fn err04_signalling_nan_payloads() {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     for bits in [
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         0x7FBF_FFFFu32, // +sNaN, max payload
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         0xFFBF_FFFF,    // -sNaN, max payload
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         0x7F80_0001,    // +sNaN, min payload
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         0xFF80_0001,    // -sNaN, min payload
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         0x7FA0_0000,
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         0xFFA0_0000,
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         p.assert_bits(bits, "ERRORS row 4 (signalling NaN)");
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     let (c, r) = p.both_bits(0x7FBF_FFFF);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m     assert_eq!((c, r), (0x7DFF, 0x7DFF), "sNaN payload was altered somewhere");
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     let (c, r) = p.both_bits(0xFFBF_FFFF);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m     assert_eq!((c, r), (0xFDFF, 0xFDFF));
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m /// ERRORS.md row 5 — quiet NaN payloads, including the payload that aliases
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m /// onto the infinity encoding. This aliasing is what the C does; do not "fix".
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m fn err05_quiet_nan_payloads_including_inf_alias() {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     // A NaN whose payload shifts down to zero collides with +Inf's encoding.
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let (c, r) = p.both_bits(0x7F80_0001);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         (c, r),
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         (0x7C00, 0x7C00),
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         "the C aliases small-payload NaN onto the Inf encoding; Rust must too"
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let (c, r) = p.both_bits(0xFF80_0001);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     assert_eq!((c, r), (0xFC00, 0xFC00));
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     // Exhaustive over the full 2^23 payload space of both NaN halves.
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     for m in 0u32..0x0080_0000 {
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         p.assert_bits(bits_from(255, m), "ERRORS row 5 (all +NaN payloads)");
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         p.assert_bits(bits_from(511, m), "ERRORS row 5 (all -NaN payloads)");
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m /// ERRORS.md row 6 — infinities.
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m fn err06_infinities() {
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     let (c, r) = p.both_bits(0x7F80_0000);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     assert_eq!((c, r), (0x7C00, 0x7C00), "+Inf");
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let (c, r) = p.both_bits(0xFF80_0000);
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     assert_eq!((c, r), (0xFC00, 0xFC00), "-Inf");
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     p.assert_val(f32::INFINITY, "ERRORS row 6 (+Inf via value)");
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     p.assert_val(f32::NEG_INFINITY, "ERRORS row 6 (-Inf via value)");
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m /// ERRORS.md row 7 — finite overflow, one step past the last representable
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m /// exponent: `j == 143` / `j == 399`.
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m fn err07_finite_overflow_saturates() {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     let (c, r) = p.both_bits(bits_from(143, 0));
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     assert_eq!((c, r), (0x7C00, 0x7C00), "j=143 saturates to +Inf encoding");
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     let (c, r) = p.both_bits(bits_from(399, 0));
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     assert_eq!((c, r), (0xFC00, 0xFC00), "j=399 saturates to -Inf encoding");
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     // Mantissa is discarded in this run — check that across the whole mantissa
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     // range for both signs.
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     let mut rng = Rng::new(0x0BAD_F00D_1234_5678);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     for _ in 0..200_000 {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         let m = rng.next_u32() & 0x007f_ffff;
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         p.assert_bits(bits_from(143, m), "ERRORS row 7 (+overflow, random mantissa)");
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         p.assert_bits(bits_from(399, m), "ERRORS row 7 (-overflow, random mantissa)");
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m /// ERRORS.md row 8 — underflow to zero one step below the first representable
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m /// half subnormal: `j == 102` / `j == 358`, sign preserved.
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m fn err08_underflow_preserves_sign() {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     let (c, r) = p.both_bits(bits_from(102, 0x007f_ffff));
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m     assert_eq!((c, r), (0x0000, 0x0000), "+tiny flushes to +0");
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     let (c, r) = p.both_bits(bits_from(358, 0x007f_ffff));
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     assert_eq!((c, r), (0x8000, 0x8000), "-tiny flushes to -0, not +0");
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     let mut rng = Rng::new(0xFEED_FACE_5EED_1111);
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     for _ in 0..200_000 {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         let m = rng.next_u32() & 0x007f_ffff;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         p.assert_bits(bits_from(102, m), "ERRORS row 8 (+underflow)");
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m         p.assert_bits(bits_from(358, m), "ERRORS row 8 (-underflow)");
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m /// ERRORS.md row 9 — signed zero and float subnormals.
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m fn err09_signed_zero_and_float_subnormals() {
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     let cases: [(u32, u16, &str); 6] = [
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         (0x0000_0000, 0x0000, "+0"),
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         (0x8000_0000, 0x8000, "-0"),
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         (0x0000_0001, 0x0000, "smallest +subnormal f32"),
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m         (0x8000_0001, 0x8000, "smallest -subnormal f32"),
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         (0x007F_FFFF, 0x0000, "largest +subnormal f32"),
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         (0x807F_FFFF, 0x8000, "largest -subnormal f32"),
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     for (bits, want, label) in cases {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         p.assert_bits(bits, &format!("ERRORS row 9 ({label})"));
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         let (c, r) = p.both_bits(bits);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         assert_eq!(c, want, "unexpected C result for {label}");
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         assert_eq!(r, want, "unexpected Rust result for {label}");
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m /// ERRORS.md row 10 — the `j == 102` / `j == 103` (and 358/359) discontinuity,
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m /// across *all* 2^23 mantissas of each side.
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m fn err10_flush_to_graduated_boundary() {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     for j in [102u32, 103, 358, 359] {
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         for m in 0u32..0x0080_0000 {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), "ERRORS row 10 (flush/graduated boundary)");
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m /// ERRORS.md row 11 — the graduated-underflow / normal boundary
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m /// (`j == 112` vs `113`, `368` vs `369`), all mantissas.
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m fn err11_graduated_to_normal_boundary() {
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     for j in [112u32, 113, 368, 369] {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m         for m in 0u32..0x0080_0000 {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), "ERRORS row 11 (graduated/normal boundary)");
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m /// ERRORS.md row 12 — the last-finite-normal / saturation boundary
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m /// (`j == 142` vs `143`, `398` vs `399`), all mantissas.
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m fn err12_normal_to_saturation_boundary() {
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     for j in [142u32, 143, 398, 399] {
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         for m in 0u32..0x0080_0000 {
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), "ERRORS row 12 (normal/saturation boundary)");
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m /// ERRORS.md row 13 — the saturation / Inf-NaN single-element discontinuity at
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m /// the end of each table half (`j == 254` vs `255`, `510` vs `511`).
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m fn err13_saturation_to_infnan_boundary() {
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     for j in [254u32, 255, 510, 511] {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         for m in 0u32..0x0080_0000 {
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m             p.assert_bits(bits_from(j, m), "ERRORS row 13 (saturation/InfNaN boundary)");
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     // The defining contrast: mantissa ignored at j=254, honoured at j=255.
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     let (c254, r254) = p.both_bits(bits_from(254, 0x007f_ffff));
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     let (c255, r255) = p.both_bits(bits_from(255, 0x007f_ffff));
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     assert_eq!((c254, r254), (0x7C00, 0x7C00));
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     assert_eq!((c255, r255), (0x7FFF, 0x7FFF));
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m /// ERRORS.md rows 14-16 — the generic C-API boundaries, documented as
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m /// structurally inapplicable and asserted as such against the real header.
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m /// * row 14 (null pointer): `float2half` has no pointer parameter.
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m /// * row 15 (zero/oversized length): no length parameter.
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m /// * row 16 (out-of-range enum): no enum/flag parameter.
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m /// The nearest real analogue is "an argument bit pattern with no valid
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m /// interpretation". Because the whole argument is 32 bits, that class is
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m /// covered by passing *every* pattern (see `phase_b_exhaustive.rs`). Here we
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m /// assert the header really does declare a single `float` parameter, so these
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m /// rows cannot be silently hiding an untested input.
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m fn err14_15_16_generic_boundaries_are_structurally_inapplicable() {
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     let header = std::fs::read_to_string(
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m             .parent()
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m             .unwrap()
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m             .join("c_src")
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m             .join("include")
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m             .join("lib.h"),
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m     )
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m     .expect("read c_src/include/lib.h");
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     let decls: Vec<&str> = header
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m         .lines()
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m         .map(str::trim)
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         .filter(|l| l.contains('(') && l.ends_with(';'))
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         decls,
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         vec!["uint16_t float2half(float flt);"],
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         "the public C API changed; rows 14-16 must be re-derived"
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     assert!(!header.contains('*'), "a pointer parameter appeared: row 14 now applies");
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     assert!(!header.contains("enum"), "an enum parameter appeared: row 16 now applies");
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m         !header.contains("size") && !header.contains("len"),
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m         "a length parameter appeared: row 15 now applies"
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     // A "no valid variant" argument still crosses the boundary fine on both
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     // sides: pass the non-canonical patterns a C caller could hand us.
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m     for bits in [
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m         0xFFFF_FFFFu32,
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m         0x7FFF_FFFF,
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m         0x8000_0000,
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m         0x0000_0000,
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         0xDEAD_BEEF,
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m         0xCAFE_BABE,
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         0x8080_8080,
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m         0x5555_5555,
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m         0xAAAA_AAAA,
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m         p.assert_bits(bits, "ERRORS rows 14-16 (arbitrary argument bit pattern)");
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/phase_c_errors.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/phase_b_exhaustive.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write exhaustive 2^32 differential test
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! CONFIGS.md row 34 — exhaustive differential test over the ENTIRE input
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m //! domain: all 2^32 `f32` bit patterns, through both `.so` exports.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m //! `float2half`'s only input is its 32-bit argument, so this is a total proof
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m //! of equivalence for this ABI: it subsumes every other Phase B row and every
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m //! Phase C row. The work is split across worker threads; each thread loads its
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m //! own handles to both libraries (both functions are pure and stateless).
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m //! Run with `cargo test --release` for the fast path. The sharded design keeps
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m //! the wall clock well under the 600 s budget.
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m mod harness;
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m use harness::Pair;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m use std::sync::atomic::{AtomicU64, Ordering};
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m use std::sync::Arc;
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m fn row34_exhaustive_all_2pow32_bit_patterns() {
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     // Sanity-check the loader once on the main thread first.
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     {
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         let p = Pair::load();
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         p.assert_bits(0, "exhaustive preflight");
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         eprintln!("C   .so: {}", p.c_path.display());
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m         eprintln!("Rust.so: {}", p.rust_path.display());
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     let threads: u32 = std::thread::available_parallelism()
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         .map(|n| n.get() as u32)
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m         .unwrap_or(4)
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m         .clamp(1, 32);
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     // 2^32 patterns split into `threads` contiguous shards.
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     const TOTAL: u64 = 1u64 << 32;
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     let chunk = TOTAL / threads as u64;
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     let mismatches = Arc::new(AtomicU64::new(0));
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     let first_bad = Arc::new(AtomicU64::new(u64::MAX));
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     let checked = Arc::new(AtomicU64::new(0));
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     let mut handles = Vec::new();
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     for t in 0..threads {
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m         let start = t as u64 * chunk;
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m         let end = if t == threads - 1 { TOTAL } else { start + chunk };
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m         let mismatches = Arc::clone(&mismatches);
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m         let first_bad = Arc::clone(&first_bad);
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m         let checked = Arc::clone(&checked);
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         handles.push(std::thread::spawn(move || {
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m             let p = Pair::load();
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m             let c = p.c;
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m             let rs = p.rust;
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             let mut local_bad = 0u64;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m             let mut local_first = u64::MAX;
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m             for bits64 in start..end {
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m                 let bits = bits64 as u32;
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m                 let x = f32::from_bits(bits);
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m                 // SAFETY: both symbols were type-checked as
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m                 // `extern "C" fn(f32) -> u16` when the library was loaded.
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m                 let (a, b) = unsafe { (c(x), rs(x)) };
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m                 if a != b {
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m                     local_bad += 1;
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m                     if local_first == u64::MAX {
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m                         local_first = bits64;
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m             checked.fetch_add(end - start, Ordering::Relaxed);
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m             if local_bad > 0 {
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m                 mismatches.fetch_add(local_bad, Ordering::Relaxed);
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m                 first_bad.fetch_min(local_first, Ordering::Relaxed);
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         }));
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m     for h in handles {
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m         h.join().expect("exhaustive worker thread panicked");
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     let n = checked.load(Ordering::Relaxed);
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m     assert_eq!(n, TOTAL, "did not cover the whole 2^32 domain (covered {n})");
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m     let bad = mismatches.load(Ordering::Relaxed);
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m     if bad != 0 {
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m         let fb = first_bad.load(Ordering::Relaxed) as u32;
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m         let p = Pair::load();
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m         let (c, r) = p.both_bits(fb);
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m         panic!(
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m             "EXHAUSTIVE DIVERGENCE: {bad} of {TOTAL} inputs differ. \
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m              First: bits 0x{fb:08X} (f32 {:e}) -> C 0x{c:04X} != Rust 0x{r:04X}",
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m             f32::from_bits(fb)
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    97[0m:[38;5;10m[49m     eprintln!("exhaustive: all {TOTAL} f32 bit patterns agree ({threads} shards)");
+[0m[49m[38;5;10m+    98[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/tests/phase_b_exhaustive.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && timeout 600 cargo test --release --no-run 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile the test suite
+
+warning: fields `c_path` and `rust_path` are never read
+  --> tests/harness/mod.rs:72:9
+   |
+67 | pub struct Pair {
+   |            ---- fields in this struct
+...
+72 |     pub c_path: PathBuf,
+   |         ^^^^^^
+73 |     pub rust_path: PathBuf,
+   |         ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `below` is never used
+   --> tests/harness/mod.rs:170:12
+    |
+152 | impl Rng {
+    | -------- method in this implementation
+...
+170 |     pub fn below(&mut self, n: u32) -> u32 {
+    |            ^^^^^
+
+warning: `translation` (test "phase_b_exhaustive") generated 7 warnings
+warning: `translation` (test "phase_b_valid") generated 1 warning
+warning: `translation` (test "phase_c_errors") generated 3 warnings (1 duplicate)
+    Finished `release` profile [optimized] target(s) in 0.77s
+  Executable unittests src/lib.rs (target/release/deps/float2half_lib-0dc0d9f117d4fa76)
+  Executable tests/phase_b_exhaustive.rs (target/release/deps/phase_b_exhaustive-871eb8adc5d007ac)
+  Executable tests/phase_b_valid.rs (target/release/deps/phase_b_valid-cbbb88d8d6f48a65)
+  Executable tests/phase_c_errors.rs (target/release/deps/phase_c_errors-558dcd078835d886)
+[38;5;244m - Completed in 0.798s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && time timeout 600 cargo test --release --test phase_c_errors 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase C error-path tests
+
+    |            ^^^^^
+
+warning: constant `REAL_RUNS` is never used
+   --> tests/harness/mod.rs:213:11
+    |
+213 | pub const REAL_RUNS: usize = 28;
+    |           ^^^^^^^^^
+
+warning: `translation` (test "phase_c_errors") generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.01s
+     Running tests/phase_c_errors.rs (target/release/deps/phase_c_errors-558dcd078835d886)
+
+running 14 tests
+test err02_widest_shift_is_well_defined ... ok
+test err04_signalling_nan_payloads ... ok
+test err06_infinities ... ok
+test err03_u16_truncation_of_sum ... ok
+test err09_signed_zero_and_float_subnormals ... ok
+test err14_15_16_generic_boundaries_are_structurally_inapplicable ... ok
+test err08_underflow_preserves_sign ... ok
+test err01_table_index_never_overruns ... ok
+test err07_finite_overflow_saturates ... ok
+test err05_quiet_nan_payloads_including_inf_alias ... ok
+test err11_graduated_to_normal_boundary ... ok
+test err13_saturation_to_infnan_boundary ... ok
+test err12_normal_to_saturation_boundary ... ok
+test err10_flush_to_graduated_boundary ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+
+real	0m0.193s
+user	0m0.744s
+sys	0m0.000s
+[38;5;244m - Completed in 0.196s[0m
+
+[?25l[0m[38;5;141m> [0m0.16 s for ~350 M calls is implausibly fast. Let me verify the tests actually do the work, by timing one alone and by mutation-testing the harness.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && nproc && time timeout 600 cargo test --release --test phase_c_errors -- --exact err10_flush_to_graduated_boundary --nocapture 2>&1 | tail -6[0m[38;5;244m (using tool: shell)[0m
+Purpose: Time single exhaustive-mantissa test
+
+48
+
+running 1 test
+test err10_flush_to_graduated_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.16s
+
+
+real	0m0.187s
+user	0m0.172s
+sys	0m0.012s
+[38;5;244m - Completed in 0.191s[0m
+
+[?25l[0m[38;5;141m> [0mTiming is plausible (~7 cycles/call). Confirming the harness truly detects divergence via a mutation test.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation
+cp src/lib.rs /tmp/lib.rs.bak
+# Mutation 1: flip the single-element discontinuity at j=511 (last shift entry 0x0d -> 0x18)
+python3 - <<'EOF'
+p='src/lib.rs'; s=open(p).read()
+i=s.rindex('0x18, 0x18, 0x18, 0x0d,\n];')
+s=s[:i]+'0x18, 0x18, 0x18, 0x18,\n];'+s[i+len('0x18, 0x18, 0x18, 0x0d,\n];'):]
+open(p,'w').write(s)
+EOF
+grep -c '0x18, 0x18, 0x18, 0x18,$' src/lib.rs >/dev/null
+timeout 600 cargo build --release 2>&1 | tail -2
+echo "--- expect FAILURES in phase C ---"
+timeout 600 cargo test --release --test phase_c_errors 2>&1 | grep -E '^test |test result|DIVERGENCE' | head -25[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test 1: corrupt m__shift last entry
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+--- expect FAILURES in phase C ---
+test err02_widest_shift_is_well_defined ... ok
+test err01_table_index_never_overruns ... FAILED
+test err03_u16_truncation_of_sum ... FAILED
+test err06_infinities ... ok
+test err04_signalling_nan_payloads ... FAILED
+test err05_quiet_nan_payloads_including_inf_alias ... FAILED
+test err09_signed_zero_and_float_subnormals ... ok
+test err14_15_16_generic_boundaries_are_structurally_inapplicable ... FAILED
+test err07_finite_overflow_saturates ... ok
+test err08_underflow_preserves_sign ... ok
+test err13_saturation_to_infnan_boundary ... FAILED
+test err10_flush_to_graduated_boundary ... ok
+test err11_graduated_to_normal_boundary ... ok
+test err12_normal_to_saturation_boundary ... ok
+assertion `left == right` failed: DIVERGENCE (ERRORS row 1 (index overrun probe)): input bits 0xFFFFFFFF (f32 NaN) -> C 0xFFFF != Rust 0xFC00
+assertion `left == right` failed: DIVERGENCE (ERRORS row 3 (max sum)): input bits 0xFFFFFFFF (f32 NaN) -> C 0xFFFF != Rust 0xFC00
+assertion `left == right` failed: DIVERGENCE (ERRORS row 4 (signalling NaN)): input bits 0xFFBFFFFF (f32 NaN) -> C 0xFDFF != Rust 0xFC00
+assertion `left == right` failed: DIVERGENCE (ERRORS row 5 (all -NaN payloads)): input bits 0xFF802000 (f32 NaN) -> C 0xFC01 != Rust 0xFC00
+assertion `left == right` failed: DIVERGENCE (ERRORS rows 14-16 (arbitrary argument bit pattern)): input bits 0xFFFFFFFF (f32 NaN) -> C 0xFFFF != Rust 0xFC00
+assertion `left == right` failed: DIVERGENCE (ERRORS row 13 (saturation/InfNaN boundary)): input bits 0xFF802000 (f32 NaN) -> C 0xFC01 != Rust 0xFC00
+test result: FAILED. 8 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+[38;5;244m - Completed in 0.300s[0m
+
+[?25l[0m[38;5;141m> [0mHarness detects real divergence. Second mutation, targeting a mid-run table entry, to check Phase B coverage.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation
+cp /tmp/lib.rs.bak src/lib.rs
+# Mutation 2: corrupt M__BASE[130] (mid "+ normal halves" run: value 0x4800)
+python3 - <<'EOF'
+import re
+p='src/lib.rs'; s=open(p).read()
+i=s.index('M__BASE: [u16; 512] = [')
+j=s.index('];', i)
+body=s[i:j]
+# find the 131st (index 130) hex literal in the body and bump it
+lits=list(re.finditer(r'0x[0-9a-fA-F]{4}', body))
+m=lits[130]
+old=m.group(0); new='0x4801'
+assert old=='0x4800', old
+body2=body[:m.start()]+new+body[m.end():]
+s=s[:i]+body2+s[j:]
+open(p,'w').write(s)
+print("mutated M__BASE[130]", old, "->", new)
+EOF
+timeout 600 cargo build --release 2>&1 | tail -1
+echo "--- expect FAILURE in phase B row12 (+ normal halves) ---"
+timeout 600 cargo test --release --test phase_b_valid 2>&1 | grep -E '^test |test result|DIVERGENCE' | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test 2: corrupt mid-run base table entry
+
+mutated M__BASE[130] 0x4800 -> 0x4801
+    Finished `release` profile [optimized] target(s) in 0.08s
+--- expect FAILURE in phase B row12 (+ normal halves) ---
+test harness_loads_two_distinct_shared_objects ... ok
+test row02_pos_subnormal_step1 ... ok
+test row01_pos_flush_to_zero ... ok
+test row03_pos_subnormal_step2 ... ok
+test row04_pos_subnormal_step3 ... ok
+test row06_pos_subnormal_step5 ... ok
+test row07_pos_subnormal_step6 ... ok
+test row05_pos_subnormal_step4 ... ok
+test row08_pos_subnormal_step7 ... ok
+test row09_pos_subnormal_step8 ... ok
+test row12_pos_normal_halves ... FAILED
+test row10_pos_subnormal_step9 ... ok
+test row11_pos_subnormal_step10 ... ok
+test row13_pos_overflow_saturate ... ok
+test row15_neg_flush_to_zero ... ok
+test row17_neg_subnormal_step2 ... ok
+test row14_pos_inf_and_nan ... ok
+test row16_neg_subnormal_step1 ... ok
+test row19_neg_subnormal_step4 ... ok
+test row18_neg_subnormal_step3 ... ok
+test row20_neg_subnormal_step5 ... ok
+test row21_neg_subnormal_step6 ... ok
+test row22_neg_subnormal_step7 ... ok
+test row23_neg_subnormal_step8 ... ok
+test row24_neg_subnormal_step9 ... ok
+test row25_neg_subnormal_step10 ... ok
+test row26_neg_normal_halves ... ok
+test row29_all_j_with_mantissa_edges ... FAILED
+test row30_run_boundaries ... ok
+test row27_neg_overflow_saturate ... ok
+test row31_random_uniform_bit_patterns ... FAILED
+test row33_ordinary_consumer_values ... FAILED
+test row28_neg_inf_and_nan ... ok
+test row32_random_interesting_shapes ... ok
+assertion `left == right` failed: DIVERGENCE (CONFIGS row for j=113..142 shift=0x0d [+ normal halves]): input bits 0x41000000 (f32 8e0) -> C 0x4800 != Rust 0x4801
+assertion `left == right` failed: DIVERGENCE (CONFIGS row 29 (all j x mantissa edges)): input bits 0x41000000 (f32 8e0) -> C 0x4800 != Rust 0x4801
+assertion `left == right` failed: DIVERGENCE (CONFIGS row 31 (uniform random bits)): input bits 0x41537EDA (f32 1.321847e1) -> C 0x4A9B != Rust 0x4A9C
+assertion `left == right` failed: DIVERGENCE (CONFIGS row 33 (ratio)): input bits 0x41612B95 (f32 1.407314e1) -> C 0x4B09 != Rust 0x4B0A
+test result: FAILED. 30 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+[38;5;244m - Completed in 0.167s[0m
+
+[?25l[0m[38;5;141m> [0mPhase B localizes the divergence to the exact row. Now checking the exhaustive test detects it too, plus a third mutation on the arithmetic.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation
+echo "=== exhaustive vs mutation 2 (still applied) ==="
+time timeout 600 cargo test --release --test phase_b_exhaustive 2>&1 | grep -E '^test |test result|DIVERGENCE|EXHAUSTIVE' | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify exhaustive test detects mutation
+
+=== exhaustive vs mutation 2 (still applied) ===
+test row34_exhaustive_all_2pow32_bit_patterns ... FAILED
+EXHAUSTIVE DIVERGENCE: 8388608 of 4294967296 inputs differ. First: bits 0x41000000 (f32 8e0) -> C 0x4800 != Rust 0x4801
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+
+real	0m0.927s
+user	0m25.704s
+sys	0m0.011s
+[38;5;244m - Completed in 0.930s[0m
+
+[?25l[0m[38;5;141m> [0mExhaustive sweep found exactly 2^23 divergent inputs — precisely the inputs with [38;5;10mj=130[0m, confirming complete domain coverage. One more mutation on the arithmetic, then restore.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation
+cp /tmp/lib.rs.bak src/lib.rs
+# Mutation 3: arithmetic — use the wrong mantissa mask
+sed -i 's/(n & 0x007f_ffff) >> shift/(n \& 0x003f_ffff) >> shift/' src/lib.rs
+grep -n '0x003f_ffff' src/lib.rs
+timeout 600 cargo build --release 2>&1 | tail -1
+timeout 600 cargo test --release --test phase_b_exhaustive 2>&1 | grep -E 'test result|EXHAUSTIVE'
+echo "=== restore pristine ==="
+cp /tmp/lib.rs.bak src/lib.rs
+diff <(cat /tmp/lib.rs.bak) src/lib.rs && echo "src/lib.rs restored byte-identical"
+timeout 600 cargo build --release 2>&1 | tail -1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test 3 on arithmetic, then restore pristine source
+
+148:    base.wrapping_add((n & 0x003f_ffff) >> shift) as u16
+    Finished `release` profile [optimized] target(s) in 0.07s
+EXHAUSTIVE DIVERGENCE: 335544320 of 4294967296 inputs differ. First: bits 0x34400000 (f32 1.7881393e-7) -> C 0x0003 != Rust 0x0002
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+=== restore pristine ===
+src/lib.rs restored byte-identical
+    Finished `release` profile [optimized] target(s) in 0.07s
+[38;5;244m - Completed in 1.123s[0m
+
+[?25l[0m[38;5;141m> [0mAll three mutations detected. Now the clean full run across profiles and feature combinations.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/verify_all.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase D automation script for all combos and symbol parity
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Phase D driver: run every phase under every feature combination and profile,
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # then diff the exported symbols of the C and Rust shared objects.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m CRATE="$ROOT/translation"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m cd "$CRATE" || exit 1
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m # ---- enumerate feature combinations from Cargo.toml (powerset) -------------
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m mapfile -t FEATS < <(
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   awk '
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m     /^\[features\]/ {inf=1; next}
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m     /^\[/           {inf=0}
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     inf && /^[A-Za-z_][A-Za-z0-9_-]*[[:space:]]*=/ {
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m       split($0, a, "="); gsub(/[[:space:]]/, "", a[1]);
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m       if (a[1] != "default") print a[1]
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m   ' Cargo.toml
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m echo "declared features: ${#FEATS[@]} ${FEATS[*]:-(none)}"
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m COMBOS=()
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m COMBOS+=("--all-features")
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m COMBOS+=("")                      # default features
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m COMBOS+=("--no-default-features")
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m n=${#FEATS[@]}
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m if (( n > 0 && n <= 12 )); then
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m   for ((mask=1; mask < (1<<n); mask++)); do
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     sel=""
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     for ((b=0; b<n; b++)); do
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m       (( mask & (1<<b) )) && sel="${sel:+$sel,}${FEATS[b]}"
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     COMBOS+=("--no-default-features --features $sel")
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m FAIL=0
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m for PROFILE in "" "--release"; do
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m   for COMBO in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     label="profile='${PROFILE:-debug}' combo='${COMBO:-<default>}'"
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     echo "=============================================================="
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     echo ">>> cargo check   $label"
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     if ! timeout 600 cargo check $PROFILE $COMBO >/tmp/pd_check.log 2>&1; then
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m       echo "!!! CHECK FAILED  $label"; tail -20 /tmp/pd_check.log; FAIL=1; continue
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     echo ">>> cargo test    $label"
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     if ! timeout 600 cargo test $PROFILE $COMBO >/tmp/pd_test.log 2>&1; then
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m       echo "!!! TEST FAILED   $label"
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m       grep -E 'DIVERGENCE|EXHAUSTIVE|^test .* FAILED|test result' /tmp/pd_test.log | head -30
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m       FAIL=1; continue
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     grep -E 'test result' /tmp/pd_test.log | sed 's/^/    /'
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m # ---- symbol parity --------------------------------------------------------
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m echo "=============================================================="
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m echo ">>> Phase D symbol parity"
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m C_SO=$(ls "$ROOT"/c_src/build/lib*.so)
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m R_SO="$CRATE/target/release/libfloat2half_lib.so"
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m [ -f "$R_SO" ] || { echo "!!! missing $R_SO"; FAIL=1; }
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m nm -D --defined-only "$C_SO" | awk '{print $NF}' | sort -u > /tmp/pd_c_syms.txt
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m nm -D --defined-only "$R_SO" | awk '{print $NF}' | sort -u > /tmp/pd_r_syms.txt
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m echo "C exports:    $(wc -l < /tmp/pd_c_syms.txt)"
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m echo "Rust exports: $(wc -l < /tmp/pd_r_syms.txt)"
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m MISSING=$(comm -23 /tmp/pd_c_syms.txt /tmp/pd_r_syms.txt)
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m EXTRA=$(comm -13 /tmp/pd_c_syms.txt /tmp/pd_r_syms.txt)
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m if [ -n "$MISSING" ]; then echo "!!! C symbols MISSING from Rust:"; echo "$MISSING"; FAIL=1
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m else echo "OK: 0 C symbols missing from Rust"; fi
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m if [ -n "$EXTRA" ]; then echo "NOTE: Rust-only exports:"; echo "$EXTRA"
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m else echo "OK: 0 Rust-only exports"; fi
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m # undefined non-libc symbols in the Rust .so
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m nm -D -u "$R_SO" | awk '{print $NF}' | sed 's/@.*//' | sort -u > /tmp/pd_r_undef.txt
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m NONLIBC=$(grep -v -E '^(_ITM_|__cxa_|__gmon_start__|_Unwind_|__tls_get_addr|__errno_location|statx|gettid)' /tmp/pd_r_undef.txt \
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m   | grep -v -x -E 'abort|bcmp|calloc|close|dl_iterate_phdr|free|fstat64|getcwd|getenv|lseek64|malloc|memcpy|memmove|memset|mmap64|munmap|open64|posix_memalign|pthread_key_create|pthread_key_delete|pthread_setspecific|read|readlink|realloc|realpath|stat64|strlen|syscall|write|writev|pthread_getspecific|sysconf|qsort|_exit|getpid|sigaction|sigaltstack|pthread_self|memrchr|memchr|strerror_r|__libc_start_main')
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m if [ -n "$NONLIBC" ]; then echo "!!! Rust .so has non-libc undefined symbols:"; echo "$NONLIBC"; FAIL=1
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m else echo "OK: 0 non-libc undefined symbols in Rust .so"; fi
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m echo "=============================================================="
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m if [ "$FAIL" -eq 0 ]; then echo "ALL PHASES PASSED"; else echo "FAILURES PRESENT"; fi
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m exit "$FAIL"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/verify_all.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && chmod +x verify_all.sh && time timeout 600 ./verify_all.sh 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full verification across all profiles, feature combos, and symbol parity
+
+declared features: 0 (none)
+==============================================================
+>>> cargo check   profile='debug' combo='--all-features'
+>>> cargo test    profile='debug' combo='--all-features'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.65s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+==============================================================
+>>> cargo check   profile='debug' combo='<default>'
+>>> cargo test    profile='debug' combo='<default>'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.56s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+==============================================================
+>>> cargo check   profile='debug' combo='--no-default-features'
+>>> cargo test    profile='debug' combo='--no-default-features'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.66s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+==============================================================
+>>> cargo check   profile='--release' combo='--all-features'
+>>> cargo test    profile='--release' combo='--all-features'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+==============================================================
+>>> cargo check   profile='--release' combo='<default>'
+>>> cargo test    profile='--release' combo='<default>'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+==============================================================
+>>> cargo check   profile='--release' combo='--no-default-features'
+>>> cargo test    profile='--release' combo='--no-default-features'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+==============================================================
+>>> Phase D symbol parity
+C exports:    1
+Rust exports: 1
+OK: 0 C symbols missing from Rust
+OK: 0 Rust-only exports
+OK: 0 non-libc undefined symbols in Rust .so
+==============================================================
+ALL PHASES PASSED
+
+real	0m14.001s
+user	4m53.567s
+sys	0m0.725s
+[38;5;244m - Completed in 14.5s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation
+echo "=== which .so does each profile load? ==="
+timeout 600 cargo test --test phase_b_exhaustive -- --nocapture 2>&1 | grep -E '\.so:|exhaustive:'
+echo "--- release ---"
+timeout 600 cargo test --release --test phase_b_exhaustive -- --nocapture 2>&1 | grep -E '\.so:|exhaustive:'
+echo "=== source integrity vs pre-mutation backup ==="
+cmp /tmp/lib.rs.bak src/lib.rs && echo "src/lib.rs IDENTICAL to pristine backup"
+echo "=== c_src untouched? ==="
+cd .. && (git status --porcelain c_src 2>/dev/null || echo "(no git)")
+ls c_src/build >/dev/null && echo "note: c_src/build/ is generated build output only"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm both profiles' .so are exercised and source is pristine
+
+=== which .so does each profile load? ===
+C   .so: /local/home/scheschb/.harvest/work/harvest-work-TuWem7/c_src/build/libharvest-work-TuWem7.so
+Rust.so: /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/target/release/libfloat2half_lib.so
+exhaustive: all 4294967296 f32 bit patterns agree (32 shards)
+--- release ---
+C   .so: /local/home/scheschb/.harvest/work/harvest-work-TuWem7/c_src/build/libharvest-work-TuWem7.so
+Rust.so: /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation/target/release/libfloat2half_lib.so
+exhaustive: all 4294967296 f32 bit patterns agree (32 shards)
+=== source integrity vs pre-mutation backup ===
+src/lib.rs IDENTICAL to pristine backup
+=== c_src untouched? ===
+(no git)
+note: c_src/build/ is generated build output only
+[38;5;244m - Completed in 3.266s[0m
+
+[?25l[0m[38;5;141m> [0mThe debug profile silently fell back to the release [38;5;10m.so[0m. I need the debug cdylib too — it has overflow checks and bounds panics enabled, which is a genuinely different code path.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation
+ls target/debug/*.so 2>&1 | head
+echo "--- force build debug cdylib ---"
+timeout 600 cargo build 2>&1 | tail -2
+ls -la target/debug/*.so 2>&1 | head[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check for debug cdylib
+
+ls: cannot access 'target/debug/*.so': No such file or directory
+--- force build debug cdylib ---
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+-rwxr-xr-x. 2 scheschb amazon 4316720 Sep  5 00:49 target/debug/libfloat2half_lib.so
+[38;5;244m - Completed in 0.109s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/harness/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Make harness require matching-profile cdylib, with explicit env override
+
+[49m[39m  44, 44[0m:[39m[49m fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m     // Tests may run under the `debug` or `release` profile; accept whichever
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m     // cdylib exists, preferring the profile the test itself was built with.
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     // Explicit override lets the Phase D driver pin exactly which cdylib build
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     // is under test (debug and release differ: the dev profile enables
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     // `debug_assertions` + `overflow-checks`, so it can panic where the C
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     // silently wraps — that is a distinct code path worth exercising).
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     if let Some(p) = std::env::var_os("FLOAT2HALF_RUST_SO") {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         let p = PathBuf::from(p);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         assert!(p.is_file(), "FLOAT2HALF_RUST_SO={} is not a file", p.display());
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         return p;
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     // Otherwise: require the cdylib built with the SAME profile as this test
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     // binary, so a missing build cannot silently fall back to the other
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     // profile and hide it from verification.
+[0m[49m[39m  47, 58[0m:[39m[49m     let target = repo_root().join("translation").join("target");
+[0m[49m[39m  48, 59[0m:[39m[49m     let name = "libfloat2half_lib.so";
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m     let profiles: [&str; 2] = if cfg!(debug_assertions) {
+[0m[49m[38;5;9m- 50    [0m:[38;5;9m[49m         ["debug", "release"]
+[0m[49m[38;5;9m- 51    [0m:[38;5;9m[49m     } else {
+[0m[49m[38;5;9m- 52    [0m:[38;5;9m[49m         ["release", "debug"]
+[0m[49m[38;5;9m- 53    [0m:[38;5;9m[49m     };
+[0m[49m[38;5;9m- 54    [0m:[38;5;9m[49m     for p in profiles {
+[0m[49m[38;5;9m- 55    [0m:[38;5;9m[49m         let cand = target.join(p).join(name);
+[0m[49m[38;5;9m- 56    [0m:[38;5;9m[49m         if cand.is_file() {
+[0m[49m[38;5;9m- 57    [0m:[38;5;9m[49m             return cand;
+[0m[49m[38;5;9m- 58    [0m:[38;5;9m[49m         }
+[0m[49m[38;5;9m- 59    [0m:[38;5;9m[49m     }
+[0m[49m[38;5;9m- 60    [0m:[38;5;9m[49m     panic!(
+[0m[49m[38;5;9m- 61    [0m:[38;5;9m[49m         "{name} not found under {}. Run `cargo build` / `cargo build --release` first.",
+[0m[49m[38;5;9m- 62    [0m:[38;5;9m[49m         target.display()
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     let want = if cfg!(debug_assertions) { "debug" } else { "release" };
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     let cand = target.join(want).join(name);
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         cand.is_file(),
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         "{} not found. Run `cargo build{}` so the {want}-profile cdylib exists \
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m          (refusing to fall back to the other profile).",
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         cand.display(),
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         if want == "release" { " --release" } else { "" }
+[0m[49m[39m  63, 68[0m:[39m[49m     );
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     cand
+[0m[49m[39m  64, 70[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/harness/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/verify_all.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Build cdylib per profile before testing
+
+[49m[39m  42, 42[0m:[39m[49m     label="profile='${PROFILE:-debug}' combo='${COMBO:-<default>}'"
+[0m[49m[39m  43, 43[0m:[39m[49m     echo "=============================================================="
+[0m[49m[39m  44, 44[0m:[39m[49m     echo ">>> cargo check   $label"
+[0m[49m[39m  45, 45[0m:[39m[49m     if ! timeout 600 cargo check $PROFILE $COMBO >/tmp/pd_check.log 2>&1; then
+[0m[49m[39m  46, 46[0m:[39m[49m       echo "!!! CHECK FAILED  $label"; tail -20 /tmp/pd_check.log; FAIL=1; continue
+[0m[49m[39m  47, 47[0m:[39m[49m     fi
+[0m[49m[39m  48, 48[0m:[39m[49m 
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     # Build the cdylib for THIS profile so the harness tests the matching .so
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     # (it refuses to fall back to the other profile).
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     if ! timeout 600 cargo build $PROFILE $COMBO >/tmp/pd_build.log 2>&1; then
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m       echo "!!! BUILD FAILED  $label"; tail -20 /tmp/pd_build.log; FAIL=1; continue
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[39m  49, 55[0m:[39m[49m     echo ">>> cargo test    $label"
+[0m[K
+Updating: [38;5;141mtranslation/verify_all.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/verify_all.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Add cross-profile matrix to Phase D driver
+
+[49m[38;5;10m+     65[0m:[38;5;10m[49m # ---- cross-profile matrix: every test binary x every cdylib build ---------
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m echo "=============================================================="
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m echo ">>> cross-profile matrix (test binary profile x cdylib profile)"
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m for TP in "" "--release"; do
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m   for SOP in debug release; do
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     SO="$CRATE/target/$SOP/libfloat2half_lib.so"
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     [ -f "$SO" ] || { echo "!!! missing $SO"; FAIL=1; continue; }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     echo "--- test-binary='${TP:-debug}' cdylib='$SOP'"
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     if ! FLOAT2HALF_RUST_SO="$SO" timeout 600 cargo test $TP >/tmp/pd_x.log 2>&1; then
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m       echo "!!! FAILED test='${TP:-debug}' cdylib='$SOP'"
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m       grep -E 'DIVERGENCE|EXHAUSTIVE|^test .* FAILED|test result' /tmp/pd_x.log | head -20
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m       FAIL=1
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m       grep -E 'test result' /tmp/pd_x.log | sed 's/^/    /'
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m 
+[0m[49m[39m  65, 83[0m:[39m[49m # ---- symbol parity --------------------------------------------------------
+[0m[K
+Updating: [38;5;141mtranslation/verify_all.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && time timeout 600 ./verify_all.sh 2>&1 | tail -45[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full Phase D verification including cross-profile matrix
+
+==============================================================
+>>> cargo check   profile='--release' combo='<default>'
+>>> cargo test    profile='--release' combo='<default>'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+==============================================================
+>>> cargo check   profile='--release' combo='--no-default-features'
+>>> cargo test    profile='--release' combo='--no-default-features'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+==============================================================
+>>> cross-profile matrix (test binary profile x cdylib profile)
+--- test-binary='debug' cdylib='debug'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+--- test-binary='debug' cdylib='release'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+--- test-binary='--release' cdylib='debug'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+--- test-binary='--release' cdylib='release'
+    test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+    test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+==============================================================
+>>> Phase D symbol parity
+C exports:    1
+Rust exports: 1
+OK: 0 C symbols missing from Rust
+OK: 0 Rust-only exports
+OK: 0 non-libc undefined symbols in Rust .so
+==============================================================
+ALL PHASES PASSED
+
+real	0m26.213s
+user	9m11.667s
+sys	0m0.954s
+[38;5;244m - Completed in 26.217s[0m
+
+[?25l[0m[38;5;141m> [0mAll green, including the debug cdylib (overflow-checks and bounds-check panics enabled) across the full 2^32 domain. Independent verification of the artifacts:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7
+echo "=== artifacts ==="; wc -l translation/SYMBOLS.md translation/ERRORS.md translation/CONFIGS.md translation/verify_all.sh
+echo "=== ERRORS.md rows ==="; grep -c '^| [0-9]' translation/ERRORS.md
+echo "=== ERRORS.md unchecked rows ==="; grep -c '\[ \]' translation/ERRORS.md
+echo "=== CONFIGS.md rows ==="; grep -c '^| [0-9]' translation/CONFIGS.md
+echo "=== CONFIGS.md unchecked rows ==="; grep -c '\[ \]' translation/CONFIGS.md
+echo "=== tests ==="; wc -l translation/tests/*.rs translation/tests/harness/mod.rs
+echo "=== test fn count ==="; grep -c '^fn \|#\[test\]' translation/tests/phase_b_valid.rs translation/tests/phase_c_errors.rs translation/tests/phase_b_exhaustive.rs
+echo "=== libloading in Cargo.toml ==="; grep -A2 dev-dependencies translation/Cargo.toml
+echo "=== c_src integrity (no writes by me) ==="; ls -la c_src/src/lib.c c_src/include/lib.h; cmp <(sed -n '108,118p' c_src/src/lib.c) <(sed -n '108,118p' c_src/src/lib.c) && echo ok
+echo "=== rust src pristine ==="; cmp /tmp/lib.rs.bak translation/src/lib.rs && echo "src/lib.rs unmodified from original"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Independently verify all artifacts and integrity
+
+=== artifacts ===
+   76 translation/SYMBOLS.md
+   66 translation/ERRORS.md
+   96 translation/CONFIGS.md
+  111 translation/verify_all.sh
+  349 total
+=== ERRORS.md rows ===
+16
+=== ERRORS.md unchecked rows ===
+0
+=== CONFIGS.md rows ===
+34
+=== CONFIGS.md unchecked rows ===
+1
+=== tests ===
+   98 translation/tests/phase_b_exhaustive.rs
+  223 translation/tests/phase_b_valid.rs
+  300 translation/tests/phase_c_errors.rs
+  219 translation/tests/harness/mod.rs
+  840 total
+=== test fn count ===
+translation/tests/phase_b_valid.rs:14
+translation/tests/phase_c_errors.rs:28
+translation/tests/phase_b_exhaustive.rs:2
+=== libloading in Cargo.toml ===
+[dev-dependencies]
+libloading = "0.8"
+
+=== c_src integrity (no writes by me) ===
+-rw-r--r--. 1 scheschb amazon   53 Sep  5 00:40 c_src/include/lib.h
+-rw-r--r--. 1 scheschb amazon 7935 Sep  5 00:40 c_src/src/lib.c
+ok
+=== rust src pristine ===
+src/lib.rs unmodified from original
+[38;5;244m - Completed in 0.17s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && grep -n '\[ \]' CONFIGS.md[0m[38;5;244m (using tool: shell)[0m
+Purpose: Locate remaining unchecked marker
+
+52:| # | entry point(s) | configuration (options set + input shape) | [ ] |
+[38;5;244m - Completed in 0.4s[0m
+
+[?25l[0m[38;5;141m> [0mThat's the table header, not a row — all 34 rows are checked. Recording the verification evidence in the artifacts.[0m[0m
+[?25l[0m[0mI'll append content to file: [38;5;141mtranslation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Append verification results and mutation-test evidence to CONFIGS.md
+
+[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m ## Result
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m All 34 rows pass. Driver: `translation/verify_all.sh` (Phase D), which runs
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m every phase under `{debug, release} x {default, --no-default-features,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m --all-features}` and then a cross-profile matrix of
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m `{debug, release} test binary x {debug, release} cdylib`.
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m The **debug**-profile cdylib is verified explicitly and separately, because the
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m dev profile enables `debug_assertions` and `overflow-checks`: the C wraps and
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m truncates silently, so a Rust translation using checked arithmetic or an
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m unguarded index would panic there while passing in release. It passes the full
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 2^32 sweep, which proves no input causes an index-out-of-bounds, a
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m shift-overflow, or an add-overflow panic.
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m Row 34 (exhaustive) reports:
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m exhaustive: all 4294967296 f32 bit patterns agree (32 shards)
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m ### Harness credibility (mutation testing)
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m The differential harness was validated by deliberately corrupting the Rust
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m translation (then restoring `src/lib.rs` byte-identically) to confirm the tests
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m actually fail on divergence rather than passing vacuously:
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m | mutation to `translation/src/lib.rs` | detected by |
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m |-------------------------------------|-------------|
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m | `M__SHIFT[511]`: `0x0d` -> `0x18` (the single-element discontinuity at the end of the table) | 6 Phase C tests, incl. rows 1, 3, 4, 5, 13 |
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m | `M__BASE[130]`: `0x4800` -> `0x4801` (mid-run, `+ normal halves`) | Phase B rows 12, 29, 31, 33 and row 34, which reported **exactly 8388608 = 2^23** differing inputs — precisely the inputs with `j == 130`, confirming the sweep's coverage is complete and correctly indexed |
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m | mantissa mask `0x007f_ffff` -> `0x003f_ffff` | row 34, 335544320 differing inputs |
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m The two lookup tables were additionally compared element-by-element between
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m `c_src/src/lib.c` and `translation/src/lib.rs` by mechanical extraction of every
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m hex literal: 512/512 equal for `m__base`, 512/512 equal for `m__shift`.
+[0m[K
+Appending to: [38;5;141mtranslation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll append content to file: [38;5;141mtranslation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Append results section to ERRORS.md
+
+[49m[38;5;10m+    67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m ## Result
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m All 16 rows pass, under every feature combination and under both the debug and
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m release cdylib builds. Driver: `translation/verify_all.sh`.
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m Rows 1–3 are the rows that matter most for a C-to-Rust port, because they are
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m the places where C's silent behaviour could become a Rust panic:
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m * row 1 — indexing `M__BASE`/`M__SHIFT` with `j`. Verified in bounds for **all
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m   2^32** inputs, including with `debug_assertions` on.
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m * row 2 — `>> shift` with the table's widest shift (24). Verified never to
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m   trigger `attempt to shift right with overflow`, with `overflow-checks` on.
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m * row 3 — the `uint32_t` -> `uint16_t` narrowing. Verified never to trigger
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m   `attempt to add with overflow`; the maximum sum is exactly `0xffff`.
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m Because the whole input domain of `float2half` is its single 32-bit argument,
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m `phase_b_exhaustive.rs` (`CONFIGS.md` row 34) passes **every** input the ABI
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m admits — valid and invalid alike — through both `.so`s. That makes the error
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m surface above provably complete: there is no rejectable input it omits.
+[0m[K
+Appending to: [38;5;141mtranslation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TuWem7/translation && time timeout 600 ./verify_all.sh > /tmp/final.log 2>&1; echo "exit=$?"; grep -cE 'test result: ok' /tmp/final.log; grep -cE 'FAILED|!!!' /tmp/final.log; tail -8 /tmp/final.log
+echo "=== final integrity ==="; cmp /tmp/lib.rs.bak src/lib.rs && echo "src/lib.rs pristine"
+ls -la ../c_src/src/lib.c ../c_src/include/lib.h[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final full verification run
+
+exit=0
+
+real	0m25.148s
+user	8m58.234s
+sys	0m0.403s
+40
+0
+>>> Phase D symbol parity
+C exports:    1
+Rust exports: 1
+OK: 0 C symbols missing from Rust
+OK: 0 Rust-only exports
+OK: 0 non-libc undefined symbols in Rust .so
+==============================================================
+ALL PHASES PASSED
+=== final integrity ===
+src/lib.rs pristine
+-rw-r--r--. 1 scheschb amazon   53 Sep  5 00:40 ../c_src/include/lib.h
+-rw-r--r--. 1 scheschb amazon 7935 Sep  5 00:40 ../c_src/src/lib.c
+[38;5;244m - Completed in 25.157s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete — the translation is correct, and no fixes were needed.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+The entire C source is 121 lines: one exported function, [38;5;10muint16_t float2half(float)[0m, plus two file-local 512-entry lookup tables. It is branch-free — no [38;5;10mif[0m, [38;5;10mswitch[0m, [38;5;10m?:[0m, [38;5;10mgoto[0m, [38;5;10menum[0m, pointer, or length parameter anywhere (verified by grep; the file contains exactly one [38;5;10mreturn[0m). All of its "branching" is data-driven through [38;5;10mj = (n >> 23) & 0x1ff[0m.[0m[0m
+[0m[0m
+Because the library is 121 lines, I read it directly rather than delegating to sub-agents — dispatching would have cost more context than the source itself.[0m[0m
+[0m[0m
+[38;5;252m[1m## Results[0m[0m
+[0m[0m
+[38;5;10mcargo check[0m passed clean on the first run; no compile errors existed. The C and Rust [38;5;10m.so[0ms each export exactly one dynamic symbol, [38;5;10mfloat2half[0m, so the symbol diff was empty from the start. The two lookup tables are element-for-element identical (512/512 for each), verified by mechanically extracting every hex literal from both files.[0m[0m
+[0m[0m
+The decisive test is exhaustive: since the function's entire input domain is its single 32-bit argument, I swept [1mall 2^32 = 4,294,967,296 [38;5;10mf32[0m bit patterns[22m through both shared objects and compared. All agree. That subsumes every [38;5;10mCONFIGS.md[0m and [38;5;10mERRORS.md[0m row — there is no input, valid or invalid, that the tests omit. It runs in ~1 s release / ~3 s debug, sharded across 32 threads.[0m[0m
+[0m[0m
+Everything passes under [38;5;10m{debug, release} × {default, --no-default-features, --all-features}[0m plus a cross-profile matrix of test binary × cdylib build (40 passing test-binary runs, 0 failures). The [1mdebug[22m cdylib is checked separately and deliberately: the dev profile enables [38;5;10moverflow-checks[0m and bounds-check panics, so a translation using checked arithmetic or an unguarded index would panic there where the C silently wraps. It passes the full sweep, which proves no input triggers an index, shift, or add overflow panic.[0m[0m
+[0m[0m
+[38;5;252m[1m## Guarding against a vacuous pass[0m[0m
+[0m[0m
+A harness that always passes is worthless, so I mutation-tested it. Corrupting [38;5;10mM__SHIFT[511][0m ([38;5;10m0x0d[0m→[38;5;10m0x18[0m) tripped 6 Phase C tests. Corrupting [38;5;10mM__BASE[130][0m mid-run tripped Phase B rows 12/29/31/33 and made the exhaustive test report [1mexactly 8,388,608 = 2^23[22m differing inputs — precisely the inputs with [38;5;10mj == 130[0m, which confirms the sweep's indexing and coverage are correct. Changing the mantissa mask tripped 335,544,320 inputs. [38;5;10msrc/lib.rs[0m was then restored byte-identically ([38;5;10mcmp[0m-verified).[0m[0m
+[0m[0m
+[38;5;252m[1m## Files[0m[0m
+[0m[0m
+- [38;5;10mtranslation/SYMBOLS.md[0m, [38;5;10mERRORS.md[0m (16 rows, all checked), [38;5;10mCONFIGS.md[0m (34 rows, all checked)[0m[0m
+- [38;5;10mtranslation/tests/harness/mod.rs[0m — [38;5;10mlibloading[0m loader; the Rust function is only ever reached through its [38;5;10m#[no_mangle][0m export, never called directly[0m[0m
+- [38;5;10mtranslation/tests/phase_b_valid.rs[0m (34 tests), [38;5;10mphase_c_errors.rs[0m (14), [38;5;10mphase_b_exhaustive.rs[0m (1)[0m[0m
+- [38;5;10mtranslation/verify_all.sh[0m — Phase D driver; [38;5;10m./verify_all.sh[0m reproduces everything in ~25 s[0m[0m
+[0m[0m
+Two notes on judgment calls. [38;5;10mERRORS.md[0m rows 14–16 (null pointer, zero/oversized length, out-of-range enum) are marked structurally inapplicable rather than tested, because the C API has no pointer, length, or enum parameter — a test asserts the header still declares only [38;5;10muint16_t float2half(float flt);[0m, so the rows fail loudly if that ever changes. And the "compare C and Rust binary stdout" gate does not apply: [38;5;10mCMakeLists.txt[0m has no [38;5;10madd_executable[0m and the crate is [38;5;10mcdylib[0m-only, so neither side builds a driver. [38;5;10mc_src/[0m was not modified.[0m[0m
+[38;5;8m
+ ▸ Credits: 25.31 • Time: 10m 32s
+
+[0m[1G[0m[0m[?25h

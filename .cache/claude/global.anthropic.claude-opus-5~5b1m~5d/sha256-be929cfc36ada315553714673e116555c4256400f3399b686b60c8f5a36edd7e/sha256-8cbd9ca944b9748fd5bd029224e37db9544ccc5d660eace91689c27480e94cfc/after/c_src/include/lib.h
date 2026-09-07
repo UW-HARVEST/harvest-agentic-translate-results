@@ -1,0 +1,1 @@
+void intput(int num);
