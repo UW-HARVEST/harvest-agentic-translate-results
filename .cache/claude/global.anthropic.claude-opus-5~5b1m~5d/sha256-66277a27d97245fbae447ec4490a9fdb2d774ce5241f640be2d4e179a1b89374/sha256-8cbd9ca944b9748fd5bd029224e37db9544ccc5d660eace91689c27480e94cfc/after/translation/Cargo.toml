@@ -1,0 +1,22 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+# `cdylib` is the deliverable. `rlib` is added ONLY so that `cargo test` treats
+# the library as a dependency of the integration tests and therefore rebuilds
+# the `.so` before running them — without it, `cargo test` happily tests a stale
+# `libdriver.so`. The tests still load the `cdylib` through `libloading`; they
+# never link against the rlib.
+crate-type = ["cdylib", "rlib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

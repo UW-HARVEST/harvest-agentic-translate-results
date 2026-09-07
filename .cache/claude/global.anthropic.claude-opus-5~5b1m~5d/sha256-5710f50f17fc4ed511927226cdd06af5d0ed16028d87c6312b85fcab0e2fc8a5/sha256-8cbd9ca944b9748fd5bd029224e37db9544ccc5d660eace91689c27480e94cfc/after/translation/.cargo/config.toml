@@ -1,0 +1,10 @@
+# The differential tests capture stdout by temporarily redirecting file
+# descriptor 1, which is a process-wide resource. libtest's own progress output
+# ("test foo ... ok") is written to fd 1 from other test threads and would land
+# inside a capture window, corrupting the bytes under comparison. Running the
+# tests serially removes that interference.
+#
+# common::capture_stdout additionally holds a mutex, which keeps two captures
+# from overlapping even if this setting is overridden.
+[env]
+RUST_TEST_THREADS = "1"

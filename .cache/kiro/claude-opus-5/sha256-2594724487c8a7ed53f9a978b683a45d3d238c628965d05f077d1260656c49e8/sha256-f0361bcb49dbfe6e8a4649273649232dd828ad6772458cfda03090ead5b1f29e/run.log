@@ -1,0 +1,1774 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "--- c_src ---" && find c_src -type f | head -100 && echo "--- translation ---" && find translation -type f -not -path '*/target/*' | head -100[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore directory structure
+
+total 160
+drwxr-xr-x.    4 scheschb amazon     50 Sep  5 00:51 .
+drwxr-xr-x. 2019 scheschb amazon 114688 Sep  5 00:51 ..
+drwxr-xr-x.    4 scheschb amazon     70 Sep  5 00:51 c_src
+drwxr-xr-x.    3 scheschb amazon     69 Sep  5 00:51 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+--- translation ---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/CMakeLists.txt && echo "=== lib.h ===" && cat c_src/include/lib.h && echo "=== wc ===" && wc -l c_src/src/lib.c translation/src/lib.rs && echo "=== Cargo.toml ===" && cat translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read build files and header
+
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+=== lib.h ===
+#include <stdint.h>
+
+unsigned hdr_bitrate(const uint8_t *h);
+=== wc ===
+  14 c_src/src/lib.c
+  62 translation/src/lib.rs
+  76 total
+=== Cargo.toml ===
+[package]
+name = "harvest-work-wDkIYQ"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "hdr_bitrate_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat -A c_src/src/lib.c | sed 's/\$$//' ; echo "=== RUST ==="; cat translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C and Rust source
+
+#include "lib.h"
+
+unsigned hdr_bitrate(const uint8_t *h) {
+    static const uint8_t halfrate[2][3][15] = {
+        {{0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80},
+         {0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80},
+         {0, 16, 24, 28, 32, 40, 48, 56, 64, 72, 80, 88, 96, 112, 128}},
+        {{0, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160},
+         {0, 16, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192},
+         {0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224}},
+    };
+    return 2 *
+           halfrate[!!((h[1]) & 0x8)][(((h[1]) >> 1) & 3) - 1][((h[2]) >> 4)];
+}
+=== RUST ===
+//! Rust translation of `c_src/src/lib.c`.
+//!
+//! Public ABI (matches `nm -D` on the C shared library):
+//!   * `hdr_bitrate`
+//!
+//! The C header declares no namespace-renaming macros, so the linker symbol is
+//! identical to the source-level name.
+
+use std::ffi::c_uint;
+
+/// The C source declares the table as `static const uint8_t halfrate[2][3][15]`
+/// and indexes it with values that can fall outside the declared bounds, so the
+/// table is kept here as a flat 90-byte block and indexed with the same
+/// arithmetic C uses (`i * 45 + j * 15 + k`). This preserves the original
+/// row-crossing reads exactly instead of "fixing" them.
+static HALFRATE: [u8; 90] = [
+    // halfrate[0][0..3]
+    0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80, //
+    0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72, 80, //
+    0, 16, 24, 28, 32, 40, 48, 56, 64, 72, 80, 88, 96, 112, 128, //
+    // halfrate[1][0..3]
+    0, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, //
+    0, 16, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, //
+    0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224,
+];
+
+/// `unsigned hdr_bitrate(const uint8_t *h)`
+///
+/// Reads only `h[1]` and `h[2]`, exactly like the C original:
+///
+/// ```c
+/// return 2 * halfrate[!!((h[1]) & 0x8)][(((h[1]) >> 1) & 3) - 1][((h[2]) >> 4)];
+/// ```
+///
+/// The middle index is `layer - 1`, which is `-1` for the reserved layer value
+/// `0b00`, and the last index reaches 15 for the "bad" bitrate nibble. Both
+/// escape the declared bounds of the innermost arrays; the original library
+/// reads the neighbouring table bytes (or zero padding outside the table) in
+/// those cases. The flat indexing below reproduces that, with reads that fall
+/// outside the 90-byte table yielding 0 as they do in the C build.
+///
+/// # Safety
+/// `h` must point to at least 3 readable bytes, as required by the C function.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hdr_bitrate(h: *const u8) -> c_uint {
+    let h1 = unsafe { *h.add(1) };
+    let h2 = unsafe { *h.add(2) };
+
+    let i = isize::from(h1 & 0x8 != 0); // !!(h[1] & 0x8)
+    let j = (isize::from((h1 >> 1) & 3)) - 1; // ((h[1] >> 1) & 3) - 1
+    let k = isize::from(h2 >> 4); // h[2] >> 4
+
+    let offset = i * 45 + j * 15 + k;
+
+    let half = if offset >= 0 && (offset as usize) < HALFRATE.len() {
+        HALFRATE[offset as usize]
+    } else {
+        0
+    };
+
+    2 * c_uint::from(half)
+}
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mTiny surface: one function, one file. The interesting part is the C's out-of-bounds table indexing. Let me build both.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null 2>&1 && cmake --build . 2>&1 | tail -5 && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/harvest-work-qKupep.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-qKupep.so
+[100%] Built target harvest-work-qKupep
+-rwxr-xr-x. 1 scheschb amazon 15776 Sep  5 00:51 libharvest-work-qKupep.so
+[38;5;244m - Completed in 0.404s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -20 && ls -la target/release/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust cdylib
+
+   Compiling harvest-work-wDkIYQ v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation)
+    Finished `release` profile [optimized] target(s) in 0.13s
+-rwxr-xr-x. 2 scheschb amazon 401984 Sep  5 00:52 target/release/libhdr_bitrate_lib.so
+[38;5;244m - Completed in 0.153s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep && echo "=== C dynamic symbols (defined) ===" && nm -D --defined-only c_src/build/libharvest-work-qKupep.so && echo "=== RUST dynamic symbols (defined, non-rust-internal) ===" && nm -D --defined-only translation/target/release/libhdr_bitrate_lib.so | grep -v ' _ZN\| rust_\|__rust' | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported symbols
+
+=== C dynamic symbols (defined) ===
+00000000000010f9 T hdr_bitrate
+=== RUST dynamic symbols (defined, non-rust-internal) ===
+00000000000116e0 T hdr_bitrate
+[38;5;244m - Completed in 0.29s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity is already 1:1. Now the crux: what the C actually returns on its out-of-bounds table reads. Let me look at the compiled code and the table's neighborhood in [38;5;10m.rodata[0m.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/c_src/build && objdump -d --no-show-raw-insn -M intel libharvest-work-qKupep.so | sed -n '/<hdr_bitrate>:/,/^$/p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble C hdr_bitrate
+
+00000000000010f9 <hdr_bitrate>:
+    10f9:	push   rbp
+    10fa:	mov    rbp,rsp
+    10fd:	mov    QWORD PTR [rbp-0x8],rdi
+    1101:	mov    rax,QWORD PTR [rbp-0x8]
+    1105:	add    rax,0x1
+    1109:	movzx  eax,BYTE PTR [rax]
+    110c:	movzx  eax,al
+    110f:	and    eax,0x8
+    1112:	test   eax,eax
+    1114:	setne  al
+    1117:	movzx  eax,al
+    111a:	mov    rdx,QWORD PTR [rbp-0x8]
+    111e:	add    rdx,0x1
+    1122:	movzx  edx,BYTE PTR [rdx]
+    1125:	shr    dl,1
+    1127:	movzx  edx,dl
+    112a:	and    edx,0x3
+    112d:	lea    ecx,[rdx-0x1]
+    1130:	mov    rdx,QWORD PTR [rbp-0x8]
+    1134:	add    rdx,0x2
+    1138:	movzx  edx,BYTE PTR [rdx]
+    113b:	shr    dl,0x4
+    113e:	movzx  edx,dl
+    1141:	movsxd rsi,edx
+    1144:	movsxd rdx,eax
+    1147:	movsxd rcx,ecx
+    114a:	mov    rax,rdx
+    114d:	add    rax,rax
+    1150:	add    rax,rdx
+    1153:	mov    rdx,rax
+    1156:	shl    rdx,0x4
+    115a:	sub    rdx,rax
+    115d:	mov    rax,rcx
+    1160:	shl    rax,0x4
+    1164:	sub    rax,rcx
+    1167:	add    rax,rdx
+    116a:	lea    rdx,[rax+rsi*1]
+    116e:	lea    rax,[rip+0xe8b]        # 2000 <halfrate.0>
+    1175:	add    rax,rdx
+    1178:	movzx  eax,BYTE PTR [rax]
+    117b:	movzx  eax,al
+    117e:	add    eax,eax
+    1180:	pop    rbp
+    1181:	ret
+
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/c_src/build && readelf -lS -W libharvest-work-qKupep.so | sed -n '1,80p'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect ELF sections and segments around .rodata
+
+There are 29 section headers, starting at offset 0x3660:
+
+Section Headers:
+  [Nr] Name              Type            Address          Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            0000000000000000 000000 000000 00      0   0  0
+  [ 1] .note.gnu.property NOTE            00000000000002a8 0002a8 000030 00   A  0   0  8
+  [ 2] .note.gnu.build-id NOTE            00000000000002d8 0002d8 000024 00   A  0   0  4
+  [ 3] .gnu.hash         GNU_HASH        0000000000000300 000300 000024 00   A  4   0  8
+  [ 4] .dynsym           DYNSYM          0000000000000328 000328 000090 18   A  5   1  8
+  [ 5] .dynstr           STRTAB          00000000000003b8 0003b8 000091 00   A  0   0  1
+  [ 6] .gnu.version      VERSYM          000000000000044a 00044a 00000c 02   A  4   0  2
+  [ 7] .gnu.version_r    VERNEED         0000000000000458 000458 000020 00   A  5   1  8
+  [ 8] .rela.dyn         RELA            0000000000000478 000478 0000a8 18   A  4   0  8
+  [ 9] .rela.plt         RELA            0000000000000520 000520 000018 18  AI  4  22  8
+  [10] .init             PROGBITS        0000000000001000 001000 00001b 00  AX  0   0  4
+  [11] .plt              PROGBITS        0000000000001020 001020 000020 10  AX  0   0 16
+  [12] .text             PROGBITS        0000000000001040 001040 000142 00  AX  0   0 16
+  [13] .fini             PROGBITS        0000000000001184 001184 00000d 00  AX  0   0  4
+  [14] .rodata           PROGBITS        0000000000002000 002000 00005a 00   A  0   0 32
+  [15] .eh_frame_hdr     PROGBITS        000000000000205c 00205c 00001c 00   A  0   0  4
+  [16] .eh_frame         PROGBITS        0000000000002078 002078 000064 00   A  0   0  8
+  [17] .init_array       INIT_ARRAY      0000000000003de0 002de0 000008 08  WA  0   0  8
+  [18] .fini_array       FINI_ARRAY      0000000000003de8 002de8 000008 08  WA  0   0  8
+  [19] .data.rel.ro      PROGBITS        0000000000003df0 002df0 000008 00  WA  0   0  8
+  [20] .dynamic          DYNAMIC         0000000000003df8 002df8 0001d0 10  WA  5   0  8
+  [21] .got              PROGBITS        0000000000003fc8 002fc8 000020 08  WA  0   0  8
+  [22] .got.plt          PROGBITS        0000000000003fe8 002fe8 000020 08  WA  0   0  8
+  [23] .bss              NOBITS          0000000000004008 003008 000008 00  WA  0   0  1
+  [24] .comment          PROGBITS        0000000000000000 003008 00002e 01  MS  0   0  1
+  [25] .gnu.build.attributes NOTE            0000000000006010 003038 000120 00      0   0  4
+  [26] .symtab           SYMTAB          0000000000000000 003158 000270 18     27  21  8
+  [27] .strtab           STRTAB          0000000000000000 0033c8 000177 00      0   0  1
+  [28] .shstrtab         STRTAB          0000000000000000 00353f 00011d 00      0   0  1
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+  L (link order), O (extra OS processing required), G (group), T (TLS),
+  C (compressed), x (unknown), o (OS specific), E (exclude),
+  D (mbind), l (large), p (processor specific)
+
+Elf file type is DYN (Shared object file)
+Entry point 0x0
+There are 11 program headers, starting at offset 64
+
+Program Headers:
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  LOAD           0x000000 0x0000000000000000 0x0000000000000000 0x000538 0x000538 R   0x1000
+  LOAD           0x001000 0x0000000000001000 0x0000000000001000 0x000191 0x000191 R E 0x1000
+  LOAD           0x002000 0x0000000000002000 0x0000000000002000 0x0000dc 0x0000dc R   0x1000
+  LOAD           0x002de0 0x0000000000003de0 0x0000000000003de0 0x000228 0x000230 RW  0x1000
+  DYNAMIC        0x002df8 0x0000000000003df8 0x0000000000003df8 0x0001d0 0x0001d0 RW  0x8
+  NOTE           0x0002a8 0x00000000000002a8 0x00000000000002a8 0x000030 0x000030 R   0x8
+  NOTE           0x0002d8 0x00000000000002d8 0x00000000000002d8 0x000024 0x000024 R   0x4
+  GNU_PROPERTY   0x0002a8 0x00000000000002a8 0x00000000000002a8 0x000030 0x000030 R   0x8
+  GNU_EH_FRAME   0x00205c 0x000000000000205c 0x000000000000205c 0x00001c 0x00001c R   0x4
+  GNU_STACK      0x000000 0x0000000000000000 0x0000000000000000 0x000000 0x000000 RW  0x10
+  GNU_RELRO      0x002de0 0x0000000000003de0 0x0000000000003de0 0x000220 0x000220 R   0x1
+
+ Section to Segment mapping:
+  Segment Sections...
+   00     .note.gnu.property .note.gnu.build-id .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
+   01     .init .plt .text .fini 
+   02     .rodata .eh_frame_hdr .eh_frame 
+   03     .init_array .fini_array .data.rel.ro .dynamic .got .got.plt .bss 
+   04     .dynamic 
+   05     .note.gnu.property 
+   06     .note.gnu.build-id 
+   07     .note.gnu.property 
+   08     .eh_frame_hdr 
+   09     
+   10     .init_array .fini_array .data.rel.ro .dynamic .got 
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[38;5;141m> [0mThe table sits at the exact start of a LOAD segment (0x2000), so the negative offsets read into the text segment's zero padding, and offset 90 reads [38;5;10m.rodata[0m alignment padding. Let me confirm the actual bytes rather than trust the layout reasoning.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/c_src/build && echo "bytes at file offset 0x1ff0..0x1fff (virt 0x1ff0, read by j=-1):" && xxd -s 0x1ff0 -l 16 libharvest-work-qKupep.so && echo "bytes at 0x2000..0x2060 (table 90 bytes + padding):" && xxd -s 0x2000 -l 96 libharvest-work-qKupep.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Dump rodata neighborhood bytes
+
+bytes at file offset 0x1ff0..0x1fff (virt 0x1ff0, read by j=-1):
+00001ff0: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+bytes at 0x2000..0x2060 (table 90 bytes + padding):
+00002000: 0004 080c 1014 181c 2028 3038 4048 5000  ........ (08@HP.
+00002010: 0408 0c10 1418 1c20 2830 3840 4850 0010  ....... (08@HP..
+00002020: 181c 2028 3038 4048 5058 6070 8000 1014  .. (08@HPX`p....
+00002030: 181c 2028 3038 4050 6070 80a0 0010 181c  .. (08@P`p......
+00002040: 2028 3038 4050 6070 80a0 c000 1020 3040   (08@P`p..... 0@
+00002050: 5060 7080 90a0 b0c0 d0e0 0000 011b 033b  P`p............;
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: the 16 bytes before the table are zero and the two padding bytes after it (0x205a–0x205b) are zero, so every out-of-bounds read yields 0 — which is what the Rust returns. I also verified all 90 table bytes match the Rust [38;5;10mHALFRATE[0m array.[0m[0m
+[0m[0m
+Now the Phase A artifacts. First let me confirm the feature/binary surface.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && echo "features:" && grep -A20 '^\[features\]' Cargo.toml || echo "(none)"; echo "bins:"; ls src/ ; grep -c '\[\[bin\]\]' Cargo.toml; echo "cargo check:"; timeout 600 cargo check 2>&1 | tail -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check features, binaries, cargo check
+
+features:
+(none)
+bins:
+lib.rs
+0
+cargo check:
+    Checking harvest-work-wDkIYQ v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+[38;5;244m - Completed in 0.66s[0m
+
+[?25l[0m[38;5;141m> [0m[38;5;10mcargo check[0m is clean, no features, no binary. Writing the Phase A artifacts.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write SYMBOLS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `nm -D --defined-only` on both shared objects.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m * C  `.so`: `c_src/build/libharvest-work-qKupep.so`
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m * Rust `.so`: `translation/target/release/libhdr_bitrate_lib.so`
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ## C `.so` exported (defined, dynamic) symbols
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m $ nm -D --defined-only c_src/build/libharvest-work-qKupep.so
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 00000000000010f9 T hdr_bitrate
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m The C library defines exactly **one** dynamic symbol. `c_src/include/lib.h`
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m declares exactly one function and no renaming macros, so the linker name equals
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m the source name. `halfrate.0` is a function-local `static const` and is a
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m `LOCAL` symbol in `.symtab` only — it is not exported, so it is not part of the
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m ABI surface.
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m ## Parity table
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m | # | C symbol | type | present in Rust `.so`? | Rust item |
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m |---|----------|------|------------------------|-----------|
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m | 1 | `hdr_bitrate` | `T` (global text) | YES — `T hdr_bitrate` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn hdr_bitrate` in `src/lib.rs` |
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m ## Symbol diff
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m $ diff <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m        <(nm -D --defined-only RUST.so | awk '{print $3}' | sort | grep -vE '^(_ZN|rust_|__rust|_ITM_|__cxa|_Unwind)')
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m (empty)
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m **Missing symbols: 0.** No module of the C source was left untranslated
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m (`c_src/src/lib.c` is 14 lines and is the only C translation unit in
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m `CMakeLists.txt`). No stubs or `unimplemented!()` were added.
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m ## Undefined (imported) symbols
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m The Rust `.so` imports only libc/runtime symbols
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m (`__libc_start_main`-class, unwinder, `memcpy`-class). Because
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m `panic = "abort"` is set for the release profile, no Rust-specific unresolved
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m symbols remain. 0 missing/undefined non-libc symbols.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/c_src && echo "--- error-ish greps over all C sources/headers ---" && grep -rnE 'RETURN_ERROR|return *-1|return *NULL|assert|errno|ERROR|_ERR|if *\(|switch|\?|#ifdef|#if |goto|exit\(|abort\(' src include || echo "NO MATCHES: the C source contains no conditionals, asserts, or error returns at all"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mechanically grep C source for all error/rejection constructs
+
+--- error-ish greps over all C sources/headers ---
+NO MATCHES: the C source contains no conditionals, asserts, or error returns at all
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mThe grep is conclusive: the C has [1mzero[22m conditionals, asserts, or error returns. So the entire "rejection surface" is implicit — inputs the C accepts but that drive the table index outside its declared bounds. Let me map that precisely.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write ERRORS.md error-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — error / rejection surface table (Phase C gate)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m ## Mechanical derivation
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m $ grep -rnE 'RETURN_ERROR|return *-1|return *NULL|assert|errno|ERROR|_ERR|if *\(|switch|\?|#ifdef|#if |goto|exit\(|abort\(' c_src/src c_src/include
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m (no matches)
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m `c_src/src/lib.c` contains **no** conditional, no `assert`, no error enum, no
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m sentinel return, no range check, no null check, and no `#ifdef`. `hdr_bitrate`
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m is a single unconditional `return` expression. There is therefore **no explicit
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m error-return path to differential-test**, and no error code or sentinel value
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m exists in this API — every input produces a normal `unsigned` return.
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m That makes the real rejection surface *implicit*: inputs the C accepts without
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m complaint but that push the array subscript outside the declared bounds of
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m `static const uint8_t halfrate[2][3][15]`. The compiled code
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m (`objdump -d`) performs a flat, unchecked byte load:
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m lea rax,[rip+0xe8b]   # halfrate.0  (.rodata, addr 0x2000)
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m add rax,rdx           # rdx = 45*i + 15*j + k   (sign-extended, may be negative)
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m movzx eax,BYTE PTR [rax]
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m add eax,eax           # result = 2 * byte
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m with `i = !!(h[1] & 0x8)` ∈ {0,1}, `j = ((h[1] >> 1) & 3) - 1` ∈ {**-1**,0,1,2},
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m `k = h[2] >> 4` ∈ 0..15. Flat offset range is therefore **-15 .. +90**, while
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m the table is only bytes 0..89. Rows below are every distinct way that happens.
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m Verified byte layout of the C `.so` (this is the ground truth the Rust must
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m reproduce):
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m * Table `halfrate.0` is at vaddr `0x2000`, the **first byte of a LOAD segment**.
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m * vaddr `0x1ff0..0x1fff` (the 16 bytes read by negative offsets) are `00` — file
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m   padding between `.fini` and `.rodata`, mapped as part of the R+E segment page.
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m * vaddr `0x205a..0x205b` (the bytes read by offset 90) are `00` — `.rodata`
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m   alignment padding before `.eh_frame_hdr`.
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m So **every out-of-bounds read yields byte 0, hence return value 0.**
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m ## Rejection / edge-condition rows
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | # | function | trigger (the exact invalid input/condition) | expected C result |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m |---|----------|---------------------------------------------|-------------------|
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | 1 | `hdr_bitrate` | reserved layer bits `(h[1]>>1)&3 == 0` ⇒ `j = -1`, with `h[1]&0x8 == 0` (`i=0`) and `h[2]>>4` = 0..14 ⇒ flat offset **-15..-1**, i.e. read **before** the table | reads zero padding ⇒ returns **0** |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | 2 | `hdr_bitrate` | reserved layer bits (`j = -1`), `i=0`, `h[2]>>4 == 15` ⇒ offset **0** — negative row index cancels, lands back **inside** the table at `halfrate[0][0][0]` | returns `2*0` = **0** |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | 3 | `hdr_bitrate` | reserved layer bits (`j = -1`) with `h[1]&0x8 != 0` (`i=1`) ⇒ offsets **30..45**: silently **aliases a different row**, `halfrate[0][2][k]` for k=0..14, and `halfrate[1][0][0]` for k=15 | returns `2*halfrate_flat[30+k]` — i.e. **0,32,48,56,64,80,96,112,128,144,160,176,192,224,256,0** |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | 4 | `hdr_bitrate` | "bad"/reserved bitrate nibble `h[2]>>4 == 15` with a *valid* layer, any `i`, where `(i,j) != (1,2)` ⇒ offset is the **first byte of the next row** (15, 30, 45, 60, 75) | returns `2*halfrate_flat[45i+15j+15]`, which is `2*0` = **0** in every such case (every row starts with 0) |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | 5 | `hdr_bitrate` | `h[2]>>4 == 15` **and** `i=1, j=2` (`h[1]&0x8` set, layer bits `0b11`) ⇒ flat offset **90**, one byte **past** the 90-byte table | reads `.rodata` alignment padding ⇒ returns **0** |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | 6 | `hdr_bitrate` | `h == NULL` | unconditional `h[1]` deref ⇒ **SIGSEGV**. No null check exists to differential-test a return value; the Rust must fault identically rather than returning a value. Covered by a *dedicated crash-parity subprocess test*, not by a return-value comparison. |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | 7 | `hdr_bitrate` | buffer shorter than 3 bytes (length 0/1/2) | there is no length parameter, so nothing is checked: the C reads `h[1]`/`h[2]` unconditionally, past the end of the caller's buffer. Not a rejection; the Rust must read exactly the same two offsets and no others. Tested by a guard-page/offset-read test. |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | 8 | `hdr_bitrate` | `h[0]` — never read by the C at all | must be **ignored**: result must be invariant under any value of `h[0]`. A Rust that read `h[0]` would be a divergence. |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | 9 | `hdr_bitrate` | out-of-range "enum-like" ints across FFI: `h[1]`/`h[2]` are `uint8_t`, so **all 256 values of each are in-range for the type** and there is no invalid encoding to reject. The layer field's reserved value `0b00` (row 1/2/3) *is* this API's out-of-range-enum case. | no rejection path exists; result is whatever the flat load produces (rows 1–5) |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m ## Notes on completeness
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m Rows 1–5 partition every out-of-declared-bounds subscript the function can
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m produce; rows 6–8 are the generic C-API boundaries (null pointer, undersized
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m buffer, unread input byte); row 9 records that the FFI enum-range class of bug
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m collapses into the reserved-layer rows because both inputs are `uint8_t`.
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m Since the total input space that affects the result is only
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m `h[1]` × `h[2]` = 256 × 256 = **65 536** cases, Phase B/C do not sample — they
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m **exhaustively** compare all 65 536, which covers every row above by
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m construction, in addition to each row's own targeted test.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write CONFIGS.md header
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — configuration / valid-input surface table (Phase B gate)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m ## Mechanical derivation of the axes
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m `c_src/include/lib.h` exposes exactly one entry point, and it is also the
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m lowest-level one — there is no convenience wrapper and no one-shot API to
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m prefer over a primitive:
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m unsigned hdr_bitrate(const uint8_t *h);
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m There is no runtime option, no mode flag, no init/config struct, no global
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m state, no `#ifdef`, and no byte-order or element-type parameter (confirmed by
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m the grep in `ERRORS.md`, which finds zero conditionals or preprocessor
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m branches). The Rust crate likewise declares **no** `[features]`, so the only
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m feature combination is the default/empty one.
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m The C therefore branches on nothing *except* the bit-fields it extracts from
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m the input buffer. Those bit-fields are the configuration axes, read straight out
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m of the return expression:
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m return 2 * halfrate[!!((h[1]) & 0x8)][(((h[1]) >> 1) & 3) - 1][((h[2]) >> 4)];
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m | axis | source expression | distinct values the code treats differently |
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m |------|-------------------|---------------------------------------------|
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m | `i` — MPEG version / ID bit | `!!(h[1] & 0x8)` | 2: `0` (h[1] bit3 clear), `1` (set) |
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m | `layer` — layer field | `(h[1] >> 1) & 3` | 4: `0b00` (**reserved** ⇒ row index `-1`), `0b01`, `0b10`, `0b11` |
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m | `k` — bitrate index nibble | `h[2] >> 4` | 16: `0`(free) .. `14`, and `15` (**bad**/reserved) |
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m | `h[0]` | not read | 1 (must be irrelevant — asserted, not enumerated) |
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m | `h[1]` bit0 | not used by any index | 1 (must be irrelevant — asserted, not enumerated) |
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | `h[2]` low nibble | shifted out | 1 (must be irrelevant — asserted, not enumerated) |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m Pruned cross-product of the axes that actually change the result:
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m `2 (i) × 4 (layer) × 16 (k)` = **128 rows**, enumerated below. Nothing is
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m pruned away as "unimportant"; all 128 are listed because the C distinguishes
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m all 128 (they map to 128 distinct flat table offsets, per `ERRORS.md`).
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m Each row is exercised with **many randomized inputs** (fixed seed): for a row's
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m `(i, layer, k)` the free bits — all 8 bits of `h[0]`, `h[1]` bit0, and `h[2]`'s
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m low nibble — are randomized, so a row passes only if it holds across all the
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m value combinations that must not matter. In addition, Phase B runs an
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m **exhaustive** sweep of all 65 536 `(h[1], h[2])` pairs, which is a superset of
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m every row.
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m `offset` below is the flat byte index `45*i + 15*(layer-1) + k` that the
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m compiled C actually loads (see `ERRORS.md`); `OOB<` = before the table,
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m `OOB>` = past it, `alias` = lands in a different row than declared.
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | [ ] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m |---|----------------|--------------------------------------------|-----|
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow generating the 128 rows mechanically rather than by hand:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && python3 - <<'EOF' >> CONFIGS.md
+n = 0
+for i in (0, 1):
+    for layer in (0, 1, 2, 3):
+        j = layer - 1
+        for k in range(16):
+            n += 1
+            off = 45*i + 15*j + k
+            if off < 0:
+                cls = f"offset {off} (OOB<, before table)"
+            elif off >= 90:
+                cls = f"offset {off} (OOB>, past table)"
+            elif layer == 0:
+                cls = f"offset {off} (alias: reserved layer folds into another row)"
+            elif k == 15:
+                cls = f"offset {off} (alias: bad-bitrate nibble reads next row's first byte)"
+            else:
+                cls = f"offset {off} (in declared bounds)"
+            lname = "0b00 RESERVED" if layer == 0 else f"0b{layer:02b}"
+            knote = " free" if k == 0 else (" bad" if k == 15 else "")
+            print(f"| {n} | `hdr_bitrate` | i={i} (h[1]&0x8 {'set' if i else 'clear'}), layer={lname}, k={k}{knote}; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |")
+EOF
+tail -4 CONFIGS.md; echo "rows: $(grep -c '^| [0-9]' CONFIGS.md)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Generate 128 config rows
+
+| 125 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=12; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+| 126 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=13; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+| 127 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=14; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+| 128 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=15 bad; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+rows: 128
+[38;5;244m - Completed in 0.20s[0m
+
+[?25l[0m[38;5;141m> [0mThe offset classification didn't make it into the rows. Regenerating:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && head -n "$(grep -n '^|---|' CONFIGS.md | head -1 | cut -d: -f1)" CONFIGS.md > CONFIGS.tmp && python3 - <<'EOF' >> CONFIGS.tmp
+n = 0
+for i in (0, 1):
+    for layer in (0, 1, 2, 3):
+        j = layer - 1
+        for k in range(16):
+            n += 1
+            off = 45*i + 15*j + k
+            if off < 0:
+                cls = f"offset {off} OOB< before table"
+            elif off >= 90:
+                cls = f"offset {off} OOB> past table"
+            elif layer == 0:
+                cls = f"offset {off} alias (reserved layer folds into another row)"
+            elif k == 15:
+                cls = f"offset {off} alias (bad nibble reads next row's first byte)"
+            else:
+                cls = f"offset {off} in declared bounds"
+            lname = "0b00 RESERVED" if layer == 0 else f"0b{layer:02b}"
+            knote = " (free)" if k == 0 else (" (bad)" if k == 15 else "")
+            print(f"| {n} | `hdr_bitrate` | i={i} (h[1]&0x8 {'set' if i else 'clear'}), layer={lname}, k={k}{knote} — {cls}; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |")
+EOF
+mv CONFIGS.tmp CONFIGS.md && echo "rows: $(grep -c '^| [0-9]' CONFIGS.md)" && sed -n '/^| 1 |/p;/^| 16 |/p;/^| 63 |/p;/^| 128 |/p' CONFIGS.md[0m[38;5;244m (using tool: shell)[0m
+Purpose: Regenerate config rows with offset classification
+
+rows: 128
+| 1 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=0 (free) — offset -15 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+| 16 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=15 (bad) — offset 0 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+| 63 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=14 — offset 44 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+| 128 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=15 (bad) — offset 90 OOB> past table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [ ] |
+[38;5;244m - Completed in 0.22s[0m
+
+[?25l[0m[38;5;141m> [0mAll three Phase A artifacts are in place. Now the differential tests. First the shared loader harness:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared FFI loader harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared harness: loads BOTH the C `.so` and the Rust `.so` through
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `libloading` and calls `hdr_bitrate` only through the exported symbol, so
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! the `#[no_mangle]` / `extern "C"` wrapper is under test too. No Rust
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! function is ever called directly.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::path::PathBuf;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// `unsigned hdr_bitrate(const uint8_t *h)`
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m pub type HdrBitrateFn = unsafe extern "C" fn(*const u8) -> std::ffi::c_uint;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m fn manifest_dir() -> PathBuf {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /// Locate the C shared library built from `c_src/`.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m fn c_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     if let Ok(p) = std::env::var("C_SO_PATH") {
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         return PathBuf::from(p);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     let build = manifest_dir().parent().unwrap().join("c_src/build");
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     let mut found = None;
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     if let Ok(entries) = std::fs::read_dir(&build) {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         for e in entries.flatten() {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             let p = e.path();
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m             if name.starts_with("lib") && name.ends_with(".so") {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m                 found = Some(p);
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     found.unwrap_or_else(|| {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         panic!(
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             "no C .so found in {}. Build it first:\n  cd c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m              && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m             build.display()
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// Locate the Rust cdylib. Prefers whichever of debug/release is newest so the
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// test reflects the build that was just produced.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     if let Ok(p) = std::env::var("RUST_SO_PATH") {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         return PathBuf::from(p);
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let target = manifest_dir().join("target");
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     for profile in ["release", "debug"] {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         let p = target.join(profile).join("libhdr_bitrate_lib.so");
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         if let Ok(md) = std::fs::metadata(&p) {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m             let t = md.modified().unwrap_or(std::time::UNIX_EPOCH);
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             if best.as_ref().map(|(bt, _)| t > *bt).unwrap_or(true) {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m                 best = Some((t, p));
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     best.map(|(_, p)| p).unwrap_or_else(|| {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         panic!(
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m             "libhdr_bitrate_lib.so not found under {}. Run `cargo build --release` first.",
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             target.display()
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m /// Both libraries, kept alive for the lifetime of the test.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m pub struct Pair {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     _c_lib: Library,
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     _rust_lib: Library,
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     pub c: HdrBitrateFn,
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     pub rust: HdrBitrateFn,
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m impl Pair {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     pub fn load() -> Self {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             let c_lib = Library::new(c_so_path())
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("failed to dlopen C .so: {e}"));
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m             let rust_lib = Library::new(rust_so_path())
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m                 .unwrap_or_else(|e| panic!("failed to dlopen Rust .so: {e}"));
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m             let c_sym: Symbol<HdrBitrateFn> = c_lib
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m                 .get(b"hdr_bitrate\0")
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m                 .expect("C .so does not export `hdr_bitrate`");
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             let rust_sym: Symbol<HdrBitrateFn> = rust_lib
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m                 .get(b"hdr_bitrate\0")
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m                 .expect("Rust .so does not export `hdr_bitrate` (missing #[no_mangle]?)");
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             let c = *c_sym;
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             let rust = *rust_sym;
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             Pair { _c_lib: c_lib, _rust_lib: rust_lib, c, rust }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     /// Call both exports on the same buffer and require byte-identical results.
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     #[track_caller]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m     pub fn assert_same(&self, buf: &[u8], ctx: &str) -> u32 {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         assert!(buf.len() >= 3, "test buffers must have >= 3 bytes");
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         let (cv, rv) = unsafe { (self.c)(buf.as_ptr()) as u32, };
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         let _ = cv;
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         let _ = rv;
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         unreachable!()
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m /// Deterministic PRNG (xorshift64*) so every run uses the same inputs.
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     pub const fn new(seed: u64) -> Self {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         Rng(if seed == 0 { 0x9E3779B97F4A7C15 } else { seed })
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         let mut x = self.0;
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         x ^= x >> 12;
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         x ^= x << 25;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         x ^= x >> 27;
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         self.0 = x;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         x.wrapping_mul(0x2545F4914F6CDD1D)
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     pub fn next_u8(&mut self) -> u8 {
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         (self.next_u64() >> 33) as u8
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mI garbled [38;5;10massert_same[0m. Fixing it:[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Fix assert_same implementation
+
+[49m[39m   98,  98[0m:[39m[49m     /// Call both exports on the same buffer and require byte-identical results.
+[0m[49m[39m   99,  99[0m:[39m[49m     #[track_caller]
+[0m[49m[39m  100, 100[0m:[39m[49m     pub fn assert_same(&self, buf: &[u8], ctx: &str) -> u32 {
+[0m[49m[39m  101, 101[0m:[39m[49m         assert!(buf.len() >= 3, "test buffers must have >= 3 bytes");
+[0m[49m[38;5;9m- 102     [0m:[38;5;9m[49m         let (cv, rv) = unsafe { (self.c)(buf.as_ptr()) as u32, };
+[0m[49m[38;5;9m- 103     [0m:[38;5;9m[49m         let _ = cv;
+[0m[49m[38;5;9m- 104     [0m:[38;5;9m[49m         let _ = rv;
+[0m[49m[38;5;9m- 105     [0m:[38;5;9m[49m         unreachable!()
+[0m[49m[38;5;10m+      102[0m:[38;5;10m[49m         let cv = unsafe { (self.c)(buf.as_ptr()) } as u32;
+[0m[49m[38;5;10m+      103[0m:[38;5;10m[49m         let rv = unsafe { (self.rust)(buf.as_ptr()) } as u32;
+[0m[49m[38;5;10m+      104[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+      105[0m:[38;5;10m[49m             cv, rv,
+[0m[49m[38;5;10m+      106[0m:[38;5;10m[49m             "DIVERGENCE [{ctx}]: h = [{:#04x}, {:#04x}, {:#04x}] -> C returned {cv}, Rust returned {rv}",
+[0m[49m[38;5;10m+      107[0m:[38;5;10m[49m             buf[0], buf[1], buf[2]
+[0m[49m[38;5;10m+      108[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      109[0m:[38;5;10m[49m         cv
+[0m[49m[39m  106, 110[0m:[39m[49m     }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the Phase B test, covering all 128 [38;5;10mCONFIGS.md[0m rows plus an exhaustive sweep:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/tests/phase_b_configs.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write Phase B differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase B — valid-path differential tests, gated on `CONFIGS.md`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Every one of the 128 `CONFIGS.md` rows is the cross product
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `i (2) x layer (4) x k (16)`. For each row the bits the C never uses
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! (`h[0]`, `h[1]` bit0, `h[2]`'s low nibble) are randomized with a fixed seed,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! so a row only passes if it holds across all the values that must not matter.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! Both implementations are reached exclusively through their `.so` exports.
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use common::{Pair, Rng};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// Randomized iterations per `CONFIGS.md` row.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m const ITERS_PER_ROW: usize = 64;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Build a header for row `(i, layer, k)`, randomizing every bit the C ignores.
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m fn header_for(rng: &mut Rng, i: u8, layer: u8, k: u8) -> [u8; 3] {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     // h[1]: bit3 = i, bits2..1 = layer, bit0 free, bits7..4 free.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     let free_hi = rng.next_u8() & 0xF0;
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     let free_lo_bit = rng.next_u8() & 0x01;
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     let h1 = free_hi | (i << 3) | (layer << 1) | free_lo_bit;
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     // h[2]: high nibble = k, low nibble free.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     let h2 = (k << 4) | (rng.next_u8() & 0x0F);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     [rng.next_u8(), h1, h2]
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// Rows 1..128 of `CONFIGS.md`, randomized.
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m fn phase_b_all_config_rows() {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC0FFEE_1234_5678);
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     let mut row = 0usize;
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     let mut checked = 0usize;
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     for i in 0u8..2 {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         for layer in 0u8..4 {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             for k in 0u8..16 {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m                 row += 1;
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m                 let ctx = format!("CONFIGS.md row {row}: i={i}, layer={layer:#04b}, k={k}");
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m                 for _ in 0..ITERS_PER_ROW {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m                     let h = header_for(&mut rng, i, layer, k);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m                     // Re-assert the row's invariants actually hold for this input.
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m                     assert_eq!(u8::from(h[1] & 0x8 != 0), i, "row setup broken");
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m                     assert_eq!((h[1] >> 1) & 3, layer, "row setup broken");
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m                     assert_eq!(h[2] >> 4, k, "row setup broken");
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m                     pair.assert_same(&h, &ctx);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m                     checked += 1;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     assert_eq!(row, 128, "expected exactly 128 CONFIGS.md rows");
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     assert_eq!(checked, 128 * ITERS_PER_ROW);
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m /// Superset of every row: all 65 536 `(h[1], h[2])` pairs. The input space that
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// can affect the result is finite and small, so Phase B does not have to
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// sample — it proves equivalence exhaustively.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m fn phase_b_exhaustive_h1_h2() {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     let mut rng = Rng::new(0xA5A5_5A5A_DEAD_BEEF);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     for h1 in 0u16..256 {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         for h2 in 0u16..256 {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             let h = [rng.next_u8(), h1 as u8, h2 as u8];
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             pair.assert_same(&h, "exhaustive h1 x h2");
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// `h[0]` is never read by the C. The result must be invariant under all 256
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m /// values of it, for a spread of `(h[1], h[2])` including the edge rows.
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m fn phase_b_h0_is_ignored() {
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     for &(h1, h2) in &[
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m         (0x00u8, 0x00u8), // reserved layer, k=0  -> OOB<
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         (0x00, 0xF0),     // reserved layer, k=15 -> offset 0
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         (0x08, 0x00),     // i=1, reserved layer  -> alias row
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         (0x02, 0x90),     // i=0, layer 0b01
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         (0x0E, 0xF0),     // i=1, layer 0b11, k=15 -> OOB>
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         (0xFF, 0xFF),     // all bits set
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         let base = pair.assert_same(&[0x00, h1, h2], "h0 baseline");
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         for h0 in 0u16..256 {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             let got = pair.assert_same(&[h0 as u8, h1, h2], "h0 sweep");
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m                 got, base,
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                 "h[0]={h0:#04x} changed the result for h1={h1:#04x} h2={h2:#04x}: {base} -> {got}"
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m /// The low bit of `h[1]` and the low nibble of `h[2]` are shifted/masked out by
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m /// the C and must not affect the result either.
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m fn phase_b_unused_bitfields_are_ignored() {
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     for i in 0u8..2 {
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         for layer in 0u8..4 {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m             for k in 0u8..16 {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m                 let canonical = [0u8, (i << 3) | (layer << 1), k << 4];
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m                 let base = pair.assert_same(&canonical, "unused-bits baseline");
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m                 for lowbit in 0u8..2 {
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m                     for lownib in 0u8..16 {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m                         let h = [0u8, (i << 3) | (layer << 1) | lowbit, (k << 4) | lownib];
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m                         let got = pair.assert_same(&h, "unused-bits sweep");
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m                         assert_eq!(
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m                             got, base,
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m                             "unused bits changed result: i={i} layer={layer} k={k} \
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m                              lowbit={lowbit} lownib={lownib}"
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m                         );
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m /// The upper nibble of `h[1]` (bits 7..4) is likewise untouched by the C.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m fn phase_b_h1_high_nibble_is_ignored() {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     for i in 0u8..2 {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         for layer in 0u8..4 {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m             for k in [0u8, 1, 7, 14, 15] {
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m                 let base = pair.assert_same(&[0, (i << 3) | (layer << 1), k << 4], "hi-nib base");
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m                 for hi in 0u8..16 {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m                     let h = [0u8, (hi << 4) | (i << 3) | (layer << 1), k << 4];
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                     let got = pair.assert_same(&h, "hi-nib sweep");
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m                     assert_eq!(got, base, "h[1] high nibble {hi:#x} changed result");
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/tests/phase_b_configs.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow Phase C, one test per [38;5;10mERRORS.md[0m row including the null-pointer crash-parity and guard-page tests:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/tests/phase_c_errors.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write Phase C error-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase C — error/rejection-path differential tests, gated on `ERRORS.md`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! The C has no explicit error return (see the grep recorded in `ERRORS.md`), so
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! each row here pins the *implicit* rejection behaviour: the out-of-declared-
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! bounds table reads, the aliased rows, and the generic C-API boundaries
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! (null pointer, undersized buffer, out-of-range enum-like field).
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! Both sides are always reached through their `.so` exports.
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use common::{Pair, Rng};
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m fn h(i: u8, layer: u8, k: u8) -> [u8; 3] {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     [0, (i << 3) | (layer << 1), k << 4]
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /// Row 1 — reserved layer `0b00` with i=0 and k=0..14 => flat offset -15..-1,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// a read *before* the table. C reads zero padding => 0.
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m fn errors_row1_reserved_layer_negative_offset() {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     let mut rng = Rng::new(1);
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     for k in 0u8..15 {
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         for _ in 0..32 {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m             let buf = [rng.next_u8(), (rng.next_u8() & 0xF0) | 0x00 | (rng.next_u8() & 1), (k << 4) | (rng.next_u8() & 0xF)];
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             // force i=0 (bit3 clear) and layer=0b00 (bits2..1 clear)
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             let buf = [buf[0], buf[1] & !0x0E, buf[2]];
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m             assert_eq!((buf[1] >> 1) & 3, 0);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m             assert_eq!(buf[1] & 0x8, 0);
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m             let v = pair.assert_same(&buf, "ERRORS row 1: offset -15..-1 (OOB before table)");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m             assert_eq!(v, 0, "expected 0 from zero padding, got {v}");
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// Row 2 — reserved layer, i=0, k=15 => offset 0, folds back into the table at
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// `halfrate[0][0][0]` == 0.
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m fn errors_row2_reserved_layer_wraps_to_offset_zero() {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     let v = pair.assert_same(&h(0, 0, 15), "ERRORS row 2: offset 0");
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     assert_eq!(v, 0);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// Row 3 — reserved layer with i=1 => offsets 30..45, silently aliasing
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m /// `halfrate[0][2][*]`. Pins the exact aliased sequence.
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m fn errors_row3_reserved_layer_aliases_other_row() {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let expected: [u32; 16] = [
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0,
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     for k in 0u8..16 {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         let v = pair.assert_same(&h(1, 0, k), "ERRORS row 3: aliased row");
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             v, expected[k as usize],
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m             "aliased read at k={k}: C/Rust agreed on {v} but table says {}",
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             expected[k as usize]
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m /// Row 4 — "bad" bitrate nibble k=15 with a valid layer, (i,j) != (1,2): the
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m /// index runs one past the row and lands on the next row's first byte, which is
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m /// 0 in every row.
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m fn errors_row4_bad_nibble_reads_next_row_first_byte() {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     for (i, layer) in [(0u8, 1u8), (0, 2), (0, 3), (1, 1), (1, 2)] {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         let v = pair.assert_same(&h(i, layer, 15), "ERRORS row 4: k=15 crosses into next row");
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         assert_eq!(v, 0, "i={i} layer={layer}: expected 0, got {v}");
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m /// Row 5 — k=15 with i=1, layer=0b11 => flat offset 90, one byte *past* the
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// 90-byte table. C reads `.rodata` alignment padding => 0.
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m fn errors_row5_offset_90_past_end_of_table() {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     let buf = h(1, 3, 15);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     assert_eq!(u8::from(buf[1] & 0x8 != 0), 1);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     assert_eq!((buf[1] >> 1) & 3, 3);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     assert_eq!(buf[2] >> 4, 15);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     let v = pair.assert_same(&buf, "ERRORS row 5: offset 90 (OOB past table)");
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     assert_eq!(v, 0, "expected 0 from rodata padding, got {v}");
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m // Row 6 — null pointer. Neither side checks, so both must fault identically.
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m // Compared by running each call in a forked child and matching the death
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m // signal, rather than by comparing return values (there are none).
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     fn fork() -> i32;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     fn waitpid(pid: i32, status: *mut i32, options: i32) -> i32;
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     fn _exit(code: i32) -> !;
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// Runs `f` in a child process. Returns `Err(signal)` if it died by signal,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// `Ok(exit_code)` otherwise.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m unsafe fn run_isolated(f: impl FnOnce()) -> Result<i32, i32> {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let pid = fork();
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     assert!(pid >= 0, "fork failed");
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     if pid == 0 {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         f();
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         _exit(0);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     let mut status: i32 = 0;
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     let r = waitpid(pid, &mut status, 0);
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     assert_eq!(r, pid, "waitpid failed");
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     if (status & 0x7f) != 0 {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         Err(status & 0x7f) // WTERMSIG
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         Ok((status >> 8) & 0xff) // WEXITSTATUS
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m fn errors_row6_null_pointer_crash_parity() {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     let (c, rust) = (pair.c, pair.rust);
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     let c_res = unsafe {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         run_isolated(|| {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m             let v = c(std::ptr::null());
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m             std::hint::black_box(v);
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let rust_res = unsafe {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         run_isolated(|| {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m             let v = rust(std::ptr::null());
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m             std::hint::black_box(v);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         c_res, rust_res,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         "null-pointer behaviour diverges: C = {c_res:?}, Rust = {rust_res:?}"
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     assert_eq!(c_res, Err(11), "expected both to die with SIGSEGV(11), got {c_res:?}");
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m // Row 7 — undersized buffer / exact read footprint, enforced with a guard page.
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m const PROT_NONE: i32 = 0;
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m const PROT_READ: i32 = 1;
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m const PROT_WRITE: i32 = 2;
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m const MAP_PRIVATE: i32 = 2;
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m const MAP_ANONYMOUS: i32 = 0x20;
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     fn mmap(
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         addr: *mut u8,
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         len: usize,
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         prot: i32,
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         flags: i32,
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m         fd: i32,
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m         off: i64,
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     ) -> *mut u8;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     fn mprotect(addr: *mut u8, len: usize, prot: i32) -> i32;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m /// Maps two pages, makes the second unreadable, and returns
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m /// (base, first_page_end). Any read at or past `first_page_end` faults.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m unsafe fn guarded_pair_of_pages() -> (*mut u8, *mut u8) {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     let page = 4096usize;
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     let base = mmap(
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         std::ptr::null_mut(),
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         page * 2,
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         PROT_READ | PROT_WRITE,
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         MAP_PRIVATE | MAP_ANONYMOUS,
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         -1,
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         0,
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m     assert!(!base.is_null() && base as isize != -1, "mmap failed");
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     assert_eq!(mprotect(base.add(page), page, PROT_NONE), 0, "mprotect failed");
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     (base, base.add(page))
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m /// Both implementations must read *only* `h[1]` and `h[2]` — never `h[3]` or
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m /// beyond. With the 3-byte header butted against a guard page, any read past
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m /// `h[2]` segfaults. Both sides must survive and agree, for every `(h1, h2)`.
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m fn errors_row7_reads_no_further_than_h2() {
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         let (_base, guard) = guarded_pair_of_pages();
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         let hp = guard.sub(3); // h[2] is the final readable byte
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         for h1 in 0u16..256 {
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m             for h2 in 0u16..256 {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m                 *hp.add(0) = 0xAA;
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m                 *hp.add(1) = h1 as u8;
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m                 *hp.add(2) = h2 as u8;
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m                 let cv = (pair.c)(hp) as u32;
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m                 let rv = (pair.rust)(hp) as u32;
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m                 assert_eq!(
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m                     cv, rv,
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m                     "guard-page divergence at h1={h1:#04x} h2={h2:#04x}: C={cv} Rust={rv}"
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m /// A buffer with fewer than 3 readable bytes: the C has no length parameter and
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m /// dereferences `h[1]` unconditionally, so both must fault the same way.
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m fn errors_row7b_undersized_buffer_crash_parity() {
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m     let (c, rust) = (pair.c, pair.rust);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     // Only 1 readable byte before the guard page => reading h[1] must fault.
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     for readable in [0usize, 1, 2] {
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         let c_res = unsafe {
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m             run_isolated(|| {
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m                 let (_b, guard) = guarded_pair_of_pages();
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m                 let hp = guard.sub(readable);
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m                 std::hint::black_box(c(hp));
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m             })
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         let rust_res = unsafe {
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m             run_isolated(|| {
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m                 let (_b, guard) = guarded_pair_of_pages();
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m                 let hp = guard.sub(readable);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m                 std::hint::black_box(rust(hp));
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m             })
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m             c_res, rust_res,
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m             "undersized buffer ({readable} readable bytes): C = {c_res:?}, Rust = {rust_res:?}"
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m /// Row 8 — `h[0]` is never read; result must be invariant under it. (Also
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m /// covered in Phase B; repeated here so the row has its own test.)
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m fn errors_row8_h0_never_read() {
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     for h1 in [0x00u8, 0x02, 0x08, 0x0E, 0xFF] {
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         for h2 in [0x00u8, 0x10, 0xF0, 0xFF] {
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m             let base = pair.assert_same(&[0, h1, h2], "ERRORS row 8 baseline");
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m             for h0 in 0u16..256 {
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m                 let got = pair.assert_same(&[h0 as u8, h1, h2], "ERRORS row 8 sweep");
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m                 assert_eq!(got, base, "h[0] affected result (h1={h1:#04x} h2={h2:#04x})");
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m /// Row 9 — the out-of-range "enum" class. `h[1]`/`h[2]` are `uint8_t`, so every
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m /// one of the 256 values is representable and none can be rejected; the layer
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m /// field's reserved `0b00` is this API's no-valid-variant value. Sweep all 256
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m /// values of each byte against the other held at each edge value.
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m fn errors_row9_no_invalid_encoding_is_rejected() {
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     for fixed in [0x00u8, 0x0F, 0xF0, 0xFF, 0x08, 0x02] {
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         for v in 0u16..256 {
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m             // vary h[1]
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m             pair.assert_same(&[0, v as u8, fixed], "ERRORS row 9: h1 sweep");
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m             // vary h[2]
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             pair.assert_same(&[0, fixed, v as u8], "ERRORS row 9: h2 sweep");
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m /// Extra generic boundary: an "enum-ish" value one step past every documented
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m /// field range. The fields are 1-bit / 2-bit / 4-bit and saturate at their
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m /// masks, so the step-past value aliases back into range — assert both agree.
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m fn errors_boundary_one_past_each_field_range() {
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     let pair = Pair::load();
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     // layer field is 2 bits: 4 would be "one past" but cannot be encoded; it
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     // aliases to layer 0. Verify the aliasing matches on both sides.
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     for layer_raw in 0u8..8 {
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m         let h1 = (layer_raw << 1) & 0xFF;
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m         for k_raw in 0u8..17 {
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m             let h2 = (k_raw << 4) & 0xFF; // k_raw = 16 aliases to k = 0
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m             pair.assert_same(&[0, h1, h2], "boundary: one past field ranges");
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/tests/phase_c_errors.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && timeout 600 cargo build --release 2>&1 | tail -3 && timeout 600 cargo test --release 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build and run differential tests
+
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+    Finished `release` profile [optimized] target(s) in 0.05s
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> tests/phase_c_errors.rs:169:1
+    |
+169 | unsafe fn guarded_pair_of_pages() -> (*mut u8, *mut u8) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `mprotect` is unsafe and requires unsafe block
+   --> tests/phase_c_errors.rs:180:16
+    |
+180 |     assert_eq!(mprotect(base.add(page), page, PROT_NONE), 0, "mprotect failed");
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::ptr::mut_ptr::<impl *mut T>::add` is unsafe and requires unsafe block
+   --> tests/phase_c_errors.rs:180:25
+    |
+180 |     assert_eq!(mprotect(base.add(page), page, PROT_NONE), 0, "mprotect failed");
+    |                         ^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::ptr::mut_ptr::<impl *mut T>::add` is unsafe and requires unsafe block
+   --> tests/phase_c_errors.rs:181:12
+    |
+181 |     (base, base.add(page))
+    |            ^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+For more information about this error, try `rustc --explain E0133`.
+warning: `harvest-work-wDkIYQ` (test "phase_c_errors") generated 7 warnings
+error: could not compile `harvest-work-wDkIYQ` (test "phase_c_errors") due to 2 previous errors; 7 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+[38;5;244m - Completed in 0.593s[0m
+
+[?25l[0m[38;5;141m> [0mEdition 2024 strictness. Let me see the two hard errors:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && timeout 600 cargo test --release --no-run 2>&1 | grep -E '^error' | head -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Extract hard compile errors
+
+error: extern blocks must be unsafe
+error: extern blocks must be unsafe
+error: could not compile `harvest-work-wDkIYQ` (test "phase_c_errors") due to 2 previous errors; 7 warnings emitted
+[38;5;244m - Completed in 0.105s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && python3 - <<'EOF'
+import re
+p='tests/phase_c_errors.rs'
+s=open(p).read()
+s=s.replace('extern "C" {\n    fn fork','unsafe extern "C" {\n    fn fork')
+s=s.replace('extern "C" {\n    fn mmap','unsafe extern "C" {\n    fn mmap')
+# make the two unsafe fns fully explicit about their unsafe ops
+s=s.replace('''unsafe fn run_isolated(f: impl FnOnce()) -> Result<i32, i32> {
+    let pid = fork();''','''unsafe fn run_isolated(f: impl FnOnce()) -> Result<i32, i32> { unsafe {
+    let pid = fork();''')
+s=s.replace('''        Ok((status >> 8) & 0xff) // WEXITSTATUS
+    }
+}''','''        Ok((status >> 8) & 0xff) // WEXITSTATUS
+    }
+}}''')
+s=s.replace('''unsafe fn guarded_pair_of_pages() -> (*mut u8, *mut u8) {
+    let page''','''unsafe fn guarded_pair_of_pages() -> (*mut u8, *mut u8) { unsafe {
+    let page''')
+s=s.replace('''    (base, base.add(page))
+}''','''    (base, base.add(page))
+}}''')
+open(p,'w').write(s)
+EOF
+timeout 600 cargo test --release --no-run 2>&1 | grep -E '^(error|warning: unused|warning: `)' | head -20; echo "build rc done"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix edition-2024 unsafe extern blocks
+
+build rc done
+[38;5;244m - Completed in 0.448s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles clean. Running the full suite:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && timeout 600 cargo test --release 2>&1 | grep -vE '^\s*$' | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run all differential tests
+
+    Finished `release` profile [optimized] target(s) in 0.01s
+     Running unittests src/lib.rs (target/release/deps/hdr_bitrate_lib-e5cf98522cf97c7e)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/phase_b_configs.rs (target/release/deps/phase_b_configs-3c43f6ff23e5c48b)
+running 5 tests
+test phase_b_h1_high_nibble_is_ignored ... ok
+test phase_b_h0_is_ignored ... ok
+test phase_b_all_config_rows ... ok
+test phase_b_unused_bitfields_are_ignored ... ok
+test phase_b_exhaustive_h1_h2 ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/phase_c_errors.rs (target/release/deps/phase_c_errors-629a5ce918245ad4)
+running 11 tests
+test errors_boundary_one_past_each_field_range ... ok
+test errors_row2_reserved_layer_wraps_to_offset_zero ... ok
+test errors_row3_reserved_layer_aliases_other_row ... ok
+test errors_row1_reserved_layer_negative_offset ... ok
+test errors_row5_offset_90_past_end_of_table ... ok
+test errors_row4_bad_nibble_reads_next_row_first_byte ... ok
+test errors_row7_reads_no_further_than_h2 ... ok
+test errors_row9_no_invalid_encoding_is_rejected ... ok
+test errors_row8_h0_never_read ... ok
+test errors_row6_null_pointer_crash_parity ... ok
+test errors_row7b_undersized_buffer_crash_parity ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.57s
+[38;5;244m - Completed in 5.616s[0m
+
+[?25l[0m[38;5;141m> [0mAll 16 pass. But passing tests are only meaningful if the harness can actually [3mdetect[23m a divergence, so let me run a negative control: deliberately break the Rust and confirm the tests catch it.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && cp src/lib.rs /tmp/lib.rs.bak
+# Mutation 1: single table byte wrong (offset 40: 80 -> 81)
+sed -i 's/0, 16, 24, 28, 32, 40, 48, 56, 64, 72, 80, 88, 96, 112, 128, \/\//0, 16, 24, 28, 32, 40, 48, 56, 64, 72, 81, 88, 96, 112, 128, \/\//' src/lib.rs
+grep -c '81, 88' src/lib.rs && timeout 600 cargo build --release 2>&1|tail -1 && timeout 300 cargo test --release 2>&1 | grep -E 'test (phase|errors)|DIVERGENCE|test result' | head -25[0m[38;5;244m (using tool: shell)[0m
+Purpose: Negative control: corrupt one table byte
+
+1
+    Finished `release` profile [optimized] target(s) in 0.08s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test phase_b_h1_high_nibble_is_ignored ... ok
+test phase_b_h0_is_ignored ... ok
+test phase_b_all_config_rows ... FAILED
+test phase_b_exhaustive_h1_h2 ... FAILED
+test phase_b_unused_bitfields_are_ignored ... FAILED
+assertion `left == right` failed: DIVERGENCE [CONFIGS.md row 59: i=0, layer=0b11, k=10]: h = [0xdb, 0x07, 0xad] -> C returned 160, Rust returned 162
+assertion `left == right` failed: DIVERGENCE [exhaustive h1 x h2]: h = [0x83, 0x06, 0xa0] -> C returned 160, Rust returned 162
+assertion `left == right` failed: DIVERGENCE [unused-bits baseline]: h = [0x00, 0x06, 0xa0] -> C returned 160, Rust returned 162
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `--test phase_b_configs`
+[38;5;244m - Completed in 0.216s[0m
+
+[?25l[0m[38;5;141m> [0mCaught it. Second control on the highest-risk path — the out-of-bounds fallback:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && cp /tmp/lib.rs.bak src/lib.rs
+# Mutation 2: OOB reads yield 4 instead of 0
+python3 - <<'EOF'
+p='src/lib.rs'; s=open(p).read()
+s=s.replace("    } else {\n        0\n    };","    } else {\n        4\n    };")
+open(p,'w').write(s)
+EOF
+grep -A1 '} else {' src/lib.rs | head -3
+timeout 600 cargo build --release 2>&1|tail -1 && timeout 300 cargo test --release --test phase_c_errors 2>&1 | grep -E 'test errors|DIVERGENCE|test result' | head -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: Negative control: wrong OOB fallback value
+
+    } else {
+        4
+    Finished `release` profile [optimized] target(s) in 0.08s
+test errors_row2_reserved_layer_wraps_to_offset_zero ... ok
+test errors_boundary_one_past_each_field_range ... FAILED
+test errors_row1_reserved_layer_negative_offset ... FAILED
+test errors_row3_reserved_layer_aliases_other_row ... ok
+test errors_row4_bad_nibble_reads_next_row_first_byte ... ok
+test errors_row5_offset_90_past_end_of_table ... FAILED
+test errors_row7_reads_no_further_than_h2 ... FAILED
+test errors_row8_h0_never_read ... FAILED
+test errors_row9_no_invalid_encoding_is_rejected ... FAILED
+test errors_row6_null_pointer_crash_parity ... ok
+test errors_row7b_undersized_buffer_crash_parity ... ok
+assertion `left == right` failed: DIVERGENCE [boundary: one past field ranges]: h = [0x00, 0x00, 0x00] -> C returned 0, Rust returned 8
+assertion `left == right` failed: DIVERGENCE [ERRORS row 1: offset -15..-1 (OOB before table)]: h = [0x25, 0x51, 0x00] -> C returned 0, Rust returned 8
+assertion `left == right` failed: DIVERGENCE [ERRORS row 5: offset 90 (OOB past table)]: h = [0x00, 0x0e, 0xf0] -> C returned 0, Rust returned 8
+assertion `left == right` failed: DIVERGENCE [ERRORS row 8 baseline]: h = [0x00, 0x00, 0x00] -> C returned 0, Rust returned 8
+assertion `left == right` failed: DIVERGENCE [ERRORS row 9: h1 sweep]: h = [0x00, 0x00, 0x00] -> C returned 0, Rust returned 8
+test result: FAILED. 5 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.62s
+[38;5;244m - Completed in 5.768s[0m
+
+[?25l[0m[38;5;141m> [0mBoth OOB rows detected. One more control targeting the single most likely real translation bug — treating the reserved layer as universally out-of-bounds instead of letting it alias into another row:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && cp /tmp/lib.rs.bak src/lib.rs
+python3 - <<'EOF'
+p='src/lib.rs'; s=open(p).read()
+s=s.replace("    let half = if offset >= 0","    let half = if j < 0 { 0 } else if offset >= 0")
+open(p,'w').write(s)
+EOF
+timeout 600 cargo build --release 2>&1|tail -1 && timeout 300 cargo test --release 2>&1 | grep -E 'FAILED|DIVERGENCE|table says|test result' | head -12[0m[38;5;244m (using tool: shell)[0m
+Purpose: Negative control: reserved layer treated as OOB instead of aliasing
+
+    Finished `release` profile [optimized] target(s) in 0.08s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test phase_b_exhaustive_h1_h2 ... FAILED
+test phase_b_all_config_rows ... FAILED
+test phase_b_h1_high_nibble_is_ignored ... FAILED
+test phase_b_unused_bitfields_are_ignored ... FAILED
+assertion `left == right` failed: DIVERGENCE [exhaustive h1 x h2]: h = [0x48, 0x08, 0x10] -> C returned 32, Rust returned 0
+assertion `left == right` failed: DIVERGENCE [CONFIGS.md row 66: i=1, layer=0b00, k=1]: h = [0x11, 0x79, 0x14] -> C returned 32, Rust returned 0
+assertion `left == right` failed: DIVERGENCE [hi-nib base]: h = [0x00, 0x08, 0x10] -> C returned 32, Rust returned 0
+assertion `left == right` failed: DIVERGENCE [unused-bits baseline]: h = [0x00, 0x08, 0x10] -> C returned 32, Rust returned 0
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[38;5;244m - Completed in 0.229s[0m
+
+[?25l[0m[38;5;141m> [0mHarness validated against three independent mutations. Restoring the original and confirming green:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && cp /tmp/lib.rs.bak src/lib.rs && diff /tmp/lib.rs.bak src/lib.rs && echo "src restored byte-identical" && timeout 600 cargo build --release 2>&1|tail -1 && timeout 600 cargo test --release 2>&1 | grep -E 'test result|FAILED'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Restore original source and re-verify all tests pass
+
+src restored byte-identical
+    Finished `release` profile [optimized] target(s) in 0.08s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.66s
+[38;5;244m - Completed in 5.874s[0m
+
+[?25l[0m[38;5;141m> [0mAll green. Now Phase D — symbol parity re-check and every feature combination. Automating rather than repeating by hand:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/phase_d.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase D automation script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Phase D driver: symbol parity + every feature combination x profile.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m cd "$(dirname "$0")"
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m C_SO=$(ls ../c_src/build/lib*.so | head -1)
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m export C_SO_PATH="$(readlink -f "$C_SO")"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m echo "=== Feature enumeration from Cargo.toml ==="
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m # Collect declared features (excluding "default"); build the full power set.
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m mapfile -t FEATS < <(awk '
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   /^\[features\]/ {inf=1; next}
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   /^\[/           {inf=0}
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m   inf && /^[A-Za-z0-9_-]+ *=/ {gsub(/ *=.*/,""); if ($0 != "default") print}
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m ' Cargo.toml)
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m echo "declared features: ${#FEATS[@]} (${FEATS[*]:-none})"
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m COMBOS=()
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m n=${#FEATS[@]}
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m if [ "$n" -eq 0 ]; then
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   COMBOS+=("--no-default-features")   # no features exist -> only the empty config
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   COMBOS+=("")                        # default
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   for ((mask=0; mask<(1<<n); mask++)); do
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     sel=()
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     for ((b=0; b<n; b++)); do (( mask & (1<<b) )) && sel+=("${FEATS[$b]}"); done
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m     if [ ${#sel[@]} -eq 0 ]; then
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m       COMBOS+=("--no-default-features")
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m       COMBOS+=("--no-default-features --features $(IFS=,; echo "${sel[*]}")")
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m   COMBOS+=("")                        # default feature set
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m echo "combinations to verify: ${#COMBOS[@]}"
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m FAIL=0
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m for profile in debug release; do
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m   PFLAG=""; [ "$profile" = release ] && PFLAG="--release"
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m   for combo in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m     label="profile=$profile features=[${combo:-default}]"
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     echo
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     echo "################ $label ################"
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m     if ! timeout 600 cargo build $PFLAG $combo >/tmp/pd_build.log 2>&1; then
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m       echo "BUILD FAILED: $label"; tail -20 /tmp/pd_build.log; FAIL=1; continue
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     export RUST_SO_PATH="$(readlink -f "target/$profile/libhdr_bitrate_lib.so")"
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m     # --- symbol parity for this configuration ---
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     diff <(nm -D --defined-only "$C_SO_PATH" | awk '{print $NF}' | sort -u) \
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m          <(nm -D --defined-only "$RUST_SO_PATH" | awk '{print $NF}' | sort -u \
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             | grep -vE '^(_ZN|rust_|__rust|_ITM_|__cxa|_Unwind|__tls|_edata|_end|__bss_start)') \
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m          > /tmp/pd_symdiff.txt
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     if [ -s /tmp/pd_symdiff.txt ]; then
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m       echo "SYMBOL DIFF NOT EMPTY ($label):"; cat /tmp/pd_symdiff.txt; FAIL=1
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m       echo "symbol parity: OK (diff empty)"
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     # --- Phases B + C for this configuration ---
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     if timeout 600 cargo test $PFLAG $combo >/tmp/pd_test.log 2>&1; then
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m       grep -E '^test result' /tmp/pd_test.log | sed 's/^/  /'
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     else
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m       echo "TESTS FAILED: $label"; grep -E 'FAILED|DIVERGENCE|panicked' /tmp/pd_test.log | head -20; FAIL=1
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     fi
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m if [ "$FAIL" -eq 0 ]; then echo "PHASE D: ALL CONFIGURATIONS PASSED"; else echo "PHASE D: FAILURES PRESENT"; fi
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m exit $FAIL
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-qKupep/translation/phase_d.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && chmod +x phase_d.sh && timeout 600 ./phase_d.sh 2>&1 | tail -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase D across all configurations
+
+=== Feature enumeration from Cargo.toml ===
+declared features: 0 (none)
+combinations to verify: 2
+
+################ profile=debug features=[--no-default-features] ################
+symbol parity: OK (diff empty)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.32s
+
+################ profile=debug features=[default] ################
+symbol parity: OK (diff empty)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.71s
+
+################ profile=release features=[--no-default-features] ################
+symbol parity: OK (diff empty)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.62s
+
+################ profile=release features=[default] ################
+symbol parity: OK (diff empty)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.60s
+
+PHASE D: ALL CONFIGURATIONS PASSED
+[38;5;244m - Completed in 23.22s[0m
+
+[?25l[0m[38;5;141m> [0mAll configurations pass. One robustness question worth settling: the C's out-of-bounds reads return 0 only because of where the linker placed the table. Let me check whether that holds under different optimization levels (building outside [38;5;10mc_src[0m so I don't touch it).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep && for opt in -O0 -O1 -O2 -O3 -Os; do
+  d=/tmp/cb$opt; rm -rf $d
+  cmake -S c_src -B $d -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_C_FLAGS="$opt" >/dev/null 2>&1
+  cmake --build $d >/dev/null 2>&1
+  so=$(ls $d/lib*.so)
+  # find the table symbol address
+  addr=$(nm -a "$so" | awk '/halfrate/ {print $1; exit}')
+  if [ -z "$addr" ]; then echo "$opt: table inlined/not emitted as symbol"; continue; fi
+  python3 - "$so" "$addr" "$opt" <<'EOF'
+import sys,subprocess
+so,addr,opt=sys.argv[1],int(sys.argv[2],16),sys.argv[3]
+# map vaddr->file offset via readelf sections
+out=subprocess.run(['readelf','-SW',so],capture_output=True,text=True).stdout
+off=None
+for l in out.splitlines():
+    p=l.split()
+    if len(p)>6 and p[0].startswith('['):
+        try:
+            i=p.index([x for x in p if len(x)==16][0])
+        except Exception: continue
+data=open(so,'rb').read()
+# simpler: .rodata section addr/off
+import re
+m=re.search(r'\.rodata\s+PROGBITS\s+([0-9a-f]+)\s+([0-9a-f]+)\s+([0-9a-f]+)',out)
+ra,ro,rs=(int(x,16) for x in m.groups())
+fo=ro+(addr-ra)
+before=data[fo-15:fo]
+after=data[fo+90:fo+91]
+print(f"{opt}: table vaddr={addr:#x} rodata={ra:#x}(size {rs:#x}) | 15 bytes before = {before.hex()} | byte@+90 = {after.hex()}")
+EOF
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Test OOB padding bytes across optimization levels
+
+-O0: table vaddr=0x2000 rodata=0x2000(size 0x5a) | 15 bytes before = 000000000000000000000000000000 | byte@+90 = 00
+-O1: table vaddr=0x2000 rodata=0x2000(size 0x5a) | 15 bytes before = 000000000000000000000000000000 | byte@+90 = 00
+-O2: table vaddr=0x2000 rodata=0x2000(size 0x5a) | 15 bytes before = 000000000000000000000000000000 | byte@+90 = 00
+-O3: table vaddr=0x2000 rodata=0x2000(size 0x5a) | 15 bytes before = 000000000000000000000000000000 | byte@+90 = 00
+-Os: table vaddr=0x2000 rodata=0x2000(size 0x5a) | 15 bytes before = 000000000000000000000000000000 | byte@+90 = 00
+[38;5;244m - Completed in 2.166s[0m
+
+[?25l[0m[38;5;141m> [0mStable at every optimization level — the table is the only object in [38;5;10m.rodata[0m, at the start of a page-aligned segment. Let me run the full differential suite against each of those C builds:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && export RUST_SO_PATH=$(readlink -f target/release/libhdr_bitrate_lib.so) && for opt in -O0 -O1 -O2 -O3 -Os; do
+  export C_SO_PATH=$(readlink -f $(ls /tmp/cb$opt/lib*.so))
+  r=$(timeout 300 cargo test --release 2>&1 | grep -cE 'test result: FAILED|DIVERGENCE')
+  pass=$(timeout 300 cargo test --release 2>&1 | grep -E '^test result: ok' | awk '{s+=$4} END{print s}')
+  echo "C built with $opt : failures=$r  tests_passed=$pass"
+done[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential suite against C built at each optimization level
+
+C built with -O0 : failures=0  tests_passed=16
+C built with -O1 : failures=0  tests_passed=16
+C built with -O2 : failures=0  tests_passed=16
+C built with -O3 : failures=0  tests_passed=16
+C built with -Os : failures=0  tests_passed=16
+[38;5;244m - Completed in 54.32s[0m
+
+[?25l[0m[38;5;141m> [0mNow checking off the artifact rows, since Phase B/C have actually passed:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && sed -i 's/ | \[ \] |$/ | [x] |/' CONFIGS.md && echo "checked rows: $(grep -c '| \[x\] |' CONFIGS.md) / unchecked: $(grep -c '| \[ \] |' CONFIGS.md)" && sed -n '/^| 1 |/p;/^| 128 |/p' CONFIGS.md[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mark CONFIGS.md rows as passing
+
+checked rows: 129 / unchecked: 0
+| 1 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=0 (free) — offset -15 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 128 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=15 (bad) — offset 90 OOB> past table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[38;5;141m> [0mThe header row got caught by that sed; restoring it:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && sed -i 's/^| # | entry point(s) | configuration (options set + input shape) | \[x\] |$/| # | entry point(s) | configuration (options set + input shape) | [ ] |/' CONFIGS.md && echo "data rows checked: $(grep -cE '^\| [0-9]+ \|.*\| \[x\] \|' CONFIGS.md)" && grep -n '\[x\]\|\[ \]' CONFIGS.md | head -3[0m[38;5;244m (using tool: shell)[0m
+Purpose: Restore CONFIGS.md header row
+
+data rows checked: 128
+52:| # | entry point(s) | configuration (options set + input shape) | [ ] |
+54:| 1 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=0 (free) — offset -15 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+55:| 2 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=1 — offset -14 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0mNow recording the per-row test mapping and evidence in [38;5;10mERRORS.md[0m:[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `new_str`
+[0m[?25l[0m[0mI'll append content to file: [38;5;141mtranslation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Append Phase C status and robustness evidence to ERRORS.md
+
+[49m[38;5;10m+     68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m ## Phase C status — every row has a passing differential test
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m Tests live in `tests/phase_c_errors.rs` and reach both implementations only via
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m `dlopen` + `hdr_bitrate` (`tests/common/mod.rs`). All 11 pass.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m | row | test | status |
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m |-----|------|--------|
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m | 1 | `errors_row1_reserved_layer_negative_offset` | [x] pass |
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m | 2 | `errors_row2_reserved_layer_wraps_to_offset_zero` | [x] pass |
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m | 3 | `errors_row3_reserved_layer_aliases_other_row` | [x] pass |
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m | 4 | `errors_row4_bad_nibble_reads_next_row_first_byte` | [x] pass |
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m | 5 | `errors_row5_offset_90_past_end_of_table` | [x] pass |
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m | 6 | `errors_row6_null_pointer_crash_parity` (forked child, compares death signal) | [x] pass — both die with SIGSEGV(11) |
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m | 7 | `errors_row7_reads_no_further_than_h2` (guard page after `h[2]`, all 65 536 pairs) | [x] pass |
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m | 7 | `errors_row7b_undersized_buffer_crash_parity` (0/1/2 readable bytes) | [x] pass — identical fault behaviour |
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m | 8 | `errors_row8_h0_never_read` | [x] pass |
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m | 9 | `errors_row9_no_invalid_encoding_is_rejected` | [x] pass |
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m | generic | `errors_boundary_one_past_each_field_range` (one step past each bit-field range) | [x] pass |
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m ## Robustness of the "OOB reads yield 0" ground truth
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m The zero result for rows 1 and 5 comes from the C `.so`'s memory layout, so it
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m was checked rather than assumed. `halfrate.0` is the only object in `.rodata`
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m and sits at the first byte of a page-aligned LOAD segment, which makes the
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m preceding bytes segment padding and the following bytes alignment padding:
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m | C build | table vaddr | 15 bytes before | byte at +90 |
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m |---------|-------------|-----------------|-------------|
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m | `-O0` | `0x2000` | all `00` | `00` |
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m | `-O1` | `0x2000` | all `00` | `00` |
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m | `-O2` | `0x2000` | all `00` | `00` |
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m | `-O3` | `0x2000` | all `00` | `00` |
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m | `-Os` | `0x2000` | all `00` | `00` |
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m The full differential suite (16 tests) was re-run against the C library built at
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m each of those five optimization levels; 16/16 passed every time. Note this is a
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m property of the current single-translation-unit library: were more `.rodata`
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m ever linked ahead of the table, the C's own result for rows 1 and 5 would change
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m (the reads are UB), and the Rust would need to change with it.
+[0m[K
+Appending to: [38;5;141mtranslation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mFinal independent verification of every gate with my own commands:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep && echo "=== 1. artifacts exist ===" && wc -l translation/SYMBOLS.md translation/ERRORS.md translation/CONFIGS.md && echo && echo "=== 2. CONFIGS rows: 128 all checked ===" && echo "data rows: $(grep -cE '^\| [0-9]+ \|' translation/CONFIGS.md)  checked: $(grep -cE '^\| [0-9]+ \|.*\[x\]' translation/CONFIGS.md)  unchecked: $(grep -cE '^\| [0-9]+ \|.*\[ \]' translation/CONFIGS.md)" && echo && echo "=== 3. ERRORS rows + all marked pass ===" && echo "rows: $(grep -cE '^\| [0-9]+ \| .hdr_bitrate' translation/ERRORS.md)  pass-marks: $(grep -c '\[x\] pass' translation/ERRORS.md)" && echo && echo "=== 4. no stubs/unimplemented in Rust ===" && grep -cE 'unimplemented!|todo!|panic!\(' translation/src/lib.rs && echo && echo "=== 5. symbol diff (C vs Rust) ===" && diff <(nm -D --defined-only c_src/build/lib*.so | awk '{print $NF}' | sort -u) <(nm -D --defined-only translation/target/release/libhdr_bitrate_lib.so | awk '{print $NF}' | sort -u | grep -vE '^(_ZN|rust_|__rust|_ITM_|__cxa|_Unwind|__tls|_edata|_end|__bss_start)') && echo "EMPTY DIFF -> parity OK" && echo && echo "=== 6. binary target? ===" && grep -c 'add_executable' c_src/CMakeLists.txt; ls translation/src/; echo "(no add_executable, no main.rs -> no binary; stdout comparison N/A)" && echo && echo "=== 7. c_src untouched by me ===" && ls c_src/src c_src/include[0m[38;5;244m (using tool: shell)[0m
+Purpose: Independently verify all completion gates
+
+=== 1. artifacts exist ===
+   44 translation/SYMBOLS.md
+  107 translation/ERRORS.md
+  181 translation/CONFIGS.md
+  332 total
+
+=== 2. CONFIGS rows: 128 all checked ===
+data rows: 128  checked: 128  unchecked: 0
+
+=== 3. ERRORS rows + all marked pass ===
+rows: 9  pass-marks: 11
+
+=== 4. no stubs/unimplemented in Rust ===
+0
+lib.rs
+(no add_executable, no main.rs -> no binary; stdout comparison N/A)
+
+=== 7. c_src untouched by me ===
+c_src/include:
+lib.h
+
+c_src/src:
+lib.c
+[38;5;244m - Completed in 0.15s[0m
+
+[?25l[0m[38;5;141m> [0mSections 5–6 were skipped because a [38;5;10mgrep -c[0m returned 0 and broke the [38;5;10m&&[0m chain. Re-running those independently:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep
+echo "=== C exported symbols ==="; nm -D --defined-only c_src/build/lib*.so
+echo "=== Rust exported symbols (non-runtime) ==="; nm -D --defined-only translation/target/release/libhdr_bitrate_lib.so | grep -vE '_ZN|rust_|__rust|_ITM_|__cxa|_Unwind|__tls'
+echo "=== symbol diff ==="
+diff <(nm -D --defined-only c_src/build/lib*.so | awk '{print $NF}' | sort -u) \
+     <(nm -D --defined-only translation/target/release/libhdr_bitrate_lib.so | awk '{print $NF}' | sort -u | grep -vE '^(_ZN|rust_|__rust|_ITM_|__cxa|_Unwind|__tls|_edata|_end|__bss_start)')
+echo "diff exit=$? (0 = empty = parity OK)"
+echo "=== undefined non-libc symbols in Rust .so ==="
+nm -D --undefined-only translation/target/release/libhdr_bitrate_lib.so | awk '{print $NF}' | grep -vE '^(_|memcpy|memset|memmove|memcmp|malloc|free|realloc|calloc|abort|write|writev|bcmp|strlen|dl_iterate_phdr|getenv|sysconf|pthread|posix_|open|read|close|mmap|munmap|open64|syscall|gnu_get_libc_version|__)' || echo "(none)"
+echo "=== executables in c_src build? ==="; find c_src/build -maxdepth 1 -type f -executable -not -name '*.so' | grep -v cmake || echo "(none - library only, no driver binary)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify symbol parity and undefined symbols
+
+=== C exported symbols ===
+00000000000010f9 T hdr_bitrate
+=== Rust exported symbols (non-runtime) ===
+00000000000116e0 T hdr_bitrate
+=== symbol diff ===
+diff exit=0 (0 = empty = parity OK)
+=== undefined non-libc symbols in Rust .so ===
+fstat64@GLIBC_2.33
+getcwd@GLIBC_2.2.5
+gettid@GLIBC_2.30
+lseek64@GLIBC_2.2.5
+realpath@GLIBC_2.3
+stat64@GLIBC_2.33
+statx@GLIBC_2.28
+=== executables in c_src build? ===
+(none - library only, no driver binary)
+[38;5;244m - Completed in 0.60s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-qKupep/translation && unset C_SO_PATH RUST_SO_PATH; timeout 600 cargo test --release 2>&1 | grep -E 'running|^test |test result' && rm -rf /tmp/cb-O* /tmp/lib.rs.bak && echo && echo "FINAL: $(timeout 600 cargo test --release 2>&1 | grep -E '^test result: ok' | awk '{s+=$4} END{print s}') tests passing, 0 failures"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final clean test run
+
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 5 tests
+test phase_b_h0_is_ignored ... ok
+test phase_b_h1_high_nibble_is_ignored ... ok
+test phase_b_unused_bitfields_are_ignored ... ok
+test phase_b_all_config_rows ... ok
+test phase_b_exhaustive_h1_h2 ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 11 tests
+test errors_boundary_one_past_each_field_range ... ok
+test errors_row1_reserved_layer_negative_offset ... ok
+test errors_row2_reserved_layer_wraps_to_offset_zero ... ok
+test errors_row5_offset_90_past_end_of_table ... ok
+test errors_row3_reserved_layer_aliases_other_row ... ok
+test errors_row4_bad_nibble_reads_next_row_first_byte ... ok
+test errors_row9_no_invalid_encoding_is_rejected ... ok
+test errors_row8_h0_never_read ... ok
+test errors_row7_reads_no_further_than_h2 ... ok
+test errors_row6_null_pointer_crash_parity ... ok
+test errors_row7b_undersized_buffer_crash_parity ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.75s
+
+FINAL: 16 tests passing, 0 failures
+[38;5;244m - Completed in 11.554s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete. The translation is correct — no divergences found, and no fixes to the Rust were needed.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+A single 14-line C function, [38;5;10munsigned hdr_bitrate(const uint8_t *h)[0m, which looks up an MPEG-audio bitrate from a 3D table using bit-fields extracted from [38;5;10mh[1][0m and [38;5;10mh[2][0m.[0m[0m
+[0m[0m
+The whole verification hinges on one thing: [1mthe C indexes its table out of bounds.[22m With [38;5;10mi = !!(h[1] & 0x8)[0m, [38;5;10mj = ((h[1]>>1) & 3) - 1[0m, and [38;5;10mk = h[2] >> 4[0m, the flat offset [38;5;10m45i + 15j + k[0m ranges over [1m-15 .. +90[22m while the table is only 90 bytes. [38;5;10mj[0m is [38;5;10m-1[0m for the reserved layer value [38;5;10m0b00[0m, and [38;5;10mk[0m reaches 15 for the "bad" bitrate nibble. The [38;5;10mobjdump[0m output confirms the compiler emits a single unchecked [38;5;10mmovzx[0m at [38;5;10mtable + offset[0m, negative offsets included.[0m[0m
+[0m[0m
+I established the ground truth for those reads empirically rather than assuming: [38;5;10mhalfrate.0[0m is the only object in [38;5;10m.rodata[0m and sits at the first byte of a page-aligned LOAD segment, so the 15 preceding bytes are segment padding ([38;5;10m00[0m) and byte +90 is alignment padding ([38;5;10m00[0m). Every OOB read yields 0. This held at [38;5;10m-O0/-O1/-O2/-O3/-Os[0m, and the suite passes against the C built at all five. The existing Rust already handled this correctly, and its 90-byte flat [38;5;10mHALFRATE[0m array matches the C [38;5;10m.rodata[0m bytes exactly.[0m[0m
+[0m[0m
+[38;5;252m[1m## Phase results[0m[0m
+[0m[0m
+- **Phase A** — [38;5;10mSYMBOLS.md[0m, [38;5;10mERRORS.md[0m, [38;5;10mCONFIGS.md[0m in the crate root. The C exports exactly one dynamic symbol; the symbol diff was empty from the start, so no module was untranslated and no stubs were added.[0m[0m
+- **[38;5;10mERRORS.md[0m** — a mechanical grep found [1mzero[22m conditionals, asserts, error returns, or [38;5;10m#ifdef[0m in the C. The API has no error code or sentinel, so the rejection surface is entirely implicit: 9 rows covering the negative offsets, the reserved-layer row aliasing, the bad-nibble row crossing, offset 90, plus null pointer, undersized buffer, and the FFI enum-range case.[0m[0m
+- **Phase B** — 128 rows (the pruned cross-product [38;5;10mi × layer × k[0m), each with 64 randomized iterations over the bits the C ignores, [1mplus an exhaustive sweep of all 65 536 [38;5;10m(h[1], h[2])[0m pairs[22m — the input space is small enough that sampling wasn't necessary. All 128 checked off.[0m[0m
+- **Phase C** — 11 tests, one per row. Null-pointer and undersized-buffer parity are compared by death signal in a forked child (both SIGSEGV) since there's no return value to compare; a guard page proves neither side reads past [38;5;10mh[2][0m.[0m[0m
+- **Phase D** — [38;5;10mphase_d.sh[0m enumerates feature combos from [38;5;10mCargo.toml[0m and loops over them. The crate declares no features, so the configurations are default and [38;5;10m--no-default-features[0m, run in both debug and release: 4 configurations, symbol parity empty and 16/16 tests in each. No binary target exists ([38;5;10mCMakeLists.txt[0m has only [38;5;10madd_library SHARED[0m, no [38;5;10mmain.rs[0m), so the stdout comparison is N/A.[0m[0m
+[0m[0m
+[38;5;252m[1m## On trusting the result[0m[0m
+[0m[0m
+Passing tests against an already-correct translation prove little unless the harness can detect failure, so I ran three negative controls, reverting each afterward: corrupting one table byte (caught, row 59), changing the OOB fallback from 0 to 4 (caught, 6 tests), and making the reserved layer return 0 instead of aliasing into another row — the most likely real translation bug (caught at row 66). [38;5;10msrc/lib.rs[0m was restored byte-identical, confirmed by [38;5;10mdiff[0m.[0m[0m
+[0m[0m
+Everything in [38;5;10mc_src/[0m is unmodified; the optimization-level builds went to [38;5;10m/tmp[0m and have been cleaned up. One caveat worth recording: the row 1 and row 5 expectations depend on the C's link layout, since those reads are UB. If additional [38;5;10m.rodata[0m were ever linked ahead of the table, the C's own output would change and the Rust would need to follow — this is noted in [38;5;10mERRORS.md[0m.[0m[0m
+[38;5;8m
+ ▸ Credits: 20.36 • Time: 10m 17s
+
+[0m[1G[0m[0m[?25h

@@ -1,0 +1,34 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "normalize_lib"
+
+[dev-dependencies]
+libloading = "0.8"
+
+[profile.release]
+panic = "abort"
+
+# The C `normalize` validates nothing: a null `dest`/`src`, or a negative `size`
+# (whose `size * sizeof(float)` memset length sign-extends and wraps), are all
+# inputs it happily executes straight into a SIGSEGV. Rust's `debug-assertions`
+# also enable `ub_checks`, which turn those very same operations (`*ptr` deref,
+# `ptr::write_bytes` on null) into a controlled `abort()` -- SIGABRT instead of
+# SIGSEGV -- and `overflow-checks` would panic on the `i += 1` wrap that C
+# performs silently. Both are disabled so that EVERY build profile of this
+# translation reproduces the C's observable behaviour identically, which is what
+# the differential test suite asserts.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]

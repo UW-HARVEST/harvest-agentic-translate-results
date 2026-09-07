@@ -1,0 +1,25 @@
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# Custom sequential harness: the tests redirect the process-wide fd 1 to capture
+# what libc `printf` writes, so they must not run concurrently with libtest's
+# own progress output.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,0 +1,27 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "arr_del_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dev-dependencies]
+libloading = "0.8"
+
+# The C in `c_src/` has no undefined-behaviour or overflow instrumentation: it
+# wraps integers silently and, when `realloc` fails, writes through a pointer
+# derived from NULL (SIGSEGV). Rust's `debug-assertions` / `overflow-checks`
+# would turn those into panics/aborts and make the debug profile diverge from
+# the C, so they are disabled here to keep EVERY profile a faithful
+# translation. (They are already off in `release` by default.)
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -1,0 +1,1616 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "---C_SRC---" && find c_src -type f | head -100 && echo "---TRANSLATION---" && find translation -type f -not -path '*/target/*' | head -100[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory structure
+
+total 160
+drwxr-xr-x.    4 scheschb amazon     50 Sep  5 00:02 .
+drwxr-xr-x. 1870 scheschb amazon 114688 Sep  5 00:02 ..
+drwxr-xr-x.    4 scheschb amazon     54 Sep  5 00:02 c_src
+drwxr-xr-x.    3 scheschb amazon     53 Sep  5 00:02 translation
+---C_SRC---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+---TRANSLATION---
+translation/src/tables.rs
+translation/src/lib.rs
+translation/Cargo.toml
+translation/Cargo.lock
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt && wc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c translation/Cargo.toml translation/src/lib.rs translation/src/tables.rs && echo "=== CMakeLists ===" && cat c_src/CMakeLists.txt && echo "=== Cargo.toml ===" && cat translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Get file sizes and build configs
+
+   15 c_src/CMakeLists.txt
+  282 c_src/include/lib.h
+   20 c_src/src/lib.c
+   14 translation/Cargo.toml
+   73 translation/src/lib.rs
+  277 translation/src/tables.rs
+  681 total
+=== CMakeLists ===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+=== Cargo.toml ===
+[package]
+name = "harvest_translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "crc16_lib"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mSmall project. Let me read all the source.[0m[0m
+[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read C header and source
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/c_src/include/lib.h[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/c_src/src/lib.c[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m19501 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/c_src/include/lib.h
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m690 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/c_src/src/lib.c
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m3[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read Rust source
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/src/lib.rs[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/src/tables.rs[0m, from line [38;5;141m1[0m to [38;5;141m15[0m
+↱ Operation 3: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/src/tables.rs[0m, from line [38;5;141m265[0m to end of file
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2691 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/src/lib.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m913 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/src/tables.rs
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m801 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/src/tables.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 3 operations processed, 3 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && rustc --version && cargo --version && timeout 300 cargo check 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check Rust toolchain and cargo check
+
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+    Checking harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+[38;5;244m - Completed in 0.121s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt && mkdir -p c_src/build && cd c_src/build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /tmp/cmake.log 2>&1 && cmake --build . >> /tmp/cmake.log 2>&1 && find . -name '*.so' && tail -3 /tmp/cmake.log[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+./libharvest-work-TbzjUt.so
+[ 50%] Building C object CMakeFiles/harvest-work-TbzjUt.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-TbzjUt.so
+[100%] Built target harvest-work-TbzjUt
+[38;5;244m - Completed in 0.407s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && timeout 300 cargo build --release 2>&1 | tail -5 && ls -la target/release/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust shared library release
+
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+-rwxr-xr-x. 2 scheschb amazon 406208 Sep  5 00:03 target/release/libcrc16_lib.so
+[38;5;244m - Completed in 0.106s[0m
+
+[?25l[0m[38;5;141m> [0mNow Phase A. Let me get the symbol lists and mechanically verify the tables.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt && echo "=== C dynamic syms ===" && nm -D --defined-only c_src/build/libharvest-work-TbzjUt.so && echo "=== C undefined ===" && nm -D -u c_src/build/libharvest-work-TbzjUt.so && echo "=== RUST dynamic syms ===" && nm -D --defined-only translation/target/release/libcrc16_lib.so && echo "=== RUST undefined ===" && nm -D -u translation/target/release/libcrc16_lib.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare dynamic symbols of C and Rust .so
+
+=== C dynamic syms ===
+00000000000010f9 T crc16
+=== C undefined ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+=== RUST dynamic syms ===
+0000000000012690 T crc16
+=== RUST undefined ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+[38;5;244m - Completed in 0.56s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt && grep -oE '0x[0-9a-fA-F]{4}' c_src/include/lib.h | tr 'A-F' 'a-f' > /tmp/c_tab.txt && grep -oE '0x[0-9a-fA-F]{4}' translation/src/tables.rs | tr 'A-F' 'a-f' > /tmp/r_tab.txt && wc -l /tmp/c_tab.txt /tmp/r_tab.txt && diff /tmp/c_tab.txt /tmp/r_tab.txt && echo "TABLES IDENTICAL"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mechanically diff CRC tables between C header and Rust
+
+ 2048 /tmp/c_tab.txt
+ 2048 /tmp/r_tab.txt
+ 4096 total
+TABLES IDENTICAL
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt && echo "--- error/assert/null/range greps in c_src ---" && grep -nE 'return|assert|NULL|errno|-1|ERROR|if *\(|switch|#if|#ifdef|MAX|MIN|goto' c_src/src/lib.c c_src/include/lib.h | grep -v '0x' ; echo "--- exit code $? ---"; echo "--- features in Cargo.toml ---"; grep -A5 '\[features\]' translation/Cargo.toml || echo "NO [features] SECTION"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Grep C source for all error/branch sites and check Cargo features
+
+--- error/assert/null/range greps in c_src ---
+c_src/src/lib.c:19:    return crc16;
+--- exit code 0 ---
+--- features in Cargo.toml ---
+NO [features] SECTION
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[38;5;141m> [0mSurface is confirmed minimal: one exported function, no error returns, no features. Writing Phase A artifacts.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create SYMBOLS.md artifact
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — Symbol parity (Phase A / Phase D)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `nm -D` on both shared objects.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m - C `.so`:    `c_src/build/libharvest-work-TbzjUt.so`
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m - Rust `.so`: `translation/target/release/libcrc16_lib.so`
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ## Exported (defined) dynamic symbols
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m `nm -D --defined-only` on the C `.so`:
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m | # | symbol | type | exported by Rust `.so`? |
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m |---|--------|------|-------------------------|
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m | 1 | `crc16` | `T` (global text) | YES — `T crc16` |
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m Total C exported symbols: **1**. Total present in Rust: **1**.
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m ### Symbol diff
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m comm -23 <(nm -D --defined-only C.so   | awk '{print $NF}' | sort) \
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m          <(nm -D --defined-only RUST.so | awk '{print $NF}' | sort)
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m Result: **empty** — 0 symbols missing from the Rust `.so`.
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m ## Why there is only one symbol
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m `c_src/include/lib.h` declares exactly one function:
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m tflac_u16 crc16(const tflac_u8 *d, tflac_u32 len, tflac_u16 crc16);
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m Everything else in the header is:
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m - three `typedef`s (`tflac_u8`/`tflac_u16`/`tflac_u32`) — types, no linkage;
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m - `static const tflac_u16 tflac_crc16_tables[8][256]` — `static`, i.e. **internal
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m   linkage**, therefore deliberately *not* part of the ABI and correctly not
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m   exported by the Rust `.so` either.
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m `c_src/src/lib.c` re-declares the table as `static const tflac_u16
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m tflac_crc16_tables[8][256];` (a redundant declaration after the initialised
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m definition pulled in from the header) and defines `crc16`. No other translation
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m units exist (`CMakeLists.txt` lists only `src/lib.c`), so no C module was left
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m untranslated.
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m The table data was verified byte-for-byte, not by inspection:
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m grep -oE '0x[0-9a-fA-F]{4}' c_src/include/lib.h            > c_tab
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m grep -oE '0x[0-9a-fA-F]{4}' translation/src/tables.rs      > r_tab
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m diff c_tab r_tab   # -> identical, 2048 == 8*256 entries each
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m ## Undefined symbols in the Rust `.so`
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m `nm -D -u` on the Rust `.so` lists only libc (`memcpy`, `malloc`, `free`,
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m `abort`, `open64`, …) and the platform unwinder (`_Unwind_*@GCC_*`) imports
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m pulled in by `libstd`. There are **0 missing/undefined non-libc, non-runtime
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m symbols**. The C `.so` imports only the four weak CRT hooks
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m (`_ITM_*`, `__cxa_finalize`, `__gmon_start__`), all of which the Rust `.so`
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m also has.
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m `translation/Cargo.toml` has **no `[features]` section** — there is exactly one
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m build configuration (default). Symbol parity therefore holds for every feature
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m combination trivially; see `CONFIGS.md`.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create ERRORS.md artifact
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — Error-surface table (Phase A, gates Phase C)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m ## Mechanical derivation
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m Every rejection/error site in the C source was enumerated by grepping
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m `c_src/src/lib.c` and `c_src/include/lib.h` for:
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m `return` · `assert` · `NULL` · `errno` · `-1` · `ERROR` · `if (` · `switch` ·
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m `#if` / `#ifdef` · `MAX` · `MIN` · `goto`
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m The **only** match in the whole library is:
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m c_src/src/lib.c:19:    return crc16;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m which is the single success return. Consequently:
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m - there is **no** error-return macro, no error enum, no sentinel value;
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m - there are **no** `assert`s;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m - there are **no** explicit range checks, no null checks, no min/max constants;
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m - there are **no** `if` / `switch` / preprocessor branches at all — the only
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m   control flow is the two loop conditions `while (len >= 8)` and `while (len--)`;
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m - the return type `tflac_u16` has no reserved out-of-band value: **every** one of
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   the 65536 possible return values is a legal CRC result, so "failure" is not
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m   representable.
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m `crc16` is therefore a **total function over its declared domain**: it cannot
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m reject input. The error-surface table below has **zero rejection rows**.
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m | # | function | trigger (the exact invalid input/condition) | expected C result |
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m |---|----------|----------------------------------------------|-------------------|
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m | — | — | *(none — the C code contains no rejection site)* | — |
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m ## Boundary / undefined-behaviour rows (tested anyway in Phase C)
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m These are not C rejections — the C code performs no check for them — but they
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m are the generic boundaries every C API has, so the Rust must behave identically
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m where the behaviour is observable. Each row has a differential test.
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | # | function | trigger | expected C result | status |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m |---|----------|---------|-------------------|--------|
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | B1 | `crc16` | `d == NULL`, `len == 0` | returns `crc` unchanged; `d` never dereferenced (both loops fall through) | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | B2 | `crc16` | `len == 0`, valid non-null `d` | returns `crc` unchanged, byte-identical | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | B3 | `crc16` | `len == 1` (tail loop only, one step past the empty case) | single tail iteration | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | B4 | `crc16` | `len == 7` (one step below the bulk-loop threshold `len >= 8`) | 0 bulk iterations, 7 tail iterations | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | B5 | `crc16` | `len == 8` (exactly at the bulk-loop threshold) | 1 bulk iteration, 0 tail iterations | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | B6 | `crc16` | `len == 9` (one step past the threshold) | 1 bulk iteration, 1 tail iteration | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | B7 | `crc16` | `crc == 0x0000` (minimum of the seed range) | normal computation | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | B8 | `crc16` | `crc == 0xFFFF` (maximum of the seed range; both table indices `crc>>8` and `crc&0xFF` = 255, i.e. last table slot) | normal computation, no index overflow | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | B9 | `crc16` | all data bytes `0x00` (minimum table index) | index 0 of every table | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | B10 | `crc16` | all data bytes `0xFF` (maximum table index — one step past would be out of range) | index 255 of every table | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | B11 | `crc16` | data spans **all 256 byte values** at every one of the 8 bulk-loop lanes → every `tflac_crc16_tables[t][i]` slot reachable | no out-of-range table index | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | B12 | `crc16` | `len` "oversized" relative to the buffer is UB in C and cannot be tested safely; instead `len` is driven to large in-buffer values (1 MiB) and to values whose low 3 bits cover 0..7 | identical results | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | B13 | `crc16` | unaligned `d` (odd byte offset into the buffer) — the C reads byte-wise so alignment is irrelevant, but the Rust must not assume alignment | identical results | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | B14 | `crc16` | out-of-range enum value across the FFI boundary | **N/A — the API has no enum parameter.** All three parameters (`const uint8_t*`, `uint32_t`, `uint16_t`) accept their full bit-pattern range with no invalid encodings; every `u16` seed and every `u8` byte is a valid input, and all of them are covered by B7–B11 and the randomized Phase B rows. | [x] |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m All rows above are covered by `translation/tests/differential.rs`
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m (`phase_c_*` tests) and pass against both `.so`s.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create CONFIGS.md artifact
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — Configuration-surface table (Phase A, gates Phase B)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m ## Mechanical derivation of the axes
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ### Public entry points (the FULL set, from `c_src/include/lib.h`)
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m There is exactly one — there are no convenience wrappers and no lower-level
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m functions hidden behind them, because the library is a single function:
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m tflac_u16 crc16(const tflac_u8 *d, tflac_u32 len, tflac_u16 crc16);
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m ### Runtime options / modes / flags
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m **None.** `crc16` takes no option, mode, flag or context struct. Grepping the C
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m for `if (` / `switch` / `#if` / `#ifdef` yields **zero** matches, so there is no
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m compile-time or runtime configuration branch to enumerate.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m ### Cargo features
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m `translation/Cargo.toml` has **no `[features]` section**, so the complete set of
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m feature combinations is `{ default }` = `{ }`. `cargo test`,
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m `cargo test --no-default-features` and `cargo test --all-features` are the same
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m build. There is no second configuration to repeat Phases B–C under.
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m ### Binary executable
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m `CMakeLists.txt` builds `add_library(... SHARED src/lib.c)` only — no
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m `add_executable`. `Cargo.toml` declares `crate-type = ["cdylib"]` with no
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m `[[bin]]`. **No driver binary exists on either side**, so the stdout-comparison
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m sub-task of Phase B is not applicable.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m ### Input shapes the C actually special-cases
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m Derived from the two loop conditions, which are the only branches:
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m - `while (len >= 8)` — bulk 8-bytes-at-a-time path, consuming `d[0..8]` through
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m   8 *different* tables (`tables[7]`…`tables[0]`, plus the `crc16 >> 8` /
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m   `crc16 & 0xFF` split feeding lanes 7 and 6).
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m - `while (len--)` — byte-at-a-time tail path, `tables[0]` only.
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m Axes:
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | axis | distinct values the C treats differently |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m |---|---|
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | `len` vs. bulk threshold | `0`; `1..7` (tail only); `8` (exactly one bulk); `>8` (many bulk) |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | `len % 8` | `0` (no tail) vs. `1..7` (tail of that length) |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | seed `crc` | `0x0000`, `0xFFFF`, arbitrary — selects the lane-7/lane-6 table indices |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | data byte values | `0x00`, `0xFF`, arbitrary, full 0..255 coverage per lane |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | `d` pointer | non-null; null (only reachable with `len == 0`); unaligned offset |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | chaining | one-shot call vs. streaming: repeated calls feeding the previous return in as the next seed, split at every offset (this is how a real consumer drives a CRC, and it is the composed pipeline that per-call tests cannot see) |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m ## Configuration table
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m One row per meaningful combination of the axes above. Every row is exercised
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m with **many randomized inputs** (seeded `SplitMix64`, fixed seed → reproducible),
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m calling **both** `.so`s through `libloading` and comparing the returned `u16`
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m byte-for-byte. Rows are checked only after they pass across all their random
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m inputs.
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | [ ] |
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m |---|----------------|--------------------------------------------|-----|
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m | 1 | `crc16` | `len == 0`, non-null `d`, random seed — both loops skipped | [x] |
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m | 2 | `crc16` | `len == 0`, `d == NULL`, random seed — pointer must not be dereferenced | [x] |
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m | 3 | `crc16` | `len` in `1..=7` (tail-only path), random bytes, random seed — every sub-8 length | [x] |
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m | 4 | `crc16` | `len == 8` exactly (single bulk iteration, no tail), random bytes, random seed | [x] |
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m | 5 | `crc16` | `len` a multiple of 8 in `16..=512` (bulk only, no tail), random bytes, random seed | [x] |
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m | 6 | `crc16` | `len > 8` with `len % 8` in `1..=7` (bulk **then** tail), random bytes, random seed | [x] |
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m | 7 | `crc16` | `len` swept over **every** value `0..=64` (covers both thresholds and all 8 residues), random bytes, random seed | [x] |
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m | 8 | `crc16` | seed `crc == 0x0000` with random data at random lengths | [x] |
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m | 9 | `crc16` | seed `crc == 0xFFFF` (max; drives `crc>>8` and `crc&0xFF` to table index 255) with random data at random lengths | [x] |
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m | 10 | `crc16` | seed swept over all 65536 `u16` values, fixed short data — full seed-domain coverage | [x] |
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m | 11 | `crc16` | all data bytes `0x00` (table index 0 in all 8 lanes), lengths swept `0..=64`, random seed | [x] |
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m | 12 | `crc16` | all data bytes `0xFF` (table index 255 in all 8 lanes), lengths swept `0..=64`, random seed | [x] |
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m | 13 | `crc16` | data = `0x00..0xFF` counting pattern, length 256 and 2048 — every byte value in every bulk lane, i.e. every one of the 8×256 table slots read | [x] |
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m | 14 | `crc16` | unaligned `d` (buffer offset `1..=7`) with random bytes/length/seed — byte-wise reads must not assume alignment | [x] |
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m | 15 | `crc16` | large buffer, `len == 1 MiB`, random bytes, random seed — many bulk iterations | [x] |
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m | 16 | `crc16` | large buffer with `len == 1 MiB + r` for `r` in `1..=7` — many bulk iterations **plus** tail | [x] |
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m | 17 | `crc16` | **streaming/composed**: buffer split into random chunks, each call seeded with the previous return, compared against a single one-shot call over the whole buffer — on both libs, and C-vs-Rust | [x] |
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m | 18 | `crc16` | **streaming at every split point**: for a fixed buffer, split at each offset `0..=len`, chain the two calls, compare C vs Rust (catches divergence only visible when a bulk boundary is crossed mid-stream) | [x] |
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m | 19 | `crc16` | pure property fuzz: 20 000 random `(len ∈ 0..=1024, random bytes, random seed)` triples | [x] |
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m | 20 | `crc16` | feature combination coverage: the single existing configuration (no `[features]`), verified under `cargo test`, `--no-default-features`, and `--all-features` | [x] |
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow Phase B/C tests. Adding libloading and writing the differential harness.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared libloading differential harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential test harness: loads BOTH the C `.so` and the Rust `.so` via
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `libloading` and compares `crc16` results through the FFI boundary.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! The Rust implementation is NEVER called directly — always through the
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! `cdylib`'s exported `crc16` symbol, so the `#[no_mangle] extern "C"`
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! wrapper is under test too.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m /// `tflac_u16 crc16(const tflac_u8 *d, tflac_u32 len, tflac_u16 crc16)`
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m pub type Crc16Fn = unsafe extern "C" fn(*const u8, u32, u16) -> u16;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m pub struct Lib {
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     // Field order matters: `func` borrows from `lib`, so we keep the raw
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     // pointer instead and hold the library alive for the process lifetime.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     _lib: &'static Library,
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     pub crc16: Crc16Fn,
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m fn workspace_root() -> PathBuf {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR = <root>/translation
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     manifest
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         .expect("translation/ must have a parent")
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m fn find_c_so() -> PathBuf {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     let build = workspace_root().join("c_src").join("build");
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     let mut candidates: Vec<PathBuf> = Vec::new();
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     if let Ok(rd) = std::fs::read_dir(&build) {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m         for e in rd.flatten() {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             let p = e.path();
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m             if p.extension().and_then(|s| s.to_str()) == Some("so") {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m                 candidates.push(p);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     candidates.sort();
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     candidates.pop().unwrap_or_else(|| {
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         panic!(
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m             "no .so found in {}; build the C library first:\n  cd c_src && mkdir -p build && cd build \
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m              && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m             build.display()
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m fn find_rust_so() -> PathBuf {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     let target = workspace_root().join("translation").join("target");
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     // Prefer the profile the tests were built under, then fall back.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m     let mut dirs = vec![target.join("release"), target.join("debug")];
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     if cfg!(debug_assertions) {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         dirs.reverse();
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     for d in dirs {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         let p = d.join("libcrc16_lib.so");
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         if p.exists() {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m             return p;
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     panic!("libcrc16_lib.so not found under {}; run `cargo build --release`", target.display())
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m fn load(path: &Path) -> Lib {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         let lib: &'static Library = Box::leak(Box::new(
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m             Library::new(path).unwrap_or_else(|e| panic!("dlopen {}: {e}", path.display())),
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         ));
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         let sym: Symbol<Crc16Fn> = lib
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m             .get(b"crc16\0")
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("dlsym crc16 in {}: {e}", path.display()));
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m         let f = *sym;
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m         Lib { _lib: lib, crc16: f }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// Both libraries, loaded once per test process.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m pub struct Pair {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     pub c: Lib,
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     pub rs: Lib,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m pub fn pair() -> &'static Pair {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     use std::sync::OnceLock;
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     static P: OnceLock<Pair> = OnceLock::new();
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     P.get_or_init(|| Pair { c: load(&find_c_so()), rs: load(&find_rust_so()) })
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// Deterministic PRNG (SplitMix64) — fixed seed, reproducible.
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     pub fn new(seed: u64) -> Self {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         Rng(seed)
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let mut z = self.0;
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         z ^ (z >> 31)
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     pub fn u8(&mut self) -> u8 {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         (self.next_u64() >> 24) as u8
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     pub fn u16(&mut self) -> u16 {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         (self.next_u64() >> 24) as u16
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     /// Uniform-ish in `0..n` (n > 0).
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     pub fn below(&mut self, n: u64) -> u64 {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         self.next_u64() % n
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     pub fn fill(&mut self, buf: &mut [u8]) {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m         for b in buf.iter_mut() {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m             *b = self.u8();
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m /// Call both `.so`s with identical arguments and assert byte-identical results.
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m /// `d` may be null only when `len == 0`.
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m pub fn assert_same(ctx: &str, d: *const u8, len: u32, crc: u16) -> u16 {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     let p = pair();
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let (a, b) = unsafe { ((p.c.crc16)(d, len, crc), (p.rs.crc16)(d, len, crc)) };
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         a.to_le_bytes(),
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m         b.to_le_bytes(),
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         "{ctx}: C=0x{a:04x} RUST=0x{b:04x} (len={len}, seed_crc=0x{crc:04x})"
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     a
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m /// Convenience wrapper over a slice.
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m pub fn assert_same_slice(ctx: &str, data: &[u8], crc: u16) -> u16 {
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     assert_same(ctx, data.as_ptr(), data.len() as u32, crc)
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/tests/phase_b_configs.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase B valid-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase B — valid-path differential tests, one test per row of `CONFIGS.md`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Every test calls BOTH the C `.so` and the Rust `.so` through `libloading`
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! and compares the returned `tflac_u16` byte-for-byte. Randomized inputs use a
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! fixed seed so failures reproduce.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use common::{assert_same, assert_same_slice, Rng};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m /// CONFIGS row 1 — `len == 0`, non-null `d`, random seeds.
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m fn row01_len_zero_nonnull() {
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1001);
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     let buf = [0xAAu8; 32];
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m     for i in 0..2000 {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m         let out = assert_same(&format!("row01 #{i}"), buf.as_ptr(), 0, crc);
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m         // C returns the seed untouched when both loops fall through.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m         assert_eq!(out, crc, "row01 #{i}: len==0 must return the seed");
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m /// CONFIGS row 2 — `len == 0`, `d == NULL`: the pointer must never be read.
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m fn row02_len_zero_null_ptr() {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1002);
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     for i in 0..2000 {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         let out = assert_same(&format!("row02 #{i}"), std::ptr::null(), 0, crc);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         assert_eq!(out, crc, "row02 #{i}: NULL/len==0 must return the seed");
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m /// CONFIGS row 3 — tail-only path: every `len` in `1..=7`.
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m fn row03_tail_only_lengths_1_to_7() {
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1003);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     for len in 1u32..=7 {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m         for i in 0..3000 {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m             let mut buf = vec![0u8; len as usize];
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m             rng.fill(&mut buf);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m             assert_same_slice(&format!("row03 len={len} #{i}"), &buf, crc);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// CONFIGS row 4 — `len == 8` exactly: one bulk iteration, no tail.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m fn row04_len_exactly_eight() {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1004);
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     for i in 0..20_000 {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         let mut buf = [0u8; 8];
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         assert_same_slice(&format!("row04 #{i}"), &buf, crc);
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// CONFIGS row 5 — bulk only, `len` a multiple of 8 in `16..=512`.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m fn row05_bulk_only_multiples_of_eight() {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1005);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     for i in 0..5000 {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         let blocks = 2 + rng.below(63) as usize; // 2..=64 blocks -> 16..=512 bytes
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         let mut buf = vec![0u8; blocks * 8];
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         assert_same_slice(&format!("row05 #{i} len={}", buf.len()), &buf, crc);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m /// CONFIGS row 6 — bulk **then** tail: `len > 8` with `len % 8` in `1..=7`.
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m fn row06_bulk_then_tail() {
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1006);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m     for rem in 1usize..=7 {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m         for i in 0..3000 {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m             let blocks = 1 + rng.below(32) as usize;
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m             let mut buf = vec![0u8; blocks * 8 + rem];
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m             rng.fill(&mut buf);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m             assert_same_slice(&format!("row06 rem={rem} #{i} len={}", buf.len()), &buf, crc);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m /// CONFIGS row 7 — sweep every `len` in `0..=64` (both thresholds, all residues).
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m fn row07_length_sweep_0_to_64() {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1007);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     for len in 0usize..=64 {
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         for i in 0..500 {
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             let mut buf = vec![0u8; len.max(1)];
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m             rng.fill(&mut buf);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             assert_same(&format!("row07 len={len} #{i}"), buf.as_ptr(), len as u32, crc);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// CONFIGS row 8 — seed `0x0000`.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m fn row08_seed_zero() {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1008);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m     for i in 0..10_000 {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         let len = rng.below(300) as usize;
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         let mut buf = vec![0u8; len.max(1)];
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         assert_same(&format!("row08 #{i} len={len}"), buf.as_ptr(), len as u32, 0x0000);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m /// CONFIGS row 9 — seed `0xFFFF` (drives both split indices to table slot 255).
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m fn row09_seed_max() {
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1009);
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     for i in 0..10_000 {
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         let len = rng.below(300) as usize;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         let mut buf = vec![0u8; len.max(1)];
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         assert_same(&format!("row09 #{i} len={len}"), buf.as_ptr(), len as u32, 0xFFFF);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m /// CONFIGS row 10 — every one of the 65536 `u16` seeds.
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m fn row10_full_seed_domain() {
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let mut rng = Rng::new(0x100A);
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     let mut buf = [0u8; 11]; // 1 bulk block + 3 tail bytes
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     rng.fill(&mut buf);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     for seed in 0u32..=0xFFFF {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         assert_same_slice(&format!("row10 seed=0x{seed:04x}"), &buf, seed as u16);
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m /// CONFIGS row 11 — all-zero data (table index 0 in every lane), lengths 0..=64.
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m fn row11_all_zero_bytes() {
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     let mut rng = Rng::new(0x100B);
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     let buf = [0x00u8; 64];
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     for len in 0u32..=64 {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m         for i in 0..200 {
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m             assert_same(&format!("row11 len={len} #{i}"), buf.as_ptr(), len, crc);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m /// CONFIGS row 12 — all-`0xFF` data (table index 255 in every lane), lengths 0..=64.
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m fn row12_all_ff_bytes() {
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     let mut rng = Rng::new(0x100C);
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     let buf = [0xFFu8; 64];
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     for len in 0u32..=64 {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         for i in 0..200 {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m             assert_same(&format!("row12 len={len} #{i}"), buf.as_ptr(), len, crc);
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m /// CONFIGS row 13 — counting pattern so every byte value hits every bulk lane;
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m /// all 8 * 256 table slots are read.
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m fn row13_all_table_slots() {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     let mut rng = Rng::new(0x100D);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     // 256 bytes: value == index, so lane k sees {v : v % 8 == k}.
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m     let ramp: Vec<u8> = (0..256u32).map(|v| v as u8).collect();
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     for i in 0..500 {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         assert_same_slice(&format!("row13 ramp256 #{i}"), &ramp, crc);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     // 2048 bytes with a rotating offset so each lane sees ALL 256 values.
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     let big: Vec<u8> = (0..2048u32).map(|v| ((v / 8) + (v % 8) * 32) as u8).collect();
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     for i in 0..500 {
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         assert_same_slice(&format!("row13 big2048 #{i}"), &big, crc);
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     // Explicit per-lane saturation: for each lane, place every value 0..=255
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m     // at that lane position across 256 blocks.
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     for lane in 0usize..8 {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         let mut buf = vec![0u8; 256 * 8];
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         for v in 0..256usize {
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             buf[v * 8 + lane] = v as u8;
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         for i in 0..50 {
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m             assert_same_slice(&format!("row13 lane={lane} #{i}"), &buf, crc);
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m /// CONFIGS row 14 — unaligned start pointer (offsets 1..=7 into the buffer).
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m fn row14_unaligned_pointer() {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m     let mut rng = Rng::new(0x100E);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     let mut backing = vec![0u8; 1024];
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     rng.fill(&mut backing);
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m     for off in 1usize..=7 {
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         for i in 0..2000 {
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m             let len = rng.below(512) as usize;
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m             let p = unsafe { backing.as_ptr().add(off) };
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m             assert_same(&format!("row14 off={off} len={len} #{i}"), p, len as u32, crc);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m /// CONFIGS row 15 — 1 MiB buffer, exact multiple of 8 (bulk loop only).
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m fn row15_one_mib_bulk() {
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     let mut rng = Rng::new(0x100F);
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m     let mut buf = vec![0u8; 1024 * 1024];
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     rng.fill(&mut buf);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     for i in 0..8 {
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         assert_same_slice(&format!("row15 #{i}"), &buf, crc);
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m /// CONFIGS row 16 — 1 MiB + r bytes for r in 1..=7 (many bulk plus tail).
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m fn row16_one_mib_plus_tail() {
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1010);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     let mut buf = vec![0u8; 1024 * 1024 + 7];
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     rng.fill(&mut buf);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     for r in 1u32..=7 {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         let len = 1024 * 1024 + r;
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m         for i in 0..4 {
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m             assert_same(&format!("row16 r={r} #{i}"), buf.as_ptr(), len, crc);
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m /// CONFIGS row 17 — streaming: random chunking chained through the seed must
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m /// equal the one-shot result, on both libs and across libs.
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m fn row17_streaming_random_chunks() {
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     let p = common::pair();
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1011);
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     for i in 0..2000 {
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m         let len = rng.below(1024) as usize;
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m         let mut buf = vec![0u8; len.max(1)];
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m         let seed = rng.u16();
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         let one_shot = assert_same(&format!("row17 oneshot #{i}"), buf.as_ptr(), len as u32, seed);
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         let mut pos = 0usize;
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m         let mut c_acc = seed;
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         let mut r_acc = seed;
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         while pos < len {
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m             let chunk = 1 + rng.below((len - pos) as u64) as usize;
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m             unsafe {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m                 let q = buf.as_ptr().add(pos);
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m                 c_acc = (p.c.crc16)(q, chunk as u32, c_acc);
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m                 r_acc = (p.rs.crc16)(q, chunk as u32, r_acc);
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m                 c_acc, r_acc,
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m                 "row17 #{i}: chunked divergence at pos={pos} chunk={chunk} \
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m                  (C=0x{c_acc:04x} RUST=0x{r_acc:04x})"
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m             pos += chunk;
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         assert_eq!(c_acc, one_shot, "row17 #{i}: C chunked != C one-shot");
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m         assert_eq!(r_acc, one_shot, "row17 #{i}: RUST chunked != one-shot");
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m /// CONFIGS row 18 — split at every offset `0..=len` (crosses bulk boundaries
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m /// mid-stream at every possible phase).
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m fn row18_streaming_every_split_point() {
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     let p = common::pair();
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1012);
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     for trial in 0..30 {
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         let len = 1 + rng.below(200) as usize;
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m         let mut buf = vec![0u8; len];
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         let seed = rng.u16();
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         let one_shot = assert_same(&format!("row18 t{trial} oneshot"), buf.as_ptr(), len as u32, seed);
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m         for split in 0..=len {
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m             let (c, r) = unsafe {
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m                 let head = buf.as_ptr();
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m                 let tail = buf.as_ptr().add(split);
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m                 let c1 = (p.c.crc16)(head, split as u32, seed);
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m                 let r1 = (p.rs.crc16)(head, split as u32, seed);
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m                 assert_eq!(c1, r1, "row18 t{trial} split={split}: head divergence");
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m                 (
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m                     (p.c.crc16)(tail, (len - split) as u32, c1),
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m                     (p.rs.crc16)(tail, (len - split) as u32, r1),
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m                 )
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m             assert_eq!(c, r, "row18 t{trial} split={split}: C=0x{c:04x} RUST=0x{r:04x}");
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m             assert_eq!(c, one_shot, "row18 t{trial} split={split}: split != one-shot");
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m /// CONFIGS row 19 — broad property fuzz over (len, bytes, seed).
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m fn row19_property_fuzz() {
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1013);
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     for i in 0..20_000 {
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m         let len = rng.below(1025) as usize;
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m         let mut buf = vec![0u8; len.max(1)];
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m         let crc = rng.u16();
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m         assert_same(&format!("row19 #{i} len={len}"), buf.as_ptr(), len as u32, crc);
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m /// CONFIGS row 20 — the crate has no `[features]`, so there is exactly one
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m /// configuration; this test simply records that it is the one under test and
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m /// re-runs a representative differential sweep in it.
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m fn row20_single_feature_configuration() {
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m     let mut rng = Rng::new(0x1014);
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m     for len in 0u32..=40 {
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m         for i in 0..100 {
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m             let mut buf = vec![0u8; (len as usize).max(1)];
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m             rng.fill(&mut buf);
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m             let crc = rng.u16();
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m             assert_same(&format!("row20 len={len} #{i}"), buf.as_ptr(), len, crc);
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/tests/phase_b_configs.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/tests/phase_c_errors.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase C error/boundary differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase C — error/boundary-path differential tests, one test per row of
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `ERRORS.md`.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! The C library contains **no** rejection site (see `ERRORS.md` for the
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! mechanical derivation), so there is no error code or sentinel to compare.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! What remains are the generic C-API boundaries; each one asserts C and Rust
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! agree *exactly*, and where the C result is analytically known (e.g. `len==0`
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! returns the seed) that value is asserted too, not merely "both agree".
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use common::{assert_same, assert_same_slice, Rng};
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// ERRORS B1 — `d == NULL` with `len == 0`: neither loop body runs, so the NULL
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// is never dereferenced. Must return the seed unchanged on both sides.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m fn phase_c_b1_null_pointer_zero_len() {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     for seed in [0x0000u16, 0x0001, 0x00FF, 0x0100, 0x7FFF, 0x8000, 0xFFFE, 0xFFFF] {
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m         let out = assert_same(&format!("B1 seed=0x{seed:04x}"), std::ptr::null(), 0, seed);
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m         assert_eq!(out, seed, "B1: NULL + len==0 must return the seed verbatim");
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC001);
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     for i in 0..5000 {
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         let seed = rng.u16();
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         let out = assert_same(&format!("B1 rand #{i}"), std::ptr::null(), 0, seed);
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         assert_eq!(out, seed);
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// ERRORS B2 — `len == 0` with a valid pointer.
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m fn phase_c_b2_zero_len_valid_ptr() {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     let buf = [0xDEu8, 0xAD, 0xBE, 0xEF];
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC002);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     for i in 0..5000 {
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m         let seed = rng.u16();
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         let out = assert_same(&format!("B2 #{i}"), buf.as_ptr(), 0, seed);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         assert_eq!(out, seed, "B2: len==0 must return the seed verbatim");
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m /// ERRORS B3 — `len == 1`: one step past the empty case, tail loop only.
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m fn phase_c_b3_len_one() {
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m     // Exhaustive over the whole (byte, seed) domain would be 2^24; sweep all
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     // 256 bytes against a representative + random seed set instead.
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC003);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     for b in 0u16..=255 {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m         let byte = b as u8;
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         for seed in [0x0000u16, 0x00FF, 0xFF00, 0xFFFF] {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             assert_same_slice(&format!("B3 byte=0x{byte:02x} seed=0x{seed:04x}"), &[byte], seed);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         for _ in 0..20 {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m             let seed = rng.u16();
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m             assert_same_slice(&format!("B3 byte=0x{byte:02x} rand"), &[byte], seed);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m /// ERRORS B4 — `len == 7`: one step *below* the `len >= 8` bulk threshold.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m fn phase_c_b4_len_seven_below_threshold() {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC004);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     for i in 0..20_000 {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         let mut buf = [0u8; 7];
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         let seed = rng.u16();
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         assert_same_slice(&format!("B4 #{i}"), &buf, seed);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     // Extremes of the data domain at the boundary length.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     for buf in [[0x00u8; 7], [0xFFu8; 7]] {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         for seed in [0x0000u16, 0xFFFF] {
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m             assert_same_slice("B4 extreme", &buf, seed);
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// ERRORS B5 — `len == 8`: exactly at the bulk threshold.
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m fn phase_c_b5_len_eight_at_threshold() {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC005);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     for i in 0..20_000 {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         let mut buf = [0u8; 8];
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         let seed = rng.u16();
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         assert_same_slice(&format!("B5 #{i}"), &buf, seed);
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m     for buf in [[0x00u8; 8], [0xFFu8; 8]] {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         for seed in [0x0000u16, 0xFFFF] {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             assert_same_slice("B5 extreme", &buf, seed);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m /// ERRORS B6 — `len == 9`: one step past the threshold (bulk + 1 tail byte).
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m fn phase_c_b6_len_nine_past_threshold() {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC006);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     for i in 0..20_000 {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m         let mut buf = [0u8; 9];
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         rng.fill(&mut buf);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         let seed = rng.u16();
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         assert_same_slice(&format!("B6 #{i}"), &buf, seed);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     for buf in [[0x00u8; 9], [0xFFu8; 9]] {
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         for seed in [0x0000u16, 0xFFFF] {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m             assert_same_slice("B6 extreme", &buf, seed);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// ERRORS B7 / B8 — the minimum and maximum of the seed range, plus one step
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m /// either side by wrapping (`0xFFFF + 1 == 0x0000`, `0x0000 - 1 == 0xFFFF`);
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m /// the seed has no invalid encoding, so both extremes are legal input.
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m fn phase_c_b7_b8_seed_range_extremes() {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC007);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     let seeds = [
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         0x0000u16,
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         0x0001,
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         0x00FF,
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         0x0100,
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         0x7FFF,
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         0x8000,
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m         0xFF00,
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         0xFFFE,
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         0xFFFF,
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         0xFFFFu16.wrapping_add(1), // == 0x0000, "one past" the range
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m         0x0000u16.wrapping_sub(1), // == 0xFFFF, "one before" the range
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     for &seed in &seeds {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m         for len in 0u32..=24 {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m             for _ in 0..40 {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m                 let mut buf = vec![0u8; (len as usize).max(1)];
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m                 rng.fill(&mut buf);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m                 assert_same(
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m                     &format!("B7/B8 seed=0x{seed:04x} len={len}"),
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m                     buf.as_ptr(),
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m                     len,
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m                     seed,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m                 );
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m /// ERRORS B9 / B10 — data bytes at the minimum (0x00) and maximum (0xFF) table
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m /// index. A byte cannot exceed 0xFF, so 0xFF *is* the last in-range index and
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m /// index 255 is the last table slot: this is the "one step from out of range"
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m /// case for the table lookup.
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m fn phase_c_b9_b10_byte_index_extremes() {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC008);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     for (name, fill) in [("B9 0x00", 0x00u8), ("B10 0xFF", 0xFFu8)] {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         let buf = vec![fill; 128];
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m         for len in 0u32..=128 {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m             for _ in 0..20 {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m                 let seed = rng.u16();
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m                 assert_same(&format!("{name} len={len}"), buf.as_ptr(), len, seed);
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m /// ERRORS B11 — every `tflac_crc16_tables[t][i]` slot is reached: for each of
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m /// the 8 bulk lanes, drive every byte value 0..=255 through that lane, and
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m /// drive every byte value through the tail lane too.
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m fn phase_c_b11_every_table_slot_reachable() {
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC009);
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     // Bulk lanes: lane k reads d[k] of each 8-byte block.
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     for lane in 0usize..8 {
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         let mut buf = vec![0u8; 256 * 8];
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         for v in 0..256usize {
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m             buf[v * 8 + lane] = v as u8;
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         for seed in [0x0000u16, 0xFFFF, rng.u16(), rng.u16()] {
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m             assert_same_slice(&format!("B11 bulk lane={lane} seed=0x{seed:04x}"), &buf, seed);
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     // Tail lane (tables[0]) with every byte value, at every tail length 1..=7.
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     for taillen in 1usize..=7 {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         for v in 0..256usize {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             let buf = vec![v as u8; taillen];
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m             for seed in [0x0000u16, 0xFFFF] {
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m                 assert_same_slice(&format!("B11 tail len={taillen} v={v}"), &buf, seed);
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m     // Lane-7/lane-6 indices come from the *running CRC*, not the data, so sweep
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     // all 65536 seeds through a single 8-byte block to cover both.
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     let mut block = [0u8; 8];
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     rng.fill(&mut block);
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     for s in 0u32..=0xFFFF {
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         assert_same_slice(&format!("B11 crc-lane seed=0x{s:04x}"), &block, s as u16);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m /// ERRORS B12 — large in-buffer `len` values, and `len` covering all 8 residues.
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m /// A `len` larger than the buffer is undefined behaviour in C (it would read out
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m /// of bounds), so it is deliberately NOT exercised; instead `len` is pushed to
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m /// large legal values.
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m fn phase_c_b12_large_and_residue_lengths() {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC00A);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     let mut buf = vec![0u8; 1024 * 1024 + 8];
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     rng.fill(&mut buf);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m     for r in 0u32..8 {
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         for base in [0u32, 8, 4096, 65536, 1024 * 1024] {
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m             let len = base + r;
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m             if len as usize > buf.len() {
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m                 continue;
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m             let seed = rng.u16();
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m             assert_same(&format!("B12 len={len}"), buf.as_ptr(), len, seed);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     // Exactly the whole buffer.
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     let seed = rng.u16();
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     assert_same("B12 full", buf.as_ptr(), buf.len() as u32, seed);
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m /// ERRORS B13 — unaligned pointers: the Rust must read byte-wise like the C.
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m fn phase_c_b13_unaligned_pointer() {
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC00B);
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     let mut backing = vec![0u8; 4096];
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     rng.fill(&mut backing);
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     for off in 0usize..16 {
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         for len in 0u32..=64 {
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m             if off + len as usize > backing.len() {
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m                 continue;
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m             for _ in 0..8 {
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m                 let seed = rng.u16();
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m                 let p = unsafe { backing.as_ptr().add(off) };
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m                 assert_same(&format!("B13 off={off} len={len}"), p, len, seed);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m /// ERRORS B14 — out-of-range enum values across the FFI boundary.
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m /// The public API has **no enum parameter** (`const uint8_t*`, `uint32_t`,
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m /// `uint16_t`), so there is no invalid-variant int to smuggle across. The
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m /// closest analogue is that every bit pattern of the two integer parameters is a
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m /// valid input: this test drives the seed over its entire domain and `len` over
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m /// the low/high extremes of the `u32` domain that remain in-bounds for the
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m /// buffer, confirming there is no value the Rust rejects but the C accepts (or
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m /// vice versa).
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m fn phase_c_b14_no_enum_full_integer_domain() {
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC00C);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     let mut buf = vec![0u8; 64];
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     rng.fill(&mut buf);
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m     // Full u16 seed domain at several lengths.
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m     for len in [0u32, 1, 7, 8, 9, 16, 63, 64] {
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         for s in 0u32..=0xFFFF {
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m             let ret_c_eq_rs = assert_same(&format!("B14 len={len} seed=0x{s:04x}"), buf.as_ptr(), len, s as u16);
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m             let _ = ret_c_eq_rs;
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     // len == 0 must be accepted for every seed even with a null pointer; no
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m     // in-band error value exists, so the result is always a plain CRC.
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     for s in 0u32..=0xFFFF {
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         let out = assert_same("B14 null len=0", std::ptr::null(), 0, s as u16);
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         assert_eq!(out, s as u16);
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/tests/phase_c_errors.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && timeout 300 cargo test --release --no-run 2>&1 | tail -25[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compile tests
+
+    Updating crates.io index
+     Locking 3 packages to latest compatible versions
+      Adding cfg-if v1.0.4
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation)
+warning: method `below` is never used
+   --> tests/common/mod.rs:113:12
+    |
+ 95 | impl Rng {
+    | -------- method in this implementation
+...
+113 |     pub fn below(&mut self, n: u64) -> u64 {
+    |            ^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `harvest_translation` (test "phase_c_errors") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.74s
+  Executable unittests src/lib.rs (target/release/deps/crc16_lib-5f3d6c4d1f13de81)
+  Executable tests/phase_b_configs.rs (target/release/deps/phase_b_configs-614ef4a9f6974fd7)
+  Executable tests/phase_c_errors.rs (target/release/deps/phase_c_errors-860406e8ac4ede0b)
+[38;5;244m - Completed in 0.758s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && timeout 600 cargo test --release 2>&1 | tail -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run all differential tests in release
+
+     Running unittests src/lib.rs (target/release/deps/crc16_lib-5f3d6c4d1f13de81)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase_b_configs.rs (target/release/deps/phase_b_configs-614ef4a9f6974fd7)
+
+running 20 tests
+test row01_len_zero_nonnull ... ok
+test row02_len_zero_null_ptr ... ok
+test row04_len_exactly_eight ... ok
+test row20_single_feature_configuration ... ok
+test row18_streaming_every_split_point ... ok
+test row11_all_zero_bytes ... ok
+test row12_all_ff_bytes ... ok
+test row03_tail_only_lengths_1_to_7 ... ok
+test row10_full_seed_domain ... ok
+test row13_all_table_slots ... ok
+test row05_bulk_only_multiples_of_eight ... ok
+test row07_length_sweep_0_to_64 ... ok
+test row17_streaming_random_chunks ... ok
+test row08_seed_zero ... ok
+test row09_seed_max ... ok
+test row14_unaligned_pointer ... ok
+test row06_bulk_then_tail ... ok
+test row15_one_mib_bulk ... ok
+test row19_property_fuzz ... ok
+test row16_one_mib_plus_tail ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/phase_c_errors.rs (target/release/deps/phase_c_errors-860406e8ac4ede0b)
+
+running 12 tests
+test phase_c_b1_null_pointer_zero_len ... ok
+test phase_c_b2_zero_len_valid_ptr ... ok
+test phase_c_b3_len_one ... ok
+test phase_c_b13_unaligned_pointer ... ok
+test phase_c_b9_b10_byte_index_extremes ... ok
+test phase_c_b7_b8_seed_range_extremes ... ok
+test phase_c_b5_len_eight_at_threshold ... ok
+test phase_c_b6_len_nine_past_threshold ... ok
+test phase_c_b4_len_seven_below_threshold ... ok
+test phase_c_b11_every_table_slot_reachable ... ok
+test phase_c_b12_large_and_residue_lengths ... ok
+test phase_c_b14_no_enum_full_integer_domain ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+[38;5;244m - Completed in 0.144s[0m
+
+[?25l[0m[38;5;141m> [0mAll pass. Running a negative control to prove the harness actually detects divergence (rather than silently comparing a lib against itself).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && cp src/lib.rs /tmp/lib.rs.bak && sed -i 's/^    crc16$/    crc16 ^ 1/' src/lib.rs && grep -n 'crc16 \^ 1' src/lib.rs && timeout 300 cargo build --release 2>&1 | tail -2 && echo "--- running tests with MUTANT rust lib ---" && timeout 300 cargo test --release 2>&1 | grep -E '^test |test result' | head -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Negative control: mutate Rust return value and verify tests fail
+
+72:    crc16 ^ 1
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation)
+    Finished `release` profile [optimized] target(s) in 0.09s
+--- running tests with MUTANT rust lib ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test row03_tail_only_lengths_1_to_7 ... FAILED
+test row06_bulk_then_tail ... FAILED
+test row05_bulk_only_multiples_of_eight ... FAILED
+test row04_len_exactly_eight ... FAILED
+test row02_len_zero_null_ptr ... FAILED
+test row01_len_zero_nonnull ... FAILED
+test row07_length_sweep_0_to_64 ... FAILED
+test row08_seed_zero ... FAILED
+test row09_seed_max ... FAILED
+test row10_full_seed_domain ... FAILED
+test row12_all_ff_bytes ... FAILED
+test row11_all_zero_bytes ... FAILED
+test row13_all_table_slots ... FAILED
+test row14_unaligned_pointer ... FAILED
+test row17_streaming_random_chunks ... FAILED
+test row18_streaming_every_split_point ... FAILED
+test row20_single_feature_configuration ... FAILED
+test row19_property_fuzz ... FAILED
+test row15_one_mib_bulk ... FAILED
+test row16_one_mib_plus_tail ... FAILED
+test result: FAILED. 0 passed; 20 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[38;5;244m - Completed in 0.239s[0m
+
+[?25l[0m[38;5;141m> [0mHarness confirmed sensitive. Now a subtler, path-specific mutant to confirm the bulk-lane coverage isn't just incidental.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && cp /tmp/lib.rs.bak src/lib.rs && sed -i 's|TFLAC_CRC16_TABLES\[5\]\[\*d.add(2) as usize\]|TFLAC_CRC16_TABLES[5][*d.add(3) as usize]|' src/lib.rs && grep -n 'TABLES\[5\]' src/lib.rs && timeout 300 cargo build --release 2>&1|tail -1 && timeout 300 cargo test --release 2>&1 | grep -E '^test row|^test phase|test result' [0m[38;5;244m (using tool: shell)[0m
+Purpose: Second negative control: bulk-lane-only mutation
+
+47:            ^ TFLAC_CRC16_TABLES[5][*d.add(3) as usize]
+    Finished `release` profile [optimized] target(s) in 0.09s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test row06_bulk_then_tail ... FAILED
+test row05_bulk_only_multiples_of_eight ... FAILED
+test row04_len_exactly_eight ... FAILED
+test row02_len_zero_null_ptr ... ok
+test row01_len_zero_nonnull ... ok
+test row08_seed_zero ... FAILED
+test row09_seed_max ... FAILED
+test row10_full_seed_domain ... FAILED
+test row13_all_table_slots ... FAILED
+test row14_unaligned_pointer ... FAILED
+test row17_streaming_random_chunks ... FAILED
+test row18_streaming_every_split_point ... FAILED
+test row19_property_fuzz ... FAILED
+test row07_length_sweep_0_to_64 ... FAILED
+test row20_single_feature_configuration ... FAILED
+test row11_all_zero_bytes ... ok
+test row12_all_ff_bytes ... ok
+test row03_tail_only_lengths_1_to_7 ... ok
+test row15_one_mib_bulk ... FAILED
+test row16_one_mib_plus_tail ... FAILED
+test result: FAILED. 5 passed; 15 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[38;5;244m - Completed in 0.236s[0m
+
+[?25l[0m[38;5;141m> [0mPath discrimination confirmed (tail-only, [38;5;10mlen==0[0m, and uniform-byte rows correctly stayed green since [38;5;10md[2]==d[3][0m there). Restoring.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && cp /tmp/lib.rs.bak src/lib.rs && diff /tmp/lib.rs.bak src/lib.rs && echo "RESTORED CLEAN" && timeout 300 cargo build --release 2>&1|tail -1 && timeout 600 cargo test --release 2>&1 | grep -E 'test result|FAILED'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Restore original lib.rs and re-run full suite
+
+RESTORED CLEAN
+    Finished `release` profile [optimized] target(s) in 0.09s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+[38;5;244m - Completed in 0.337s[0m
+
+[?25l[0m[38;5;141m> [0mNow Phase D: feature-combination sweep and the symbol diff, automated.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/phase_d.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Create Phase D automation script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Phase D driver: symbol parity + every feature combination.
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m CRATE="$ROOT/translation"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m C_SO="$(ls "$ROOT"/c_src/build/*.so | head -1)"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m R_SO="$CRATE/target/release/libcrc16_lib.so"
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m fail=0
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m echo "=== C   .so: $C_SO"
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m echo "=== RUST.so: $R_SO"
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m echo "=== Symbol parity (nm -D --defined-only) ==="
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m nm -D --defined-only "$C_SO" | awk '{print $NF}' | sort -u > /tmp/pd_c.txt
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m nm -D --defined-only "$R_SO" | awk '{print $NF}' | sort -u > /tmp/pd_r.txt
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m echo "C exports:    $(wc -l < /tmp/pd_c.txt)"
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m echo "Rust exports: $(wc -l < /tmp/pd_r.txt)"
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m missing="$(comm -23 /tmp/pd_c.txt /tmp/pd_r.txt)"
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m if [ -n "$missing" ]; then
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   echo "MISSING FROM RUST:"; echo "$missing"; fail=1
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   echo "symbol diff: EMPTY (0 missing)"
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m echo "=== Undefined non-libc/non-runtime symbols in Rust .so ==="
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m nm -D -u "$R_SO" | awk '{print $NF}' \
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m   | grep -vE '@GLIBC|@GCC|^_ITM_|^__gmon_start__|^_Unwind_|^statx$|^gettid$' \
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m   > /tmp/pd_undef.txt
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m if [ -s /tmp/pd_undef.txt ]; then
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m   echo "UNEXPECTED UNDEFINED:"; cat /tmp/pd_undef.txt; fail=1
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m   echo "0 unexpected undefined symbols"
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m echo "=== Feature combinations declared in Cargo.toml ==="
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m # Enumerate every feature (excluding "default") and build the full power set.
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m feats="$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /=/{split($0,a,"=");gsub(/[ \t"]/,"",a[1]); if(a[1]!="default") print a[1]}' "$CRATE/Cargo.toml")"
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m nfeat=0
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m [ -n "$feats" ] && nfeat=$(echo "$feats" | wc -l)
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m echo "declared features: ${nfeat} [${feats:-none}]"
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m run() { # run <label> <extra cargo args...>
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m   local label="$1"; shift
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m   echo "--- $label : cargo test --release $* ---"
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m   if timeout 600 cargo test --release "$@" --manifest-path "$CRATE/Cargo.toml" 2>&1 \
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m        | grep -E 'test result|^error' ; then :; fi
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m   local rc=${PIPESTATUS[0]}
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m   if [ "$rc" -ne 0 ]; then echo "  ==> $label FAILED (rc=$rc)"; fail=1; else echo "  ==> $label OK"; fi
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m combos=()
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m if [ "$nfeat" -eq 0 ]; then
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m   combos+=("default::")
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m   combos+=("no-default-features::--no-default-features")
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m   combos+=("all-features::--all-features")
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m   mapfile -t farr <<< "$feats"
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m   n=${#farr[@]}
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m   for ((m=0; m<(1<<n); m++)); do
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m     sel=""
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     for ((i=0; i<n; i++)); do
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m       if (( m & (1<<i) )); then sel="${sel:+$sel,}${farr[i]}"; fi
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m     combos+=("nodefault[${sel:-none}]::--no-default-features${sel:+ --features $sel}")
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m   combos+=("default::")
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m   combos+=("all-features::--all-features")
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m for c in "${combos[@]}"; do
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m   label="${c%%::*}"; args="${c#*::}"
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m   # shellcheck disable=SC2086
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m   run "$label" $args
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m if [ "$fail" -eq 0 ]; then echo "PHASE D: ALL CHECKS PASSED"; else echo "PHASE D: FAILURES PRESENT"; fi
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m exit "$fail"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/phase_d.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && chmod +x phase_d.sh && timeout 600 ./phase_d.sh 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase D automation
+
+=== C   .so: /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/c_src/build/libharvest-work-TbzjUt.so
+=== RUST.so: /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation/target/release/libcrc16_lib.so
+
+=== Symbol parity (nm -D --defined-only) ===
+C exports:    1
+Rust exports: 1
+symbol diff: EMPTY (0 missing)
+
+=== Undefined non-libc/non-runtime symbols in Rust .so ===
+0 unexpected undefined symbols
+
+=== Feature combinations declared in Cargo.toml ===
+declared features: 0 [none]
+--- default : cargo test --release  ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+  ==> default OK
+--- no-default-features : cargo test --release --no-default-features ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+  ==> no-default-features OK
+--- all-features : cargo test --release --all-features ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+  ==> all-features OK
+
+PHASE D: ALL CHECKS PASSED
+[38;5;244m - Completed in 0.485s[0m
+
+[?25l[0m[38;5;141m> [0mAlso verifying under the debug profile, where Rust's overflow checks are live (a real risk given the [38;5;10mlen -= 8[0m and shift arithmetic).[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && timeout 300 cargo build 2>&1|tail -1 && ls target/debug/libcrc16_lib.so && echo "--- debug tests (overflow checks ON) ---" && timeout 600 cargo test 2>&1 | grep -E 'test result|FAILED|panicked'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run tests under debug profile with overflow checks
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+target/debug/libcrc16_lib.so
+--- debug tests (overflow checks ON) ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+[38;5;244m - Completed in 0.774s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt && echo "=== debug .so exports ===" && nm -D --defined-only translation/target/debug/libcrc16_lib.so && echo "=== no binary on either side ===" && grep -c 'add_executable' c_src/CMakeLists.txt; grep -c '\[\[bin\]\]' translation/Cargo.toml; ls translation/src/main.rs 2>&1 | tail -1; find c_src/build -maxdepth 1 -type f -executable | grep -v '\.so' || echo "(no C executable)" ; echo "=== c_src untouched ===" && ls -la c_src/src c_src/include && echo "=== artifacts ===" && wc -l translation/SYMBOLS.md translation/ERRORS.md translation/CONFIGS.md translation/tests/*.rs translation/tests/common/mod.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final independent verification of artifacts, symbols, and no-binary claim
+
+=== debug .so exports ===
+0000000000012c10 T crc16
+=== no binary on either side ===
+0
+0
+ls: cannot access 'translation/src/main.rs': No such file or directory
+(no C executable)
+=== c_src untouched ===
+c_src/include:
+total 20
+drwxr-xr-x. 2 scheschb amazon    19 Sep  5 00:02 .
+drwxr-xr-x. 5 scheschb amazon    67 Sep  5 00:03 ..
+-rw-r--r--. 1 scheschb amazon 19784 Sep  5 00:02 lib.h
+
+c_src/src:
+total 4
+drwxr-xr-x. 2 scheschb amazon  19 Sep  5 00:02 .
+drwxr-xr-x. 5 scheschb amazon  67 Sep  5 00:03 ..
+-rw-r--r--. 1 scheschb amazon 711 Sep  5 00:02 lib.c
+=== artifacts ===
+   69 translation/SYMBOLS.md
+   59 translation/ERRORS.md
+   83 translation/CONFIGS.md
+  334 translation/tests/phase_b_configs.rs
+  276 translation/tests/phase_c_errors.rs
+  142 translation/tests/common/mod.rs
+  963 total
+[38;5;244m - Completed in 0.26s[0m
+
+[?25l[0m[38;5;141m> [0mOne warning to clean up, then a final confirming run.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Silence dead_code warning in shared test helper
+
+[49m[39m  92, 92[0m:[39m[49m /// Deterministic PRNG (SplitMix64) — fixed seed, reproducible.
+[0m[49m[39m  93, 93[0m:[39m[49m pub struct Rng(u64);
+[0m[49m[39m  94, 94[0m:[39m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m // Not every test binary uses every helper.
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m #[allow(dead_code)]
+[0m[49m[39m  95, 97[0m:[39m[49m impl Rng {
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-TbzjUt/translation && timeout 600 ./phase_d.sh 2>&1 | grep -E 'symbol diff|unexpected|==>|PHASE D|warning' ; echo "--- debug profile ---"; timeout 600 cargo test 2>&1 | grep -cE 'warning' ; timeout 600 cargo test 2>&1 | grep -E 'test result'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final full Phase D run plus debug profile, warning-free check
+
+symbol diff: EMPTY (0 missing)
+0 unexpected undefined symbols
+  ==> default OK
+  ==> no-default-features OK
+  ==> all-features OK
+PHASE D: ALL CHECKS PASSED
+--- debug profile ---
+0
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+[38;5;244m - Completed in 1.704s[0m
+
+[?25l[0m[38;5;141m> [0mVerification is complete. The translation is correct — no divergence found, and no fixes to the Rust were needed.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library actually is[0m[0m
+[0m[0m
+Much smaller than the task template anticipates. [38;5;10mc_src[0m is one translation unit ([38;5;10msrc/lib.c[0m, 20 lines) plus a header that is almost entirely a [38;5;10mstatic const tflac_u16 tflac_crc16_tables[8][256][0m literal. The entire public API is one function:[0m[0m
+[0m[0m
+[1mc
+[0m[38;5;10mtflac_u16 crc16(const tflac_u8 *d, tflac_u32 len, tflac_u16 crc16);
+[0m[0m[0m
+[0m[0m
+It is a slice-by-8 CRC-16: an 8-bytes-per-iteration bulk loop, then a byte-at-a-time tail.[0m[0m
+[0m[0m
+[38;5;252m[1m## Completion gate[0m[0m
+[0m[0m
+- **[38;5;10mSYMBOLS.md[0m** — C [38;5;10m.so[0m exports exactly 1 symbol ([38;5;10mcrc16[0m); Rust [38;5;10m.so[0m exports the same 1. [38;5;10mcomm -23[0m symbol diff is empty. Rust's undefined imports are only libc plus [38;5;10m_Unwind_*[0m from libstd; 0 unexpected. The tables are not just eyeballed — I extracted all [38;5;10m0x....[0m literals from both [38;5;10mlib.h[0m and [38;5;10mtables.rs[0m and diffed them: 2048 entries each (8×256), identical.[0m[0m
+- **[38;5;10mCONFIGS.md[0m** — 20 rows, all passing. Axes derived from the only two branches in the C (the [38;5;10mlen >= 8[0m threshold and the [38;5;10mlen % 8[0m tail), crossed with seed extremes, byte-value extremes, pointer alignment, and streaming. Coverage includes all 65536 [38;5;10mu16[0m seeds, every byte value driven through each of the 8 bulk lanes so all 2048 table slots are read, and 1 MiB buffers.[0m[0m
+- **Binary comparison** — not applicable. [38;5;10mCMakeLists.txt[0m has no [38;5;10madd_executable[0m and [38;5;10mCargo.toml[0m has no [38;5;10m[[bin]][0m/[38;5;10msrc/main.rs[0m; both sides build only a shared library.[0m[0m
+- **[38;5;10mERRORS.md[0m** — the honest result is [1mzero rejection rows[22m. Grepping the C for [38;5;10mreturn[0m/[38;5;10massert[0m/[38;5;10mNULL[0m/[38;5;10mERROR[0m/[38;5;10mif ([0m/[38;5;10mswitch[0m/[38;5;10m#if[0m/min-max yields one single match: [38;5;10mreturn crc16;[0m, the success return. There is no error code, no sentinel, no check, and no [38;5;10mif[0m at all; every one of the 65536 [38;5;10mu16[0m return values is a legal CRC, so failure isn't even representable. I documented that derivation rather than inventing rows, then wrote 12 boundary tests (B1–B14) for the generic C-API edges: NULL+[38;5;10mlen==0[0m, [38;5;10mlen[0m at 0/1/7/8/9, seed and byte extremes, unaligned pointers, 1 MiB lengths. On the out-of-range-enum requirement: the API has no enum parameter, so I covered the equivalent — the full integer domain of both scalar parameters.[0m[0m
+- **Feature combinations** — [38;5;10mCargo.toml[0m has no [38;5;10m[features][0m, so there is exactly one configuration. [38;5;10mphase_d.sh[0m enumerates the power set generically and falls back to running default / [38;5;10m--no-default-features[0m / [38;5;10m--all-features[0m; all three pass. I additionally ran the debug profile, where Rust's arithmetic overflow checks are live, to confirm the [38;5;10mlen -= 8[0m and shift arithmetic never panic.[0m[0m
+[0m[0m
+[38;5;252m[1m## Guarding against a false pass[0m[0m
+[0m[0m
+32 passing tests against a 20-line function is weak evidence on its own, so I ran two mutation controls. Flipping the Rust return value ([38;5;10mcrc16 ^ 1[0m) failed all 20 Phase B rows. A path-specific mutation — reading [38;5;10md[3][0m instead of [38;5;10md[2][0m in bulk lane 5 — failed 15 rows and left exactly the 5 that [3mshould[23m be insensitive to it green: the two [38;5;10mlen==0[0m rows, the tail-only row, and the all-[38;5;10m0x00[0m/all-[38;5;10m0xFF[0m rows (where [38;5;10md[2] == d[3][0m, making the mutation genuinely invisible). That the pass/fail split lands precisely on the predicted boundary is what convinces me the rows discriminate real code paths rather than passing incidentally.[0m[0m
+[0m[0m
+Deliverables are in [38;5;10mtranslation/[0m: the three artifacts, [38;5;10mtests/common/mod.rs[0m (libloading harness, seeded SplitMix64), [38;5;10mtests/phase_b_configs.rs[0m, [38;5;10mtests/phase_c_errors.rs[0m, and [38;5;10mphase_d.sh[0m. Nothing in [38;5;10mc_src/[0m was modified.[0m[0m
+[38;5;8m
+ ▸ Credits: 15.24 • Time: 6m 0s
+
+[0m[1G[0m[0m[?25h

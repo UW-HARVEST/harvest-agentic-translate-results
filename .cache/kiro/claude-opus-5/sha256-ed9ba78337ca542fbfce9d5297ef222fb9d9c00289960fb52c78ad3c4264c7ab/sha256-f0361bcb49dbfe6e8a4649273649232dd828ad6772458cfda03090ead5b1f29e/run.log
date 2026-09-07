@@ -1,0 +1,2068 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "--- c_src ---" && find c_src -type f | head -50 && echo "--- translation ---" && find translation -type f -not -path '*/target/*' | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: List working directory structure
+
+total 160
+drwxr-xr-x.    4 scheschb amazon     50 Sep  5 02:56 .
+drwxr-xr-x. 2325 scheschb amazon 114688 Sep  5 02:56 ..
+drwxr-xr-x.    4 scheschb amazon     70 Sep  5 02:56 c_src
+drwxr-xr-x.    3 scheschb amazon     69 Sep  5 02:56 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/src/lib.c
+--- translation ---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/CMakeLists.txt && echo "=== lib.h ===" && cat c_src/include/lib.h && echo "=== wc ===" && wc -l c_src/src/lib.c translation/src/lib.rs && cat translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read CMakeLists, header, Cargo.toml
+
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+=== lib.h ===
+#include <stddef.h>
+
+int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src);
+=== wc ===
+  21 c_src/src/lib.c
+  89 translation/src/lib.rs
+ 110 total
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "wcscat_lib"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat -A c_src/src/lib.c | sed 's/\$$//' | head -30; echo "==== RAW C ===="; cat c_src/src/lib.c; echo "==== RUST ===="; cat translation/src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read C and Rust source
+
+#include <stddef.h>
+
+#include "lib.h"
+
+int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src) {
+    wchar_t *ptr = dst;
+    if (!dst || numElem == 0)
+        return 22;
+    if (!src) {
+        dst[0] = 0;
+        return 22;
+    }
+    while (ptr < dst + numElem && *ptr != 0)
+        ptr++;
+    while (ptr < dst + numElem) {
+        if ((*ptr++ = *src++) == 0)
+            return 0;
+    }
+    dst[0] = 0;
+    return 34;
+}
+==== RAW C ====
+#include <stddef.h>
+
+#include "lib.h"
+
+int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src) {
+    wchar_t *ptr = dst;
+    if (!dst || numElem == 0)
+        return 22;
+    if (!src) {
+        dst[0] = 0;
+        return 22;
+    }
+    while (ptr < dst + numElem && *ptr != 0)
+        ptr++;
+    while (ptr < dst + numElem) {
+        if ((*ptr++ = *src++) == 0)
+            return 0;
+    }
+    dst[0] = 0;
+    return 34;
+}
+==== RUST ====
+//! Rust translation of the C library in `c_src/`.
+//!
+//! Public ABI (as exported by the C shared library):
+//!   int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src);
+//!
+//! The C behaviour is reproduced exactly, including its quirks:
+//!   * the return codes 22 (EINVAL) and 34 (ERANGE) are hard-coded literals,
+//!   * `dst[0]` is zeroed on the `!src` and overflow paths,
+//!   * an unterminated `dst` buffer makes the copy loop run zero times, so the
+//!     function truncates `dst` and reports 34 without touching `src`,
+//!   * the bounds check is `ptr < dst + numElem`, i.e. the terminating NUL is
+//!     allowed to occupy the last element of the buffer.
+
+#![allow(non_camel_case_types)]
+
+use std::ffi::{c_int, c_uint};
+
+/// `wchar_t` on the Linux/glibc targets this library is built for (4 bytes,
+/// signed). Declared explicitly so the ABI matches the C compiler's `wchar_t`.
+#[cfg(not(windows))]
+pub type wchar_t = c_int;
+
+/// On Windows `wchar_t` is a 16-bit unsigned type.
+#[cfg(windows)]
+pub type wchar_t = u16;
+
+// `size_t` == `usize` on every platform Rust supports.
+#[allow(non_camel_case_types)]
+type size_t = usize;
+
+const _: () = {
+    // Keep the unused import of c_uint meaningful only if needed; guard the
+    // assumption that `wchar_t` is 4 bytes on non-Windows targets.
+    #[cfg(not(windows))]
+    assert!(core::mem::size_of::<wchar_t>() == core::mem::size_of::<c_uint>());
+};
+
+/// Appends `src` to the wide string in `dst`, which holds at most `numElem`
+/// elements.
+///
+/// Returns 0 on success, 22 for invalid arguments, 34 when the result does not
+/// fit.
+///
+/// # Safety
+///
+/// Same contract as the C original: `dst`, when non-null, must point to
+/// `numElem` writable `wchar_t`s and `src`, when non-null, must point to a
+/// NUL-terminated wide string.
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub unsafe extern "C" fn wcscat(
+    dst: *mut wchar_t,
+    numElem: size_t,
+    src: *const wchar_t,
+) -> c_int {
+    // `wchar_t *ptr = dst;` happens before any validation in the C source.
+    let mut ptr = dst;
+
+    if dst.is_null() || numElem == 0 {
+        return 22;
+    }
+
+    // One-past-the-end bound; `dst + numElem` in C.
+    let end = unsafe { dst.add(numElem) };
+
+    if src.is_null() {
+        unsafe { *dst = 0 };
+        return 22;
+    }
+
+    // Seek the existing terminator, but never past the end of the buffer.
+    while ptr < end && unsafe { *ptr } != 0 {
+        ptr = unsafe { ptr.add(1) };
+    }
+
+    let mut s = src;
+    while ptr < end {
+        let ch = unsafe { *s };
+        unsafe { *ptr = ch };
+        ptr = unsafe { ptr.add(1) };
+        s = unsafe { s.add(1) };
+        if ch == 0 {
+            return 0;
+        }
+    }
+
+    unsafe { *dst = 0 };
+    34
+}
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null 2>&1 && cmake --build . 2>&1 | tail -5 && ls *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/harvest-work-CWGPNw.dir/src/lib.c.o
+[100%] Linking C shared library libharvest-work-CWGPNw.so
+[100%] Built target harvest-work-CWGPNw
+libharvest-work-CWGPNw.so
+[38;5;244m - Completed in 0.404s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo check 2>&1 | tail -20[0m[38;5;244m (using tool: shell)[0m
+Purpose: cargo check
+
+    Checking translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+[38;5;244m - Completed in 0.105s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -5 && ls target/release/*.so && echo "=== C syms ===" && nm -D --defined-only ../c_src/build/*.so && echo "=== Rust syms ===" && nm -D --defined-only target/release/libwcscat_lib.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust cdylib and compare symbols
+
+   Compiling translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+target/release/libwcscat_lib.so
+=== C syms ===
+00000000000010f9 T wcscat
+=== Rust syms ===
+0000000000011690 T wcscat
+[38;5;244m - Completed in 0.122s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity is already exact (one symbol: [38;5;10mwcscat[0m). Now the Phase A artifacts.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write SYMBOLS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — Phase A symbol surface
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `nm -D --defined-only` on both shared objects.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ## C shared library
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m `c_src/build/libharvest-work-CWGPNw.so` (built from the single translation unit
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m `c_src/src/lib.c`; the only declaration in `c_src/include/lib.h` is `wcscat`).
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m $ nm -D --defined-only c_src/build/libharvest-work-CWGPNw.so
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 00000000000010f9 T wcscat
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m ## Rust shared library
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m `translation/target/release/libwcscat_lib.so` (`crate-type = ["cdylib"]`).
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m $ nm -D --defined-only translation/target/release/libwcscat_lib.so
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 0000000000011690 T wcscat
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m ## Parity table
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m | # | symbol   | type in C `.so` | exported by Rust `.so` | notes |
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m |---|----------|-----------------|------------------------|-------|
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m | 1 | `wcscat` | `T` (global text) | yes (`T`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn wcscat` in `src/lib.rs` |
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m ## Symbol diff
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m $ diff <(nm -D --defined-only <C .so>  | awk '{print $NF}' | sort) \
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m        <(nm -D --defined-only <Rust .so> | awk '{print $NF}' | sort)
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m (empty)
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m **Missing from Rust: none.** No C module/file was left untranslated: `c_src` has
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m exactly one source file (`src/lib.c`, 21 lines) defining exactly one function.
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m ## Undefined (imported) non-libc symbols in the Rust `.so`
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m `nm -D --undefined-only` on the Rust `.so` lists only the standard C runtime /
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m unwinder imports that every `cdylib` links (`memcpy`, `__cxa_*`, `_Unwind_*`,
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m `pthread_*`, etc.) — no unresolved project symbols. Verified by loading the
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m `.so` with `libloading::Library::new`, which fails on any unresolved symbol.
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m `translation/Cargo.toml` declares no `[features]` table, so the only build
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m configuration is the default one. There is no `src/main.rs` / `[[bin]]`, so the
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m project builds no driver executable (nothing to compare on stdout).
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write ERRORS.md error-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — Phase C error-surface table
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Mechanically derived from every rejection/error return in `c_src/src/lib.c`.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m The whole file is reproduced here for reference (it is the complete error
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m surface — there are no asserts, no error enums, no other files):
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m ```c
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src) {
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     wchar_t *ptr = dst;
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m     if (!dst || numElem == 0)          /* -> return 22          */
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m         return 22;
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m     if (!src) {                        /* -> dst[0]=0; return 22 */
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m         dst[0] = 0;
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m         return 22;
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     while (ptr < dst + numElem && *ptr != 0)
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m         ptr++;
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m     while (ptr < dst + numElem) {
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         if ((*ptr++ = *src++) == 0)
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m             return 0;
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m     dst[0] = 0;                        /* -> return 34          */
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     return 34;
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m Distinct rejection statements in the C source: three (`return 22` at the
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m argument check, `return 22` after zeroing on the null-`src` path, `return 34`
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m after zeroing on the no-room path). Each is reachable through several distinct
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m triggers; one row per distinct trigger below.
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m | #  | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m |----|----------|---------------------------------------------|-------------------|-----|
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | 1  | `wcscat` | `dst == NULL`, `numElem > 0`, `src` valid | returns `22`; nothing written anywhere (short-circuit `!dst` before `dst[0]=0`) | [x] |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m | 2  | `wcscat` | `dst == NULL`, `numElem == 0`, `src` valid | returns `22`; no write | [x] |
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | 3  | `wcscat` | `dst == NULL`, `src == NULL`, any `numElem` | returns `22`; no write (the `!dst` test wins over the `!src` test) | [x] |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m | 4  | `wcscat` | `dst` valid, `numElem == 0`, `src` valid | returns `22`; **`dst` left untouched** — `dst[0]` is *not* zeroed on this path | [x] |
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | 5  | `wcscat` | `dst` valid, `numElem == 0`, `src == NULL` | returns `22`; `dst` untouched (`numElem==0` checked before `!src`) | [x] |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | 6  | `wcscat` | `dst` valid, `numElem > 0`, `src == NULL` | returns `22` **and writes `dst[0] = 0`** (destroys the existing contents; the rest of the buffer is left as-is) | [x] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m | 7  | `wcscat` | `dst` valid, `numElem == 1`, `src == NULL` | returns `22`, `dst[0] = 0` (boundary of row 6) | [x] |
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | 8  | `wcscat` | no room for the terminator: `wcslen(dst) + wcslen(src) + 1 > numElem` (`dst` NUL-terminated inside the buffer) | returns `34`; buffer is filled with as many `src` elements as fit, **then `dst[0]` is overwritten with `0`** (the partially-copied tail elements stay in the buffer) | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | 9  | `wcscat` | exactly one element too long: `wcslen(dst) + wcslen(src) + 1 == numElem + 1` | returns `34` (one step past the valid range of row 4/5 in `CONFIGS.md`) | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | 10 | `wcscat` | `dst` is **not** NUL-terminated within `numElem` elements (seek loop stops at `dst+numElem`, so the copy loop body never runs) | returns `34`; **`src` is never read at all**; only `dst[0] = 0` is written, `dst[1..numElem]` unchanged | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | 11 | `wcscat` | `dst` unterminated **and** `numElem == 1` (`dst[0] != 0`) | returns `34`, `dst[0] = 0` | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | 12 | `wcscat` | `numElem == 1`, `dst[0] == 0`, `src` non-empty | returns `34`: one element of `src` is written to `dst[0]`, then the loop ends and `dst[0]` is reset to `0` | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | 13 | `wcscat` | oversized `numElem` (much larger than the real allocation) but `dst`/`src` short enough that the copy terminates before the real buffer end | returns `0` — the bogus length is never noticed (no length validation beyond `numElem == 0`) | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | 14 | `wcscat` | "out-of-range enum"/garbage scalar analogue: `wchar_t` elements that are not valid Unicode — negative values, `INT_MIN`, `INT_MAX`, surrogates, `> 0x10FFFF` | no validation whatsoever; treated as ordinary non-zero elements and copied verbatim (only `== 0` is special) | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m Notes on generic boundaries required by Phase C:
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m * null pointers — rows 1, 2, 3, 5, 6, 7 (both parameters, in both orders).
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m * zero length — rows 2, 4, 5.
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m * oversized length — row 13.
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m * one step past a valid range — row 9 (and row 12, `numElem == 1`).
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m * out-of-range enum values across the FFI boundary — the API takes no enum; the
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m   closest real analogue is an arbitrary `int`-valued `wchar_t` with no valid
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m   Unicode meaning, covered by row 14. The `int` return value is likewise
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m   compared as a raw `c_int`, not mapped onto a Rust enum.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Write CONFIGS.md configuration-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — Phase B configuration-surface table
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m ## Axes the C code actually branches on
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m Derived from `c_src/src/lib.c` and `c_src/include/lib.h`.
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m * **Runtime options / modes / flags:** none. The public header declares exactly
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m   one entry point, `int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src)`,
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m   and there is no global state, no init/config call, no `#ifdef` in the source.
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m   So the configuration surface is entirely made of *input shapes*.
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m * **Full set of public entry points:** `wcscat` — it *is* the lowest-level entry
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   point; there is no convenience wrapper layer to skip past.
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m * **Input shapes the code special-cases:**
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m   * `dst` NUL-terminated inside `numElem` vs. not terminated (decides whether the
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     copy loop body runs at all).
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m   * position of `dst`'s terminator: 0 (empty), 1, middle, `numElem-1` (last
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m     element, i.e. the seek loop stops on the final element).
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m   * `src` length: 0 (empty), 1, many.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m   * slack = `numElem - (wcslen(dst) + wcslen(src) + 1)`: > 0 (room to spare),
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     == 0 (exact fit — the terminator lands in the very last element, allowed
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m     because the bound is `ptr < dst + numElem`), < 0 (overflow → `34`).
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   * `numElem`: 1 (minimum accepted), small, large; larger than the real buffer.
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m   * residual bytes in `dst` past its terminator (must be observably overwritten
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     or preserved exactly as C leaves them).
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   * element values: ASCII, non-BMP, negative (`wchar_t` is signed 32-bit on
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     Linux), `INT_MIN`, `INT_MAX`, surrogate range, `> 0x10FFFF`.
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   * `wchar_t` width/signedness: fixed by the platform (4-byte signed `int` on
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m     the Linux/glibc target); asserted by the test harness.
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m Every row is exercised with many randomized inputs (fixed seed, deterministic
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m xorshift PRNG) and compared C-vs-Rust over the **whole** buffer plus guard
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m padding, not just the return value.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | #  | entry point(s) | configuration (options set + input shape) | [x] |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m |----|----------------|-------------------------------------------|-----|
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | 1  | `wcscat` | `dst` empty (`dst[0]==0`), `src` empty, slack > 0 | [x] |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m | 2  | `wcscat` | `dst` empty, `src` length 1, slack > 0 | [x] |
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | 3  | `wcscat` | `dst` empty, `src` long, slack > 0 | [x] |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | 4  | `wcscat` | `dst` empty, `src` long, **exact fit** (slack == 0) | [x] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m | 5  | `wcscat` | `dst` non-empty (terminator in the middle), `src` empty, slack > 0 | [x] |
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | 6  | `wcscat` | `dst` non-empty, `src` length 1, slack > 0 | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | 7  | `wcscat` | `dst` non-empty, `src` long, slack > 0 | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | 8  | `wcscat` | `dst` non-empty, `src` long, **exact fit** (slack == 0) | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | 9  | `wcscat` | `dst`'s terminator sits in the **last** element (`dst[numElem-1]==0`), `src` empty → the terminator is rewritten in place, returns 0 | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | 10 | `wcscat` | `dst`'s terminator sits in the last element, `src` non-empty → no room, returns 34 (valid-shape input that lands on the overflow path) | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | 11 | `wcscat` | `numElem == 1`, `dst[0]==0`, `src` empty (smallest possible success) | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | 12 | `wcscat` | `dst` contains non-zero residual data **after** its terminator; append shorter than the residue, so the tail must be preserved byte-for-byte | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | 13 | `wcscat` | `dst` **unterminated** within `numElem` (seek loop exhausts the buffer), `src` non-empty → 34, `src` untouched | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | 14 | `wcscat` | `dst` unterminated, `src` empty → 34 | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | 15 | `wcscat` | overflow by exactly one element (slack == -1) | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | 16 | `wcscat` | overflow by many elements: `src` far longer than the remaining room → partial fill then `dst[0]=0`, 34 | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | 17 | `wcscat` | `numElem` smaller than the real allocation (guard region past `numElem` must stay pristine — proves no over-write) | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | 18 | `wcscat` | `numElem` **larger** than the logical data but within the real allocation ("oversized length" that is never noticed) | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | 19 | `wcscat` | element values: random full-range 32-bit non-zero `wchar_t` (negative values included) in both `dst` and `src` | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | 20 | `wcscat` | element values: extremes only — `INT_MIN`, `INT_MAX`, `-1`, `0x110000`, `0xD800` surrogates | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | 21 | `wcscat` | `src` and `dst` are the **same length class** but randomized across all of the above simultaneously (fuzz sweep over `numElem` 1..=24, random terminator position or none, random `src` length) — the cross-product row | [x] |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m | 22 | `wcscat` | `dst` buffer of size 1..=4 swept exhaustively against `src` of length 0..=4 with every terminator position, including none (exhaustive small-shape cross-product) | [x] |
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create differential test harness loading both .so files via libloading
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Shared differential-testing harness.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Loads BOTH shared objects (the C one built by CMake and the Rust `cdylib`)
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! with `libloading` and calls `wcscat` through the FFI boundary only — the Rust
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! implementation is never called directly, so the `#[no_mangle]` export wrapper
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! is under test as well.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m #![allow(dead_code)]
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m use std::sync::OnceLock;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m /// `wchar_t` as the platform C compiler sees it (4-byte signed `int` on
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m /// Linux/glibc). The harness asserts the assumption below.
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m pub type Wchar = i32;
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m pub type WcscatFn = unsafe extern "C" fn(*mut Wchar, usize, *const Wchar) -> std::ffi::c_int;
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m fn workspace_root() -> PathBuf {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     // CARGO_MANIFEST_DIR == <root>/translation
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m         .expect("manifest dir has a parent")
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m fn find_c_so() -> PathBuf {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     let build_dir = workspace_root().join("c_src").join("build");
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     let mut found: Vec<PathBuf> = Vec::new();
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     if let Ok(entries) = std::fs::read_dir(&build_dir) {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         for e in entries.flatten() {
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m             let p = e.path();
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             if p.extension().map(|x| x == "so").unwrap_or(false) {
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m                 found.push(p);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     found.sort();
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     found.pop().unwrap_or_else(|| {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         panic!(
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m             "no C .so found in {}; build it with:\n  cd c_src && mkdir -p build && cd build && \
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m              cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m             build_dir.display()
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m fn find_rust_so() -> PathBuf {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     let root = workspace_root().join("translation").join("target");
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     // Prefer the profile the tests were built with, then fall back.
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     let candidates = [
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         root.join("release").join("libwcscat_lib.so"),
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         root.join("debug").join("libwcscat_lib.so"),
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     for c in candidates.iter() {
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         if c.exists() {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m             return c.clone();
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         "no Rust cdylib found; build it with `cargo build --release` (looked for {:?})",
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         candidates
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m struct Libs {
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     c: Library,
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     rust: Library,
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m // The libraries are only ever used through raw function pointers to `extern "C"`
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m // functions that touch no shared state, so sharing them across threads is fine.
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m unsafe impl Send for Libs {}
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m unsafe impl Sync for Libs {}
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m static LIBS: OnceLock<Libs> = OnceLock::new();
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m fn libs() -> &'static Libs {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     LIBS.get_or_init(|| {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         // Note: `Library::new` uses RTLD_LOCAL, so the C `wcscat` (which shadows
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         // the libc symbol of the same name) does not leak into the global scope
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         // and cannot interpose on the Rust library's lookups.
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m         let c_path = find_c_so();
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m         let rust_path = find_rust_so();
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         let c = unsafe { Library::new(&c_path) }
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("failed to dlopen {}: {e}", c_path.display()));
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let rust = unsafe { Library::new(&rust_path) }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("failed to dlopen {}: {e}", rust_path.display()));
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         Libs { c, rust }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m /// `wcscat` as exported by the **C** shared object.
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m pub fn c_wcscat() -> WcscatFn {
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     let l = libs();
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     let sym: Symbol<WcscatFn> = unsafe { l.c.get(b"wcscat\0") }.expect("C .so exports wcscat");
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     *sym
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// `wcscat` as exported by the **Rust** shared object.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m pub fn rust_wcscat() -> WcscatFn {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let l = libs();
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     let sym: Symbol<WcscatFn> =
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         unsafe { l.rust.get(b"wcscat\0") }.expect("Rust .so exports wcscat");
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     *sym
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m pub fn assert_platform_assumptions() {
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m         std::mem::size_of::<Wchar>(),
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m         4,
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         "harness assumes 4-byte wchar_t"
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m /// Guard element written past the region the callee is allowed to touch.
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m pub const GUARD: Wchar = 0x5A5A_5A5A_u32 as Wchar;
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m /// Number of guard elements appended after `numElem`.
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m pub const GUARD_LEN: usize = 8;
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m /// One differential call outcome: return value + the complete buffer image
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m /// (including the guard region) after the call.
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m #[derive(Debug, Clone, PartialEq, Eq)]
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m pub struct Outcome {
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     pub ret: std::ffi::c_int,
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     pub buf: Vec<Wchar>,
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m /// Runs `f` (a `wcscat` from one of the two `.so`s) on a *fresh private copy* of
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m /// `dst_image`, with `GUARD_LEN` guard elements appended, and returns the
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m /// outcome. `dst_image` must be exactly the elements the callee may see, i.e.
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m /// `num_elem` is passed independently so oversized/undersized lengths can be
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m /// tested.
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m pub fn run(
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     f: WcscatFn,
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     dst_image: &[Wchar],
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     num_elem: usize,
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m     src: Option<&[Wchar]>,
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     null_dst: bool,
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m ) -> Outcome {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     let mut buf: Vec<Wchar> = Vec::with_capacity(dst_image.len() + GUARD_LEN);
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     buf.extend_from_slice(dst_image);
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     buf.extend(std::iter::repeat(GUARD).take(GUARD_LEN));
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     // `src` is copied into its own allocation so an accidental write through the
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     // `const` pointer would show up as a difference too.
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     let mut src_buf: Vec<Wchar> = src.map(|s| s.to_vec()).unwrap_or_default();
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     let dst_ptr = if null_dst {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         std::ptr::null_mut()
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     } else {
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         buf.as_mut_ptr()
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     let src_ptr = match src {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m         None => std::ptr::null(),
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         Some(_) => src_buf.as_mut_ptr() as *const Wchar,
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let ret = unsafe { f(dst_ptr, num_elem, src_ptr) };
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     // Fold the (possibly mutated) src image into the compared state as well.
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m     let mut image = buf;
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     image.push(Wchar::MIN); // separator so the two regions can't alias visually
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     image.append(&mut src_buf);
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     Outcome { ret, buf: image }
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m /// Core differential assertion: identical inputs must give identical return
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m /// value AND identical post-call memory, byte for byte.
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m pub fn assert_same(
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     label: &str,
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     dst_image: &[Wchar],
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m     num_elem: usize,
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m     src: Option<&[Wchar]>,
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m     null_dst: bool,
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m ) {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     let c = run(c_wcscat(), dst_image, num_elem, src, null_dst);
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     let r = run(rust_wcscat(), dst_image, num_elem, src, null_dst);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     if c != r {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         let mut first_diff = None;
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         for (i, (a, b)) in c.buf.iter().zip(r.buf.iter()).enumerate() {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m             if a != b {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m                 first_diff = Some((i, *a, *b));
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m                 break;
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         panic!(
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m             "DIVERGENCE [{label}]\n  dst_image = {dst_image:?}\n  num_elem  = {num_elem}\n  \
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m              src       = {src:?}\n  null_dst  = {null_dst}\n  \
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m              C   ret = {} buf = {:?}\n  Rust ret = {} buf = {:?}\n  first differing element: {:?}",
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m             c.ret, c.buf, r.ret, r.buf, first_diff
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m     // Guard region must be untouched by both (no write past `num_elem`).
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     let guard_start = dst_image.len();
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     if !null_dst {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         for (i, g) in c.buf[guard_start..guard_start + GUARD_LEN].iter().enumerate() {
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m                 *g, GUARD,
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m                 "[{label}] C wrote past the buffer at guard index {i}"
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m /// Deterministic xorshift64* PRNG — reproducible across runs and platforms.
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m pub struct Rng(u64);
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m     pub fn new(seed: u64) -> Self {
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         Rng(if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed })
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m     pub fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m         let mut x = self.0;
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m         x ^= x >> 12;
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         x ^= x << 25;
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m         x ^= x >> 27;
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m         self.0 = x;
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m     pub fn below(&mut self, n: usize) -> usize {
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         if n == 0 { 0 } else { (self.next_u64() % n as u64) as usize }
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m     pub fn range(&mut self, lo: usize, hi_inclusive: usize) -> usize {
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         lo + self.below(hi_inclusive - lo + 1)
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     /// A non-zero `wchar_t`, drawn from the full 32-bit range.
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m     pub fn nonzero_wchar(&mut self) -> Wchar {
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m             let v = self.next_u64() as u32 as Wchar;
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m             if v != 0 {
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m                 return v;
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     /// A non-zero printable-ASCII-ish `wchar_t` (keeps failures readable).
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m     pub fn ascii_wchar(&mut self) -> Wchar {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         (0x21 + self.below(0x5E)) as Wchar
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m /// Interesting extreme `wchar_t` values (nothing here is zero).
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m pub const EXTREMES: &[Wchar] = &[
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     Wchar::MIN,
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m     Wchar::MIN + 1,
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     -2,
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     -1,
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m     1,
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m     0x7F,
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     0x80,
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     0xD800, // lone surrogate
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     0xDFFF,
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m     0xFFFF,
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m     0x1_0000,
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     0x10_FFFF,
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     0x11_0000, // past the Unicode range
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     Wchar::MAX,
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m ];
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m /// Builds a `dst` image of `len` elements: a NUL-terminated prefix of
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m /// `prefix_len` non-zero elements (terminator at index `prefix_len`), and
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m /// pseudo-random non-zero residue after the terminator. If `prefix_len == len`
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m /// the image is left *unterminated*.
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m pub fn make_dst(rng: &mut Rng, len: usize, prefix_len: usize, ascii: bool) -> Vec<Wchar> {
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     assert!(prefix_len <= len);
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     let mut v = Vec::with_capacity(len);
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m     for _ in 0..prefix_len {
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         v.push(if ascii { rng.ascii_wchar() } else { rng.nonzero_wchar() });
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m     if prefix_len < len {
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         v.push(0);
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m         while v.len() < len {
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m             v.push(if ascii { rng.ascii_wchar() } else { rng.nonzero_wchar() });
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     debug_assert_eq!(v.len(), len);
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     v
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m /// Builds a NUL-terminated `src` of `len` visible elements (so `len + 1` total).
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m pub fn make_src(rng: &mut Rng, len: usize, ascii: bool) -> Vec<Wchar> {
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     let mut v = Vec::with_capacity(len + 1);
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     for _ in 0..len {
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         v.push(if ascii { rng.ascii_wchar() } else { rng.nonzero_wchar() });
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m     v.push(0);
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     v
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Require NUL-terminated src slices in harness
+
+[49m[39m  142, 142[0m:[39m[49m ) -> Outcome {
+[0m[49m[38;5;10m+      143[0m:[38;5;10m[49m     if let Some(s) = src {
+[0m[49m[38;5;10m+      144[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+      145[0m:[38;5;10m[49m             s.last() == Some(&0),
+[0m[49m[38;5;10m+      146[0m:[38;5;10m[49m             "`src` slices passed to run() must include their NUL terminator"
+[0m[49m[38;5;10m+      147[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+      148[0m:[38;5;10m[49m     }
+[0m[49m[39m  143, 149[0m:[39m[49m     let mut buf: Vec<Wchar> = Vec::with_capacity(dst_image.len() + GUARD_LEN);
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the Phase B valid-path tests.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/phase_b_valid_paths.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Phase B valid-path differential tests, one per CONFIGS.md row
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase B — valid-path differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! One test per row of `CONFIGS.md`. Every row drives BOTH `.so`s through their
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! exported `wcscat` symbol with many randomized inputs (fixed seed) and asserts
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! the return value and the whole post-call buffer image match byte-for-byte.
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m const SEED: u64 = 0xC0FF_EE12_3456_789A;
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Randomized iterations per row.
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m const ITERS: usize = 400;
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m fn platform_assumptions() {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     assert_platform_assumptions();
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     // Both symbols must resolve through the FFI boundary.
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     let _ = c_wcscat();
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m     let _ = rust_wcscat();
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // ---------------------------------------------------------------- rows 1..=4
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // `dst` empty (dst[0] == 0).
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m fn row01_dst_empty_src_empty_slack() {
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 1);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         let n = rng.range(2, 32);
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, 0, false);
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m         let src = make_src(&mut rng, 0, false);
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m         assert_same("row01", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m fn row02_dst_empty_src_len1_slack() {
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 2);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m         let n = rng.range(3, 32);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, 0, false);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         let src = make_src(&mut rng, 1, false);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         assert_same("row02", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m fn row03_dst_empty_src_long_slack() {
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 3);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         let n = rng.range(6, 48);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         let src_len = rng.range(1, n - 2); // leaves at least one element of slack
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, 0, false);
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m         assert_same("row03", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m fn row04_dst_empty_src_exact_fit() {
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 4);
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         let n = rng.range(1, 40);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         // wcslen(dst)=0, so exact fit means src_len + 1 == n.
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         let src_len = n - 1;
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, 0, false);
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         assert_same("row04", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m // ---------------------------------------------------------------- rows 5..=8
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m // `dst` non-empty, terminator strictly inside the buffer.
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m fn row05_dst_nonempty_src_empty_slack() {
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 5);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m         let n = rng.range(3, 32);
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m         let plen = rng.range(1, n - 1);
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m         let src = make_src(&mut rng, 0, false);
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m         assert_same("row05", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m fn row06_dst_nonempty_src_len1_slack() {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 6);
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         let n = rng.range(4, 32);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         let plen = rng.range(1, n - 2);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         let src = make_src(&mut rng, 1, false);
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         assert_same("row06", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m fn row07_dst_nonempty_src_long_slack() {
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 7);
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         let n = rng.range(6, 48);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m         let plen = rng.range(1, n - 3);
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         let max_src = n - plen - 2; // >= 1, keeps one element of slack
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         let src_len = rng.range(1, max_src.max(1));
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         assert_same("row07", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m fn row08_dst_nonempty_src_exact_fit() {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 8);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         let n = rng.range(3, 40);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         let plen = rng.range(1, n - 2);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         let src_len = n - plen - 1; // plen + src_len + 1 == n
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         assert_same("row08", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m // -------------------------------------------------------------- rows 9..=10
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m // `dst`'s terminator occupies the very last element.
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m fn row09_terminator_in_last_element_src_empty() {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 9);
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         let n = rng.range(1, 32);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, n - 1, false); // terminator at n-1
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         let src = make_src(&mut rng, 0, false);
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         assert_same("row09", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m fn row10_terminator_in_last_element_src_nonempty() {
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 10);
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         let n = rng.range(1, 32);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, n - 1, false);
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(1, 8), false);
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         assert_same("row10", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m // -------------------------------------------------------------- rows 11..=12
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m fn row11_num_elem_one_empty_dst_empty_src() {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 11);
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         let src = make_src(&mut rng, 0, false);
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m         assert_same("row11", &[0], 1, Some(&src), false);
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m fn row12_residue_after_terminator_preserved() {
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 12);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         let n = rng.range(8, 40);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         let plen = rng.range(0, 3);
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m         // Short append so a long non-zero residue survives past the new NUL.
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         let src_len = rng.range(0, 2);
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m         assert_same("row12", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m // -------------------------------------------------------------- rows 13..=14
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m // `dst` unterminated inside `numElem`.
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m fn row13_dst_unterminated_src_nonempty() {
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 13);
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         let n = rng.range(1, 32);
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, n, false); // no terminator at all
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(1, 8), false);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m         assert_same("row13", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m fn row14_dst_unterminated_src_empty() {
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 14);
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         let n = rng.range(1, 32);
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, n, false);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         let src = make_src(&mut rng, 0, false);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m         assert_same("row14", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m // -------------------------------------------------------------- rows 15..=16
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m // Overflow shapes reached from otherwise valid inputs.
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m fn row15_overflow_by_exactly_one() {
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 15);
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m         let n = rng.range(2, 40);
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         let plen = rng.range(0, n - 1);
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         let src_len = n - plen; // plen + src_len + 1 == n + 1
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m         assert_same("row15", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m fn row16_overflow_by_many() {
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 16);
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         let n = rng.range(1, 24);
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         let plen = rng.range(0, n - 1);
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         let src_len = n + rng.range(1, 32);
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         assert_same("row16", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m // -------------------------------------------------------------- rows 17..=18
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m // `numElem` vs. the real allocation.
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m fn row17_num_elem_smaller_than_allocation() {
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 17);
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m         let alloc = rng.range(8, 48);
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m         let n = rng.range(1, alloc);
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         // Terminator position chosen inside the *reported* length or beyond it.
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m         let plen = rng.range(0, alloc);
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, alloc, plen.min(alloc), false);
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 6), false);
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m         assert_same("row17", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m fn row18_num_elem_oversized_but_within_allocation() {
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 18);
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         // Huge reported length; the data terminates long before the real end so
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m         // the bogus length is never noticed by the C code.
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m         let alloc = 4096;
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m         let n = rng.range(2048, 4096);
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         let plen = rng.range(0, 16);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, alloc, plen, false);
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 16), false);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         assert_same("row18", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m // -------------------------------------------------------------- rows 19..=20
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m // Element value domains.
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m fn row19_full_range_random_element_values() {
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 19);
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m     for _ in 0..(ITERS * 2) {
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         let n = rng.range(1, 40);
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         let plen = rng.range(0, n);
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 40), false);
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m         assert_same("row19", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m fn row20_extreme_element_values() {
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 20);
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m     // Exhaustive over the extremes for dst residue / src content.
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m     for &dv in EXTREMES {
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         for &sv in EXTREMES {
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m             for n in 1..=6usize {
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m                 for plen in 0..=n {
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m                     let mut dst = vec![dv; n];
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m                     if plen < n {
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m                         dst[plen] = 0;
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m                         for e in dst.iter_mut().skip(plen + 1) {
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m                             *e = dv;
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m                         }
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m                     for src_len in 0..=4usize {
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m                         let mut src = vec![sv; src_len];
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m                         src.push(0);
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m                         assert_same("row20", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m                     }
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m     let _ = rng.next_u64();
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m // -------------------------------------------------------------------- row 21
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m // The cross-product fuzz sweep.
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m fn row21_cross_product_fuzz() {
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 21);
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m     for _ in 0..20_000 {
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m         let n = rng.range(1, 24);
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m         // Terminator anywhere in 0..=n, where n means "unterminated".
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m         let plen = rng.range(0, n);
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m         let ascii = rng.below(2) == 0;
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, ascii);
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m         let src_len = rng.range(0, 30);
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, ascii);
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m         assert_same("row21", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m // -------------------------------------------------------------------- row 22
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m // Exhaustive small shapes.
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m fn row22_exhaustive_small_shapes() {
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 22);
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m     for n in 1..=4usize {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m         for plen in 0..=n {
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m             for src_len in 0..=4usize {
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m                 for _ in 0..8 {
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m                     let dst = make_dst(&mut rng, n, plen, true);
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m                     let src = make_src(&mut rng, src_len, true);
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m                     assert_same("row22", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/phase_b_valid_paths.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/phase_c_error_paths.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Phase C error-path differential tests, one per ERRORS.md row
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase C — error-path differential tests.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! One test per row of `ERRORS.md`, plus the generic FFI boundary cases (null
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! pointers, zero / oversized lengths, one-past-the-range values, and arbitrary
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! out-of-range scalar values crossing the boundary).
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //! Every assertion compares the *exact* return code (22 / 34 / 0) and the whole
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m //! post-call memory image, not merely "both failed somehow".
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m use common::*;
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m const SEED: u64 = 0xBADC_0DE0_0FF1_CE55;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m const ITERS: usize = 300;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Sanity: the C library really returns the codes `ERRORS.md` claims, so the
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m /// differential assertions below are anchored to absolute values and not just to
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m /// "C agrees with Rust".
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m fn c_return_codes_are_22_and_34_as_documented() {
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     let c = c_wcscat();
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m     let r = rust_wcscat();
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m     let src = [b'x' as Wchar, 0];
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     // dst == NULL -> 22
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     assert_eq!(unsafe { c(std::ptr::null_mut(), 8, src.as_ptr()) }, 22);
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     assert_eq!(unsafe { r(std::ptr::null_mut(), 8, src.as_ptr()) }, 22);
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     // numElem == 0 -> 22
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m     let mut b = [0 as Wchar; 4];
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     assert_eq!(unsafe { c(b.as_mut_ptr(), 0, src.as_ptr()) }, 22);
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     assert_eq!(unsafe { r(b.as_mut_ptr(), 0, src.as_ptr()) }, 22);
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m     // src == NULL -> 22
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m     assert_eq!(unsafe { c(b.as_mut_ptr(), 4, std::ptr::null()) }, 22);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m     assert_eq!(unsafe { r(b.as_mut_ptr(), 4, std::ptr::null()) }, 22);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     // no room -> 34
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let mut full = [b'a' as Wchar, b'b' as Wchar, 0, 0];
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     assert_eq!(unsafe { c(full.as_mut_ptr(), 3, src.as_ptr()) }, 34);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     let mut full = [b'a' as Wchar, b'b' as Wchar, 0, 0];
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     assert_eq!(unsafe { r(full.as_mut_ptr(), 3, src.as_ptr()) }, 34);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     // success -> 0
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     let mut ok = [0 as Wchar; 4];
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m     assert_eq!(unsafe { c(ok.as_mut_ptr(), 4, src.as_ptr()) }, 0);
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     let mut ok = [0 as Wchar; 4];
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     assert_eq!(unsafe { r(ok.as_mut_ptr(), 4, src.as_ptr()) }, 0);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 1
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m fn err_row01_null_dst_nonzero_len() {
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 1);
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 12), false);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         let n = rng.range(1, 64);
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m         assert_same("err01", &[], n, Some(&src), true);
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     // Plus a pathologically large length: the `!dst` check must short-circuit
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     // before anything touches memory.
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let src = make_src(&mut rng, 3, false);
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     assert_same("err01/huge", &[], usize::MAX, Some(&src), true);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     assert_same("err01/huge2", &[], usize::MAX / 2, Some(&src), true);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 2
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m fn err_row02_null_dst_zero_len() {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 2);
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 12), false);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         assert_same("err02", &[], 0, Some(&src), true);
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 3
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m fn err_row03_null_dst_and_null_src() {
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     for &n in &[0usize, 1, 2, 7, 1024, usize::MAX / 4, usize::MAX] {
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m         assert_same("err03", &[], n, None, true);
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 4
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m fn err_row04_zero_len_valid_dst_valid_src() {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 4);
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         let alloc = rng.range(1, 32);
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m         let plen = rng.range(0, alloc);
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, alloc, plen, false);
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 12), false);
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         // numElem == 0 must leave dst completely untouched (dst[0] is NOT zeroed
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         // on this path) — the full-image comparison proves it.
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m         assert_same("err04", &dst, 0, Some(&src), false);
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 5
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m fn err_row05_zero_len_valid_dst_null_src() {
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 5);
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         let alloc = rng.range(1, 32);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m         let plen = rng.range(0, alloc);
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, alloc, plen, false);
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         assert_same("err05", &dst, 0, None, false);
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 6
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m fn err_row06_null_src_zeroes_dst0() {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 6);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     for _ in 0..ITERS {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         let n = rng.range(1, 40);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         let plen = rng.range(0, n);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         assert_same("err06", &dst, n, None, false);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m     // Also with an oversized reported length (still inside the allocation).
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     let dst = make_dst(&mut rng, 512, 400, false);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     assert_same("err06/oversized", &dst, 512, None, false);
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 7
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m fn err_row07_null_src_num_elem_one() {
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 7);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     for _ in 0..64 {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m         let v = rng.nonzero_wchar();
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m         assert_same("err07", &[v], 1, None, false);
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         assert_same("err07/zero", &[0], 1, None, false);
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     for &v in EXTREMES {
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         assert_same("err07/extreme", &[v], 1, None, false);
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 8
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m fn err_row08_no_room_partial_fill_then_zero() {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 8);
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     for _ in 0..(ITERS * 2) {
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         let n = rng.range(2, 40);
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         let plen = rng.range(0, n - 1); // terminated inside the buffer
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         // Make the concatenation too long by a random amount.
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         let over = rng.range(1, 20);
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         let src_len = n - plen - 1 + over;
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m         let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m         assert_same("err08", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m // ------------------------------------------------------------------- row 9
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m fn err_row09_one_element_too_long() {
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 9);
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m     for n in 1..=48usize {
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m         for plen in 0..n {
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m             let src_len = n - plen; // plen + src_len + 1 == n + 1
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m             let dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m             let src = make_src(&mut rng, src_len, false);
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m             assert_same("err09", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m             // And the exact-fit neighbour, to pin the boundary from both sides.
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m             if src_len >= 1 {
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m                 let dst2 = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m                 let src2 = make_src(&mut rng, src_len - 1, false);
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m                 assert_same("err09/fits", &dst2, n, Some(&src2), false);
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m // ------------------------------------------------------------------ row 10
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m fn err_row10_unterminated_dst_src_never_read() {
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 10);
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m     for _ in 0..(ITERS * 2) {
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m         let n = rng.range(1, 40);
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, n, n, false); // unterminated
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 20), false);
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         assert_same("err10", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m // ------------------------------------------------------------------ row 11
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m fn err_row11_unterminated_num_elem_one() {
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 11);
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     for _ in 0..64 {
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m         let v = rng.nonzero_wchar();
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 4), false);
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m         assert_same("err11", &[v], 1, Some(&src), false);
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m     for &v in EXTREMES {
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m         let src = make_src(&mut rng, 2, false);
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m         assert_same("err11/extreme", &[v], 1, Some(&src), false);
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m // ------------------------------------------------------------------ row 12
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m fn err_row12_num_elem_one_empty_dst_nonempty_src() {
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 12);
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m     for _ in 0..128 {
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(1, 8), false);
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m         assert_same("err12", &[0], 1, Some(&src), false);
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m // ------------------------------------------------------------------ row 13
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m fn err_row13_oversized_num_elem_is_not_validated() {
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 13);
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m     // A big real allocation with a big reported length; the data is short, so
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     // the C code returns 0 and never notices that `numElem` is absurd relative
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     // to the useful content.
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m     for _ in 0..64 {
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         let alloc = 8192;
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         let n = rng.range(4096, 8192);
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         let plen = rng.range(0, 8);
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         let dst = make_dst(&mut rng, alloc, plen, false);
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         let src = make_src(&mut rng, rng.range(0, 8), false);
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         assert_same("err13", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m // ------------------------------------------------------------------ row 14
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m fn err_row14_out_of_range_scalar_values_across_ffi() {
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     // The API has no enum parameter; the equivalent "any int is accepted"
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     // surface is the `wchar_t` element type. Values with no valid Unicode
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m     // meaning must be copied verbatim, and only `== 0` may terminate.
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 14);
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     for &v in EXTREMES {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         for n in 1..=5usize {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m             for plen in 0..=n {
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m                 let mut dst = vec![v; n];
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m                 if plen < n {
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m                     dst[plen] = 0;
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m                 for src_len in 0..=3usize {
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m                     let mut src = vec![v; src_len];
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m                     src.push(0);
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m                     assert_same("err14", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m     // Mixed random garbage, including negatives.
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m     for _ in 0..2000 {
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m         let n = rng.range(1, 16);
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m         let plen = rng.range(0, n);
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m         let mut dst = make_dst(&mut rng, n, plen, false);
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m         for e in dst.iter_mut() {
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m             if *e != 0 && rng.below(3) == 0 {
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m                 *e = EXTREMES[rng.below(EXTREMES.len())];
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m         let mut src = make_src(&mut rng, rng.range(0, 20), false);
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m         let last = src.len() - 1;
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m         for e in src[..last].iter_mut() {
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m             if rng.below(3) == 0 {
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m                 *e = EXTREMES[rng.below(EXTREMES.len())];
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m         assert_same("err14/mixed", &dst, n, Some(&src), false);
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m // ------------------------------------------------- generic boundary sweep
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m /// Every combination of (dst null?, src null?, numElem in a boundary set).
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m fn generic_null_and_length_boundary_matrix() {
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m     let mut rng = Rng::new(SEED + 99);
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m     let lens: [usize; 9] = [
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m         0,
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         2,
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m         3,
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m         8,
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m         16,
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         usize::MAX / 2,
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m         usize::MAX - 1,
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m         usize::MAX,
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m     for &n in &lens {
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         for &null_dst in &[true, false] {
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m             for &null_src in &[true, false] {
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m                 // A non-null dst may only be given a length it can really back,
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m                 // otherwise both implementations would run out of bounds.
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m                 if !null_dst && n > 16 {
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m                     continue;
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m                 let alloc = if null_dst { 0 } else { 16 };
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m                 let dst = if null_dst {
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m                     Vec::new()
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m                 } else {
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m                     make_dst(&mut rng, alloc, rng.range(0, alloc), false)
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m                 };
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m                 let src = make_src(&mut rng, rng.range(0, 6), false);
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m                 let s = if null_src { None } else { Some(&src[..]) };
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m                 assert_same("generic-matrix", &dst, n, s, null_dst);
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/phase_c_error_paths.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/phase_d_symbols.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Phase D symbol parity test
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m //! Phase D — symbol parity, checked programmatically so it cannot drift.
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m use std::process::Command;
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m fn root() -> PathBuf {
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m     Path::new(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m         .unwrap()
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m fn defined_symbols(so: &Path) -> Vec<String> {
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m     let out = Command::new("nm")
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m         .args(["-D", "--defined-only", so.to_str().unwrap()])
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m         .output()
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m         .expect("nm must be available");
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m         out.status.success(),
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m         "nm failed on {}: {}",
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m         so.display(),
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m         String::from_utf8_lossy(&out.stderr)
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     let mut v: Vec<String> = String::from_utf8_lossy(&out.stdout)
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m         .lines()
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m         .filter_map(|l| l.split_whitespace().last().map(str::to_string))
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     v.sort();
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     v.dedup();
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m     v
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m fn find_c_so() -> PathBuf {
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     let dir = root().join("c_src").join("build");
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m     let mut v: Vec<PathBuf> = std::fs::read_dir(&dir)
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("{} unreadable: {e}", dir.display()))
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m         .flatten()
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         .map(|e| e.path())
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         .filter(|p| p.extension().map(|x| x == "so").unwrap_or(false))
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m     v.sort();
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m     v.pop().expect("C .so must be built")
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m fn find_rust_so() -> PathBuf {
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     for p in [
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m         root().join("translation/target/release/libwcscat_lib.so"),
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         root().join("translation/target/debug/libwcscat_lib.so"),
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         if p.exists() {
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m             return p;
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     panic!("Rust cdylib must be built");
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m fn every_c_symbol_is_exported_by_rust() {
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m     let c = defined_symbols(&find_c_so());
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     let r = defined_symbols(&find_rust_so());
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m     assert!(!c.is_empty(), "C .so exported no symbols — build problem");
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m     let missing: Vec<&String> = c.iter().filter(|s| !r.contains(s)).collect();
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         missing.is_empty(),
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m         "symbols exported by the C .so but MISSING from the Rust .so: {missing:?}\n\
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m          C: {c:?}\nRust: {r:?}"
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m fn rust_so_has_no_unresolved_project_symbols() {
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     // `Library::new` (RTLD_NOW is not used by default, so force resolution by
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m     // actually looking the symbol up and calling it) proves the .so links.
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     let f = common::rust_wcscat();
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m     let mut buf = [0i32; 4];
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m     let src = [b'a' as i32, 0];
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m     let rc = unsafe { f(buf.as_mut_ptr(), 4, src.as_ptr()) };
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m     assert_eq!(rc, 0);
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m     assert_eq!(buf, [b'a' as i32, 0, 0, 0]);
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/tests/phase_d_symbols.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo build --release 2>&1 | tail -3 && timeout 600 cargo test --release 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run all differential tests
+
+      Adding libloading v0.8.9 (available: v0.9.0)
+      Adding windows-link v0.2.1
+    Finished `release` profile [optimized] target(s) in 0.05s
+    |                   first borrow later used by call
+
+error[E0499]: cannot borrow `rng` as mutable more than once at a time
+   --> tests/phase_b_valid_paths.rs:243:38
+    |
+243 |         let src = make_src(&mut rng, rng.range(0, 6), false);
+    |                   -------- --------  ^^^ second mutable borrow occurs here
+    |                   |        |
+    |                   |        first mutable borrow occurs here
+    |                   first borrow later used by call
+
+error[E0499]: cannot borrow `rng` as mutable more than once at a time
+   --> tests/phase_c_error_paths.rs:264:42
+    |
+264 |         let mut src = make_src(&mut rng, rng.range(0, 20), false);
+    |                       -------- --------  ^^^ second mutable borrow occurs here
+    |                       |        |
+    |                       |        first mutable borrow occurs here
+    |                       first borrow later used by call
+
+error[E0499]: cannot borrow `rng` as mutable more than once at a time
+   --> tests/phase_b_valid_paths.rs:258:38
+    |
+258 |         let src = make_src(&mut rng, rng.range(0, 16), false);
+    |                   -------- --------  ^^^ second mutable borrow occurs here
+    |                   |        |
+    |                   |        first mutable borrow occurs here
+    |                   first borrow later used by call
+
+error[E0499]: cannot borrow `rng` as mutable more than once at a time
+   --> tests/phase_b_valid_paths.rs:273:38
+    |
+273 |         let src = make_src(&mut rng, rng.range(0, 40), false);
+    |                   -------- --------  ^^^ second mutable borrow occurs here
+    |                   |        |
+    |                   |        first mutable borrow occurs here
+    |                   first borrow later used by call
+
+error[E0499]: cannot borrow `rng` as mutable more than once at a time
+   --> tests/phase_c_error_paths.rs:303:47
+    |
+303 |                     make_dst(&mut rng, alloc, rng.range(0, alloc), false)
+    |                     -------- --------         ^^^ second mutable borrow occurs here
+    |                     |        |
+    |                     |        first mutable borrow occurs here
+    |                     first borrow later used by call
+
+error[E0499]: cannot borrow `rng` as mutable more than once at a time
+   --> tests/phase_c_error_paths.rs:305:46
+    |
+305 |                 let src = make_src(&mut rng, rng.range(0, 6), false);
+    |                           -------- --------  ^^^ second mutable borrow occurs here
+    |                           |        |
+    |                           |        first mutable borrow occurs here
+    |                           first borrow later used by call
+
+For more information about this error, try `rustc --explain E0499`.
+error: could not compile `translation` (test "phase_c_error_paths") due to 10 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `translation` (test "phase_b_valid_paths") due to 5 previous errors
+[38;5;244m - Completed in 0.618s[0m
+
+[?25l[0m[?25l[0m[0mSearching for: [38;5;141mmake_(src|dst)\(&mut rng,.*rng\.[0m in [38;5;141mtranslation/tests[0m[38;5;244m (using tool: grep)[0m
+[38;5;10m ✓ [0mSuccessfully found [38;5;244m15 matches[0m in [38;5;244m2 files[0m under translation/tests (result is truncated)
+[38;5;244m - Completed in 0.2s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation/tests && python3 - <<'EOF'
+import re,io
+pat_src = re.compile(r'make_src\(&mut rng, (rng\.range\([^()]*\)), (\w+)\)')
+pat_dst = re.compile(r'make_dst\(&mut rng, (\w+), (rng\.range\([^()]*\)), (\w+)\)')
+for fn in ['phase_b_valid_paths.rs','phase_c_error_paths.rs']:
+    s=open(fn).read()
+    s=pat_src.sub(lambda m: '{ let __l = %s; make_src(&mut rng, __l, %s) }'%(m.group(1),m.group(2)), s)
+    s=pat_dst.sub(lambda m: '{ let __l = %s; make_dst(&mut rng, %s, __l, %s) }'%(m.group(2),m.group(1),m.group(3)), s)
+    open(fn,'w').write(s)
+    print(fn, s.count('__l'))
+EOF[0m[38;5;244m (using tool: shell)[0m
+Purpose: Hoist rng.range calls out of nested borrows
+
+phase_b_valid_paths.rs 10
+phase_c_error_paths.rs 20
+[38;5;244m - Completed in 0.22s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release --no-run 2>&1 | grep -E "^(error|warning: unused)" -A6 | head -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Recompile tests
+
+[38;5;244m - Completed in 0.450s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release 2>&1 | tail -70[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run all tests
+
+    Finished `release` profile [optimized] target(s) in 0.01s
+     Running unittests src/lib.rs (target/release/deps/wcscat_lib-519382147f54ebde)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase_b_valid_paths.rs (target/release/deps/phase_b_valid_paths-b6f20a08f91cb415)
+
+running 23 tests
+test platform_assumptions ... ok
+test row01_dst_empty_src_empty_slack ... ok
+test row05_dst_nonempty_src_empty_slack ... ok
+test row06_dst_nonempty_src_len1_slack ... ok
+test row13_dst_unterminated_src_nonempty ... ok
+test row17_num_elem_smaller_than_allocation ... ok
+test row11_num_elem_one_empty_dst_empty_src ... ok
+test row04_dst_empty_src_exact_fit ... ok
+test row02_dst_empty_src_len1_slack ... ok
+test row14_dst_unterminated_src_empty ... ok
+test row09_terminator_in_last_element_src_empty ... ok
+test row10_terminator_in_last_element_src_nonempty ... ok
+test row07_dst_nonempty_src_long_slack ... ok
+test row12_residue_after_terminator_preserved ... ok
+test row15_overflow_by_exactly_one ... ok
+test row16_overflow_by_many ... ok
+test row08_dst_nonempty_src_exact_fit ... ok
+test row22_exhaustive_small_shapes ... ok
+test row03_dst_empty_src_long_slack ... ok
+test row19_full_range_random_element_values ... ok
+test row18_num_elem_oversized_but_within_allocation ... ok
+test row20_extreme_element_values ... ok
+test row21_cross_product_fuzz ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/phase_c_error_paths.rs (target/release/deps/phase_c_error_paths-dffbc958e2548e97)
+
+running 16 tests
+test c_return_codes_are_22_and_34_as_documented ... ok
+test err_row03_null_dst_and_null_src ... ok
+test generic_null_and_length_boundary_matrix ... ok
+test err_row11_unterminated_num_elem_one ... ok
+test err_row07_null_src_num_elem_one ... ok
+test err_row12_num_elem_one_empty_dst_nonempty_src ... ok
+test err_row02_null_dst_zero_len ... ok
+test err_row04_zero_len_valid_dst_valid_src ... ok
+test err_row05_zero_len_valid_dst_null_src ... ok
+test err_row06_null_src_zeroes_dst0 ... ok
+test err_row01_null_dst_nonzero_len ... ok
+test err_row13_oversized_num_elem_is_not_validated ... ok
+test err_row10_unterminated_dst_src_never_read ... ok
+test err_row08_no_room_partial_fill_then_zero ... ok
+test err_row09_one_element_too_long ... ok
+test err_row14_out_of_range_scalar_values_across_ffi ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/phase_d_symbols.rs (target/release/deps/phase_d_symbols-e22416120fdd9f8a)
+
+running 2 tests
+test rust_so_has_no_unresolved_project_symbols ... ok
+test every_c_symbol_is_exported_by_rust ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+[38;5;244m - Completed in 0.121s[0m
+
+[?25l[0m[38;5;141m> [0mAll 41 tests pass. Now a negative control to prove the harness actually detects divergence.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Allow overriding the Rust .so under test via env var
+
+[49m[39m  50, 50[0m:[39m[49m fn find_rust_so() -> PathBuf {
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m     if let Ok(p) = std::env::var("WCSCAT_RUST_SO") {
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         let p = PathBuf::from(p);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         assert!(p.exists(), "WCSCAT_RUST_SO={} does not exist", p.display());
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m         return p;
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     }
+[0m[49m[39m  51, 56[0m:[39m[49m     let root = workspace_root().join("translation").join("target");
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/phase_d_symbols.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Honor env override in phase D too
+
+[49m[39m  47, 47[0m:[39m[49m fn find_rust_so() -> PathBuf {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     if let Ok(p) = std::env::var("WCSCAT_RUST_SO") {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         return PathBuf::from(p);
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     }
+[0m[49m[39m  48, 51[0m:[39m[49m     for p in [
+[0m[K
+Updating: [38;5;141mtranslation/tests/phase_d_symbols.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cd /local/home/scheschb/.harvest/work/harvest-work-CWGPNw
+mkdir -p /tmp/mutants && rm -rf /tmp/mutants/* 
+run_mutant () {
+  name="$1"; sedexpr="$2"
+  cp translation/src/lib.rs /tmp/mutants/orig.rs
+  sed -i "$sedexpr" translation/src/lib.rs
+  (cd translation && cargo build --release >/dev/null 2>&1)
+  cp translation/target/release/libwcscat_lib.so /tmp/mutants/$name.so
+  cp /tmp/mutants/orig.rs translation/src/lib.rs
+  (cd translation && cargo build --release >/dev/null 2>&1)
+  echo "--- mutant $name ---"
+  (cd translation && WCSCAT_RUST_SO=/tmp/mutants/$name.so timeout 600 cargo test --release 2>&1 | grep -E "^test result|FAILED|failures:$" | head -8)
+}
+run_mutant m1_ret23 's/return 22;/return 23;/'
+run_mutant m2_no_zero_on_overflow 's/    unsafe { \*dst = 0 };\n    34/    34/'
+run_mutant m3_off_by_one 's/let end = unsafe { dst.add(numElem) };/let end = unsafe { dst.add(numElem - 1) };/'
+[0m[38;5;244m (using tool: shell)[0m
+Purpose: Negative control: mutate the Rust and confirm tests fail
+
+--- mutant m1_ret23 ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test c_return_codes_are_22_and_34_as_documented ... FAILED
+test err_row01_null_dst_nonzero_len ... FAILED
+test err_row03_null_dst_and_null_src ... FAILED
+test err_row05_zero_len_valid_dst_null_src ... FAILED
+test err_row02_null_dst_zero_len ... FAILED
+test err_row06_null_src_zeroes_dst0 ... FAILED
+--- mutant m2_no_zero_on_overflow ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+--- mutant m3_off_by_one ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test row04_dst_empty_src_exact_fit ... FAILED
+test row05_dst_nonempty_src_empty_slack ... FAILED
+test row08_dst_nonempty_src_exact_fit ... FAILED
+test row06_dst_nonempty_src_len1_slack ... FAILED
+test row11_num_elem_one_empty_dst_empty_src ... FAILED
+test row09_terminator_in_last_element_src_empty ... FAILED
+test row10_terminator_in_last_element_src_nonempty ... FAILED
+[38;5;244m - Completed in 1.509s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mset -e
+cd /local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation
+cp src/lib.rs /tmp/mutants/orig.rs
+python3 - <<'EOF'
+p='src/lib.rs'; s=open(p).read()
+old="    unsafe { *dst = 0 };\n    34\n}"
+assert old in s
+s=s.replace(old,"    34\n}")
+open(p,'w').write(s)
+EOF
+cargo build --release >/dev/null 2>&1
+cp target/release/libwcscat_lib.so /tmp/mutants/m2.so
+cp /tmp/mutants/orig.rs src/lib.rs
+cargo build --release >/dev/null 2>&1
+echo "--- mutant m2: overflow path does not zero dst[0] ---"
+WCSCAT_RUST_SO=/tmp/mutants/m2.so timeout 600 cargo test --release 2>&1 | grep -E "^test result|FAILED" | head -10
+echo "--- restored: full run ---"
+diff /tmp/mutants/orig.rs src/lib.rs && echo "lib.rs restored byte-identical"
+timeout 600 cargo test --release 2>&1 | grep -E "^test result"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Second negative control and restore original
+
+--- mutant m2: overflow path does not zero dst[0] ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test row13_dst_unterminated_src_nonempty ... FAILED
+test row14_dst_unterminated_src_empty ... FAILED
+test row10_terminator_in_last_element_src_nonempty ... FAILED
+test row15_overflow_by_exactly_one ... FAILED
+test row16_overflow_by_many ... FAILED
+test row17_num_elem_smaller_than_allocation ... FAILED
+test row19_full_range_random_element_values ... FAILED
+test row20_extreme_element_values ... FAILED
+test row21_cross_product_fuzz ... FAILED
+--- restored: full run ---
+lib.rs restored byte-identical
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+[38;5;244m - Completed in 0.439s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/run_all_configs.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Script to run the suite across every feature combo and profile
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Phase D driver: enumerate every build configuration of the crate and run the
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # full differential suite (Phases B + C + D) under each one.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m cd "$(dirname "$0")"
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m echo "=== declared features in Cargo.toml ==="
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m python3 - <<'PY'
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m import re, sys
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m src = open('Cargo.toml').read()
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m # crude but sufficient TOML section scan
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m sections = re.split(r'(?m)^\[', src)
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m feats = []
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m for s in sections:
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m     if s.startswith('features]'):
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m         for line in s.splitlines()[1:]:
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m             line = line.split('#')[0].strip()
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m             if not line or line.startswith('['):
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m                 break
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m             m = re.match(r'([A-Za-z0-9_\-]+)\s*=', line)
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m             if m:
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m                 feats.append(m.group(1))
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m print('\n'.join(feats) if feats else '(none)')
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m PY
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m FEATS=$(python3 - <<'PY'
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m import re
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m src=open('Cargo.toml').read()
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m out=[]
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m for s in re.split(r'(?m)^\[', src):
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     if s.startswith('features]'):
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m         for line in s.splitlines()[1:]:
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m             line=line.split('#')[0].strip()
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m             if not line or line.startswith('['): break
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m             m=re.match(r'([A-Za-z0-9_\-]+)\s*=', line)
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m             if m and m.group(1)!='default': out.append(m.group(1))
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m print(' '.join(out))
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m PY
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m )
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m status=0
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m run_suite () {
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m   local label="$1"; shift
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m   echo
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m   echo "########## $label ##########"
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m   timeout 600 cargo build --release "$@" >/dev/null 2>&1 || { echo "BUILD FAILED"; status=1; return; }
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m   timeout 600 cargo test --release "$@" 2>&1 | grep -E "^(test result|error|failures:)" || true
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m   timeout 600 cargo test --release "$@" >/dev/null 2>&1 || { echo "TESTS FAILED"; status=1; }
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m # 1. default features
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m run_suite "default features"
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m if [ -n "${FEATS// /}" ]; then
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m   run_suite "--no-default-features"
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m   # power set of the declared features
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m   python3 - "$FEATS" <<'PY' > /tmp/wcscat_combos.txt
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m import sys, itertools
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m f=sys.argv[1].split()
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m for r in range(1,len(f)+1):
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m     for c in itertools.combinations(f,r):
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m         print(','.join(c))
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m PY
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m   while read -r combo; do
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m     [ -z "$combo" ] && continue
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     run_suite "--no-default-features --features $combo" --no-default-features --features "$combo"
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m   done < /tmp/wcscat_combos.txt
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m   echo
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m   echo "no optional features declared -> the default build is the only feature configuration"
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m # 2. the other build profile (opt-level 0 + panic=unwind) as a distinct
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m #    codegen configuration of the same source.
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m echo "########## dev-profile cdylib (opt-level 0, panic=unwind) ##########"
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m timeout 600 cargo build >/dev/null 2>&1 || { echo "BUILD FAILED"; status=1; }
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m WCSCAT_RUST_SO="$(pwd)/target/debug/libwcscat_lib.so" \
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m   timeout 600 cargo test --release 2>&1 | grep -E "^(test result|failures:)" || true
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m WCSCAT_RUST_SO="$(pwd)/target/debug/libwcscat_lib.so" \
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m   timeout 600 cargo test --release >/dev/null 2>&1 || { echo "TESTS FAILED"; status=1; }
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m # 3. binary targets?
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m echo "=== binary targets ==="
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m if compgen -G "src/main.rs" > /dev/null || compgen -G "src/bin/*.rs" > /dev/null \
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m    || grep -q '^\[\[bin\]\]' Cargo.toml; then
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m   echo "binary target present - stdout comparison required"
+[0m[49m[38;5;10m+    90[0m:[38;5;10m[49m   status=1
+[0m[49m[38;5;10m+    91[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    92[0m:[38;5;10m[49m   echo "no [[bin]] / src/main.rs / src/bin -> nothing to compare on stdout"
+[0m[49m[38;5;10m+    93[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    95[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    96[0m:[38;5;10m[49m if [ "$status" -eq 0 ]; then echo "ALL CONFIGURATIONS PASSED"; else echo "SOME CONFIGURATIONS FAILED"; fi
+[0m[49m[38;5;10m+    97[0m:[38;5;10m[49m exit "$status"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-CWGPNw/translation/run_all_configs.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x run_all_configs.sh && timeout 600 ./run_all_configs.sh 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run suite across all configurations
+
+=== declared features in Cargo.toml ===
+(none)
+
+########## default features ##########
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+no optional features declared -> the default build is the only feature configuration
+
+########## dev-profile cdylib (opt-level 0, panic=unwind) ##########
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+=== binary targets ===
+no [[bin]] / src/main.rs / src/bin -> nothing to compare on stdout
+
+ALL CONFIGURATIONS PASSED
+[38;5;244m - Completed in 0.651s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-CWGPNw
+echo "=== symbol diff (C vs Rust) ==="
+diff <(nm -D --defined-only c_src/build/*.so | awk '{print $NF}' | sort) \
+     <(nm -D --defined-only translation/target/release/libwcscat_lib.so | awk '{print $NF}' | sort) \
+  && echo "EMPTY DIFF"
+echo "=== undefined non-libc symbols in Rust .so ==="
+nm -D --undefined-only translation/target/release/libwcscat_lib.so | awk '{print $NF}' | grep -vE '^(_|memcpy|memset|memmove|memcmp|malloc|free|realloc|calloc|abort|write|dl_iterate_phdr|pthread_|getenv|strlen|bcmp|posix_memalign|syscall|sysconf|open|close|read|mmap|munmap|qsort|__)' || echo "(none beyond libc/runtime)"
+echo "=== artifacts ==="
+wc -l translation/SYMBOLS.md translation/ERRORS.md translation/CONFIGS.md
+echo "ERRORS.md rows: $(grep -c '^| [0-9]' translation/ERRORS.md)  checked: $(grep -c '\[x\] |$' translation/ERRORS.md)"
+echo "CONFIGS.md rows: $(grep -c '^| [0-9]' translation/CONFIGS.md)  checked: $(grep -c '\[x\] |$' translation/CONFIGS.md)"
+echo "=== test fns per file ==="
+grep -c '^#\[test\]' translation/tests/phase_b_valid_paths.rs translation/tests/phase_c_error_paths.rs translation/tests/phase_d_symbols.rs
+echo "=== c_src untouched ==="
+git -C c_src status --short 2>/dev/null || ls -l c_src/src/lib.c c_src/include/lib.h[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final independent verification of artifacts and symbol parity
+
+=== symbol diff (C vs Rust) ===
+EMPTY DIFF
+=== undefined non-libc symbols in Rust .so ===
+fstat64@GLIBC_2.33
+getcwd@GLIBC_2.2.5
+gettid@GLIBC_2.30
+lseek64@GLIBC_2.2.5
+realpath@GLIBC_2.3
+stat64@GLIBC_2.33
+statx@GLIBC_2.28
+=== artifacts ===
+   52 translation/SYMBOLS.md
+   58 translation/ERRORS.md
+   57 translation/CONFIGS.md
+  167 total
+ERRORS.md rows: 14  checked: 15
+CONFIGS.md rows: 22  checked: 23
+=== test fns per file ===
+translation/tests/phase_b_valid_paths.rs:23
+translation/tests/phase_c_error_paths.rs:16
+translation/tests/phase_d_symbols.rs:2
+=== c_src untouched ===
+-rw-r--r--. 1 scheschb amazon  83 Sep  5 02:56 c_src/include/lib.h
+-rw-r--r--. 1 scheschb amazon 427 Sep  5 02:56 c_src/src/lib.c
+[38;5;244m - Completed in 0.43s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && sed -i 's/| expected C result | \[x\] |/| expected C result | ok |/; s/|-------------------|-----|/|-------------------|----|/' ERRORS.md && sed -i 's/| configuration (options set + input shape) | \[x\] |/| configuration (options set + input shape) | ok |/; s/|-------------------------------------------|-----|/|-------------------------------------------|----|/' CONFIGS.md && echo "ERRORS rows: $(grep -c '^| [0-9]' ERRORS.md) checked: $(grep -c '\[x\] |$' ERRORS.md)" && echo "CONFIGS rows: $(grep -c '^| [0-9]' CONFIGS.md) checked: $(grep -c '\[x\] |$' CONFIGS.md)" && head -3 ERRORS.md >/dev/null && grep -n '^| *#' ERRORS.md CONFIGS.md[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix table header so checkbox counts are exact
+
+ERRORS rows: 14 checked: 14
+CONFIGS rows: 22 checked: 22
+ERRORS.md:32:| #  | function | trigger (the exact invalid input/condition) | expected C result | ok |
+CONFIGS.md:34:| #  | entry point(s) | configuration (options set + input shape) | ok |
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Record actual undefined-symbol list and mutation self-check in SYMBOLS.md
+
+[49m[38;5;9m- 43    [0m:[38;5;9m[49m `nm -D --undefined-only` on the Rust `.so` lists only the standard C runtime /
+[0m[49m[38;5;9m- 44    [0m:[38;5;9m[49m unwinder imports that every `cdylib` links (`memcpy`, `__cxa_*`, `_Unwind_*`,
+[0m[49m[38;5;9m- 45    [0m:[38;5;9m[49m `pthread_*`, etc.) — no unresolved project symbols. Verified by loading the
+[0m[49m[38;5;9m- 46    [0m:[38;5;9m[49m `.so` with `libloading::Library::new`, which fails on any unresolved symbol.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m `nm -D --undefined-only` on the Rust `.so` resolves entirely against glibc and
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m the Rust runtime — after filtering the `__*`/`_*` runtime and unwinder imports
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m the remainder is:
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m fstat64@GLIBC_2.33  getcwd@GLIBC_2.2.5  gettid@GLIBC_2.30  lseek64@GLIBC_2.2.5
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m realpath@GLIBC_2.3  stat64@GLIBC_2.33   statx@GLIBC_2.28
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m All libc. **0 unresolved project symbols.** Independently confirmed by
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m `libloading::Library::new` succeeding and a call through the loaded symbol
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m returning correct results (`phase_d_symbols::rust_so_has_no_unresolved_project_symbols`).
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m ## Harness self-check (mutation / negative control)
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m To prove the differential suite has real detection power rather than passing
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m vacuously, three mutants of the Rust source were built and run against the
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m unmodified C `.so`; each was caught:
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m | mutant | change | caught by |
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m |--------|--------|-----------|
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m | `m1` | `return 22` → `return 23` | all 6 Phase C null/zero-length rows + the absolute-code anchor test |
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m | `m2` | drop `*dst = 0` on the `34` overflow path | 9 Phase B rows (10, 13–17, 19–21) |
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m | `m3` | `end = dst + numElem` → `dst + numElem - 1` (off-by-one bound) | 7 Phase B rows (04–06, 08–11) |
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m `src/lib.rs` was restored byte-identically afterwards (verified with `diff`).
+[0m[K
+Updating: [38;5;141mtranslation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 ./run_all_configs.sh 2>&1 | tail -20 && echo && ls -la SYMBOLS.md ERRORS.md CONFIGS.md tests/ && git diff --stat 2>/dev/null; echo "lib.rs changed? "; diff <(cat /tmp/mutants/orig.rs) src/lib.rs >/dev/null && echo "no (identical to pre-mutation original)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final full verification run
+
+(none)
+
+########## default features ##########
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+no optional features declared -> the default build is the only feature configuration
+
+########## dev-profile cdylib (opt-level 0, panic=unwind) ##########
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+=== binary targets ===
+no [[bin]] / src/main.rs / src/bin -> nothing to compare on stdout
+
+ALL CONFIGURATIONS PASSED
+
+-rw-r--r--. 1 scheschb amazon 4548 Sep  5 03:03 CONFIGS.md
+-rw-r--r--. 1 scheschb amazon 4373 Sep  5 03:03 ERRORS.md
+-rw-r--r--. 1 scheschb amazon 2772 Sep  5 03:03 SYMBOLS.md
+
+tests/:
+total 44
+drwxr-xr-x. 3 scheschb amazon   126 Sep  5 03:01 .
+drwxr-xr-x. 5 scheschb amazon 16384 Sep  5 03:03 ..
+drwxr-xr-x. 2 scheschb amazon    28 Sep  5 02:59 common
+-rw-r--r--. 1 scheschb amazon 11045 Sep  5 03:01 phase_b_valid_paths.rs
+-rw-r--r--. 1 scheschb amazon 11441 Sep  5 03:01 phase_c_error_paths.rs
+-rw-r--r--. 1 scheschb amazon  2529 Sep  5 03:02 phase_d_symbols.rs
+lib.rs changed? 
+no (identical to pre-mutation original)
+[38;5;244m - Completed in 0.571s[0m
+
+[?25l[0m[38;5;141m> [0mVerification is complete. The Rust translation was already correct — no fixes were needed in [38;5;10mtranslation/src/lib.rs[0m.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+[38;5;10mc_src[0m is a single 21-line file exporting one function: [38;5;10mint wcscat(wchar_t *dst, size_t numElem, const wchar_t *src)[0m — a bounded wide-string concatenation returning [38;5;10m0[0m, [38;5;10m22[0m (EINVAL) or [38;5;10m34[0m (ERANGE).[0m[0m
+[0m[0m
+[38;5;252m[1m## Completion gate[0m[0m
+[0m[0m
+- **[38;5;10mSYMBOLS.md[0m** — [38;5;10mdiff[0m of [38;5;10mnm -D --defined-only[0m between the two [38;5;10m.so[0ms is [1mempty[22m (both export exactly [38;5;10mwcscat[0m). No C module was left untranslated; [38;5;10mc_src[0m has one source file with one function. Rust's undefined symbols are all glibc/runtime; 0 unresolved project symbols.[0m[0m
+- **[38;5;10mCONFIGS.md[0m** — 22 rows, all [38;5;10m[x][0m. Since the API has no flags or modes, the axes are input shapes: terminator position (including "in the last element" and "absent"), slack ([38;5;10m>0[0m / exact fit / overflow), [38;5;10mnumElem[0m vs. real allocation, [38;5;10msrc[0m length, and element value domain. 23 tests, ~30k randomized cases with a fixed seed.[0m[0m
+- **[38;5;10mERRORS.md[0m** — 14 rows, all [38;5;10m[x][0m. Derived from the three literal error returns in the C, expanded to each distinct trigger, plus the generic FFI boundary matrix (both pointers null in both orders, [38;5;10mnumElem[0m ∈ {0, 1, …, [38;5;10musize::MAX[0m}, one-past-range lengths, and full-range garbage [38;5;10mwchar_t[0m as the "out-of-range enum" analogue — the API takes no enum).[0m[0m
+- **No binary target** ([38;5;10mcdylib[0m only, no [38;5;10msrc/main.rs[0m/[38;5;10m[[bin]][0m), so there is no stdout comparison to make.[0m[0m
+- **All configurations**: [38;5;10mCargo.toml[0m declares no [38;5;10m[features][0m, so the default build is the only feature configuration; [38;5;10mrun_all_configs.sh[0m enumerates that mechanically and additionally runs the whole suite against the dev-profile [38;5;10mcdylib[0m (opt-level 0, [38;5;10mpanic=unwind[0m) as a second codegen configuration. Both green.[0m[0m
+[0m[0m
+[38;5;252m[1m## Two behaviours worth calling out[0m[0m
+[0m[0m
+Both are C quirks the Rust reproduces, and both are pinned by tests rather than assumed:[0m[0m
+[0m[0m
+- On [38;5;10mnumElem == 0[0m the C returns [38;5;10m22[0m [1mwithout[22m zeroing [38;5;10mdst[0][0m, but on [38;5;10msrc == NULL[0m it [1mdoes[22m zero it. The tests compare the whole post-call buffer, not just the return code, so this asymmetry is enforced.[0m[0m
+- If [38;5;10mdst[0m has no terminator within [38;5;10mnumElem[0m, the seek loop consumes the buffer and the copy loop body never runs — [38;5;10msrc[0m is never read, and the result is [38;5;10mdst[0] = 0[0m plus [38;5;10m34[0m.[0m[0m
+[0m[0m
+[38;5;252m[1m## Harness credibility[0m[0m
+[0m[0m
+Because everything passed on the first run, I ran three mutants of the Rust against the unmodified C to confirm the suite isn't passing vacuously: changing [38;5;10m22[0m→[38;5;10m23[0m (caught by 6 Phase C rows), dropping the [38;5;10mdst[0] = 0[0m on the overflow path (caught by 9 Phase B rows), and an off-by-one in the bound (caught by 7 Phase B rows). [38;5;10msrc/lib.rs[0m was restored byte-identically, verified with [38;5;10mdiff[0m. [38;5;10mc_src[0m was not modified.[0m[0m
+[38;5;8m
+ ▸ Credits: 16.38 • Time: 6m 58s
+
+[0m[1G[0m[0m[?25h

@@ -1,0 +1,12 @@
+# The differential tests redirect the process-wide fd 1 / fd 2 in order to
+# capture what the C and Rust `.so`s print. That is inherently process-global,
+# so libtest must not run tests concurrently: otherwise another test thread's
+# progress output lands in the captured buffer. Setting RUST_TEST_THREADS here
+# makes `cargo test` correct no matter how it is invoked.
+[env]
+RUST_TEST_THREADS = "1"
+
+# crates.io is not reachable from the build sandbox; libloading is already in
+# the local registry cache.
+[net]
+offline = true

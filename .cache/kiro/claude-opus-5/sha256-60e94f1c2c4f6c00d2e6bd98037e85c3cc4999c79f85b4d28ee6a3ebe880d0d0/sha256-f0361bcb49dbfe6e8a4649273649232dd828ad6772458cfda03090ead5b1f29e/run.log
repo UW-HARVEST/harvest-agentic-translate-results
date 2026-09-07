@@ -1,0 +1,1944 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "--- c_src ---" && find c_src -type f | head -100 && echo "--- translation ---" && find translation -type f -not -path '*/target/*' | head -100[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore working directory structure
+
+total 160
+drwxr-xr-x.    4 scheschb amazon     50 Sep  5 04:46 .
+drwxr-xr-x. 2706 scheschb amazon 114688 Sep  5 04:46 ..
+drwxr-xr-x.    4 scheschb amazon     54 Sep  5 04:46 c_src
+drwxr-xr-x.    3 scheschb amazon     53 Sep  5 04:46 translation
+--- c_src ---
+c_src/CMakeLists.txt
+c_src/include/driver.h
+c_src/src/driver.c
+--- translation ---
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.9s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcat c_src/CMakeLists.txt && echo "=== driver.h ===" && cat c_src/include/driver.h && echo "=== wc ===" && wc -l c_src/src/driver.c translation/src/lib.rs && echo "=== Cargo.toml ===" && cat translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Read build files and header
+
+# Copyright 2025 MIT Lincoln Laboratory
+# Permission is hereby granted, free of charge,
+# to any person obtaining a copy of this software
+# and associated documentation files (the “Software”),
+# to deal in the Software without restriction,
+# including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice
+# shall be included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+# FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+# OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.10)
+project(driver)
+add_library(driver SHARED
+    src/driver.c)
+
+target_include_directories(driver PUBLIC include)
+target_include_directories(driver PRIVATE src)
+
+install(TARGETS driver
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+=== driver.h ===
+// Copyright 2025 MIT Lincoln Laboratory
+// Permission is hereby granted, free of charge,
+// to any person obtaining a copy of this software
+// and associated documentation files (the “Software”),
+// to deal in the Software without restriction,
+// including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+// 
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+// FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+// OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#ifndef DRIVER_H_
+#define DRIVER_H_
+
+void driver(int useGood);
+
+#endif //DRIVER_H_=== wc ===
+  99 c_src/src/driver.c
+  97 translation/src/lib.rs
+ 196 total
+=== Cargo.toml ===
+[package]
+name = "driver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "driver"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+[38;5;244m - Completed in 0.7s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read C source and Rust translation
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/c_src/src/driver.c[0m, from line [38;5;141m24[0m to end of file
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/src/lib.rs[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m1060 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/c_src/src/driver.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m2594 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/src/lib.rs
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo check 2>&1 | tail -30; echo "--- rustc ---"; rustc --version[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run cargo check
+
+    Checking driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+--- rustc ---
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+[38;5;244m - Completed in 0.104s[0m
+
+[?25l[0m[38;5;141m> [0mCompiles clean. Now build both libraries.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > /dev/null 2>&1 && cmake --build . 2>&1 | tail -5 && ls -la *.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+[ 50%] Building C object CMakeFiles/driver.dir/src/driver.c.o
+[100%] Linking C shared library libdriver.so
+[100%] Built target driver
+-rwxr-xr-x. 1 scheschb amazon 16064 Sep  5 04:47 libdriver.so
+[38;5;244m - Completed in 0.421s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 300 cargo build --release 2>&1 | tail -5 && echo "=== C dynamic symbols ===" && nm -D --defined-only ../c_src/build/libdriver.so | grep -v '^\s*$' && echo "=== Rust dynamic symbols ===" && nm -D --defined-only target/release/libdriver.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build Rust cdylib and compare exported symbols
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation)
+    Finished `release` profile [optimized] target(s) in 0.07s
+=== C dynamic symbols ===
+00000000000011a5 T bad
+0000000000001256 T driver
+000000000000123b T good
+000000000000117b T printHexCharLine
+0000000000001159 T printLine
+=== Rust dynamic symbols ===
+0000000000011850 T bad
+0000000000011870 T driver
+00000000000118b0 T good
+00000000000118e0 T printHexCharLine
+0000000000011900 T printLine
+[38;5;244m - Completed in 0.122s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && echo "=== Rust UNDEFINED ===" && nm -D --undefined-only target/release/libdriver.so && echo "=== C UNDEFINED ===" && nm -D --undefined-only ../c_src/build/libdriver.so && echo "=== features ===" && grep -A20 '\[features\]' Cargo.toml || echo "(no [features] section)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check undefined symbols and feature sections
+
+=== Rust UNDEFINED ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U printf@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U puts@GLIBC_2.2.5
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+=== C UNDEFINED ===
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U printf@GLIBC_2.2.5
+                 U puts@GLIBC_2.2.5
+=== features ===
+(no [features] section)
+[38;5;244m - Completed in 0.31s[0m
+
+[?25l[0m[38;5;141m> [0mSymbols already match. Now Phase A artifacts.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create SYMBOLS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Source of truth: `nm -D --defined-only` on the two shared libraries.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m - C:    `c_src/build/libdriver.so`      (built from `c_src/src/driver.c` only — CMakeLists builds a single SHARED lib, no executable target)
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m - Rust: `translation/target/release/libdriver.so` (`crate-type = ["cdylib"]`)
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ## C source inventory (completeness check)
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m `c_src` contains exactly one translation unit and one public header:
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m | C file | translated? |
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m |---|---|
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m | `c_src/include/driver.h` | yes — declares only `void driver(int)` |
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m | `c_src/src/driver.c` | yes — all 7 function definitions are present in `translation/src/lib.rs` |
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m Function-by-function coverage of `driver.c`:
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m | C function | C linkage | present in Rust? | Rust item |
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m |---|---|---|---|
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m | `printLine(const char *)` | external | yes | `printLine` (`#[no_mangle] extern "C"`) |
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m | `printHexCharLine(char)` | external | yes | `printHexCharLine` (`#[no_mangle] extern "C"`) |
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m | `bad(void)` | external | yes | `bad` (`#[no_mangle] extern "C"`) |
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m | `goodG2B(void)` | **static** | yes | private `unsafe fn goodG2B` — correctly NOT exported |
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m | `goodB2G(void)` | **static** | yes | private `unsafe fn goodB2G` — correctly NOT exported |
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m | `good(void)` | external | yes | `good` (`#[no_mangle] extern "C"`) |
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m | `driver(int)` | external | yes | `driver` (`#[no_mangle] extern "C"`) |
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m No module/file was skipped; nothing is stubbed or `unimplemented!()`.
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m ## Dynamic symbol table — defined (exported)
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m | # | symbol | C `.so` | Rust `.so` | status |
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m |---|--------|---------|------------|--------|
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m | 1 | `bad`              | T | T | match |
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | 2 | `driver`           | T | T | match |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m | 3 | `good`             | T | T | match |
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | 4 | `printHexCharLine` | T | T | match |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | 5 | `printLine`        | T | T | match |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m `goodG2B` / `goodB2G` are absent from BOTH tables (they are `static` in C) — correct.
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m **Symbol diff (C-exported minus Rust-exported): EMPTY.**
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m Verification command (must print nothing):
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m diff <(nm -D --defined-only c_src/build/libdriver.so        | awk '{print $3}' | sort) \
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m      <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m ## Undefined symbols in the Rust `.so`
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m 0 missing/undefined **non-libc** symbols. Every `U`/`w` entry resolves to glibc
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m (`printf`, `puts`, `memcpy`, `malloc`, `write`, …) or to the platform unwinder
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m (`_Unwind_*`, `__gmon_start__`, `_ITM_*`), which the Rust runtime always
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m references. The C `.so` references the same `printf`/`puts` pair.
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m Note: gcc rewrites the C `printf("%s\n", line)` into `puts(line)`; the Rust side
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m calls `printf` directly. Both emit the identical byte stream to `stdout` and use
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m the same stdio buffer, so this is not an observable difference (asserted by the
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m differential tests in `tests/`).
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m ## Feature combinations
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m `translation/Cargo.toml` declares **no `[features]` section**, so the complete
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m set of feature combinations is:
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m | # | combination | cargo invocation |
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m |---|---|---|
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m | 1 | default (empty) | `cargo test` |
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m | 2 | `--no-default-features` (identical to #1) | `cargo test --no-default-features` |
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m Both are exercised by `run_all_features.sh`.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src/src && grep -n 'if\s*(\|assert\|return\|NULL\|MAX\|MIN\|else\|CHAR_\|INT_' driver.c[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mechanically grep C source for all checks/rejections
+
+32:    if(line != NULL) 
+46:    data = CHAR_MAX;
+47:    if(data > 0)
+58:    if(data > 0)
+69:    data = CHAR_MAX;
+70:    if(data > 0)
+72:        if (data < (CHAR_MAX/2))
+77:        else
+91:    if (useGood)
+95:    else
+[38;5;244m - Completed in 0.4s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create ERRORS.md error-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — Error / rejection surface table (Phase C)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `c_src/src/driver.c`. Every `if`, `else`, null check,
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m range check and named constant in the file:
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m 32:    if(line != NULL)              <- null check (printLine)
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 46:    data = CHAR_MAX;              <- limits.h constant (bad)
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 47:    if(data > 0)                  <- positivity guard (bad), no else
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m 58:    if(data > 0)                  <- positivity guard (goodG2B), no else
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 69:    data = CHAR_MAX;              <- limits.h constant (goodB2G)
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 70:    if(data > 0)                  <- positivity guard (goodB2G), no else
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 72:        if (data < (CHAR_MAX/2))  <- explicit RANGE CHECK (goodB2G)
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 77:        else                      <- the rejection branch
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 91:    if (useGood)                  <- mode dispatch (driver)
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 95:    else                          <- the other mode
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m There are **no** `assert`s, **no** `return -1` / `return NULL`, **no** error
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m enums, **no** `errno` use, and **no** allocation in this translation unit. All
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m functions return `void`, so every "rejection" is observable **only** through the
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m bytes written to `stdout` (or the absence of bytes). The tests therefore compare
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m captured `stdout` byte-for-byte, plus the fact that neither library crashes.
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m Named constants: `CHAR_MAX` = `127` (x86-64 Linux `char` is signed);
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m `CHAR_MAX/2` = `63` (integer division).
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m ## Table
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m | # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m |---|----------|----------------------------------------------|-------------------|-----|
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m | E1 | `printLine` | `line == NULL` (line 32 false branch) | silent no-op; **zero bytes** written; no crash | [x] |
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m | E2 | `printLine` | `line` points at an empty string `""` (degenerate, passes null check) | writes exactly `"\n"` (1 byte) | [x] |
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | E3 | `printLine` | `line` contains `printf` conversion specifiers (`%s %n %d %%`) — argument, not format, so must NOT be interpreted | writes the literal bytes + `"\n"` | [x] |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m | E4 | `printHexCharLine` | negative `char` (e.g. `-1`, `-2`, `-128`) — no validation; varargs promotes to `int` and `%02x` reinterprets as `unsigned int` | 8 hex digits, e.g. `-1`→`ffffffff`, `-2`→`fffffffe`, `-128`→`ffffff80`, + `"\n"` | [x] |
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | E5 | `printHexCharLine` | `0` (below the `data > 0` guard that protects the callers; reachable only via the exported symbol) | writes `"00\n"` (`%02x` zero-pads) | [x] |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m | E6 | `printHexCharLine` | every one of the 256 possible `char` bit patterns (`-128..=127`) | exact `%02x` rendering for each; `<16` zero-padded to 2 digits, negative widened to 8 digits | [x] |
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | E7 | `bad` | line 47 `data > 0` FALSE branch — unreachable by design (`data` is hard-coded `CHAR_MAX` = 127) and there is **no `else`** | never taken; `bad()` always prints exactly one line | [x] |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | E8 | `bad` | the *overflow* itself: `CHAR_MAX * 2` = 254 truncated into `char` → `-2` (signed overflow, reproduced verbatim, NOT fixed) | prints `"fffffffe\n"` | [x] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m | E9 | `goodG2B` (via `good`) | line 58 `data > 0` FALSE branch — unreachable (`data` = 2), no `else` | never taken | [x] |
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | E10 | `goodB2G` (via `good`) | line 70 `data > 0` FALSE branch — unreachable (`data` = `CHAR_MAX`), no `else` | never taken | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | E11 | `goodB2G` (via `good`) | **range check** line 72: `data < CHAR_MAX/2` i.e. `127 < 63` is FALSE → rejection `else` at line 77 | prints `"data value is too large to perform arithmetic safely.\n"` and performs no multiply | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | E12 | `goodB2G` (via `good`) | dead store: `data = ' '` (32, which *would* pass the range check) is overwritten by `data = CHAR_MAX` on line 69 before any read | the `' '` value must have **no** effect — output must be the rejection line, not `40` | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | E13 | `driver` | `useGood == 0` → `else` branch line 95 | dispatches `bad()`; output `"fffffffe\n"` | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | E14 | `driver` | out-of-range "enum-like" `int` values across FFI: `1, -1, 2, 42, 256, 0x10000, INT_MAX, INT_MIN, 0x7FFFFF00` (non-zero **whole int**, incl. values whose low byte is 0) | all are truthy → `good()`; must NOT be truncated to `char`/`bool` on the Rust side | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | E15 | `driver` | `useGood == 0` supplied as a *fresh* zero after a non-zero call (no latched state) | `bad()` again — the library is stateless | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m Rows are checked off in `tests/differential.rs::phase_c_*` — each asserts the two
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m libraries produce the **same** byte stream (the same sentinel output / same
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m rejection message), not merely that both "did something".
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create CONFIGS.md configuration-surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — Configuration surface table (Phase B)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `c_src/src/driver.c` + `c_src/include/driver.h`.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ## Axes the C code actually branches on
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m **A. Runtime option / mode flag** — there is exactly one, the `driver` parameter:
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m | flag | set via | C branch | state it selects |
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m |---|---|---|---|
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m | `useGood` | `driver(int useGood)` line 91 | `if (useGood)` / `else` | `good()` (both mitigations) vs `bad()` (the overflow) |
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m There are no globals, no `#ifdef`s in `driver.c`, no init/teardown, no
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m environment lookups — the library is **stateless** (relevant axis: call order /
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m repetition must not change results).
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m **B. Public entry points** — the full set exported by the `.so`, not just the
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m top-level `driver` convenience wrapper:
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m | level | entry point | signature |
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m |---|---|---|
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m | lowest | `printLine` | `void(const char *)` |
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m | lowest | `printHexCharLine` | `void(char)` |
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m | mid | `bad` | `void(void)` |
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m | mid | `good` | `void(void)` (composes the two `static` helpers) |
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m | top | `driver` | `void(int)` |
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m `goodG2B` / `goodB2G` are `static`; they are reachable only *through* `good`, so
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m `good` is the lowest-level handle on them.
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m **C. Input shapes the code special-cases**
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m - `printLine`: NULL vs non-NULL (line 32); length 0 / 1 / many; bytes containing
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m   `%` conversion specifiers; bytes containing embedded newlines; high-bit
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m   (non-ASCII / negative `char`) bytes; long strings that cross the stdio buffer
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m   size (>4096) so that flush behaviour is exercised.
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m - `printHexCharLine`: the `char` value domain — `< 16` (needs `%02x`
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m   zero-padding), `16..=127` (2 digits, no padding), `0`, and `< 0` (sign-extended
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m   to 8 hex digits). Full 256-value sweep.
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m - `driver`: `0` vs non-zero; and among non-zero, values whose *low byte* is zero
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m   (`256`, `0x10000`, `INT_MIN`) to prove the whole `int` is tested.
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m - Composition: repeated / interleaved calls, to confirm statelessness and
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m   identical stdio buffering.
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m ## Table — one row per combination the C treats differently
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m |---|----------------|--------------------------------------------|-----|
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | C1 | `printLine` | non-NULL, single ASCII line, randomized length 1..64, randomized printable bytes | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | C2 | `printLine` | non-NULL, **empty** string `""` (length 0) | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | C3 | `printLine` | non-NULL, length exactly 1, swept over all 255 non-NUL byte values (incl. high-bit / negative `char`) | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | C4 | `printLine` | non-NULL, randomized bytes drawn from the **full** `1..=255` range (non-ASCII / UTF-8-invalid) | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | C5 | `printLine` | non-NULL, contains `%s`, `%n`, `%d`, `%%`, `%p` — must be treated as data, never as a format | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | C6 | `printLine` | non-NULL, contains embedded `\n`, `\t`, `\r` (multi-line payload) | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | C7 | `printLine` | non-NULL, **long** string crossing the stdio buffer (randomized lengths 4000..9000) | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m | C8 | `printLine` | NULL pointer (the line-32 false branch) — see also ERRORS.md E1 | [x] |
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m | C9 | `printHexCharLine` | full sweep of all 256 `char` bit patterns `-128..=127` (covers `<16` padded, `>=16` unpadded, `0`, and sign-extended negatives) | [x] |
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m | C10 | `printHexCharLine` | randomized `char` values, 512 draws from a fixed seed | [x] |
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m | C11 | `bad` | no options; called once (exercises `CHAR_MAX` overflow path, lines 46-48) | [x] |
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m | C12 | `bad` | called repeatedly (randomized 1..16 repeats) — statelessness + accumulated buffered output | [x] |
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m | C13 | `good` | no options; called once (runs `goodG2B` then `goodB2G`, incl. the line-72 range-check rejection) | [x] |
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m | C14 | `good` | called repeatedly (randomized 1..16 repeats) | [x] |
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m | C15 | `driver` | `useGood = 0` → `bad()` path | [x] |
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m | C16 | `driver` | `useGood = 1` → `good()` path | [x] |
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m | C17 | `driver` | `useGood` = randomized non-zero `i32` (full range incl. negatives, fixed seed) → `good()` path | [x] |
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m | C18 | `driver` | `useGood` ∈ {`256`, `0x10000`, `0x7FFFFF00`, `INT_MIN`, `INT_MAX`, `-1`, `2`} — non-zero ints whose low byte may be `0` | [x] |
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m | C19 | `driver` | randomized **sequence** of mixed `0` / non-zero calls (interleaving both modes in one capture) | [x] |
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m | C20 | mixed pipeline | randomized interleaving of `driver`, `good`, `bad`, `printLine`, `printHexCharLine` in one capture — end-to-end composed byte stream | [x] |
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m Every row is driven from `tests/differential.rs::phase_b_*`, calling **both**
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m `.so`s through `libloading` and comparing captured `stdout` byte-for-byte.
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m Randomized rows use a fixed-seed xorshift PRNG (see `Rng` in the test file) so
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m runs are reproducible.
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m ## Binary executable
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m `c_src/CMakeLists.txt` defines a single `add_library(driver SHARED ...)` target
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m and **no** `add_executable`, and `translation/Cargo.toml` declares only
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m `[lib] crate-type = ["cdylib"]` with no `src/main.rs` / `[[bin]]`. There is no
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m driver binary, so the "compare C and Rust stdout from the binaries" gate is
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m **not applicable**; the equivalent coverage is obtained by capturing `stdout` at
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m the file-descriptor level around every `.so` call (rows C1-C20).
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the differential test harness.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Write the full differential test suite
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m // Differential tests: load BOTH the C `.so` and the Rust `.so` through
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m // `libloading` and compare their observable behaviour byte-for-byte.
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m // Neither library is ever called directly as a Rust function -- every call goes
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m // through `dlsym` on a shared object, exactly as an external C consumer would,
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m // so the `#[no_mangle]` export wrappers are under test too.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m //
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m // All five functions in this library return `void`; their entire observable
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m // effect is the bytes they write to `stdout`. We therefore capture `stdout` at
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m // the file-descriptor level (dup/dup2 around the call) so that we see the exact
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m // bytes glibc emitted for each library.
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m use std::ffi::{c_char, c_int, c_void, CString};
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m use std::fs::File;
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m use std::os::unix::io::AsRawFd;
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m use std::sync::atomic::{AtomicU64, Ordering};
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m use std::sync::{Mutex, OnceLock};
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m // stdout capture
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m extern "C" {
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     fn dup(oldfd: c_int) -> c_int;
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m     fn dup2(oldfd: c_int, newfd: c_int) -> c_int;
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m     fn close(fd: c_int) -> c_int;
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m     fn fflush(stream: *mut c_void) -> c_int;
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// Run `f`, returning every byte it wrote to file descriptor 1.
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m fn capture<F: FnOnce()>(f: F) -> Vec<u8> {
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     // fd 1 is process-global; serialise so parallel test threads cannot
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     // interleave their captures.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let _guard = CAPTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m     let path = std::env::temp_dir().join(format!(
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m         "driver_diff_{}_{}.bin",
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m         std::process::id(),
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m         CAPTURE_SEQ.fetch_add(1, Ordering::SeqCst)
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     ));
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         // Flush anything already pending so it is not attributed to this call.
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         let saved = dup(1);
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m         assert!(saved >= 0, "dup(1) failed");
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m         {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m             let file = File::create(&path).expect("create capture file");
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m             assert!(dup2(file.as_raw_fd(), 1) >= 0, "dup2 onto stdout failed");
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m         f();
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m         fflush(std::ptr::null_mut());
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         assert!(dup2(saved, 1) >= 0, "dup2 restore failed");
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m         close(saved);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     let bytes = std::fs::read(&path).expect("read capture file");
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     let _ = std::fs::remove_file(&path);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     bytes
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m // library loading
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m type FnVoid = unsafe extern "C" fn();
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m type FnDriver = unsafe extern "C" fn(c_int);
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m type FnPrintLine = unsafe extern "C" fn(*const c_char);
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m type FnPrintHexCharLine = unsafe extern "C" fn(c_char);
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m /// One dlopen'd shared object plus typed accessors for its exports.
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m struct Lib {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     name: &'static str,
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     lib: Library,
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m impl Lib {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     fn open(name: &'static str, path: &Path) -> Lib {
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let lib = unsafe { Library::new(path) }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             .unwrap_or_else(|e| panic!("dlopen {} ({}) failed: {e}", name, path.display()));
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m         Lib { name, lib }
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m     fn sym<T: Copy>(&self, name: &[u8]) -> T {
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         let s: Symbol<T> = unsafe { self.lib.get(name) }.unwrap_or_else(|e| {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             panic!(
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m                 "{}: symbol `{}` not exported: {e}",
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m                 self.name,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                 String::from_utf8_lossy(name)
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m             )
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m         *s
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     fn has(&self, name: &[u8]) -> bool {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         unsafe { self.lib.get::<*const c_void>(name) }.is_ok()
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m     fn print_line(&self, s: *const c_char) {
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         let f: FnPrintLine = self.sym(b"printLine\0");
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m         unsafe { f(s) }
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     fn print_hex_char_line(&self, c: c_char) {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         let f: FnPrintHexCharLine = self.sym(b"printHexCharLine\0");
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m         unsafe { f(c) }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     fn bad(&self) {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         let f: FnVoid = self.sym(b"bad\0");
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         unsafe { f() }
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m     fn good(&self) {
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         let f: FnVoid = self.sym(b"good\0");
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m         unsafe { f() }
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m     fn driver(&self, use_good: c_int) {
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         let f: FnDriver = self.sym(b"driver\0");
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m         unsafe { f(use_good) }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m fn manifest_dir() -> PathBuf {
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m fn c_so_path() -> PathBuf {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     let p = manifest_dir().join("../c_src/build/libdriver.so");
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         p.exists(),
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         "C shared library not built. Run:\n  cd c_src && mkdir -p build && cd build && \
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m          cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build ."
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m     p
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m fn rust_so_path() -> PathBuf {
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m     // The test binary lives in <target>/<profile>/deps/, so the cdylib that
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     // cargo just built for this package is one directory up.
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m     let exe = std::env::current_exe().expect("current_exe");
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     let mut candidates = Vec::new();
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m     if let Some(profile_dir) = exe.parent().and_then(|p| p.parent()) {
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m         candidates.push(profile_dir.join("libdriver.so"));
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     candidates.push(manifest_dir().join("target/release/libdriver.so"));
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m     candidates.push(manifest_dir().join("target/debug/libdriver.so"));
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m     for c in &candidates {
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m         if c.exists() {
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m             return c.clone();
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     panic!("Rust cdylib not found; tried: {candidates:?}");
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m static LIBS: OnceLock<(Lib, Lib)> = OnceLock::new();
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m fn libs() -> (&'static Lib, &'static Lib) {
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     let (c, r) = LIBS.get_or_init(|| {
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m         (
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m             Lib::open("C", &c_so_path()),
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m             Lib::open("Rust", &rust_so_path()),
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m     (c, r)
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m // differential assertions
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m fn show(b: &[u8]) -> String {
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m     format!("{:?} ({} bytes)", String::from_utf8_lossy(b), b.len())
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m /// Run the same scenario against both libraries; require identical stdout.
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m fn diff<F: Fn(&Lib)>(label: &str, f: F) -> Vec<u8> {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     let (c, r) = libs();
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m     let out_c = capture(|| f(c));
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     let out_r = capture(|| f(r));
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    189[0m:[38;5;10m[49m         out_c,
+[0m[49m[38;5;10m+    190[0m:[38;5;10m[49m         out_r,
+[0m[49m[38;5;10m+    191[0m:[38;5;10m[49m         "DIVERGENCE [{label}]\n  C   : {}\n  Rust: {}",
+[0m[49m[38;5;10m+    192[0m:[38;5;10m[49m         show(&out_c),
+[0m[49m[38;5;10m+    193[0m:[38;5;10m[49m         show(&out_r)
+[0m[49m[38;5;10m+    194[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    195[0m:[38;5;10m[49m     out_c
+[0m[49m[38;5;10m+    196[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    197[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    198[0m:[38;5;10m[49m /// Same as `diff`, but also pins the absolute expected bytes so that a
+[0m[49m[38;5;10m+    199[0m:[38;5;10m[49m /// "both produced nothing" false pass is impossible.
+[0m[49m[38;5;10m+    200[0m:[38;5;10m[49m fn diff_expect<F: Fn(&Lib)>(label: &str, expected: &[u8], f: F) {
+[0m[49m[38;5;10m+    201[0m:[38;5;10m[49m     let out = diff(label, f);
+[0m[49m[38;5;10m+    202[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    203[0m:[38;5;10m[49m         out,
+[0m[49m[38;5;10m+    204[0m:[38;5;10m[49m         expected,
+[0m[49m[38;5;10m+    205[0m:[38;5;10m[49m         "[{label}] both libraries agreed but on the WRONG bytes\n  got     : {}\n  expected: {}",
+[0m[49m[38;5;10m+    206[0m:[38;5;10m[49m         show(&out),
+[0m[49m[38;5;10m+    207[0m:[38;5;10m[49m         show(expected)
+[0m[49m[38;5;10m+    208[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    209[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    210[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    211[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    212[0m:[38;5;10m[49m // deterministic PRNG (fixed seed => reproducible runs)
+[0m[49m[38;5;10m+    213[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    214[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    215[0m:[38;5;10m[49m struct Rng(u64);
+[0m[49m[38;5;10m+    216[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    217[0m:[38;5;10m[49m impl Rng {
+[0m[49m[38;5;10m+    218[0m:[38;5;10m[49m     fn new(seed: u64) -> Rng {
+[0m[49m[38;5;10m+    219[0m:[38;5;10m[49m         Rng(seed ^ 0x9E37_79B9_7F4A_7C15)
+[0m[49m[38;5;10m+    220[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    221[0m:[38;5;10m[49m     fn next_u64(&mut self) -> u64 {
+[0m[49m[38;5;10m+    222[0m:[38;5;10m[49m         // xorshift64*
+[0m[49m[38;5;10m+    223[0m:[38;5;10m[49m         let mut x = self.0;
+[0m[49m[38;5;10m+    224[0m:[38;5;10m[49m         x ^= x >> 12;
+[0m[49m[38;5;10m+    225[0m:[38;5;10m[49m         x ^= x << 25;
+[0m[49m[38;5;10m+    226[0m:[38;5;10m[49m         x ^= x >> 27;
+[0m[49m[38;5;10m+    227[0m:[38;5;10m[49m         self.0 = x;
+[0m[49m[38;5;10m+    228[0m:[38;5;10m[49m         x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+[0m[49m[38;5;10m+    229[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    230[0m:[38;5;10m[49m     fn below(&mut self, n: u64) -> u64 {
+[0m[49m[38;5;10m+    231[0m:[38;5;10m[49m         self.next_u64() % n
+[0m[49m[38;5;10m+    232[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    233[0m:[38;5;10m[49m     fn range(&mut self, lo: u64, hi_inclusive: u64) -> u64 {
+[0m[49m[38;5;10m+    234[0m:[38;5;10m[49m         lo + self.below(hi_inclusive - lo + 1)
+[0m[49m[38;5;10m+    235[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    236[0m:[38;5;10m[49m     fn i32(&mut self) -> i32 {
+[0m[49m[38;5;10m+    237[0m:[38;5;10m[49m         self.next_u64() as i32
+[0m[49m[38;5;10m+    238[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    239[0m:[38;5;10m[49m     fn nonzero_i32(&mut self) -> i32 {
+[0m[49m[38;5;10m+    240[0m:[38;5;10m[49m         loop {
+[0m[49m[38;5;10m+    241[0m:[38;5;10m[49m             let v = self.i32();
+[0m[49m[38;5;10m+    242[0m:[38;5;10m[49m             if v != 0 {
+[0m[49m[38;5;10m+    243[0m:[38;5;10m[49m                 return v;
+[0m[49m[38;5;10m+    244[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    245[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    246[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    247[0m:[38;5;10m[49m     fn i8(&mut self) -> i8 {
+[0m[49m[38;5;10m+    248[0m:[38;5;10m[49m         self.next_u64() as i8
+[0m[49m[38;5;10m+    249[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    250[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    251[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    252[0m:[38;5;10m[49m // Reference renderings of the C source's literal outputs.
+[0m[49m[38;5;10m+    253[0m:[38;5;10m[49m const BAD_LINE: &[u8] = b"fffffffe\n"; // (char)(CHAR_MAX * 2) == -2 -> %02x on int
+[0m[49m[38;5;10m+    254[0m:[38;5;10m[49m const G2B_LINE: &[u8] = b"04\n"; // (char)(2 * 2) == 4
+[0m[49m[38;5;10m+    255[0m:[38;5;10m[49m const TOO_LARGE: &[u8] = b"data value is too large to perform arithmetic safely.\n";
+[0m[49m[38;5;10m+    256[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    257[0m:[38;5;10m[49m fn good_bytes() -> Vec<u8> {
+[0m[49m[38;5;10m+    258[0m:[38;5;10m[49m     let mut v = G2B_LINE.to_vec();
+[0m[49m[38;5;10m+    259[0m:[38;5;10m[49m     v.extend_from_slice(TOO_LARGE);
+[0m[49m[38;5;10m+    260[0m:[38;5;10m[49m     v
+[0m[49m[38;5;10m+    261[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    262[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    263[0m:[38;5;10m[49m /// The exact bytes C's `printHexCharLine(v)` must produce: `v` is promoted to
+[0m[49m[38;5;10m+    264[0m:[38;5;10m[49m /// `int` through varargs and rendered with `%02x`, i.e. reinterpreted as
+[0m[49m[38;5;10m+    265[0m:[38;5;10m[49m /// `unsigned int`, so negatives widen to eight hex digits.
+[0m[49m[38;5;10m+    266[0m:[38;5;10m[49m fn hex_line(v: i8) -> Vec<u8> {
+[0m[49m[38;5;10m+    267[0m:[38;5;10m[49m     format!("{:02x}\n", (v as c_int) as u32).into_bytes()
+[0m[49m[38;5;10m+    268[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    269[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    270[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    271[0m:[38;5;10m[49m // Phase A / D -- symbol parity checked through dlsym
+[0m[49m[38;5;10m+    272[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    273[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    274[0m:[38;5;10m[49m /// Every symbol the C `.so` exports must be resolvable in the Rust `.so`.
+[0m[49m[38;5;10m+    275[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    276[0m:[38;5;10m[49m fn phase_d_symbol_parity_via_dlsym() {
+[0m[49m[38;5;10m+    277[0m:[38;5;10m[49m     let (c, r) = libs();
+[0m[49m[38;5;10m+    278[0m:[38;5;10m[49m     let exported: [&[u8]; 5] = [
+[0m[49m[38;5;10m+    279[0m:[38;5;10m[49m         b"printLine\0",
+[0m[49m[38;5;10m+    280[0m:[38;5;10m[49m         b"printHexCharLine\0",
+[0m[49m[38;5;10m+    281[0m:[38;5;10m[49m         b"bad\0",
+[0m[49m[38;5;10m+    282[0m:[38;5;10m[49m         b"good\0",
+[0m[49m[38;5;10m+    283[0m:[38;5;10m[49m         b"driver\0",
+[0m[49m[38;5;10m+    284[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    285[0m:[38;5;10m[49m     let mut missing = Vec::new();
+[0m[49m[38;5;10m+    286[0m:[38;5;10m[49m     for name in exported {
+[0m[49m[38;5;10m+    287[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+    288[0m:[38;5;10m[49m             c.has(name),
+[0m[49m[38;5;10m+    289[0m:[38;5;10m[49m             "test bug: C lib lacks {}",
+[0m[49m[38;5;10m+    290[0m:[38;5;10m[49m             String::from_utf8_lossy(name)
+[0m[49m[38;5;10m+    291[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    292[0m:[38;5;10m[49m         if !r.has(name) {
+[0m[49m[38;5;10m+    293[0m:[38;5;10m[49m             missing.push(String::from_utf8_lossy(name).to_string());
+[0m[49m[38;5;10m+    294[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    295[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    296[0m:[38;5;10m[49m     assert!(missing.is_empty(), "Rust .so missing symbols: {missing:?}");
+[0m[49m[38;5;10m+    297[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    298[0m:[38;5;10m[49m     // `goodG2B` / `goodB2G` are `static` in C: neither library may export them.
+[0m[49m[38;5;10m+    299[0m:[38;5;10m[49m     for name in [b"goodG2B\0".as_slice(), b"goodB2G\0".as_slice()] {
+[0m[49m[38;5;10m+    300[0m:[38;5;10m[49m         let n = String::from_utf8_lossy(name);
+[0m[49m[38;5;10m+    301[0m:[38;5;10m[49m         assert!(!c.has(name), "unexpected: C exports static {n}");
+[0m[49m[38;5;10m+    302[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+    303[0m:[38;5;10m[49m             !r.has(name),
+[0m[49m[38;5;10m+    304[0m:[38;5;10m[49m             "Rust exports {n}, but it is `static` in the C source"
+[0m[49m[38;5;10m+    305[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    306[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    307[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    308[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    309[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    310[0m:[38;5;10m[49m // Phase B -- valid-path differential tests, one per CONFIGS.md row
+[0m[49m[38;5;10m+    311[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    312[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    313[0m:[38;5;10m[49m // C1: printLine, randomized printable ASCII, length 1..64
+[0m[49m[38;5;10m+    314[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    315[0m:[38;5;10m[49m fn phase_b_c01_print_line_random_ascii() {
+[0m[49m[38;5;10m+    316[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC001);
+[0m[49m[38;5;10m+    317[0m:[38;5;10m[49m     for _ in 0..512 {
+[0m[49m[38;5;10m+    318[0m:[38;5;10m[49m         let len = rng.range(1, 64) as usize;
+[0m[49m[38;5;10m+    319[0m:[38;5;10m[49m         let bytes: Vec<u8> = (0..len).map(|_| rng.range(0x20, 0x7e) as u8).collect();
+[0m[49m[38;5;10m+    320[0m:[38;5;10m[49m         let cs = CString::new(bytes.clone()).unwrap();
+[0m[49m[38;5;10m+    321[0m:[38;5;10m[49m         let mut expected = bytes.clone();
+[0m[49m[38;5;10m+    322[0m:[38;5;10m[49m         expected.push(b'\n');
+[0m[49m[38;5;10m+    323[0m:[38;5;10m[49m         diff_expect("C1", &expected, |lib| lib.print_line(cs.as_ptr()));
+[0m[49m[38;5;10m+    324[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    325[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    326[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    327[0m:[38;5;10m[49m // C2: printLine("")
+[0m[49m[38;5;10m+    328[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    329[0m:[38;5;10m[49m fn phase_b_c02_print_line_empty() {
+[0m[49m[38;5;10m+    330[0m:[38;5;10m[49m     let cs = CString::new("").unwrap();
+[0m[49m[38;5;10m+    331[0m:[38;5;10m[49m     diff_expect("C2", b"\n", |lib| lib.print_line(cs.as_ptr()));
+[0m[49m[38;5;10m+    332[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    333[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    334[0m:[38;5;10m[49m // C3: printLine, every single non-NUL byte value as a 1-char string
+[0m[49m[38;5;10m+    335[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    336[0m:[38;5;10m[49m fn phase_b_c03_print_line_all_single_bytes() {
+[0m[49m[38;5;10m+    337[0m:[38;5;10m[49m     for b in 1u8..=255 {
+[0m[49m[38;5;10m+    338[0m:[38;5;10m[49m         let cs = CString::new(vec![b]).unwrap();
+[0m[49m[38;5;10m+    339[0m:[38;5;10m[49m         let expected = [b, b'\n'];
+[0m[49m[38;5;10m+    340[0m:[38;5;10m[49m         diff_expect(&format!("C3/{b:#04x}"), &expected, |lib| {
+[0m[49m[38;5;10m+    341[0m:[38;5;10m[49m             lib.print_line(cs.as_ptr())
+[0m[49m[38;5;10m+    342[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    343[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    344[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    345[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    346[0m:[38;5;10m[49m // C4: printLine, randomized bytes over the full 1..=255 range
+[0m[49m[38;5;10m+    347[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    348[0m:[38;5;10m[49m fn phase_b_c04_print_line_random_full_byte_range() {
+[0m[49m[38;5;10m+    349[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC004);
+[0m[49m[38;5;10m+    350[0m:[38;5;10m[49m     for _ in 0..512 {
+[0m[49m[38;5;10m+    351[0m:[38;5;10m[49m         let len = rng.range(1, 96) as usize;
+[0m[49m[38;5;10m+    352[0m:[38;5;10m[49m         let bytes: Vec<u8> = (0..len).map(|_| rng.range(1, 255) as u8).collect();
+[0m[49m[38;5;10m+    353[0m:[38;5;10m[49m         let cs = CString::new(bytes.clone()).unwrap();
+[0m[49m[38;5;10m+    354[0m:[38;5;10m[49m         let mut expected = bytes.clone();
+[0m[49m[38;5;10m+    355[0m:[38;5;10m[49m         expected.push(b'\n');
+[0m[49m[38;5;10m+    356[0m:[38;5;10m[49m         diff_expect("C4", &expected, |lib| lib.print_line(cs.as_ptr()));
+[0m[49m[38;5;10m+    357[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    358[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    359[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    360[0m:[38;5;10m[49m // C5: printLine payloads that look like printf format strings
+[0m[49m[38;5;10m+    361[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    362[0m:[38;5;10m[49m fn phase_b_c05_print_line_format_specifiers() {
+[0m[49m[38;5;10m+    363[0m:[38;5;10m[49m     let payloads: [&str; 8] = [
+[0m[49m[38;5;10m+    364[0m:[38;5;10m[49m         "%s",
+[0m[49m[38;5;10m+    365[0m:[38;5;10m[49m         "%n",
+[0m[49m[38;5;10m+    366[0m:[38;5;10m[49m         "%d %i %u",
+[0m[49m[38;5;10m+    367[0m:[38;5;10m[49m         "100%%",
+[0m[49m[38;5;10m+    368[0m:[38;5;10m[49m         "%p %p %p %p",
+[0m[49m[38;5;10m+    369[0m:[38;5;10m[49m         "%1000000d",
+[0m[49m[38;5;10m+    370[0m:[38;5;10m[49m         "%s%s%s%s%s%s%s%s",
+[0m[49m[38;5;10m+    371[0m:[38;5;10m[49m         "mixed %s literal %x tail",
+[0m[49m[38;5;10m+    372[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    373[0m:[38;5;10m[49m     for p in payloads {
+[0m[49m[38;5;10m+    374[0m:[38;5;10m[49m         let cs = CString::new(p).unwrap();
+[0m[49m[38;5;10m+    375[0m:[38;5;10m[49m         let mut expected = p.as_bytes().to_vec();
+[0m[49m[38;5;10m+    376[0m:[38;5;10m[49m         expected.push(b'\n');
+[0m[49m[38;5;10m+    377[0m:[38;5;10m[49m         diff_expect(&format!("C5/{p}"), &expected, |lib| {
+[0m[49m[38;5;10m+    378[0m:[38;5;10m[49m             lib.print_line(cs.as_ptr())
+[0m[49m[38;5;10m+    379[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    380[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    381[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    382[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    383[0m:[38;5;10m[49m // C6: printLine with embedded control characters
+[0m[49m[38;5;10m+    384[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    385[0m:[38;5;10m[49m fn phase_b_c06_print_line_embedded_controls() {
+[0m[49m[38;5;10m+    386[0m:[38;5;10m[49m     let payloads: [&[u8]; 5] = [
+[0m[49m[38;5;10m+    387[0m:[38;5;10m[49m         b"a\nb",
+[0m[49m[38;5;10m+    388[0m:[38;5;10m[49m         b"a\tb\tc",
+[0m[49m[38;5;10m+    389[0m:[38;5;10m[49m         b"cr\rhere",
+[0m[49m[38;5;10m+    390[0m:[38;5;10m[49m         b"\n\n\n",
+[0m[49m[38;5;10m+    391[0m:[38;5;10m[49m         b"line1\nline2\nline3",
+[0m[49m[38;5;10m+    392[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    393[0m:[38;5;10m[49m     for p in payloads {
+[0m[49m[38;5;10m+    394[0m:[38;5;10m[49m         let cs = CString::new(p.to_vec()).unwrap();
+[0m[49m[38;5;10m+    395[0m:[38;5;10m[49m         let mut expected = p.to_vec();
+[0m[49m[38;5;10m+    396[0m:[38;5;10m[49m         expected.push(b'\n');
+[0m[49m[38;5;10m+    397[0m:[38;5;10m[49m         diff_expect("C6", &expected, |lib| lib.print_line(cs.as_ptr()));
+[0m[49m[38;5;10m+    398[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    399[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    400[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    401[0m:[38;5;10m[49m // C7: printLine with strings longer than the stdio buffer
+[0m[49m[38;5;10m+    402[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    403[0m:[38;5;10m[49m fn phase_b_c07_print_line_long_strings() {
+[0m[49m[38;5;10m+    404[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC007);
+[0m[49m[38;5;10m+    405[0m:[38;5;10m[49m     for _ in 0..24 {
+[0m[49m[38;5;10m+    406[0m:[38;5;10m[49m         let len = rng.range(4000, 9000) as usize;
+[0m[49m[38;5;10m+    407[0m:[38;5;10m[49m         let bytes: Vec<u8> = (0..len).map(|_| rng.range(0x21, 0x7e) as u8).collect();
+[0m[49m[38;5;10m+    408[0m:[38;5;10m[49m         let cs = CString::new(bytes.clone()).unwrap();
+[0m[49m[38;5;10m+    409[0m:[38;5;10m[49m         let mut expected = bytes.clone();
+[0m[49m[38;5;10m+    410[0m:[38;5;10m[49m         expected.push(b'\n');
+[0m[49m[38;5;10m+    411[0m:[38;5;10m[49m         diff_expect("C7", &expected, |lib| lib.print_line(cs.as_ptr()));
+[0m[49m[38;5;10m+    412[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    413[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    414[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    415[0m:[38;5;10m[49m // C8: printLine(NULL) -- see also E1
+[0m[49m[38;5;10m+    416[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    417[0m:[38;5;10m[49m fn phase_b_c08_print_line_null() {
+[0m[49m[38;5;10m+    418[0m:[38;5;10m[49m     diff_expect("C8", b"", |lib| lib.print_line(std::ptr::null()));
+[0m[49m[38;5;10m+    419[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    420[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    421[0m:[38;5;10m[49m // C9: printHexCharLine over all 256 char bit patterns
+[0m[49m[38;5;10m+    422[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    423[0m:[38;5;10m[49m fn phase_b_c09_print_hex_char_line_full_sweep() {
+[0m[49m[38;5;10m+    424[0m:[38;5;10m[49m     for v in i8::MIN..=i8::MAX {
+[0m[49m[38;5;10m+    425[0m:[38;5;10m[49m         diff_expect(&format!("C9/{v}"), &hex_line(v), |lib| {
+[0m[49m[38;5;10m+    426[0m:[38;5;10m[49m             lib.print_hex_char_line(v as c_char)
+[0m[49m[38;5;10m+    427[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    428[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    429[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    430[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    431[0m:[38;5;10m[49m // C10: printHexCharLine, randomized draws
+[0m[49m[38;5;10m+    432[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    433[0m:[38;5;10m[49m fn phase_b_c10_print_hex_char_line_random() {
+[0m[49m[38;5;10m+    434[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC010);
+[0m[49m[38;5;10m+    435[0m:[38;5;10m[49m     for _ in 0..512 {
+[0m[49m[38;5;10m+    436[0m:[38;5;10m[49m         let v = rng.i8();
+[0m[49m[38;5;10m+    437[0m:[38;5;10m[49m         diff_expect(&format!("C10/{v}"), &hex_line(v), |lib| {
+[0m[49m[38;5;10m+    438[0m:[38;5;10m[49m             lib.print_hex_char_line(v as c_char)
+[0m[49m[38;5;10m+    439[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    440[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    441[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    442[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    443[0m:[38;5;10m[49m // C11: bad() once
+[0m[49m[38;5;10m+    444[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    445[0m:[38;5;10m[49m fn phase_b_c11_bad_single() {
+[0m[49m[38;5;10m+    446[0m:[38;5;10m[49m     diff_expect("C11", BAD_LINE, |lib| lib.bad());
+[0m[49m[38;5;10m+    447[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    448[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    449[0m:[38;5;10m[49m // C12: bad() repeated
+[0m[49m[38;5;10m+    450[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    451[0m:[38;5;10m[49m fn phase_b_c12_bad_repeated() {
+[0m[49m[38;5;10m+    452[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC012);
+[0m[49m[38;5;10m+    453[0m:[38;5;10m[49m     for _ in 0..64 {
+[0m[49m[38;5;10m+    454[0m:[38;5;10m[49m         let n = rng.range(1, 16) as usize;
+[0m[49m[38;5;10m+    455[0m:[38;5;10m[49m         let expected: Vec<u8> = BAD_LINE.repeat(n);
+[0m[49m[38;5;10m+    456[0m:[38;5;10m[49m         diff_expect(&format!("C12/n={n}"), &expected, |lib| {
+[0m[49m[38;5;10m+    457[0m:[38;5;10m[49m             for _ in 0..n {
+[0m[49m[38;5;10m+    458[0m:[38;5;10m[49m                 lib.bad();
+[0m[49m[38;5;10m+    459[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    460[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    461[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    462[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    463[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    464[0m:[38;5;10m[49m // C13: good() once -- goodG2B then the goodB2G range-check rejection
+[0m[49m[38;5;10m+    465[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    466[0m:[38;5;10m[49m fn phase_b_c13_good_single() {
+[0m[49m[38;5;10m+    467[0m:[38;5;10m[49m     diff_expect("C13", &good_bytes(), |lib| lib.good());
+[0m[49m[38;5;10m+    468[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    469[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    470[0m:[38;5;10m[49m // C14: good() repeated
+[0m[49m[38;5;10m+    471[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    472[0m:[38;5;10m[49m fn phase_b_c14_good_repeated() {
+[0m[49m[38;5;10m+    473[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC014);
+[0m[49m[38;5;10m+    474[0m:[38;5;10m[49m     let unit = good_bytes();
+[0m[49m[38;5;10m+    475[0m:[38;5;10m[49m     for _ in 0..64 {
+[0m[49m[38;5;10m+    476[0m:[38;5;10m[49m         let n = rng.range(1, 16) as usize;
+[0m[49m[38;5;10m+    477[0m:[38;5;10m[49m         let expected: Vec<u8> = unit.repeat(n);
+[0m[49m[38;5;10m+    478[0m:[38;5;10m[49m         diff_expect(&format!("C14/n={n}"), &expected, |lib| {
+[0m[49m[38;5;10m+    479[0m:[38;5;10m[49m             for _ in 0..n {
+[0m[49m[38;5;10m+    480[0m:[38;5;10m[49m                 lib.good();
+[0m[49m[38;5;10m+    481[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    482[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    483[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    484[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    485[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    486[0m:[38;5;10m[49m // C15: driver(0) -> bad()
+[0m[49m[38;5;10m+    487[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    488[0m:[38;5;10m[49m fn phase_b_c15_driver_zero() {
+[0m[49m[38;5;10m+    489[0m:[38;5;10m[49m     diff_expect("C15", BAD_LINE, |lib| lib.driver(0));
+[0m[49m[38;5;10m+    490[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    491[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    492[0m:[38;5;10m[49m // C16: driver(1) -> good()
+[0m[49m[38;5;10m+    493[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    494[0m:[38;5;10m[49m fn phase_b_c16_driver_one() {
+[0m[49m[38;5;10m+    495[0m:[38;5;10m[49m     diff_expect("C16", &good_bytes(), |lib| lib.driver(1));
+[0m[49m[38;5;10m+    496[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    497[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    498[0m:[38;5;10m[49m // C17: driver(random non-zero) -> good()
+[0m[49m[38;5;10m+    499[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    500[0m:[38;5;10m[49m fn phase_b_c17_driver_random_nonzero() {
+[0m[49m[38;5;10m+    501[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC017);
+[0m[49m[38;5;10m+    502[0m:[38;5;10m[49m     let expected = good_bytes();
+[0m[49m[38;5;10m+    503[0m:[38;5;10m[49m     for _ in 0..1024 {
+[0m[49m[38;5;10m+    504[0m:[38;5;10m[49m         let v = rng.nonzero_i32();
+[0m[49m[38;5;10m+    505[0m:[38;5;10m[49m         diff_expect(&format!("C17/{v}"), &expected, |lib| lib.driver(v));
+[0m[49m[38;5;10m+    506[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    507[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    508[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    509[0m:[38;5;10m[49m // C18: driver with non-zero ints whose low byte may be zero
+[0m[49m[38;5;10m+    510[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    511[0m:[38;5;10m[49m fn phase_b_c18_driver_low_byte_zero() {
+[0m[49m[38;5;10m+    512[0m:[38;5;10m[49m     let expected = good_bytes();
+[0m[49m[38;5;10m+    513[0m:[38;5;10m[49m     for v in [
+[0m[49m[38;5;10m+    514[0m:[38;5;10m[49m         256i32,
+[0m[49m[38;5;10m+    515[0m:[38;5;10m[49m         0x1_0000,
+[0m[49m[38;5;10m+    516[0m:[38;5;10m[49m         0x7FFF_FF00,
+[0m[49m[38;5;10m+    517[0m:[38;5;10m[49m         -256,
+[0m[49m[38;5;10m+    518[0m:[38;5;10m[49m         i32::MIN,
+[0m[49m[38;5;10m+    519[0m:[38;5;10m[49m         i32::MAX,
+[0m[49m[38;5;10m+    520[0m:[38;5;10m[49m         -1,
+[0m[49m[38;5;10m+    521[0m:[38;5;10m[49m         2,
+[0m[49m[38;5;10m+    522[0m:[38;5;10m[49m         0x0100_0000,
+[0m[49m[38;5;10m+    523[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    524[0m:[38;5;10m[49m         diff_expect(&format!("C18/{v}"), &expected, |lib| lib.driver(v));
+[0m[49m[38;5;10m+    525[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    526[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    527[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    528[0m:[38;5;10m[49m // C19: randomized sequence of mixed driver() modes in one capture
+[0m[49m[38;5;10m+    529[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    530[0m:[38;5;10m[49m fn phase_b_c19_driver_mixed_sequence() {
+[0m[49m[38;5;10m+    531[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC019);
+[0m[49m[38;5;10m+    532[0m:[38;5;10m[49m     let good = good_bytes();
+[0m[49m[38;5;10m+    533[0m:[38;5;10m[49m     for _ in 0..128 {
+[0m[49m[38;5;10m+    534[0m:[38;5;10m[49m         let n = rng.range(1, 12) as usize;
+[0m[49m[38;5;10m+    535[0m:[38;5;10m[49m         let args: Vec<i32> = (0..n)
+[0m[49m[38;5;10m+    536[0m:[38;5;10m[49m             .map(|_| if rng.below(2) == 0 { 0 } else { rng.nonzero_i32() })
+[0m[49m[38;5;10m+    537[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+    538[0m:[38;5;10m[49m         let mut expected = Vec::new();
+[0m[49m[38;5;10m+    539[0m:[38;5;10m[49m         for a in &args {
+[0m[49m[38;5;10m+    540[0m:[38;5;10m[49m             expected.extend_from_slice(if *a == 0 { BAD_LINE } else { &good });
+[0m[49m[38;5;10m+    541[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    542[0m:[38;5;10m[49m         diff_expect(&format!("C19/{args:?}"), &expected, |lib| {
+[0m[49m[38;5;10m+    543[0m:[38;5;10m[49m             for a in &args {
+[0m[49m[38;5;10m+    544[0m:[38;5;10m[49m                 lib.driver(*a);
+[0m[49m[38;5;10m+    545[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    546[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    547[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    548[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    549[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    550[0m:[38;5;10m[49m // C20: randomized interleaving of every entry point in one capture
+[0m[49m[38;5;10m+    551[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    552[0m:[38;5;10m[49m fn phase_b_c20_mixed_pipeline() {
+[0m[49m[38;5;10m+    553[0m:[38;5;10m[49m     #[derive(Debug, Clone)]
+[0m[49m[38;5;10m+    554[0m:[38;5;10m[49m     enum Op {
+[0m[49m[38;5;10m+    555[0m:[38;5;10m[49m         Driver(i32),
+[0m[49m[38;5;10m+    556[0m:[38;5;10m[49m         Good,
+[0m[49m[38;5;10m+    557[0m:[38;5;10m[49m         Bad,
+[0m[49m[38;5;10m+    558[0m:[38;5;10m[49m         PrintLine(Vec<u8>),
+[0m[49m[38;5;10m+    559[0m:[38;5;10m[49m         PrintLineNull,
+[0m[49m[38;5;10m+    560[0m:[38;5;10m[49m         PrintHex(i8),
+[0m[49m[38;5;10m+    561[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    562[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    563[0m:[38;5;10m[49m     let mut rng = Rng::new(0xC020);
+[0m[49m[38;5;10m+    564[0m:[38;5;10m[49m     let good = good_bytes();
+[0m[49m[38;5;10m+    565[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    566[0m:[38;5;10m[49m     for _ in 0..128 {
+[0m[49m[38;5;10m+    567[0m:[38;5;10m[49m         let n = rng.range(1, 20) as usize;
+[0m[49m[38;5;10m+    568[0m:[38;5;10m[49m         let mut ops = Vec::with_capacity(n);
+[0m[49m[38;5;10m+    569[0m:[38;5;10m[49m         for _ in 0..n {
+[0m[49m[38;5;10m+    570[0m:[38;5;10m[49m             ops.push(match rng.below(6) {
+[0m[49m[38;5;10m+    571[0m:[38;5;10m[49m                 0 => Op::Driver(if rng.below(2) == 0 { 0 } else { rng.nonzero_i32() }),
+[0m[49m[38;5;10m+    572[0m:[38;5;10m[49m                 1 => Op::Good,
+[0m[49m[38;5;10m+    573[0m:[38;5;10m[49m                 2 => Op::Bad,
+[0m[49m[38;5;10m+    574[0m:[38;5;10m[49m                 3 => {
+[0m[49m[38;5;10m+    575[0m:[38;5;10m[49m                     let len = rng.range(0, 48) as usize;
+[0m[49m[38;5;10m+    576[0m:[38;5;10m[49m                     Op::PrintLine((0..len).map(|_| rng.range(1, 255) as u8).collect())
+[0m[49m[38;5;10m+    577[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    578[0m:[38;5;10m[49m                 4 => Op::PrintLineNull,
+[0m[49m[38;5;10m+    579[0m:[38;5;10m[49m                 _ => Op::PrintHex(rng.i8()),
+[0m[49m[38;5;10m+    580[0m:[38;5;10m[49m             });
+[0m[49m[38;5;10m+    581[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    582[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    583[0m:[38;5;10m[49m         let mut expected = Vec::new();
+[0m[49m[38;5;10m+    584[0m:[38;5;10m[49m         for op in &ops {
+[0m[49m[38;5;10m+    585[0m:[38;5;10m[49m             match op {
+[0m[49m[38;5;10m+    586[0m:[38;5;10m[49m                 Op::Driver(0) => expected.extend_from_slice(BAD_LINE),
+[0m[49m[38;5;10m+    587[0m:[38;5;10m[49m                 Op::Driver(_) => expected.extend_from_slice(&good),
+[0m[49m[38;5;10m+    588[0m:[38;5;10m[49m                 Op::Good => expected.extend_from_slice(&good),
+[0m[49m[38;5;10m+    589[0m:[38;5;10m[49m                 Op::Bad => expected.extend_from_slice(BAD_LINE),
+[0m[49m[38;5;10m+    590[0m:[38;5;10m[49m                 Op::PrintLine(b) => {
+[0m[49m[38;5;10m+    591[0m:[38;5;10m[49m                     expected.extend_from_slice(b);
+[0m[49m[38;5;10m+    592[0m:[38;5;10m[49m                     expected.push(b'\n');
+[0m[49m[38;5;10m+    593[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    594[0m:[38;5;10m[49m                 Op::PrintLineNull => {}
+[0m[49m[38;5;10m+    595[0m:[38;5;10m[49m                 Op::PrintHex(v) => expected.extend_from_slice(&hex_line(*v)),
+[0m[49m[38;5;10m+    596[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    597[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    598[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    599[0m:[38;5;10m[49m         // Pre-build the CStrings so the closure can run twice unchanged.
+[0m[49m[38;5;10m+    600[0m:[38;5;10m[49m         let strings: Vec<Option<CString>> = ops
+[0m[49m[38;5;10m+    601[0m:[38;5;10m[49m             .iter()
+[0m[49m[38;5;10m+    602[0m:[38;5;10m[49m             .map(|op| match op {
+[0m[49m[38;5;10m+    603[0m:[38;5;10m[49m                 Op::PrintLine(b) => Some(CString::new(b.clone()).unwrap()),
+[0m[49m[38;5;10m+    604[0m:[38;5;10m[49m                 _ => None,
+[0m[49m[38;5;10m+    605[0m:[38;5;10m[49m             })
+[0m[49m[38;5;10m+    606[0m:[38;5;10m[49m             .collect();
+[0m[49m[38;5;10m+    607[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    608[0m:[38;5;10m[49m         diff_expect("C20", &expected, |lib| {
+[0m[49m[38;5;10m+    609[0m:[38;5;10m[49m             for (op, s) in ops.iter().zip(strings.iter()) {
+[0m[49m[38;5;10m+    610[0m:[38;5;10m[49m                 match op {
+[0m[49m[38;5;10m+    611[0m:[38;5;10m[49m                     Op::Driver(v) => lib.driver(*v),
+[0m[49m[38;5;10m+    612[0m:[38;5;10m[49m                     Op::Good => lib.good(),
+[0m[49m[38;5;10m+    613[0m:[38;5;10m[49m                     Op::Bad => lib.bad(),
+[0m[49m[38;5;10m+    614[0m:[38;5;10m[49m                     Op::PrintLine(_) => lib.print_line(s.as_ref().unwrap().as_ptr()),
+[0m[49m[38;5;10m+    615[0m:[38;5;10m[49m                     Op::PrintLineNull => lib.print_line(std::ptr::null()),
+[0m[49m[38;5;10m+    616[0m:[38;5;10m[49m                     Op::PrintHex(v) => lib.print_hex_char_line(*v as c_char),
+[0m[49m[38;5;10m+    617[0m:[38;5;10m[49m                 }
+[0m[49m[38;5;10m+    618[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    619[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    620[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    621[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    622[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    623[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    624[0m:[38;5;10m[49m // Phase C -- error / rejection paths, one per ERRORS.md row
+[0m[49m[38;5;10m+    625[0m:[38;5;10m[49m // ===========================================================================
+[0m[49m[38;5;10m+    626[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    627[0m:[38;5;10m[49m // E1: printLine(NULL) -> silent no-op, zero bytes
+[0m[49m[38;5;10m+    628[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    629[0m:[38;5;10m[49m fn phase_c_e01_print_line_null_is_silent() {
+[0m[49m[38;5;10m+    630[0m:[38;5;10m[49m     diff_expect("E1", b"", |lib| lib.print_line(std::ptr::null()));
+[0m[49m[38;5;10m+    631[0m:[38;5;10m[49m     // Also from a non-first position, to rule out latched state.
+[0m[49m[38;5;10m+    632[0m:[38;5;10m[49m     let cs = CString::new("before").unwrap();
+[0m[49m[38;5;10m+    633[0m:[38;5;10m[49m     diff_expect("E1/seq", b"before\n", |lib| {
+[0m[49m[38;5;10m+    634[0m:[38;5;10m[49m         lib.print_line(cs.as_ptr());
+[0m[49m[38;5;10m+    635[0m:[38;5;10m[49m         lib.print_line(std::ptr::null());
+[0m[49m[38;5;10m+    636[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    637[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    638[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    639[0m:[38;5;10m[49m // E2: printLine("") -> exactly one newline
+[0m[49m[38;5;10m+    640[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    641[0m:[38;5;10m[49m fn phase_c_e02_print_line_empty_is_one_newline() {
+[0m[49m[38;5;10m+    642[0m:[38;5;10m[49m     diff_expect("E2", b"\n", |lib| lib.print_line(std::ptr::null::<c_char>().wrapping_add(0)));
+[0m[49m[38;5;10m+    643[0m:[38;5;10m[49m     // (above is NULL; the real E2 assertion follows)
+[0m[49m[38;5;10m+    644[0m:[38;5;10m[49m     let cs = CString::new("").unwrap();
+[0m[49m[38;5;10m+    645[0m:[38;5;10m[49m     diff_expect("E2/empty", b"\n", |lib| lib.print_line(cs.as_ptr()));
+[0m[49m[38;5;10m+    646[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    647[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    648[0m:[38;5;10m[49m // E3: format specifiers in the *argument* must not be interpreted
+[0m[49m[38;5;10m+    649[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    650[0m:[38;5;10m[49m fn phase_c_e03_print_line_no_format_injection() {
+[0m[49m[38;5;10m+    651[0m:[38;5;10m[49m     for p in ["%s", "%n", "%d", "%%", "%s %n %d %%", "%99999999d"] {
+[0m[49m[38;5;10m+    652[0m:[38;5;10m[49m         let cs = CString::new(p).unwrap();
+[0m[49m[38;5;10m+    653[0m:[38;5;10m[49m         let mut expected = p.as_bytes().to_vec();
+[0m[49m[38;5;10m+    654[0m:[38;5;10m[49m         expected.push(b'\n');
+[0m[49m[38;5;10m+    655[0m:[38;5;10m[49m         diff_expect(&format!("E3/{p}"), &expected, |lib| {
+[0m[49m[38;5;10m+    656[0m:[38;5;10m[49m             lib.print_line(cs.as_ptr())
+[0m[49m[38;5;10m+    657[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    658[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    659[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    660[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    661[0m:[38;5;10m[49m // E4: negative char -> sign-extended 8-digit hex
+[0m[49m[38;5;10m+    662[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    663[0m:[38;5;10m[49m fn phase_c_e04_print_hex_negative_sign_extends() {
+[0m[49m[38;5;10m+    664[0m:[38;5;10m[49m     let cases: [(i8, &[u8]); 5] = [
+[0m[49m[38;5;10m+    665[0m:[38;5;10m[49m         (-1, b"ffffffff\n"),
+[0m[49m[38;5;10m+    666[0m:[38;5;10m[49m         (-2, b"fffffffe\n"),
+[0m[49m[38;5;10m+    667[0m:[38;5;10m[49m         (-128, b"ffffff80\n"),
+[0m[49m[38;5;10m+    668[0m:[38;5;10m[49m         (-16, b"fffffff0\n"),
+[0m[49m[38;5;10m+    669[0m:[38;5;10m[49m         (-127, b"ffffff81\n"),
+[0m[49m[38;5;10m+    670[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    671[0m:[38;5;10m[49m     for (v, expected) in cases {
+[0m[49m[38;5;10m+    672[0m:[38;5;10m[49m         diff_expect(&format!("E4/{v}"), expected, |lib| {
+[0m[49m[38;5;10m+    673[0m:[38;5;10m[49m             lib.print_hex_char_line(v as c_char)
+[0m[49m[38;5;10m+    674[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    675[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    676[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    677[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    678[0m:[38;5;10m[49m // E5: zero -> "00"
+[0m[49m[38;5;10m+    679[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    680[0m:[38;5;10m[49m fn phase_c_e05_print_hex_zero_pads() {
+[0m[49m[38;5;10m+    681[0m:[38;5;10m[49m     diff_expect("E5", b"00\n", |lib| lib.print_hex_char_line(0));
+[0m[49m[38;5;10m+    682[0m:[38;5;10m[49m     for (v, expected) in [(1i8, "01\n"), (9, "09\n"), (15, "0f\n"), (16, "10\n")] {
+[0m[49m[38;5;10m+    683[0m:[38;5;10m[49m         diff_expect(&format!("E5/{v}"), expected.as_bytes(), |lib| {
+[0m[49m[38;5;10m+    684[0m:[38;5;10m[49m             lib.print_hex_char_line(v as c_char)
+[0m[49m[38;5;10m+    685[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    686[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    687[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    688[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    689[0m:[38;5;10m[49m // E6: exhaustive char domain
+[0m[49m[38;5;10m+    690[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    691[0m:[38;5;10m[49m fn phase_c_e06_print_hex_exhaustive_domain() {
+[0m[49m[38;5;10m+    692[0m:[38;5;10m[49m     for v in i8::MIN..=i8::MAX {
+[0m[49m[38;5;10m+    693[0m:[38;5;10m[49m         diff_expect(&format!("E6/{v}"), &hex_line(v), |lib| {
+[0m[49m[38;5;10m+    694[0m:[38;5;10m[49m             lib.print_hex_char_line(v as c_char)
+[0m[49m[38;5;10m+    695[0m:[38;5;10m[49m         });
+[0m[49m[38;5;10m+    696[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    697[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    698[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    699[0m:[38;5;10m[49m // E7: bad()'s `data > 0` false branch is unreachable and has no else
+[0m[49m[38;5;10m+    700[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    701[0m:[38;5;10m[49m fn phase_c_e07_bad_guard_has_no_else_branch() {
+[0m[49m[38;5;10m+    702[0m:[38;5;10m[49m     // Exactly one line, always -- never zero lines, never two.
+[0m[49m[38;5;10m+    703[0m:[38;5;10m[49m     diff_expect("E7", BAD_LINE, |lib| lib.bad());
+[0m[49m[38;5;10m+    704[0m:[38;5;10m[49m     let out = diff("E7/lines", |lib| lib.bad());
+[0m[49m[38;5;10m+    705[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    706[0m:[38;5;10m[49m         out.iter().filter(|b| **b == b'\n').count(),
+[0m[49m[38;5;10m+    707[0m:[38;5;10m[49m         1,
+[0m[49m[38;5;10m+    708[0m:[38;5;10m[49m         "bad() must emit exactly one line"
+[0m[49m[38;5;10m+    709[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    710[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    711[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    712[0m:[38;5;10m[49m // E8: the signed overflow itself, reproduced not fixed
+[0m[49m[38;5;10m+    713[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    714[0m:[38;5;10m[49m fn phase_c_e08_bad_overflow_wraps_to_minus_two() {
+[0m[49m[38;5;10m+    715[0m:[38;5;10m[49m     diff_expect("E8", b"fffffffe\n", |lib| lib.bad());
+[0m[49m[38;5;10m+    716[0m:[38;5;10m[49m     // (char)(CHAR_MAX * 2) must be -2, i.e. NOT saturated to 127 and NOT 254.
+[0m[49m[38;5;10m+    717[0m:[38;5;10m[49m     diff_expect("E8/ref", &hex_line(-2), |lib| lib.bad());
+[0m[49m[38;5;10m+    718[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    719[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    720[0m:[38;5;10m[49m // E9: goodG2B's guard -- reachable only via good(); its line must be present
+[0m[49m[38;5;10m+    721[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    722[0m:[38;5;10m[49m fn phase_c_e09_good_g2b_guard_taken() {
+[0m[49m[38;5;10m+    723[0m:[38;5;10m[49m     let out = diff("E9", |lib| lib.good());
+[0m[49m[38;5;10m+    724[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    725[0m:[38;5;10m[49m         out.starts_with(G2B_LINE),
+[0m[49m[38;5;10m+    726[0m:[38;5;10m[49m         "good() must begin with goodG2B's `04` line, got {}",
+[0m[49m[38;5;10m+    727[0m:[38;5;10m[49m         show(&out)
+[0m[49m[38;5;10m+    728[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    729[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    730[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    731[0m:[38;5;10m[49m // E10: goodB2G's outer `data > 0` guard, no else
+[0m[49m[38;5;10m+    732[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    733[0m:[38;5;10m[49m fn phase_c_e10_good_b2g_outer_guard_taken() {
+[0m[49m[38;5;10m+    734[0m:[38;5;10m[49m     let out = diff("E10", |lib| lib.good());
+[0m[49m[38;5;10m+    735[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+    736[0m:[38;5;10m[49m         out.iter().filter(|b| **b == b'\n').count(),
+[0m[49m[38;5;10m+    737[0m:[38;5;10m[49m         2,
+[0m[49m[38;5;10m+    738[0m:[38;5;10m[49m         "good() must emit exactly two lines, got {}",
+[0m[49m[38;5;10m+    739[0m:[38;5;10m[49m         show(&out)
+[0m[49m[38;5;10m+    740[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    741[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    742[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    743[0m:[38;5;10m[49m // E11: the explicit range check 127 < 63 is FALSE -> rejection message
+[0m[49m[38;5;10m+    744[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    745[0m:[38;5;10m[49m fn phase_c_e11_good_b2g_range_check_rejects() {
+[0m[49m[38;5;10m+    746[0m:[38;5;10m[49m     let out = diff("E11", |lib| lib.good());
+[0m[49m[38;5;10m+    747[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    748[0m:[38;5;10m[49m         out.ends_with(TOO_LARGE),
+[0m[49m[38;5;10m+    749[0m:[38;5;10m[49m         "goodB2G must take the `else` rejection branch, got {}",
+[0m[49m[38;5;10m+    750[0m:[38;5;10m[49m         show(&out)
+[0m[49m[38;5;10m+    751[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    752[0m:[38;5;10m[49m     // and must NOT have multiplied.
+[0m[49m[38;5;10m+    753[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    754[0m:[38;5;10m[49m         !out.ends_with(&hex_line(-2)[..]),
+[0m[49m[38;5;10m+    755[0m:[38;5;10m[49m         "goodB2G must not perform the multiply"
+[0m[49m[38;5;10m+    756[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    757[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    758[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    759[0m:[38;5;10m[49m // E12: the dead store `data = ' '` must have no effect
+[0m[49m[38;5;10m+    760[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    761[0m:[38;5;10m[49m fn phase_c_e12_good_b2g_dead_store_has_no_effect() {
+[0m[49m[38;5;10m+    762[0m:[38;5;10m[49m     let out = diff("E12", |lib| lib.good());
+[0m[49m[38;5;10m+    763[0m:[38;5;10m[49m     // ' ' == 32 would pass the range check and print "40\n"; CHAR_MAX must win.
+[0m[49m[38;5;10m+    764[0m:[38;5;10m[49m     assert!(
+[0m[49m[38;5;10m+    765[0m:[38;5;10m[49m         !out.contains(&b'4') || !out.windows(3).any(|w| w == b"40\n"),
+[0m[49m[38;5;10m+    766[0m:[38;5;10m[49m         "the overwritten `data = ' '` value leaked: {}",
+[0m[49m[38;5;10m+    767[0m:[38;5;10m[49m         show(&out)
+[0m[49m[38;5;10m+    768[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+    769[0m:[38;5;10m[49m     assert_eq!(out, good_bytes(), "unexpected good() output: {}", show(&out));
+[0m[49m[38;5;10m+    770[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    771[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    772[0m:[38;5;10m[49m // E13: driver(0) dispatches bad()
+[0m[49m[38;5;10m+    773[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    774[0m:[38;5;10m[49m fn phase_c_e13_driver_zero_dispatches_bad() {
+[0m[49m[38;5;10m+    775[0m:[38;5;10m[49m     diff_expect("E13", BAD_LINE, |lib| lib.driver(0));
+[0m[49m[38;5;10m+    776[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    777[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    778[0m:[38;5;10m[49m // E14: out-of-range "enum-like" ints across the FFI boundary
+[0m[49m[38;5;10m+    779[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    780[0m:[38;5;10m[49m fn phase_c_e14_driver_out_of_range_enum_values() {
+[0m[49m[38;5;10m+    781[0m:[38;5;10m[49m     let expected = good_bytes();
+[0m[49m[38;5;10m+    782[0m:[38;5;10m[49m     for v in [
+[0m[49m[38;5;10m+    783[0m:[38;5;10m[49m         1i32,
+[0m[49m[38;5;10m+    784[0m:[38;5;10m[49m         -1,
+[0m[49m[38;5;10m+    785[0m:[38;5;10m[49m         2,
+[0m[49m[38;5;10m+    786[0m:[38;5;10m[49m         42,
+[0m[49m[38;5;10m+    787[0m:[38;5;10m[49m         256,
+[0m[49m[38;5;10m+    788[0m:[38;5;10m[49m         0x1_0000,
+[0m[49m[38;5;10m+    789[0m:[38;5;10m[49m         0x7FFF_FF00,
+[0m[49m[38;5;10m+    790[0m:[38;5;10m[49m         i32::MAX,
+[0m[49m[38;5;10m+    791[0m:[38;5;10m[49m         i32::MIN,
+[0m[49m[38;5;10m+    792[0m:[38;5;10m[49m         -0x8000_0000i64 as i32,
+[0m[49m[38;5;10m+    793[0m:[38;5;10m[49m         0x0000_FF00,
+[0m[49m[38;5;10m+    794[0m:[38;5;10m[49m         0x0100_0000,
+[0m[49m[38;5;10m+    795[0m:[38;5;10m[49m         i32::MIN + 1,
+[0m[49m[38;5;10m+    796[0m:[38;5;10m[49m         i32::MAX - 1,
+[0m[49m[38;5;10m+    797[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    798[0m:[38;5;10m[49m         diff_expect(&format!("E14/{v}"), &expected, |lib| lib.driver(v));
+[0m[49m[38;5;10m+    799[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    800[0m:[38;5;10m[49m     // Only an exact zero selects bad().
+[0m[49m[38;5;10m+    801[0m:[38;5;10m[49m     diff_expect("E14/zero", BAD_LINE, |lib| lib.driver(0));
+[0m[49m[38;5;10m+    802[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    803[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    804[0m:[38;5;10m[49m // E15: statelessness -- a zero after a non-zero still selects bad()
+[0m[49m[38;5;10m+    805[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    806[0m:[38;5;10m[49m fn phase_c_e15_driver_is_stateless() {
+[0m[49m[38;5;10m+    807[0m:[38;5;10m[49m     let mut expected = good_bytes();
+[0m[49m[38;5;10m+    808[0m:[38;5;10m[49m     expected.extend_from_slice(BAD_LINE);
+[0m[49m[38;5;10m+    809[0m:[38;5;10m[49m     expected.extend_from_slice(&good_bytes());
+[0m[49m[38;5;10m+    810[0m:[38;5;10m[49m     expected.extend_from_slice(BAD_LINE);
+[0m[49m[38;5;10m+    811[0m:[38;5;10m[49m     diff_expect("E15", &expected, |lib| {
+[0m[49m[38;5;10m+    812[0m:[38;5;10m[49m         lib.driver(7);
+[0m[49m[38;5;10m+    813[0m:[38;5;10m[49m         lib.driver(0);
+[0m[49m[38;5;10m+    814[0m:[38;5;10m[49m         lib.driver(-3);
+[0m[49m[38;5;10m+    815[0m:[38;5;10m[49m         lib.driver(0);
+[0m[49m[38;5;10m+    816[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    817[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    818[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    819[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    820[0m:[38;5;10m[49m // Generic FFI-boundary boundaries (beyond the tables)
+[0m[49m[38;5;10m+    821[0m:[38;5;10m[49m // ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    822[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    823[0m:[38;5;10m[49m // A pointer that is non-NULL but points at an immediately-terminated buffer,
+[0m[49m[38;5;10m+    824[0m:[38;5;10m[49m // and a pointer into the middle of a larger buffer (offset aliasing).
+[0m[49m[38;5;10m+    825[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    826[0m:[38;5;10m[49m fn phase_c_generic_pointer_shapes() {
+[0m[49m[38;5;10m+    827[0m:[38;5;10m[49m     let buf = b"abcdef\0tail\0".to_vec();
+[0m[49m[38;5;10m+    828[0m:[38;5;10m[49m     for off in 0..7usize {
+[0m[49m[38;5;10m+    829[0m:[38;5;10m[49m         let p = unsafe { buf.as_ptr().add(off) } as *const c_char;
+[0m[49m[38;5;10m+    830[0m:[38;5;10m[49m         let expected = {
+[0m[49m[38;5;10m+    831[0m:[38;5;10m[49m             let mut v = buf[off..6].to_vec();
+[0m[49m[38;5;10m+    832[0m:[38;5;10m[49m             v.push(b'\n');
+[0m[49m[38;5;10m+    833[0m:[38;5;10m[49m             v
+[0m[49m[38;5;10m+    834[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    835[0m:[38;5;10m[49m         diff_expect(&format!("ptr/off={off}"), &expected, |lib| lib.print_line(p));
+[0m[49m[38;5;10m+    836[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    837[0m:[38;5;10m[49m     // Pointer to a lone NUL byte.
+[0m[49m[38;5;10m+    838[0m:[38;5;10m[49m     let nul = [0u8];
+[0m[49m[38;5;10m+    839[0m:[38;5;10m[49m     diff_expect("ptr/lone-nul", b"\n", |lib| {
+[0m[49m[38;5;10m+    840[0m:[38;5;10m[49m         lib.print_line(nul.as_ptr() as *const c_char)
+[0m[49m[38;5;10m+    841[0m:[38;5;10m[49m     });
+[0m[49m[38;5;10m+    842[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    843[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    844[0m:[38;5;10m[49m // The `char` parameter passed with garbage in the upper register bits: C
+[0m[49m[38;5;10m+    845[0m:[38;5;10m[49m // callees read only the low byte. Emulated by passing every i8, already done in
+[0m[49m[38;5;10m+    846[0m:[38;5;10m[49m // E6; here we additionally confirm the two libs agree when the value arrives as
+[0m[49m[38;5;10m+    847[0m:[38;5;10m[49m // a widened int (function pointer cast to take c_int).
+[0m[49m[38;5;10m+    848[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    849[0m:[38;5;10m[49m fn phase_c_generic_char_arg_widening() {
+[0m[49m[38;5;10m+    850[0m:[38;5;10m[49m     let (c, r) = libs();
+[0m[49m[38;5;10m+    851[0m:[38;5;10m[49m     for raw in [0x0000_0100i32, 0x0000_017f, -0x0000_0180, 0x7fff_ff00u32 as i32] {
+[0m[49m[38;5;10m+    852[0m:[38;5;10m[49m         let f_c: unsafe extern "C" fn(c_int) = unsafe {
+[0m[49m[38;5;10m+    853[0m:[38;5;10m[49m             std::mem::transmute::<FnPrintHexCharLine, unsafe extern "C" fn(c_int)>(
+[0m[49m[38;5;10m+    854[0m:[38;5;10m[49m                 c.sym(b"printHexCharLine\0"),
+[0m[49m[38;5;10m+    855[0m:[38;5;10m[49m             )
+[0m[49m[38;5;10m+    856[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    857[0m:[38;5;10m[49m         let f_r: unsafe extern "C" fn(c_int) = unsafe {
+[0m[49m[38;5;10m+    858[0m:[38;5;10m[49m             std::mem::transmute::<FnPrintHexCharLine, unsafe extern "C" fn(c_int)>(
+[0m[49m[38;5;10m+    859[0m:[38;5;10m[49m                 r.sym(b"printHexCharLine\0"),
+[0m[49m[38;5;10m+    860[0m:[38;5;10m[49m             )
+[0m[49m[38;5;10m+    861[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    862[0m:[38;5;10m[49m         let out_c = capture(|| unsafe { f_c(raw) });
+[0m[49m[38;5;10m+    863[0m:[38;5;10m[49m         let out_r = capture(|| unsafe { f_r(raw) });
+[0m[49m[38;5;10m+    864[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    865[0m:[38;5;10m[49m             out_c,
+[0m[49m[38;5;10m+    866[0m:[38;5;10m[49m             out_r,
+[0m[49m[38;5;10m+    867[0m:[38;5;10m[49m             "DIVERGENCE [widened char arg {raw:#x}]\n  C   : {}\n  Rust: {}",
+[0m[49m[38;5;10m+    868[0m:[38;5;10m[49m             show(&out_c),
+[0m[49m[38;5;10m+    869[0m:[38;5;10m[49m             show(&out_r)
+[0m[49m[38;5;10m+    870[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    871[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    872[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Fix incorrect E2 assertion
+
+[49m[39m  641, 641[0m:[39m[49m fn phase_c_e02_print_line_empty_is_one_newline() {
+[0m[49m[38;5;9m- 642     [0m:[38;5;9m[49m     diff_expect("E2", b"\n", |lib| lib.print_line(std::ptr::null::<c_char>().wrapping_add(0)));
+[0m[49m[38;5;9m- 643     [0m:[38;5;9m[49m     // (above is NULL; the real E2 assertion follows)
+[0m[49m[39m  644, 642[0m:[39m[49m     let cs = CString::new("").unwrap();
+[0m[49m[39m  645, 643[0m:[39m[49m     diff_expect("E2/empty", b"\n", |lib| lib.print_line(cs.as_ptr()));
+[0m[49m[39m  646, 644[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential test suite
+
+assertion `left == right` failed: DIVERGENCE [E6/-128]
+  C   : "ffffff80\ntest phase_b_c03_print_line_all_single_bytes ... " (58 bytes)
+  Rust: "ffffff80\n" (9 bytes)
+  left: [102, 102, 102, 102, 102, 102, 56, 48, 10, 116, 101, 115, 116, 32, 112, 104, 97, 115, 101, 95, 98, 95, 99, 48, 51, 95, 112, 114, 105, 110, 116, 95, 108, 105, 110, 101, 95, 97, 108, 108, 95, 115, 105, 110, 103, 108, 101, 95, 98, 121, 116, 101, 115, 32, 46, 46, 46, 32]
+ right: [102, 102, 102, 102, 102, 102, 56, 48, 10]
+
+---- phase_b_c09_print_hex_char_line_full_sweep stdout ----
+
+thread 'phase_b_c09_print_hex_char_line_full_sweep' (3899161) panicked at tests/differential.rs:188:5:
+assertion `left == right` failed: DIVERGENCE [C9/-33]
+  C   : "ffffffdf\ntest phase_c_e06_print_hex_exhaustive_domain ... " (58 bytes)
+  Rust: "ffffffdf\n" (9 bytes)
+  left: [102, 102, 102, 102, 102, 102, 100, 102, 10, 116, 101, 115, 116, 32, 112, 104, 97, 115, 101, 95, 99, 95, 101, 48, 54, 95, 112, 114, 105, 110, 116, 95, 104, 101, 120, 95, 101, 120, 104, 97, 117, 115, 116, 105, 118, 101, 95, 100, 111, 109, 97, 105, 110, 32, 46, 46, 46, 32]
+ right: [102, 102, 102, 102, 102, 102, 100, 102, 10]
+
+---- phase_b_c11_bad_single stdout ----
+
+thread 'phase_b_c11_bad_single' (3899163) panicked at tests/differential.rs:188:5:
+assertion `left == right` failed: DIVERGENCE [C11]
+  C   : "test phase_b_c10_print_hex_char_line_random ... fffffffe\nok" (59 bytes)
+  Rust: "fffffffe\n" (9 bytes)
+  left: [116, 101, 115, 116, 32, 112, 104, 97, 115, 101, 95, 98, 95, 99, 49, 48, 95, 112, 114, 105, 110, 116, 95, 104, 101, 120, 95, 99, 104, 97, 114, 95, 108, 105, 110, 101, 95, 114, 97, 110, 100, 111, 109, 32, 46, 46, 46, 32, 102, 102, 102, 102, 102, 102, 102, 101, 10, 111, 107]
+ right: [102, 102, 102, 102, 102, 102, 102, 101, 10]
+
+---- phase_b_c01_print_line_random_ascii stdout ----
+
+thread 'phase_b_c01_print_line_random_ascii' (3899153) panicked at tests/differential.rs:188:5:
+assertion `left == right` failed: DIVERGENCE [C1]
+  C   : "test phase_b_c17_driver_random_nonzero ... Wy57vug~d=+;2mh\\w.A&4:T7tadJJHBw0+{T&X1J 'E)<9OM/Wbi<%\nok" (100 bytes)
+  Rust: "Wy57vug~d=+;2mh\\w.A&4:T7tadJJHBw0+{T&X1J 'E)<9OM/Wbi<%\n" (55 bytes)
+  left: [116, 101, 115, 116, 32, 112, 104, 97, 115, 101, 95, 98, 95, 99, 49, 55, 95, 100, 114, 105, 118, 101, 114, 95, 114, 97, 110, 100, 111, 109, 95, 110, 111, 110, 122, 101, 114, 111, 32, 46, 46, 46, 32, 87, 121, 53, 55, 118, 117, 103, 126, 100, 61, 43, 59, 50, 109, 104, 92, 119, 46, 65, 38, 52, 58, 84, 55, 116, 97, 100, 74, 74, 72, 66, 119, 48, 43, 123, 84, 38, 88, 49, 74, 32, 39, 69, 41, 60, 57, 79, 77, 47, 87, 98, 105, 60, 37, 10, 111, 107]
+ right: [87, 121, 53, 55, 118, 117, 103, 126, 100, 61, 43, 59, 50, 109, 104, 92, 119, 46, 65, 38, 52, 58, 84, 55, 116, 97, 100, 74, 74, 72, 66, 119, 48, 43, 123, 84, 38, 88, 49, 74, 32, 39, 69, 41, 60, 57, 79, 77, 47, 87, 98, 105, 60, 37, 10]
+
+---- phase_b_c19_driver_mixed_sequence stdout ----
+
+thread 'phase_b_c19_driver_mixed_sequence' (3899171) panicked at tests/differential.rs:188:5:
+assertion `left == right` failed: DIVERGENCE [C19/[0, -1216866679, -137410546, 0, -272891673, 0, -310325646, 0, -1003398927, 0, -1940966439, 0]]
+  C   : "okfffffffe\n04\ndata value is too large to perform arithmetic safely.\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n\n" (399 bytes)
+  Rust: "fffffffe\n04\ndata value is too large to perform arithmetic safely.\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n04\ndata value is too large to perform arithmetic safely.\nfffffffe\n" (396 bytes)
+  left: [111, 107, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 10]
+ right: [102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10, 48, 52, 10, 100, 97, 116, 97, 32, 118, 97, 108, 117, 101, 32, 105, 115, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 116, 111, 32, 112, 101, 114, 102, 111, 114, 109, 32, 97, 114, 105, 116, 104, 109, 101, 116, 105, 99, 32, 115, 97, 102, 101, 108, 121, 46, 10, 102, 102, 102, 102, 102, 102, 102, 101, 10]
+
+
+failures:
+    phase_b_c01_print_line_random_ascii
+    phase_b_c03_print_line_all_single_bytes
+    phase_b_c05_print_line_format_specifiers
+    phase_b_c07_print_line_long_strings
+    phase_b_c09_print_hex_char_line_full_sweep
+    phase_b_c11_bad_single
+    phase_b_c12_bad_repeated
+    phase_b_c19_driver_mixed_sequence
+    phase_c_e01_print_line_null_is_silent
+    phase_c_e06_print_hex_exhaustive_domain
+    phase_c_generic_char_arg_widening
+    phase_c_generic_pointer_shapes
+
+test result: FAILED. 26 passed; 12 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+error: test failed, to rerun pass `--test differential`
+[38;5;244m - Completed in 1.123s[0m
+
+[?25l[0m[38;5;141m> [0mFailures are harness-output contamination of the fd-1 capture, not translation divergence. Fixing the harness.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/.cargo/config.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Force single-threaded test execution for fd-level stdout capture
+
+[49m[38;5;10m+    1[0m:[38;5;10m[49m # The differential tests capture file descriptor 1 (dup2) to observe the exact
+[0m[49m[38;5;10m+    2[0m:[38;5;10m[49m # bytes each shared library writes to stdout. fd 1 is process-global, so the
+[0m[49m[38;5;10m+    3[0m:[38;5;10m[49m # test harness must not run tests concurrently -- otherwise another thread's
+[0m[49m[38;5;10m+    4[0m:[38;5;10m[49m # harness progress output lands inside a capture window.
+[0m[49m[38;5;10m+    5[0m:[38;5;10m[49m [env]
+[0m[49m[38;5;10m+    6[0m:[38;5;10m[49m RUST_TEST_THREADS = "1"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/.cargo/config.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/differential.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Flush Rust stdout buffer before redirecting fd 1
+
+[49m[39m  48, 48[0m:[39m[49m     unsafe {
+[0m[49m[38;5;9m- 49    [0m:[38;5;9m[49m         // Flush anything already pending so it is not attributed to this call.
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m         // Flush anything already pending so it is not attributed to this call:
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m         // both the C stdio buffer and Rust's own `Stdout` buffer (the test
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         // harness leaves a partial `test <name> ... ` line sitting in it).
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m         let _ = std::io::Write::flush(&mut std::io::stdout());
+[0m[49m[39m  50, 53[0m:[39m[49m         fflush(std::ptr::null_mut());
+[0m[K
+Updating: [38;5;141mtranslation/tests/differential.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Re-run tests after harness fix
+
+
+running 38 tests
+test phase_b_c01_print_line_random_ascii ... ok
+test phase_b_c02_print_line_empty ... ok
+test phase_b_c03_print_line_all_single_bytes ... ok
+test phase_b_c04_print_line_random_full_byte_range ... ok
+test phase_b_c05_print_line_format_specifiers ... ok
+test phase_b_c06_print_line_embedded_controls ... ok
+test phase_b_c07_print_line_long_strings ... ok
+test phase_b_c08_print_line_null ... ok
+test phase_b_c09_print_hex_char_line_full_sweep ... ok
+test phase_b_c10_print_hex_char_line_random ... ok
+test phase_b_c11_bad_single ... ok
+test phase_b_c12_bad_repeated ... ok
+test phase_b_c13_good_single ... ok
+test phase_b_c14_good_repeated ... ok
+test phase_b_c15_driver_zero ... ok
+test phase_b_c16_driver_one ... ok
+test phase_b_c17_driver_random_nonzero ... ok
+test phase_b_c18_driver_low_byte_zero ... ok
+test phase_b_c19_driver_mixed_sequence ... ok
+test phase_b_c20_mixed_pipeline ... ok
+test phase_c_e01_print_line_null_is_silent ... ok
+test phase_c_e02_print_line_empty_is_one_newline ... ok
+test phase_c_e03_print_line_no_format_injection ... ok
+test phase_c_e04_print_hex_negative_sign_extends ... ok
+test phase_c_e05_print_hex_zero_pads ... ok
+test phase_c_e06_print_hex_exhaustive_domain ... ok
+test phase_c_e07_bad_guard_has_no_else_branch ... ok
+test phase_c_e08_bad_overflow_wraps_to_minus_two ... ok
+test phase_c_e09_good_g2b_guard_taken ... ok
+test phase_c_e10_good_b2g_outer_guard_taken ... ok
+test phase_c_e11_good_b2g_range_check_rejects ... ok
+test phase_c_e12_good_b2g_dead_store_has_no_effect ... ok
+test phase_c_e13_driver_zero_dispatches_bad ... ok
+test phase_c_e14_driver_out_of_range_enum_values ... ok
+test phase_c_e15_driver_is_stateless ... ok
+test phase_c_generic_char_arg_widening ... FAILED
+test phase_c_generic_pointer_shapes ... ok
+test phase_d_symbol_parity_via_dlsym ... ok
+
+failures:
+
+---- phase_c_generic_char_arg_widening stdout ----
+
+thread 'phase_c_generic_char_arg_widening' (3905472) panicked at tests/differential.rs:865:9:
+assertion `left == right` failed: DIVERGENCE [widened char arg 0x100]
+  C   : "00\n" (3 bytes)
+  Rust: "100\n" (4 bytes)
+  left: [48, 48, 10]
+ right: [49, 48, 48, 10]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    phase_c_generic_char_arg_widening
+
+test result: FAILED. 37 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+error: test failed, to rerun pass `--test differential`
+[38;5;244m - Completed in 1.136s[0m
+
+[?25l[0m[38;5;141m> [0mReal divergence found. Let me look at the generated code.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M && echo "=== C printHexCharLine ===" && objdump -d --no-show-raw-insn c_src/build/libdriver.so | awk '/<printHexCharLine>:/,/^$/' && echo "=== Rust printHexCharLine ===" && objdump -d --no-show-raw-insn translation/target/debug/libdriver.so | awk '/<printHexCharLine>:/,/^$/' | head -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Disassemble printHexCharLine in both libraries
+
+=== C printHexCharLine ===
+000000000000117b <printHexCharLine>:
+    117b:	push   %rbp
+    117c:	mov    %rsp,%rbp
+    117f:	sub    $0x10,%rsp
+    1183:	mov    %edi,%eax
+    1185:	mov    %al,-0x4(%rbp)
+    1188:	movsbl -0x4(%rbp),%eax
+    118c:	mov    %eax,%esi
+    118e:	lea    0xe6b(%rip),%rax        # 2000 <_fini+0xd80>
+    1195:	mov    %rax,%rdi
+    1198:	mov    $0x0,%eax
+    119d:	call   1060 <printf@plt>
+    11a2:	nop
+    11a3:	leave
+    11a4:	ret
+
+=== Rust printHexCharLine ===
+objdump: 'translation/target/debug/libdriver.so': No such file
+[38;5;244m - Completed in 0.13s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation && find target -name 'libdriver.so' && echo "=== release Rust ===" && objdump -d --no-show-raw-insn target/release/libdriver.so | awk '/<printHexCharLine>:/,/^$/'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Find and disassemble Rust cdylib
+
+target/release/deps/libdriver.so
+target/release/libdriver.so
+=== release Rust ===
+00000000000118e0 <printHexCharLine>:
+   118e0:	mov    %edi,%esi
+   118e2:	lea    -0xcba3(%rip),%rdi        # 4d46 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x4cfe>
+   118e9:	xor    %eax,%eax
+   118eb:	jmp    *0x3a7f7(%rip)        # 4c0e8 <printf@GLIBC_2.2.5>
+   118f1:	int3
+   118f2:	int3
+   118f3:	int3
+   118f4:	int3
+   118f5:	int3
+   118f6:	int3
+   118f7:	int3
+   118f8:	int3
+   118f9:	int3
+   118fa:	int3
+   118fb:	int3
+   118fc:	int3
+   118fd:	int3
+   118fe:	int3
+   118ff:	int3
+
+[38;5;244m - Completed in 0.66s[0m
+
+[?25l[0m[38;5;141m> [0mConfirmed: gcc truncates the incoming register to the low byte ([38;5;10mmov %al,-4(%rbp); movsbl[0m), while Rust's [38;5;10mextern "C" fn(i8)[0m trusts the caller and forwards all 32 bits ([38;5;10mmov %edi,%esi[0m). Fixing the Rust side to reproduce gcc's truncation.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/src/lib.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Reproduce gcc's low-byte truncation of the char parameter
+
+[49m[39m  30, 30[0m:[39m[49m /// void printHexCharLine(char charHex)
+[0m[49m[39m  31, 31[0m:[39m[49m ///
+[0m[49m[39m  32, 32[0m:[39m[49m /// The C code passes a `char` through varargs, where it is promoted to `int`
+[0m[49m[39m  33, 33[0m:[39m[49m /// and then formatted with `%02x` (i.e. reinterpreted as `unsigned int`), so a
+[0m[49m[39m  34, 34[0m:[39m[49m /// negative value prints as eight hex digits.
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m /// ABI note: gcc compiles the `char` parameter as a *narrowing* read of the
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// argument register — `mov %edi,%eax; mov %al,-0x4(%rbp); movsbl -0x4(%rbp),%eax`
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m /// — so a caller that leaves garbage in the upper 24 bits of `edi` (e.g. one
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m /// using a mismatched `void(int)` prototype) still only observes the low byte.
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m /// Declaring the parameter as `c_char` here is NOT equivalent: rustc/LLVM tags
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m /// it `signext i8`, assumes the caller already extended it, and forwards the
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// whole register (`mov %edi,%esi`), which prints `100` where C prints `00`.
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// The parameter is therefore taken as `c_int` (identical register on the
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m /// SysV x86-64 ABI, which is what the C library is built for) and truncated
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m /// explicitly, reproducing gcc's observable behaviour for every input.
+[0m[49m[39m  35, 46[0m:[39m[49m #[unsafe(no_mangle)]
+[0m[49m[38;5;9m- 36    [0m:[38;5;9m[49m pub unsafe extern "C" fn printHexCharLine(charHex: c_char) {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m pub unsafe extern "C" fn printHexCharLine(charHex: c_int) {
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m     print_hex_char_line(charHex as c_char);
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m /// Internal, correctly-typed body of `printHexCharLine`, used by the callers
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m /// inside this translation unit (where the argument really is a `char`).
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m #[inline]
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m unsafe fn print_hex_char_line(charHex: c_char) {
+[0m[49m[39m  37, 55[0m:[39m[49m     printf(b"%02x\n\0".as_ptr() as *const c_char, charHex as c_int);
+[0m[49m[39m  38, 56[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/src/lib.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation && sed -i 's/^        printHexCharLine(result);$/        print_hex_char_line(result);/' src/lib.rs && grep -n 'print_hex_char_line(result)\|printHexCharLine' src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Point internal callers at the char-typed helper
+
+4://   printLine, printHexCharLine, bad, good, driver
+30:/// void printHexCharLine(char charHex)
+47:pub unsafe extern "C" fn printHexCharLine(charHex: c_int) {
+51:/// Internal, correctly-typed body of `printHexCharLine`, used by the callers
+68:        print_hex_char_line(result);
+78:        print_hex_char_line(result);
+90:            printHexCharLine(result);
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation && sed -i '90s/printHexCharLine(result);/print_hex_char_line(result);/' src/lib.rs && sed -n '86,94p' src/lib.rs[0m[38;5;244m (using tool: shell)[0m
+Purpose: Fix remaining internal caller in goodB2G
+
+    data = CHAR_MAX;
+    if data > 0 {
+        if data < (CHAR_MAX / 2) {
+            let result: c_char = data.wrapping_mul(2);
+            print_hex_char_line(result);
+        } else {
+            printLine(
+                b"data value is too large to perform arithmetic safely.\0".as_ptr()
+                    as *const c_char,
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation && timeout 300 cargo build --release 2>&1 | tail -3 && objdump -d --no-show-raw-insn target/release/libdriver.so | awk '/<printHexCharLine>:/,/int3/' | head -8 && echo "=== TESTS ===" && timeout 600 cargo test --release 2>&1 | tail -12[0m[38;5;244m (using tool: shell)[0m
+Purpose: Rebuild and rerun tests
+
+   Compiling driver v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation)
+    Finished `release` profile [optimized] target(s) in 0.08s
+00000000000118e0 <printHexCharLine>:
+   118e0:	movsbl %dil,%esi
+   118e4:	lea    -0xcba5(%rip),%rdi        # 4d46 <_RNvNtNtNtCs2AWtUsOyxgP_3std6thread7current2id2ID+0x4cfe>
+   118eb:	xor    %eax,%eax
+   118ed:	jmp    *0x3a7f5(%rip)        # 4c0e8 <printf@GLIBC_2.2.5>
+   118f3:	int3
+=== TESTS ===
+test phase_c_e10_good_b2g_outer_guard_taken ... ok
+test phase_c_e11_good_b2g_range_check_rejects ... ok
+test phase_c_e12_good_b2g_dead_store_has_no_effect ... ok
+test phase_c_e13_driver_zero_dispatches_bad ... ok
+test phase_c_e14_driver_out_of_range_enum_values ... ok
+test phase_c_e15_driver_is_stateless ... ok
+test phase_c_generic_char_arg_widening ... ok
+test phase_c_generic_pointer_shapes ... ok
+test phase_d_symbol_parity_via_dlsym ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+[38;5;244m - Completed in 4.15s[0m
+
+[?25l[0m[38;5;141m> [0mAll 38 pass. Now the feature-combination sweep and the [38;5;10mnm[0m symbol diff.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/run_all_features.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Add automated feature-combination + symbol-parity sweep script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Phase D driver: rebuild both libraries, diff their exported symbol tables,
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # and run the differential suite under EVERY feature combination in Cargo.toml.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m cd "$(dirname "$0")"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m ROOT="$(cd .. && pwd)"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m fail=0
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m echo "=== building C shared library ==="
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m ( cd "$ROOT/c_src" && mkdir -p build && cd build \
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m C_SO="$ROOT/c_src/build/libdriver.so"
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m # Enumerate feature combinations from Cargo.toml (powerset of [features]).
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m FEATS=$(awk '
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   /^\[features\]/ {inside=1; next}
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   /^\[/           {inside=0}
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   inside && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m       split($0, a, "="); gsub(/[[:space:]]/, "", a[1]);
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m       if (a[1] != "default") print a[1]
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   }' Cargo.toml)
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m COMBOS=()
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m if [ -z "$FEATS" ]; then
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m     echo "=== no [features] in Cargo.toml -> 2 configurations ==="
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m     COMBOS+=("default:")
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m     COMBOS+=("no-default:--no-default-features")
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m     COMBOS+=("default:")
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m     mapfile -t FARR <<<"$FEATS"
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     n=${#FARR[@]}
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     for ((mask = 0; mask < (1 << n); mask++)); do
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m         combo=""
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m         for ((i = 0; i < n; i++)); do
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m             if (((mask >> i) & 1)); then combo="${combo:+$combo,}${FARR[i]}"; fi
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m         done
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m         COMBOS+=("no-default+[${combo}]:--no-default-features --features=${combo}")
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m # ---------------------------------------------------------------------------
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m for entry in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     label="${entry%%:*}"
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     flags="${entry#*:}"
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     for profile in debug release; do
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m         relflag=""; [ "$profile" = release ] && relflag="--release"
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m         echo
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m         echo "############ combo=$label profile=$profile ############"
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m         if ! timeout 600 cargo build $relflag $flags >/dev/null 2>&1; then
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m             echo "  BUILD FAILED"; fail=1; continue
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m         fi
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m         R_SO="target/$profile/libdriver.so"
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m         if [ ! -f "$R_SO" ]; then echo "  MISSING $R_SO"; fail=1; continue; fi
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m         echo "--- nm -D defined-symbol diff (C vs Rust) ---"
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m         diff <(nm -D --defined-only "$C_SO" | awk '{print $3}' | sort) \
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m              <(nm -D --defined-only "$R_SO" | awk '{print $3}' | sort) \
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m           && echo "  symbol tables IDENTICAL (0 missing)" \
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m           || { echo "  SYMBOL DIFF NON-EMPTY"; fail=1; }
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m         echo "--- undefined non-libc symbols in Rust .so ---"
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m         leftover=$(nm -D --undefined-only "$R_SO" | awk '{print $NF}' \
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m             | grep -v '@GLIBC\|@GCC\|^_ITM_\|^__gmon_start__\|^gettid$\|^statx$\|^__cxa_thread_atexit_impl$' || true)
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m         if [ -n "$leftover" ]; then echo "  UNRESOLVED: $leftover"; fail=1
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m         else echo "  none (all imports are libc/unwinder)"; fi
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m         echo "--- differential test suite ---"
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m         if timeout 600 cargo test $relflag $flags 2>&1 | tail -3; then :; else fail=1; fi
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m         # tail hides the exit status of cargo; re-check explicitly
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m         timeout 600 cargo test $relflag $flags >/dev/null 2>&1 \
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m           || { echo "  TESTS FAILED"; fail=1; }
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m if [ "$fail" -eq 0 ]; then echo "ALL CONFIGURATIONS PASSED"; else echo "FAILURES PRESENT"; fi
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m exit "$fail"
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation/run_all_features.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation && chmod +x run_all_features.sh && timeout 600 ./run_all_features.sh 2>&1 | tail -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run full sweep across all configurations
+
+=== building C shared library ===
+=== no [features] in Cargo.toml -> 2 configurations ===
+
+############ combo=default profile=debug ############
+--- nm -D defined-symbol diff (C vs Rust) ---
+  symbol tables IDENTICAL (0 missing)
+--- undefined non-libc symbols in Rust .so ---
+  none (all imports are libc/unwinder)
+--- differential test suite ---
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+
+############ combo=default profile=release ############
+--- nm -D defined-symbol diff (C vs Rust) ---
+  symbol tables IDENTICAL (0 missing)
+--- undefined non-libc symbols in Rust .so ---
+  none (all imports are libc/unwinder)
+--- differential test suite ---
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+
+############ combo=no-default profile=debug ############
+--- nm -D defined-symbol diff (C vs Rust) ---
+  symbol tables IDENTICAL (0 missing)
+--- undefined non-libc symbols in Rust .so ---
+  none (all imports are libc/unwinder)
+--- differential test suite ---
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+
+############ combo=no-default profile=release ############
+--- nm -D defined-symbol diff (C vs Rust) ---
+  symbol tables IDENTICAL (0 missing)
+--- undefined non-libc symbols in Rust .so ---
+  none (all imports are libc/unwinder)
+--- differential test suite ---
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+
+
+ALL CONFIGURATIONS PASSED
+[38;5;244m - Completed in 7.208s[0m
+
+[?25l[0m[?25l[0m[0mI'll append content to file: [38;5;141mtranslation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Document the divergence found and fixed
+
+[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m ## Divergence found and fixed
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m One real divergence was found by the generic FFI-boundary tests (not by any
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m happy-path row):
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m **`printHexCharLine` — upper argument-register bits.** gcc compiles the `char`
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m parameter as a narrowing read of `edi`:
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m mov    %edi,%eax
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m mov    %al,-0x4(%rbp)      <- truncate to the low byte
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m movsbl -0x4(%rbp),%eax     <- sign-extend it back
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m so a caller that leaves garbage in the upper 24 bits (for example one using a
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m mismatched `void(int)` prototype, the `char` analogue of an out-of-range enum
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m value) still observes only the low byte. The original Rust took the parameter as
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m `c_char`; rustc tags that `signext i8`, assumes the caller already extended it,
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m and forwarded the whole register:
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m mov    %edi,%esi           <- no truncation
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m `printHexCharLine(0x100)` therefore printed `100` in Rust but `00` in C.
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m Fixed in `src/lib.rs` by taking the parameter as `c_int` (the same register on
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m the SysV x86-64 ABI the C library is built for) and truncating with
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m `as c_char` before use; the Rust `.so` now emits `movsbl %dil,%esi`, matching
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m gcc for every input. Regression test: `phase_c_generic_char_arg_widening`.
+[0m[K
+Appending to: [38;5;141mtranslation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mIndependent verification of every gate:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M
+echo "=== artifacts exist ==="; ls -l translation/SYMBOLS.md translation/ERRORS.md translation/CONFIGS.md translation/tests/differential.rs
+echo "=== row counts (must be 15 E-rows, 20 C-rows, 5 symbol rows) ==="
+echo -n "ERRORS.md rows:  "; grep -c '^| E[0-9]' translation/ERRORS.md
+echo -n "unchecked E:     "; grep -c '^| E[0-9].*\[ \]' translation/ERRORS.md || true
+echo -n "CONFIGS.md rows: "; grep -c '^| C[0-9]' translation/CONFIGS.md
+echo -n "unchecked C:     "; grep -c '^| C[0-9].*\[ \]' translation/CONFIGS.md || true
+echo "=== every ERRORS/CONFIGS row has a test ==="
+for r in $(seq -f 'e%02g' 1 15); do grep -q "phase_c_${r}_" translation/tests/differential.rs || echo "MISSING test for $r"; done
+for r in $(seq -f 'c%02g' 1 20); do grep -q "phase_b_${r}_" translation/tests/differential.rs || echo "MISSING test for $r"; done
+echo "  (no MISSING lines above = every row is driven by a test)"
+echo "=== nm -D symbol diff, release + debug ==="
+for p in debug release; do
+  printf '%s: ' "$p"
+  diff <(nm -D --defined-only c_src/build/libdriver.so | awk '{print $3}' | sort) \
+       <(nm -D --defined-only translation/target/$p/libdriver.so | awk '{print $3}' | sort) \
+    && echo "EMPTY DIFF"
+done
+echo "=== no stubs in the Rust translation ==="
+grep -cE 'unimplemented!|todo!|unreachable!|panic!\(' translation/src/lib.rs || echo "0 stubs"
+echo "=== c_src untouched ==="
+cd c_src && git status --porcelain 2>/dev/null | grep -v '^?? build/' || echo "(no tracked modifications / not a git repo)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify all completion-gate conditions independently
+
+=== artifacts exist ===
+-rw-r--r--. 1 scheschb amazon  5099 Sep  5 04:49 translation/CONFIGS.md
+-rw-r--r--. 1 scheschb amazon  5666 Sep  5 04:54 translation/ERRORS.md
+-rw-r--r--. 1 scheschb amazon  3184 Sep  5 04:47 translation/SYMBOLS.md
+-rw-r--r--. 1 scheschb amazon 27198 Sep  5 04:52 translation/tests/differential.rs
+=== row counts (must be 15 E-rows, 20 C-rows, 5 symbol rows) ===
+ERRORS.md rows:  15
+unchecked E:     0
+CONFIGS.md rows: 20
+unchecked C:     0
+=== every ERRORS/CONFIGS row has a test ===
+  (no MISSING lines above = every row is driven by a test)
+=== nm -D symbol diff, release + debug ===
+debug: EMPTY DIFF
+release: EMPTY DIFF
+=== no stubs in the Rust translation ===
+0
+0 stubs
+=== c_src untouched ===
+(no tracked modifications / not a git repo)
+[38;5;244m - Completed in 0.88s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-a8vS8M/translation && timeout 300 cargo clippy --all-targets 2>&1 | grep -E '^(warning|error)' | sort | uniq -c | head; echo "--- final full run ---"; timeout 600 cargo test --release 2>&1 | grep -E 'test result|FAILED'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final lint and test confirmation
+
+      1 warning: `driver` (lib test) generated 10 warnings (10 duplicates)
+      1 warning: `driver` (lib) generated 10 warnings (run `cargo clippy --fix --lib -p driver -- ` to apply 2 suggestions)
+      3 warning: manually constructing a nul-terminated string
+      2 warning: unneeded late initialization
+      5 warning: unsafe function's docs are missing a `# Safety` section
+--- final full run ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+[38;5;244m - Completed in 1.77s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete. All four phases pass, with one real bug found and fixed.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+[38;5;10mc_src[0m is a single translation unit ([38;5;10mdriver.c[0m, 99 lines) exporting five symbols — a CWE-190 signed-integer-overflow demonstration. All functions return [38;5;10mvoid[0m; their entire observable effect is bytes on [38;5;10mstdout[0m, so the tests capture file descriptor 1 ([38;5;10mdup[0m/[38;5;10mdup2[0m) around every call and compare byte-for-byte. Both [38;5;10m.so[0ms are loaded with [38;5;10mlibloading[0m and every call goes through [38;5;10mdlsym[0m, so the [38;5;10m#[no_mangle][0m wrappers are themselves under test.[0m[0m
+[0m[0m
+[38;5;252m[1m## Phase artifacts (in [38;5;10mtranslation/[0m)[0m[0m
+[0m[0m
+- [38;5;10mSYMBOLS.md[0m — 5 exported symbols, C↔Rust [38;5;10mnm -D[0m diff empty; [38;5;10mgoodG2B[0m/[38;5;10mgoodB2G[0m correctly absent from both (they are [38;5;10mstatic[0m in C). Function-by-function coverage table confirms nothing was skipped or stubbed ([38;5;10mgrep[0m for [38;5;10munimplemented![0m/[38;5;10mtodo![0m returns 0).[0m[0m
+- [38;5;10mERRORS.md[0m — 15 rows, derived from a mechanical grep of every [38;5;10mif[0m/[38;5;10melse[0m/null-check/[38;5;10mCHAR_MAX[0m in the source. There are no [38;5;10massert[0ms, no error returns, and no error enums in this TU, so every rejection is observable only as output bytes or their absence.[0m[0m
+- [38;5;10mCONFIGS.md[0m — 20 rows over the one runtime flag ([38;5;10mdriver[0m's [38;5;10museGood[0m), all five entry points including the lowest-level [38;5;10mprintLine[0m/[38;5;10mprintHexCharLine[0m, and the input shapes the code special-cases.[0m[0m
+[0m[0m
+[38;5;252m[1m## The divergence found[0m[0m
+[0m[0m
+[38;5;10mprintHexCharLine[0m disagreed on the upper bits of its argument register. gcc compiles the [38;5;10mchar[0m parameter as a narrowing read ([38;5;10mmov %al,-0x4(%rbp); movsbl -0x4(%rbp),%eax[0m), so a caller leaving garbage in the top 24 bits of [38;5;10medi[0m — the [38;5;10mchar[0m analogue of an out-of-range enum value — still sees only the low byte. Rust's [38;5;10mextern "C" fn(charHex: c_char)[0m is tagged [38;5;10msignext i8[0m, so LLVM assumed the caller had already extended it and forwarded the whole register ([38;5;10mmov %edi,%esi[0m). [38;5;10mprintHexCharLine(0x100)[0m printed [38;5;10m100[0m in Rust versus [38;5;10m00[0m in C.[0m[0m
+[0m[0m
+Fixed by taking the parameter as [38;5;10mc_int[0m (same register under SysV x86-64) and truncating with [38;5;10mas c_char[0m; the Rust [38;5;10m.so[0m now emits [38;5;10mmovsbl %dil,%esi[0m. Internal callers use a private [38;5;10mc_char[0m-typed helper. No happy-path row would have caught this.[0m[0m
+[0m[0m
+[38;5;252m[1m## Completion gate[0m[0m
+[0m[0m
+[38;5;10mtranslation/run_all_features.sh[0m rebuilds the C library, diffs [38;5;10mnm -D[0m, checks for unresolved non-libc imports, and runs the suite across all configurations. [38;5;10mCargo.toml[0m has no [38;5;10m[features][0m section, so the combination set is [38;5;10mdefault[0m and [38;5;10m--no-default-features[0m; the script sweeps both across debug and release — 4 configurations, each with an empty symbol diff and 38/38 tests passing. There is no [38;5;10madd_executable[0m in [38;5;10mCMakeLists.txt[0m and no [38;5;10m[[bin]][0m/[38;5;10mmain.rs[0m in the crate, so the binary-stdout comparison is not applicable; fd-level capture around the [38;5;10m.so[0m calls covers the equivalent ground.[0m[0m
+[0m[0m
+One harness detail worth knowing: fd 1 is process-global, so [38;5;10mtranslation/.cargo/config.toml[0m pins [38;5;10mRUST_TEST_THREADS=1[0m. Without it the test harness's own progress output lands inside a capture window and produces spurious failures.[0m[0m
+[38;5;8m
+ ▸ Credits: 17.28 • Time: 8m 11s
+
+[0m[1G[0m[0m[?25h

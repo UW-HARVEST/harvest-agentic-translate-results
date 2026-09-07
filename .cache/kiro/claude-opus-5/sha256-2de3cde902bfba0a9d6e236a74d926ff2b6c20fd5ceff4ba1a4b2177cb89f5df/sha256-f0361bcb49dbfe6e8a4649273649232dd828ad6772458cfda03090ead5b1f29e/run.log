@@ -1,0 +1,1374 @@
+[32mAll tools are now trusted ([0m[31m![0m[32m). Kiro will execute tools without asking for confirmation.[0m
+Agents can sometimes do unexpected things so understand the risks.
+
+Learn more at [38;5;141mhttps://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely[0m
+
+
+
+[38;5;252m[0m[?25l[38;5;141m> [0mI'll start by exploring the working directory structure.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mls -la && echo "=== c_src ===" && find c_src -type f | head -50 && echo "=== translation ===" && find translation -type f -not -path '*/target/*' | head -50[0m[38;5;244m (using tool: shell)[0m
+Purpose: Explore directory structure
+
+total 160
+drwxr-xr-x.    4 scheschb amazon     50 Sep  5 09:16 .
+drwxr-xr-x. 2380 scheschb amazon 114688 Sep  5 09:16 ..
+drwxr-xr-x.    4 scheschb amazon     73 Sep  5 09:16 c_src
+drwxr-xr-x.    3 scheschb amazon     53 Sep  5 09:16 translation
+=== c_src ===
+c_src/CMakeLists.txt
+c_src/include/lib.h
+c_src/license.txt
+c_src/src/lib.c
+=== translation ===
+translation/Cargo.toml
+translation/src/lib.rs
+translation/Cargo.lock
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mwc -l c_src/CMakeLists.txt c_src/include/lib.h c_src/src/lib.c translation/Cargo.toml translation/src/lib.rs && echo "=== CMakeLists ===" && cat c_src/CMakeLists.txt && echo "=== Cargo.toml ===" && cat translation/Cargo.toml[0m[38;5;244m (using tool: shell)[0m
+Purpose: Check file sizes and build configs
+
+   15 c_src/CMakeLists.txt
+    1 c_src/include/lib.h
+  273 c_src/src/lib.c
+   14 translation/Cargo.toml
+  415 translation/src/lib.rs
+  718 total
+=== CMakeLists ===
+cmake_minimum_required(VERSION 3.10)
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
+cmake_path(GET parent FILENAME project_name)
+project(${project_name})
+add_library(${project_name} SHARED
+    src/lib.c)
+
+target_include_directories(${project_name} PUBLIC include)
+target_include_directories(${project_name} PRIVATE src)
+
+install(TARGETS ${project_name}
+    DESTINATION lib)
+install(DIRECTORY include/
+    DESTINATION include)
+
+=== Cargo.toml ===
+[package]
+name = "harvest_translation"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "get_predict_func_lib"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+[38;5;244m - Completed in 0.6s[0m
+
+[?25l[0m[?25l[0m[0mBatch fs_read operation with [38;5;141m2[0m operations[38;5;244m (using tool: read)[0m
+Purpose: Read C source and header
+
+↱ Operation 1: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/c_src/src/lib.c[0m, all lines
+↱ Operation 2: Reading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/c_src/include/lib.h[0m, all lines
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m9013 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/c_src/src/lib.c
+
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m31 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/c_src/include/lib.h
+
+ ⋮ 
+
+[38;5;244m- [0mSummary: 2 operations processed, 2 successful, 0 failed
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mReading file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/src/lib.rs[0m, all lines[38;5;244m (using tool: read)[0m
+[38;5;10m ✓ [0mSuccessfully read [38;5;244m14891 bytes[0m from /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/src/lib.rs
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON > cmake.log 2>&1 && cmake --build . >> cmake.log 2>&1 && echo OK && find . -name '*.so'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Build C shared library
+
+OK
+./libharvest-work-9AcdNV.so
+[38;5;244m - Completed in 0.409s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo check 2>&1 | tail -20 && echo "=== BUILD ===" && timeout 600 cargo build --release 2>&1 | tail -20 && ls -la target/release/*.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: cargo check and build
+
+    Checking harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+=== BUILD ===
+   Compiling harvest_translation v0.1.0 (/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation)
+    Finished `release` profile [optimized] target(s) in 0.11s
+-rwxr-xr-x. 2 scheschb amazon 405920 Sep  5 09:16 target/release/libget_predict_func_lib.so
+[38;5;244m - Completed in 0.240s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-9AcdNV && echo "=== C dynamic symbols ===" && nm -D --defined-only c_src/build/libharvest-work-9AcdNV.so && echo "=== C all defined text symbols ===" && nm --defined-only c_src/build/libharvest-work-9AcdNV.so && echo "=== RUST dynamic symbols ===" && nm -D --defined-only translation/target/release/libget_predict_func_lib.so[0m[38;5;244m (using tool: shell)[0m
+Purpose: Compare exported symbols
+
+=== C dynamic symbols ===
+00000000000024c8 T get_predict_func
+=== C all defined text symbols ===
+00000000000023dd t BTAC1C2_GetPredictFunc
+00000000000010f9 t BTAC1C2_PredictSample
+0000000000001b4e t BTAC1C2_PredictSample_Pfn0
+0000000000001b7e t BTAC1C2_PredictSample_Pfn1
+00000000000021b7 t BTAC1C2_PredictSample_Pfn10
+00000000000022cd t BTAC1C2_PredictSample_Pfn11
+0000000000001bd1 t BTAC1C2_PredictSample_Pfn2
+0000000000001c29 t BTAC1C2_PredictSample_Pfn3
+0000000000001c83 t BTAC1C2_PredictSample_Pfn4
+0000000000001d1d t BTAC1C2_PredictSample_Pfn5
+0000000000001dba t BTAC1C2_PredictSample_Pfn6
+0000000000001e58 t BTAC1C2_PredictSample_Pfn7
+0000000000001f24 t BTAC1C2_PredictSample_Pfn8
+0000000000002070 t BTAC1C2_PredictSample_Pfn9
+0000000000004df8 d _DYNAMIC
+0000000000004fe8 d _GLOBAL_OFFSET_TABLE_
+0000000000003350 r __FRAME_END__
+00000000000030a0 r __GNU_EH_FRAME_HDR
+0000000000005008 d __TMC_END__
+00000000000010b0 t __do_global_dtors_aux
+0000000000004de8 d __do_global_dtors_aux_fini_array_entry
+0000000000004df0 d __dso_handle
+0000000000004de0 d __frame_dummy_init_array_entry
+0000000000002638 t _fini
+0000000000001000 t _init
+0000000000005008 b completed.0
+0000000000001040 t deregister_tm_clones
+00000000000010f0 t frame_dummy
+00000000000024c8 T get_predict_func
+0000000000001070 t register_tm_clones
+=== RUST dynamic symbols ===
+00000000000120c0 T get_predict_func
+[38;5;244m - Completed in 0.42s[0m
+
+[?25l[0m[38;5;141m> [0mSymbol parity is already exact ([38;5;10mget_predict_func[0m only). Now writing Phase A artifacts.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/SYMBOLS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create SYMBOLS.md
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # SYMBOLS.md — exported-symbol parity
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from:
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m nm -D --defined-only c_src/build/libharvest-work-9AcdNV.so
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m nm -D --defined-only translation/target/release/libget_predict_func_lib.so
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m ## C `.so` dynamic (exported) symbols
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m 00000000000024c8 T get_predict_func
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m That is the complete `nm -D --defined-only` output for the C library. Every
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m other function in `c_src/src/lib.c` is declared `static`, so it has local
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m (`t`) linkage and is *not* part of the ABI:
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m | C symbol | linkage | exported? |
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m |---|---|---|
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m | `get_predict_func` | `T` (global text) | YES |
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m | `BTAC1C2_GetPredictFunc` | `t` (local) | no — `static` |
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m | `BTAC1C2_PredictSample` | `t` (local) | no — `static` |
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m | `BTAC1C2_PredictSample_Pfn0` .. `_Pfn11` (12 fns) | `t` (local) | no — `static` |
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m CRT/linker-synthesised locals (`_init`, `_fini`, `frame_dummy`,
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m `register_tm_clones`, `deregister_tm_clones`, `__do_global_dtors_aux`,
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m `__dso_handle`, `_DYNAMIC`, `_GLOBAL_OFFSET_TABLE_`, `__FRAME_END__`,
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m `__GNU_EH_FRAME_HDR`, `__TMC_END__`, `completed.0`, and the
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m `*_init_array_entry` / `*_fini_array_entry` data symbols) are toolchain
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m artifacts, not library API, and are excluded.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m There are no macro-generated symbol families in this source: `lib.c` contains
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m no function-defining macros, so the symbol list above is exhaustive.
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ## Rust `.so` dynamic (exported) symbols
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m 00000000000120c0 T get_predict_func
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m ## Parity table
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | # | symbol | in C `.so` | in Rust `.so` | status |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m |---|--------|-----------|---------------|--------|
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | 1 | `get_predict_func` | yes (`T`) | yes (`T`, via `#[unsafe(no_mangle)] pub extern "C"`) | MATCH |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m ## Diff
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m $ comm -3 <(c symbols) <(rust symbols)
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m (empty)
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m - Symbols exported by C but missing from Rust: **0**
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m - No symbol required translating a previously-skipped C module: all 15 C
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m   functions (`get_predict_func`, `BTAC1C2_GetPredictFunc`,
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m   `BTAC1C2_PredictSample`, `BTAC1C2_PredictSample_Pfn0..11`) are present in
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m   `translation/src/lib.rs`; the 14 `static` ones are private in Rust too,
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m   matching their C linkage.
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m - Undefined non-libc symbols in the Rust `.so`: **0** (verified with
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m   `nm -D --undefined-only`; all remaining undefined entries resolve to
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m   `libc`/`libgcc`/`ld-linux` runtime symbols).
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m STATUS: **PASS** — symbol diff is empty.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/SYMBOLS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-9AcdNV && echo "--- rust undefined ---" && nm -D --undefined-only translation/target/release/libget_predict_func_lib.so && echo "--- c undefined ---" && nm -D --undefined-only c_src/build/libharvest-work-9AcdNV.so && echo "--- diff ---" && comm -3 <(nm -D --defined-only --format=posix c_src/build/libharvest-work-9AcdNV.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $1}' | sort) <(nm -D --defined-only --format=posix translation/target/release/libget_predict_func_lib.so | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $1}' | sort) && echo "(diff done)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify undefined symbols and compute symbol diff
+
+--- rust undefined ---
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 U _Unwind_Backtrace@GCC_3.3
+                 U _Unwind_GetDataRelBase@GCC_3.0
+                 U _Unwind_GetIP@GCC_3.0
+                 U _Unwind_GetIPInfo@GCC_4.2.0
+                 U _Unwind_GetLanguageSpecificData@GCC_3.0
+                 U _Unwind_GetRegionStart@GCC_3.0
+                 U _Unwind_GetTextRelBase@GCC_3.0
+                 U _Unwind_Resume@GCC_3.0
+                 U _Unwind_SetGR@GCC_3.0
+                 U _Unwind_SetIP@GCC_3.0
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __cxa_thread_atexit_impl@GLIBC_2.18
+                 U __errno_location@GLIBC_2.2.5
+                 w __gmon_start__
+                 U __tls_get_addr@GLIBC_2.3
+                 U abort@GLIBC_2.2.5
+                 U bcmp@GLIBC_2.2.5
+                 U calloc@GLIBC_2.2.5
+                 U close@GLIBC_2.2.5
+                 U dl_iterate_phdr@GLIBC_2.2.5
+                 U free@GLIBC_2.2.5
+                 U fstat64@GLIBC_2.33
+                 U getcwd@GLIBC_2.2.5
+                 U getenv@GLIBC_2.2.5
+                 w gettid@GLIBC_2.30
+                 U lseek64@GLIBC_2.2.5
+                 U malloc@GLIBC_2.2.5
+                 U memcpy@GLIBC_2.14
+                 U memmove@GLIBC_2.2.5
+                 U memset@GLIBC_2.2.5
+                 U mmap64@GLIBC_2.2.5
+                 U munmap@GLIBC_2.2.5
+                 U open64@GLIBC_2.2.5
+                 U posix_memalign@GLIBC_2.2.5
+                 U pthread_key_create@GLIBC_2.34
+                 U pthread_key_delete@GLIBC_2.34
+                 U pthread_setspecific@GLIBC_2.34
+                 U read@GLIBC_2.2.5
+                 U readlink@GLIBC_2.2.5
+                 U realloc@GLIBC_2.2.5
+                 U realpath@GLIBC_2.3
+                 U stat64@GLIBC_2.33
+                 w statx@GLIBC_2.28
+                 U strlen@GLIBC_2.2.5
+                 U syscall@GLIBC_2.2.5
+                 U write@GLIBC_2.2.5
+                 U writev@GLIBC_2.2.5
+--- c undefined ---
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+--- diff ---
+(diff done)
+[38;5;244m - Completed in 0.44s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-9AcdNV && echo "--- return/error-ish ---" && grep -n 'return\|assert\|NULL\|-1\|ERROR\|default:\|if *(\|MAX\|MIN\|switch' c_src/src/lib.c | grep -v 'psamp\[' | head -60[0m[38;5;244m (using tool: shell)[0m
+Purpose: Grep C for error paths and branches
+
+--- return/error-ish ---
+22:    switch (pfcn) {
+98:    default:
+102:    return (pred);
+125:    return (p0 - (p1 >> 1));
+132:    return ((3 * p0 - p1) >> 2);
+139:    return ((5 * p0 - p1) >> 3);
+171:    return ((5 * p0 - p1) >> 3);
+180:    return ((p0 + p1) >> 1);
+185:    switch (pfcn) {
+222:    default:
+226:    return (fcn);
+232:    switch (pfcn) {
+269:    default:
+272:    return result;
+[38;5;244m - Completed in 0.5s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/ERRORS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create ERRORS.md error surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # ERRORS.md — error / rejection surface table
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `c_src/src/lib.c`. The grep sweep for every
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m rejection idiom found:
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m ```sh
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m grep -n 'RETURN_ERROR\|return -1\|return NULL\|assert\|errno\|exit(\|abort(' c_src/src/lib.c
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m #   -> no matches
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m grep -n 'if *(\|MAX\|MIN\|<=\|>=' c_src/src/lib.c
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m #   -> no matches (no explicit range checks, no null checks, no min/max constants)
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m grep -n 'switch\|default:' c_src/src/lib.c
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m #   -> 22, 98 | 185, 222 | 232, 269   (three switches, each with a `default:`)
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m ```
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m So this library has **no error codes, no error enums, no asserts, no null
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m checks, and no explicit range checks**. Its *entire* rejection surface is the
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m `default:` arm of the three `switch (pfcn)` statements — an out-of-domain
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m `pfcn` is "rejected" by falling through to a fallback value rather than by
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m returning an error code. Each distinct `default:` / out-of-domain branch gets
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m its own row.
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m `pfcn` is a plain `int` parameter (not an `enum`), so the C accepts any 32-bit
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m value; every value outside the switch's case labels is a real input the C
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m handles and the Rust must handle identically.
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m ## Table
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m | # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m |---|----------|----------------------------------------------|-------------------|------|--------|
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m | 1 | `get_predict_func` (line 269 `default:`) | `pfcn == 12` — first value past the 0..11 domain of `BTAC1C2_GetPredictFunc`; also a *valid* label for `BTAC1C2_PredictSample`'s switch, so it is the trickiest boundary | `0` (`result` keeps its initialiser; `BTAC1C2_GetPredictFunc` returned `&BTAC1C2_PredictSample`, which matches no `case`) | `err_row01_pfcn_12` | [x] |
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m | 2 | `get_predict_func` (line 269 `default:`) | `pfcn == 13, 14, 15` — the remaining `BTAC1C2_PredictSample` case labels, still outside `GetPredictFunc`'s 0..11 domain | `0` for each | `err_row02_pfcn_13_14_15` | [x] |
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m | 3 | `get_predict_func` (line 269 `default:`) | `pfcn == 16` — first value past *every* case label in *every* switch in the file | `0` | `err_row03_pfcn_16` | [x] |
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m | 4 | `get_predict_func` (line 269 `default:`) | `pfcn == -1` — one step below the low end of the valid domain | `0` | `err_row04_pfcn_minus_1` | [x] |
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m | 5 | `get_predict_func` (line 269 `default:`) | `pfcn < -1` (arbitrary negative, e.g. `-2, -12, -16, -1000`) | `0` for each | `err_row05_pfcn_negative` | [x] |
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m | 6 | `get_predict_func` (line 269 `default:`) | `pfcn == INT_MAX` (`2147483647`) — extreme positive, exercises the switch's jump-table/range lowering | `0` | `err_row06_pfcn_int_max` | [x] |
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m | 7 | `get_predict_func` (line 269 `default:`) | `pfcn == INT_MIN` (`-2147483648`) — extreme negative; note `pfcn - 12` would overflow, so any lowering that computes the jump-table offset must not mis-dispatch | `0` | `err_row07_pfcn_int_min` | [x] |
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m | 8 | `get_predict_func` (line 269 `default:`) | out-of-range "enum-like" values crossing the FFI boundary: values that would be plausible variants of a 4-bit predictor-function enum but have no matching `case` — `0x10, 0xFF, 0x100, 0xFFFF, 0x10000, 0x7FFFFFFE` | `0` for each | `err_row08_out_of_range_enum_values` | [x] |
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m | 9 | `get_predict_func` (line 269 `default:`) | bit-pattern aliasing: values congruent to a *valid* index modulo a power of two (`16, 32, 256, 4096, -16, -256`, and `k + 65536` for k in 0..11). A masking bug (`pfcn & 15`, `pfcn & 7`) would wrongly return `1` | `0` for each | `err_row09_masking_aliases` | [x] |
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | 10 | `get_predict_func` (line 269 `default:`) | exhaustive sweep of the whole near-domain `-2048..=2048`, plus 200k pseudo-random `i32` values (fixed seed) | `1` iff `0 <= pfcn <= 11`, else `0` | `err_row10_exhaustive_and_random` | [x] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m | 11 | `BTAC1C2_GetPredictFunc` (line 222 `default:`) | `pfcn` outside 0..11 | returns `(void *)BTAC1C2_PredictSample` (the fallback pointer, **not** `NULL`) — observable only indirectly: `get_predict_func` then returns `0` because that pointer matches no `case` | covered transitively by rows 1–10; `static`, so not FFI-reachable | [x] |
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | 12 | `BTAC1C2_PredictSample` (line 98 `default:`) | `pfcn < 0` or `pfcn > 15` | `pred = 0` | not FFI-reachable (`static`, and `get_predict_func` never calls it); verified by source inspection — Rust `_ => { pred = 0; }` | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m ## Notes on non-reachable rows
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m Rows 11 and 12 concern `static` C functions with local (`t`) linkage. They are
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m absent from `nm -D` for both libraries, so no differential FFI test can call
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m them directly; row 11 is exercised transitively (every row 1–10 goes through
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m it), and row 12's Rust counterpart was checked against the C by reading both
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m sources. This is documented rather than stubbed — no fake export was added to
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m make them appear callable.
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m Deliberately *not* tested as "null pointer" cases: `get_predict_func` takes no
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m pointer parameters, so there is no null-pointer input to construct at the ABI
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m boundary. The `*mut c_int` / `*mut btac1c_idxstate` parameters exist only on the
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m non-exported predictors.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/ERRORS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/CONFIGS.md[0m[38;5;244m (using tool: write)[0m
+Purpose: Create CONFIGS.md configuration surface table
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m # CONFIGS.md — configuration surface table (valid inputs)
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m Derived mechanically from `c_src/include/lib.h` and `c_src/src/lib.c`.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m ## Axes the C actually branches on
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m Enumerated from the public header plus every `if` / `switch` / `#ifdef` in the
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m source:
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m - **Public entry points** (`nm -D` ∩ `lib.h`): exactly one —
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m   `int get_predict_func(int pfcn)`. There are no convenience-vs-low-level
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   layers to choose between at the ABI boundary; the "low-level" functions
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   (`BTAC1C2_GetPredictFunc`, `BTAC1C2_PredictSample`,
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m   `BTAC1C2_PredictSample_Pfn0..11`) are all `static`.
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m - **Runtime options / modes / flags**: none. There is no init call, no
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m   settable state, no global, no context object, no `#ifdef` in the file
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m   (`grep -c '#if' c_src/src/lib.c` → 0). The library is a pure function of its
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m   single argument.
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m - **Input shapes**: the only input is the scalar `int pfcn`. The shape axis is
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   therefore the *value class* of `pfcn`, and the code distinguishes these
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   classes:
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m   - each individual value `0..=11` — `BTAC1C2_GetPredictFunc` has a separate
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m     `case` per value, and `get_predict_func` has a separate pointer comparison
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m     per value, so each is its own distinct path (12 classes);
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m   - `12..=15` — outside `GetPredictFunc`'s domain but inside
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m     `BTAC1C2_PredictSample`'s (4 classes, covered as error rows);
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m   - everything else (covered as error rows).
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m - **Call-sequence shape**: the function is stateless, so repeated / interleaved
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m   calls are an axis only insofar as a buggy translation might cache. Covered by
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m   row 13.
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m - Byte order, element widths, buffer sizes, counts, empty/one/many: **not
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m   applicable** — no buffers, no arrays, no lengths cross the ABI boundary.
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m Because there are no option flags, the cross-product collapses to
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m `{single entry point} × {value class of pfcn}`, plus the call-sequence row.
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m ## Table
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m | # | entry point(s) | configuration (options set + input shape) | [ ] |
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m |---|----------------|--------------------------------------------|-----|
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m | 1 | `get_predict_func` | `pfcn = 0` → `BTAC1C2_PredictSample_Pfn0` selected; expect `1` | [x] |
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m | 2 | `get_predict_func` | `pfcn = 1` → `_Pfn1`; expect `1` | [x] |
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m | 3 | `get_predict_func` | `pfcn = 2` → `_Pfn2`; expect `1` | [x] |
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m | 4 | `get_predict_func` | `pfcn = 3` → `_Pfn3`; expect `1` | [x] |
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m | 5 | `get_predict_func` | `pfcn = 4` → `_Pfn4`; expect `1` | [x] |
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m | 6 | `get_predict_func` | `pfcn = 5` → `_Pfn5`; expect `1` | [x] |
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m | 7 | `get_predict_func` | `pfcn = 6` → `_Pfn6`; expect `1` | [x] |
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m | 8 | `get_predict_func` | `pfcn = 7` → `_Pfn7`; expect `1` | [x] |
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m | 9 | `get_predict_func` | `pfcn = 8` → `_Pfn8`; expect `1` | [x] |
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m | 10 | `get_predict_func` | `pfcn = 9` → `_Pfn9`; expect `1` | [x] |
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m | 11 | `get_predict_func` | `pfcn = 10` → `_Pfn10`; expect `1`. Note `_Pfn10` body (`>> 3`) disagrees with `PredictSample` case 10 (`>> 4`); identity selection is what is observable here | [x] |
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m | 12 | `get_predict_func` | `pfcn = 11` → `_Pfn11`; expect `1`. Note `_Pfn11` body (`>> 1`) disagrees with `PredictSample` case 11 (`>> 3`) | [x] |
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m | 13 | `get_predict_func` | full valid domain `0..=11` driven end-to-end as a real consumer does: each value called repeatedly, in ascending, descending, and pseudo-random interleaved order (fixed seed), asserting statelessness — the same value must give the same answer regardless of what preceded it | [x] |
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m | 14 | `get_predict_func` | randomized property sweep over the *whole* `i32` domain (fixed-seed LCG, 200k draws) biased to include the valid domain, boundaries, and masking aliases: C and Rust return values compared for every draw | [x] |
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m | 15 | `get_predict_func` | pointer-identity invariant implied by the C: for the valid domain the return value is `1` for *every* value, i.e. `BTAC1C2_GetPredictFunc` must return the *matching* specialised predictor and never the shared `BTAC1C2_PredictSample` fallback. A Rust translation that collapsed distinct predictors onto one address, or that used a per-call trampoline/shim address, would break this. Asserted for all 12 values against C | [x] |
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m ## Non-rows (recorded so the pruning is auditable)
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m - No `#ifdef` / build-time configuration in the C, so there is no compile-time
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m   axis to cross with the above.
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m - `c_src/CMakeLists.txt` builds a `SHARED` library only — **no binary
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m   executable / driver**, so the "compare C and Rust stdout" gate is not
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m   applicable (nothing to run). `translation/Cargo.toml` likewise declares only
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m   `crate-type = ["cdylib"]` and no `[[bin]]`.
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m - `translation/Cargo.toml` has **no `[features]` section**, so the only feature
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m   combination is the default (empty) one. `--no-default-features` and the
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m   default build are therefore the same code; both are exercised.
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/CONFIGS.md[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the differential test harness. Adding [38;5;10mlibloading[0m and writing tests.[0m[0m
+[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/Cargo.toml[0m[38;5;244m (using tool: write)[0m
+Purpose: Add libloading dev-dependency
+
+[49m[38;5;10m+     11[0m:[38;5;10m[49m [dev-dependencies]
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m libloading = "0.8"
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m 
+[0m[49m[39m  11, 14[0m:[39m[49m [profile.release]
+[0m[49m[39m  12, 15[0m:[39m[49m panic = "abort"
+[0m[K
+Updating: [38;5;141mtranslation/Cargo.toml[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Create shared differential test harness
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Differential test harness: loads BOTH the C `.so` and the Rust `.so` with
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //! `libloading` and compares their exported `get_predict_func` through the FFI
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! boundary. The Rust code is never called directly, so the `#[no_mangle]`
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! export wrapper is under test too.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m use std::path::{Path, PathBuf};
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use libloading::{Library, Symbol};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m pub type GetPredictFunc = unsafe extern "C" fn(std::ffi::c_int) -> std::ffi::c_int;
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Crate root (`translation/`).
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m fn crate_root() -> PathBuf {
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m /// Working-directory root (the parent of `translation/` and `c_src/`).
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m fn work_root() -> PathBuf {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m     crate_root()
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         .parent()
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m         .expect("crate root has a parent")
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m         .to_path_buf()
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m fn find_so(dir: &Path, prefix: &str) -> Option<PathBuf> {
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m     let entries = std::fs::read_dir(dir).ok()?;
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m     let mut hits: Vec<PathBuf> = entries
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m         .filter_map(|e| e.ok())
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m         .map(|e| e.path())
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m         .filter(|p| {
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m             let name = match p.file_name().and_then(|n| n.to_str()) {
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m                 Some(n) => n,
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m                 None => return false,
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m             };
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m             name.starts_with(prefix) && name.ends_with(".so")
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m         })
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m         .collect();
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m     hits.sort();
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m     hits.into_iter().next()
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m /// Path to the C shared library. The CMake project name is derived from the
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m /// working directory's name, so the file name is not fixed — glob for it.
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m pub fn c_lib_path() -> PathBuf {
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m     let build = work_root().join("c_src").join("build");
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m     find_so(&build, "lib").unwrap_or_else(|| {
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m         panic!(
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m             "no C .so found in {}. Build it first:\n  cd c_src && mkdir -p build && cd build && \
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m              cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .",
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m             build.display()
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m         )
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m     })
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m /// Path to the Rust `cdylib`. Located relative to the running test binary
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m /// (`target/<profile>/deps/<test>`), so it picks up whatever profile and
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m /// feature set `cargo test` just built.
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m pub fn rust_lib_path() -> PathBuf {
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     let exe = std::env::current_exe().expect("test exe path");
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     // .../target/<profile>/deps/<test-bin>
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m     let mut dir = exe.parent().expect("deps dir").to_path_buf();
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     for _ in 0..2 {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m         if let Some(p) = find_so(&dir, "libget_predict_func_lib") {
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m             return p;
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         dir = match dir.parent() {
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m             Some(p) => p.to_path_buf(),
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m             None => break,
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m     panic!(
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         "could not locate libget_predict_func_lib.so near {}",
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         exe.display()
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m /// Both implementations, loaded through `dlopen`.
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m pub struct Pair {
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m     _c: Library,
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m     _r: Library,
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m     c_fn: GetPredictFunc,
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m     r_fn: GetPredictFunc,
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m impl Pair {
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     pub fn load() -> Pair {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         unsafe {
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m             let c = Library::new(c_lib_path()).expect("dlopen C .so");
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m             let r = Library::new(rust_lib_path()).expect("dlopen Rust .so");
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             let c_sym: Symbol<GetPredictFunc> = c
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m                 .get(b"get_predict_func\0")
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m                 .expect("C .so exports get_predict_func");
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             let r_sym: Symbol<GetPredictFunc> = r
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m                 .get(b"get_predict_func\0")
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m                 .expect("Rust .so exports get_predict_func");
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m             let c_fn = *c_sym;
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m             let r_fn = *r_sym;
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m             Pair {
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m                 _c: c,
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m                 _r: r,
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m                 c_fn,
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m                 r_fn,
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     pub fn c(&self, pfcn: i32) -> i32 {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         unsafe { (self.c_fn)(pfcn) }
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m     #[inline]
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m     pub fn rust(&self, pfcn: i32) -> i32 {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         unsafe { (self.r_fn)(pfcn) }
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     /// Assert byte-identical results, returning the shared value.
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     #[track_caller]
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     pub fn assert_same(&self, pfcn: i32) -> i32 {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         let c = self.c(pfcn);
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m         let r = self.rust(pfcn);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             c, r,
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             "divergence for get_predict_func({pfcn}) [0x{pfcn:08x}]: C={c} Rust={r}"
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m         c
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m /// Deterministic 64-bit LCG (fixed seed) so every property run is reproducible.
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m pub struct Lcg(u64);
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m impl Lcg {
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     pub fn new(seed: u64) -> Lcg {
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m         Lcg(seed)
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m     pub fn next_u32(&mut self) -> u32 {
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         // Numerical Recipes constants.
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         self.0 = self
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m             .0
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m             .wrapping_mul(6364136223846793005)
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m             .wrapping_add(1442695040888963407);
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m         (self.0 >> 32) as u32
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m     pub fn next_i32(&mut self) -> i32 {
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         self.next_u32() as i32
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     pub fn below(&mut self, n: u32) -> u32 {
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m         self.next_u32() % n
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow the Phase B (valid-path) tests:[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/tests/phase_b_valid_paths.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Phase B valid-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase B — valid-path differential tests. One test per row of `CONFIGS.md`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! Every assertion goes through `dlopen` on both the C `.so` and the Rust
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! `.so`; the Rust implementation is never called directly.
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m use common::{Lcg, Pair};
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m /// The 12 values `BTAC1C2_GetPredictFunc` has a dedicated `case` for.
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m const VALID: [i32; 12] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// Rows 1..=12: each individual valid `pfcn`, its own code path in both
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m /// `BTAC1C2_GetPredictFunc` and `get_predict_func`.
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m macro_rules! valid_row {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     ($name:ident, $pfcn:expr, $row:expr) => {
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m         #[test]
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m         fn $name() {
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m             let p = Pair::load();
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m             let got = p.assert_same($pfcn);
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m             assert_eq!(
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m                 got, 1,
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m                 "CONFIGS.md row {}: C itself must select the matching _Pfn{} \
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m                  (ground truth), got {}",
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m                 $row, $pfcn, got
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m             );
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m             // Repeat: stateless, so the answer must not drift.
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m             for _ in 0..64 {
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m                 assert_eq!(p.assert_same($pfcn), got);
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m             }
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m     };
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m valid_row!(cfg_row01_pfcn_0, 0, 1);
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m valid_row!(cfg_row02_pfcn_1, 1, 2);
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m valid_row!(cfg_row03_pfcn_2, 2, 3);
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m valid_row!(cfg_row04_pfcn_3, 3, 4);
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m valid_row!(cfg_row05_pfcn_4, 4, 5);
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m valid_row!(cfg_row06_pfcn_5, 5, 6);
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m valid_row!(cfg_row07_pfcn_6, 6, 7);
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m valid_row!(cfg_row08_pfcn_7, 7, 8);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m valid_row!(cfg_row09_pfcn_8, 8, 9);
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m valid_row!(cfg_row10_pfcn_9, 9, 10);
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m valid_row!(cfg_row11_pfcn_10, 10, 11);
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m valid_row!(cfg_row12_pfcn_11, 11, 12);
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m /// Row 13: drive the whole valid domain end to end the way a consumer would —
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m /// ascending, descending, and pseudo-random interleavings — asserting the
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m /// result is order-independent (no hidden state / caching in the translation).
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m fn cfg_row13_domain_sweep_orderings() {
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m     // Ascending.
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     for &v in VALID.iter() {
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m         assert_eq!(p.assert_same(v), 1, "ascending sweep, pfcn={v}");
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m     // Descending.
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m     for &v in VALID.iter().rev() {
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m         assert_eq!(p.assert_same(v), 1, "descending sweep, pfcn={v}");
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     // Random interleaving, fixed seed.
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     let mut rng = Lcg::new(0x5EED_1234_ABCD_0001);
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m     for _ in 0..20_000 {
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m         let v = VALID[rng.below(VALID.len() as u32) as usize];
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m         assert_eq!(p.assert_same(v), 1, "interleaved sweep, pfcn={v}");
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     // Interleave valid with invalid so a stateful bug would show up.
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m     for _ in 0..20_000 {
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m         let v = VALID[rng.below(VALID.len() as u32) as usize];
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m         let bad = rng.next_i32();
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m         p.assert_same(bad);
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m         assert_eq!(p.assert_same(v), 1, "valid after invalid {bad}, pfcn={v}");
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m /// Row 14: randomized property sweep over the whole `i32` domain, fixed seed.
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// Biased so the valid domain, the boundaries, and masking aliases all get hit
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// frequently instead of being lost in 2^32.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m fn cfg_row14_randomized_full_domain() {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     let mut rng = Lcg::new(0xC0FF_EE00_1234_5678);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     for _ in 0..200_000 {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         let raw = rng.next_i32();
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m         // Five biasing strategies, so ~4/5 of draws land near interesting values.
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m         let pfcn = match rng.below(5) {
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m             0 => raw,                              // anywhere in i32
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m             1 => raw % 32,                         // -31..=31, straddles the domain
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m             2 => (raw % 12).abs(),                 // strictly valid
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m             3 => raw & 0xF,                        // 0..=15: valid ∪ PredictSample-only
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m             _ => raw.wrapping_mul(16),             // multiples of 16: masking aliases
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m         p.assert_same(pfcn);
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m /// Row 15: the pointer-identity invariant. For every valid `pfcn` the C
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m /// returns 1, meaning `BTAC1C2_GetPredictFunc` handed back the *matching*
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m /// specialised predictor rather than the shared `BTAC1C2_PredictSample`
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m /// fallback. A Rust translation that merged distinct predictor addresses or
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m /// produced a fresh trampoline per call would fail this.
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m fn cfg_row15_pointer_identity_invariant() {
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m     for &v in VALID.iter() {
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m         assert_eq!(p.c(v), 1, "C ground truth: pfcn={v} must select _Pfn{v}");
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m             p.rust(v),
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m             1,
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m             "Rust must also select the matching specialised predictor for pfcn={v}"
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m     // And the fallback must never masquerade as a match.
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     for v in 12..=15 {
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m         assert_eq!(p.c(v), 0);
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m         assert_eq!(p.rust(v), 0);
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m /// Cross-check that the two libraries really are two distinct objects (guards
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m /// against the harness accidentally loading the same `.so` twice and passing
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m /// trivially).
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m fn harness_loads_two_distinct_libraries() {
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m     let c = common::c_lib_path();
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m     let r = common::rust_lib_path();
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m     assert_ne!(c, r, "C and Rust .so paths must differ");
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m     assert!(c.exists(), "missing {}", c.display());
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m     assert!(r.exists(), "missing {}", r.display());
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let cs = std::fs::read(&c).unwrap();
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m     let rs = std::fs::read(&r).unwrap();
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     assert_ne!(cs, rs, "the two .so files must not be byte-identical");
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/tests/phase_b_valid_paths.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/tests/phase_c_error_paths.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Phase C error-path differential tests
+
+[49m[38;5;10m+      1[0m:[38;5;10m[49m //! Phase C — error-path differential tests. One test per row of `ERRORS.md`.
+[0m[49m[38;5;10m+      2[0m:[38;5;10m[49m //!
+[0m[49m[38;5;10m+      3[0m:[38;5;10m[49m //! This library has no error codes; its rejection surface is the `default:`
+[0m[49m[38;5;10m+      4[0m:[38;5;10m[49m //! arm of `switch (pfcn)`, which yields the sentinel return value `0`. Each
+[0m[49m[38;5;10m+      5[0m:[38;5;10m[49m //! test asserts C and Rust return the *same* sentinel, and (as ground truth)
+[0m[49m[38;5;10m+      6[0m:[38;5;10m[49m //! that the sentinel is `0`.
+[0m[49m[38;5;10m+      7[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      8[0m:[38;5;10m[49m mod common;
+[0m[49m[38;5;10m+      9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     10[0m:[38;5;10m[49m use common::{Lcg, Pair};
+[0m[49m[38;5;10m+     11[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     12[0m:[38;5;10m[49m /// Assert C and Rust agree AND that the shared answer is the rejection
+[0m[49m[38;5;10m+     13[0m:[38;5;10m[49m /// sentinel `0`.
+[0m[49m[38;5;10m+     14[0m:[38;5;10m[49m #[track_caller]
+[0m[49m[38;5;10m+     15[0m:[38;5;10m[49m fn assert_rejected(p: &Pair, pfcn: i32) {
+[0m[49m[38;5;10m+     16[0m:[38;5;10m[49m     let c = p.c(pfcn);
+[0m[49m[38;5;10m+     17[0m:[38;5;10m[49m     let r = p.rust(pfcn);
+[0m[49m[38;5;10m+     18[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     19[0m:[38;5;10m[49m         c, r,
+[0m[49m[38;5;10m+     20[0m:[38;5;10m[49m         "divergence for get_predict_func({pfcn}) [0x{pfcn:08x}]: C={c} Rust={r}"
+[0m[49m[38;5;10m+     21[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     22[0m:[38;5;10m[49m     assert_eq!(
+[0m[49m[38;5;10m+     23[0m:[38;5;10m[49m         c, 0,
+[0m[49m[38;5;10m+     24[0m:[38;5;10m[49m         "C ground truth: pfcn={pfcn} is outside 0..=11 so it must reject with 0, got {c}"
+[0m[49m[38;5;10m+     25[0m:[38;5;10m[49m     );
+[0m[49m[38;5;10m+     26[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     27[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     28[0m:[38;5;10m[49m /// Row 1: `pfcn == 12` — first value past `BTAC1C2_GetPredictFunc`'s domain,
+[0m[49m[38;5;10m+     29[0m:[38;5;10m[49m /// yet a valid `case` label inside `BTAC1C2_PredictSample`. The fallback
+[0m[49m[38;5;10m+     30[0m:[38;5;10m[49m /// pointer matches no comparison, so `get_predict_func` returns 0.
+[0m[49m[38;5;10m+     31[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     32[0m:[38;5;10m[49m fn err_row01_pfcn_12() {
+[0m[49m[38;5;10m+     33[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     34[0m:[38;5;10m[49m     assert_rejected(&p, 12);
+[0m[49m[38;5;10m+     35[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     36[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     37[0m:[38;5;10m[49m /// Row 2: `pfcn` 13, 14, 15 — the remaining `BTAC1C2_PredictSample` labels.
+[0m[49m[38;5;10m+     38[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     39[0m:[38;5;10m[49m fn err_row02_pfcn_13_14_15() {
+[0m[49m[38;5;10m+     40[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     41[0m:[38;5;10m[49m     for v in 13..=15 {
+[0m[49m[38;5;10m+     42[0m:[38;5;10m[49m         assert_rejected(&p, v);
+[0m[49m[38;5;10m+     43[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     44[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     45[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     46[0m:[38;5;10m[49m /// Row 3: `pfcn == 16` — first value past every case label in the file.
+[0m[49m[38;5;10m+     47[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     48[0m:[38;5;10m[49m fn err_row03_pfcn_16() {
+[0m[49m[38;5;10m+     49[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     50[0m:[38;5;10m[49m     assert_rejected(&p, 16);
+[0m[49m[38;5;10m+     51[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     53[0m:[38;5;10m[49m /// Row 4: `pfcn == -1` — one step below the valid domain.
+[0m[49m[38;5;10m+     54[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     55[0m:[38;5;10m[49m fn err_row04_pfcn_minus_1() {
+[0m[49m[38;5;10m+     56[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     57[0m:[38;5;10m[49m     assert_rejected(&p, -1);
+[0m[49m[38;5;10m+     58[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     59[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     60[0m:[38;5;10m[49m /// Row 5: arbitrary negatives.
+[0m[49m[38;5;10m+     61[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     62[0m:[38;5;10m[49m fn err_row05_pfcn_negative() {
+[0m[49m[38;5;10m+     63[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     64[0m:[38;5;10m[49m     for v in [-2, -3, -8, -11, -12, -13, -15, -16, -17, -100, -1000, -65536] {
+[0m[49m[38;5;10m+     65[0m:[38;5;10m[49m         assert_rejected(&p, v);
+[0m[49m[38;5;10m+     66[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     67[0m:[38;5;10m[49m     for v in -2048..0 {
+[0m[49m[38;5;10m+     68[0m:[38;5;10m[49m         assert_rejected(&p, v);
+[0m[49m[38;5;10m+     69[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     70[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     72[0m:[38;5;10m[49m /// Row 6: `INT_MAX`.
+[0m[49m[38;5;10m+     73[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     74[0m:[38;5;10m[49m fn err_row06_pfcn_int_max() {
+[0m[49m[38;5;10m+     75[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     76[0m:[38;5;10m[49m     assert_rejected(&p, i32::MAX);
+[0m[49m[38;5;10m+     77[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     78[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     79[0m:[38;5;10m[49m /// Row 7: `INT_MIN`. `pfcn - 12` overflows here, so any jump-table offset
+[0m[49m[38;5;10m+     80[0m:[38;5;10m[49m /// lowering must not mis-dispatch into a valid arm.
+[0m[49m[38;5;10m+     81[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     82[0m:[38;5;10m[49m fn err_row07_pfcn_int_min() {
+[0m[49m[38;5;10m+     83[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     84[0m:[38;5;10m[49m     assert_rejected(&p, i32::MIN);
+[0m[49m[38;5;10m+     85[0m:[38;5;10m[49m     // Neighbours of the extremes too.
+[0m[49m[38;5;10m+     86[0m:[38;5;10m[49m     for v in [i32::MIN + 1, i32::MIN + 12, i32::MAX - 1, i32::MAX - 12] {
+[0m[49m[38;5;10m+     87[0m:[38;5;10m[49m         assert_rejected(&p, v);
+[0m[49m[38;5;10m+     88[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+     89[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+     90[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     91[0m:[38;5;10m[49m /// Row 8: out-of-range "enum" values crossing the FFI boundary. `pfcn` is an
+[0m[49m[38;5;10m+     92[0m:[38;5;10m[49m /// `int`, so C accepts any 32-bit value; a value with no valid variant is a
+[0m[49m[38;5;10m+     93[0m:[38;5;10m[49m /// real input and must be handled identically.
+[0m[49m[38;5;10m+     94[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+     95[0m:[38;5;10m[49m fn err_row08_out_of_range_enum_values() {
+[0m[49m[38;5;10m+     96[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+     97[0m:[38;5;10m[49m     for v in [
+[0m[49m[38;5;10m+     98[0m:[38;5;10m[49m         0x10, 0x1F, 0x20, 0x7F, 0xFF, 0x100, 0x1000, 0xFFFF, 0x1_0000, 0x7FFF_FFFE, 0x7FFF_FFFF,
+[0m[49m[38;5;10m+     99[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    100[0m:[38;5;10m[49m         assert_rejected(&p, v);
+[0m[49m[38;5;10m+    101[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    102[0m:[38;5;10m[49m     // Same bit patterns reinterpreted as negatives.
+[0m[49m[38;5;10m+    103[0m:[38;5;10m[49m     for v in [
+[0m[49m[38;5;10m+    104[0m:[38;5;10m[49m         -0x10i32, -0x20, -0xFF, -0x100, -0xFFFF, -0x1_0000, -0x7FFF_FFFF,
+[0m[49m[38;5;10m+    105[0m:[38;5;10m[49m     ] {
+[0m[49m[38;5;10m+    106[0m:[38;5;10m[49m         assert_rejected(&p, v);
+[0m[49m[38;5;10m+    107[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    108[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    109[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    110[0m:[38;5;10m[49m /// Row 9: bit-pattern aliasing. A translation that masked (`pfcn & 15`,
+[0m[49m[38;5;10m+    111[0m:[38;5;10m[49m /// `pfcn & 7`) instead of comparing would wrongly accept these.
+[0m[49m[38;5;10m+    112[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    113[0m:[38;5;10m[49m fn err_row09_masking_aliases() {
+[0m[49m[38;5;10m+    114[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    115[0m:[38;5;10m[49m     for v in [16, 32, 64, 128, 256, 4096, 65536, -16, -32, -256, -4096] {
+[0m[49m[38;5;10m+    116[0m:[38;5;10m[49m         assert_rejected(&p, v);
+[0m[49m[38;5;10m+    117[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    118[0m:[38;5;10m[49m     // k + 2^n for every valid k and several powers of two.
+[0m[49m[38;5;10m+    119[0m:[38;5;10m[49m     for k in 0..=11i32 {
+[0m[49m[38;5;10m+    120[0m:[38;5;10m[49m         for shift in [4u32, 5, 8, 12, 16, 24, 30] {
+[0m[49m[38;5;10m+    121[0m:[38;5;10m[49m             let v = k + (1i32 << shift);
+[0m[49m[38;5;10m+    122[0m:[38;5;10m[49m             assert_rejected(&p, v);
+[0m[49m[38;5;10m+    123[0m:[38;5;10m[49m             let v2 = k - (1i32 << shift);
+[0m[49m[38;5;10m+    124[0m:[38;5;10m[49m             assert_rejected(&p, v2);
+[0m[49m[38;5;10m+    125[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+    126[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    127[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    128[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    129[0m:[38;5;10m[49m /// Row 10: exhaustive near-domain sweep plus a large fixed-seed random sweep,
+[0m[49m[38;5;10m+    130[0m:[38;5;10m[49m /// asserting the exact C classification (1 iff 0..=11) on every value.
+[0m[49m[38;5;10m+    131[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    132[0m:[38;5;10m[49m fn err_row10_exhaustive_and_random() {
+[0m[49m[38;5;10m+    133[0m:[38;5;10m[49m     let p = Pair::load();
+[0m[49m[38;5;10m+    134[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    135[0m:[38;5;10m[49m     for v in -2048..=2048i32 {
+[0m[49m[38;5;10m+    136[0m:[38;5;10m[49m         let c = p.c(v);
+[0m[49m[38;5;10m+    137[0m:[38;5;10m[49m         let r = p.rust(v);
+[0m[49m[38;5;10m+    138[0m:[38;5;10m[49m         assert_eq!(c, r, "divergence at pfcn={v}: C={c} Rust={r}");
+[0m[49m[38;5;10m+    139[0m:[38;5;10m[49m         let expect = if (0..=11).contains(&v) { 1 } else { 0 };
+[0m[49m[38;5;10m+    140[0m:[38;5;10m[49m         assert_eq!(c, expect, "C ground truth changed for pfcn={v}");
+[0m[49m[38;5;10m+    141[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    142[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    143[0m:[38;5;10m[49m     let mut rng = Lcg::new(0xDEAD_BEEF_0000_0007);
+[0m[49m[38;5;10m+    144[0m:[38;5;10m[49m     for _ in 0..200_000 {
+[0m[49m[38;5;10m+    145[0m:[38;5;10m[49m         let v = rng.next_i32();
+[0m[49m[38;5;10m+    146[0m:[38;5;10m[49m         let c = p.c(v);
+[0m[49m[38;5;10m+    147[0m:[38;5;10m[49m         let r = p.rust(v);
+[0m[49m[38;5;10m+    148[0m:[38;5;10m[49m         assert_eq!(c, r, "divergence at pfcn={v} [0x{v:08x}]: C={c} Rust={r}");
+[0m[49m[38;5;10m+    149[0m:[38;5;10m[49m         let expect = if (0..=11).contains(&v) { 1 } else { 0 };
+[0m[49m[38;5;10m+    150[0m:[38;5;10m[49m         assert_eq!(c, expect, "C ground truth changed for pfcn={v}");
+[0m[49m[38;5;10m+    151[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    152[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    153[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    154[0m:[38;5;10m[49m /// Rows 11 & 12 concern `static` C functions with local linkage: they appear in
+[0m[49m[38;5;10m+    155[0m:[38;5;10m[49m /// neither library's `nm -D`, so no FFI call can reach them. Assert that fact
+[0m[49m[38;5;10m+    156[0m:[38;5;10m[49m /// (rather than stubbing a fake export), which also documents that the Rust
+[0m[49m[38;5;10m+    157[0m:[38;5;10m[49m /// translation kept the same private linkage as the C.
+[0m[49m[38;5;10m+    158[0m:[38;5;10m[49m #[test]
+[0m[49m[38;5;10m+    159[0m:[38;5;10m[49m fn err_rows11_12_static_helpers_are_not_exported() {
+[0m[49m[38;5;10m+    160[0m:[38;5;10m[49m     let c = unsafe { libloading::Library::new(common::c_lib_path()).unwrap() };
+[0m[49m[38;5;10m+    161[0m:[38;5;10m[49m     let r = unsafe { libloading::Library::new(common::rust_lib_path()).unwrap() };
+[0m[49m[38;5;10m+    162[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    163[0m:[38;5;10m[49m     let mut names: Vec<String> = vec![
+[0m[49m[38;5;10m+    164[0m:[38;5;10m[49m         "BTAC1C2_GetPredictFunc\0".to_string(),
+[0m[49m[38;5;10m+    165[0m:[38;5;10m[49m         "BTAC1C2_PredictSample\0".to_string(),
+[0m[49m[38;5;10m+    166[0m:[38;5;10m[49m     ];
+[0m[49m[38;5;10m+    167[0m:[38;5;10m[49m     for i in 0..12 {
+[0m[49m[38;5;10m+    168[0m:[38;5;10m[49m         names.push(format!("BTAC1C2_PredictSample_Pfn{i}\0"));
+[0m[49m[38;5;10m+    169[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    170[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    171[0m:[38;5;10m[49m     for n in &names {
+[0m[49m[38;5;10m+    172[0m:[38;5;10m[49m         let in_c = unsafe {
+[0m[49m[38;5;10m+    173[0m:[38;5;10m[49m             r#unsafe_get(&c, n)
+[0m[49m[38;5;10m+    174[0m:[38;5;10m[49m         };
+[0m[49m[38;5;10m+    175[0m:[38;5;10m[49m         let in_r = unsafe { r#unsafe_get(&r, n) };
+[0m[49m[38;5;10m+    176[0m:[38;5;10m[49m         assert!(!in_c, "C unexpectedly exports {n:?}");
+[0m[49m[38;5;10m+    177[0m:[38;5;10m[49m         assert_eq!(
+[0m[49m[38;5;10m+    178[0m:[38;5;10m[49m             in_c, in_r,
+[0m[49m[38;5;10m+    179[0m:[38;5;10m[49m             "export-visibility mismatch for {n:?}: C={in_c} Rust={in_r}"
+[0m[49m[38;5;10m+    180[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+    181[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    182[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    183[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    184[0m:[38;5;10m[49m unsafe fn r#unsafe_get(lib: &libloading::Library, name: &str) -> bool {
+[0m[49m[38;5;10m+    185[0m:[38;5;10m[49m     unsafe {
+[0m[49m[38;5;10m+    186[0m:[38;5;10m[49m         lib.get::<*const ()>(name.as_bytes()).is_ok()
+[0m[49m[38;5;10m+    187[0m:[38;5;10m[49m     }
+[0m[49m[38;5;10m+    188[0m:[38;5;10m[49m }
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/tests/phase_c_error_paths.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && timeout 600 cargo test --release 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run differential tests
+
+
+     Running tests/phase_b_valid_paths.rs (target/release/deps/phase_b_valid_paths-92730133dc6c64dd)
+
+running 16 tests
+test cfg_row01_pfcn_0 ... ok
+test cfg_row04_pfcn_3 ... ok
+test cfg_row03_pfcn_2 ... ok
+test cfg_row02_pfcn_1 ... ok
+test cfg_row05_pfcn_4 ... ok
+test cfg_row06_pfcn_5 ... ok
+test cfg_row09_pfcn_8 ... ok
+test cfg_row08_pfcn_7 ... ok
+test cfg_row07_pfcn_6 ... ok
+test cfg_row11_pfcn_10 ... ok
+test cfg_row10_pfcn_9 ... ok
+test cfg_row12_pfcn_11 ... ok
+test cfg_row15_pointer_identity_invariant ... ok
+test harness_loads_two_distinct_libraries ... ok
+test cfg_row13_domain_sweep_orderings ... ok
+test cfg_row14_randomized_full_domain ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/phase_c_error_paths.rs (target/release/deps/phase_c_error_paths-bc8e4f625c226557)
+
+running 11 tests
+test err_row03_pfcn_16 ... ok
+test err_row01_pfcn_12 ... ok
+test err_row02_pfcn_13_14_15 ... ok
+test err_row04_pfcn_minus_1 ... ok
+test err_row09_masking_aliases ... ok
+test err_row05_pfcn_negative ... ok
+test err_row06_pfcn_int_max ... ok
+test err_row07_pfcn_int_min ... ok
+test err_row08_out_of_range_enum_values ... ok
+test err_rows11_12_static_helpers_are_not_exported ... ok
+test err_row10_exhaustive_and_random ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[38;5;244m - Completed in 0.604s[0m
+
+[?25l[0m[38;5;141m> [0mAll 27 pass. Now automating across profiles and feature combinations.[0m[0m
+[?25l[0m[0mI'll create the following file: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/verify_all.sh[0m[38;5;244m (using tool: write)[0m
+Purpose: Phase D automation script
+
+[49m[38;5;10m+     1[0m:[38;5;10m[49m #!/usr/bin/env bash
+[0m[49m[38;5;10m+     2[0m:[38;5;10m[49m # Phase D driver: symbol parity + full B/C suite under every feature
+[0m[49m[38;5;10m+     3[0m:[38;5;10m[49m # combination and both profiles. Run from translation/.
+[0m[49m[38;5;10m+     4[0m:[38;5;10m[49m set -uo pipefail
+[0m[49m[38;5;10m+     5[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+     6[0m:[38;5;10m[49m cd "$(dirname "$0")"
+[0m[49m[38;5;10m+     7[0m:[38;5;10m[49m ROOT="$(cd .. && pwd)"
+[0m[49m[38;5;10m+     8[0m:[38;5;10m[49m FAIL=0
+[0m[49m[38;5;10m+     9[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    10[0m:[38;5;10m[49m echo "===================== rebuild C ====================="
+[0m[49m[38;5;10m+    11[0m:[38;5;10m[49m ( cd "$ROOT/c_src" && mkdir -p build && cd build \
+[0m[49m[38;5;10m+    12[0m:[38;5;10m[49m   && timeout 300 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+[0m[49m[38;5;10m+    13[0m:[38;5;10m[49m   && timeout 300 cmake --build . >/dev/null ) || { echo "C BUILD FAILED"; exit 1; }
+[0m[49m[38;5;10m+    14[0m:[38;5;10m[49m C_SO="$(ls "$ROOT"/c_src/build/lib*.so | head -1)"
+[0m[49m[38;5;10m+    15[0m:[38;5;10m[49m echo "C  .so: $C_SO"
+[0m[49m[38;5;10m+    16[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    17[0m:[38;5;10m[49m # ---- enumerate feature combinations from Cargo.toml ----------------------
+[0m[49m[38;5;10m+    18[0m:[38;5;10m[49m FEATS=$(awk '
+[0m[49m[38;5;10m+    19[0m:[38;5;10m[49m   /^\[features\]/ {inf=1; next}
+[0m[49m[38;5;10m+    20[0m:[38;5;10m[49m   /^\[/           {inf=0}
+[0m[49m[38;5;10m+    21[0m:[38;5;10m[49m   inf && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
+[0m[49m[38;5;10m+    22[0m:[38;5;10m[49m       split($0,a,"="); gsub(/[[:space:]]/,"",a[1]);
+[0m[49m[38;5;10m+    23[0m:[38;5;10m[49m       if (a[1] != "default") print a[1]
+[0m[49m[38;5;10m+    24[0m:[38;5;10m[49m   }' Cargo.toml | sort -u)
+[0m[49m[38;5;10m+    25[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    26[0m:[38;5;10m[49m COMBOS=()
+[0m[49m[38;5;10m+    27[0m:[38;5;10m[49m if [ -z "$FEATS" ]; then
+[0m[49m[38;5;10m+    28[0m:[38;5;10m[49m   echo "No [features] in Cargo.toml -> only the default (empty) feature set."
+[0m[49m[38;5;10m+    29[0m:[38;5;10m[49m   COMBOS+=("__default__" "__nodefault__")
+[0m[49m[38;5;10m+    30[0m:[38;5;10m[49m else
+[0m[49m[38;5;10m+    31[0m:[38;5;10m[49m   FARR=($FEATS)
+[0m[49m[38;5;10m+    32[0m:[38;5;10m[49m   N=${#FARR[@]}
+[0m[49m[38;5;10m+    33[0m:[38;5;10m[49m   COMBOS+=("__default__" "__nodefault__")
+[0m[49m[38;5;10m+    34[0m:[38;5;10m[49m   for ((m=1; m<(1<<N); m++)); do
+[0m[49m[38;5;10m+    35[0m:[38;5;10m[49m     c=""
+[0m[49m[38;5;10m+    36[0m:[38;5;10m[49m     for ((i=0; i<N; i++)); do
+[0m[49m[38;5;10m+    37[0m:[38;5;10m[49m       if (( m & (1<<i) )); then c="${c:+$c,}${FARR[$i]}"; fi
+[0m[49m[38;5;10m+    38[0m:[38;5;10m[49m     done
+[0m[49m[38;5;10m+    39[0m:[38;5;10m[49m     COMBOS+=("$c")
+[0m[49m[38;5;10m+    40[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    41[0m:[38;5;10m[49m fi
+[0m[49m[38;5;10m+    42[0m:[38;5;10m[49m echo "feature combinations to verify: ${COMBOS[*]}"
+[0m[49m[38;5;10m+    43[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    44[0m:[38;5;10m[49m run_combo() {
+[0m[49m[38;5;10m+    45[0m:[38;5;10m[49m   local combo="$1" profile="$2" flags=() pdir
+[0m[49m[38;5;10m+    46[0m:[38;5;10m[49m   case "$combo" in
+[0m[49m[38;5;10m+    47[0m:[38;5;10m[49m     __default__)   flags=() ;;
+[0m[49m[38;5;10m+    48[0m:[38;5;10m[49m     __nodefault__) flags=(--no-default-features) ;;
+[0m[49m[38;5;10m+    49[0m:[38;5;10m[49m     *)             flags=(--no-default-features --features "$combo") ;;
+[0m[49m[38;5;10m+    50[0m:[38;5;10m[49m   esac
+[0m[49m[38;5;10m+    51[0m:[38;5;10m[49m   if [ "$profile" = release ]; then flags+=(--release); pdir=release; else pdir=debug; fi
+[0m[49m[38;5;10m+    52[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    53[0m:[38;5;10m[49m   echo
+[0m[49m[38;5;10m+    54[0m:[38;5;10m[49m   echo "----- combo=$combo profile=$profile -----"
+[0m[49m[38;5;10m+    55[0m:[38;5;10m[49m   timeout 300 cargo build "${flags[@]}" >/dev/null 2>&1 \
+[0m[49m[38;5;10m+    56[0m:[38;5;10m[49m     || { echo "  BUILD FAILED"; FAIL=1; return; }
+[0m[49m[38;5;10m+    57[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    58[0m:[38;5;10m[49m   local R_SO="target/$pdir/libget_predict_func_lib.so"
+[0m[49m[38;5;10m+    59[0m:[38;5;10m[49m   [ -f "$R_SO" ] || { echo "  MISSING $R_SO"; FAIL=1; return; }
+[0m[49m[38;5;10m+    60[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    61[0m:[38;5;10m[49m   # symbol parity for THIS build
+[0m[49m[38;5;10m+    62[0m:[38;5;10m[49m   local d
+[0m[49m[38;5;10m+    63[0m:[38;5;10m[49m   d=$(comm -3 \
+[0m[49m[38;5;10m+    64[0m:[38;5;10m[49m         <(nm -D --defined-only --format=posix "$C_SO" | awk '$2=="T"{print $1}' | sort) \
+[0m[49m[38;5;10m+    65[0m:[38;5;10m[49m         <(nm -D --defined-only --format=posix "$R_SO" | awk '$2=="T"{print $1}' | sort))
+[0m[49m[38;5;10m+    66[0m:[38;5;10m[49m   if [ -n "$d" ]; then
+[0m[49m[38;5;10m+    67[0m:[38;5;10m[49m     echo "  SYMBOL DIFF NON-EMPTY:"; echo "$d" | sed 's/^/    /'; FAIL=1
+[0m[49m[38;5;10m+    68[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+    69[0m:[38;5;10m[49m     echo "  symbol diff: EMPTY (ok)"
+[0m[49m[38;5;10m+    70[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    71[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    72[0m:[38;5;10m[49m   local out
+[0m[49m[38;5;10m+    73[0m:[38;5;10m[49m   out=$(timeout 600 cargo test "${flags[@]}" 2>&1)
+[0m[49m[38;5;10m+    74[0m:[38;5;10m[49m   if [ $? -ne 0 ]; then
+[0m[49m[38;5;10m+    75[0m:[38;5;10m[49m     echo "  TESTS FAILED"; echo "$out" | tail -30 | sed 's/^/    /'; FAIL=1
+[0m[49m[38;5;10m+    76[0m:[38;5;10m[49m   else
+[0m[49m[38;5;10m+    77[0m:[38;5;10m[49m     echo "$out" | grep -E '^test result:' | sed 's/^/  /'
+[0m[49m[38;5;10m+    78[0m:[38;5;10m[49m   fi
+[0m[49m[38;5;10m+    79[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+    80[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    81[0m:[38;5;10m[49m for combo in "${COMBOS[@]}"; do
+[0m[49m[38;5;10m+    82[0m:[38;5;10m[49m   for profile in debug release; do
+[0m[49m[38;5;10m+    83[0m:[38;5;10m[49m     run_combo "$combo" "$profile"
+[0m[49m[38;5;10m+    84[0m:[38;5;10m[49m   done
+[0m[49m[38;5;10m+    85[0m:[38;5;10m[49m done
+[0m[49m[38;5;10m+    86[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+    87[0m:[38;5;10m[49m echo
+[0m[49m[38;5;10m+    88[0m:[38;5;10m[49m if [ $FAIL -eq 0 ]; then echo "===== PHASE D: ALL COMBINATIONS PASS ====="; else echo "===== PHASE D: FAILURES PRESENT ====="; fi
+[0m[49m[38;5;10m+    89[0m:[38;5;10m[49m exit $FAIL
+[0m[K
+Creating: [38;5;141m/local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/verify_all.sh[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && chmod +x verify_all.sh && timeout 600 ./verify_all.sh 2>&1 | tail -40[0m[38;5;244m (using tool: shell)[0m
+Purpose: Run Phase D verification across all combos
+
+===================== rebuild C =====================
+C  .so: /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/c_src/build/libharvest-work-9AcdNV.so
+No [features] in Cargo.toml -> only the default (empty) feature set.
+feature combinations to verify: __default__ __nodefault__
+
+----- combo=__default__ profile=debug -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+----- combo=__default__ profile=release -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+----- combo=__nodefault__ profile=debug -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+----- combo=__nodefault__ profile=release -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+===== PHASE D: ALL COMBINATIONS PASS =====
+[38;5;244m - Completed in 0.902s[0m
+
+[?25l[0m[38;5;141m> [0mLet me verify the harness actually detects divergence (negative control):[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && \
+python3 - <<'EOF'
+import re
+s=open('src/lib.rs').read()
+s=s.replace('11 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn11)) as c_int,',
+            '11 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn10)) as c_int,')
+s=s.replace('_ => BTAC1C2_PredictSample,\n    };','_ => BTAC1C2_PredictSample_Pfn0,\n    };')
+open('src/lib.rs','w').write(s)
+EOF
+echo "--- mutated: expect FAILURES ---" && timeout 600 cargo test --release 2>&1 | grep -E '^test (result|cfg|err)' | grep -c FAILED; timeout 600 cargo test --release 2>&1 | grep -E 'FAILED|test result' ; cp /tmp/lib.rs.bak src/lib.rs && echo "--- restored ---" && timeout 600 cargo test --release 2>&1 | grep -E 'test result'[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test to confirm harness catches divergence
+
+--- mutated: expect FAILURES ---
+0
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+--- restored ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[38;5;244m - Completed in 0.370s[0m
+
+[?25l[0m[38;5;141m> [0mThe mutation didn't cause failures — that means the harness has a problem. Investigating.[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && ls -la target/release/*.so target/release/deps/*.so 2>&1; echo "--- debug ---"; ls -la target/debug/*.so target/debug/deps/*.so 2>&1[0m[38;5;244m (using tool: shell)[0m
+Purpose: Inspect .so artifact locations
+
+-rwxr-xr-x. 2 scheschb amazon 405920 Sep  5 09:16 target/release/deps/libget_predict_func_lib.so
+-rwxr-xr-x. 2 scheschb amazon 405920 Sep  5 09:16 target/release/libget_predict_func_lib.so
+--- debug ---
+-rwxr-xr-x. 2 scheschb amazon 4394216 Sep  5 09:20 target/debug/deps/libget_predict_func_lib.so
+-rwxr-xr-x. 2 scheschb amazon 4394216 Sep  5 09:20 target/debug/libget_predict_func_lib.so
+[38;5;244m - Completed in 0.8s[0m
+
+[?25l[0m[38;5;141m> [0mThe release [38;5;10m.so[0m timestamp (09:16) shows [38;5;10mcargo test --release[0m never rebuilt the cdylib — the mutation test loaded a stale library. Adding a staleness guard so that can't produce a false pass:[0m[0m
+[?25l[0m[0m[1mTool validation failed: [0m
+[38;5;9mTool 'fs_write' validation failed: missing field `path`
+[0m[?25l[0m[0mI'll modify the following file: [38;5;141mtranslation/tests/common/mod.rs[0m[38;5;244m (using tool: write)[0m
+Purpose: Add stale-artifact guard to test harness
+
+[49m[39m  55,  55[0m:[39m[49m /// Path to the Rust `cdylib`. Located relative to the running test binary
+[0m[49m[39m  56,  56[0m:[39m[49m /// (`target/<profile>/deps/<test>`), so it picks up whatever profile and
+[0m[49m[38;5;9m- 57     [0m:[38;5;9m[49m /// feature set `cargo test` just built.
+[0m[49m[38;5;10m+      57[0m:[38;5;10m[49m /// feature set was last built.
+[0m[49m[38;5;10m+      58[0m:[38;5;10m[49m ///
+[0m[49m[38;5;10m+      59[0m:[38;5;10m[49m /// IMPORTANT: with `crate-type = ["cdylib"]` only, `cargo test` does *not*
+[0m[49m[38;5;10m+      60[0m:[38;5;10m[49m /// refresh the `.so` — it builds a separate unit-test harness instead. A stale
+[0m[49m[38;5;10m+      61[0m:[38;5;10m[49m /// `.so` would make every differential test pass vacuously, so
+[0m[49m[38;5;10m+      62[0m:[38;5;10m[49m /// [`assert_rust_lib_fresh`] cross-checks mtimes and this function calls it.
+[0m[49m[39m  58,  63[0m:[39m[49m pub fn rust_lib_path() -> PathBuf {
+[0m[49m[38;5;10m+      64[0m:[38;5;10m[49m     let p = rust_lib_path_raw();
+[0m[49m[38;5;10m+      65[0m:[38;5;10m[49m     assert_rust_lib_fresh(&p);
+[0m[49m[38;5;10m+      66[0m:[38;5;10m[49m     p
+[0m[49m[38;5;10m+      67[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      68[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      69[0m:[38;5;10m[49m fn rust_lib_path_raw() -> PathBuf {
+[0m[49m[39m  59,  70[0m:[39m[49m     let exe = std::env::current_exe().expect("test exe path");
+[0m[49m[39m  60,  71[0m:[39m[49m     // .../target/<profile>/deps/<test-bin>
+[0m[49m[39m  61,  72[0m:[39m[49m     let mut dir = exe.parent().expect("deps dir").to_path_buf();
+[0m[49m[39m  62,  73[0m:[39m[49m     for _ in 0..2 {
+[0m[49m[39m  63,  74[0m:[39m[49m         if let Some(p) = find_so(&dir, "libget_predict_func_lib") {
+[0m[49m[39m  64,  75[0m:[39m[49m             return p;
+[0m[49m[39m  65,  76[0m:[39m[49m         }
+[0m[49m[39m  66,  77[0m:[39m[49m         dir = match dir.parent() {
+[0m[49m[39m  67,  78[0m:[39m[49m             Some(p) => p.to_path_buf(),
+[0m[49m[39m  68,  79[0m:[39m[49m             None => break,
+[0m[49m[39m  69,  80[0m:[39m[49m         };
+[0m[49m[39m  70,  81[0m:[39m[49m     }
+[0m[49m[39m  71,  82[0m:[39m[49m     panic!(
+[0m[49m[39m  72,  83[0m:[39m[49m         "could not locate libget_predict_func_lib.so near {}",
+[0m[49m[39m  73,  84[0m:[39m[49m         exe.display()
+[0m[49m[39m  74,  85[0m:[39m[49m     );
+[0m[49m[38;5;10m+      86[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      87[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      88[0m:[38;5;10m[49m fn mtime(p: &Path) -> std::time::SystemTime {
+[0m[49m[38;5;10m+      89[0m:[38;5;10m[49m     std::fs::metadata(p)
+[0m[49m[38;5;10m+      90[0m:[38;5;10m[49m         .unwrap_or_else(|e| panic!("stat {}: {e}", p.display()))
+[0m[49m[38;5;10m+      91[0m:[38;5;10m[49m         .modified()
+[0m[49m[38;5;10m+      92[0m:[38;5;10m[49m         .expect("mtime")
+[0m[49m[38;5;10m+      93[0m:[38;5;10m[49m }
+[0m[49m[38;5;10m+      94[0m:[38;5;10m[49m 
+[0m[49m[38;5;10m+      95[0m:[38;5;10m[49m /// Refuse to run against a `.so` older than the Rust sources it is built from.
+[0m[49m[38;5;10m+      96[0m:[38;5;10m[49m /// This is what turns a silently-stale mutation into a hard failure.
+[0m[49m[38;5;10m+      97[0m:[38;5;10m[49m pub fn assert_rust_lib_fresh(so: &Path) {
+[0m[49m[38;5;10m+      98[0m:[38;5;10m[49m     let so_t = mtime(so);
+[0m[49m[38;5;10m+      99[0m:[38;5;10m[49m     let src_dir = crate_root().join("src");
+[0m[49m[38;5;10m+     100[0m:[38;5;10m[49m     for e in std::fs::read_dir(&src_dir).expect("read src/").flatten() {
+[0m[49m[38;5;10m+     101[0m:[38;5;10m[49m         let p = e.path();
+[0m[49m[38;5;10m+     102[0m:[38;5;10m[49m         if p.extension().and_then(|s| s.to_str()) != Some("rs") {
+[0m[49m[38;5;10m+     103[0m:[38;5;10m[49m             continue;
+[0m[49m[38;5;10m+     104[0m:[38;5;10m[49m         }
+[0m[49m[38;5;10m+     105[0m:[38;5;10m[49m         assert!(
+[0m[49m[38;5;10m+     106[0m:[38;5;10m[49m             mtime(&p) <= so_t,
+[0m[49m[38;5;10m+     107[0m:[38;5;10m[49m             "STALE ARTIFACT: {} is newer than {}.\n\
+[0m[49m[38;5;10m+     108[0m:[38;5;10m[49m              `cargo test` does not rebuild a cdylib-only lib target. Run \
+[0m[49m[38;5;10m+     109[0m:[38;5;10m[49m              `cargo build [--release] [feature flags]` first (or use \
+[0m[49m[38;5;10m+     110[0m:[38;5;10m[49m              ./verify_all.sh); otherwise the differential tests compare against \
+[0m[49m[38;5;10m+     111[0m:[38;5;10m[49m              an out-of-date library and pass vacuously.",
+[0m[49m[38;5;10m+     112[0m:[38;5;10m[49m             p.display(),
+[0m[49m[38;5;10m+     113[0m:[38;5;10m[49m             so.display()
+[0m[49m[38;5;10m+     114[0m:[38;5;10m[49m         );
+[0m[49m[38;5;10m+     115[0m:[38;5;10m[49m     }
+[0m[49m[39m  75, 116[0m:[39m[49m }
+[0m[K
+Updating: [38;5;141mtranslation/tests/common/mod.rs[0m
+[38;5;244m - Completed in 0.0s[0m
+
+[?25l[0m[38;5;141m> [0mNow re-running the mutation test with a proper rebuild:[0m[0m
+[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp src/lib.rs /tmp/lib.rs.bak && \
+python3 - <<'EOF'
+s=open('src/lib.rs').read()
+a='11 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn11)) as c_int,'
+b='11 => result = (fcn == addr(BTAC1C2_PredictSample_Pfn10)) as c_int,'
+assert a in s, "mutation A target not found"
+s=s.replace(a,b)
+c='_ => BTAC1C2_PredictSample,'
+assert c in s, "mutation B target not found"
+s=s.replace(c,'_ => BTAC1C2_PredictSample_Pfn0,')
+open('src/lib.rs','w').write(s)
+print("mutations applied")
+EOF
+echo "=== rebuild + test (expect FAILURES) ===" && timeout 300 cargo build --release >/dev/null 2>&1 && timeout 600 cargo test --release 2>&1 | grep -E 'test result|^test (cfg|err).*FAILED|divergence' | head -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Mutation test with proper rebuild
+
+mutations applied
+=== rebuild + test (expect FAILURES) ===
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test cfg_row14_randomized_full_domain ... FAILED
+test cfg_row15_pointer_identity_invariant ... FAILED
+test cfg_row12_pfcn_11 ... FAILED
+test cfg_row13_domain_sweep_orderings ... FAILED
+assertion `left == right` failed: divergence for get_predict_func(11) [0x0000000b]: C=1 Rust=0
+assertion `left == right` failed: divergence for get_predict_func(11) [0x0000000b]: C=1 Rust=0
+assertion `left == right` failed: divergence for get_predict_func(11) [0x0000000b]: C=1 Rust=0
+test result: FAILED. 12 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+[38;5;244m - Completed in 0.586s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && cp /tmp/lib.rs.bak src/lib.rs && echo "=== staleness guard check (no rebuild after touch; expect STALE) ===" && touch src/lib.rs && timeout 600 cargo test --release 2>&1 | grep -E 'STALE ARTIFACT|test result' | head -5[0m[38;5;244m (using tool: shell)[0m
+Purpose: Verify staleness guard fires
+
+=== staleness guard check (no rebuild after touch; expect STALE) ===
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+STALE ARTIFACT: /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/src/lib.rs is newer than /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/target/release/deps/libget_predict_func_lib.so.
+STALE ARTIFACT: /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/src/lib.rs is newer than /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/target/release/deps/libget_predict_func_lib.so.
+STALE ARTIFACT: /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/src/lib.rs is newer than /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/target/release/deps/libget_predict_func_lib.so.
+STALE ARTIFACT: /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/src/lib.rs is newer than /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/translation/target/release/deps/libget_predict_func_lib.so.
+[38;5;244m - Completed in 0.147s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd translation && grep -c 'Pfn11)) as c_int' src/lib.rs && grep -c '_ => BTAC1C2_PredictSample,' src/lib.rs && grep -c 'Pfn10)) as c_int' src/lib.rs && md5sum src/lib.rs /tmp/lib.rs.bak && echo "=== FULL PHASE D RERUN ===" && timeout 600 ./verify_all.sh 2>&1 | tail -30[0m[38;5;244m (using tool: shell)[0m
+Purpose: Confirm source restored and rerun full Phase D
+
+1
+1
+1
+36bfb291f1c6543c6f7e8d3ed6fec3a7  src/lib.rs
+36bfb291f1c6543c6f7e8d3ed6fec3a7  /tmp/lib.rs.bak
+=== FULL PHASE D RERUN ===
+===================== rebuild C =====================
+C  .so: /local/home/scheschb/.harvest/work/harvest-work-9AcdNV/c_src/build/libharvest-work-9AcdNV.so
+No [features] in Cargo.toml -> only the default (empty) feature set.
+feature combinations to verify: __default__ __nodefault__
+
+----- combo=__default__ profile=debug -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+----- combo=__default__ profile=release -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+----- combo=__nodefault__ profile=debug -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+----- combo=__nodefault__ profile=release -----
+  symbol diff: EMPTY (ok)
+  test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+  test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+===== PHASE D: ALL COMBINATIONS PASS =====
+[38;5;244m - Completed in 0.766s[0m
+
+[?25l[0m[?25l[0m[0mI will run the following command: [38;5;141mcd /local/home/scheschb/.harvest/work/harvest-work-9AcdNV && echo "=== artifacts ===" && wc -l translation/SYMBOLS.md translation/ERRORS.md translation/CONFIGS.md translation/tests/common/mod.rs translation/tests/phase_b_valid_paths.rs translation/tests/phase_c_error_paths.rs translation/verify_all.sh && \
+echo "=== CONFIGS rows vs phase B tests ===" && echo -n "CONFIGS rows: " && grep -cE '^\| [0-9]+ \|' translation/CONFIGS.md && echo -n "unchecked CONFIGS rows: " && grep -cE '^\| [0-9]+ \|.*\[ \]$' translation/CONFIGS.md; echo -n "phase B #[test]: " && grep -c '#\[test\]' translation/tests/phase_b_valid_paths.rs && echo -n "  + macro-generated: " && grep -c '^valid_row!' translation/tests/phase_b_valid_paths.rs && \
+echo "=== ERRORS rows vs phase C tests ===" && echo -n "ERRORS rows: " && grep -cE '^\| [0-9]+ \|' translation/ERRORS.md && echo -n "unchecked ERRORS rows: " && grep -cE '^\| [0-9]+ \|.*\| \[ \] \|' translation/ERRORS.md; echo -n "phase C #[test]: " && grep -c '#\[test\]' translation/tests/phase_c_error_paths.rs && \
+echo "=== c_src untouched (no .c/.h/.txt modified) ===" && find c_src -newermt '2026-09-05 09:17' -not -path 'c_src/build/*' | sed 's/^/  modified: /' ; echo "  (none above = clean)" && \
+echo "=== final symbol diff ===" && comm -3 <(nm -D --defined-only --format=posix c_src/build/lib*.so | awk '$2=="T"{print $1}'|sort) <(nm -D --defined-only --format=posix translation/target/release/libget_predict_func_lib.so | awk '$2=="T"{print $1}'|sort) | sed 's/^/  DIFF: /'; echo "  (none above = empty diff)"[0m[38;5;244m (using tool: shell)[0m
+Purpose: Final independent verification of all artifacts and gates
+
+=== artifacts ===
+   66 translation/SYMBOLS.md
+   55 translation/ERRORS.md
+   67 translation/CONFIGS.md
+  195 translation/tests/common/mod.rs
+  136 translation/tests/phase_b_valid_paths.rs
+  188 translation/tests/phase_c_error_paths.rs
+   89 translation/verify_all.sh
+  796 total
+=== CONFIGS rows vs phase B tests ===
+CONFIGS rows: 15
+unchecked CONFIGS rows: 0
+phase B #[test]: 5
+  + macro-generated: 12
+=== ERRORS rows vs phase C tests ===
+ERRORS rows: 12
+unchecked ERRORS rows: 0
+phase C #[test]: 11
+=== c_src untouched (no .c/.h/.txt modified) ===
+  modified: c_src/build
+  (none above = clean)
+=== final symbol diff ===
+  (none above = empty diff)
+[38;5;244m - Completed in 0.29s[0m
+
+[?25l[0m[38;5;141m> [0mVerification complete. All four phases pass, with independently verified evidence.[0m[0m
+[0m[0m
+[38;5;252m[1m## What the library is[0m[0m
+[0m[0m
+[38;5;10mc_src/src/lib.c[0m exports exactly one function: [38;5;10mint get_predict_func(int pfcn)[0m. It calls the [38;5;10mstatic[0m selector [38;5;10mBTAC1C2_GetPredictFunc[0m, then compares the returned pointer against the specific [38;5;10mBTAC1C2_PredictSample_PfnNN[0m it expected. Net observable behavior: returns [38;5;10m1[0m for [38;5;10mpfcn[0m in [38;5;10m0..=11[0m, [38;5;10m0[0m otherwise. The other 14 C functions are [38;5;10mstatic[0m (local [38;5;10mt[0m linkage) and are not ABI-reachable.[0m[0m
+[0m[0m
+[38;5;252m[1m## Phase artifacts (in [38;5;10mtranslation/[0m)[0m[0m
+[0m[0m
+- [38;5;10mSYMBOLS.md[0m — C [38;5;10m.so[0m exports one symbol ([38;5;10mget_predict_func[0m); Rust [38;5;10m.so[0m exports the same. Symbol diff empty; Rust's undefined symbols are all libc/libgcc/ld.[0m[0m
+- [38;5;10mERRORS.md[0m — 12 rows. The grep sweep found no error macros, enums, asserts, null checks, or range checks; the entire rejection surface is the [38;5;10mdefault:[0m arm of three [38;5;10mswitch (pfcn)[0m statements, sentinel [38;5;10m0[0m. Rows cover 12, 13–15, 16, −1, negatives, [38;5;10mINT_MAX[0m, [38;5;10mINT_MIN[0m, out-of-range enum-like values, masking aliases ([38;5;10mk + 2^n[0m), an exhaustive [38;5;10m−2048..=2048[0m sweep plus 200k random draws, and the two unreachable [38;5;10mstatic[0m fallbacks (documented, not stubbed).[0m[0m
+- [38;5;10mCONFIGS.md[0m — 15 rows. No runtime flags, no [38;5;10m#ifdef[0m, no buffers/lengths, one entry point, so the axis is the value class of [38;5;10mpfcn[0m: 12 per-value rows, plus ordering/statelessness, a 200k biased random sweep, and the pointer-identity invariant.[0m[0m
+[0m[0m
+[38;5;252m[1m## Tests[0m[0m
+[0m[0m
+[38;5;10mtests/common/mod.rs[0m [38;5;10mdlopen[0ms both [38;5;10m.so[0m files and calls [38;5;10mget_predict_func[0m through FFI on each; the Rust code is never called directly. 27 tests (16 Phase B, 11 Phase C) pass under both profiles and both feature configurations ([38;5;10mCargo.toml[0m has no [38;5;10m[features][0m, so default and [38;5;10m--no-default-features[0m are the only combos). [38;5;10mverify_all.sh[0m automates the whole matrix including a per-build [38;5;10mnm -D[0m diff. No binary target exists in either project, so the stdout-comparison gate is not applicable.[0m[0m
+[0m[0m
+[38;5;252m[1m## One real harness defect found and fixed[0m[0m
+[0m[0m
+My first mutation test — deliberately breaking the [38;5;10mpfcn == 11[0m arm — [1mpassed[22m, which it should not have. Cause: with [38;5;10mcrate-type = ["cdylib"][0m, [38;5;10mcargo test[0m builds a separate unit-test harness and never refreshes the [38;5;10m.so[0m, so the tests were loading a stale library from an earlier [38;5;10mcargo build[0m. Any divergence would have gone undetected. I added an mtime guard ([38;5;10massert_rust_lib_fresh[0m) that aborts if the [38;5;10m.so[0m is older than [38;5;10msrc/*.rs[0m, and confirmed both halves: after a proper rebuild the mutation fails 4 tests with [38;5;10mdivergence for get_predict_func(11): C=1 Rust=0[0m, and touching [38;5;10msrc/lib.rs[0m without rebuilding now fails with [38;5;10mSTALE ARTIFACT[0m. [38;5;10msrc/lib.rs[0m was restored to its original bytes (md5 confirmed) and nothing in [38;5;10mc_src/[0m was modified apart from the [38;5;10mbuild/[0m output directory.[0m[0m
+[0m[0m
+No behavioral divergence was found between the C and Rust implementations — including the two places where the C's [38;5;10m_Pfn10[0m/[38;5;10m_Pfn11[0m bodies disagree with the corresponding [38;5;10mBTAC1C2_PredictSample[0m cases ([38;5;10m>>3[0m vs [38;5;10m>>4[0m, [38;5;10m>>1[0m vs [38;5;10m>>3[0m), which the Rust reproduces verbatim rather than fixing. Those bodies are not observable through the exported ABI, only the pointer identity is.[0m[0m
+[38;5;8m
+ ▸ Credits: 14.30 • Time: 5m 48s
+
+[0m[1G[0m[0m[?25h

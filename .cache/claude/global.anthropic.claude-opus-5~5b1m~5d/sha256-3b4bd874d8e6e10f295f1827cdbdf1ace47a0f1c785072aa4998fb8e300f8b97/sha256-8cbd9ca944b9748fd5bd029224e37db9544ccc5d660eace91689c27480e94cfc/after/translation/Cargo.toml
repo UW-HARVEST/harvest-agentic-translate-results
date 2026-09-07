@@ -1,0 +1,35 @@
+[package]
+name = "translation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "next_double_lib"
+
+[profile.release]
+panic = "abort"
+
+# This crate is a drop-in replacement for a C shared library and must reproduce
+# the C's behaviour at the FFI boundary in EVERY profile.
+#
+# Rust's debug-only instrumentation has no counterpart in the C:
+#   * `debug-assertions` enables the library UB-checks on raw-pointer reads and
+#     writes. On `next_double(NULL)` those fire first and kill the process with
+#     SIGABRT (6), whereas the C dereferences NULL and dies with SIGSEGV (11);
+#     on a misaligned `cn_rnd_t *` they abort, whereas the C returns a value.
+#   * `overflow-checks` would panic on the `x + y` wraparound that C defines as
+#     modular arithmetic.
+# Both are therefore off, so the debug and release `.so`s are behaviourally
+# identical to `libc`-compiled C. The code itself is written with
+# `read_unaligned`/`write_unaligned` and never forms a reference, so it does not
+# rely on these settings for soundness.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[workspace]
+
+[dev-dependencies]
+libloading = "0.8"

@@ -1,0 +1,8 @@
+# The differential tests redirect the process-wide file descriptor 1 in order to
+# capture what the C and Rust `.so`s write with libc `printf`. That redirection
+# is global state, and libtest's own progress output ("test foo ... ok") also
+# goes to fd 1, so a parallel test harness leaks its progress lines into the
+# capture window. Force single-threaded execution so `cargo test` is correct
+# without the caller having to remember `-- --test-threads=1`.
+[env]
+RUST_TEST_THREADS = "1"

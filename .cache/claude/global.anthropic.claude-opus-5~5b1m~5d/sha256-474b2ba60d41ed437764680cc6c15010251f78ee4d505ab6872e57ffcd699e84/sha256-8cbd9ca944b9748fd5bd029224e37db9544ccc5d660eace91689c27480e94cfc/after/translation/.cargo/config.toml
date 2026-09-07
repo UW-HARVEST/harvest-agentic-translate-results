@@ -1,0 +1,11 @@
+# The differential tests redirect file descriptor 1 (process-global) in order to
+# capture what the C and Rust shared libraries write via libc `printf`/`puts`.
+# libtest's own progress output also goes to fd 1, so the test harness MUST run
+# single-threaded or that progress text leaks into the captured bytes.
+[env]
+RUST_TEST_THREADS = "1"
+
+# The crates.io index is not reachable in this environment; the required
+# dev-dependencies (libloading, libc) are already in the local cargo cache.
+[net]
+offline = true
