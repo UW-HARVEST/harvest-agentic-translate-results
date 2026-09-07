@@ -1,19 +1,27 @@
-# Error Surface
+# Error surface
 
 Mechanical scan:
 
 ```text
-rg -n 'RETURN_ERROR|return\b|assert\s*\(|if\s*\(|switch\s*\(|case\b|default\s*:|NULL|[Mm][Ii][Nn]|[Mm][Aa][Xx]|enum|#if|#ifdef|#ifndef' ../c_src/include ../c_src/src
+rg -n 'RETURN_ERROR|return\s+(-1|NULL)|return\b|assert\s*\(|if\s*\(|switch\s*\(|case\b|#ifdef|#if|NULL|MIN|MAX|<[=]?|>[=]?' ../c_src/include ../c_src/src ../c_src/CMakeLists.txt
 ```
 
-The source contains no error-return statements, assertions, null checks, range
-checks, or min/max constants. The sole rejection behavior is the switch's
-implicit handling of unsupported enum values.
+The C source has no error-return statements, assertions, explicit range
+checks, null checks, or min/max constants. Its sole rejection behavior is the
+implicit no-op when the enum value matches no `switch` case.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
-| 1 | `colourblind` | `Impairment < cbProtanopia` or `Impairment > cbTritanopia` (any integer other than 0, 1, or 2) | [x] Return `void` without reading or writing `R`, `G`, or `B`; null pointers are therefore also accepted in this condition |
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `colourblind` | `Impairment` is any integer other than `0`, `1`, or `2` | returns `void` without reading or writing `R`, `G`, or `B` | [x] |
 
-For a valid impairment, any null pointer is dereferenced by the C source and
-has undefined behavior rather than a defined rejection result. Length
-boundaries do not apply because this API has no length argument.
+Generic FFI boundary probes required by Phase C, despite not being explicit C
+rejection branches:
+
+| # | function | boundary | expected C behavior on this build | verified |
+|---|----------|----------|-----------------------------------|----------|
+| G1 | `colourblind` | valid impairment with `R == NULL` | invalid dereference; child process terminates abnormally | [x] |
+| G2 | `colourblind` | valid impairment with `G == NULL` | invalid dereference; child process terminates abnormally | [x] |
+| G3 | `colourblind` | valid impairment with `B == NULL` | invalid dereference; child process terminates abnormally | [x] |
+
+There are no length parameters, so zero-length and oversized-length probes do
+not apply.

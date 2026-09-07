@@ -1,18 +1,17 @@
 # Dynamic Symbol Surface
 
-Generated from:
+Derived from:
 
 ```text
-nm -D --defined-only ../c_src/build/libSieve.so
-nm -D --defined-only target/release/libSieve.so
+nm -D ../c_src/build/libSieve.so
 ```
 
-Only symbols defined by the library are API exports. Undefined libc/runtime
-imports shown by unfiltered `nm -D` are not library-defined public symbols.
+Undefined C runtime/toolchain imports are not library API exports. The complete
+set of globally defined symbols in the C shared object is:
 
-| C symbol | C type | Rust symbol | Rust type | Status |
-|----------|--------|-------------|-----------|--------|
-| `sieve` | `T` | `sieve` | `T` | [x] exact match |
+| symbol | C `nm -D` type | Rust `nm -D` type | status |
+|--------|----------------|-------------------|--------|
+| `sieve` | `T` | `T` | present |
 
-Missing C symbols in Rust: **0**
+Missing C exports in Rust: **0**.
 

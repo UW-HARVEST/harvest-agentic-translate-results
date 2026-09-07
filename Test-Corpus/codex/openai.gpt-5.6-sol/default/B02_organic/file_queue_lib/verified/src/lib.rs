@@ -466,7 +466,13 @@ pub unsafe extern "C" fn Init_FileQueue(
         b"Jan\0", b"Feb\0", b"Mar\0", b"Apr\0", b"May\0", b"Jun\0", b"Jul\0", b"Aug\0", b"Sep\0",
         b"Oct\0", b"Nov\0", b"Dec\0",
     ];
-    let month = unsafe { MONTHS.get_unchecked((*p).tm_mon as usize) };
+    let month_index = unsafe { (*p).tm_mon };
+    if !(0..12).contains(&month_index) {
+        unsafe {
+            libc::strncpy(queue.mon.as_mut_ptr(), ptr::null(), 3);
+        }
+    }
+    let month = unsafe { MONTHS.get_unchecked(month_index as usize) };
     unsafe {
         libc::strncpy(queue.mon.as_mut_ptr(), cptr(*month), 3);
         libc::memset(queue.file_name.as_mut_ptr().cast(), 0, MAX_FQUEUE + 1);
@@ -508,7 +514,13 @@ pub unsafe extern "C" fn Read_FileMon(
         b"Jan\0", b"Feb\0", b"Mar\0", b"Apr\0", b"May\0", b"Jun\0", b"Jul\0", b"Aug\0", b"Sep\0",
         b"Oct\0", b"Nov\0", b"Dec\0",
     ];
-    let month = unsafe { MONTHS.get_unchecked((*p).tm_mon as usize) };
+    let month_index = unsafe { (*p).tm_mon };
+    if !(0..12).contains(&month_index) {
+        unsafe {
+            libc::strncpy(queue.mon.as_mut_ptr(), ptr::null(), 3);
+        }
+    }
+    let month = unsafe { MONTHS.get_unchecked(month_index as usize) };
     unsafe { libc::strncpy(queue.mon.as_mut_ptr(), cptr(*month), 3) };
 
     unsafe { get_file_queue(fileq) };

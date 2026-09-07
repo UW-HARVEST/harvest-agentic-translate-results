@@ -1,124 +1,134 @@
 #!/usr/bin/env bash
-# Full verification driver: builds the C reference .so, then runs the entire
-# differential suite for every feature combination and every profile.
-#
-#   ./verify.sh            # everything
-#   ./verify.sh --quick    # release profile only
+# Phase D driver: symbol parity + full Phase B/C suite under every feature
+# combination and every build profile / C optimization level.
 set -uo pipefail
 
-cd "$(dirname "$0")"
-ROOT="$(pwd)"
-CSRC="$ROOT/../c_src"
-CARGO_FLAGS="--offline"
-QUICK=0
-[ "${1:-}" = "--quick" ] && QUICK=1
-
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CRATE="$ROOT/translation"
+CBUILD="$ROOT/c_src/build"
 fail=0
-note() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
-bad()  { printf '\033[31mFAIL: %s\033[0m\n' "$*"; fail=1; }
-good() { printf '\033[32mok: %s\033[0m\n' "$*"; }
+step() { printf '\n=== %s ===\n' "$*"; }
+ok()   { printf 'PASS  %s\n' "$*"; }
+bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 
-# --------------------------------------------------------------- C reference
-note "Building the C reference shared library"
-mkdir -p "$CSRC/build"
-( cd "$CSRC/build" \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-  && cmake --build . >/dev/null ) || { bad "C build"; exit 1; }
-C_SO="$(ls "$CSRC"/build/lib*.so 2>/dev/null | head -1)"
-[ -f "$C_SO" ] || { bad "no C .so produced"; exit 1; }
-good "C .so = $C_SO"
+# ---------------------------------------------------------------------------
+step "Build C shared library (as documented, untouched CMakeLists)"
+mkdir -p "$CBUILD"
+( cd "$CBUILD" && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+    && cmake --build . >/dev/null ) || { bad "C build"; exit 1; }
+# The cmake-produced library only; `alt_O*.so` are the supplementary builds
+# created further down and must never be mistaken for the ground truth.
+C_SO="$(find "$CBUILD" -maxdepth 1 -name '*.so' -not -name 'alt_O*.so' | sort | head -1)"
+[ -n "$C_SO" ] || { bad "no C .so produced"; exit 1; }
+ok "C .so = $C_SO"
 
-# ------------------------------------------------- enumerate feature combos
-# Mechanically read the [features] table; if absent the only combo is default.
-mapfile -t FEATURES < <(
-  awk '
-    /^\[/                { in_f = ($0 ~ /^\[features\]/) ; next }
-    in_f && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
-      sub(/[[:space:]]*=.*/, ""); print
-    }
-  ' Cargo.toml
-)
-
-COMBOS=()
-if [ "${#FEATURES[@]}" -eq 0 ]; then
-  note "Cargo.toml declares no [features] -> single configuration"
-  COMBOS+=("<default>")
-  COMBOS+=("--no-default-features")
-  COMBOS+=("--all-features")
+# ---------------------------------------------------------------------------
+step "Enumerate feature combinations from Cargo.toml"
+FEATURES="$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /=/{split($0,a,"=");gsub(/ /,"",a[1]);if(a[1]!="default")print a[1]}' "$CRATE/Cargo.toml")"
+if [ -z "$FEATURES" ]; then
+  echo "no [features] table -> the only configuration is the default one"
+  COMBOS=("default" "no-default")
 else
-  note "Features found: ${FEATURES[*]} -> testing the full power set"
-  COMBOS+=("<default>")
-  COMBOS+=("--no-default-features")
-  n=${#FEATURES[@]}
-  total=$(( 1 << n ))
-  for (( mask = 0; mask < total; mask++ )); do
-    sel=()
-    for (( i = 0; i < n; i++ )); do
-      (( mask & (1 << i) )) && sel+=("${FEATURES[$i]}")
-    done
-    if [ "${#sel[@]}" -eq 0 ]; then
-      COMBOS+=("--no-default-features")
+  COMBOS=("default" "no-default")
+  for f in $FEATURES; do COMBOS+=("no-default:$f"); done
+  COMBOS+=("all")
+fi
+printf 'combinations: %s\n' "${COMBOS[*]}"
+
+# ---------------------------------------------------------------------------
+run_combo() {
+  local combo="$1" profile="$2"
+  local -a fflags=()
+  case "$combo" in
+    default)     fflags=() ;;
+    no-default)  fflags=(--no-default-features) ;;
+    all)         fflags=(--all-features) ;;
+    no-default:*) fflags=(--no-default-features --features "${combo#no-default:}") ;;
+  esac
+  local -a pflags=()
+  [ "$profile" = release ] && pflags=(--release)
+
+  ( cd "$CRATE" && cargo build "${fflags[@]}" "${pflags[@]}" >/dev/null 2>&1 ) \
+    || { bad "cargo build [$combo/$profile]"; return; }
+  local rso; rso="$(find "$CRATE/target/$profile" -maxdepth 1 -name 'libpremultiply_lib.so' | head -1)"
+  [ -n "$rso" ] || { bad "no Rust .so [$combo/$profile]"; return; }
+
+  # -- symbol parity -------------------------------------------------------
+  local d
+  d="$(diff <(nm -D --defined-only "$C_SO" | awk '{print $NF}' \
+              | grep -vE '^(_init|_fini|__bss_start|_edata|_end)$' | sort -u) \
+            <(nm -D --defined-only "$rso" | awk '{print $NF}' \
+              | grep -vE '^(_init|_fini|__bss_start|_edata|_end|__rust_.*|rust_eh_personality)$' | sort -u))"
+  if [ -n "$d" ]; then
+    bad "symbol parity [$combo/$profile]"; echo "$d"
+  else
+    ok "symbol parity [$combo/$profile]"
+  fi
+
+  # -- undefined non-libc symbols in the Rust .so --------------------------
+  local undef
+  undef="$(nm -D --undefined-only "$rso" | awk '{print $NF}' \
+           | grep -vE '^(_+ITM_|__gmon_start__|__cxa_|_Unwind_|__tls_get_addr)' \
+           | grep -vE '@GLIBC|@GCC' || true)"
+  if [ -n "$undef" ]; then
+    bad "unresolved non-libc symbols [$combo/$profile]"; echo "$undef"
+  else
+    ok "no unresolved non-libc symbols [$combo/$profile]"
+  fi
+
+  # -- full Phase B + Phase C suite against THIS .so pair ------------------
+  for cso_label in stock O2 O3; do
+    local cso="$C_SO"
+    case "$cso_label" in
+      O2) cso="$CBUILD/alt_O2.so" ;;
+      O3) cso="$CBUILD/alt_O3.so" ;;
+    esac
+    [ -f "$cso" ] || continue
+    if ( cd "$CRATE" && PREMULTIPLY_RUST_SO="$rso" PREMULTIPLY_C_SO="$cso" \
+           timeout 600 cargo test "${fflags[@]}" --tests -- --test-threads=4 \
+           >"$CRATE/target/test-$combo-$profile-$cso_label.log" 2>&1 ); then
+      ok "Phase B+C [$combo/$profile vs C:$cso_label]"
     else
-      COMBOS+=("--no-default-features --features $(IFS=,; echo "${sel[*]}")")
+      bad "Phase B+C [$combo/$profile vs C:$cso_label]"
+      tail -30 "$CRATE/target/test-$combo-$profile-$cso_label.log"
     fi
   done
-  COMBOS+=("--all-features")
+}
+
+# ---------------------------------------------------------------------------
+step "Supplementary C builds at higher optimization levels"
+# The stock cmake build (no CMAKE_BUILD_TYPE) is the ground truth; these extra
+# builds only confirm the Rust matches the C's float semantics regardless of how
+# aggressively the C is optimized/vectorized. c_src is NOT modified.
+for lvl in 2 3; do
+  if cc -shared -fPIC -O$lvl -I"$ROOT/c_src/include" \
+       "$ROOT/c_src/src/lib.c" -o "$CBUILD/alt_O$lvl.so" 2>/dev/null; then
+    ok "built alt_O$lvl.so"
+  else
+    echo "skip: could not build alt_O$lvl.so"
+  fi
+done
+
+step "Check for a driver binary in the project"
+if grep -qE 'add_executable' "$ROOT/c_src/CMakeLists.txt"; then
+  bad "CMakeLists declares an executable -- stdout comparison required"
+else
+  ok "no add_executable in c_src/CMakeLists.txt (library only)"
+fi
+if [ -f "$CRATE/src/main.rs" ] || grep -q '^\[\[bin\]\]' "$CRATE/Cargo.toml"; then
+  bad "Rust crate declares a binary but the C project does not"
+else
+  ok "no Rust binary target (crate-type = cdylib only) -> no stdout to compare"
 fi
 
-# Deduplicate.
-mapfile -t COMBOS < <(printf '%s\n' "${COMBOS[@]}" | awk '!seen[$0]++')
-
-PROFILES=(release)
-[ "$QUICK" -eq 0 ] && PROFILES=(release debug)
-
-# ------------------------------------------------------------------- run it
-for profile in "${PROFILES[@]}"; do
-  pflag=""; [ "$profile" = release ] && pflag="--release"
-  for combo in "${COMBOS[@]}"; do
-    cflag="$combo"; [ "$combo" = "<default>" ] && cflag=""
-    label="profile=$profile features=$combo"
-
-    note "$label"
-    # The cdylib must exist before the tests dlopen it.
-    if ! timeout 600 cargo build $pflag $CARGO_FLAGS $cflag >/dev/null 2>&1; then
-      bad "build ($label)"; continue
-    fi
-    if timeout 600 cargo test $pflag $CARGO_FLAGS $cflag 2>&1 | tee "$ROOT/.verify.log" \
-         | grep -E '^test result:'; then
-      if grep -qE '^test result: FAILED|error:' "$ROOT/.verify.log"; then
-        bad "tests ($label)"
-        grep -E '^test .* FAILED|panicked at|signal:' "$ROOT/.verify.log" | head -20
-      else
-        good "$label"
-      fi
-    else
-      bad "tests produced no result line ($label)"
-      tail -30 "$ROOT/.verify.log"
-    fi
+# ---------------------------------------------------------------------------
+for combo in "${COMBOS[@]}"; do
+  for profile in debug release; do
+    step "combo=$combo profile=$profile"
+    run_combo "$combo" "$profile"
   done
 done
 
-# --------------------------------------------------------- symbol diff gate
-note "Symbol diff gate (nm -D)"
-RUST_SO="$ROOT/target/release/libpremultiply_lib.so"
-if [ ! -f "$RUST_SO" ]; then
-  timeout 600 cargo build --release $CARGO_FLAGS >/dev/null 2>&1
-fi
-c_syms=$(nm -D --defined-only "$C_SO" | awk '$2 ~ /^[A-Z]$/ {print $3}' | sort -u)
-r_syms=$(nm -D --defined-only "$RUST_SO" | awk '{print $NF}' | sort -u)
-missing=$(comm -23 <(echo "$c_syms") <(echo "$r_syms"))
-echo "C exports:"; echo "$c_syms" | sed 's/^/  /'
-if [ -n "$missing" ]; then
-  bad "symbols missing from the Rust .so:"; echo "$missing" | sed 's/^/  /'
-else
-  good "symbol diff is EMPTY (0 missing)"
-fi
-
-rm -f "$ROOT/.verify.log"
-note "RESULT"
-if [ "$fail" -eq 0 ]; then
-  printf '\033[32mALL CHECKS PASSED\033[0m\n'
-else
-  printf '\033[31mSOME CHECKS FAILED\033[0m\n'
-fi
+step "RESULT"
+if [ "$fail" -eq 0 ]; then echo "ALL PHASE D CHECKS PASSED"; else echo "FAILURES PRESENT"; fi
 exit "$fail"

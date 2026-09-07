@@ -1,104 +1,104 @@
-# CONFIGS.md — Configuration-surface table
+# CONFIGS.md — Configuration-surface table (valid inputs)
 
-Derived mechanically from `c_src/src/lib.c`. The full body is:
+Mechanically derived from the branches the C actually takes.
 
-```c
-char *tool_basename(char *path)
-{
-  char *s1;
-  char *s2;
+## Axes the C code branches on
 
-  s1 = strrchr(path, '/');
-  s2 = strrchr(path, '\\');
+`c_src/src/lib.c` has exactly these decision points:
 
-  if(s1 && s2) {
-    path = (s1 > s2) ? s1 + 1 : s2 + 1;
-  }
-  else if(s1)
-    path = s1 + 1;
-  else if(s2)
-    path = s2 + 1;
+| source line | branch |
+|---|---|
+| `if(s1 && s2)` | both separators present |
+| `(s1 > s2) ? s1 + 1 : s2 + 1` | which separator is later (pointer compare) |
+| `else if(s1)` | only `/` present |
+| `else if(s2)` | only `\` present |
+| (fall-through) | neither present → return input pointer unchanged |
 
-  return path;
-}
-```
+So the axes are:
 
-## Axes the C actually branches on
+- **A. presence of `/`** — absent / present
+- **B. presence of `\`** — absent / present
+- **C. relative order of the LAST `/` vs the LAST `\`** — only meaningful when
+  both present: `/` later, `\` later (they can never be equal)
+- **D. position of the winning separator** — first byte / interior / last byte
+  (last byte ⇒ empty result component)
+- **E. multiplicity** — one occurrence / several (only the last counts)
+- **F. string length shape** — empty / 1 byte / small / large (64 KiB)
+- **G. byte content** — ASCII / high-bit (≥ 0x80, signed-`char` sensitive) / all
+  bytes 0x01–0xFF
+- **H. trailing bytes after the NUL terminator** — absent / present and
+  containing separators (must be ignored)
 
-**Runtime options / modes / flags:** NONE. The public header is one line
-(`char *tool_basename(char *path);`) — there is no context struct, no setopt
-call, no flags word, no enum, and no `#ifdef` in either file. So the
-configuration cross-product collapses onto the input-shape axes alone.
+## Runtime options / modes / flags
 
-**Public entry points:** exactly one — `tool_basename`. There is no
-higher-level convenience wrapper and no lower-level helper exported (glibc
-`strrchr` is an import, replicated as a private Rust `fn`), so "exercise the
-lowest-level entry point" and "exercise the top-level entry point" are the same
-call here. Every row below calls `tool_basename` through the `.so` export.
+**None.** `c_src/include/lib.h` declares a single function with a single
+parameter. There is no init/config struct, no setter, no global, no
+`#ifdef`-gated behaviour anywhere in `c_src`, and `translation/Cargo.toml`
+declares **no `[features]` table** — so there is exactly one feature
+combination (the default) and one code configuration to verify.
 
-**Control-flow axes (from the source, not assumed):**
+## Full set of public entry points
 
-| axis | values the code distinguishes |
-|------|-------------------------------|
-| A. `s1` = last `'/'` | NULL (no `/`) vs non-NULL |
-| B. `s2` = last `'\\'` | NULL (no `\`) vs non-NULL |
-| C. `s1 > s2` (pointer compare, only when both non-NULL) | true (`/` is later) vs false (`\` is later). `s1 == s2` is impossible since the bytes differ, so "false" means `s1 < s2`. |
-| D. position of the winning separator | interior · index 0 (first byte) · last byte (result is the empty string) |
-| E. separator multiplicity | one occurrence vs many (exercises "last", not "first") |
-| F. string length | 0 · 1 · small · page-crossing / multi-MB |
-| G. byte values in the non-separator part | ASCII · high bytes `0x80..=0xFF` (signed `c_char` hazard) · bytes adjacent to the separators (`0x2E/0x30/0x5B/0x5D`) · full random `0x01..=0xFF` |
+| entry point | level | in header | tested directly |
+|---|---|---|---|
+| `tool_basename` | lowest and only | yes | yes |
 
-## Configuration table
+There is no convenience wrapper vs. low-level split; `tool_basename` *is* the
+lowest-level entry point. The private helper `strrchr` is exercised
+transitively through every row below (and is deliberately not exported by
+either side, matching the C).
 
-One row per combination the C treats differently. Every row is driven with
-**many randomized inputs** from a fixed-seed PRNG (seed `0x5EED_1234_ABCD_0001`,
-SplitMix64), not a single hand-picked value, and both `.so`s are called through
-`libloading`. The asserted output is byte-for-byte: the returned pointer's offset
-from the input buffer AND the full returned NUL-terminated byte string.
+## Rows (pruned cross-product of the axes the C distinguishes)
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+Every row is driven with **many randomized inputs** (fixed seed, deterministic
+xorshift PRNG) plus the hand-picked boundary values, comparing C and Rust
+`.so` exports byte-for-byte on both the returned **string bytes** and the
+returned **pointer offset** relative to the input buffer.
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `tool_basename` | no options exist; **empty string** `""` (len 0) → A=NULL, B=NULL, all `if`s false, returns `path` unchanged | [x] |
-| 2 | `tool_basename` | **no separator at all**, ASCII, random len 1..64, random content → A=NULL, B=NULL, returns `path` unchanged | [x] |
-| 3 | `tool_basename` | **no separator**, random bytes drawn from full `0x01..=0xFF` incl. high bytes ≥ `0x80` → signed-`c_char` comparison hazard | [x] |
-| 4 | `tool_basename` | **only `'/'`, exactly one occurrence, interior** → A≠NULL, B=NULL, `else if(s1)` branch, returns `s1+1` | [x] |
-| 5 | `tool_basename` | **only `'/'`, many occurrences (2..8), interior** → must select the *last*, not the first | [x] |
-| 6 | `tool_basename` | **only `'/'`, at index 0** → returns `path+1` | [x] |
-| 7 | `tool_basename` | **only `'/'`, as the final byte** (trailing separator) → returns pointer to the NUL, i.e. the empty basename `""` | [x] |
-| 8 | `tool_basename` | **only `'\\'`, exactly one occurrence, interior** → A=NULL, B≠NULL, `else if(s2)` branch, returns `s2+1` | [x] |
-| 9 | `tool_basename` | **only `'\\'`, many occurrences (2..8)** → must select the last | [x] |
-| 10 | `tool_basename` | **only `'\\'`, at index 0** and, separately, **as the final byte** → `path+1` / empty basename | [x] |
-| 11 | `tool_basename` | **both separators present, last `'/'` strictly after last `'\\'`** (`s1 > s2` true) → returns `s1+1` | [x] |
-| 12 | `tool_basename` | **both separators present, last `'\\'` strictly after last `'/'`** (`s1 > s2` false) → returns `s2+1` | [x] |
-| 13 | `tool_basename` | both/either separator present **plus decoy bytes one step off the separators** (`0x2E '.'`, `0x30 '0'`, `0x5B '['`, `0x5D ']'`) densely interleaved → off-by-one in the byte comparison would diverge here | [x] |
-| 14 | `tool_basename` | **adjacent separator pairs** `"/\\"` and `"\\/"` and runs of mixed separators (`"//\\\\//"`), including a string composed *entirely* of separators → exercises axis C at distance 1 | [x] |
-| 15 | `tool_basename` | **fully random bytes `0x01..=0xFF`, random length 0..256**, separators appearing only by chance — unbiased property test over all of axes A–E and G simultaneously (10 000 cases) | [x] |
-| 16 | `tool_basename` | **oversized input**: page-crossing and multi-MB strings (len 4095, 4096, 4097, 65 536, 1 048 576) with separators placed at the first byte, the last byte, and random interior offsets → long-scan / pointer-arithmetic overflow | [x] |
-| 17 | `tool_basename` | **length-1 strings**, exhaustively over every byte value `0x01..=0xFF` (covers `"/"`, `"\\"`, and all 253 non-separator singletons) → degenerate-length dispatch | [x] |
-| 18 | `tool_basename` | **buffer aliasing / in-place contract**: the returned pointer must point *into the caller's own buffer* (same allocation, offset in `0..=len`) and the input buffer must be left unmodified — asserted for every case in every row above | [x] |
+| 1 | `tool_basename` | no options; empty string `""` | [x] |
+| 2 | `tool_basename` | no options; 1-byte non-separator, e.g. `"a"` | [x] |
+| 3 | `tool_basename` | no options; 1-byte = `"/"` (separator is both first and last byte) | [x] |
+| 4 | `tool_basename` | no options; 1-byte = `"\\"` | [x] |
+| 5 | `tool_basename` | no separators, random ASCII, length 2..64 | [x] |
+| 6 | `tool_basename` | only `/`, single occurrence, interior | [x] |
+| 7 | `tool_basename` | only `/`, single occurrence, first byte | [x] |
+| 8 | `tool_basename` | only `/`, single occurrence, last byte (empty component) | [x] |
+| 9 | `tool_basename` | only `/`, many occurrences, random positions | [x] |
+| 10 | `tool_basename` | only `/`, all bytes are `/` (e.g. `"////"`) | [x] |
+| 11 | `tool_basename` | only `\`, single occurrence, interior | [x] |
+| 12 | `tool_basename` | only `\`, single occurrence, first byte | [x] |
+| 13 | `tool_basename` | only `\`, single occurrence, last byte (empty component) | [x] |
+| 14 | `tool_basename` | only `\`, many occurrences, random positions | [x] |
+| 15 | `tool_basename` | only `\`, all bytes are `\` | [x] |
+| 16 | `tool_basename` | both present, last `/` strictly after last `\` (branch `s1 > s2`) | [x] |
+| 17 | `tool_basename` | both present, last `\` strictly after last `/` (branch `s1 <= s2`) | [x] |
+| 18 | `tool_basename` | both present, adjacent `"…/\\…"` (1-byte pointer delta, `\` wins) | [x] |
+| 19 | `tool_basename` | both present, adjacent `"…\\/…"` (1-byte pointer delta, `/` wins) | [x] |
+| 20 | `tool_basename` | both present, winning separator is the last byte (empty component) | [x] |
+| 21 | `tool_basename` | both present, winning separator is the first byte | [x] |
+| 22 | `tool_basename` | both present, many of each, random interleaving, length 2..64 | [x] |
+| 23 | `tool_basename` | high-bit bytes (0x80..0xFF) mixed with separators — signed-`char` sensitivity | [x] |
+| 24 | `tool_basename` | fully random bytes 0x01..0xFF (separators occur by chance), length 0..128 | [x] |
+| 25 | `tool_basename` | buffer with trailing bytes *after* the NUL that contain separators (must be ignored) | [x] |
+| 26 | `tool_basename` | large input, 64 KiB, separators only in the first half | [x] |
+| 27 | `tool_basename` | large input, 64 KiB, separators only in the last 8 bytes | [x] |
+| 28 | `tool_basename` | large input, 64 KiB of pure `/` | [x] |
+| 29 | `tool_basename` | idempotence / composition: feed `tool_basename`'s own result back in (real-consumer pipeline, exercises the returned pointer as a valid input) | [x] |
+| 30 | `tool_basename` | same buffer called repeatedly (no hidden state / no mutation of the input buffer — verified by comparing the buffer contents before and after) | [x] |
+
+## Binary executable
+
+`c_src/CMakeLists.txt` contains only `add_library(driver SHARED src/lib.c)` —
+no `add_executable`. `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` and has no `[[bin]]` / `src/main.rs`. **The project
+builds no driver binary**, so the stdout-comparison item is not applicable.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares no `[features]`. The only combinations are the
-default (empty) feature set and `--no-default-features`, which are identical.
-`run_all_features.sh` enumerates the feature list mechanically from `Cargo.toml`
-(so it will expand automatically if features are ever added) and runs the whole
-suite across `{dev, release} × {default, --no-default-features}` — 4
-configurations — checking symbol parity for each profile's `.so` as well. Every
-row above is verified under each.
-
-## Suite sensitivity (mutation check)
-
-Passing tests only mean something if they can fail. Six deliberate defects were
-injected into `src/lib.rs` one at a time and `run_all_features.sh` was re-run;
-each was caught in every configuration, and the unmutated baseline passes:
-
-| mutation | detected |
-|----------|----------|
-| `s1 > s2` → `s1 < s2` (wrong separator wins) | yes |
-| `strrchr` → first match instead of last | yes |
-| drop `+1` in the `else if s1` branch | yes |
-| drop `+1` in the `else if s2` branch | yes |
-| add a NULL check the C does not have | yes (Phase C only) |
-| skip the scan's NUL terminator condition | yes |
-
+`translation/Cargo.toml` has no `[features]` section, therefore the complete
+set of combinations is: `{default}` = `{}`. Verified with
+`cargo test --release`, `cargo test --release --no-default-features`, and
+`cargo test --release --all-features`, which are all the same configuration
+here.

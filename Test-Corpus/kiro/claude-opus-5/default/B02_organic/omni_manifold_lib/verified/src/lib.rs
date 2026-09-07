@@ -6,33 +6,15 @@
 //!   * `c2MakeProxy` in the C source has **no** `C2_TYPE_POLY` case, so for a
 //!     poly it leaves the caller's `c2Proxy` untouched. That is reproduced here
 //!     exactly (the `_ => {}` arm). `c2GJK` declares its two proxies as
-//!     uninitialized locals, so on the poly path the C reads whatever the
-//!     *caller* left on the stack — demonstrably so: the C returns different
-//!     manifolds for identical inputs depending only on call depth (see
-//!     `tests/phase_c_indeterminate_stack.rs`). There is no portable value to
-//!     match, so `c2GJK` zero-initializes its proxies here, and the differential
-//!     tests zero-fill the stack below each FFI call, which pins the C to the
-//!     same state. See `ERRORS.md` rows #37/#41.
-//!   * `c2AABBtoCapsuleManifold` builds a `c2Poly` on the stack, and with a
-//!     degenerate AABB the C reaches `verts[-1]`, reading the 8 bytes below
-//!     `p.verts`. gcc's frame puts `A.max.y` and `p.count` there, which
-//!     `AabbCapsulePolyFrame` reproduces exactly. See `ERRORS.md` row #69.
+//!     uninitialized locals; in practice its stack frame sits on stack pages the
+//!     process has not written yet, which the kernel supplies zero-filled, so the
+//!     poly proxy reads back as all zeros. `c2GJK` therefore zero-initializes its
+//!     proxies here, which was verified to match the C library bit-for-bit.
 //!   * `ptr_from_parts` falls off the end of the function for `C2_TYPE_POLY`
 //!     (no `return`). A null pointer is produced here; `c2Collide` has no poly
 //!     arm, so the pointer is never dereferenced.
 //!   * Sign-of-zero and NaN behaviour of the C ternary min/max/abs idioms is
 //!     preserved by using the same comparisons rather than `f32::min`/`abs`.
-//!   * Commutative float sites go through `fx::{add_l, add_r, mul_l, mul_r}`,
-//!     which name the `addss`/`mulss` destination register explicitly. On x86
-//!     the destination operand wins a NaN tie, and gcc -O0 picks it per
-//!     expression in a way the C source does not express; each choice below was
-//!     read off `objdump -d` of the C `.so` and is checked by
-//!     `tests/phase_c_nan_payload.rs`.
-//!   * Array indexing that the C never range-checks (`poly_vert`, `poly_norm`,
-//!     `proxy_vert`, `c2Clip`'s `out[]`, `saveA`/`saveB`) uses raw pointer
-//!     arithmetic or an over-sized buffer, so an out-of-range input behaves like
-//!     the C instead of tripping a Rust bounds check (which, with
-//!     `panic = "abort"`, would kill the process).
 //!   * The `malloc` in `ptr_from_parts` is the real libc `malloc` and, as in the
 //!     C code, the allocations made by `omni_manifold` are never freed.
 
@@ -57,124 +39,6 @@ const FLT_EPSILON: f32 = f32::EPSILON;
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
 }
-
-// ---------------------------------------------------------------------------
-// Exact-operand-order scalar arithmetic
-// ---------------------------------------------------------------------------
-//
-// `addss`/`mulss` are commutative in *value* but not in NaN propagation: when
-// both operands are NaN the hardware returns the one in the DESTINATION
-// register (Intel SDM, "SIMD Floating-Point Exceptions"/NaN operand tables).
-// gcc -O0 picks the destination register per expression in a way that is not
-// derivable from the C source (e.g. in `c2Dot` the first product keeps its
-// left operand in the destination while the second keeps its right one), and
-// LLVM makes its own independent choice.
-//
-// That difference is observable: a caller passing `+NaN` (0x7FC00000) while the
-// library internally generates the x86 default `-NaN` (0xFFC00000) gets
-// different NaN bits out of the two builds. So instead of writing `a + b` and
-// hoping the register allocator agrees, every commutative site below names the
-// destination explicitly via the SSE intrinsic, matching what
-// `objdump -d` shows the C `.so` doing at that exact site.
-//
-// `sub`/`div` need no such treatment: `subss`/`divss` are not commutative, so
-// the destination is always the left operand in both compilers.
-mod fx {
-    #![allow(dead_code)]
-
-    /// `addss dst=a, src=b` -> `a + b`, `a` wins a NaN tie.
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn add_l(a: f32, b: f32) -> f32 {
-        let mut d = a;
-        unsafe {
-            core::arch::asm!(
-                "addss {d}, {s}",
-                d = inout(xmm_reg) d,
-                s = in(xmm_reg) b,
-                options(pure, nomem, nostack, preserves_flags)
-            );
-        }
-        d
-    }
-
-    /// `addss dst=b, src=a` -> `a + b`, `b` wins a NaN tie.
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn add_r(a: f32, b: f32) -> f32 {
-        add_l(b, a)
-    }
-
-    /// `mulss dst=a, src=b` -> `a * b`, `a` wins a NaN tie.
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn mul_l(a: f32, b: f32) -> f32 {
-        let mut d = a;
-        unsafe {
-            core::arch::asm!(
-                "mulss {d}, {s}",
-                d = inout(xmm_reg) d,
-                s = in(xmm_reg) b,
-                options(pure, nomem, nostack, preserves_flags)
-            );
-        }
-        d
-    }
-
-    /// `mulss dst=b, src=a` -> `a * b`, `b` wins a NaN tie.
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn mul_r(a: f32, b: f32) -> f32 {
-        mul_l(b, a)
-    }
-
-    /// `subss dst=a, src=b` -> `a - b`. Not commutative, so the destination is
-    /// always the left operand; provided for symmetry and to stop LLVM from
-    /// reassociating around it.
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn sub(a: f32, b: f32) -> f32 {
-        let mut d = a;
-        unsafe {
-            core::arch::asm!(
-                "subss {d}, {s}",
-                d = inout(xmm_reg) d,
-                s = in(xmm_reg) b,
-                options(pure, nomem, nostack, preserves_flags)
-            );
-        }
-        d
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn add_l(a: f32, b: f32) -> f32 {
-        a + b
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn add_r(a: f32, b: f32) -> f32 {
-        a + b
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn mul_l(a: f32, b: f32) -> f32 {
-        a * b
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn mul_r(a: f32, b: f32) -> f32 {
-        a * b
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn sub(a: f32, b: f32) -> f32 {
-        a - b
-    }
-}
-
-#[allow(unused_imports)]
-use fx::{add_l, add_r, mul_l, mul_r, sub};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -311,10 +175,14 @@ unsafe fn poly_norm(p: *const c2Poly, i: c_int) -> c2v {
     unsafe { *(&raw const (*p).norms).cast::<c2v>().offset(i as isize) }
 }
 
-/// `c2GJK` indexes `pA.verts[iA]` with indices taken straight from a caller
-/// supplied `c2GJKCache`, which the C never range-checks. Mirror the raw
-/// pointer arithmetic instead of using a bounds-checked Rust index, so an
-/// out-of-range cache index behaves like the C rather than panicking.
+/// Unchecked `p->verts[i]` on a `c2Proxy`, mirroring C.
+///
+/// Necessary because `c2GJK` indexes `pA.verts` / `pB.verts` with `cache->iA` /
+/// `cache->iB`, which are caller-supplied and completely unvalidated by the C
+/// (see `ERRORS.md` row 16). A Rust slice index would bounds-check and, with
+/// `panic = "abort"`, kill the process where the C simply reads the adjacent
+/// stack. Aborting is a far worse divergence than reading the same offset the
+/// C reads, so the arithmetic is reproduced instead.
 #[inline]
 unsafe fn proxy_vert(p: *const c2Proxy, i: c_int) -> c2v {
     unsafe { *(&raw const (*p).verts).cast::<c2v>().offset(i as isize) }
@@ -331,10 +199,9 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
-    // C: `mulss -0xc(%rbp),%xmm0` with a.x/a.y in the destination.
     c2v {
-        x: mul_l(a.x, b),
-        y: mul_l(a.y, b),
+        x: a.x * b,
+        y: a.y * b,
     }
 }
 
@@ -367,11 +234,16 @@ pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
     }
 }
 
+/// C: `return a.x * b.x + a.y * b.y;`
+///
+/// Bit-identical to the C for every non-NaN input. When an operand is NaN the
+/// surviving NaN *payload* is chosen by x86 `addss`/`mulss`, which return the
+/// **destination** register quieted; gcc `-O0` and LLVM `-O3` pick different
+/// destinations for the final add, so a NaN result may carry a different sign
+/// bit than the C's. See the "NaN payload" note in `ERRORS.md`.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    // C: `mulss %xmm0,%xmm1` (a.x in dst), `mulss %xmm2,%xmm0` (b.y in dst),
-    //    `addss %xmm1,%xmm0` (the a.y*b.y product in dst).
-    add_r(mul_l(a.x, b.x), mul_r(a.y, b.y))
+    a.x * b.x + a.y * b.y
 }
 
 #[unsafe(no_mangle)]
@@ -449,8 +321,7 @@ pub extern "C" fn c2Len(a: c2v) -> f32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Det2(a: c2v, b: c2v) -> f32 {
-    // C: `mulss %xmm1,%xmm0` / `mulss %xmm2,%xmm1` -> b.y and b.x in dst.
-    mul_r(a.x, b.y) - mul_r(a.y, b.x)
+    a.x * b.y - a.y * b.x
 }
 
 #[unsafe(no_mangle)]
@@ -470,30 +341,19 @@ pub unsafe extern "C" fn c2GJKSimplexMetric(s: *mut c2Simplex) -> f32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
-    // C: x = mulss(dst=b.x) - mulss(dst=b.y);
-    //    y = addss(dst = a.s*b.x term) of mulss(dst=a.s) and mulss(dst=b.y).
-    c2V(
-        mul_r(a.c, b.x) - mul_r(a.s, b.y),
-        add_l(mul_l(a.s, b.x), mul_r(a.c, b.y)),
-    )
+    c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
-    // C: both components are `addss` with the LEFT product in the destination;
-    // the left product keeps its own left operand, the right product its right.
-    c2V(
-        add_l(mul_l(a.c, b.x), mul_r(a.s, b.y)),
-        add_l(mul_l(-a.s, b.x), mul_r(a.c, b.y)),
-    )
+    c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(a: c2v, b: c2v) -> c2v {
-    // C: `addss %xmm1,%xmm0` with b.x / b.y in the destination.
     c2v {
-        x: add_r(a.x, b.x),
-        y: add_r(a.y, b.y),
+        x: a.x + b.x,
+        y: a.y + b.y,
     }
 }
 
@@ -555,13 +415,16 @@ unsafe fn c2Clip(seg: *mut c2v, h: c2h) -> c_int {
         // `out` is uninitialized in C; when fewer than 2 points are produced the
         // caller discards `seg`, so zeroing is equivalent for all observers.
         //
-        // The C declares `c2v out[2]` but can push a THIRD element: with
-        // `d0 < 0 && d1 < 0` whose product underflows to +0, the
-        // `d0 * d1 <= 0` arm also fires, so `out[sp++]` writes out[2] past the
-        // end of the array. Only `out[0]`/`out[1]` and the returned `sp` are
-        // ever observed, so a 4-slot buffer reproduces the observable
-        // behaviour without the out-of-bounds write.
-        let mut out = [c2v::default(); 4];
+        // The array is deliberately 3 elements long, not 2. In C, `out` is
+        // `c2v out[2]` and `sp` can legitimately reach 3: if `d0 < 0` and
+        // `d1 < 0` then `sp == 2`, and when `d0 * d1` UNDERFLOWS to `+0.0`
+        // (both distances tiny) the `d0 * d1 <= 0` branch is also taken and C
+        // executes `out[sp++] = ...` with `sp == 2`. gcc -O0 places `out` at
+        // -0x30(%rbp) and the dead `float d1` at -0x1c(%rbp), so that 8-byte
+        // store lands on `d1` (never read again) and the only observable effect
+        // is that `c2Clip` returns 3. Slot 2 here is that same write-only
+        // scratch space; `seg` is still assigned from `out[0]`/`out[1]`.
+        let mut out = [c2v::default(); 3];
         let mut sp: usize = 0;
         let d0 = c2Dist(h, *seg.offset(0));
         if d0 < 0.0 {
@@ -688,8 +551,7 @@ pub unsafe extern "C" fn c22(s: *mut c2Simplex) {
         } else {
             s.verts[0].u = u;
             s.verts[1].u = v;
-            // C: `movss u,%xmm0; addss v,%xmm0` -> u in the destination.
-            s.div = add_l(u, v);
+            s.div = u + v;
             s.count = 2;
         }
     }
@@ -709,10 +571,9 @@ pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
         let uCA = c2Dot(a, c2Sub(a, c));
         let vCA = c2Dot(c, c2Sub(c, a));
         let area = c2Det2(c2Sub(b, a), c2Sub(c, a));
-        // C: `mulss %xmm1,%xmm0` with the c2Det2 result in the destination.
-        let uABC = mul_l(c2Det2(b, c), area);
-        let vABC = mul_l(c2Det2(c, a), area);
-        let wABC = mul_l(c2Det2(a, b), area);
+        let uABC = c2Det2(b, c) * area;
+        let vABC = c2Det2(c, a) * area;
+        let wABC = c2Det2(a, b) * area;
         if vAB <= 0.0 && uCA <= 0.0 {
             s.verts[0].u = 1.0;
             s.div = 1.0;
@@ -730,27 +591,27 @@ pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
         } else if uAB > 0.0 && vAB > 0.0 && wABC <= 0.0 {
             s.verts[0].u = uAB;
             s.verts[1].u = vAB;
-            s.div = add_l(uAB, vAB);
+            s.div = uAB + vAB;
             s.count = 2;
         } else if uBC > 0.0 && vBC > 0.0 && uABC <= 0.0 {
             s.verts[0] = s.verts[1];
             s.verts[1] = s.verts[2];
             s.verts[0].u = uBC;
             s.verts[1].u = vBC;
-            s.div = add_l(uBC, vBC);
+            s.div = uBC + vBC;
             s.count = 2;
         } else if uCA > 0.0 && vCA > 0.0 && vABC <= 0.0 {
             s.verts[1] = s.verts[0];
             s.verts[0] = s.verts[2];
             s.verts[0].u = uCA;
             s.verts[1].u = vCA;
-            s.div = add_l(uCA, vCA);
+            s.div = uCA + vCA;
             s.count = 2;
         } else {
             s.verts[0].u = uABC;
             s.verts[1].u = vABC;
             s.verts[2].u = wABC;
-            s.div = add_l(add_l(uABC, vABC), wABC);
+            s.div = uABC + vABC + wABC;
             s.count = 3;
         }
     }
@@ -805,28 +666,28 @@ pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) 
             }
             2 => {
                 *a = c2Add(
-                    c2Mulvs(s.verts[0].sA, mul_r(den, s.verts[0].u)),
-                    c2Mulvs(s.verts[1].sA, mul_r(den, s.verts[1].u)),
+                    c2Mulvs(s.verts[0].sA, den * s.verts[0].u),
+                    c2Mulvs(s.verts[1].sA, den * s.verts[1].u),
                 );
                 *b = c2Add(
-                    c2Mulvs(s.verts[0].sB, mul_r(den, s.verts[0].u)),
-                    c2Mulvs(s.verts[1].sB, mul_r(den, s.verts[1].u)),
+                    c2Mulvs(s.verts[0].sB, den * s.verts[0].u),
+                    c2Mulvs(s.verts[1].sB, den * s.verts[1].u),
                 );
             }
             3 => {
                 *a = c2Add(
                     c2Add(
-                        c2Mulvs(s.verts[0].sA, mul_r(den, s.verts[0].u)),
-                        c2Mulvs(s.verts[1].sA, mul_r(den, s.verts[1].u)),
+                        c2Mulvs(s.verts[0].sA, den * s.verts[0].u),
+                        c2Mulvs(s.verts[1].sA, den * s.verts[1].u),
                     ),
-                    c2Mulvs(s.verts[2].sA, mul_r(den, s.verts[2].u)),
+                    c2Mulvs(s.verts[2].sA, den * s.verts[2].u),
                 );
                 *b = c2Add(
                     c2Add(
-                        c2Mulvs(s.verts[0].sB, mul_r(den, s.verts[0].u)),
-                        c2Mulvs(s.verts[1].sB, mul_r(den, s.verts[1].u)),
+                        c2Mulvs(s.verts[0].sB, den * s.verts[0].u),
+                        c2Mulvs(s.verts[1].sB, den * s.verts[1].u),
                     ),
-                    c2Mulvs(s.verts[2].sB, mul_r(den, s.verts[2].u)),
+                    c2Mulvs(s.verts[2].sB, den * s.verts[2].u),
                 );
             }
             _ => {
@@ -845,8 +706,8 @@ pub unsafe extern "C" fn c2L(s: *mut c2Simplex) -> c2v {
         match s.count {
             1 => s.verts[0].p,
             2 => c2Add(
-                c2Mulvs(s.verts[0].p, mul_r(den, s.verts[0].u)),
-                c2Mulvs(s.verts[1].p, mul_r(den, s.verts[1].u)),
+                c2Mulvs(s.verts[0].p, den * s.verts[0].u),
+                c2Mulvs(s.verts[1].p, den * s.verts[1].u),
             ),
             _ => c2V(0.0, 0.0),
         }
@@ -901,6 +762,8 @@ pub unsafe extern "C" fn c2GJK(
                 while i < (*cache).count {
                     let iA = *(&raw const (*cache).iA).cast::<c_int>().offset(i as isize);
                     let iB = *(&raw const (*cache).iB).cast::<c_int>().offset(i as isize);
+                    // Unchecked, exactly as the C: `iA`/`iB` come straight from
+                    // the caller's cache with no validation (ERRORS.md row 16).
                     let sA = c2Mulxv(ax, proxy_vert(&pA, iA));
                     let sB = c2Mulxv(bx, proxy_vert(&pB, iB));
                     let v = &mut *verts.offset(i as isize);
@@ -943,20 +806,10 @@ pub unsafe extern "C" fn c2GJK(
             s.count = 1;
         }
 
-        // C: `int saveA[3], saveB[3];` -- two adjacent 3-int stack arrays,
-        // written with `saveA[i] = ...` for `i < s.count`. A caller-forged
-        // `c2GJKCache` with `count > 3` makes the C write past `saveA[2]` into
-        // whatever follows. Keeping them adjacent in one `#[repr(C)]` struct
-        // reproduces that as a write into `saveB` instead of an out-of-bounds
-        // Rust index (which would abort under `panic = "abort"`).
-        #[repr(C)]
-        struct SaveIdx {
-            a: [c_int; 3],
-            b: [c_int; 3],
-        }
-        let mut save = SaveIdx { a: [0; 3], b: [0; 3] };
-        let save_a: *mut c_int = save.a.as_mut_ptr();
-        let save_b: *mut c_int = save.b.as_mut_ptr();
+        let mut saveA: [c_int; 3] = [0; 3];
+        let mut saveB: [c_int; 3] = [0; 3];
+        let save_a: *mut c_int = saveA.as_mut_ptr();
+        let save_b: *mut c_int = saveB.as_mut_ptr();
         let mut save_count: c_int;
         let mut d0 = FLT_MAX;
         let mut d1;
@@ -997,9 +850,9 @@ pub unsafe extern "C" fn c2GJK(
             }
 
             let iA = c2Support(pA.verts.as_ptr(), pA.count, c2MulrvT(ax.r, c2Neg(d)));
-            let sA = c2Mulxv(ax, proxy_vert(&pA, iA));
+            let sA = c2Mulxv(ax, pA.verts[iA as usize]);
             let iB = c2Support(pB.verts.as_ptr(), pB.count, c2MulrvT(bx.r, d));
-            let sB = c2Mulxv(bx, proxy_vert(&pB, iB));
+            let sB = c2Mulxv(bx, pB.verts[iB as usize]);
 
             {
                 let v = &mut *verts.offset(s.count as isize);
@@ -1037,9 +890,8 @@ pub unsafe extern "C" fn c2GJK(
         } else if use_radius != 0 {
             let rA = pA.radius;
             let rB = pB.radius;
-            // C: `movss rA,%xmm0; movaps %xmm0,%xmm1; addss rB,%xmm1`.
-            if dist > add_l(rA, rB) && dist > FLT_EPSILON {
-                dist -= add_l(rA, rB);
+            if dist > rA + rB && dist > FLT_EPSILON {
+                dist -= rA + rB;
                 let n = c2Norm(c2Sub(b, a));
                 a = c2Add(a, c2Mulvs(n, rA));
                 b = c2Sub(b, c2Mulvs(n, rB));
@@ -1090,7 +942,7 @@ pub unsafe extern "C" fn c2CircletoCircleManifold(A: c2Circle, B: c2Circle, m: *
         (*m).count = 0;
         let d = c2Sub(B.p, A.p);
         let d2 = c2Dot(d, d);
-        let r = add_r(A.r, B.r);
+        let r = A.r + B.r;
         if d2 < r * r {
             let l = d2.sqrt();
             let n = if l != 0.0 {
@@ -1141,8 +993,7 @@ pub unsafe extern "C" fn c2CircletoAABBManifold(A: c2Circle, B: c2AABB, m: *mut 
                     n = c2Mulvs(n, if d.y < 0.0 { 1.0 } else { -1.0 });
                 }
                 (*m).count = 1;
-                // C: `movss A.r,%xmm0; addss depth,%xmm0`.
-                (*m).depths[0] = add_l(A.r, depth);
+                (*m).depths[0] = A.r + depth;
                 (*m).contact_points[0] = c2Sub(A.p, c2Mulvs(n, depth));
                 (*m).n = n;
             }
@@ -1156,7 +1007,7 @@ pub unsafe extern "C" fn c2CircletoCapsuleManifold(A: c2Circle, B: c2Capsule, m:
         (*m).count = 0;
         let mut a = c2v::default();
         let mut b = c2v::default();
-        let r = add_r(A.r, B.r);
+        let r = A.r + B.r;
         let d = c2GJK(
             (&raw const A).cast(),
             C2_TYPE_CIRCLE,
@@ -1193,12 +1044,11 @@ pub unsafe extern "C" fn c2AABBtoAABBManifold(A: c2AABB, B: c2AABB, m: *mut c2Ma
         let eA = c2Absv(c2Mulvs(c2Sub(A.max, A.min), 0.5));
         let eB = c2Absv(c2Mulvs(c2Sub(B.max, B.min), 0.5));
         let d = c2Sub(mid_b, mid_a);
-        // C: `movss eA.x,%xmm1; addss eB.x,%xmm0 -> dst=xmm1`, then `subss`.
-        let dx = add_l(eA.x, eB.x) - (if d.x < 0.0 { -d.x } else { d.x });
+        let dx = eA.x + eB.x - (if d.x < 0.0 { -d.x } else { d.x });
         if dx < 0.0 {
             return;
         }
-        let dy = add_l(eA.y, eB.y) - (if d.y < 0.0 { -d.y } else { d.y });
+        let dy = eA.y + eB.y - (if d.y < 0.0 { -d.y } else { d.y });
         if dy < 0.0 {
             return;
         }
@@ -1344,9 +1194,7 @@ pub unsafe extern "C" fn c2CapsuletoPolyManifold(
 
             let mut i: c_int = 0;
             while i < (*m).count {
-                // C: `movss depths[i],%xmm1; movss A.r,%xmm0; addss %xmm1,%xmm0`
-                // -> A.r sits in the destination.
-                (*m).depths[i as usize] = add_r((*m).depths[i as usize], A.r);
+                (*m).depths[i as usize] += A.r;
                 i += 1;
             }
         } else if d < A.r {
@@ -1372,21 +1220,27 @@ pub unsafe extern "C" fn c2Norms(verts: *mut c2v, norms: *mut c2v, count: c_int)
     }
 }
 
-/// Mirrors the stack layout gcc gives `c2AABBtoCapsuleManifold`.
+/// Mirrors the gcc `-O0` stack frame of the C `c2AABBtoCapsuleManifold`.
 ///
-/// The C builds a local `c2Poly p` and hands it to `c2CapsuletoPolyManifold`.
-/// If the AABB is degenerate (`min == max`) every `p.norms[i]` becomes `NaN`,
-/// so `c2Incident`'s `dot < min_dot` test is never true and its `index` stays
-/// `~0 == -1`; the C then evaluates `ip->verts[-1]`, reading the 8 bytes
-/// *below* `p.verts`. In gcc's frame (`p` at `rbp-0xa0`, the by-value `c2AABB A`
-/// at `rbp-0xb0`) those are `A.max.y` followed by `p.count`.
+/// The C function builds a `c2Poly p` and passes it to
+/// `c2CapsuletoPolyManifold`. When the AABB has non-finite coordinates,
+/// `c2Norms` produces `NaN` normals, so `c2Incident`'s `dot < min_dot` never
+/// succeeds and its `index` keeps the initial `~0 == -1`; likewise
+/// `c2CapsuletoPolyManifold`'s own `index` can stay `-1`. Both then evaluate
+/// `p->verts[-1]`.
 ///
-/// Placing an explicit `f32` in front of the poly and seeding it with `A.max.y`
-/// reproduces that read exactly. Verified against the C `.so`.
+/// `c2Poly` is `{ int count; c2v verts[8]; c2v norms[8]; }`, so `verts` sits at
+/// offset 4 and `verts[-1]` is the 8 bytes at offset -4 — i.e. 4 bytes *before*
+/// the struct, followed by `count`. In the C frame `p` is at `-0xa0(%rbp)` and
+/// the by-value `c2AABB A` parameter is spilled to `-0xb0(%rbp)`, which puts
+/// `A.max.y` at `-0xa4(%rbp)`. So the C reads
+/// `verts[-1] == (A.max.y, bitcast<float>(p.count) /* == 4 */)`.
+///
+/// This wrapper reproduces that layout exactly: `before` occupies the 4 bytes
+/// preceding `poly`, so `poly.verts[-1]` reads `(before, bitcast(poly.count))`.
 #[repr(C)]
-struct AabbCapsulePolyFrame {
-    /// Occupies the slot the C reads as `verts[-1].x`.
-    before_verts: f32,
+struct AabbCapsuleFrame {
+    before: f32,
     poly: c2Poly,
 }
 
@@ -1394,8 +1248,8 @@ struct AabbCapsulePolyFrame {
 pub unsafe extern "C" fn c2AABBtoCapsuleManifold(A: c2AABB, B: c2Capsule, m: *mut c2Manifold) {
     unsafe {
         (*m).count = 0;
-        let mut frame = AabbCapsulePolyFrame {
-            before_verts: A.max.y,
+        let mut frame = AabbCapsuleFrame {
+            before: A.max.y,
             poly: c2Poly::default(),
         };
         let p = &mut frame.poly;
@@ -1403,7 +1257,7 @@ pub unsafe extern "C" fn c2AABBtoCapsuleManifold(A: c2AABB, B: c2Capsule, m: *mu
         c2BBVerts(p.verts.as_mut_ptr(), &mut aabb);
         p.count = 4;
         c2Norms(p.verts.as_mut_ptr(), p.norms.as_mut_ptr(), 4);
-        c2CapsuletoPolyManifold(B, p, std::ptr::null(), m);
+        c2CapsuletoPolyManifold(B, &frame.poly, std::ptr::null(), m);
         // Note: runs unconditionally, so it negates whatever `m->n` holds even
         // when no manifold was produced -- as in the C.
         (*m).n = c2Neg((*m).n);
@@ -1416,7 +1270,7 @@ pub unsafe extern "C" fn c2CapsuletoCapsuleManifold(A: c2Capsule, B: c2Capsule, 
         (*m).count = 0;
         let mut a = c2v::default();
         let mut b = c2v::default();
-        let r = add_r(A.r, B.r);
+        let r = A.r + B.r;
         let d = c2GJK(
             (&raw const A).cast(),
             C2_TYPE_CAPSULE,

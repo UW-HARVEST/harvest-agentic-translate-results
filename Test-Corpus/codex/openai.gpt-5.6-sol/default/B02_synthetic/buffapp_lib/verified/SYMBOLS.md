@@ -1,25 +1,25 @@
-# Dynamic symbol surface
+# Dynamic Symbol Surface
 
-Source library:
-`../c_src/build/libharvest-work-s5WMbT.so`
+Source command:
 
-Rust library:
-`target/release/libbuffapp_lib.so`
-
-Derived with:
-
-```sh
-nm -D --defined-only <library> | awk '{print $3}' | sort -u
+```text
+nm -D --defined-only c_src/build/libharvest-work-pddoiK.so
 ```
 
-| C symbol | C source definition | Rust export | Status |
-|----------|---------------------|-------------|--------|
-| `append_to_buffer` | `src/lib.c:53` | `append_to_buffer` | [x] |
-| `buffapp` | `src/lib.c:111` | `buffapp` | [x] |
-| `create_buffer` | `src/lib.c:34` | `create_buffer` | [x] |
-| `destroy_buffer` | `src/lib.c:75` | `destroy_buffer` | [x] |
-| `get_operation_name` | `src/lib.c:84` | `get_operation_name` | [x] |
-| `perform_operation` | `src/lib.c:94` | `perform_operation` | [x] |
+Only globally defined dynamic symbols (`T`) are part of the C library surface.
+The Rust comparison was made against `target/release/libbuffapp_lib.so`.
 
-The sorted C-minus-Rust symbol difference is empty. The C library's undefined
-symbols are libc/runtime imports and are not API definitions.
+| # | C symbol | C type | Rust export | Status |
+|---|----------|--------|-------------|--------|
+| 1 | `append_to_buffer` | `T` | `append_to_buffer` | present |
+| 2 | `buffapp` | `T` | `buffapp` | present |
+| 3 | `create_buffer` | `T` | `create_buffer` | present |
+| 4 | `destroy_buffer` | `T` | `destroy_buffer` | present |
+| 5 | `get_operation_name` | `T` | `get_operation_name` | present |
+| 6 | `perform_operation` | `T` | `perform_operation` | present |
+
+Missing C symbols in Rust: **0**.
+
+There are no macro-generated public symbols and no non-library executable
+target. Undefined entries in both shared objects are runtime/libc imports, not
+missing library implementations.

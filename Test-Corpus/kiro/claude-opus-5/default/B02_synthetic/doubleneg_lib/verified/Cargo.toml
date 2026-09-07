@@ -10,6 +10,19 @@ crate-type = ["cdylib"]
 [dev-dependencies]
 libloading = "0.8"
 
+# `doubleneg` writes to stdout, and comparing it requires redirecting the
+# process-global file descriptor 1. The libtest harness writes its own progress
+# lines to fd 1 from another thread, so this target runs without a harness and
+# executes every row sequentially.
+[[test]]
+name = "phase_d_pipeline"
+harness = false
+
+# Multi-gigabyte buffers; must not run concurrently with anything else.
+[[test]]
+name = "phase_e_large"
+harness = false
+
 [profile.release]
 panic = "abort"
 

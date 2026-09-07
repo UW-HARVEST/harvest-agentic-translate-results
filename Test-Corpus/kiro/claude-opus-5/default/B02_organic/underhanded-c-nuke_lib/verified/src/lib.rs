@@ -8,8 +8,9 @@
 //! `typedef double float_t`, but `src/spectral_contrast.c` never includes that
 //! header, so its `float_t` resolves to `<math.h>`'s `float_t` (== `float` on
 //! x86-64 glibc). The two translation units therefore disagree about the
-//! element type, and the compiled library really does behave that way. See
-//! `spectral_contrast.rs` for details.
+//! element type -- `match` walks its buffers with an 8-byte stride while
+//! `spectral_contrast` walks the *same* buffers with a 4-byte one -- and the
+//! compiled library really does behave that way. See `spectral_contrast.rs`.
 
 mod fp;
 #[path = "match.rs"]

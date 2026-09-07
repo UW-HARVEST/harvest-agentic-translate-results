@@ -1,94 +1,155 @@
-# CONFIGS.md — Phase A configuration-surface table
+# CONFIGS.md — Configuration-surface table (valid inputs)
 
-## Axes the C code actually branches on
+## Axes the C actually branches on
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
+Derived from `c_src/include/lib.h` (the whole public API is one function) and
+every `if` / range check in `c_src/src/lib.c`.
 
-**Runtime options / modes / flags: NONE.** The public header is one line —
-`char *decode_base64(const char *src);`. There is no context struct, no option
-setter, no flags argument, no `#ifdef`, and no compile-time configuration in
-`CMakeLists.txt`. The only `#define`s are `TRUE`/`FALSE`. Consequently the
-configuration surface is entirely the *shape of the input string*.
+There are **no** runtime options, flags, modes, `#ifdef`s, enums, or context
+structs in this library. The only public entry point is:
 
-**Full set of public entry points (1):** `decode_base64`. The two remaining
-functions, `decode` and `is_base64`, are `static` — they are the lowest-level
-routines and are unreachable across the FFI boundary, so they are driven
-*through* `decode_base64` by inputs chosen to hit each of their branches
-individually (axis A2/A3 below).
+```c
+char *decode_base64(const char *src);          /* include/lib.h:1 */
+```
 
-| axis | what the C branches on | source |
-|------|------------------------|--------|
-| A1 | `src` non-`NULL` and non-empty | `if (src && *src)` line 46 |
-| A2 | `is_base64` character class: `A-Z`, `a-z`, `0-9`, `+`, `/`, `=` vs. everything else (ignored) | lines 31–37, 67–71 |
-| A3 | `decode` character class: `A-Z` → `c-'A'`; `a-z` → `c-'a'+26`; `0-9` → `c-'0'+52`; `'+'` → 62; **fall-through** (`'/'`, `'='`) → 63 | lines 12–25 |
-| A4 | filtered length `l` mod 4 — controls how many of `c2`,`c3`,`c4` keep their `'A'` default | `if (k+n < l)` lines 79–89 |
-| A5 | `c3 == '='` → 2nd output byte suppressed | line 98 |
-| A6 | `c4 == '='` → 3rd output byte suppressed | line 102 |
-| A7 | `l == 0` after filtering (non-empty input, no base64 chars) → decode loop body never runs | line 73 |
-| A8 | sign of `char`: bytes `0x80..0xFF` are *negative*, so they fail every range check in both `is_base64` and `decode` | signed `char` on x86-64 |
-| A9 | input length — drives `strlen`, the `calloc(1, l+13)` / `malloc(l)` sizes, and the number of quartets | lines 49–60 |
-| A10 | `'\0'` inside the buffer → `strlen`/loop stop early | lines 49, 67 |
+So the configuration surface is entirely made of **input shapes**. The branches
+the code takes are:
 
-Rows below are the cross-product of these axes pruned to the combinations the C
-actually distinguishes. **Every row is exercised with many randomized inputs
-(fixed seed) — not one hand-picked value.** Output comparison is byte-for-byte
-over the *entire* `strlen(src)+14`-byte allocation (both sides `calloc`, so the
-tail is defined), never merely as a C string, so bytes past an embedded `NUL`
-are compared too.
+| axis | source location | distinct values |
+|------|-----------------|-----------------|
+| A. `src` non-null & non-empty | line 46 | yes / no (no ⇒ ERRORS.md rows 1-2) |
+| B. `l` = number of surviving base64 chars, mod 4 | lines 73, 79, 83, 87 | 0, 1, 2, 3 — selects how many of `c2 c3 c4` default to `'A'` |
+| C. `l` magnitude | line 73 | 0 (all chars filtered), 1, 2, 3, 4, 5..8 (multi-group), large |
+| D. `c3 == '='` | line 98 | yes ⇒ 2nd output byte suppressed / no ⇒ emitted |
+| E. `c4 == '='` | line 102 | yes ⇒ 3rd output byte suppressed / no ⇒ emitted |
+| F. `decode()` class of each char | lines 12-25 | `A-Z` (0-25), `a-z` (26-51), `0-9` (52-61), `'+'` (62), everything-else-that-survives-the-filter i.e. `'/'` and `'='` (63) |
+| G. `is_base64()` verdict per byte | lines 31-37 | kept (`A-Za-z0-9+/=`) / dropped (all other bytes, incl. `0x80..0xFF` which are **negative** `char` on x86-64) |
+| H. `'='` position | lines 74-104 | none / trailing-1 / trailing-2 / **interior** (C does *not* stop at padding; interior `'='` decodes as 63 and only suppresses bytes when it lands on the c3/c4 slot of its group) |
+| I. output contains embedded `0x00` | — | yes / no (buffer is NUL-terminated by `calloc`, so the byte *after* the payload is 0 too; comparison must be over the full `strlen+14` region, not `strcmp`) |
+| J. filtered-out bytes interleaved | lines 67-71 | none / leading / interior / trailing / only-junk |
+
+`decode_base64` is simultaneously the lowest-level and the highest-level public
+entry point; the two `static` helpers (`decode`, `is_base64`) are not exported,
+so axes F and G are driven through it.
+
+## Row table
+
+Every row is exercised with **many randomized inputs** (fixed seed, xorshift64\*
+PRNG in `tests/common/mod.rs`) unless it is inherently a single input.
+Comparison is byte-for-byte over the entire `strlen(src) + 14` allocation plus
+the NULL/non-NULL verdict.
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|-------------------------------------------|-----|
-| B01 | `decode_base64` | `l % 4 == 0`, no padding, uppercase-only alphabet (A3 branch 1) | [x] |
-| B02 | `decode_base64` | `l % 4 == 0`, no padding, lowercase-only alphabet (A3 branch 2) | [x] |
-| B03 | `decode_base64` | `l % 4 == 0`, no padding, digits-only alphabet (A3 branch 3) | [x] |
-| B04 | `decode_base64` | `l % 4 == 0`, no padding, `'+'`-only alphabet (A3 branch 4) | [x] |
-| B05 | `decode_base64` | `l % 4 == 0`, no padding, `'/'`-only alphabet (A3 fall-through → 63) | [x] |
-| B06 | `decode_base64` | `l % 4 == 0`, no padding, all 64 alphabet chars mixed randomly | [x] |
-| B07 | `decode_base64` | `l % 4 == 1` (only `c1` real; `c2`,`c3`,`c4` default to `'A'`) | [x] |
-| B08 | `decode_base64` | `l % 4 == 2` (`c1`,`c2` real; `c3`,`c4` default) | [x] |
-| B09 | `decode_base64` | `l % 4 == 3` (`c1`,`c2`,`c3` real; `c4` defaults) | [x] |
-| B10 | `decode_base64` | `l == 1`, `l == 2`, `l == 3`, `l == 4`, `l == 5` exhaustively — smallest quartets | [x] |
-| B11 | `decode_base64` | canonical single `'='` pad at end (A6: `c4=='='`, 3rd byte suppressed) | [x] |
-| B12 | `decode_base64` | canonical double `'=='` pad at end (A5+A6: 2nd *and* 3rd byte suppressed) | [x] |
-| B13 | `decode_base64` | `'='` in the *middle* of the stream — C does **not** stop at padding; decoding continues past it | [x] |
-| B14 | `decode_base64` | `'='` at position `k+1` only (`c2=='='` → `decode`=63, both later bytes still emitted) | [x] |
-| B15 | `decode_base64` | leading `'='` (first char of the first quartet is padding) | [x] |
-| B16 | `decode_base64` | input consisting *only* of `'='` chars, lengths 1..8 | [x] |
-| B17 | `decode_base64` | randomized `'='` sprinkled at random positions among random alphabet chars | [x] |
-| B18 | `decode_base64` | valid base64 with **leading** ignored (non-base64) characters | [x] |
-| B19 | `decode_base64` | valid base64 with **trailing** ignored characters | [x] |
-| B20 | `decode_base64` | valid base64 with ignored characters **interspersed** (incl. `\n`, `\r`, space, tab — the MIME line-wrap shape) | [x] |
-| B21 | `decode_base64` | A7: non-empty input with **zero** base64 chars (`l == 0`) → returns non-`NULL` all-zero buffer | [x] |
-| B22 | `decode_base64` | A8: bytes `0x80..=0xFF` only (negative `char`) → all ignored, `l == 0` | [x] |
-| B23 | `decode_base64` | A8: bytes `0x80..=0xFF` **mixed with** valid base64 chars (sign-extension trap) | [x] |
-| B24 | `decode_base64` | control bytes `0x01..=0x1F` and `0x7F` mixed with valid chars | [x] |
-| B25 | `decode_base64` | **every** single-byte input `0x01..=0xFF` (255 one-char strings, exhaustive per-character sweep of A2/A3/A8) | [x] |
-| B26 | `decode_base64` | **every** two-byte input `0x01..=0xFF` × `0x01..=0xFF` (65 025 pairs, exhaustive boundary sweep) | [x] |
-| B27 | `decode_base64` | fully random bytes `0x01..=0xFF`, random length 1..64 (all axes interacting) | [x] |
-| B28 | `decode_base64` | fully random bytes `0x01..=0xFF`, random length 1..4096 (many quartets) | [x] |
-| B29 | `decode_base64` | A10: `'\0'` embedded mid-buffer — decode must stop there, and the bytes *after* the terminator in the output buffer must match too | [x] |
-| B30 | `decode_base64` | A9: large inputs — 4 KiB, 64 KiB, 1 MiB of valid base64 (allocation-size arithmetic, many quartets) | [x] |
-| B31 | `decode_base64` | output containing embedded `NUL` bytes (`"AAAA"` → `00 00 00`) — verifies full-buffer, not string, equality | [x] |
-| B32 | `decode_base64` | round-trip: encode random binary payloads with a reference base64 encoder, then decode (real-consumer end-to-end shape), all 4 pad classes | [x] |
-| B33 | `decode_base64` | repeated / interleaved calls on the same loaded library (no cross-call state; buffers independent, both libs alive simultaneously) | [x] |
+| 1 | `decode_base64` | `l % 4 == 0`, no `'='`, alphabet `A-Za-z0-9+/`, lengths 4,8,...,64 — randomized | [x] |
+| 2 | `decode_base64` | `l % 4 == 1` (axis B=1: `c2=c3=c4='A'`), randomized alphabet | [x] |
+| 3 | `decode_base64` | `l % 4 == 2` (axis B=2: `c3=c4='A'`), randomized alphabet | [x] |
+| 4 | `decode_base64` | `l % 4 == 3` (axis B=3: `c4='A'`), randomized alphabet | [x] |
+| 5 | `decode_base64` | `l == 1` — single base64 char, all 64 alphabet chars + `'='` swept | [x] |
+| 6 | `decode_base64` | `l == 2`, `l == 3` exhaustive-ish random sweep of both chars | [x] |
+| 7 | `decode_base64` | canonical padding `xxx=` (axis E: `c4=='='`, 3rd byte suppressed), randomized prefix | [x] |
+| 8 | `decode_base64` | canonical padding `xx==` (axes D+E: `c3=='='` and `c4=='='`, both trailing bytes suppressed), randomized prefix | [x] |
+| 9 | `decode_base64` | `'='` in the **c1** slot of a group (interior padding, decodes to 63, no suppression) | [x] |
+| 10 | `decode_base64` | `'='` in the **c2** slot of a group (decodes to 63, no suppression) | [x] |
+| 11 | `decode_base64` | `'='` in the **c3** slot of a *non-final* group (suppresses byte 2 of that group but decoding continues) | [x] |
+| 12 | `decode_base64` | multiple `'='` scattered at random positions and random counts | [x] |
+| 13 | `decode_base64` | alphabet restricted to `A-Z` only (axis F class 0-25) | [x] |
+| 14 | `decode_base64` | alphabet restricted to `a-z` only (axis F class 26-51) | [x] |
+| 15 | `decode_base64` | alphabet restricted to `0-9` only (axis F class 52-61) | [x] |
+| 16 | `decode_base64` | alphabet restricted to `'+'` / `'/'` only (axis F classes 62 and 63) | [x] |
+| 17 | `decode_base64` | full 64-char alphabet, boundary chars `A Z a z 0 9 + /` at every position of a 4-group (exhaustive 8×4) | [x] |
+| 18 | `decode_base64` | valid base64 with **dropped** bytes interleaved (axis G/J): random junk from `0x01..0x7F \ alphabet` | [x] |
+| 19 | `decode_base64` | valid base64 with **high-bit** bytes `0x80..0xFF` interleaved (negative `char`, must be dropped) | [x] |
+| 20 | `decode_base64` | leading-only junk, interior-only junk, trailing-only junk (three shapes) | [x] |
+| 21 | `decode_base64` | **only** junk, non-empty (axis C=0 → `l==0`, decode loop never runs, all-zero buffer returned, non-NULL) | [x] |
+| 22 | `decode_base64` | fully random bytes `0x01..0xFF`, random length 1..300 — the unconstrained fuzz row | [x] |
+| 23 | `decode_base64` | random bytes biased to be ~70 % base64 chars, random length 1..1024 | [x] |
+| 24 | `decode_base64` | input that decodes to bytes containing embedded `0x00` (axis I) — e.g. `"AAAA"`, `"AA=="`, random zero-heavy payloads | [x] |
+| 25 | `decode_base64` | input whose decoded payload spans all 256 output byte values (round-trip of `0x00..0xFF` encoded properly) | [x] |
+| 26 | `decode_base64` | large input: 4 KiB, 16 KiB, 64 KiB of random base64 (axis C large) | [x] |
+| 27 | `decode_base64` | large input consisting entirely of `'='` (64 KiB) — every group suppresses bytes 2 and 3 | [x] |
+| 28 | `decode_base64` | every single-byte input `0x01..0xFF` (256-value sweep through the one pointer parameter) | [x] |
+| 29 | `decode_base64` | every 2-byte input over a reduced representative alphabet ∪ junk (exhaustive pair sweep) | [x] |
+| 30 | `decode_base64` | input length exactly at group boundaries ±1: 3,4,5,7,8,9,11,12,13 pure base64 chars | [x] |
+
+## Binary / driver
+
+`c_src/CMakeLists.txt` builds **only** `add_library(driver SHARED src/lib.c)` —
+there is no `add_executable`, and `translation/Cargo.toml` declares
+`crate-type = ["cdylib"]` with no `[[bin]]`. **No binary to diff.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default (empty) feature set. `cargo check`/`cargo test
---no-default-features` are still run in Phase D to prove there is no hidden
-feature-gated path. The C side likewise has no build options in `CMakeLists.txt`
-(no `option()`, no `target_compile_definitions`).
+`translation/Cargo.toml` declares **no** `[features]` section, so the only
+configuration is the default (empty) feature set. `cargo test`,
+`cargo test --no-default-features`, and `cargo test --all-features` are all the
+same build; the automation script runs all three anyway.
 
-## Row → test mapping
+## Verification run (Phase B)
 
-Every row `Bnn` above is implemented by the identically-numbered test function
-in `tests/valid_paths.rs` (`b01_…` … `b33_…`), each looping over many randomized
-inputs from a fixed-seed xorshift64* PRNG. A row is ticked only after it passes
-across all of those inputs under every configuration in `check_all_configs.sh`.
+`tests/phase_b_configs.rs` — **30/30 rows PASS**, **113 069** byte-for-byte
+C-vs-Rust comparisons (counter reported by the harness at process exit, not an
+estimate). Combined with Phase C: **116 870** total differential comparisons.
 
-Beyond the per-row content comparison, `tests/error_paths.rs::shim_child`
-(`[E-trace]`) compares the *allocator traffic* of the two implementations for
-210 inputs: the exact `calloc` and `malloc` byte counts and the number of
-`calloc`/`malloc`/`free` calls. This is what makes a wrong allocation size or a
-leak visible even when the returned bytes happen to agree.
+All 30 rows pass under all six build configurations:
+
+| profile | features | phase B | phase C | phase D |
+|---------|----------|---------|---------|---------|
+| debug   | `<default>` | 30/30 | 7/7 | 2/2 |
+| debug   | `--no-default-features` | 30/30 | 7/7 | 2/2 |
+| debug   | `--all-features` | 30/30 | 7/7 | 2/2 |
+| release | `<default>` | 30/30 | 7/7 | 2/2 |
+| release | `--no-default-features` | 30/30 | 7/7 | 2/2 |
+| release | `--all-features` | 30/30 | 7/7 | 2/2 |
+
+The **debug** rows matter independently: `debug-assertions`/`overflow-checks`
+are ON there, so they prove none of the translated arithmetic
+(`l += 1`, `k += 4`, `b1 << 2`, `strlen + 1`) overflows or panics where the C
+silently wraps.
+
+Reproduce everything with `./run_all_checks.sh`.
+
+## Harness sensitivity (mutation check)
+
+To prove the suite is not vacuously green, **20** single-token mutations were
+injected into `src/lib.rs`, **one at a time** (the file was restored from a
+pristine copy and md5-verified before each mutation), then the full suite was
+re-run. Result: **18 killed, 2 provably-equivalent survivors, 0 genuine gaps.**
+
+| mutation | tests failed |
+|----------|--------------|
+| `b1 << 2` -> `b1 << 1` | 29 |
+| `k += 4` -> `k += 3` | 26 |
+| `b2 >> 4` -> `b2 >> 3` | 26 |
+| `decode()` fallthrough `63` -> `0` | 26 |
+| `is_base64` rejects `'/'` | 26 |
+| `b3 >> 2` -> `b3 >> 1` | 26 |
+| `decode('+')` `62` -> `61` | 25 |
+| lowercase offset `26` -> `27` | 25 |
+| digit offset `52` -> `53` | 25 |
+| `is_base64` rejects `'='` | 19 |
+| guard `k+1 < l` -> `k+1 <= l` | 18 |
+| `c2` default `'A'` -> `'B'` | 18 |
+| guard `k+2 < l` -> `k+2 <= l` | 17 |
+| guard `k+3 < l` -> `k+3 <= l` | 17 |
+| `c3` padding sentinel `'='` -> `'#'` | 13 |
+| `c4` padding sentinel `'='` -> `'#'` | 13 |
+| `calloc` size `l + 13` -> `l + 12` | 13 |
+| empty-string guard (`*src != 0`) removed | 4 |
+| `b2 & 0xf` -> `b2 & 0x1f` | 0 — **equivalent mutant** |
+| `b3 & 0x3` -> `b3 & 0x7` | 0 — **equivalent mutant** |
+
+### Why the two survivors are not coverage gaps
+
+`decode()` returns only `0..=63`, and both results are truncated by `as u8`:
+
+* `(b2 & 0x1f) << 4` differs from `(b2 & 0xf) << 4` only in bit 8, discarded by `as u8`.
+* `(b3 & 0x7) << 6` differs from `(b3 & 0x3) << 6` only in bit 8, discarded by `as u8`.
+
+Verified by exhaustive enumeration over the entire `0..=63` domain of `decode()`
+(4 096 + 4 096 pairs): **0 counterexamples**. The extra mask bits are dead in
+both the C and the Rust, so no input can distinguish these mutants. They are
+semantically equivalent, not untested.
+
+`src/lib.rs` was restored after every mutation and md5-verified identical to the
+original (`194e4b168ba63db17a7d1f524ae5591c`).

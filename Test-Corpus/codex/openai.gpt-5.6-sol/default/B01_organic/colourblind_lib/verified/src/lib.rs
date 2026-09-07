@@ -1,8 +1,8 @@
-use std::ffi::{c_float, c_int};
+use std::ffi::{c_float, c_uint};
 
-const CB_PROTANOPIA: c_int = 0;
-const CB_DEUTERANOPIA: c_int = 1;
-const CB_TRITANOPIA: c_int = 2;
+const CB_PROTANOPIA: c_uint = 0;
+const CB_DEUTERANOPIA: c_uint = 1;
+const CB_TRITANOPIA: c_uint = 2;
 
 // Keep each operation opaque to LLVM so NaN signs and payloads follow the C
 // implementation's exact sequence instead of being algebraically rewritten.
@@ -104,7 +104,7 @@ unsafe fn tritanopia(red: *mut c_float, green: *mut c_float, blue: *mut c_float)
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn colourblind(
-    impairment: c_int,
+    impairment: c_uint,
     red: *mut c_float,
     green: *mut c_float,
     blue: *mut c_float,

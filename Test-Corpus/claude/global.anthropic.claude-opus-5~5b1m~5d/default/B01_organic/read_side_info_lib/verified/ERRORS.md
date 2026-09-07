@@ -1,71 +1,77 @@
-# ERRORS.md — Phase A error surface table
+# ERRORS.md — error-surface table
 
-Mechanically derived by grepping **every** rejection/early-return in
-`c_src/src/lib.c`. There are no `assert`s, no error enums, no `return NULL`,
-and **no null-pointer checks at all** in this library.
+Mechanically derived from every rejection / early-return / bound in
+`c_src/src/lib.c`. Greps used:
 
 ```
-$ grep -n 'return\|assert\|> \|< \|>= \|<= ' c_src/src/lib.c
+grep -n 'return' c_src/src/lib.c      # 5 return statements total
+grep -n 'assert\|NULL\|abort\|errno' c_src/src/lib.c   # none
+grep -n '> 288\|>= 500\|0x0F0F\|255 >>\|& 7' c_src/src/lib.c
 ```
 
-Exhaustive list of `return` statements in the C source:
+`c_src` contains **no** `assert`, **no** null checks, **no** error enum and no
+`errno` use. All rejection is by return value: `get_bits` returns `0`,
+`read_side_info` returns `-1`.
 
-| line | statement | function |
-|------|-----------|----------|
-| 8    | `return 0;`                 | `get_bits` (bitstream overrun) |
-| 14   | `return cache \| (next >> -shl);` | `get_bits` (normal) |
-| 106  | `return -1;`                | `read_side_info` (`big_values > 288`) |
-| 117  | `return -1;`                | `read_side_info` (`!block_type`) |
-| 160  | `return -1;`                | `read_side_info` (main-data overrun) |
-| 162  | `return main_data_begin;`   | `read_side_info` (normal) |
+| #  | function | trigger (exact invalid input/condition) | expected C result |
+|----|----------|------------------------------------------|-------------------|
+| E1 | `get_bits` (`lib.c:7`) | `(bs->pos += n) > bs->limit` — request runs past the limit. Note `bs->pos` is advanced *before* the test, so it stays advanced on failure and every subsequent call also fails. Buffer is **not** read. | returns `0`; `bs->pos == old_pos + n` |
+| E2 | `get_bits` (`lib.c:7`) | boundary: `bs->pos + n == bs->limit` exactly — NOT an error (test is `>`, not `>=`) | normal value returned |
+| E3 | `read_side_info` (`lib.c:105`) | `gr->big_values > 288` after reading 9 bits, i.e. any of the 223 encodings 289..511 in the `big_values` field of ANY granule | returns `-1` immediately; `gr[i]` partially written (`sfbtab`/`n_long_sfb`/`n_short_sfb` and everything after `big_values` untouched for that granule), `bs->pos` left where the `big_values` read ended |
+| E4 | `read_side_info` (`lib.c:116`) | `!gr->block_type` — window-switching flag bit is 1 but the following 2 `block_type` bits are `00` | returns `-1` immediately; `gr[i].block_type == 0`, fields from `mixed_block_flag` on untouched, `bs->pos` left after the 2-bit read |
+| E5 | `read_side_info` (`lib.c:159`) | `part_23_sum + bs->pos > bs->limit + main_data_begin * 8` — sum of all granules' `part_23_length` overflows the available main-data | returns `-1` **after** all granules have been fully written |
+| E6 | `read_side_info` (`lib.c:159`) | boundary: `part_23_sum + bs->pos == bs->limit + main_data_begin * 8` exactly — NOT an error | returns `main_data_begin` |
+| E7 | `read_side_info` (`lib.c:162`) | success | returns `main_data_begin` (0..511 for MPEG1, 0..511 for MPEG2 after the `>> gr_count`), never negative |
+| E8 | `read_side_info` (`lib.c:111,126,130`) | `sr_idx == 8` (sample-rate bits `11` + MPEG1 bit + extension bit) indexes one row PAST `g_scf_long[8]` / `g_scf_short[8]` / `g_scf_mixed[8]`. No check exists — C reads out of bounds. | no error returned; `sfbtab` aliases whatever the linker placed next in `.rodata`. Two of the three rows land on the next table inside the same section and are compared byte-for-byte; the third runs off the section end (see N5). The array order is optimisation dependent (`-O0`: long, pad, short, mixed; `-O2`: mixed, short, long), which is why `src/lib.rs` carries both layouts behind the `c_layout_o2` feature. |
+| E9 | `read_side_info` | `bs->limit < 0`, or `bs->pos > bs->limit` on entry — every `get_bits` returns 0 from the first call | all fields derive from all-zero bits: `block_type=0`, `region_count={0,0,255}`, and E5's check then decides the return |
+| E10 | `read_side_info` | `bs->limit` large but `bs->pos` negative → `bs->buf + (pos>>3)` reads *before* the buffer (arithmetic shift keeps the sign) | no check; C reads OOB. Reproduced by Rust identically (same pointer arithmetic) |
+| E11 | `get_bits` (`lib.c:4,9`) | `s = bs->pos & 7` masks the first byte with `255 >> s`; `bs->pos` not byte-aligned on entry | first partial byte's high `s` bits dropped |
+| E12 | `read_side_info` (`lib.c:152`) | `scalefac_compress >= 500` (only reachable for non-MPEG1, where the field is 9 bits, so 500..511) sets `preflag = 1` without reading a bit | `preflag == 1` |
+| E13 | `read_side_info` (`lib.c:123`) | `block_type == 2` masks `scfsi &= 0x0F0F`, discarding scfsi bits for later granules | later granules' `gr->scfsi` change |
 
-## Error-surface table
+## Not testable / UB in both implementations (documented, deliberately not exercised)
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | ok |
-|---|----------|---------------------------------------------|-------------------|------|----|
-| E1 | `get_bits` | `(bs->pos += n) > bs->limit` — the read crosses the end of the bit budget | returns `0` **without** reading `*p`; `bs->pos` **stays advanced** by `n` (side effect is not rolled back) | `err_e1_get_bits_overrun_truncates` | [x] |
-| E2 | `get_bits` | every subsequent call once `pos > limit` | keeps returning `0` and keeps advancing `pos`, so all remaining side-info fields decode as `0` | `err_e2_all_zero_after_overrun` | [x] |
-| E3 | `read_side_info` | `gr->big_values > 288` (9-bit field, i.e. any value in `289..=511`) for **any** granule | `-1`, aborting immediately — later granules are left untouched, and the already-written fields of the current granule keep their new values | `err_e3_big_values_gt_288` | [x] |
-| E4 | `read_side_info` | boundary of E3: `big_values == 288` | **not** an error; parsing continues | `err_e4_big_values_288_ok` | [x] |
-| E5 | `read_side_info` | boundary of E3: `big_values == 289` | `-1` | `err_e5_big_values_289_err` | [x] |
-| E6 | `read_side_info` | window-switching bit set **and** the 2-bit `block_type` field reads `0` | `-1`, aborting immediately (before `mixed_block_flag` / `region_count` are written) | `err_e6_block_type_zero` | [x] |
-| E7 | `read_side_info` | `part_23_sum + bs->pos > bs->limit + main_data_begin * 8` — the granules claim more main data than the bit reservoir holds | `-1` (checked only **after** all granules are written, so `*gr` is fully populated even on failure) | `err_e7_main_data_overrun` | [x] |
-| E8 | `read_side_info` | boundary of E7: `part_23_sum + bs->pos == bs->limit + main_data_begin * 8` | **not** an error; returns `main_data_begin` | `err_e8_main_data_exact_boundary` | [x] |
-| E9 | `read_side_info` | E3 fires on granule 2/3/4 (MPEG1 multi-granule), not granule 1 | `-1`; granules before the failure are fully written, the failing granule keeps its partial writes | `err_e9_big_values_late_granule` | [x] |
-| E10 | `read_side_info` | E6 fires on a late granule | `-1` with the same partial-write semantics | `err_e10_block_type_zero_late_granule` | [x] |
+| # | trigger | why not tested |
+|---|---------|----------------|
+| N1 | `bs == NULL`, `gr == NULL`, or `hdr == NULL` | C has no null check; it dereferences immediately (`hdr[2]`, `bs->pos`). Both C and Rust segfault. A differential test would abort the test process, so this is asserted only by inspection. |
+| N2 | `hdr` shorter than 4 bytes | C reads `hdr[1..3]` unconditionally; OOB read in both. Tests always pass a 4-byte header. |
+| N3 | `bs->buf` shorter than `(limit+7)/8` bytes | C reads up to `(pos+n+7)/8` bytes; OOB read in both. Tests always over-allocate the buffer. |
+| N4 | `gr` array shorter than `gr_count` (1/2/4) entries | C writes `gr[0..gr_count]`; OOB write in both. Tests always pass a 4-element array. |
+| N5 | `sr_idx == 8` combined with whichever table the C compiler emitted LAST in `.rodata` (`g_scf_mixed` at `-O0`, `g_scf_long` at `-O2`) | that row 8 runs off the end of `.rodata` into `.eh_frame_hdr`; no implementation can reproduce those bytes portably. The return value, `bs->pos` and all 32 struct bytes *are* still compared; only the dereferenced `sfbtab` contents are skipped, for that one sub-case only. The harness picks the right sub-case from `UNREPRODUCIBLE_ROW8` (`run_all.sh` sets it per configuration). |
 
-## Generic FFI boundary conditions (not in the table, still required)
+## Checklist (Phase C)
 
-| # | condition | expected C result | test | ok |
-|---|-----------|-------------------|------|----|
-| B1 | `bs->limit == 0` | first `get_bits` overruns → every field `0`; `block_type` stays `0`, so the non-window-switching path is taken; final check `0 + pos > 0 + 0` fires → `-1` | `bnd_b1_zero_limit` | [x] |
-| B2 | `bs->limit < 0` (negative budget) | same as B1 — immediate overrun | `bnd_b2_negative_limit` | [x] |
-| B3 | `bs->pos > bs->limit` on entry | immediate overrun, `pos` keeps growing | `bnd_b3_pos_past_limit` | [x] |
-| B4 | `bs->pos == bs->limit` on entry | first `get_bits(9 or 10)` overruns | `bnd_b4_pos_eq_limit` | [x] |
-| B5 | `bs->pos < 0` (negative bit position) | `bs->buf + (pos >> 3)` addresses **before** `buf`; C reads it. Both libraries are handed the *same* buffer pointer, so the same bytes are read and results must agree. | `bnd_b5_negative_pos` | [x] |
-| B6 | `bs->pos` near `INT_MAX` → `pos += n` overflows | signed overflow; gcc wraps, Rust `wrapping_add` matches | `bnd_b6_pos_int_max_overflow` | [x] |
-| B7 | `bs->limit == INT_MAX` (oversized length) | no overrun ever; reads run off the end of the buffer — same shared buffer for both, so results must agree | `bnd_b7_limit_int_max` | [x] |
-| B8 | out-of-range "enum" values: `block_type` is a 2-bit field, so `1..=3` are all valid and `0` is the rejection (E6). `sr_idx` is computed, not passed, and reaches `8` — one past the last valid table row (`0..=7`). | `sr_idx == 8` indexes one row **past** all three tables | `bnd_b8_sr_idx_out_of_range` | [x] |
-| B9 | every one of the 256 possible `hdr[1]` values × every `hdr[2]`/`hdr[3]` combination that changes `sr_idx`/`gr_count` (C enums accept any int; these header bytes are raw `uint8_t` with no validation) | whatever the bit math yields — no rejection path | `bnd_b9_exhaustive_header_bytes` | [x] |
-| B10 | `hdr` bytes such that `sr_idx == 0` via the `sr_idx -= (sr_idx != 0)` quirk (raw sum `0` **and** raw sum `1` both map to `0`) | identical `sfbtab` for two different headers | `bnd_b10_sr_idx_aliasing_headers` | [x] |
-| B11 | NULL `bs`, NULL `gr`, NULL `hdr` | The C code dereferences all three unconditionally with **no** null check (`bs->pos`, `*hdr`, `gr->part_23_length`), so a null argument is a hard segfault in *both* libraries. Not differentially testable in-process; asserted to be UB-by-parity in `bnd_b11_null_pointers_documented` instead of crashing the harness. | `bnd_b11_null_pointers_documented` | [x] |
-| B12 | `hdr` pointing **into** the `gr` array, so the C code's own writes mutate the header while it parses | the C reloads `hdr[1]`/`hdr[3]` at every access (the reference build has no `-O` flag), so later granules see the mutated header; the translation must not hoist those loads. Only the scalar-field byte offsets are usable — bytes `0..8` of each struct hold the `sfbtab` **pointer**, whose value necessarily differs between two separately-loaded `.so`s. | `bnd_b12_hdr_aliasing_gr_array` | [x] |
-| B13 | all 256 values of `hdr[2]` and `hdr[3]` for each distinct `hdr[1]` version-bit pattern | no rejection path; proves no unread header bit changes behaviour | `bnd_b9b_full_hdr2_hdr3_sweep` | [x] |
+- [x] E1  — `err_e1_get_bits_past_limit_returns_zero_and_advances`
+- [x] E2  — `err_e2_get_bits_exact_limit_is_not_an_error`
+- [x] E3  — `err_e3_big_values_gt_288`
+- [x] E4  — `err_e4_block_type_zero`
+- [x] E5  — `err_e5_part23_overflow`
+- [x] E6  — `err_e6_part23_exact_boundary`
+- [x] E7  — `err_e7_success_returns_main_data_begin`
+- [x] E8  — `err_e8_sr_idx_8_out_of_range_row` (verified under both `.rodata` layouts)
+- [x] E9  — `err_e9_zero_and_negative_limit`
+- [x] E10 — `err_e10_negative_pos`
+- [x] E11 — `err_e11_unaligned_start_pos`
+- [x] E12 — `err_e12_scalefac_compress_500_sets_preflag`
+- [x] E13 — `err_e13_block_type_2_masks_scfsi`
+- [x] generic: zero length / oversized length (`err_generic_extreme_limits`)
+- [x] generic: one step past valid range —
+      `err_generic_one_past_big_values` (287/288 ok vs 289/290 error),
+      `err_generic_one_past_scalefac_compress` (499 vs 500), and
+      `err_e2_get_bits_exact_limit_is_not_an_error` (`pos+n` == vs > `limit`)
+- [x] generic: out-of-range "enum" values across FFI — `block_type` (0..3, all
+      4 raw 2-bit values incl. the rejected 0), `sr_idx` (0..8 incl. the
+      reserved sample-rate 3 and the reserved MPEG version bits), channel-mode
+      `hdr[3]>>6` (all 4), and all 256 values of `hdr[1]`/`hdr[2]`/`hdr[3]`
+      (`err_generic_exhaustive_header_bytes`, plus
+      `c39_all_hdr1_x_hdr3_and_all_hdr2` for all 65 536 `hdr[1]`x`hdr[3]` pairs)
 
-## Coverage summary
+## Harness sensitivity (negative control)
 
-| group | rows | status |
-|-------|------|--------|
-| `ERRORS.md` E1–E10 | 10 | all covered by a passing differential test |
-| generic boundaries B1–B13 | 13 | all covered by a passing differential test |
-
-Every row's test name appears in the tables above and every one of them is in
-`tests/differential.rs`. `./check_features.sh` runs the whole suite under both
-cargo profiles and every feature combination.
-
-### Rejection-path inventory cross-check
-
-`bnd_b11_null_pointers_documented` asserts mechanically that the C source still
-contains exactly **three** `return -1;` statements (E3, E6, E7) and exactly
-**one** `return 0;` (E1). If anyone edits `c_src`, that test fails and this
-table must be re-derived — the error surface cannot silently grow.
+The error/config suites were validated by mutation testing: 27 single-token
+mutations were injected into `src/lib.rs` one at a time (wrong comparison
+operator on every bound, wrong bit width on every `get_bits` call, wrong shift
+amount, wrong constant, swapped field writes, `.rodata` offsets swapped,
+`get_bits` advancing `pos` after instead of before the limit test, granule
+pointer not advancing, `part_23_sum` not accumulating, ...). **All 27 were
+detected**; no mutant survived. See the "MUTANT [...]" runs in the session log.

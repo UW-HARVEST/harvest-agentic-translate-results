@@ -1,94 +1,87 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — Phase C error / rejection surface table
 
-Derived mechanically from `c_src/src/lib.c` (59 lines, the only source file).
+## Mechanical derivation
 
-## Mechanical grep for rejection constructs
+Every grep for an error-reporting construct over the whole C source
+(`c_src/src/lib.c`, `c_src/include/lib.h`) returns **nothing**:
 
-```sh
-$ grep -nE 'RETURN_ERROR|return -1|return NULL|return [0-9-]|assert|errno|goto|exit\(|abort\(' c_src/src/lib.c
-(no matches)
+```
+$ grep -n 'assert\|NULL\|errno\|ERROR\|error\|return -1\|enum\|#if\|#define\|_MIN\|_MAX' src/lib.c include/lib.h
+  <no matches>
 
-$ grep -nE 'if *\(|switch|else|\?|#if' c_src/src/lib.c
-12:    if (s == 0) {
-24:    switch (i) {
+$ grep -n 'return' src/lib.c include/lib.h
+  src/lib.c:16:        return;      # bare early return, void function
 ```
 
-## Finding
+Consequences, stated explicitly so the table below is not mistaken for an
+oversight:
 
-`hsv_to_rgb` returns `void`. It contains:
+* `hsv_to_rgb` returns `void`. **There is no error channel at all** — no return
+  code, no sentinel, no out-parameter status, no `errno` write, no global flag.
+* There are no `assert`s, no null checks, no range checks, no clamping, and no
+  min/max constants.
+* There are no enums anywhere in the API, so the "out-of-range enum value across
+  FFI" class is **structurally N/A** for this library (row 15 records this).
+* There is no length/count/size parameter — the arity is fixed at 3 `float`s by
+  the contract — so "zero and oversized lengths" is **structurally N/A**
+  (row 16). The nearest analogue is a short buffer, which is plain UB in both.
 
-* **no** error-return macro or statement,
-* **no** error enum, status code, or sentinel value,
-* **no** `assert`,
-* **no** explicit range check, clamp, or min/max constant,
-* **no** null-pointer check,
-* **no** `errno` use.
+The only branches in the entire function are `if (s == 0)` (line 12) and
+`switch (i)` (lines 24–55). The table therefore enumerates the *rejection-shaped*
+branch, the generic C-API boundaries the task mandates, and every input value
+class that steers the undefined `(int)floorf(...)` conversion — which is the
+real behavioural cliff in this function.
 
-The function has exactly **two control-flow constructs**: the `s == 0` guard
-(line 12, an early `return;`) and the `switch (i)` sector dispatch (line 24)
-whose `default:` arm absorbs every index outside `0..=4`.
-
-Therefore the *explicit* error surface is EMPTY. Every row below is a
-**rejection-adjacent / boundary condition** that the C code reaches implicitly.
-Each row has a differential test in `tests/differential.rs` (Phase C).
+"Expected C result" below is the *observed* behaviour of the reference build on
+this platform (x86-64, glibc, `cvttss2si`), which is the ground truth the Rust
+must match byte-for-byte.
 
 ## Table
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|----------------------------------------------|-------------------|
-| E1 | `hsv_to_rgb` | `src[1] == 0.0f` (achromatic guard, line 12) — the ONLY early `return` | writes `{v, v, v}` to `dest`, leaves `dest[0..3]` otherwise untouched, returns void |
-| E2 | `hsv_to_rgb` | `src[1] == -0.0f` (negative zero saturation; `-0.0f == 0` is true in C) | same as E1: `{v, v, v}` |
-| E3 | `hsv_to_rgb` | sector index `i < 0` (e.g. `h < 0`, so `floorf(h/60) < 0`) → `default:` arm | `{v, p, q}`, no clamping, no rejection |
-| E4 | `hsv_to_rgb` | sector index `i >= 5` (e.g. `h >= 300`, incl. `h >= 360` which is out of the documented hue range) → `default:` arm | `{v, p, q}`, no wrap-around, no rejection |
-| E5 | `hsv_to_rgb` | `h = NaN` → `floorf(NaN) = NaN` → `(int)NaN` is **UB**; x86-64 `cvttss2si` yields the integer-indefinite value `INT_MIN` → `default:` arm | `{v, p, q}` with `f = NaN`, so `q`/`t` are NaN (or NaN×0 → NaN) |
-| E6 | `hsv_to_rgb` | `h = +INFINITY` → `(int)+inf` is UB → `INT_MIN` → `default:` arm | `{v, p, q}` with `f = NaN` (`inf - (-2^31)` = inf; `inf - inf` … see test) |
-| E7 | `hsv_to_rgb` | `h = -INFINITY` → `(int)-inf` is UB → `INT_MIN` → `default:` arm | `{v, p, q}` |
-| E8 | `hsv_to_rgb` | `\|h/60\| >= 2^31` finite (e.g. `h = 1e30f`) → float-to-int conversion out of `int` range, UB → `INT_MIN` → `default:` arm | `{v, p, q}` |
-| E9 | `hsv_to_rgb` | `h/60` exactly `2147483648.0f` (`2^31`, first value past `INT_MAX`) — one step past the valid conversion range | `INT_MIN` → `default:` arm |
-| E10 | `hsv_to_rgb` | `h/60` exactly `-2147483648.0f` (`-2^31`, still IN range for `int`) — boundary that must NOT take the indefinite path | `i = INT_MIN` (a *representable* result) → `default:` arm |
-| E11 | `hsv_to_rgb` | `s = NaN` → `s == 0` is false → chromatic path with NaN saturation | `p = v*(1-NaN) = NaN`, etc.; no rejection |
-| E12 | `hsv_to_rgb` | `s = ±INFINITY` (far outside the documented `[0,1]` range, no clamp) | arithmetic propagates inf/NaN; no rejection |
-| E13 | `hsv_to_rgb` | `s < 0` or `s > 1` (outside documented range, no clamp, no rejection) | unclamped arithmetic result |
-| E14 | `hsv_to_rgb` | `v = NaN` / `±INFINITY` / negative / `> 1` (outside documented range, no clamp) | unclamped arithmetic result |
-| E15 | `hsv_to_rgb` | subnormal `h`, `s`, `v` (smallest denormals) — boundary of the float range | full-precision denormal arithmetic, no flush-to-zero difference |
-| E16 | `hsv_to_rgb` | `dest == src` (full aliasing / in-place conversion) — C reads all three inputs into locals *before* the first store, so this is well defined in C | same output as the non-aliased call |
-| E17 | `hsv_to_rgb` | `dest` partially overlaps `src` (`dest = src+1`, `dest = src+2`) | same output as the non-aliased call (reads precede writes) |
-| E18 | `hsv_to_rgb` | `src == NULL` — **no null check in C**, dereferenced at line 7 | UB: `SIGSEGV` on Linux/x86-64 |
-| E19 | `hsv_to_rgb` | `dest == NULL` (with valid non-zero `src[1]`) — no null check, stored to at line 51 | UB: `SIGSEGV` |
-| E20 | `hsv_to_rgb` | `dest == NULL` and `src[1] == 0.0f` (achromatic path stores at line 13) | UB: `SIGSEGV` |
-| E21 | `hsv_to_rgb` | *"out-of-range enum value"* class: the C API declares **no enum, flag, or mode parameter**, so the analogous input is an arbitrary 32-bit pattern reinterpreted as `float`. Every one of the 2^32 bit patterns is a legal `float` argument (incl. every NaN payload, both zeros, both infinities). | no rejection path exists; result is whatever the arithmetic produces, bit-for-bit |
-
-Rows E18–E20 are the null-pointer boundary. Because the C code has no null
-check, the only observable behaviour is a fault; the tests compare the
-*termination signal* of both libraries in forked child processes.
+| 1 | `hsv_to_rgb` | `src[1] == 0.0f` exactly (the only rejection-shaped branch, line 12) | early return; `dest[0..3] = v, v, v`; `h` never divided, `switch` never reached |
+| 2 | `hsv_to_rgb` | `src[1] == -0.0f` (IEEE `-0.0 == 0.0` is true, so the branch IS taken) | same as row 1: `dest = v, v, v` — NOT the chromatic path |
+| 3 | `hsv_to_rgb` | `src[1]` = smallest positive subnormal (`1e-45`, one step past exact zero) | branch NOT taken; falls through to the full chromatic computation |
+| 4 | `hsv_to_rgb` | `src[1] = NaN` (`s == 0` is false for NaN) | branch NOT taken; `p`, `q`, `t` all NaN; selected arm mixes NaN with `v` |
+| 5 | `hsv_to_rgb` | `dest == NULL` (null out-pointer) | UB: SIGSEGV on the first store (compared as a crash-signal differential) |
+| 6 | `hsv_to_rgb` | `src == NULL` (null in-pointer) | UB: SIGSEGV on the load of `src[0]` (compared as a crash-signal differential) |
+| 7 | `hsv_to_rgb` | `src[0] = NaN`, `s != 0` → `floorf(NaN) = NaN`, `(int)NaN` is UB | `cvttss2si` yields `INT_MIN` (`-2147483648`) ⇒ `default:` arm ⇒ `r,g,b = v,p,q` (all NaN via `f`) |
+| 8 | `hsv_to_rgb` | `src[0] = +INFINITY`, `s != 0` → `(int)+inf` is UB | `INT_MIN` ⇒ `default:` arm; `f = inf - (-2147483648.0f) = inf` |
+| 9 | `hsv_to_rgb` | `src[0] = -INFINITY`, `s != 0` → `(int)-inf` is UB | `INT_MIN` ⇒ `default:` arm; `f = -inf` |
+| 10 | `hsv_to_rgb` | `src[0]` so large that `h/60 >= 2^31` (e.g. `1e30`, `FLT_MAX`) — out of `int` range | `INT_MIN` ⇒ `default:` arm; `f = h/60 + 2147483648.0f` |
+| 11 | `hsv_to_rgb` | `src[0]` so negative that `h/60 < -2^31` (e.g. `-1e30`, `-FLT_MAX`) | `INT_MIN` ⇒ `default:` arm |
+| 12 | `hsv_to_rgb` | `src[0]/60` exactly `2147483648.0f` (`= 2^31`, first value past `INT_MAX`) | out of range ⇒ `INT_MIN` ⇒ `default:` arm |
+| 13 | `hsv_to_rgb` | `src[0]/60` exactly `-2147483648.0f` (`= -2^31`, last in-range value) | IN range ⇒ `i = INT_MIN` ⇒ `default:` arm (same arm, but reached legitimately) |
+| 14 | `hsv_to_rgb` | `src[0] >= 300` so `i >= 5` — no valid `case`, i.e. hue past the documented `[0,360)` range with no clamping | `default:` arm ⇒ `r,g,b = v,p,q` (no wraparound, no rejection) |
+| 15 | `hsv_to_rgb` | `src[0] < 0` so `i` is negative (e.g. `-30` ⇒ `i = -1`) — one step past the low end of the valid hue range | `default:` arm ⇒ `r,g,b = v,p,q` (negative hues are NOT normalised) |
+| 16 | `hsv_to_rgb` | `src[1] > 1.0f` (e.g. `2.0`, `1e30`, `+inf`) — out of the documented `[0,1]` saturation range, unchecked | no rejection; `p = v*(1-s)` goes negative / non-finite and is written out verbatim |
+| 17 | `hsv_to_rgb` | `src[1] < 0.0f` (e.g. `-1.0`, `-inf`) — out of `[0,1]`, unchecked | no rejection; `p,q,t` computed with negative `s` and written out verbatim |
+| 18 | `hsv_to_rgb` | `src[2]` (value) `= NaN` / `±inf` / negative / `-0.0` — out of the documented `[0,1]` range, unchecked | no rejection; `v` propagates verbatim into `p,q,t` and `dest` (incl. `-0.0` sign and `inf*0 = NaN`) |
+| 19 | `hsv_to_rgb` | out-of-range **enum** value passed across the FFI boundary | **N/A** — the API declares no enum and no integer parameter; grep for `enum` in the C source returns nothing. Recorded so the class is provably covered, not skipped. |
+| 20 | `hsv_to_rgb` | zero / oversized **length** argument | **N/A** — the API takes no length, count or size parameter; the arity is fixed at 3 `float`s. A short `dest`/`src` buffer is out-of-contract UB in C and in Rust alike, with no defined result to compare. Recorded for completeness. |
 
 ## Status
 
-All 21 rows have a passing differential test — see `PHASE_C_RESULTS` at the
-bottom of this file.
-
-### PHASE_C_RESULTS
-
-| row | test name | status |
-|-----|-----------|--------|
-| E1  | `e1_e2_zero_and_negative_zero_saturation` | ✅ pass |
-| E2  | `e1_e2_zero_and_negative_zero_saturation` | ✅ pass |
-| E3  | `e3_negative_sector_index` | ✅ pass |
-| E4  | `e4_sector_index_ge_5` | ✅ pass |
-| E5  | `e5_hue_nan` | ✅ pass |
-| E6  | `e6_e7_hue_infinities` | ✅ pass |
-| E7  | `e6_e7_hue_infinities` | ✅ pass |
-| E8  | `e8_hue_huge_finite` | ✅ pass |
-| E9  | `e9_e10_int_conversion_boundaries` | ✅ pass |
-| E10 | `e9_e10_int_conversion_boundaries` | ✅ pass |
-| E11 | `e11_saturation_nan` | ✅ pass |
-| E12 | `e12_saturation_infinities` | ✅ pass |
-| E13 | `e13_saturation_out_of_range` | ✅ pass |
-| E14 | `e14_value_out_of_range` | ✅ pass |
-| E15 | `e15_subnormals` | ✅ pass |
-| E16 | `e16_full_aliasing_in_place` | ✅ pass |
-| E17 | `e17_partial_overlap` | ✅ pass |
-| E18 | `e18_e19_e20_null_pointers` (forked children) | ✅ pass |
-| E19 | `e18_e19_e20_null_pointers` (forked children) | ✅ pass |
-| E20 | `e18_e19_e20_null_pointers` (forked children) | ✅ pass |
-| E21 | `e21_arbitrary_bit_patterns` | ✅ pass |
+| # | test | status |
+|---|------|--------|
+| 1 | `err_01_s_exactly_zero` | [x] pass |
+| 2 | `err_02_s_negative_zero` | [x] pass |
+| 3 | `err_03_s_smallest_subnormal` | [x] pass |
+| 4 | `err_04_s_nan` | [x] pass |
+| 5 | `err_05_null_dest` (crash-signal differential, forked child) | [x] pass |
+| 6 | `err_06_null_src` (crash-signal differential, forked child) | [x] pass |
+| 7 | `err_07_h_nan` | [x] pass |
+| 8 | `err_08_h_pos_inf` | [x] pass |
+| 9 | `err_09_h_neg_inf` | [x] pass |
+| 10 | `err_10_h_huge_positive` | [x] pass |
+| 11 | `err_11_h_huge_negative` | [x] pass |
+| 12 | `err_12_h_div60_exactly_2pow31` | [x] pass |
+| 13 | `err_13_h_div60_exactly_neg_2pow31` | [x] pass |
+| 14 | `err_14_i_ge_5_default_arm` | [x] pass |
+| 15 | `err_15_negative_hue_negative_i` | [x] pass |
+| 16 | `err_16_s_above_one` | [x] pass |
+| 17 | `err_17_s_below_zero` | [x] pass |
+| 18 | `err_18_v_out_of_range` | [x] pass |
+| 19 | `err_19_enum_surface_absent` (asserts the class is structurally absent) | [x] pass (N/A documented) |
+| 20 | `err_20_length_surface_absent` (asserts the class is structurally absent) | [x] pass (N/A documented) |

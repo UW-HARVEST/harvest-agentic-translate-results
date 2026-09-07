@@ -1,80 +1,100 @@
-# SYMBOLS.md — Symbol parity: C `.so` vs Rust `.so`
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from `nm -D` on both shared libraries.
 
-## Source inventory (completeness check)
-
-The C library is built from exactly the sources listed in `c_src/CMakeLists.txt`:
+Build commands:
 
 ```
-add_library(${project_name} SHARED
-    src/lib.c)
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libharvest-work-ym5QOj.so
+
+cd translation && cargo build --release
+# -> translation/target/release/libbin2hex_lib.so
 ```
 
-Full C source tree (`find c_src -type f`, excluding `build/`):
+## C `.so` defined dynamic symbols
 
-| C file | translated? | Rust location |
-|--------|-------------|---------------|
-| `c_src/include/lib.h` | yes (declaration only) | `translation/src/lib.rs` |
-| `c_src/src/lib.c` | yes (the single definition, `bin2hex`) | `translation/src/lib.rs` |
-
-No C module is missing from the translation, so no Phase-A "translate the
-skipped module" work is required. There are no namespacing/renaming
-preprocessor macros in the header, so the linker symbol is plainly `bin2hex`.
-
-## Commands
-
-```sh
-nm -D --defined-only c_src/build/libharvest-work-5FUsip.so
-nm -D --defined-only translation/target/release/libbin2hex_lib.so
-```
-
-## Exported (defined, dynamic) symbols
-
-### C `.so` — `libharvest-work-5FUsip.so`
+`nm -D --defined-only c_src/build/libharvest-work-ym5QOj.so`
 
 | symbol | type | exported by Rust `.so`? |
-|--------|------|--------------------------|
-| `bin2hex` | `T` (global text) | **yes** — `#[unsafe(no_mangle)] pub unsafe extern "C" fn bin2hex` |
+|--------|------|-------------------------|
+| `bin2hex` | `T` (global text) | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn bin2hex` |
 
-Total: **1** exported symbol.
+The C translation unit (`c_src/src/lib.c`) contains exactly one function
+definition and no macro-generated / aliased / versioned symbols, no `static`
+functions promoted to globals, and no data symbols. `include/lib.h` declares
+only `bin2hex` and contains no renaming/namespacing macros, so the linker name
+is plainly `bin2hex`.
 
-### Rust `.so` — `libbin2hex_lib.so`
+## Rust `.so` defined dynamic symbols
+
+`nm -D --defined-only translation/target/release/libbin2hex_lib.so`
 
 | symbol | type |
 |--------|------|
-| `bin2hex` | `T` (global text) |
+| `bin2hex` | `T` |
 
-Total: **1** exported symbol.
-
-## Diff
+## Symbol diff
 
 ```
-C exported \ Rust exported  =  (empty)
-Rust exported \ C exported  =  (empty)
+comm -23 <(C defined) <(Rust defined)   # symbols in C missing from Rust
+<empty>
 ```
 
-**0 symbols missing from the Rust `.so`.** No stubs, no `unimplemented!()`;
-`bin2hex` is a real translation of `c_src/src/lib.c`.
+- Missing from Rust: **0**
+- Extra in Rust (not an error, but none present beyond `bin2hex`): **0**
 
 ## Undefined (imported) symbols
 
-The C `.so` imports only `abort@GLIBC_2.2.5` plus the standard weak
-`_ITM_*` / `__cxa_finalize` / `__gmon_start__` entries.
+C `.so` imports: `abort@GLIBC_2.2.5`, `__cxa_finalize@GLIBC_2.2.5`,
+`__gmon_start__`, `_ITM_registerTMCloneTable`, `_ITM_deregisterTMCloneTable` —
+all libc/runtime. The Rust `.so` imports only libc/runtime symbols as well.
 
-The Rust `.so` imports the same `abort@GLIBC_2.2.5` plus libc/`libgcc`
-runtime support pulled in by `std` (`malloc`, `memcpy`, `write`, `_Unwind_*`,
-`pthread_key_*`, `dl_iterate_phdr`, …). **All Rust undefined symbols are libc,
-libgcc-unwind, or standard weak ELF symbols — there are 0 undefined non-libc
-symbols**, i.e. nothing the Rust `.so` expects another translation unit to
-provide.
+- Non-libc undefined symbols in Rust `.so`: **0**
 
-Verified by `tests/symbol_parity.rs::c_symbols_are_all_exported_by_rust`, which
-re-runs `nm -D` on both objects at test time and fails on any diff, and by
-`tests/symbol_parity.rs::rust_so_has_no_undefined_non_libc_symbols`.
+## Verdict
+
+- [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
+- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.
+
+No module of the C source was skipped: `c_src/CMakeLists.txt` lists `src/lib.c`
+as the sole source file, and it is fully translated in `translation/src/lib.rs`.
 
 ## Feature combinations
 
-`translation/Cargo.toml` has **no `[features]` section** and no optional
-dependencies, so the only build configuration is the default one
-(`--no-default-features` is equivalent to the default). See `CONFIGS.md`.
+`translation/Cargo.toml` has **no `[features]` section**, therefore the only
+feature combination is the default (empty) one. `default`, `--all-features`,
+and `--no-default-features` are all identical builds. Verified by
+`scripts/check_features.sh`.
+
+## Build-configuration notes affecting these results
+
+- `[lib] crate-type` is `["cdylib", "rlib"]`. The `rlib` is required only so the
+  integration tests can be built against the crate; it does **not** change the
+  `.so`, which still exports exactly `bin2hex` and nothing else.
+- `cargo test` does **not** build the `cdylib` crate-type. A `cdylib`-only crate
+  therefore lets `cargo test` run against a missing or stale `.so` and report a
+  green result for code that no longer exists. `tests/common/mod.rs` guards
+  against this: it builds the cdylib itself when absent or older than
+  `src/lib.rs`, and hard-fails if the artifact is still stale afterwards.
+- Run everything with `./scripts/verify_all.sh`, which rebuilds the C `.so`,
+  enumerates the feature power set from `Cargo.toml`, and for every
+  (feature-combination x profile) pair diffs `nm -D` and runs both test suites.
+
+## Divergences found and fixed during verification
+
+Both were profile-dependent behavioural differences in the null-pointer /
+faulting path, found by Phase C rows E13–E16 and E18:
+
+1. The translation formed `&[u8]` / `&mut [u8]` slices over the caller's raw
+   pointers via `slice::from_raw_parts{,_mut}`. Those carry a debug-assertion
+   precondition check that rejects null pointers by **aborting** (`SIGABRT`),
+   whereas the C — which performs no null check — dies with `SIGSEGV`.
+2. Replacing the slices with the plain `*p` deref operator was not sufficient:
+   rustc emits its own null-pointer check for raw dereferences under
+   `-C debug-assertions`, producing "null pointer dereference occurred" and
+   again `SIGABRT` instead of `SIGSEGV`.
+
+The fix is `core::ptr::read` / `core::ptr::write`, which are unchecked and
+reproduce the C's faulting behaviour identically in both `dev` and `release`.

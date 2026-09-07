@@ -1,77 +1,107 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Mechanically derived from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Build commands used:
+```
+C   : c_src/build/libdriver.so
+Rust: translation/target/release/libdriver.so
+```
+
+## C source → symbol inventory
+
+| C file | function | `static`? | exported by C `.so` | Rust impl | Rust `#[no_mangle]` export |
+|---|---|---|---|---|---|
+| `src/matrix.c` | `allocate_matrix`      | no (not in header, but non-static → exported) | yes | `src/matrix.rs` | yes |
+| `src/matrix.c` | `free_matrix`          | no | yes | `src/matrix.rs` | yes |
+| `src/matrix.c` | `initialize_matrix_from_string` | no | yes | `src/matrix.rs` | yes |
+| `src/matrix.c` | `multiply_matrices`    | no | yes | `src/matrix.rs` | yes |
+| `src/matrix.c` | `matrix_to_string`     | no | yes | `src/matrix.rs` | yes |
+| `src/write.c`  | `write_to_file`        | no | yes | `src/write.rs`  | yes |
+| `src/driver.c` | `driver`               | no | yes | `src/driver.rs` | yes |
+
+There are no macro-generated / renamed symbols: neither header contains any
+namespacing or symbol-renaming macros, so the linker names equal the
+source-level names.
+
+## `nm -D --defined-only` — C
+
+```
+allocate_matrix                 T
+free_matrix                     T
+initialize_matrix_from_string   T
+multiply_matrices               T
+matrix_to_string                T
+write_to_file                   T
+driver                          T
+```
+
+(7 defined `T` symbols; everything else in the C `.so` is `U` — libc imports:
+`malloc`, `free`, `strdup`, `strtok_r`, `strcat`, `snprintf`, `atoi`,
+`perror`, `fprintf`, `fopen`, `fclose`, `strerror`, `__errno_location`,
+`stderr`.)
+
+## `nm -D --defined-only` — Rust (C-ABI subset)
+
+```
+allocate_matrix                 T
+driver                          T
+free_matrix                     T
+initialize_matrix_from_string   T
+matrix_to_string                T
+multiply_matrices               T
+write_to_file                   T
+```
+
+The Rust `.so` additionally exports Rust-internal / std symbols
+(`_ZN…`, `rust_*`, `__rust_*`) which have no C counterpart and are not part of
+the comparison surface.
+
+## Diff
+
+| symbol | in C | in Rust | action |
+|---|---|---|---|
+| `allocate_matrix` | ✔ | ✔ | — |
+| `free_matrix` | ✔ | ✔ | — |
+| `initialize_matrix_from_string` | ✔ | ✔ | — |
+| `multiply_matrices` | ✔ | ✔ | — |
+| `matrix_to_string` | ✔ | ✔ | — |
+| `write_to_file` | ✔ | ✔ | — |
+| `driver` | ✔ | ✔ | — |
+
+**Missing from Rust: 0. Extra C-ABI symbols in Rust: 0.**
+
+## Undefined (imported) non-libc symbols in the Rust `.so`
+
+`nm -D -u` on the Rust `.so` resolves entirely against `libc`/`libgcc`
+(`malloc`, `free`, `strdup`, `strtok_r`, `strcat`, `snprintf`, `atoi`,
+`perror`, `fprintf`, `fopen`, `fclose`, `strerror`, `__errno_location`,
+`stderr`, plus std/unwind runtime imports). **0 missing non-libc symbols.**
+
+Reproduce with:
 
 ```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libdriver.so
-
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libdriver.so
+nm -D --defined-only c_src/build/libdriver.so   | awk '{print $3}' | sort > /tmp/c.txt
+nm -D --defined-only translation/target/release/libdriver.so \
+  | awk '{print $3}' | grep -v '^_ZN\|^rust_\|^__rust' | sort > /tmp/r.txt
+comm -23 /tmp/c.txt /tmp/r.txt   # must be empty
 ```
 
-## Exported (defined, dynamic) symbols
+## Feature combinations
 
-`nm -D --defined-only <so> | awk '{print $3}' | sort`
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+configuration is the default (empty) feature set. Phase D's "every feature
+combination" therefore collapses to a single combination, which is verified by
+`--no-default-features` and the default build (both checked in
+`check_features.sh`).
 
-| # | symbol | C source | declared in header | C `.so` | Rust `.so` | Rust impl |
-|---|--------|----------|--------------------|---------|------------|-----------|
-| 1 | `allocate_matrix`               | `src/matrix.c:33`  | no (non-`static`, so still exported) | ✅ | ✅ | `src/matrix.rs` |
-| 2 | `free_matrix`                   | `src/matrix.c:66`  | `include/matrix.h:33` | ✅ | ✅ | `src/matrix.rs` |
-| 3 | `initialize_matrix_from_string` | `src/matrix.c:78`  | `include/matrix.h:32` | ✅ | ✅ | `src/matrix.rs` |
-| 4 | `multiply_matrices`             | `src/matrix.c:118` | `include/matrix.h:34` | ✅ | ✅ | `src/matrix.rs` |
-| 5 | `matrix_to_string`              | `src/matrix.c:137` | `include/matrix.h:35` | ✅ | ✅ | `src/matrix.rs` |
-| 6 | `write_to_file`                 | `src/write.c:32`   | `include/write.h:26`  | ✅ | ✅ | `src/write.rs`  |
-| 7 | `driver`                        | `src/driver.c:35`  | no (non-`static`)     | ✅ | ✅ | `src/driver.rs` |
+## Result
 
-There are no namespace/renaming macros, no `__attribute__((alias))`, no
-macro-generated symbol families and no versioned symbols anywhere in `c_src/`,
-so the linker names are exactly the source-level names.
+`./check_symbols.sh` → `SYMBOL PARITY: OK (0 missing)`, and `EXTRA C-ABI
+symbols in the Rust .so: (none)`. Verified for both the default and the
+`--no-default-features` build by `./check_features.sh`.
 
-### Symbol diff
-
-```
-comm -3 <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort) \
-        <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
-```
-
-Result: **empty** — 0 symbols missing from the Rust `.so`, 0 extra. ✅
-
-No stubs / `unimplemented!()` / `todo!()` exist in the crate; every export is a
-full translation of the corresponding C function.
-
-## Undefined (imported) symbols
-
-The C `.so` imports only libc: `__errno_location atoi fclose fopen fprintf free
-fwrite malloc perror snprintf stderr strcat strdup strerror strlen strtok_r`
-(plus the weak CRT/ITM/gmon markers).
-
-The Rust `.so` imports the same libc set plus the symbols the Rust runtime
-itself needs (`libc`: `memcpy memmove memset calloc realloc posix_memalign
-abort open64 read write writev close mmap64 munmap lseek64 stat64 fstat64
-statx getcwd getenv realpath readlink syscall dl_iterate_phdr bcmp
-pthread_key_*`, `__tls_get_addr`, `__cxa_thread_atexit_impl`, `gettid`; and
-`libgcc_s`: the `_Unwind_*` family for the panic/backtrace machinery).
-
-**0 undefined non-libc / non-runtime symbols.** `ldd` resolves fully against
-`libc.so.6` + `libgcc_s.so.1`. ✅
-
-## Cargo feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table** and no optional
-dependencies, therefore the complete set of feature combinations is:
-
-| # | combination | cargo invocation |
-|---|-------------|------------------|
-| 1 | (default = empty) | `cargo test` |
-| 2 | (explicitly no defaults, identical to #1) | `cargo test --no-default-features` |
-| 3 | (all features = empty set) | `cargo test --all-features` |
-
-All three resolve to the same, single code path. `scripts/check_features.sh`
-enumerates them from `Cargo.toml` and runs the whole differential suite for
-each, so the "every feature combination" gate is satisfied by construction.
+No C source file was left untranslated: `c_src/CMakeLists.txt` compiles exactly
+`src/matrix.c`, `src/write.c`, `src/driver.c`, and each has a corresponding
+Rust module (`src/matrix.rs`, `src/write.rs`, `src/driver.rs`) with a
+`#[no_mangle] extern "C"` wrapper per non-`static` C function. No symbol is
+stubbed or `unimplemented!()`.

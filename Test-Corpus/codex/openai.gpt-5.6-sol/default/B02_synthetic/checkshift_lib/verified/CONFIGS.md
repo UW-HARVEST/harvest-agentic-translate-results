@@ -1,45 +1,39 @@
-# Configuration surface
+# Configuration-surface table
 
-Mechanically derived axes from `../c_src/include/lib.h` and
-`../c_src/src/lib.c`:
+The public ABI is the ten symbols exported by the C shared library, not only the
+single function declared in `include/lib.h`. There are no compile-time Cargo
+features and no C preprocessor feature switches. Rows below are the branch
+cross-product actually distinguished by `c_src/src/lib.c`: operation selection,
+first versus cached operation lookup, checksum count buckets, null-free state
+operations, and the composed pipeline.
 
-- no compile-time Cargo features and no C preprocessor feature flags;
-- callback identity: multiply, add, XOR, or shift;
-- callback lookup state: first call initializes the static table, later calls
-  reuse it;
-- checksum shape: 1, 2, 3, or 4 integers, versus more than 4 (truncated to 4);
-- state setup/mutation and the fixed four-stage composed operation.
-
-Randomized integer cases avoid C signed-overflow and invalid-left-shift
-undefined behavior. Bitwise-only paths still exercise the full signed bit
-patterns.
-
-| # | entry point(s) | configuration (options set + input shape) | Verified |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `multiply_with_static` | randomized safe signed integer pairs; includes negative, zero, and positive operands | [x] |
-| 2 | `add_with_static` | randomized safe signed integer pairs; includes negative, zero, and positive operands | [x] |
-| 3 | `xor_operation` | randomized full-width signed integer pairs | [x] |
-| 4 | `shift_with_static` | safe non-negative left operand; positive and negative right operands | [x] |
-| 5 | `get_operation` | cold lookup with `opcode == 0`, initializing the static callback table, then invoke returned callback | [x] |
-| 6 | `get_operation` | warm lookup with `opcode == 1`, then invoke returned callback | [x] |
-| 7 | `get_operation` | warm lookup with `opcode == 2`, then invoke returned callback | [x] |
-| 8 | `get_operation` | warm lookup with `opcode == 3`, then invoke returned callback | [x] |
-| 9 | `execute_operation` | multiply callback and valid NUL-terminated operation name | [x] |
-| 10 | `execute_operation` | add callback and valid NUL-terminated operation name | [x] |
-| 11 | `execute_operation` | XOR callback and valid NUL-terminated operation name | [x] |
-| 12 | `execute_operation` | shift callback and valid NUL-terminated operation name | [x] |
-| 13 | `compute_checksum` | `count == 1`, one initialized integer | [x] |
-| 14 | `compute_checksum` | `count == 2`, two initialized integers | [x] |
-| 15 | `compute_checksum` | `count == 3`, three initialized integers | [x] |
-| 16 | `compute_checksum` | `count == 4`, four initialized integers | [x] |
-| 17 | `compute_checksum` | `count > 4`, extra integers ignored after the fourth | [x] |
-| 18 | `init_state` | non-null state and randomized full-width initial accumulator | [x] |
-| 19 | `init_state`, `get_operation`, `apply_operation` | initialized state plus multiply callback; checksum must remain unchanged | [x] |
-| 20 | `init_state`, `get_operation`, `apply_operation` | initialized state plus add callback; checksum must remain unchanged | [x] |
-| 21 | `init_state`, `get_operation`, `apply_operation` | initialized state plus XOR callback; checksum must remain unchanged | [x] |
-| 22 | `init_state`, `get_operation`, `apply_operation` | initialized state plus shift callback; checksum must remain unchanged | [x] |
-| 23 | all public entry points through `checkshift` | full multiply → add → XOR → shift → checksum pipeline with randomized safe four-integer inputs | [x] |
-
-Feature combinations: the manifest declares no `[features]` table, so the
-single semantic configuration is the default/no-default feature set. Phase D
-runs the suite both normally and with `--no-default-features`; both pass.
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `multiply_with_static` | randomized signed 32-bit operand pairs, including zero/sign/boundary/overflow cases | [x] |
+| 2 | `add_with_static` | randomized signed 32-bit operand pairs, including zero/sign/boundary/overflow cases | [x] |
+| 3 | `xor_operation` | randomized signed 32-bit operand pairs, including zero/sign/boundary cases | [x] |
+| 4 | `shift_with_static` | randomized signed 32-bit operand pairs, including negative right operands and left-shift overflow | [x] |
+| 5 | `get_operation` + returned function | fresh library state, opcode `0` (multiply) | [x] |
+| 6 | `get_operation` + returned function | fresh library state, opcode `1` (add) | [x] |
+| 7 | `get_operation` + returned function | fresh library state, opcode `2` (xor) | [x] |
+| 8 | `get_operation` + returned function | fresh library state, opcode `3` (shift) | [x] |
+| 9 | `get_operation` + returned function | warmed/cached operation table, opcode `0` | [x] |
+| 10 | `get_operation` + returned function | warmed/cached operation table, opcode `1` | [x] |
+| 11 | `get_operation` + returned function | warmed/cached operation table, opcode `2` | [x] |
+| 12 | `get_operation` + returned function | warmed/cached operation table, opcode `3` | [x] |
+| 13 | `execute_operation` | non-null multiply function and non-null operation name; randomized operands | [x] |
+| 14 | `execute_operation` | non-null add function and non-null operation name; randomized operands | [x] |
+| 15 | `execute_operation` | non-null xor function and non-null operation name; randomized operands | [x] |
+| 16 | `execute_operation` | non-null shift function and non-null operation name; randomized operands | [x] |
+| 17 | `execute_operation` | non-null function and null `op_name` (glibc `%s` null-pointer behavior) | [x] |
+| 18 | `compute_checksum` | non-null values, `count == 1` (copies one native-endian `int`) | [x] |
+| 19 | `compute_checksum` | non-null values, `count == 2` | [x] |
+| 20 | `compute_checksum` | non-null values, `count == 3` | [x] |
+| 21 | `compute_checksum` | non-null values, `count == 4` | [x] |
+| 22 | `compute_checksum` | non-null values, `count > 4`, including `INT_MAX` (clamped to four ints) | [x] |
+| 23 | `init_state` | non-null state and randomized signed 32-bit initial value | [x] |
+| 24 | `apply_operation` | non-null state with multiply function; randomized state/value | [x] |
+| 25 | `apply_operation` | non-null state with add function; randomized state/value | [x] |
+| 26 | `apply_operation` | non-null state with xor function; randomized state/value | [x] |
+| 27 | `apply_operation` | non-null state with shift function; randomized state/value | [x] |
+| 28 | `checkshift` | full end-to-end pipeline with randomized four-tuples, including zero/sign/boundary/overflow cases | [x] |

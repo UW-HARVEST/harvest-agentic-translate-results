@@ -1,56 +1,65 @@
-# ERRORS.md — Error-surface table (Phase A / gate for Phase C)
+# ERRORS.md — Error / rejection surface table (Phase C)
 
-Mechanically derived from every rejection site in `c_src/src/lib.c`. There are no
-`assert`s, no `errno` use, and no error enums in this library; rejection is
-expressed as (a) a `NULL` return, (b) a sentinel numeric return (`0` / `-1`),
-(c) an early `void` return, and always accompanied by a specific `printf`
-diagnostic where the C prints one. Because stdout is part of the observable
-behaviour, **every row asserts both the return value AND the byte-exact stdout**.
+Mechanically derived from every rejection point in `c_src/src/lib.c`. Grep basis:
 
-Line numbers refer to `c_src/src/lib.c`.
+```
+grep -n 'return\|== NULL\|is_null\|assert\|if (' c_src/src/lib.c
+```
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|---------------------------------------------|-------------------|------|
-| E1 | `get_operation` | `opcode < 0` (e.g. `-1`, `-4`, `INT_MIN`) — fails `opcode >= 0` at L76 | returns `NULL` (L80); no output | `err_e1_get_operation_negative_opcode` |
-| E2 | `get_operation` | `opcode >= 4` (e.g. `4`, `5`, `INT_MAX`) — fails `opcode < 4` at L76 | returns `NULL` (L80); no output | `err_e2_get_operation_opcode_ge_4` |
-| E3 | `get_operation` | out-of-range "enum" values: the `OP_*` macros are `1..4` but the accepted index range is `0..3`, so `OP_SHIFT == 4` is out of range | `OP_ADD/MULTIPLY/XOR` (1,2,3) → non-NULL; `OP_SHIFT` (4) → `NULL` | `err_e3_get_operation_op_macro_values` |
-| E4 | `execute_operation` | `func == NULL` (L84), valid `op_name` | prints `Error: Operation function pointer is NULL for <op_name>\n`; returns `0` (L86) | `err_e4_execute_operation_null_func` |
-| E5 | `execute_operation` | `func == NULL` **and** `op_name == NULL` → `%s` with a NULL pointer | glibc prints `...NULL for (null)\n`; returns `0` | `err_e5_execute_operation_null_func_null_name` |
-| E6 | `execute_operation` | `func == NULL` and `op_name == ""` (empty string) | prints `...NULL for \n`; returns `0` | `err_e6_execute_operation_null_func_empty_name` |
-| E7 | `compute_checksum` | `values == NULL` (fails `values != NULL` at L102), any `count` incl. positive | body skipped; returns `0 & MASK_LOWER == 0`; no output | `err_e7_compute_checksum_null_values` |
-| E8 | `compute_checksum` | `count == 0` (fails `count > 0` at L102), valid `values` | body skipped; returns `0`; no output | `err_e8_compute_checksum_zero_count` |
-| E9 | `compute_checksum` | `count < 0` (e.g. `-1`, `INT_MIN`), valid `values` | body skipped; returns `0`; no output | `err_e9_compute_checksum_negative_count` |
-| E10 | `compute_checksum` | `count > 4` — oversized length clamped by `(count > 4) ? 4 : count` (L103) | reads only the first 4 ints; result identical to `count == 4`; never overruns the 16-byte buffer | `err_e10_compute_checksum_count_clamped_to_4` |
-| E11 | `compute_checksum` | `values == NULL` **and** `count <= 0` (both guard operands false) | returns `0`; no output | `err_e11_compute_checksum_null_and_nonpositive` |
-| E12 | `init_state` | `state == NULL` (L117) | prints `Error: state pointer is NULL in init_state\n`; returns void, writes nothing | `err_e12_init_state_null_state` |
-| E13 | `apply_operation` | `state == NULL` (L130), `func` non-NULL | prints `Error: state pointer is NULL in apply_operation\n`; returns void; `func` is **not** called | `err_e13_apply_operation_null_state` |
-| E14 | `apply_operation` | `state` non-NULL, `func == NULL` (L135) | prints `Error: operation function pointer is NULL in apply_operation\n`; returns void; state left **unmodified** (`operation_count` not incremented) | `err_e14_apply_operation_null_func` |
-| E15 | `apply_operation` | `state == NULL` **and** `func == NULL` — check order matters: `state` is tested first (L130 before L135) | prints **only** the `state ... NULL in apply_operation` message, not the func one; returns void | `err_e15_apply_operation_both_null_order` |
-| E16 | `checkshift` | `malloc(sizeof(ComputeState))` returns `NULL` (L150) | prints `Error: Failed to allocate memory for state\n`; returns `-1`; does **not** reach `init_state` or the closing banner | `err_e16_checkshift_malloc_failure_path` — reached for real with an `LD_PRELOAD` `malloc` interposer that fails allocations of exactly 12 bytes, driven out-of-process against both `.so`s (`tests/phase_c_malloc_failure.rs`). **This row found a genuine divergence — see FINDINGS.md #1.** |
+The C code has **no** error enum, no `errno` use, and no `assert`. It rejects in
+exactly three ways: (a) print a message on `stdout` and return early, (b) return
+`NULL` from `get_operation`, (c) return a sentinel value (`0` / `-1`).
+Every distinct branch below is one row.
 
-## Generic FFI boundary cases (covered even though not distinct C branches)
+| # | function | trigger (exact invalid input/condition) | expected C result | test |
+|---|----------|------------------------------------------|-------------------|------|
+| 1 | `execute_operation` | `func == NULL` (line 84) | prints `Error: Operation function pointer is NULL for %s\n` with `op_name`; returns `0`; does **not** call any op | `err_01_execute_operation_null_func` |
+| 2 | `execute_operation` | `func == NULL` **and** `op_name` is an empty string `""` | prints `...NULL for \n`; returns `0` | `err_02_execute_operation_null_func_empty_name` |
+| 3 | `compute_checksum` | `values == NULL`, `count > 0` (line 102, first conjunct false) | body skipped; returns `0 & MASK_LOWER` = `0`; no `memcpy` | `err_03_compute_checksum_null_values` |
+| 4 | `compute_checksum` | `values != NULL`, `count == 0` (second conjunct false) | body skipped; returns `0` | `err_04_compute_checksum_zero_count` |
+| 5 | `compute_checksum` | `values != NULL`, `count < 0` (e.g. `-1`, `INT_MIN`) | body skipped; returns `0` | `err_05_compute_checksum_negative_count` |
+| 6 | `compute_checksum` | `values == NULL` **and** `count == 0` (both conjuncts false) | returns `0` | `err_06_compute_checksum_null_and_zero` |
+| 7 | `compute_checksum` | `values == NULL` **and** `count < 0` | returns `0` | `err_07_compute_checksum_null_and_negative` |
+| 8 | `init_state` | `state == NULL` (line 117) | prints `Error: state pointer is NULL in init_state\n`; returns; no write | `err_08_init_state_null` |
+| 9 | `apply_operation` | `state == NULL` (line 130), any `func` (incl. `NULL`) | prints `Error: state pointer is NULL in apply_operation\n`; returns. State check precedes func check | `err_09_apply_operation_null_state` |
+| 10 | `apply_operation` | `state != NULL`, `func == NULL` (line 135) | prints `Error: operation function pointer is NULL in apply_operation\n`; returns; `accumulator`/`operation_count` **unchanged** | `err_10_apply_operation_null_func` |
+| 11 | `apply_operation` | `state == NULL` **and** `func == NULL` | only the *state* message is printed (ordering matters) | `err_11_apply_operation_both_null` |
+| 12 | `get_operation` | `opcode < 0` (line 76, first conjunct false) — `-1`, `-2`, `INT_MIN` | returns `NULL` | `err_12_get_operation_negative` |
+| 13 | `get_operation` | `opcode >= 4` (second conjunct false) — `4`, `5`, `0x7fffffff` | returns `NULL` | `err_13_get_operation_too_large` |
+| 14 | `get_operation` | one step past each end of the valid range: `-1` and `4` exactly | returns `NULL` for both; `0..=3` non-NULL | `err_14_get_operation_range_edges` |
+| 15 | `get_operation` | "out-of-range enum value" class: the `OP_*` macros are `1,2,3,4`, so `OP_SHIFT == 4` is itself **out of range** for the `ops[]` table, while opcode `0` has no `OP_*` name. Passing every `OP_*` constant plus arbitrary `int`s | `OP_ADD/OP_MULTIPLY/OP_XOR` → non-NULL, `OP_SHIFT` (`4`) → `NULL` | `err_15_get_operation_opcode_enum_values` |
+| 16 | `checkshift` | `malloc(sizeof(ComputeState))` returns `NULL` (line 150) | prints `Error: Failed to allocate memory for state\n`; returns `-1`; `init_state` is never reached | `err_16_checkshift_malloc_failure` (real injection: the test binary **interposes `malloc`** and fails the 12-byte request for both libs) + `err_16_checkshift_malloc_failure_documented` (string presence in both `.so`s) |
+| 17 | cross-cutting | `execute_operation` reached with a **valid** func but `op_name == NULL` | glibc `printf("%s")` prints `(null)`; return value is the op result. Both libs must agree | `err_17_execute_operation_null_name` |
 
-| # | case | covered by |
-|---|------|-----------|
-| G1 | NULL pointer for every pointer parameter (`values`, `state`, `op_name`, `func`) | E4–E7, E12–E15 |
-| G2 | Zero length / count | E8 |
-| G3 | Oversized length (`count` far past the 4-element clamp, incl. `INT_MAX`) | E10 |
-| G4 | One step past a valid range boundary (`opcode` = `-1` and `4`) | E1, E2 |
-| G5 | Out-of-range enum-like value across FFI (`get_operation` with `INT_MIN`/`INT_MAX`/`0x7FFFFFFF`, and the `OP_*` macro mismatch) | E1, E2, E3 |
-| G6 | Extreme integer inputs (`INT_MIN`, `INT_MAX`) to every arithmetic entry point — signed overflow in `*`, `+`, `<<` | Phase B rows C1–C4, C20 |
-| G7 | Cross-library function pointers (a C `.so` `operation_func` handed to Rust's `execute_operation`/`apply_operation`, and vice versa) | Phase B rows C13, C18 |
+## Constants / limits appearing in the code
 
-## Completion
+| constant | value | where it clamps or masks |
+|----------|-------|--------------------------|
+| `MASK_LOWER` | `0x0000FFFF` | `compute_checksum` return is always masked to 16 bits |
+| `MAGIC_NUMBER` | `0xDEADBEEF` | XORed in only when the guard passes |
+| `4` (table size) | — | `get_operation` valid opcode range `[0, 4)` |
+| `4` (copy clamp) | — | `compute_checksum`: `copy_count = min(count, 4)`; buffer is `sizeof(int)*4` = 16 bytes |
+| `static_shift_amount` | `2` | `shift_with_static` shift distance (never `>= 32`, so no UB shift) |
 
-Every row has a passing differential test asserting the SAME sentinel/return
-value AND byte-identical stdout from both `.so`s, under both the `debug` and
-`release` profiles.
+## Checklist
 
-- [x] E1  - [x] E2  - [x] E3  - [x] E4  - [x] E5  - [x] E6  - [x] E7  - [x] E8
-- [x] E9  - [x] E10 - [x] E11 - [x] E12 - [x] E13 - [x] E14 - [x] E15 - [x] E16
-- [x] G1  - [x] G2  - [x] G3  - [x] G4  - [x] G5  - [x] G6  - [x] G7
+- [x] 1 · [x] 2 · [x] 3 · [x] 4 · [x] 5 · [x] 6 · [x] 7 · [x] 8 · [x] 9
+- [x] 10 · [x] 11 · [x] 12 · [x] 13 · [x] 14 · [x] 15 · [x] 16 · [x] 17
 
-Test files: `tests/phase_c_errors.rs` (E1–E15, G1–G7, 19 tests),
-`tests/phase_c_malloc_failure.rs` (E16, 3 tests).
+## Result
 
-Run: `cargo test --test phase_c_errors --test phase_c_malloc_failure`
+All 17 rows plus the three generic-boundary tests (`err_gen_*`: NULL pointers on
+every pointer parameter, zero/oversized/negative lengths, and one-step-past-range
+values including out-of-range "enum" opcodes) pass in every configuration.
+
+### Divergence found and fixed during Phase C
+
+Row 16 exposed a real translation bug. LLVM applies its built-in knowledge that
+`malloc` returns non-null and had **deleted the entire `state == NULL` branch**
+from the Rust `checkshift` — the diagnostic string was absent from the `.so` and
+the `-1` sentinel was unreachable, whereas the C keeps the branch. With `malloc`
+interposed to fail the 12-byte request, the C printed
+`Error: Failed to allocate memory for state` and returned `-1` while the Rust
+dereferenced the null pointer. Fixed in `src/lib.rs` by wrapping the allocation
+in `core::hint::black_box`, which keeps the check reachable; `err_16_checkshift_
+malloc_failure` now shows both libraries producing identical output and `-1`.

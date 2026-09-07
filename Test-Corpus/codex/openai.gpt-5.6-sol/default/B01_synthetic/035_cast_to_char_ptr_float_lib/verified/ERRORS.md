@@ -1,21 +1,20 @@
-# Error-Surface Table
+# Error-surface table
 
-The complete C source was mechanically searched for error returns, all return
-statements, assertions, null checks, explicit range checks, error identifiers,
-and min/max constants:
+Mechanical search scope: `../c_src/include/*.h` and `../c_src/src/*.c`.
+Searched for error returns, `assert`, explicit range/null checks, error enums,
+and min/max constants.
 
-```text
-rg -n -i 'RETURN_ERROR|return\s+(-1|NULL)|\breturn\b|\bassert\s*\(|error|invalid|range|minimum|maximum|\bmin\b|\bmax\b|==\s*NULL|!=\s*NULL|!\s*[A-Za-z_][A-Za-z0-9_]*|<|>' \
-  ../c_src/include ../c_src/src
-```
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
 
-No rejection or error path exists. The sole public function accepts one
-by-value `float`, returns `void`, and has no pointer, length, enum, range, or
-state argument. Therefore the generic null-pointer, zero/oversized-length, and
-out-of-range-enum cases are not applicable.
+There are no rows because the C library has no rejection or error branch.
+`driver(float)` returns `void` and accepts the complete set of `float` object
+representations.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| — | — | No invalid-input condition exists in the C API. | — |
+Generic FFI error boundaries are not applicable: the sole public API has no
+pointer, length, count, range-limited integer, or enum parameter. Zero,
+infinities, subnormals, and all NaN payloads are valid by-value float inputs and
+are covered by the valid-path differential test.
 
-Phase C status: [x] complete (zero applicable rejection rows).
+Phase C status: **[x] complete** (zero rejection rows; generic invalid-input
+categories do not exist for this signature).

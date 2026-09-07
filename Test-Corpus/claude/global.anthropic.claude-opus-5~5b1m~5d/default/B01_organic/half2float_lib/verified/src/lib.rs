@@ -377,90 +377,24 @@ static m__exponent: [u32; 64] = [
     0x8b000000, 0x8b800000, 0x8c000000, 0x8c800000, 0x8d000000, 0x8d800000,
     0x8e000000, 0x8e800000, 0x8f000000, 0xc7800000,
 ];
-/// Faithful transliteration of the C function body.
+/// float half2float(uint16_t h)
 ///
-/// ```c
-/// float half2float(uint16_t h) {
-///     union { float flt; uint32_t num; } out;
-///     int n = h >> 10;
-///     out.num = m__mantissa[(h & 0x3ff) + m__offset[n]] + m__exponent[n];
-///     return out.flt;
-/// }
-/// ```
-#[inline]
-fn half2float_impl(h: u16) -> f32 {
-    // int n = h >> 10;  --  h is uint16_t, so n is in 0..=63, and both side
-    // tables have 64 entries, so this index is always in bounds.
+/// Converts an IEEE-754 binary16 bit pattern into the corresponding
+/// `float` value using the original table-driven algorithm.
+#[unsafe(no_mangle)]
+pub extern "C" fn half2float(h: u16) -> f32 {
+    // int n = h >> 10;  --  h is uint16_t, so n is in 0..=63.
     let n: c_int = (h >> 10) as c_int;
 
     // out.num = m__mantissa[(h & 0x3ff) + m__offset[n]] + m__exponent[n];
     //
-    // The C code performs the index arithmetic in `int` and the value addition
-    // in `uint32_t` (wrapping).  `m__offset` contains only 0x0000 and 0x0400,
-    // so the maximum index is 0x3ff + 0x400 == 2047, in bounds for the
-    // 2048-entry table for every possible input.
+    // The C code performs the index arithmetic in `int` and the value
+    // addition in `uint32_t` (wrapping).  Maximum index is
+    // 0x3ff + 0x400 == 2047, which is in bounds for the 2048-entry table.
     let index = (h & 0x3ff) as usize + m__offset[n as usize] as usize;
     let num: u32 = m__mantissa[index].wrapping_add(m__exponent[n as usize]);
 
     // union { float flt; uint32_t num; } -- type-punned read back as float.
     f32::from_bits(num)
-}
-
-// ---------------------------------------------------------------------------
-// Exported C ABI entry point: float half2float(uint16_t h)
-// ---------------------------------------------------------------------------
-//
-// Why the exported wrapper does not simply take `h: u16` on x86-64:
-//
-// GCC compiles the C parameter `uint16_t h` by NARROWING the incoming argument
-// register to 16 bits in the prologue:
-//
-//     mov    %edi,%eax
-//     mov    %ax,-0x14(%rbp)     <- only the low 16 bits are kept
-//     movzwl -0x14(%rbp),%eax
-//
-// so whatever a caller leaves in the high bits of %edi is discarded and the C
-// always computes on a true 16-bit value.
-//
-// Rust, by contrast, marks `u16` parameters of `extern "C"` functions `zeroext`,
-// which tells LLVM the caller has ALREADY zero-extended.  LLVM then legally
-// (a) shifts the full 32-bit register (`shr $0xa,%edi`) instead of the 16-bit
-// subregister, (b) folds away any `& 0x3f` mask as provably redundant, and
-// (c) elides the `m__offset` bounds check.  The observable result for a caller
-// that leaves garbage in the high bits -- e.g. one that mis-declares the
-// prototype as `float half2float(uint32_t)`, which is ABI-identical here -- was
-// an out-of-bounds read of `m__offset` followed by an index-out-of-bounds panic
-// (an `abort`, since this crate builds with `panic = "abort"`), where the C
-// returns an ordinary value.  Masking inside the function cannot fix this,
-// because the `zeroext` assumption is exactly what lets LLVM delete the mask.
-//
-// Declaring the parameter at full register width removes the assumption and
-// lets us narrow explicitly, reproducing GCC's prologue.  On x86-64 SysV
-// `uint16_t` and `unsigned int` arguments occupy the same integer register, so
-// this is ABI-compatible with the `lib.h` prototype for correct callers, and it
-// additionally matches the C for incorrect ones.
-//
-// On other targets, where a narrow argument may be passed in a differently
-// sized or positioned slot, the faithful `u16` signature is used instead.
-
-/// float half2float(uint16_t h)
-///
-/// Converts an IEEE-754 binary16 bit pattern into the corresponding
-/// `float` value using the original table-driven algorithm.
-#[cfg(target_arch = "x86_64")]
-#[unsafe(no_mangle)]
-pub extern "C" fn half2float(h: core::ffi::c_uint) -> f32 {
-    // `as u16` is GCC's `mov %ax,slot` -- keep the low 16 bits, drop the rest.
-    half2float_impl(h as u16)
-}
-
-/// float half2float(uint16_t h)
-///
-/// Converts an IEEE-754 binary16 bit pattern into the corresponding
-/// `float` value using the original table-driven algorithm.
-#[cfg(not(target_arch = "x86_64"))]
-#[unsafe(no_mangle)]
-pub extern "C" fn half2float(h: u16) -> f32 {
-    half2float_impl(h)
 }
 

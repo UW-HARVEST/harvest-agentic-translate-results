@@ -65,58 +65,34 @@ pub unsafe extern "C" fn bitwriter_add(
 
     let mut bits: tflac_u32 = bits;
     let mut val: tflac_uint = val;
-
-    // NOTE ON HOW `bw` IS DEREFERENCED
-    //
-    // The C performs `bw->tot += bits` with no null check, so `bw == NULL` is a
-    // plain unchecked dereference that faults with SIGSEGV.  Reproducing that
-    // fault mode in *every* Cargo profile rules out two obvious spellings:
-    //
-    //   * `&mut *bw` — forming a Rust reference makes rustc's reference-validity
-    //     debug assertion fire, aborting with SIGABRT instead of faulting.
-    //   * `(*bw).field` — a raw place deref still gets rustc's MIR `CheckNull`
-    //     instrumentation under `-C debug-assertions` (i.e. `cargo build`), which
-    //     also turns the fault into a SIGABRT panic.
-    //
-    // Both would be an observable difference from the C across the FFI boundary
-    // (C = SIGSEGV/11, Rust = SIGABRT/6).  Instead we take raw field addresses
-    // with `&raw mut` (address arithmetic only, never a dereference, so it is not
-    // instrumented) and perform the accesses with `ptr::read` / `ptr::write`,
-    // whose dereference lives in precompiled `core` and so is not instrumented
-    // either.  These lower to bare loads/stores, exactly like `bw->field` in C.
-    //
-    // Field accesses below are ordered exactly as in the C source.
-    let p_val: *mut tflac_uint = unsafe { &raw mut (*bw).val };
-    let p_bits: *mut tflac_u32 = unsafe { &raw mut (*bw).bits };
-    let p_tot: *mut tflac_u32 = unsafe { &raw mut (*bw).tot };
+    let b: &mut tflac_bitwriter = unsafe { &mut *bw };
 
     // val <<= ((8 * sizeof(tflac_uint)) - bits);
     // The shift count is reduced modulo 64 by the hardware shift instruction.
     val = val.wrapping_shl(UINT_BITS.wrapping_sub(bits));
 
     // bw->tot += bits;
-    unsafe { p_tot.write(p_tot.read().wrapping_add(bits)) };
+    b.tot = b.tot.wrapping_add(bits);
 
     // int i = 0;
     let mut i: c_int = 0;
 
     // while ((bw->bits + bits >= (8 * sizeof(tflac_uint))) && i < 100) {
-    while unsafe { p_bits.read() }.wrapping_add(bits) >= UINT_BITS && i < 100 {
+    while b.bits.wrapping_add(bits) >= UINT_BITS && i < 100 {
         // b = (8 * sizeof(tflac_uint)) - bw->bits - 1;
-        let mut bb: tflac_u32 =
-            UINT_BITS.wrapping_sub(unsafe { p_bits.read() }).wrapping_sub(1);
+        let mut bb: tflac_u32 = UINT_BITS.wrapping_sub(b.bits).wrapping_sub(1);
 
         // b = b > bits ? bits : b;
         bb = if bb > bits { bits } else { bb };
 
         // bw->val |= (val >> bw->bits);
-        unsafe { p_val.write(p_val.read() | val.wrapping_shr(p_bits.read())) };
+        b.val |= val.wrapping_shr(b.bits);
 
         // bw->bits += b;
-        unsafe { p_bits.write(p_bits.read().wrapping_add(bb)) };
+        b.bits = b.bits.wrapping_add(bb);
 
         // bw->val &= mask;
-        unsafe { p_val.write(p_val.read() & MASK) };
+        b.val &= MASK;
 
         // val <<= b;
         val = val.wrapping_shl(bb);
@@ -129,10 +105,10 @@ pub unsafe extern "C" fn bitwriter_add(
     }
 
     // bw->val |= (val >> bw->bits);
-    unsafe { p_val.write(p_val.read() | val.wrapping_shr(p_bits.read())) };
+    b.val |= val.wrapping_shr(b.bits);
 
     // bw->bits += bits;
-    unsafe { p_bits.write(p_bits.read().wrapping_add(bits)) };
+    b.bits = b.bits.wrapping_add(bits);
 
     // return 0;
     0

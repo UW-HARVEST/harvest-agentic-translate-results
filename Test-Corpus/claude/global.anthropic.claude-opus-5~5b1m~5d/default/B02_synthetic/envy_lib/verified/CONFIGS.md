@@ -1,149 +1,139 @@
-# CONFIGS.md — Configuration surface table (Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
+Mechanically derived from the `if`/`else`/ternary branches in
+`c_src/src/lib.c`. Every row is exercised against **both** `.so`s through
+`libloading` with **many randomized inputs** (fixed seed, SplitMix64 PRNG in
+`tests/common/mod.rs`), comparing the returned `int` **and** the bytes written
+to stdout **and** stderr.
 
 ## Axes the C code actually branches on
 
-**Runtime options** — the *only* way a consumer configures this library is the
-process environment (there is no options struct, no setter, no `#ifdef`):
+### Runtime options (there are no compile-time `#ifdef`s; all configuration is environment-driven)
 
-| axis | read at | distinct states the C distinguishes |
+| axis | read by | distinct states the C distinguishes |
 |------|---------|--------------------------------------|
-| `PROG_VERBOSE`     | `lib.c:70,74`  | unset ⇒ 0 · set without `'1'` ⇒ 0 · set containing `'1'` ⇒ 1 |
-| `PROG_DEBUG`       | `lib.c:71,75`  | unset ⇒ 0 · set without `'1'` ⇒ 0 · set containing `'1'` ⇒ 1 |
-| `PROG_OPTIMIZE`    | `lib.c:72,76`  | unset ⇒ 0 · set to *anything*, incl. `""` ⇒ 1 (presence-only) |
-| `PROG_BASE_OFFSET` | `lib.c:123`    | unset ⇒ `0100`=64 · valid decimal · contains `,` ⇒ default+warn · contains `;` ⇒ default+warn · non-numeric ⇒ `atoi`=0 · overflowing |
-| `PROG_MULTIPLIER`  | `lib.c:124`    | unset ⇒ `012`=10 · same five other states |
+| `PROG_VERBOSE` | `init_config_from_env` | (a) unset → `verbose=0`; (b) set **containing `'1'`** → `verbose=1`; (c) set **without** `'1'` → `verbose=0` |
+| `PROG_DEBUG` | `init_config_from_env` | (a) unset → `debug=0`; (b) set containing `'1'` → `debug=1`; (c) set without `'1'` → `debug=0` |
+| `PROG_OPTIMIZE` | `init_config_from_env` | (a) unset → `optimize=0`; (b) set to `""` → `optimize=1`; (c) set to anything → `optimize=1` (content ignored) |
+| `PROG_BASE_OFFSET` | `parse_env_numeric` in `envy` | (a) unset → default `0100`=64; (b) parseable → `atoi`; (c) contains `,` → warn+default; (d) contains `;` → warn+default; (e) `""` → 0 |
+| `PROG_MULTIPLIER` | `parse_env_numeric` in `envy` | same five states, default `012`=10 |
 
-**Hard-wired state** set by `init_config_from_env`: `cache_enabled = 1`,
-`log_level = 03`, `reserved = 0`. Because the *low-level* entry points
-(`perform_operation`, `apply_bit_operations`) take the `ConfigFlags` unit
-**directly**, a real consumer can present any of the 2⁸ bit patterns —
-including `cache_enabled = 0` and `log_level ∈ {0..7}`, which the env-driven
-path can never produce. Those are separate axes and are exercised directly.
+### `ConfigFlags` bit-field state (settable directly by callers of the low-level entry points)
 
-**Input shapes**: `param3 == 0` vs `≠ 0` (guard `lib.c:145`); `param4 == 0` vs
-`≠ 0` (guard `lib.c:149`); sign of `param4` (arithmetic vs logical shift);
-sign of the accumulated `result` (restore branch `lib.c:171`); `0`, `±1`,
-`INT_MIN`, `INT_MAX`, `0x3FFFFFFF`, `0x40000000` boundaries for every `int`
-parameter; garbage in bits 8..31 of the flags allocation unit.
+`verbose` (bit 0), `debug` (bit 1), `optimize` (bit 2), `cache_enabled` (bit 3),
+`log_level` (bits 4–6, values 0–7), `reserved` (bit 7). `init_config_from_env`
+only ever produces `cache_enabled=1, log_level=3, reserved=0`, so **the
+low-level entry points must be driven directly** to reach `cache_enabled=0`,
+`log_level != 3`, and `reserved=1`.
 
-**All five public entry points** are driven directly through the `.so` exports
-(not just the `envy` one-shot wrapper): `parse_env_numeric`,
-`init_config_from_env`, `perform_operation`, `apply_bit_operations`, `envy`.
+### Input shapes
 
-**Comparison performed for every row**: the `int` return value **and** the
-byte-exact `stdout` and `stderr` produced by the call (captured with
-`dup2` + `fflush`), **and** — for `init_config_from_env` — all 4 bytes of the
-written `ConfigFlags` allocation unit. Each row is driven with many
-randomized inputs from a fixed-seed PRNG (seed `0x5EED_1234`), not a single
-hand-picked value.
+* `int` params: zero, ±1, small random, large random, `INT_MIN`, `INT_MAX`,
+  `INT_MIN+1`, `INT_MAX-1`, powers of two, values with bit 30/31 set.
+* `envy` guard shapes: `param3 == 0` vs `!= 0`; `param4 == 0` vs `> 0` vs `< 0`.
+* result sign: `result >= 0` (no rollback) vs `result < 0` (rollback).
+* `ConfigFlags` backing memory: pre-zeroed, pre-filled `0xFF`, random
+  (tests that padding bytes 1–3 are handled identically).
+* env-var string shapes: empty, decimal, signed, whitespace-padded,
+  trailing junk, hex-looking, overflowing, 300 bytes long.
 
-## Rows
+## Table
 
-### `parse_env_numeric(const char*, int)` — low-level entry point
+### `parse_env_numeric` (lowest-level entry point)
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|-------------------------------------------|---|
-| 1 | `parse_env_numeric` | variable **unset** × randomized `default_val` (incl. `0`, `±1`, `INT_MIN`, `INT_MAX`) | [x] |
-| 2 | `parse_env_numeric` | value = randomized valid decimal, **positive** × randomized `default_val` | [x] |
-| 3 | `parse_env_numeric` | value = randomized valid decimal, **negative** (`-…`) | [x] |
-| 4 | `parse_env_numeric` | value = `"+N"` (explicit plus sign) | [x] |
-| 5 | `parse_env_numeric` | value with **leading whitespace** (`"  N"`, `"\tN"`) — `atoi` skips it | [x] |
-| 6 | `parse_env_numeric` | value with **trailing garbage** (`"Nabc"`, `"N N"`) — `atoi` stops early | [x] |
-| 7 | `parse_env_numeric` | value **leading zeros** (`"0100"`) — `atoi` is **decimal**, not octal ⇒ 100 | [x] |
-| 8 | `parse_env_numeric` | value = `"0x1F"` — `atoi` ⇒ 0 | [x] |
-| 9 | `parse_env_numeric` | value `INT_MAX` / `INT_MIN` exactly, and one past each | [x] |
-| 10 | `parse_env_numeric` | value contains `','` (comma) — warning path × randomized `default_val`, randomized env **name** (the name is `%s`-printed) | [x] |
-| 11 | `parse_env_numeric` | value contains `';'` — semicolon warning path × randomized `default_val`/name | [x] |
-| 12 | `parse_env_numeric` | value contains **both** separators, in both orders | [x] |
-| 13 | `parse_env_numeric` | value = `""` (empty) ⇒ `atoi("")` = 0 | [x] |
-| 14 | `parse_env_numeric` | value = very long string (1 KiB of digits) — overflow + no truncation anywhere | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `parse_env_numeric` | var **unset**; `default_val` = 64 randomized ints incl. `INT_MIN`/`INT_MAX`/0 | [x] |
+| C2 | `parse_env_numeric` | var set to plain decimal (64 randomized `i32` rendered as decimal, incl. negatives) | [x] |
+| C3 | `parse_env_numeric` | var set to `""` (empty) | [x] |
+| C4 | `parse_env_numeric` | var contains `','` at start / middle / end (randomized positions in random digit strings) | [x] |
+| C5 | `parse_env_numeric` | var contains `';'` (no comma), randomized positions | [x] |
+| C6 | `parse_env_numeric` | var contains **both** `','` and `';'` in both orders (comma check must win) | [x] |
+| C7 | `parse_env_numeric` | var = whitespace-padded / explicitly-signed / trailing-junk numbers (`" 42"`, `"+7"`, `"-0"`, `"12abc"`, `"0x1f"`, `"007"`) | [x] |
+| C8 | `parse_env_numeric` | var = `int`-overflowing decimal, both signs (`atoi` UB path, must match libc exactly) | [x] |
+| C9 | `parse_env_numeric` | var = 300-byte value (no length limit in C); with and without `,` | [x] |
+| C10 | `parse_env_numeric` | `env_name` = `""` (getenv of empty name) and a name that is never in the environment | [x] |
 
-### `init_config_from_env(struct ConfigFlags*)` — low-level entry point
+### `init_config_from_env`
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|-------------------------------------------|---|
-| 15 | `init_config_from_env` | full **cross product** of `PROG_VERBOSE` ∈ {unset, no-`1`, with-`1`} × `PROG_DEBUG` ∈ {unset, no-`1`, with-`1`} × `PROG_OPTIMIZE` ∈ {unset, `""`, `"0"`} = **27 combinations**, each compared over all 4 bytes of the unit | [x] |
-| 16 | `init_config_from_env` | destination buffer pre-filled with `0x00`, `0xFF`, `0xAA`, and randomized garbage — checks which bits the C actually preserves in bits 8..31 | [x] |
-| 17 | `init_config_from_env` | `'1'` in first / middle / last position of the value, and repeated (`"11"`), and as part of a longer token (`"v1.0"`, `"310"`) | [x] |
-| 18 | `init_config_from_env` | called **twice in a row** on the same buffer (idempotence / no accumulated state) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C11 | `init_config_from_env` | full **3×3×3 = 27 cross-product** of `PROG_VERBOSE` × `PROG_DEBUG` × `PROG_OPTIMIZE` states, on **pre-zeroed** `ConfigFlags`; all 4 bytes compared | [x] |
+| C12 | `init_config_from_env` | same 27 combos on `ConfigFlags` pre-filled `0xFF` (dirty byte 0 **and** dirty padding bytes 1–3) | [x] |
+| C13 | `init_config_from_env` | same 27 combos on `ConfigFlags` pre-filled with randomized 4-byte patterns | [x] |
+| C14 | `init_config_from_env` | `PROG_VERBOSE`/`PROG_DEBUG` set to randomized strings where `'1'` appears at a random index vs. strings drawn from `[02-9a-z]` only | [x] |
 
-### `perform_operation(int, int, struct ConfigFlags*)` — low-level entry point
+### `perform_operation`
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|-------------------------------------------|---|
-| 19 | `perform_operation` | `optimize=1, debug=0` × randomized `val1`,`val2` (uniform + boundary set) ⇒ addition path, no output | [x] |
-| 20 | `perform_operation` | `optimize=1, debug=1` ⇒ addition path **+ two debug lines on stdout** (`%o` of `0755`) | [x] |
-| 21 | `perform_operation` | `optimize=0, debug=0`, `log_level = 0` ⇒ `0*val1 + val2/2` | [x] |
-| 22 | `perform_operation` | `optimize=0, debug=0`, `log_level = 1` | [x] |
-| 23 | `perform_operation` | `optimize=0, debug=0`, `log_level = 2` | [x] |
-| 24 | `perform_operation` | `optimize=0, debug=0`, `log_level = 3` (the env-driven value) | [x] |
-| 25 | `perform_operation` | `optimize=0, debug=0`, `log_level = 4` | [x] |
-| 26 | `perform_operation` | `optimize=0, debug=0`, `log_level = 5` | [x] |
-| 27 | `perform_operation` | `optimize=0, debug=0`, `log_level = 6` | [x] |
-| 28 | `perform_operation` | `optimize=0, debug=0`, `log_level = 7` (max of the 3-bit field) | [x] |
-| 29 | `perform_operation` | `optimize=0, debug=1` × `log_level` 0..7 ⇒ multiply path **+ debug output** | [x] |
-| 30 | `perform_operation` | all 2⁸ flag byte patterns (verbose/cache_enabled/reserved must be **irrelevant** here) × randomized values | [x] |
-| 31 | `perform_operation` | flags unit with garbage in bits 8..31 (`0xDEADBE__`) — must be ignored | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C15 | `perform_operation` | `optimize=1`, `debug=0` → `val1+val2`; randomized `val1`,`val2` incl. overflow pairs | [x] |
+| C16 | `perform_operation` | `optimize=1`, `debug=1` → same plus 2 `printf` lines (stdout compared byte-for-byte) | [x] |
+| C17 | `perform_operation` | `optimize=0`, `debug=0`, `log_level` = **each of 0..7** → `val1*log_level + val2/2`; randomized vals per level | [x] |
+| C18 | `perform_operation` | `optimize=0`, `debug=1`, `log_level` = each of 0..7 (stdout compared) | [x] |
+| C19 | `perform_operation` | **all 256** `ConfigFlags` byte-0 patterns × randomized `val1`,`val2` (covers every optimize/debug/log_level/reserved/cache combination, incl. out-of-range-looking ones) | [x] |
+| C20 | `perform_operation` | boundary vals: `{INT_MIN, INT_MIN+1, -1, 0, 1, INT_MAX-1, INT_MAX}` × same set × `log_level` 0..7 (signed overflow + negative truncating division) | [x] |
+| C21 | `perform_operation` | dirty padding: `ConfigFlags` bytes 1–3 = `0xFF` (must not affect the result) | [x] |
 
-### `apply_bit_operations(int, struct ConfigFlags*)` — low-level entry point
+### `apply_bit_operations`
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|-------------------------------------------|---|
-| 32 | `apply_bit_operations` | `verbose=0, cache_enabled=0` ⇒ identity × randomized + boundary values | [x] |
-| 33 | `apply_bit_operations` | `verbose=0, cache_enabled=1` ⇒ `value | 0x0F` | [x] |
-| 34 | `apply_bit_operations` | `verbose=1, cache_enabled=0` ⇒ `value << 1` (incl. overflow / negative) | [x] |
-| 35 | `apply_bit_operations` | `verbose=1, cache_enabled=1` ⇒ `(value << 1) | 0x0F` | [x] |
-| 36 | `apply_bit_operations` | all 2⁸ flag byte patterns (debug/optimize/log_level must be irrelevant) × randomized values | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C22 | `apply_bit_operations` | `verbose=0, cache_enabled=0` → identity; randomized + boundary values | [x] |
+| C23 | `apply_bit_operations` | `verbose=0, cache_enabled=1` → `\| 0x0F` | [x] |
+| C24 | `apply_bit_operations` | `verbose=1, cache_enabled=0` → `<< 1` only (incl. bit-31 overflow, negative values) | [x] |
+| C25 | `apply_bit_operations` | `verbose=1, cache_enabled=1` → `(<<1) \| 0x0F` | [x] |
+| C26 | `apply_bit_operations` | **all 256** `ConfigFlags` byte-0 patterns × randomized values (other bits must be ignored) | [x] |
+| C27 | `apply_bit_operations` | dirty padding bytes 1–3 = `0xFF` | [x] |
 
-### `envy(int, int, int, int)` — public header entry point
+### `envy` (top-level composed pipeline)
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|-------------------------------------------|---|
-| 37 | `envy` | **all 8** verbose × debug × optimize env combinations × randomized `param1..param4`, defaults for offset/multiplier — return value **and** stdout compared | [x] |
-| 38 | `envy` | `param3 == 0` (skip multiplier term) × the 8 env combinations | [x] |
-| 39 | `envy` | `param4 == 0` (skip shift term) × the 8 env combinations | [x] |
-| 40 | `envy` | `param3 == 0 && param4 == 0` × the 8 env combinations | [x] |
-| 41 | `envy` | `param4 < 0` (arithmetic shift) and `param4 ∈ {1,2,3,-1,-2,-3}` (shift-to-zero boundary) | [x] |
-| 42 | `envy` | inputs forcing `result < 0` ⇒ restore branch, with `param1 > 0`, `param1 == 0`, `param1 < 0` | [x] |
-| 43 | `envy` | `PROG_BASE_OFFSET` = randomized valid decimal (incl. negative, `INT_MIN`, `INT_MAX`) × the 8 env combinations | [x] |
-| 44 | `envy` | `PROG_MULTIPLIER` = randomized valid decimal (incl. `0`, negative, `INT_MIN`, `INT_MAX`) × the 8 env combinations | [x] |
-| 45 | `envy` | both offset **and** multiplier customized, randomized together | [x] |
-| 46 | `envy` | `PROG_BASE_OFFSET` **rejected** by comma ⇒ default 64 **+ stderr warning** (interleaving with stdout verbose lines checked) | [x] |
-| 47 | `envy` | `PROG_MULTIPLIER` **rejected** by semicolon ⇒ default 10 + stderr warning | [x] |
-| 48 | `envy` | both rejected, one by comma and one by semicolon (both warnings, correct `%s` names, correct order) | [x] |
-| 49 | `envy` | offset/multiplier non-numeric ⇒ `atoi` = 0 (multiplier 0 ⇒ `param3` term vanishes even though `param3 ≠ 0`) | [x] |
-| 50 | `envy` | offset/multiplier overflowing (`"99999999999999"`) | [x] |
-| 51 | `envy` | extreme params: every 4-tuple from `{INT_MIN, -1, 0, 1, INT_MAX, 0x3FFFFFFF, 0x40000000}` (7⁴ = 2401 tuples) under the default env | [x] |
-| 52 | `envy` | same extreme tuples with `verbose=1` (shift path) and with `optimize=1` (addition path) | [x] |
-| 53 | `envy` | pipeline composition check: `envy` result vs. manual `init_config_from_env` → `perform_operation` → `apply_bit_operations` chain on **both** libraries | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C28 | `envy` | **no** env vars set (all defaults: verbose=0, debug=0, optimize=0, log_level=3, base=64, mult=10); randomized 4-tuples | [x] |
+| C29 | `envy` | `PROG_OPTIMIZE` set → `optimize=1` add-path; randomized 4-tuples | [x] |
+| C30 | `envy` | `PROG_VERBOSE=1` → 6 extra `printf` lines **and** the `<<1` in `apply_bit_operations`; randomized 4-tuples (stdout compared) | [x] |
+| C31 | `envy` | `PROG_DEBUG=1` → 4 extra `printf` lines incl. the `%o` octal and second-colon message (stdout compared) | [x] |
+| C32 | `envy` | `PROG_VERBOSE=1` **and** `PROG_DEBUG=1` **and** `PROG_OPTIMIZE=1` (all output paths + add-path at once) | [x] |
+| C33 | `envy` | `PROG_VERBOSE`/`PROG_DEBUG` set but **without** `'1'` (flags stay 0 while vars are non-NULL) | [x] |
+| C34 | `envy` | `PROG_BASE_OFFSET` set to randomized decimals (overrides 0100) | [x] |
+| C35 | `envy` | `PROG_MULTIPLIER` set to randomized decimals (overrides 012; feeds `param3 * multiplier`) | [x] |
+| C36 | `envy` | `PROG_BASE_OFFSET` **and** `PROG_MULTIPLIER` both set, randomized | [x] |
+| C37 | `envy` | `PROG_BASE_OFFSET` contains `','` → stderr warning + default 64 (stderr compared) | [x] |
+| C38 | `envy` | `PROG_MULTIPLIER` contains `';'` → stderr warning + default 10 (stderr compared) | [x] |
+| C39 | `envy` | **both** offset and multiplier rejected → two stderr warnings, both defaults | [x] |
+| C40 | `envy` | `PROG_BASE_OFFSET=""` / `PROG_MULTIPLIER=""` → 0 / 0 (not defaults) | [x] |
+| C41 | `envy` | `param3 == 0` (skip multiplier term) × `param4 == 0` (skip shift term), all 4 combinations, randomized others | [x] |
+| C42 | `envy` | `param4 < 0` → arithmetic right shift; randomized negative `param4` | [x] |
+| C43 | `envy` | params forced so the final `result < 0` → rollback returns `param1`; verbose on and off (extra "Restored state" line) | [x] |
+| C44 | `envy` | params forced so `result == 0` and `result == -1` exactly (rollback boundary) | [x] |
+| C45 | `envy` | all four params over the boundary set `{INT_MIN, INT_MIN+1, -2, -1, 0, 1, 2, INT_MAX-1, INT_MAX}` (overflow in `*`, `+`, `<<`) | [x] |
+| C46 | `envy` | `PROG_BASE_OFFSET`/`PROG_MULTIPLIER` = `INT_MIN`/`INT_MAX` (drives wrapping in `result += base_offset` and `param3*multiplier`) | [x] |
+| C47 | `envy` | **full randomized cross-product sweep**: verbose(3) × debug(3) × optimize(3) × base_offset(5) × multiplier(5) = 675 env configurations × randomized params, comparing return + stdout + stderr | [x] |
+
+### Cross-cutting
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C48 | `init_config_from_env` → `perform_operation` → `apply_bit_operations` | hand-composed pipeline mirroring `envy`'s call order, driven through the **low-level** exports only, under the 27 env combos × randomized params (catches bugs invisible to per-function tests) | [x] |
+| C49 | all five | symbol-parity + `.so` load smoke check (`nm -D` diff must be empty) | [x] |
+| C50 | *n/a* | no binary/driver executable is produced by `c_src/CMakeLists.txt` (`add_library(... SHARED ...)` only) and `translation/Cargo.toml` declares only a `cdylib`, so the "compare binary stdout" gate is **not applicable**; stdout is instead compared per-call via fd redirection | [x] |
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section** — therefore the
-only build configuration is the default one, and
-`cargo test --no-default-features` is equivalent to `cargo test`. Both are run
-by `run_all.sh`, together with the release-profile build (`panic = "abort"`),
-so every code path is verified under every existing configuration.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+configuration is the default one. `cargo test --no-default-features` is
+nevertheless run in `run_all.sh` to prove the crate builds and passes with no
+features enabled (the feature-combination gate is satisfied by the single
+existing combination).
 
-## How the rows were verified
+## Result
 
-`./run_all.sh` (in this directory) builds the C `.so` and the Rust `cdylib`,
-diffs `nm -D`, and runs the whole suite for every feature combination × both
-Rust build profiles:
+All 50 rows pass. See `tests/configs.rs` (50 tests, 50 passed) and
+`VERIFICATION.md` for the full report, including the two harness bugs and the
+one real translation bug that this phase and Phase C uncovered.
 
-| suite | file | rows covered |
-|-------|------|--------------|
-| Phase B, low-level entry points | `tests/phase_b_low_level.rs` | 1–36 (+ hostile env-name variants of 10/11) |
-| Phase B, `envy` + composed pipeline | `tests/phase_b_envy.rs` | 37–53 |
-| Phase C, error surface | `tests/phase_c_errors.rs` | every `ERRORS.md` row |
-| Phase D, symbol parity | `tests/symbols.rs` | `SYMBOLS.md` |
-
-Every call is compared on three axes at once: the `int` return value, the exact
-bytes written to `stdout` and to `stderr`, and (where a pointer is passed) the
-resulting memory. A `sanity_00_capture_observes_library_output` test asserts the
-capture machinery really sees library output, so no row can pass vacuously.
-
-**Result: 84 tests, all passing, in all 4 build configurations** — see the
-`ALL CONFIGURATIONS PASSED` summary from `run_all.sh`.
+Note on C50: the "compare the driver binary's stdout" gate is genuinely N/A
+(neither build produces an executable), so stdout is compared **per call**
+instead — fd 1 and fd 2 are redirected around every single differential
+invocation, which is strictly finer-grained than comparing one binary's output.

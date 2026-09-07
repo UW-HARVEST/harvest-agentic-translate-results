@@ -1,94 +1,114 @@
-# SYMBOLS.md — Phase A: public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-## Method
+## Source of truth
+
+The C library is a single translation unit (`c_src/src/lib.c`) with a single
+public declaration in `c_src/include/lib.h`:
+
+```c
+int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src);
+```
+
+There are no namespacing/renaming preprocessor macros, no `#ifdef` feature
+gates, no additional `.c` files in `CMakeLists.txt`, and no macro-generated
+symbol families. Therefore the expected dynamic-symbol surface is exactly one
+symbol.
+
+## `nm -D --defined-only` on the C `.so`
+
+Built via:
 
 ```
 cd c_src && mkdir -p build && cd build \
   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-
-nm -D --defined-only c_src/build/libharvest-work-4UINGg.so
-nm -D --defined-only translation/target/release/libwcscat_lib.so
 ```
 
-## C translation units
-
-The whole C library is ONE translation unit; nothing was skipped.
-
-| C file | public symbols it defines |
-|--------|---------------------------|
-| `c_src/src/lib.c` | `wcscat` |
-| `c_src/include/lib.h` | (declaration only, no definitions, no renaming macros) |
-
-`grep -n '^[a-zA-Z].*(' c_src/src/lib.c` yields exactly one function definition,
-and the header declares exactly that one prototype. There are no
-`#define`-generated symbol names, no `static` helpers promoted to externals, and
-no additional `.c` files listed in `add_library(...)` in `CMakeLists.txt`.
-
-## Symbol table (every `nm -D` global from the C `.so`)
-
-| # | symbol | C `.so` | Rust `.so` | kind | notes |
-|---|--------|---------|------------|------|-------|
-| 1 | `wcscat` | `T` (0x10f9) | `T` (0x11c30) | text/global func | `int wcscat(wchar_t*, size_t, const wchar_t*)`; exported from Rust via `#[unsafe(no_mangle)] pub unsafe extern "C" fn wcscat` |
-
-### Symbol diff
+Artifact: `c_src/build/libharvest-work-hoSYXc.so` (the CMake project name is
+derived from the parent directory name, so the `.so` file name is
+environment-dependent; the tests locate it with a glob).
 
 ```
-$ diff <(nm -D --defined-only c_src/build/libharvest-work-4UINGg.so   | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/libwcscat_lib.so | awk '{print $3}' | sort)
-(empty)
+00000000000010f9 T wcscat
 ```
 
-**Missing from Rust `.so`: 0.**
-**Extra non-libc/non-runtime symbols in Rust `.so`: 0.**
+## `nm -D --defined-only` on the Rust `.so`
 
-### Undefined (imported) symbols
-
-| `.so` | undefined non-libc symbols |
-|-------|----------------------------|
-| C | none (leaf translation unit; no libc calls at all) |
-| Rust | none (only the usual Rust/libc runtime imports pulled in by `cdylib`, none of which are library API) |
-
-## Name-collision note (important for the harness)
-
-`wcscat` is *also* a glibc symbol (`wchar.h`, 2-argument `wchar_t *wcscat(wchar_t
-*, const wchar_t *)`). The library deliberately interposes that name with a
-different 3-argument, `int`-returning signature.
-
-Both `.so`s are therefore loaded with `RTLD_LOCAL` (libloading's default) and the
-symbol is looked up **per handle** with `dlsym(handle, "wcscat")`, which searches
-the handle's own object first. This was verified with `dladdr()`:
+Built via `cd translation && cargo build --release`.
+Artifact: `translation/target/release/libwcscat_lib.so`.
 
 ```
-resolved from: c_src/build/libharvest-work-4UINGg.so
+0000000000011690 T wcscat
 ```
 
-so the differential tests really do compare the library's `wcscat` against the
-Rust `wcscat`, never against glibc's.
+## Parity table
 
-## Platform ABI facts pinned by the tests
+| # | C symbol | type | present in Rust `.so`? | notes |
+|---|----------|------|------------------------|-------|
+| 1 | `wcscat` | `T` (defined text) | YES — `T wcscat` | `#[no_mangle] pub unsafe extern "C" fn wcscat` in `src/lib.rs` |
 
-| item | value on this target (`x86_64-unknown-linux-gnu`, gcc 11.5) | Rust side |
-|------|--------------------------------------------------------------|-----------|
-| `sizeof(wchar_t)` | 4 | `pub type wchar_t = i32` (`cfg(not(windows))`) |
-| `wchar_t` signedness | signed (`(wchar_t)-1 < 0` is true) | `i32` |
-| `size_t` | 8 bytes, unsigned | `usize` |
-| return type | `int`, 4 bytes | `core::ffi::c_int` |
+### Symbols exported by Rust but not by C
 
-## Cargo feature surface
+None. The Rust `cdylib` exports no extra public symbols (no `rust_eh_personality`,
+no `__rust_*` allocator shims appear in `nm -D --defined-only`), so the surface
+is an exact one-to-one match.
 
-`translation/Cargo.toml` has **no `[features]` section**, so the only feature
-combination that exists is the default (empty) one:
+### Undefined / imported non-libc symbols in the Rust `.so`
 
-| combo | command |
-|-------|---------|
-| default | `cargo test` |
-| no-default-features | `cargo test --no-default-features` (identical: nothing is gated) |
-| all-features | `cargo test --all-features` (identical) |
+`nm -D --undefined-only` on the Rust `.so` lists only glibc and libgcc-unwind
+imports pulled in by the Rust standard library:
 
-`grep -rn 'feature *=' translation/src/` → no hits, i.e. no `#[cfg(feature …)]`
-in the source, confirming a single code path.
+- loader / TM stubs (weak): `_ITM_deregisterTMCloneTable`,
+  `_ITM_registerTMCloneTable`, `__gmon_start__`, `__cxa_finalize`,
+  `__cxa_thread_atexit_impl`, `gettid`, `statx`
+- libgcc unwinder: `_Unwind_Backtrace`, `_Unwind_Resume`, `_Unwind_Get*`,
+  `_Unwind_Set*`
+- glibc: `__errno_location`, `__tls_get_addr`, `abort`, `bcmp`, `calloc`,
+  `close`, `dl_iterate_phdr`, `free`, `fstat64`, `getcwd`, `getenv`, `lseek64`,
+  `malloc`, `memcpy`, `memmove`, `memset`, `mmap64`, `munmap`, `open64`,
+  `posix_memalign`, `pthread_key_{create,delete}`, `pthread_setspecific`,
+  `read`, `readlink`, `realloc`, `realpath`, `stat64`, `strlen`, `syscall`,
+  `write`, `writev`
 
-The only `cfg` in the crate is `cfg(windows)` / `cfg(not(windows))` selecting the
-`wchar_t` width, which is target-driven, not feature-driven, and matches the C
-`stddef.h` definition on this target.
+Every entry is libc / compiler-runtime. There are **0 missing or undefined
+non-libc symbols** — in particular nothing from the translated library itself is
+left undefined.
+
+(The C `.so` imports only the four weak loader stubs, because it does not link
+the Rust standard library. This difference is inherent to the language runtime
+and does not affect the exported API surface.)
+
+## Verdict
+
+- Missing symbols: **0**
+- Stubbed / `unimplemented!()` symbols: **0** (the single symbol is a full
+  translation of the C body, not a stub)
+- Untranslated C modules: **0** (`src/lib.c` is the only C source)
+
+Symbol parity: **PASS**.
+
+## `wchar_t` ABI note
+
+The C build target is Linux/x86-64 glibc, where `sizeof(wchar_t) == 4` and
+`wchar_t` is **signed** (verified by compiling a probe: prints `4 1`). The Rust
+translation maps `wchar_t` to `i32` on non-Windows, which matches. This matters
+for the comparison `*ptr != 0` and for values with the high bit set, which the
+differential tests exercise explicitly.
+
+## Automated re-check
+
+`./symbol_parity.sh` recomputes the diff from `nm -D` on both objects and fails
+if anything in C is missing from Rust. Latest run:
+
+```
+=== C defined dynamic symbols (1) ===   wcscat
+=== Rust defined dynamic symbols (1) === wcscat
+=== MISSING from Rust -- MUST be empty ===   (empty)
+RESULT: PASS -- 0 missing symbols
+```
+
+Because `wcscat` is *also* a glibc symbol with a different (2-argument)
+signature, `tests/phase_d_provenance.rs` additionally proves that neither
+`dlsym` resolved to glibc's definition: the two addresses differ, each lies
+inside the expected object per `/proc/self/maps`, and both return exactly `22`
+for `numElem == 0` (which glibc's `wcscat` cannot do). Without this check the
+entire differential suite could have been silently vacuous.

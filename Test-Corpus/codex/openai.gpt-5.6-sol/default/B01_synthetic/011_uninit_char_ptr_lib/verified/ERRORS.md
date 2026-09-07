@@ -1,21 +1,19 @@
 # Error Surface
 
-Mechanical source scan:
-
-```text
-rg -n -i 'RETURN_ERROR|return[[:space:]]+(-1|NULL)|assert[[:space:]]*\(|if[[:space:]]*\(|switch[[:space:]]*\(|case[[:space:]]+|typedef[[:space:]]+enum|enum|min|max|NULL' c_src/include c_src/src -g '*.[ch]'
-```
-
-The scan finds one explicit null check and no error-return statements, asserts,
-enums, range checks, or min/max constants.
+Mechanically derived from all checks and rejection-like constructs in
+`../c_src/include/driver.h` and `../c_src/src/driver.c`. The source contains no
+error-return macros, error enums, assertions, range checks, length checks, or
+min/max constants. It has one explicit null-pointer check.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | verified |
 |---|----------|----------------------------------------------|-------------------|----------|
-| 1 | `printLine` | `line == NULL` | Return `void` without writing any output | [x] |
+| 1 | `printLine` | `line == NULL` | Return `void` without calling `printf`; produce zero stdout bytes. | [x] |
 
-Generic FFI boundaries not represented by C parameters:
+Generic FFI-boundary audit:
 
-- There are no length parameters, so zero or oversized lengths do not apply.
-- There are no C enum parameters, so out-of-range enum values do not apply.
-- `driver` accepts the full range of C `int`; zero and nonzero are both valid.
-- `bad` and `good` take no pointers or scalar inputs.
+- `driver(int)` has no invalid integer or enum values: C treats zero as false
+  and every nonzero `int` as true.
+- No public function accepts a length, count, or enum.
+- `bad()` has no caller-supplied input. Its uninitialized local pointer is a C
+  execution behavior, not an input rejection, and is covered on the valid
+  entry-point surface in `CONFIGS.md`.

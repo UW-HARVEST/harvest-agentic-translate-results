@@ -1,17 +1,20 @@
 # Dynamic Symbol Surface
 
-Reference library:
-`../c_src/build/libharvest-work-6nhExu.so`
+Source library:
+`../c_src/build/libharvest-work-VZy3X1.so`
 
-Rust library:
-`target/release/libencode_quant_lib.so`
+The public symbol list was obtained mechanically with:
 
-The table is derived from `nm -D --defined-only` on the reference shared
-library. Toolchain-generated weak undefined imports are not library exports.
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-VZy3X1.so
+```
 
-| C symbol | Type | Rust symbol | Status |
-|----------|------|-------------|--------|
-| `encode_quant` | `T` | `encode_quant` (`T`) | present |
+| C symbol | C type | Rust symbol | Status |
+|----------|--------|-------------|--------|
+| `encode_quant` | `T` | `encode_quant` | present |
 
-Missing C exports in Rust: **0**
+The C shared library has one defined dynamic symbol. There are no missing
+Rust exports.
 
+- [x] Final defined-symbol diff is empty.
+- [x] The Rust library has no undefined reference to a C-library-owned symbol.

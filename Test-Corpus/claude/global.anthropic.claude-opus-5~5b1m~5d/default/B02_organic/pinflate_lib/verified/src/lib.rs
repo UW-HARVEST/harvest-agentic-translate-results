@@ -29,10 +29,6 @@ extern "C" {
     ) -> !;
 }
 
-/// The C `__FILE__` for `c_src/src/lib.c` as CMake passes it to the compiler
-/// (an absolute path); computed by `build.rs`.
-const CP_ASSERT_FILE: &str = concat!(env!("CP_ASSERT_FILE"), "\0");
-
 /// Reproduces `assert(expr)` from `<assert.h>` (NDEBUG *not* defined).
 macro_rules! cp_assert {
     ($cond:expr, $text:expr, $func:expr, $line:expr) => {
@@ -40,7 +36,7 @@ macro_rules! cp_assert {
             unsafe {
                 __assert_fail(
                     concat!($text, "\0").as_ptr() as *const c_char,
-                    CP_ASSERT_FILE.as_ptr() as *const c_char,
+                    concat!(env!("CP_ASSERT_FILE"), "\0").as_ptr() as *const c_char,
                     $line as c_uint,
                     concat!($func, "\0").as_ptr() as *const c_char,
                 )
@@ -274,14 +270,14 @@ unsafe fn cp_would_overflow(s: *mut cp_state_t, num_bits: c_int) -> c_int {
 #[inline]
 unsafe fn cp_ptr(s: *mut cp_state_t) -> *mut c_char {
     cp_assert!(((*s).bits_left & 7) == 0, "!(s->bits_left & 7)", "cp_ptr", 95);
-    ((*s).words.wrapping_offset((*s).word_index as isize) as *mut c_char)
-        .wrapping_offset(-(((*s).count / 8) as isize))
+    ((*s).words.offset((*s).word_index as isize) as *mut c_char)
+        .offset(-(((*s).count / 8) as isize))
 }
 
 unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
     if (*s).count < num_bits_to_read {
         if (*s).word_index < (*s).word_count {
-            let word: u32 = *(*s).words.wrapping_offset((*s).word_index as isize);
+            let word: u32 = *(*s).words.offset((*s).word_index as isize);
             (*s).word_index = (*s).word_index.wrapping_add(1);
             (*s).bits |= (word as u64).wrapping_shl((*s).count as u32);
             (*s).count = (*s).count.wrapping_add(32);
@@ -422,7 +418,7 @@ unsafe fn cp_stored(s: *mut cp_state_t) -> c_int {
     }
     p = cp_ptr(s);
     ptr::copy_nonoverlapping(p as *const u8, (*s).out as *mut u8, LEN as usize);
-    (*s).out = (*s).out.wrapping_offset(LEN as isize);
+    (*s).out = (*s).out.offset(LEN as isize);
     1
 }
 
@@ -444,13 +440,13 @@ unsafe fn cp_decode(s: *mut cp_state_t, tree: *mut u32, hi_in: c_int) -> c_int {
     let mut hi: c_int = hi_in;
     while lo < hi {
         let guess: c_int = (lo.wrapping_add(hi)) >> 1;
-        if search < *tree.wrapping_offset(guess as isize) {
+        if search < *tree.offset(guess as isize) {
             hi = guess;
         } else {
             lo = guess + 1;
         }
     }
-    let key: u32 = *tree.wrapping_offset((lo - 1) as isize);
+    let key: u32 = *tree.offset((lo - 1) as isize);
     let len: u32 = 32u32.wrapping_sub(key & 0xF);
     cp_assert!(
         search.wrapping_shr(len) == key.wrapping_shr(len),
@@ -627,7 +623,7 @@ unsafe fn cp_dynamic(s: *mut cp_state_t) -> c_int {
     (*s).ndst = cp_build(
         ptr::null_mut(),
         (*s).dst.as_mut_ptr(),
-        fr.lens().wrapping_offset(nlit_final as isize),
+        fr.lens().offset(nlit_final as isize),
         ndst_final,
     ) as u32;
     1
@@ -637,33 +633,33 @@ unsafe fn cp_block(s: *mut cp_state_t) -> c_int {
     loop {
         let mut symbol: c_int = cp_decode(s, (*s).lit.as_mut_ptr(), (*s).nlit as c_int);
         if symbol < 256 {
-            if !((*s).out.wrapping_offset(1) <= (*s).out_end) {
+            if !((*s).out.offset(1) <= (*s).out_end) {
                 set_error_reason(E_OUT_SYMBOL);
                 return 0;
             }
             *(*s).out = symbol as c_char;
-            (*s).out = (*s).out.wrapping_offset(1);
+            (*s).out = (*s).out.offset(1);
         } else if symbol > 256 {
             symbol -= 257;
-            let length: c_int = cp_read_bits(s, *g_len_extra_bits().wrapping_offset(symbol as isize) as c_int)
-                .wrapping_add(*g_len_base().wrapping_offset(symbol as isize)) as c_int;
+            let length: c_int = cp_read_bits(s, *g_len_extra_bits().offset(symbol as isize) as c_int)
+                .wrapping_add(*g_len_base().offset(symbol as isize)) as c_int;
             let distance_symbol: c_int =
                 cp_decode(s, (*s).dst.as_mut_ptr(), (*s).ndst as c_int);
             let backwards_distance: c_int =
-                cp_read_bits(s, *g_dist_extra_bits().wrapping_offset(distance_symbol as isize) as c_int)
-                    .wrapping_add(*g_dist_base().wrapping_offset(distance_symbol as isize))
+                cp_read_bits(s, *g_dist_extra_bits().offset(distance_symbol as isize) as c_int)
+                    .wrapping_add(*g_dist_base().offset(distance_symbol as isize))
                     as c_int;
-            if !((*s).out.wrapping_offset(-(backwards_distance as isize)) >= (*s).begin) {
+            if !((*s).out.offset(-(backwards_distance as isize)) >= (*s).begin) {
                 set_error_reason(E_BACK_DIST);
                 return 0;
             }
-            if !((*s).out.wrapping_offset(length as isize) <= (*s).out_end) {
+            if !((*s).out.offset(length as isize) <= (*s).out_end) {
                 set_error_reason(E_OUT_STRING);
                 return 0;
             }
-            let src: *mut c_char = (*s).out.wrapping_offset(-(backwards_distance as isize));
+            let src: *mut c_char = (*s).out.offset(-(backwards_distance as isize));
             let dst: *mut c_char = (*s).out;
-            (*s).out = (*s).out.wrapping_offset(length as isize);
+            (*s).out = (*s).out.offset(length as isize);
             match backwards_distance {
                 1 => {
                     ptr::write_bytes(dst as *mut u8, *src as u8, length as usize);
@@ -705,12 +701,12 @@ pub unsafe extern "C" fn pinflate(
     (*s).bits_left = in_bytes.wrapping_mul(8);
     let first_bytes: c_int =
         ((((input as usize).wrapping_add(3)) & !3usize).wrapping_sub(input as usize)) as c_int;
-    (*s).words = (input as *mut c_char).wrapping_offset(first_bytes as isize) as *mut u32;
+    (*s).words = (input as *mut c_char).offset(first_bytes as isize) as *mut u32;
     (*s).word_count = (in_bytes.wrapping_sub(first_bytes)) / 4;
     let last_bytes: c_int = (in_bytes.wrapping_sub(first_bytes)) & 3;
     let mut i: c_int = 0;
     while i < first_bytes {
-        (*s).bits |= ((*(input as *const u8).wrapping_offset(i as isize)) as u64)
+        (*s).bits |= ((*(input as *const u8).offset(i as isize)) as u64)
             .wrapping_shl((i.wrapping_mul(8)) as u32);
         i += 1;
     }
@@ -719,14 +715,14 @@ pub unsafe extern "C" fn pinflate(
     let mut i: c_int = 0;
     while i < last_bytes {
         (*s).final_word |= ((*(input as *const u8)
-            .wrapping_offset((in_bytes.wrapping_sub(last_bytes).wrapping_add(i)) as isize))
+            .offset((in_bytes.wrapping_sub(last_bytes).wrapping_add(i)) as isize))
             as u32)
             .wrapping_shl((i.wrapping_mul(8)) as u32);
         i += 1;
     }
     (*s).count = first_bytes.wrapping_mul(8);
     (*s).out = out as *mut c_char;
-    (*s).out_end = (*s).out.wrapping_offset(out_bytes as isize);
+    (*s).out_end = (*s).out.offset(out_bytes as isize);
     (*s).begin = out as *mut c_char;
     let mut count: c_int = 0;
     let mut bfinal: c_int;

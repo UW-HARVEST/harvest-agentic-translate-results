@@ -1,127 +1,113 @@
-# VERIFICATION.md — result of the A→D differential verification
+# VERIFICATION.md — completion gate
 
-Library: `c_src/src/driver.c` (MIT Lincoln Laboratory CWE-369 divide-by-zero
-test case) vs. the Rust translation in `src/lib.rs`.
+Reproduce everything with `./verify.sh` (phases A–D) and `./mutate.sh`
+(negative control).
 
 ## Completion gate
 
-| gate | status |
-|------|--------|
-| `SYMBOLS.md`: `nm -D` shows 0 missing/undefined non-libc symbols in Rust | **PASS** — symbol diff is empty (5/5) |
-| Phase B: every row in `CONFIGS.md` passes across randomized inputs | **PASS** — 28/28 rows, 28 tests |
-| Phase C: every row in `ERRORS.md` has a passing error-path differential test | **PASS** — 13/13 rows, 16 tests |
-| All of the above under every feature combination | **PASS** — see matrix below |
+- [x] **`SYMBOLS.md`**: `nm -D` shows **0 missing** and 0 unresolved non-libc
+      symbols in the Rust `.so`. The C `.so` exports 5 symbols; the Rust `.so`
+      exports the same 5, with identical names. `ldd -r` reports 0 unresolved
+      symbols for both the debug and the release artifact. No stubs were used;
+      the whole of `c_src` (2 files) was already translated.
+- [x] **Phase B**: all **27 rows** of `CONFIGS.md` pass, across randomized
+      inputs (fixed seeds; ~2000 random `f32` bit patterns for `bad`, ~2000 for
+      `driver` pairs, plus exhaustive single-byte and per-exponent sweeps).
+- [x] **Binary**: not applicable — `c_src/CMakeLists.txt` has no
+      `add_executable` and `Cargo.toml` has no `[[bin]]`. Equivalent end-to-end
+      coverage is `CONFIGS.md` rows 26–27, which drive the top-level `driver`
+      entry point and mixed multi-call sessions through the `.so`.
+- [x] **Phase C**: all **28 rows** of `ERRORS.md` have a passing differential
+      test that pins the exact expected bytes (not merely "both failed").
+- [x] **Every feature combination**: `Cargo.toml` declares no `[features]`
+      table, so the only configurations are the default and
+      `--no-default-features`. Both were run, against **both** the debug and the
+      release (`panic = "abort"`, opt-level 3) `.so` — 4 combinations total,
+      60/60 tests green in each.
 
-48 tests total: 28 (Phase B) + 16 (Phase C) + 4 (Phase D).
+## Result
 
-## Feature / profile matrix
+**No divergences were found. `src/lib.rs` required no changes** — its md5 is
+identical before and after verification (`7b90d765989aa12f0ad5994b6b63ddb6`).
+The translation is byte-exact against the C on every input exercised.
 
-`Cargo.toml` declares **no `[features]`**, and `src/lib.rs` contains no
-`#[cfg]`/`feature =` gates, so there is exactly one feature configuration.
-Verified anyway across all flag spellings and both profiles:
+The pre-existing translation was already correct on the three points most
+likely to diverge, and the tests confirm each:
 
-| invocation | result |
-|------------|--------|
-| `cargo test` (debug, default) | 48 passed, 0 failed |
-| `cargo test --no-default-features` | 48 passed, 0 failed |
-| `cargo test --all-features` | 48 passed, 0 failed |
-| `cargo test --release` | 48 passed, 0 failed |
-| `cargo test --release --no-default-features` | 48 passed, 0 failed |
-| `cargo test --release --all-features` | 48 passed, 0 failed |
+1. **`(int)` conversion of an out-of-range / NaN double.** The C relies on
+   x86-64 `cvttsd2si`, which yields the "integer indefinite" value `INT_MIN`.
+   Rust's `as` **saturates** instead, so a naive translation would print
+   `2147483647` where C prints `-2147483648`. `c_double_to_int` emulates the
+   hardware; mutant M1 proves the tests catch the saturating version.
+2. **Division precision.** The C divides the `double` literal `100.0` by the
+   widened `float`, so the quotient carries f64 precision. Rounding it to f32
+   changes the truncated integer for ~2.7% of all `f32` inputs (mutant M8).
+3. **NaN and the `fabs(data) > 0.000001` guard.** Because every `>` comparison
+   against NaN is false, `good(NaN)` takes the *else* branch and prints the
+   divide-by-zero message rather than dividing. Covered by `ERRORS.md` row 4.
 
-## Behaviours confirmed identical to the C
+## Test inventory
 
-- `printLine(NULL)` is a silent no-op; any other pointer prints `<bytes>\n`
-  verbatim, including non-UTF-8 bytes and `printf` conversion specifiers (the
-  argument is never used as a format string).
-- `printIntLine` matches `%d` across the entire 32-bit domain.
-- `bad(data)` computes `(int)(100.0 / data)` in **double** precision (the `100.0`
-  literal is a `double`, so the `float` operand is promoted) and reproduces the
-  x86-64 `cvttsd2si` "integer indefinite" result `-2147483648` for NaN and for
-  every quotient outside `int` range — including `data == ±0.0` (the CWE-369
-  path) and tiny/subnormal `data`. `data == ±inf` yields `0`, not an error.
-- `good(data)` always prints `50` from `goodG2B`, then takes `goodB2G`'s
-  threshold branch on `fabs((double)data) > 0.000001`.
-- `driver` emits the exact 6-line transcript in the exact order.
+| file | tests | scope |
+|------|-------|-------|
+| `tests/common/mod.rs` | — | harness: dual `dlopen`, fd-1 stdout capture, PRNG, staleness guard |
+| `tests/smoke.rs` | 4 | harness self-check + hand-verified `driver(2.0, 4.0)` output |
+| `tests/phase_b_configs.rs` | 27 | one test per `CONFIGS.md` row |
+| `tests/phase_c_errors.rs` | 29 | one test per `ERRORS.md` row + a harness sanity check |
+| **total** | **60** | |
 
-### Subtlety worth recording
+Both libraries are loaded via `libloading` and every call crosses the FFI
+boundary through an exported symbol, so the `#[no_mangle] extern "C"` wrappers
+are themselves under test. The Rust crate is never linked or called directly.
 
-`goodB2G` compares against the **double** literal `0.000001`, while `data` is a
-`float`. The `float` nearest `1e-6` is `9.99999997475e-07`, which is *below*
-`1e-6`, so `good(1e-6f)` takes the **rejection** branch; one ULP up crosses the
-threshold and prints `99999988`. Both implementations agree (`ERRORS.md` E12,
-`CONFIGS.md` C19).
+## Two methodology traps that were found and closed
 
-## Negative control: mutation testing
+These are worth recording because each one would have produced a **false pass**:
 
-Passing tests prove nothing unless the harness can actually *detect* divergence,
-so 20 deliberate bugs were injected into `src/lib.rs` and the suite re-run.
+1. **`cargo test` does not rebuild a `cdylib`.** The first mutation run reported
+   60/60 green for six deliberately broken versions of `lib.rs`, because the
+   tests were loading a stale `target/release/libdriver.so`. Closed two ways:
+   `assert_fresh()` in the harness refuses to run when a `.so` is older than its
+   source (verified: touching `src/lib.rs` without rebuilding now aborts with
+   `STALE ARTIFACT`), and `verify.sh`/`mutate.sh` always `cargo build` first.
+2. **libtest writes its own progress text to fd 1.** With more than one test
+   thread, `test foo ... ok` landed inside the capture window and corrupted the
+   comparison. Closed by `.cargo/config.toml` setting `RUST_TEST_THREADS=1`,
+   flushing Rust's `std::io::stdout` *and* libc's stdio before redirecting, and
+   an assertion that fails loudly if the thread count is overridden.
 
-**16 of 16 non-equivalent mutants were caught. 0 real bugs escaped.**
+## Negative control (`./mutate.sh`)
 
-| mutant | verdict |
-|--------|---------|
-| M1 saturating cast instead of `INT_MIN` indefinite | caught (15 tests) |
-| M2 drop the `NaN → INT_MIN` case | caught (7) |
-| M3 `round` instead of `trunc` | caught (16) |
-| M4 upper overflow bound off-by-one (`>=` → `>`) | caught (4) |
-| M6 drop the `NULL` check in `printLine` | caught (2) |
-| M7 invert the `NULL` check | caught (26) |
-| M8 `printLine` drops the newline | caught (25) |
-| M9 `printIntLine` uses `%u` instead of `%d` | caught (26) |
-| M10 one-character typo in the divide-by-zero message | caught (13) |
-| M11 `goodG2B` constant `2.0` → `4.0` | caught (18) |
-| M12 swap `goodG2B` / `goodB2G` order | caught (15) |
-| M13 `driver` omits the `Finished good()` line | caught (9) |
-| M14 `driver` swaps the `good()` / `bad()` arguments | caught (8) |
-| M15 `driver` calls `bad` before `good` | caught (9) |
-| M16 drop `fabs` in the threshold test | caught (10) |
-| M19 remove `#[no_mangle]` from `bad` | caught (Phase D, 2) |
-| M20 rename the exported `good` symbol | rejected: does not compile |
-| M5 lower bound `<` → `<=` | escaped — **proven equivalent** |
-| M17 `f32` threshold instead of `f64` | escaped — **proven equivalent** |
-| M18 threshold `>` → `>=` | escaped — **proven equivalent** |
+Green tests only mean something if they go red on a wrong translation. Each
+mutant is injected into `src/lib.rs`, the cdylib is rebuilt, and the suite is
+re-run. **10 / 10 caught:**
 
-The three escapes are *equivalent mutants*, not coverage gaps. Each was proven
-indistinguishable by exhaustive enumeration of **all 2^32 `f32` bit patterns**
-(0 differing inputs):
+| mutant | injected defect | result |
+|--------|-----------------|--------|
+| M1 | saturating cast instead of `INT_MIN` indefinite | CAUGHT (8 tests) |
+| M2 | `goodB2G` threshold `1e-6` → `1e-7` | CAUGHT (7) |
+| M3 | `printLine` passes `line` as the *format string* | CAUGHT (15) |
+| M4 | NaN converts to `0` instead of `INT_MIN` | CAUGHT (6) |
+| M5 | `floor` instead of truncate-toward-zero | CAUGHT (12) |
+| M6 | `goodG2B` constant `2.0` → `4.0` | CAUGHT (10) |
+| M7 | `driver` label typo | CAUGHT (6) |
+| M8 | quotient rounded to f32 precision | CAUGHT (9) |
+| M9 | `printLine` NULL guard inverted | CAUGHT (7) |
+| M10 | `printIntLine` uses `%u` instead of `%d` | CAUGHT (16) |
 
-- **M5**: when `truncated == -2147483648.0` exactly, the original falls through
-  to `as c_int`, which yields `INT_MIN` — the same value the mutant returns early.
-- **M17 / M18**: the `f32` nearest `1e-6` is `9.99999997475e-07` and the next
-  `f32` up is `1.00000003e-06`. No `f32` lands in `[9.99999997475e-07, 1e-6]`,
-  so neither the comparison precision nor `>` vs `>=` is observable.
+One mutant is expected to survive, and does:
 
-## Two harness defects the negative control exposed
+| | change | why surviving is correct |
+|---|--------|--------------------------|
+| E1 | `>` → `>=` at the `1e-6` threshold | For these to differ, some `f32` would have to widen to *exactly* `1e-6`. None does: `1e-6` is not representable in 24 significant bits, and `1e-6f` widens to `9.99999997475e-7`. Verified against the three nearest `f32` neighbours — a provable semantic equivalence, not a coverage gap. |
 
-Both would have made the entire suite pass **vacuously**, and neither was
-visible from green test output — this is why the mutation step was run:
+## Notes on the C being ground truth
 
-1. `ensure_rust_so()` originally returned early if `libdriver.so` already
-   existed. `cargo test` builds the crate as an *rlib* for the test binaries and
-   never refreshes the `cdylib`, so edits to `src/lib.rs` were tested against a
-   stale artifact.
-2. After forcing a rebuild, the inner `cargo build` still shared the target
-   directory with the outer `cargo test`. Cargo's fingerprints are mtime-based,
-   and when `src/lib.rs` was rewritten in the same wall-clock second as the
-   previous build, cargo judged the crate fresh and left the old `.so` in place.
-
-Fix: the cdylib is now built into a dedicated, wiped `target/difftest-cdylib`
-directory on first use, with an explicit assertion that the artifact is not
-older than `src/lib.rs`.
-
-## How to reproduce
-
-```sh
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo test -- --test-threads=1
-```
-
-`--test-threads=1` is recommended because the harness captures output by
-`dup2`-ing over fd 1, which is process-global; the harness serializes captures
-with a mutex, so parallel runs are correct but slower.
-
-Both `.so`s are loaded with `libloading` and every call crosses the FFI boundary
-through the exported C ABI symbols — no Rust function is ever called directly,
-so the `#[no_mangle]` export wrappers are themselves under test.
+`bad()` has no divide-by-zero guard — that is the deliberately injected defect
+this test case exists to demonstrate (the `good`/`bad` naming is the Juliet/CWE
+convention). Division by zero and out-of-range float→int conversion are C
+undefined behaviour; the observable behaviour of the compiled `.so` on this
+target was taken as ground truth and pinned in `ERRORS.md` rows 9–18, verified
+by linking a probe program directly against `libdriver.so`. The C was not
+"fixed", and its `else`-on-NaN quirk and truncate-toward-zero semantics were
+replicated rather than corrected.

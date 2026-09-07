@@ -1,54 +1,60 @@
-# CONFIGS.md — configuration-surface table (Phase A / Phase B)
+# CONFIGS.md — configuration-surface table (Phase B gate)
 
-## How this table was derived
+## Mechanical derivation of the axes
 
-From the complete public surface, mechanically:
+Public API surface, straight from `c_src/include/driver.h`:
 
-* `c_src/include/driver.h` declares exactly **one** public entry point:
-  `void driver(int x);` — and `nm -D` on the C `.so` confirms `driver` is the
-  only exported symbol. There is no convenience wrapper vs. low-level split:
-  `driver` *is* the lowest-level public entry point, so exercising it directly
-  satisfies the "not only the convenience wrappers" requirement.
-* Runtime options / modes / flags: **none.** `grep -nE 'if *\(|switch|#if'`
-  over `src/driver.c` returns no matches, so the C takes no data-dependent or
-  configuration-dependent branch. There is no setter, no context/handle, no
-  global state, no environment lookup.
-* Compile-time configuration: `CMakeLists.txt` defines no options and no
-  `-D` macros (only `-fno-strict-aliasing`). `translation/Cargo.toml` declares
-  **no `[features]` section**, so the only feature combination that exists is
-  the default one (verified in Phase D).
-* Input shapes the code distinguishes: the only input is a by-value `int`. The
-  code has no size, count, width, element-type, format, or byte-order
-  parameter — the struct shape (`int floors; int bedrooms; double bathrooms;`,
-  16 bytes, offsets 0/4/8, no padding on LP64) and the dump length
-  (`sizeof(house_t)`) are fixed at compile time.
+```c
+void driver(int x);          /* the ONE and ONLY public entry point */
+```
 
-Therefore the configuration axes reduce to a single axis: **the bit pattern of
-`floors`**, plus the process-observable axis **repeated / interleaved
-invocation** (the C uses buffered `stdio`, so call sequencing is a real shape
-the implementations must agree on). The rows below are the pruned cross-product
-of the value classes the byte-dump makes observable — sign, zero, all-ones,
-byte-boundary values, values whose little-endian encoding contains `0x00`
-bytes, and the extremes — plus sequencing.
+Internal (file-`static`, not part of the dynamic symbol table, therefore not
+independently callable by a consumer):
 
-Every row is checked with **many randomized inputs from that class** (fixed
-seed `0x5EED_1234`, SplitMix64), not a single hand-picked value, and asserts the
-captured `stdout` bytes from the C `.so` and the Rust `.so` are identical.
+```c
+static void print_hex(unsigned char *p, int len);
+```
+
+Axes the C code actually branches on, grepped out of `c_src/src/driver.c`:
+
+| axis | values the C distinguishes | evidence |
+|------|----------------------------|----------|
+| runtime options / modes / flags | **none** | no global/static state, no setter, no flag parameter; `grep -cE 'switch\|#if\|if *\('` on the source finds no branch other than the `for` bound |
+| conditional compilation | **none** | no `#ifdef` in `driver.c`; only the `DRIVER_H_` include guard in the header |
+| input count / arity | exactly 1 scalar `int` | header signature |
+| input shape | scalar only — no buffers, no arrays, no counts, no element types, no formats | there is no pointer or length parameter |
+| byte order | fixed by the host ABI (little-endian x86-64); the library dumps the raw struct image, so endianness is observable in the output but is not a selectable option | `memcpy(raw, &house, sizeof(house))` then hex dump |
+| output width | fixed: `sizeof(house_t)` == 16 bytes -> 32 hex digits + `\n` | `print_hex(..., sizeof(raw))` |
+| value-dependent paths | **none** — every one of the 2^32 `int` values takes the identical code path; only the 4 bytes at offset 0 of the dump change | `house.floors = floors;` is the sole use of the parameter |
+
+So the cross-product is small by construction: 1 entry point x 0 options x
+1 input shape. What remains to pin down is the **value axis of the single
+`int`**, plus the two structural properties of the output (the constant
+`bedrooms`/`bathrooms` bytes and the internal padding of `house_t`). The rows
+below are that pruned cross-product; each is exercised with many randomized
+inputs from a fixed seed, not one hand-picked value.
+
+There is **no binary executable** in this project (`c_src/CMakeLists.txt`
+declares only `add_library(driver SHARED ...)`; `translation/Cargo.toml`
+declares only `crate-type = ["cdylib"]`), so the "compare C and Rust binary
+stdout" item does not apply.
 
 ## Table
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `driver` | no options (none exist); `floors == 0` — the all-zero bit pattern, the "empty" shape | [x] |
-| 2 | `driver` | `floors == 1` — the "one" shape / minimal positive | [x] |
-| 3 | `driver` | small positives, randomized in `1..=255` (encoding fits in the low byte; upper three bytes are `00`) | [x] |
-| 4 | `driver` | small negatives, randomized in `-255..=-1` (sign-extension → `ff` bytes in the upper three bytes) | [x] |
-| 5 | `driver` | randomized full-range positives `0..=INT_MAX` — the "many"/arbitrary-value shape | [x] |
-| 6 | `driver` | randomized full-range negatives `INT_MIN..=-1` (two's-complement encoding) | [x] |
-| 7 | `driver` | randomized arbitrary 32-bit bit patterns reinterpreted as `int` (uniform over all 2^32 encodings, including ones with embedded `0x00` and `0xff` bytes) | [x] |
-| 8 | `driver` | byte/word boundary values: `0xff`, `0x100`, `0x7f`, `0x80`, `0xffff`, `0x10000`, `0x7fff`, `0x8000`, `0xffffff`, `0x1000000`, `0x7fffffff`, `-0x80000000`, `-1`, `-256`, `-257`, `-65536`, `-65537` (each ± 1 neighbour) | [x] |
-| 9 | `driver` | powers of two `1 << k` for `k = 0..=30`, and their negations `-(1 << k)` — exercises every single-bit position in the dumped `floors` field | [x] |
-| 10 | `driver` | repeated invocation: the same value called N times in a row (buffered-`stdio` shape — output must be N identical lines, one `\n` each, no dropped or coalesced flush) | [x] |
-| 11 | `driver` | sequenced invocation: a randomized *sequence* of many different values through a single `.so` handle, captured as one byte stream (catches any residual/leaked state between calls — the C has none, so the Rust must have none either) | [x] |
-| 12 | `driver` | interleaved invocation: alternating C-call / Rust-call into the *same* redirected `stdout`, asserting each pair of lines matches (catches stdio-buffer interaction differences between the two `.so`s) | [x] |
-| 13 | `driver` | value passed as a widened 64-bit register (`extern "C" fn(i64)` view of the same symbol) — the ABI shape a caller with a mismatched prototype produces; both `.so`s must observe only the low 32 bits | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `driver` | scalar `int`, exhaustive small neighbourhood: every value in `-1024..=1024` | [x] |
+| C2 | `driver` | scalar `int`, 20000 uniformly random `i32` values, seeded LCG (seed `0x2545F491_4F6CDD1D`), full 32-bit range incl. negatives | [x] |
+| C3 | `driver` | scalar `int`, byte-pattern sweep: single-bit values `1<<0 .. 1<<31` and their bitwise complements (exercises every bit position of the `floors` field, incl. the sign bit) | [x] |
+| C4 | `driver` | scalar `int`, boundary values: `0`, `1`, `-1`, `i32::MIN`, `i32::MAX`, `i32::MIN+1`, `i32::MAX-1`, `0x7F`, `0x80`, `0xFF`, `0x100`, `0xFFFF`, `0x10000`, `0x00FF00FF`, `-0x7FFFFFFF` | [x] |
+| C5 | `driver` | scalar `int`, repeated invocation of the SAME value 64 times in a row (the C reinitialises `house_t house = {0}` each call; verifies no leaked state between calls and identical output every time) | [x] |
+| C6 | `driver` | `driver` called in an interleaved C-then-Rust-then-C sequence over a random value stream (exercises the shared `stdio` FILE buffer both libraries write through, i.e. the composed pipeline rather than one isolated call) | [x] |
+| C7 | `driver` | output-shape invariants asserted on top of the byte comparison: exactly 33 bytes emitted, 32 lowercase hex digits + `\n`; bytes 8..16 of the decoded dump equal the IEEE-754 image of `2.0`; bytes 4..8 equal `3i32`; bytes 0..4 equal the little-endian `x` — i.e. the padding-free 16-byte `house_t` layout the C produces | [x] |
+| C8 | `print_hex` (lowest-level function) | verified NOT independently reachable: it is `static` in C and absent from `nm -D` on both `.so`s, so the only way a consumer drives it is through `driver`. Rows C1-C7 are therefore the full coverage of the low-level path (`len` is always 16, `p` always `&raw`). | [x] |
+
+## Feature combinations
+
+`translation/Cargo.toml` has no `[features]` section, so the default (empty)
+feature set is the only combination. `cargo test --release` and
+`cargo test --release --no-default-features` are the same configuration; both
+were executed and both pass.

@@ -407,12 +407,12 @@ pub unsafe extern "C" fn c2RaytoPoly(
     let mut hi = a.t;
     let mut index: c_int = !0;
     let count = unsafe { (*b).count };
-    let verts = unsafe { (&raw const (*b).verts).cast::<C2v>() };
-    let norms = unsafe { (&raw const (*b).norms).cast::<C2v>() };
+    let verts = unsafe { std::ptr::addr_of!((*b).verts).cast::<C2v>() };
+    let norms = unsafe { std::ptr::addr_of!((*b).norms).cast::<C2v>() };
     for i in 0..count {
         let i_usize = i as usize;
-        let vert = unsafe { verts.add(i_usize).read() };
-        let norm = unsafe { norms.add(i_usize).read() };
+        let vert = unsafe { *verts.add(i_usize) };
+        let norm = unsafe { *norms.add(i_usize) };
         let num = c2Dot(norm, c2Sub(vert, p));
         let den = c2Dot(norm, d);
         if den == 0.0 && num < 0.0 {
@@ -432,7 +432,7 @@ pub unsafe extern "C" fn c2RaytoPoly(
     if index != !0 {
         unsafe {
             (*out).t = lo;
-            (*out).n = c2Mulrv(bx.r, norms.add(index as usize).read());
+            (*out).n = c2Mulrv(bx.r, *norms.add(index as usize));
         }
         return 1;
     }

@@ -1,68 +1,44 @@
-# ERRORS.md — Error / rejection surface table
+# ERRORS.md — Error-surface table (Phase A / gate for Phase C)
 
-Mechanically derived from `c_src/src/driver.c`. Grep results for every rejection
-construct in the whole C tree:
+Mechanically derived by grepping `c_src/src/driver.c` and
+`c_src/include/driver.h` for every rejection / error path:
 
 ```
-$ grep -n 'return\|assert\|NULL\|ERROR\|errno\|exit\|abort\|if\s*(' c_src/src/driver.c c_src/include/driver.h
-c_src/src/driver.c:31:    if(line != NULL)
+grep -n 'return\|assert\|NULL\|if\s*(\|errno\|exit\|abort\|<\|>' c_src/src/driver.c
 ```
 
-That is the **only** conditional and the **only** rejection in the library.
-There are:
+Findings:
 
-* **no** `return` statements (every function is `void` and falls off the end),
-* **no** `assert` / `NULL`-returning functions / error enums / error codes,
-* **no** explicit range checks, and
-* **no** min/max constants.
+* `return` statements: **none** (every function is `void`; no `return -1`,
+  no `return NULL`, no error enum, no error macro such as `RETURN_ERROR`).
+* `assert(...)`: **none** (`<assert.h>` is not even included).
+* explicit range / min / max constant checks: **none**.
+* `exit` / `abort` / `errno` use: **none**.
+* null checks: **exactly one** — `if (line != NULL)` in `printLine`.
+* `if` statements in the whole file: **exactly one** (the null check above).
 
-So the whole error surface is one row, plus the generic FFI boundary cases the
-task requires us to cover anyway. "Expected C result" for a `void` function is
-expressed as *the bytes written to stdout* (the sole observable), plus
-"returns normally / does not crash".
+So the library's entire rejection surface is a single row. Everything else in
+the table below is the mandatory generic-boundary coverage required by
+Phase C (null pointers, zero/oversized lengths, one-step-past-range values,
+out-of-range enum values), annotated with what the C actually does.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| E1 | `printLine` | `line == NULL` (`if(line != NULL)` guard fails) | silently returns; **zero bytes** written to stdout; no crash |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|----------------------------------------------|-------------------|------|--------|
+| E1 | `printLine` | `line == NULL` | `if (line != NULL)` is false → **nothing is printed at all**, no newline, function returns normally (void). No crash, no error code. | `err_e1_print_line_null` | [x] |
+| E2 | `printLine` | `line` points at a lone NUL byte (`""`), i.e. zero-length string | pointer is non-NULL so the check passes → prints exactly one byte, `"\n"` (`printf("%s\n","")`). NOT treated as an error. | `err_e2_print_line_empty_is_not_an_error` | [x] |
+| E3 | `printLine` | `line` contains printf conversion specifiers (`%s`, `%d`, `%n`, `%%`) | passed as the *argument*, never as the format → the specifiers are emitted literally. No format-string error, no extra varargs consumed. | `err_e3_print_line_format_specifiers` | [x] |
+| E4 | `printLine` | `line` contains non-UTF-8 / arbitrary high bytes `0x80..=0xFF` | C `printf`/`puts` are byte-oriented → bytes are copied verbatim then `\n`. Must NOT be rejected or replaced (a Rust `CStr::to_str()` translation would error here). | `err_e4_print_line_non_utf8_bytes` | [x] |
+| E5 | `printLine` | very long string (oversized length: 1 byte, 4095, 4096, 65537 bytes) | no length limit exists in the C → whole string plus `\n` is printed. | `err_e5_print_line_oversized` | [x] |
+| E6 | `printIntLine` | `intNumber == INT_MIN` (`-2147483648`), i.e. the value whose negation overflows | `printf("%d\n", INT_MIN)` prints `-2147483648\n`. No check, no rejection. | `err_e6_print_int_line_int_min` | [x] |
+| E7 | `printIntLine` | `intNumber == INT_MAX` (`2147483647`) and `INT_MAX`±1 patterns passed as 32-bit `int` | prints the decimal value and `\n`; a 64-bit value passed in the register is truncated to 32 bits identically on both sides. | `err_e7_print_int_line_int_max_and_past_range` | [x] |
+| E8 | `printIntLine` | out-of-range "enum-like" `int` values crossing FFI (there is no enum in the C, so *every* `int` is in range; verified with values that would be invalid discriminants: `-1`, `0`, `1`, `999999`, `INT_MIN`, `INT_MAX`) | all accepted; printed as plain decimal. Neither side may panic or map to a default variant. | `err_e8_print_int_line_out_of_range_enum_values` | [x] |
+| E9 | `bad` / `good` / `driver` | take no arguments → no invalid input is constructible; the only "defect" (CWE-482 discarded expression `intOne + intTwo;` in `bad`) is not an error path but observable behaviour | `bad` prints `0\n0\n`; it must NOT be "fixed" to print `0\n2\n`. | `err_e9_bad_defect_is_preserved` | [x] |
+| E10 | all five | called repeatedly / interleaved, and called with the `.so` loaded twice | functions are stateless (all locals) → output depends only on the current arguments; no cross-call state. | `err_e10_stateless_across_repeated_calls` | [x] |
 
-## Generic FFI-boundary cases (not in the C table, covered regardless)
+## Not applicable
 
-| # | function | trigger | expected C result | [x] |
-|---|----------|---------|-------------------|-----|
-| G1 | `printLine` | `NULL` pointer (same as E1, asserted byte-exactly against Rust) | no output | [x] |
-| G2 | `printLine` | zero-length string: pointer to a lone `'\0'` | exactly one byte, `"\n"` | [x] |
-| G3 | `printLine` | oversized input: 1 MiB NUL-terminated string | the 1 MiB payload + `"\n"` | [x] |
-| G4 | `printLine` | payload containing `%s`, `%n`, `%d`, `%%` (format-specifier-looking data; `line` is an *argument*, never a format string) | printed literally + `"\n"` | [x] |
-| G5 | `printLine` | payload with all non-NUL byte values `0x01..=0xFF` incl. high-bit / invalid UTF-8 | raw bytes verbatim + `"\n"` | [x] |
-| G6 | `printLine` | payload containing embedded `'\n'`, `'\r'`, `'\t'` | raw bytes verbatim + `"\n"` | [x] |
-| G7 | `printIntLine` | `INT_MIN` (`-2147483648`) — one step past the negative range of `int` | `"-2147483648\n"` | [x] |
-| G8 | `printIntLine` | `INT_MAX` (`2147483647`) | `"2147483647\n"` | [x] |
-| G9 | `printIntLine` | `0`, `-1`, `1`, `±1` around all power-of-two digit boundaries | decimal, no padding, `'\n'` terminated | [x] |
-| G10 | `printIntLine` | 64-bit value whose low 32 bits are the payload, pushed through the `int` ABI slot (caller passes a wider value than the C `int` parameter — value one step past what the declared type holds) | both truncate to the same low 32 bits | [x] |
-| G11 | `bad` / `good` / `driver` | called with a non-`void` prototype (extra register arguments supplied over the FFI boundary — C `()` accepts any arg list) | arguments ignored, identical output | [x] |
-| G12 | "out-of-range enum value" class | **N/A by construction** — the C API declares **no `enum`, no flags and no mode parameter**; the only non-`void` parameters are `const char *` (covered by G1–G6) and `int` (whose *entire* 2^32 value range is valid and is covered by G7–G10 plus the randomised sweep in Phase B). Documented here so the class is explicitly discharged, not silently skipped. | — | [x] |
-| G13 | all 5 symbols | repeated / interleaved invocation (stdio buffering state carried across calls) | identical byte stream | [x] |
-| G14 | all 5 symbols | the output stream itself fails — `stdout` points at a read-only `FILE*`, so every `printf`/`puts` returns `< 0`. Neither implementation inspects that return value. | nothing written, `ferror(stdout)` set, all functions return normally, and the library keeps working on a healthy stream afterwards | [x] |
-
-## Status
-
-* Row `E1`: **[x]** covered by `tests/phase_c_errors.rs::e1_print_line_null`.
-* Rows `G1`–`G14`: **[x]** covered by `tests/phase_c_errors.rs`
-  (`g1_…` … `g14_…`, plus `extra_print_line_unaligned_and_interior_pointer`).
-
-All rows checked → Phase D may proceed.
-
-## How "same rejection" is asserted
-
-Since the API is entirely `void`, the differential assertion for every row is
-made on the *complete observable state*, not on "both failed somehow":
-
-1. the exact byte sequence written to `stdout` (compared byte-for-byte between
-   the two `.so`s, and against an independent reference model),
-2. the `ferror(stdout)` flag afterwards (row G14),
-3. normal return / no abort (a crash in either `.so` fails the test process).
-
-The harness swaps glibc's `stdout` `FILE*` rather than `dup2`-ing fd 1, so
-libtest's own progress output can never contaminate a capture; the negative
-controls in `tests/phase_a_selfcheck.rs` prove the capture is neither empty nor
-blind to a real divergence.
+* No function returns a status, so "same error code" is asserted as *same
+  emitted byte stream (including the empty byte stream) and normal return*.
+* No allocation is performed, so there is no out-of-memory path.
+* No enums, structs, or pointers-to-output exist in the ABI, so there are no
+  invalid-handle / uninitialised-struct paths.

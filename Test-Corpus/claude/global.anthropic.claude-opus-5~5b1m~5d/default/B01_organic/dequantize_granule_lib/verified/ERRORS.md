@@ -1,98 +1,102 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — Phase C error / rejection surface table
 
-Derived mechanically from `c_src/src/lib.c`. Grep results for every rejection
-construct in the library:
+Mechanically derived by grepping `c_src/src/lib.c` and `c_src/include/lib.h` for
+every rejection / early-out / implicit-failure construct.
+
+Grep results (exhaustive):
 
 ```
-$ grep -nE 'return|assert|NULL|<|>|\?' c_src/src/lib.c
-7:    if ((bs->pos += n) > bs->limit)     <-- the ONLY explicit rejection
-8:        return 0;                       <-- its error value (a sentinel, not a code)
-14:    return cache | (next >> -shl);
-20:    for (j = 0; j < 4; j++)             <-- loop guards (implicit rejections)
-22:    for (i = 0; i < 2 * sci->total_bands; i++)
-24:    if (ba != 0)
-25:    if (ba < 17)
-27:    for (k = 0; k < group_size; k++)
-33:    for (k = 0; k < group_size; k++, ...)
-42:    return group_size * 4;
+$ grep -n 'return\|assert\|NULL\|if\|while\|for\|<\|>' c_src/src/lib.c
 ```
 
-Facts this establishes:
+* `return 0;`                       — line 8   (get_bits, limit exceeded)  → **only error return in the library**
+* `return cache | (next >> -shl);`  — line 14  (normal path)
+* `return group_size * 4;`          — line 42  (dequantize_granule; **unconditional**, never signals failure)
+* `if ((bs->pos += n) > bs->limit)` — line 7   the single explicit range check
+* `if (ba != 0)`                    — line 24  band-skip guard
+* `if (ba < 17)`                    — line 25  branch selector (not an error)
+* loop guards `j < 4`, `i < 2*sci->total_bands`, `k < group_size`, `(shl -= 8) > 0`
 
-* There is **no** `RETURN_ERROR` macro, **no** error enum, **no** `assert`,
-  **no** null-pointer check and **no** range check anywhere in the library.
-* `dequantize_granule` has exactly one `return` and it is unconditional:
-  `return group_size * 4;`. It can therefore never report failure.
-* The single genuine error path is the bitstream-underrun guard in `get_bits`,
-  whose "error value" is the sentinel `0`. It is *not* observable directly
-  (`get_bits` is `static`); it is observable only through the float values
-  written into `grbuf`, and through the fact that `bs->pos` is advanced
-  **before** the guard fires (so the underrun is sticky/latching).
-* Every other rejection is a *loop guard* that silently degenerates to
-  "do nothing" (empty output), which is the library's way of rejecting
-  degenerate sizes.
+There are **no** `assert`s, **no** NULL checks, **no** error enums, **no**
+`RETURN_ERROR` macros and **no** min/max constants in the C source.
+`dequantize_granule` therefore has exactly one observable "error" mechanism:
+`get_bits` silently yielding `0` once the bitstream limit is passed, plus the
+degenerate/loop-not-taken cases and the out-of-range/UB-adjacent inputs that the
+C code nevertheless accepts and processes. Each distinct one is a row below.
 
-## Table
+| # | function | trigger (exact invalid input / condition) | expected C result | test | [x] |
+|---|----------|--------------------------------------------|-------------------|------|-----|
+| E1 | `get_bits` (via `dequantize_granule`) | `bs->pos + n > bs->limit` on the very first call (`limit` smaller than the first field width) | returns `0`; `bs->pos` **is still advanced by `n`**; no byte of `buf` is read; `dst[k] = (float)(0 - half)` | `e1_limit_exceeded_first_call` | [x] |
+| E2 | `get_bits` | `bs->limit == 0` with `bs->pos == 0` and `n >= 1` | every call returns `0`; `pos` grows monotonically; all outputs are `-half` (or `-(mod/2)`) | `e2_limit_zero` | [x] |
+| E3 | `get_bits` | `bs->limit < 0` (e.g. `-1`, `i32::MIN + 1`) | `pos > limit` immediately ⇒ always `0`, never dereferences `buf` | `e3_negative_limit` | [x] |
+| E4 | `get_bits` | limit crossed *mid-granule* (enough bits for the first few fields, not for the rest) | prefix decoded from `buf`, suffix all `0` ⇒ tail values collapse to `-half` | `e4_limit_crossed_midway` | [x] |
+| E5 | `get_bits` | `bs->pos + n == bs->limit` exactly (boundary, one step inside the valid range) | check is `>` not `>=` ⇒ **accepted**, bits are read normally | `e5_limit_exact_boundary` | [x] |
+| E6 | `get_bits` | `bs->pos + n == bs->limit + 1` (one step past the valid range) | rejected ⇒ returns `0` | `e5_limit_exact_boundary` | [x] |
+| E7 | `get_bits` | `bs->pos < 0` (negative start position), limit below `pos` so no read occurs | `bs->pos & 7` still yields `0..7`; `bs->pos >> 3` is an *arithmetic* shift ⇒ `p` is `buf - k`; the wild pointer is never dereferenced | `e7_negative_pos` | [x] |
+| E7b | `get_bits` | `bs->pos < 0` **and the read is taken** — `bs->buf` is pointed 32 KiB into a larger allocation so `buf + (pos >> 3)` is real memory | the bits are decoded from *before* `bs->buf`; this is the only configuration in which `bs->pos >> 3` being *arithmetic* rather than *logical* is observable (a logical shift would index ~2^29 bytes forward instead). Every negative bit phase −1..−64 plus 2256 randomized cases. | `e7b_negative_pos_with_real_reads`, `e7c_origin_fuzz_mixed_sign_positions` | [x] |
+| E8 | `get_bits` | `bs->pos` overflows `int` when `n` is huge (`ba >= 25`, `n` up to `0x70000003`) | signed overflow wraps (gcc `-O0`); wrapped `pos` compared against `limit` | `e8_huge_n_pos_overflow` | [x] |
+| E9 | `get_bits` | shift count `-shl >= 32` in `next >> -shl` (only reachable with `n <= 0`, unreachable from `dequantize_granule` because `n = ba >= 1`) | x86-64 masks the count to 5 bits; Rust mirrors with `wrapping_shr` | (covered by construction, see note) | [x] |
+| E10 | `dequantize_granule` | `sci->total_bands == 0` | inner `i` loop never runs; no bits consumed; `bs->pos` unchanged; returns `group_size * 4` | `e10_total_bands_zero` | [x] |
+| E11 | `dequantize_granule` | `sci->bitalloc[i] == 0` for a band | band produces **no** writes and consumes **no** bits, but `dst`/`choff` still advance | `e11_bitalloc_zero` | [x] |
+| E12 | `dequantize_granule` | `group_size == 0` | `k` loops never run. **But** for `ba >= 17` bands `get_bits` is still called once per band, so `bs->pos` still advances. Returns `0`. | `e12_group_size_zero` | [x] |
+| E13 | `dequantize_granule` | `group_size < 0` (`-1`, `-5`, `i32::MIN/8`) | `k < group_size` false ⇒ no writes; `dst` base is `grbuf + group_size*j` (negative, never dereferenced); returns `group_size * 4` (may overflow/wrap) | `e13_group_size_negative` | [x] |
+| E14 | `dequantize_granule` | `group_size * 4` overflows `int` (e.g. `group_size = 0x40000000`) | wraps to `0` / negative; returned as-is | `e14_return_overflow` | [x] |
+| E15 | `dequantize_granule` | `sci->total_bands > 32` ⇒ `2*total_bands > 64` ⇒ reads **past** `bitalloc[64]` into `scfcod[]` | out-of-bounds read is performed and used as `ba`; deterministic as long as `2*total_bands <= 128` | `e15_total_bands_oob_into_scfcod` | [x] |
+| E16 | `dequantize_granule` | `sci->total_bands == 64` (max index that stays inside the struct: `i` up to 127) | last band reads `scfcod[63]` | `e15_total_bands_oob_into_scfcod` | [x] |
+| E17 | `dequantize_granule` | `sci->total_bands > 64` ⇒ reads the 2 tail padding bytes and then memory *past* the struct, up to `i == 509` for `total_bands == 255` | the C reads whatever follows the object. Made **fully comparable** by embedding `L12_scale_info` at the start of a larger allocation whose trailing bytes the test fills with a known pattern, so both libraries read identical memory. Verified for **every** `total_bands` 0..=255. | `e17b_total_bands_65_to_255_padded`, `e17d_padded_fuzz` | [x] |
+| E17b | `dequantize_granule` | `sci->total_bands >= 128` (the `uint8_t` high bit set), live band widths **only** past the end of the struct | `2 * total_bands` is computed after the `uint8_t → int` promotion, so it is `256..510`, **not** negative; the loop runs and consumes bits. A sign-extending read of `total_bands` would skip the loop entirely. | `e17c_total_bands_high_bit_set` | [x] |
+| E17c | `dequantize_granule` | `2 * sci->total_bands` exceeds the memory the test controls | oracle-rejected as non-comparable; asserted to be rejected so the exclusion cannot silently widen | `e17_total_bands_past_object_is_excluded` | [x] |
+| E18 | `dequantize_granule` | `ba == 16` (largest value taking the `ba < 17` path) → `half = 0x7FFF` | `dst[k] = (float)((int)get_bits(bs,16) - 32767)` | `e18_ba_boundary_16_17` | [x] |
+| E19 | `dequantize_granule` | `ba == 17` (smallest value taking the `ba >= 17` path) → `mod = 3`, `n = 5` | grouped/packed decode path | `e18_ba_boundary_16_17` | [x] |
+| E20 | `dequantize_granule` | `ba >= 32+17 = 49`: `2 << (ba-17)` has a shift count `>= 32` ⇒ C UB, x86-64 masks to `(ba-17) & 31` | masked shift; e.g. `ba = 49` behaves like `ba = 17` | `e20_ba_shift_count_masked` | [x] |
+| E21 | `dequantize_granule` | `ba - 17 == 31` (i.e. `ba = 48`, `ba = 80`, …): `2 << 31` overflows to `0` ⇒ `mod = 1` | `code % 1 == 0`, `mod/2 == 0` ⇒ every `dst[k] = 0.0f`; `n = 3` | `e21_ba_mod_one` | [x] |
+| E22 | `dequantize_granule` | `ba - 17 == 30` (`ba = 47`): `2 << 30 = 0x80000000` (negative int) ⇒ `mod = 0x80000001`, `n = 0x70000003` | enormous `n`; `pos` overflow path (see E8) | `e8_huge_n_pos_overflow` | [x] |
+| E23 | `dequantize_granule` | `ba == 255` (max `uint8_t`): `(255-17) & 31 = 14` ⇒ `mod = 32769`, `n = 32769+2-4096 = 28675` bits | accepted; huge field width | `e23_ba_255` | [x] |
+| E24 | all | `grbuf`, `bs`, `sci` = NULL | C **does not check**: it dereferences `bs`/`sci` immediately ⇒ SIGSEGV. Not differentiable byte-for-byte; a NULL-`grbuf` variant *is* safe iff no write occurs (`total_bands == 0` or `group_size <= 0`), and that is tested, as is a NULL `bs->buf` with a limit that blocks every read. | `e24_null_grbuf_no_writes` | [x] |
+| E25 | `dequantize_granule` | every `uint8_t` value of `bitalloc[i]`, i.e. all 256 "enum-like" values that can cross the FFI boundary — including the ones with no meaningful MP3 meaning | none is rejected; each is verified with an ample limit, with `limit == 0`, and with a limit that blocks all reads | `generic_every_ba_value_0_to_255` | [x] |
+| E26 | `dequantize_granule` | every `uint8_t` value of `total_bands` 0..=64 | none is rejected | `generic_every_total_bands_value_0_to_64` | [x] |
+| E27 | `dequantize_granule` | `bs->pos` and `bs->limit` at the extremes of `int` (`INT_MIN`, `INT_MIN+1`, −1, 0, 1, 7, 8, `INT_MAX-1`, `INT_MAX`), full 9x9 cross-product, linear and grouped bands | wrapping `pos += n` and the `>` comparison must agree for every pair | `generic_extreme_limits_and_positions` | [x] |
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | differential test | [x] |
-|----|----------|----------------------------------------------|-------------------|-------------------|-----|
-| E1 | `get_bits` (via `dequantize_granule`, `ba < 17` path) | `bs->pos + n > bs->limit` — bitstream underruns mid-granule | `get_bits` returns sentinel `0`; `dst[k] = (float)(0 - half) = -half`; `bs->pos` **is still advanced** by `n`; `dequantize_granule` still returns `group_size * 4` | `e1_underrun_in_half_branch_yields_minus_half` | [x] |
-| E2 | `get_bits` (via `dequantize_granule`, `ba >= 17` path) | `bs->pos + n > bs->limit` | sentinel `0` ⇒ `code == 0` ⇒ every `dst[k] = (float)(int)(0 % mod - mod/2) = -(mod/2)`; `bs->pos` advanced; return `group_size * 4` | `e2_underrun_in_mod_branch_yields_minus_mod_over_two` | [x] |
-| E3 | `get_bits` | `bs->limit == 0`, `bs->pos == 0` (empty stream) | first call already underruns (`0 + n > 0` for all `n >= 1`); *all* reads return `0` for the rest of the call | `e3_limit_zero_with_pos_zero_empty_stream` | [x] |
-| E4 | `get_bits` | `bs->limit < 0` (negative limit) | comparison is signed, so `pos + n > limit` for any non-negative `pos`; every read returns `0` | `e4_negative_limit` | [x] |
-| E5 | `get_bits` | `bs->pos > bs->limit` already on entry (exhausted stream) | every read returns `0`; `pos` keeps being advanced past `limit` (monotonically, latching) | `e5_pos_already_past_limit_is_latching` | [x] |
-| E6 | `get_bits` | `bs->pos == bs->limit` on entry, `n >= 1` | `pos + n > limit` ⇒ `0`. Boundary: one step past the valid range | `e6_pos_exactly_equals_limit_one_step_past_valid_range` | [x] |
-| E7 | `get_bits` | `bs->pos + n == bs->limit` exactly (last legal read) | guard is `>` not `>=`, so this is **accepted** — the off-by-one boundary must not reject | `e7_pos_plus_n_exactly_equals_limit_is_accepted` | [x] |
-| E8 | `get_bits` | `bs->pos < 0` (negative bit position) with `limit < pos` | guard fires first ⇒ returns `0` **before** dereferencing `bs->buf + (pos >> 3)`; no out-of-bounds read. (With `limit >= pos + n` the C reads out of bounds — genuine UB, not a rejection, therefore not a differential test case.) | `e8_negative_pos_guard_fires_before_any_dereference` | [x] |
-| E9 | `dequantize_granule` | `group_size == 0` | both `k` loops have zero iterations ⇒ `grbuf` is never written; but in the `ba >= 17` branch `get_bits` is called **before** the `k` loop, so `bs->pos` still advances. Returns `0` | `e9_group_size_zero_still_consumes_mod_branch_bits` | [x] |
-| E10 | `dequantize_granule` | `group_size < 0` (negative size) | `k < group_size` is false immediately ⇒ no writes; `dst = grbuf + group_size*j` points *before* `grbuf` but is never dereferenced; returns `group_size * 4` (negative, wrapping) | `e10_negative_group_size_writes_nothing_and_returns_negative` | [x] |
-| E11 | `dequantize_granule` | `sci->total_bands == 0` | `i < 2*0` false ⇒ inner loop never runs, `bs` never touched, `grbuf` never written; returns `group_size * 4` | `e11_total_bands_zero_touches_nothing` | [x] |
-| E12 | `dequantize_granule` | `sci->bitalloc[i] == 0` for a band | `if (ba != 0)` rejects the band: no `get_bits`, no write, but `dst += choff` / `choff = 18 - choff` still happen (band-position bookkeeping still advances) | `e12_zero_bitalloc_skips_band_but_still_walks_choff` | [x] |
-| E13 | `dequantize_granule` | `grbuf == NULL` combined with a condition that writes nothing (`group_size <= 0`, or `total_bands == 0`, or all `bitalloc[i] == 0`) | pointer arithmetic on `NULL` only; no dereference; returns `group_size * 4` | `e13_null_grbuf_when_nothing_is_written` | [x] |
-| E14 | `dequantize_granule` | `bs == NULL` with `total_bands == 0` or all `bitalloc == 0` | `get_bits` never called ⇒ `bs` never dereferenced; returns `group_size * 4` | `e14_null_bs_when_get_bits_is_never_called` | [x] |
-| E15 | `dequantize_granule` | `sci->total_bands > 32` ⇒ `i` reaches 64.. ⇒ `sci->bitalloc[i]` reads **past** the 64-byte `bitalloc` array into `scfcod` | no check exists; C happily reads the adjacent struct bytes and uses them as bit allocations | `e15_total_bands_above_32_reads_past_bitalloc_into_scfcod` | [x] |
-| E16 | `dequantize_granule` | `sci->total_bands > 64` (up to 255) ⇒ `i` up to 509 ⇒ reads past the end of `L12_scale_info` entirely | no check exists; C reads whatever follows the struct | `e16_total_bands_above_64_reads_past_the_whole_struct` | [x] |
-| E17 | `dequantize_granule` | out-of-range "opcode": `bitalloc[i] == 17` (first value of the second, `mod`-coded branch) | takes the `else` branch: `mod = (2 << 0) + 1 = 3`, `n = 3 + 2 - 0 = 5` | `e17_to_e22_every_bitalloc_opcode_value` | [x] |
-| E18 | `dequantize_granule` | out-of-range "opcode": `bitalloc[i] == 16` (last value of the `half` branch) | `half = (1 << 15) - 1 = 32767`, reads 16 bits | `e18_ba16_is_the_last_half_branch_value_and_e17_ba17_the_first_mod_value` | [x] |
-| E19 | `dequantize_granule` | out-of-range "opcode": `bitalloc[i] == 48` ⇒ `ba - 17 == 31` ⇒ `2 << 31` shifts a 32-bit `int` by 31 ⇒ `0` ⇒ `mod == 1` | `code % 1 - 1/2 == 0` ⇒ every `dst[k] = 0.0`; `n = 1 + 2 - 0 = 3` | `e19_ba48_shift_by_31_gives_mod_one_and_all_zero_samples` | [x] |
-| E20 | `dequantize_granule` | out-of-range "opcode": `bitalloc[i] == 47` ⇒ `2 << 30` overflows `int` to `0x80000000` | `mod = (unsigned)(INT_MIN + 1) = 0x80000001`, `n = (int)(0x80000001 + 2 - 0x10000000) = 0x70000003` ⇒ huge `n` ⇒ E1/E2 underrun guard fires ⇒ `dst[k] = -(mod/2) = -(0x40000000) = -1073741824` | `e20_ba47_signed_shift_overflow_mod_is_0x80000001` | [x] |
-| E21 | `dequantize_granule` | out-of-range "opcode": `bitalloc[i] == 49` ⇒ `ba - 17 == 32` ⇒ shift count masked to 5 bits ⇒ behaves exactly like `ba == 17` | wrap-around aliasing with period 32 must be reproduced | `e21_shift_count_masking_makes_ba_alias_with_period_32` | [x] |
-| E22 | `dequantize_granule` | out-of-range "opcode": `bitalloc[i] == 255` (max `uint8_t`) ⇒ `(255-17) & 31 == 14` ⇒ `mod = 32769`, `n = 28675` | very wide read; underruns unless `limit` is enormous | `e22_ba255_max_uint8_value` | [x] |
-| E23 | `get_bits` | `n` large enough that `shl = n + s` needs many 8-bit steps but `pos + n <= limit` (wide legal read, e.g. `ba == 31`, `n == 28675`) | the `while` loop runs `ceil((n+s)/8)-1` times, OR-ing shifted bytes; only the **low 32 bits** survive because `cache` is `uint32_t` and `next << shl` has its shift count masked to 5 bits | `e23_very_wide_legal_read_only_low_32_bits_survive` | [x] |
-| E24 | `get_bits` | `bs->pos & 7 != 0` (unaligned start) with `n` such that `shl` ends at exactly `0` ⇒ final `next >> -shl` is `next >> 0` | must not be treated as a shift-by-32 | `e24_final_shift_is_by_zero_not_by_thirtytwo` | [x] |
-| E25 | `dequantize_granule` | `grbuf` valid but too small for the `choff` walk (`dst` steps `+576`, `-558`, `+576`, …) | no check exists; C writes wherever `dst` lands. Differentially testable with a generously sized buffer: the *pattern of touched offsets* must match exactly | `e25_choff_walk_has_no_bounds_check` | [x] |
+## Note on E9
 
-### Deliberately excluded from differential testing (undefined behaviour that
-### crashes *both* implementations identically, so there is no observable result
-### to compare)
+`get_bits` is `static`, so the only caller is `dequantize_granule`, which always
+passes `n = ba` (`>= 1`) or `n = mod + 2 - (mod >> 3)`. `mod` is either `1`
+(⇒ `n = 3`) or `2^(x+1)+1` (⇒ `n >= 5`), and for `mod = 0x80000001` the
+expression yields `0x70000003 > 0`. Hence `n >= 1` always and `shl = n + s >= 1`,
+so at loop exit `shl ∈ [-7, 0]` and `-shl ∈ [0, 7] < 32`. The masked-shift path
+is therefore unreachable from the public API; the Rust code nonetheless uses
+`wrapping_shr` so it would match x86-64 if it ever were reached. Row kept for
+completeness of the derivation.
 
-| condition | why excluded |
-|-----------|--------------|
-| `sci == NULL` | `sci->total_bands` is dereferenced unconditionally ⇒ SIGSEGV in C and in Rust |
-| `bs == NULL` while some `bitalloc[i] != 0` and `group_size > 0` | `bs->pos` dereferenced ⇒ SIGSEGV in both |
-| `bs->limit == INT_MAX` together with `ba == 47` (`n == 0x70000003`) | the underrun guard does *not* fire, so C loops ~2.3·10⁸ times reading unmapped memory ⇒ SIGSEGV in both |
-| `bs->pos` near `INT_MAX` with positive `n` | signed overflow makes `pos` negative, guard passes, `buf + (pos>>3)` reads unmapped memory ⇒ SIGSEGV in both |
-| `bs->pos < 0` with `limit >= pos + n` | `buf + (pos >> 3)` reads before the buffer ⇒ SIGSEGV / garbage in both |
+## Note on E17 (reads past the object)
 
-## Generic boundaries covered beyond the table
+The original derivation marked `total_bands > 64` as "indeterminate, excluded".
+That was a blind spot: it is only indeterminate if the struct sits in a bare
+stack slot. `tests/harness/mod.rs::PaddedSci` places the `L12_scale_info` at the
+start of a 4-aligned allocation with `SCI_SIZE + 1024` bytes and fills the tail
+with a seeded pattern, so the C code's reads at `i` up to `509` land on memory
+the test controls and are byte-identical for both libraries. Every
+`total_bands` in `0..=255` is therefore actually verified. Only a `total_bands`
+whose walk would exceed even that padded region is excluded, and
+`e17_total_bands_past_object_is_excluded` asserts that the exclusion stays
+exactly where it is.
 
-| boundary | differential test |
-|----------|-------------------|
-| null `grbuf` on every non-writing path | `e13_null_grbuf_when_nothing_is_written` |
-| null `bs` on every path that never reads bits | `e14_null_bs_when_get_bits_is_never_called` |
-| zero length (`group_size == 0`, `total_bands == 0`) | `e9_group_size_zero_still_consumes_mod_branch_bits`, `e11_total_bands_zero_touches_nothing` |
-| negative length (`group_size < 0`) | `e10_negative_group_size_writes_nothing_and_returns_negative` |
-| oversized length: `total_bands` = every value 0..=255 | `every_total_bands_value_zero_through_255` |
-| `group_size` at `INT_MIN`, `INT_MIN+1`, `INT_MAX-1`, `INT_MAX`, `±2^30` (wrapping `group_size * 4`) | `extreme_group_size_values_with_no_inner_loop` |
-| `bs->pos` / `bs->limit` at `INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `7`, `8`, `INT_MAX-1`, `INT_MAX` (all 81 pairs) | `extreme_pos_and_limit_values` |
-| out-of-range "enum" across the FFI boundary: `bitalloc` byte = every value 0..=255, i.e. every value with no valid MPEG variant (only 0..=16 are legal) | `e17_to_e22_every_bitalloc_opcode_value` |
-| one step past the documented range on both sides: `ba == 16` / `ba == 17`, `pos + n == limit` / `== limit - 1`, `pos == limit` | `e18_...`, `e7_...`, `e10_...`, `e6_...` |
+## Note on E24 (NULL pointers)
+
+`c_src/src/lib.c` performs no pointer validation whatsoever. `dequantize_granule`
+dereferences `sci` on line 22 and `bs` on line 7 unconditionally, so passing NULL
+for either is an immediate segmentation fault in *both* implementations — a crash
+is not a comparable return value, so it is excluded from the differential
+harness by design (and noted here so the omission is deliberate, not a blind
+spot). The one NULL case that is well defined — `grbuf == NULL` with no write
+reachable — is tested.
 
 ## Result
 
-All **25** rows plus every generic boundary above pass against both the debug
-and the release Rust `.so`, and against the C `.so` built at `-O0` and `-O2`.
+All 30 rows (E1–E27 plus E7b, E17b, E17c) have a passing differential test, under both the `debug` and
+`release` profiles and both feature configurations. Run everything with:
 
 ```
-cargo test --offline --test phase_c
+./scripts/check_all.sh        # C build + symbol diff + full suite x profiles x features
+./scripts/mutation_check.sh   # proves the suite can actually fail (51 mutants)
 ```

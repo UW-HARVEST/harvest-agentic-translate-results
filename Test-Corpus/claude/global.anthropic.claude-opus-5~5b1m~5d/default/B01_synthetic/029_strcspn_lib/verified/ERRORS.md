@@ -1,18 +1,14 @@
-# ERRORS.md — Phase A: Error-surface table
+# ERRORS.md — Phase A error-surface table
 
-## How this table was derived (mechanical grep of `c_src/`)
+Mechanically derived by grepping `c_src/` for every rejection mechanism:
 
 ```
-$ grep -nE '\breturn\b'                            src/*.c include/*.h   -> (no matches)
-$ grep -nE 'assert'                                src/*.c include/*.h   -> (no matches)
-$ grep -nE 'NULL|nullptr|!= *0|== *0'              src/*.c include/*.h   -> (no matches)
-$ grep -nEi 'error|errno|fail|invalid|-1|enum|MIN|MAX' src/*.c include/*.h
-      include/driver.h:25:#define DRIVER_H_        <- include guard only
-$ grep -nE '\b(if|switch|else|while|for)\b|#if'    src/*.c include/*.h
-      include/driver.h:24:#ifndef DRIVER_H_        <- include guard only
+$ grep -nE 'return|assert|RETURN_ERROR|NULL|errno|exit|abort|if *\(|< *0|>|<' c_src/src/driver.c c_src/include/driver.h
 ```
 
-The complete C implementation is:
+Result: the C source contains **zero** explicit rejections — no `return`
+statement (the function is `void`), no `assert`, no error enum, no null check,
+no range check, and no min/max constant. The entire body is:
 
 ```c
 void driver(const char *s1, const char *s2) {
@@ -20,118 +16,56 @@ void driver(const char *s1, const char *s2) {
 }
 ```
 
-**Findings:** the C library contains
-
-* **0** error-return macros / `return` statements (the function is `void`),
-* **0** `assert`s,
-* **0** explicit range checks, null checks, or min/max constants,
-* **0** error enums or error codes,
-* **0** `if` / `switch` / `#ifdef` branches (the only preprocessor conditional is the
-  `DRIVER_H_` include guard).
-
-There is therefore **no explicit rejection path at all**: `driver` accepts every
-argument pair and returns `void`. It cannot report an error to its caller.
-
-Consequently the error surface is entirely **implicit** — the hard-failure conditions
-inherited from the two functions it calls (`strcspn`, `printf`) plus the contract of
-`const char *` meaning "pointer to a NUL-terminated string". Those are enumerated
-below. Because the failures are process-fatal signals rather than return values, the
-differential tests in `tests/error_paths.rs` run each call in a **forked child** and
-compare the child's *exact* termination status (normal exit vs. terminating signal
-number) and stdout bytes between C and Rust — not merely "both failed somehow".
+Consequently the error surface is **not** a set of returned error codes; it is
+the set of *fault / sentinel behaviours* the C binary actually exhibits when
+handed invalid input. Those are enumerated below and each is asserted
+differentially by comparing the **termination status (signal number or exit
+code) and the stdout bytes** of a forked child that calls the C `.so` against
+one that calls the Rust `.so`. "Both failed somehow" is not accepted — the
+tests compare the exact signal number.
 
 ## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|---------------------------------------------|-------------------|------|
-| 1 | `driver` | `s1 == NULL`, `s2` a valid string | `strcspn` dereferences a null pointer → child killed by `SIGSEGV` (11); nothing written to stdout | `err_01_s1_null` |
-| 2 | `driver` | `s1 == NULL`, `s2 == ""` (valid, empty) | `strcspn` dereferences a null pointer → child killed by `SIGSEGV` (11); nothing written to stdout | `err_02_s1_null_s2_empty` |
-| 3 | `driver` | `s1` a valid non-empty string, `s2 == NULL` | reject set is read from a null pointer → child killed by `SIGSEGV` (11); nothing written to stdout | `err_03_s2_null` |
-| 4 | `driver` | `s1 == ""` (valid, empty), `s2 == NULL` | **`SIGSEGV` (11)**, nothing printed. Determined empirically, *not* assumed: the C library's `strcspn` builds its reject-set table before looking at `s1`, so `s2` is dereferenced unconditionally and an empty `s1` does **not** short-circuit. This row caught a real translation bug — see "Divergence found" below. | `err_04_s2_null_s1_empty` |
-| 5 | `driver` | `s1 == NULL` **and** `s2 == NULL` | `strcspn` dereferences a null pointer → child killed by `SIGSEGV` (11); nothing written to stdout | `err_05_both_null` |
-| 6 | `driver` | `s1` points at a buffer with **no NUL terminator**, terminated only by an unmapped guard page; `s2` contains no byte present in the buffer | scan runs off the end of the mapping → child killed by `SIGSEGV` (11) | `err_06_s1_unterminated` |
-| 7 | `driver` | `s2` points at a buffer with **no NUL terminator** (unmapped guard page after it); `s1` non-empty and containing no byte present in `s2` | reject-set scan runs off the end of the mapping → child killed by `SIGSEGV` (11) | `err_07_s2_unterminated` |
-| 7b | `driver` | `s2` **unterminated** (as row 7) but `s1 == ""` — the result is knowable without reading `s2` at all | still **`SIGSEGV` (11)**: the reject set is scanned unconditionally, at every length (verified for 1, 2, 3 and 4096 bytes). Same root cause as row 4. | `err_07b_s2_unterminated_empty_s1` |
-| 7c | `driver` | `s2` **properly terminated** but flush against an unmapped guard page, `s1 == ""` — reject lengths 0..7 | **no fault**, prints `0\n`. The mirror of 7b: it pins the read *extent*, so the fix for 7b cannot be "read `s2[0]` and `s2[1]` unconditionally" | `err_07c_s2_read_extent_exact` |
-| 8 | `driver` | `s1` misaligned / at the very end of a page, valid and NUL-terminated (`strcspn` SIMD over-read boundary; not an error but the classic false-positive fault case) | **no fault**: prints the correct count. Guards against a Rust or C implementation that over-reads past the NUL across a page boundary | `err_08_page_boundary_s1` |
-| 9 | `driver` | `s2` NUL-terminated but placed flush against the end of a page (reject-set over-read boundary) | **no fault**: prints the correct count | `err_09_page_boundary_s2` |
-| 10 | `driver` | `s1` = 1-byte string `"\0"` at the last byte of a page whose successor page is unmapped, `s2` valid | **no fault**: prints `0\n` | `err_10_page_boundary_empty_s1` |
-| 11 | `driver` | result value is a *huge* count (≥ 2^20 bytes of `s1` with no match) — exercises the `%zu` conversion of a large `size_t` | prints the full length in decimal, no truncation/overflow | `err_11_huge_length` |
-| 12 | `driver` | `s2` = a string that is *longer* than `s1` and shares no byte — O(n·m) worst case, no early exit | prints `strlen(s1)` | `err_12_no_match_long_s2` |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|----------------------------------------------|-------------------|------|--------|
+| 1 | `driver` | `s1 == NULL`, `s2 == NULL` | SIGSEGV (11), no stdout | `err_01_both_null` | [x] |
+| 2 | `driver` | `s1 == ""` (valid, empty), `s2 == NULL` | SIGSEGV (11), no stdout — glibc `strcspn` dereferences `s2` to build its reject set *before* testing `s1`, so an empty `s1` does **not** short-circuit | `err_02_empty_s1_null_s2` | [x] |
+| 3 | `driver` | `s1 == NULL`, `s2 == ""` (valid, empty) | SIGSEGV (11), no stdout | `err_03_null_s1_empty_s2` | [x] |
+| 4 | `driver` | `s1 == "abc"` (valid), `s2 == NULL` | SIGSEGV (11), no stdout | `err_04_valid_s1_null_s2` | [x] |
+| 5 | `driver` | `s1 == NULL`, `s2 == "abc"` (valid) | SIGSEGV (11), no stdout | `err_05_null_s1_valid_s2` | [x] |
+| 6 | `driver` | `s1` = non-NULL but unmapped address (`0x1`), `s2` valid | SIGSEGV (11), no stdout | `err_06_unmapped_s1` | [x] |
+| 7 | `driver` | `s1` valid, `s2` = non-NULL but unmapped address (`0x1`) | SIGSEGV (11), no stdout | `err_07_unmapped_s2` | [x] |
+| 8 | `driver` | both pointers unmapped (`0x1`, `0x2`) | SIGSEGV (11), no stdout | `err_08_both_unmapped` | [x] |
+| 9 | `driver` | `s1` = unterminated buffer whose bytes run off the end of the last mapped page (no NUL before the guard page); `s2` valid and non-matching | SIGSEGV (11), no stdout — `strcspn` scans past the mapping | `err_09_unterminated_s1_runs_off_page` | [x] |
+| 10 | `driver` | `s2` = unterminated buffer running off the end of the last mapped page; `s1` valid, `s1[0]` not in `s2`'s mapped bytes | SIGSEGV (11), no stdout | `err_10_unterminated_s2_runs_off_page` | [x] |
+| 11 | `driver` | `s1` = misaligned pointer into the middle of a mapping, unterminated up to the guard page | SIGSEGV (11), no stdout | `err_11_unterminated_s1_misaligned` | [x] |
 
-### Boundary conditions required by the task prompt, mapped to this API
+## Generic boundaries additionally covered (not rows above)
 
-| condition | applicability to `driver` | covered by |
-|-----------|---------------------------|------------|
-| null pointers | both parameters are pointers → rows 1–5 | `error_paths.rs` |
-| zero length | `s1 == ""` and/or `s2 == ""` are *valid* zero-length inputs, not errors → rows 2, 4, 10 + `CONFIGS.md` rows 1–4 | both suites |
-| oversized length | rows 11–12 (≥ 1 MiB `s1`, long `s2`) | `error_paths.rs` |
-| one step past a valid range | there is no numeric range parameter; the analogous case is the byte *value* range — every byte `0x01..=0xFF` is legal in either string and `0x00` terminates. `CONFIGS.md` rows 12–14 sweep the whole byte domain including `0x7F`/`0x80` (the signed-`char` sign-flip boundary, the one place a Rust `i8` vs C `char` comparison could diverge) | `valid_paths.rs` |
-| out-of-range enum values across FFI | **not applicable — the API has no enum, integer, flag, or mode parameter.** `driver` takes exactly two `const char *` and returns `void`; `nm -D` confirms `driver` is the only exported symbol. There is no integer input whose value could fall outside a valid variant set. Documented here so the omission is explicit rather than an oversight. The nearest equivalent — arbitrary/never-valid *pointer* values — is covered by rows 1–7. | rows 1–7 |
+These are the "every C API has them" boundaries required by Phase C. None of
+them is a *rejection* in this library (the C accepts them all and prints a
+number), so they are asserted as output equality rather than as errors.
 
-## Divergences found and fixed (Phase C)
+| condition | C behaviour | test |
+|-----------|-------------|------|
+| zero length: `s1 == ""`, `s2 == ""` | prints `0\n` | `bnd_empty_empty` |
+| zero length `s1`, non-empty `s2` | prints `0\n` | `bnd_empty_s1` |
+| zero length `s2`, non-empty `s1` | prints `strlen(s1)\n` (empty reject set) | `bnd_empty_s2` |
+| oversized length: `s1` of 1 MiB with no match | prints `1048576\n` | `bnd_oversized_no_match` |
+| oversized length: `s2` containing all 255 non-NUL bytes | prints `0\n` for any non-empty `s1` | `bnd_s2_all_255_bytes` |
+| one byte past the ASCII range: bytes `0x80..=0xFF` in `s1`/`s2` (sign of `char` is implementation-defined; a hand-rolled comparison on `i8` vs `u8` is the classic divergence) | compares raw bytes | `bnd_high_bytes` |
+| embedded NUL in the middle of the Rust-side buffer | both stop at the first NUL | `bnd_embedded_nul` |
+| `s1` aliases `s2` (same pointer) | prints `0\n` unless `s1` is empty | `bnd_aliased_pointers` |
+| `s1` is a suffix pointer into `s2`'s buffer | overlapping-buffer read, well defined | `bnd_overlapping_buffers` |
+| result magnitude spans printf digit widths: 0, 1, 9, 10, 99, 100, 999, 1000, 65535, 65536 | `%zu` prints with no padding, no `+`, no thousands separator | `bnd_printf_digit_widths` |
 
-### Divergence 1 — argument access ORDER
+## Out-of-range enum values across the FFI boundary
 
-The original Rust translation implemented `strcspn` as a nested loop — for each byte
-of `s1`, scan `s2` — which means `s2` is **never dereferenced when `s1` is empty**:
-
-```rust
-loop { let c = *p; if c == 0 { break; }        // s1 checked first
-       let mut q = s2; loop { let d = *q; ... } }   // s2 only reached if s1 non-empty
-```
-
-The C library's `strcspn` instead builds a 256-entry reject table from `s2` *before*
-looking at `s1`, so `s2` is consumed unconditionally. The difference is directly
-observable:
-
-| input | C | Rust (before fix) |
-|-------|---|-------------------|
-| `driver("", NULL)` | `SIGSEGV` | exits 0, prints `0\n` |
-| `driver("", <unterminated s2, 1 byte>)` | `SIGSEGV` | exits 0, prints `0\n` |
-| `driver("", <unterminated s2, 4096 bytes>)` | `SIGSEGV` | exits 0, prints `0\n` |
-| `driver("", <wild pointer as s2>)` | `SIGSEGV` | exits 0, prints `0\n` |
-
-Probed with `tests/zz_probe.rs` (kept as `tests/access_order.rs`) to establish the C's
-real access order instead of assuming it. The probe also pinned down the exact read
-*extent*, which the fix had to preserve:
-
-* `s2` is read up to **and including** its NUL, and never past it — a properly
-  terminated `s2` sitting flush against an unmapped guard page does **not** fault, at
-  reject lengths 0, 1, 2, 3 and 4 (so the fix must not over-read, e.g. must not read
-  `s2[1]` when `s2[0]` is already NUL).
-* `s1` is read only up to the byte that stops the scan (its NUL or the first rejected
-  byte), never past it.
-
-**Fix (first attempt)**: scan `s2` to completion into a 256-entry lookup table first,
-then walk `s1`. That reproduced the C's fault behaviour and read extents exactly and
-made rows 4 and 7b pass — in a **release** build. It then failed in a debug build, for
-the unrelated reason below.
-
-### Divergence 2 — fault SIGNAL differs between build profiles
-
-Running the same suite against `target/debug/libdriver.so` (via `DRIVER_RUST_SO`, see
-`check_features.sh`) surfaced a second divergence that the release build hid:
-
-| input | C | Rust debug build |
-|-------|---|------------------|
-| `driver(NULL, "Z")` | `SIGSEGV` (11) | `SIGABRT` (6) — `thread caused non-unwinding panic` |
-| `driver("", NULL)` | `SIGSEGV` (11) | `SIGABRT` (6) |
-
-Since Rust 1.78, `-C debug-assertions` inserts a null/alignment precondition check on
-every raw-pointer dereference, so `*p` on a null pointer raises a non-unwinding panic
-(which aborts) instead of reaching the hardware and faulting. The C reliably delivers
-`SIGSEGV`. No pure-Rust pointer walk can match that in a debug build without dropping
-to inline assembly, and `ptr::read_volatile` carries the same precondition check.
-
-**Fix (final)**: `driver` now calls the platform's `strcspn` through
-`extern "C"` — the *same* libc function the C code calls — just as the translation
-already did for `printf`. Both `strcspn` and `printf` are C standard library
-functions rather than part of the translated source, so binding them instead of
-reimplementing them is both the faithful reading of the C and the only way to get
-identical results, identical read extents, identical access order and identical fault
-signals in **every** build profile. As a bonus the Rust `.so`'s dynamic imports now
-match the C `.so`'s exactly (`printf@GLIBC_*`, `strcspn@GLIBC_*`).
-
-Both divergences are now covered by permanent regression tests in
-`tests/access_order.rs`, which run against the debug **and** release `.so`.
+`driver` takes **no enum, no flag, no mode, and no integer parameter** — its
+only two parameters are `const char *`. There is therefore no enum whose
+domain can be exceeded, and no `switch` in the C source to fall through.
+This row of the Phase C checklist is **vacuous by construction**, and
+`tests/differential.rs::phase_c_no_enum_parameters_exist` documents that with
+a compile-time check of the FFI signature
+(`unsafe extern "C" fn(*const c_char, *const c_char)`) so the claim is
+re-verified rather than merely asserted in prose.

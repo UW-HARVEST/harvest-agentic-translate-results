@@ -1,103 +1,90 @@
 # CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from the C source and the public header.
+Derived mechanically from the C source, the same way `ERRORS.md` is derived.
 
-## Axis enumeration (from the source, not from guesses)
+## Axes the C code actually branches on
 
-**Runtime options / modes / flags:** none. `c_src/include/driver.h` exposes a
-single declaration, `void driver(int x)`. There is no init function, no context
-struct, no setter, no global, no environment-variable read, and no `#ifdef` in
-`src/driver.c`. So the "options" axis is a singleton.
+### 1. Runtime options / modes / flags
 
-**Public entry points (the FULL set, including the lowest level):**
+**None.** Greps over all C sources and headers for `#if`/`#ifdef`
+(only the `DRIVER_H_` include guard), `if`, `switch`, ternary, global/`static`
+mutable state, setter functions, and environment reads all come back empty.
+`driver` has no configuration knob: it is a pure function of its single `int`
+argument (plus the process-wide `stdout` stream it writes to).
 
-| entry point | linkage | in ABI? |
-|---|---|---|
-| `driver(int)` | external | yes — tested directly via `dlsym` |
-| `print_hex(unsigned char*, int)` | `static` (internal) | no — unreachable from outside; its behaviour is covered transitively, and it is *correct* that it is not exported (see `SYMBOLS.md`) |
+### 2. Full set of public entry points
 
-So the lowest-level ABI entry point and the only entry point coincide: `driver`.
+`c_src/include/driver.h` declares exactly one:
 
-**Input shapes the code special-cases:** `driver` has one by-value `int`. The
-code does not branch on its value at all, so the meaningful shapes are the
-*byte-pattern classes* of the 4 bytes that `memcpy` copies and `%02x` formats —
-these are where value-dependent bugs (endianness, sign extension, zero padding)
-actually live:
+| entry point | signature | level |
+|-------------|-----------|-------|
+| `driver` | `void driver(int x)` | the only one — simultaneously the lowest-level and the top-level API |
 
-- byte order (which of the 4 bytes lands at index 0) — endianness
-- bytes `< 0x10` — must be zero-padded to two hex digits by `%02x`
-- bytes `>= 0x80` — must not sign-extend through the `char`→`int` promotion
-- sign bit of `x` set vs. clear
-- extremes: `0`, `-1`, `INT_MIN`, `INT_MAX`
-- fixed length: `len` is always `sizeof(int) == 4`, so exactly 4 loop iterations
+`print_hex` is `static` (file-local), is not declared in the header and is not
+in the dynamic symbol table (see `SYMBOLS.md`), so it is **not** reachable
+across the FFI boundary. It is exercised transitively, on every row below, as
+the composed pipeline `driver → memcpy → print_hex → printf("%02x") ×4 →
+printf("\n")`.
 
-## Configuration-surface table
+### 3. Distinct input shapes the code special-cases
 
-One row per combination the C actually distinguishes. Every row is driven with
-**many randomized inputs (fixed seed)** plus its named boundary values, and both
-`.so`s are compared byte-for-byte on captured `stdout`.
+`sizeof(int) == 4` on the target, so the byte count is fixed at 4 and the
+`i < len` loop always runs exactly 4 iterations. The remaining
+*value-dependent* distinctions in the pipeline are:
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| 1 | `driver` | `x == 0` — all four bytes zero; forces `%02x` zero-padding on every byte | `boundary_extremes` | [x] |
-| 2 | `driver` | `x == -1` (`0xFFFFFFFF`) — all bytes `0xff`, max sign-extension pressure | `boundary_extremes` | [x] |
-| 3 | `driver` | `x == INT_MAX` (`0x7FFFFFFF`) — sign bit clear, all other bits set | `boundary_extremes` | [x] |
-| 4 | `driver` | `x == INT_MIN` (`0x80000000`) — sign bit set, all other bits clear | `boundary_extremes` | [x] |
-| 5 | `driver` | `x == 1` — smallest positive; byte 0 is `01`, bytes 1..3 are `00` (endianness discriminator) | `endianness_discriminators` | [x] |
-| 6 | `driver` | `x == 0x01020304` — all four bytes distinct and ordered; pins byte order exactly | `endianness_discriminators` | [x] |
-| 7 | `driver` | one byte `0x80`..`0xff` and the rest small — isolates signed-`char` sign extension per byte position | `high_bytes_no_sign_extension` | [x] |
-| 8 | `driver` | every byte `< 0x10` (e.g. `0x01020304`, `0x0f0e0d0c`) — zero-padding in all 4 positions | `low_nibble_zero_padding` | [x] |
-| 9 | `driver` | single bit set, swept across all 32 bit positions | `single_bit_sweep` | [x] |
-| 10 | `driver` | all 256 byte values placed in each of the 4 byte positions (1024 cases) — exhaustive per-position byte coverage | `all_byte_values_each_position` | [x] |
-| 11 | `driver` | uniformly random `i32`, 4000 seeded samples over the full range | `randomized_full_range` | [x] |
-| 12 | `driver` | repeated / consecutive calls in one process — checks output framing (one `\n`-terminated line per call) and that no state leaks between calls | `repeated_calls_framing` | [x] |
-| 13 | `driver` | interleaved C-then-Rust and Rust-then-C call ordering on the shared libc `stdout` — checks the translation does not depend on stream state or ordering | `interleaved_call_order` | [x] |
+- **`%02x` zero-padding**: a byte `< 0x10` prints one significant hex digit and
+  must be left-padded with `'0'`; a byte `>= 0x10` prints two.
+- **`unsigned char` → `int` integer promotion**: a byte `>= 0x80` has its high
+  bit set. If the translation used a signed byte type it would sign-extend and
+  `%02x` would emit `ffffffXX` instead of `XX`. This is the classic divergence
+  and must be probed at every one of the 4 byte offsets.
+- **Byte order**: `memcpy(raw, &x, sizeof x)` copies the *native*
+  representation, so the printed byte order is the platform's (little-endian
+  here). A translation using `to_be_bytes` would pass on palindromic inputs and
+  fail on asymmetric ones.
+- **Sign of `x` / extreme magnitudes**: `INT_MIN`/`INT_MAX` and negative values
+  exercise the top byte's high bit.
+- **Call sequencing**: `print_hex` terminates each record with `"\n"`, so a
+  sequence of calls must produce exactly one line per call, in order, with no
+  leaked state between calls.
+
+## Configuration table
+
+One row per meaningful combination of the axes above (options × input shape).
+Every row is driven through **both** `.so` exports via `libloading`, with
+stdout captured at the file-descriptor level and compared byte-for-byte.
+Randomized rows use a fixed-seed SplitMix64 PRNG for reproducibility.
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `driver` | no options (none exist) + `x == 0` — all four bytes `0x00`, exercises `%02x` zero-padding at all 4 offsets simultaneously | [x] |
+| 2 | `driver` | `x == -1` (`0xffffffff`) — all four bytes `>= 0x80`, exercises the integer-promotion / sign-extension path at all 4 offsets simultaneously | [x] |
+| 3 | `driver` | `x == INT_MAX` (`0x7fffffff`) — top byte `0x7f`, low bytes `0xff`; byte-order-asymmetric | [x] |
+| 4 | `driver` | `x == INT_MIN` (`0x80000000`) — top byte exactly `0x80`, low bytes `0x00`; the high-bit boundary | [x] |
+| 5 | `driver` | boundary neighbours one step past / before the extremes: `INT_MAX-1`, `INT_MIN+1`, `-2`, `1`, and the `0x7fffffff↔0x80000000` wrap pair | [x] |
+| 6 | `driver` | single low-nibble byte at each offset: `0x0000000N`, `0x00000N00`, `0x000N0000`, `0x0N000000` for every `N` in `1..=0xf` — padding × byte-position cross-product (60 inputs) | [x] |
+| 7 | `driver` | single high-bit byte at each offset: `0x000000HH`, `0x0000HH00`, `0x00HH0000`, `0xHH000000` for every `HH` in `0x80..=0xff` — sign-extension × byte-position cross-product, each against an all-`0x00` and an all-`0xff` background (1024 inputs) | [x] |
+| 8 | `driver` | exhaustive sweep of one byte position at a time: each of the 4 offsets × all 256 byte values, other bytes held at `0x00` and again at `0xff` (2048 inputs), **plus** an exhaustive sweep of every value of the low 16-bit half-word and of the high 16-bit half-word (2 x 65 536 inputs) | [x] |
+| 9 | `driver` | byte-order-sensitive asymmetric patterns: `0x000000ff`, `0xff000000`, `0x0000ff00`, `0x00ff0000`, `0x12345678`, `0x78563412`, `0xdeadbeef`, `0xefbeadde` | [x] |
+| 10 | `driver` | mixed nibble patterns where every byte differs in both nibbles and in padding class: `0x0f1e2d3c`, `0xa0b1c2d3`, `0x01f0e0d0`, … | [x] |
+| 11 | `driver` | randomized, uniform over the **full** `i32` domain — 200 000 inputs, fixed seed | [x] |
+| 12 | `driver` | randomized, every byte constrained to `0x00..=0x0f` — stresses padding-only outputs, 2 000 inputs, fixed seed | [x] |
+| 13 | `driver` | randomized, every byte constrained to `0x80..=0xff` — stresses promotion-only outputs, 2 000 inputs, fixed seed | [x] |
+| 14 | `driver` | randomized, bytes drawn from the padding/promotion boundary set `{0x00,0x0f,0x10,0x7f,0x80,0xff}` — 2 000 inputs, fixed seed | [x] |
+| 15 | `driver` | **sequenced pipeline**: one long run of 5 000 randomized calls into a single captured stream, comparing the whole multi-line transcript — verifies one `"\n"`-terminated line per call, correct ordering, and no state leaking between calls | [x] |
+| 16 | `driver` | interleaved C/Rust calls into the **same** stdout stream (C, Rust, C, Rust, …) — verifies the Rust `.so` shares libc's `stdout` buffering and does not reorder or duplicate output relative to C | [x] |
+
+## Binary executable
+
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)` —
+there is no `add_executable`, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]` with no `[[bin]]` and no `src/main.rs`.
+**The project builds no driver binary**, so the "compare C and Rust stdout of
+the binaries" obligation is vacuous. (Stdout *is* nevertheless compared
+byte-for-byte on every row above, since stdout is this library's only output.)
 
 ## Feature combinations
 
-`Cargo.toml` declares no `[features]`, so the cross-product of features is the
-single default configuration. The test runner script enumerates the feature list
-from `Cargo.toml` programmatically and confirms this rather than assuming it.
-
----
-
-## Verification results
-
-Run with `./run_tests.sh` (which builds the C `.so`, builds the Rust cdylib,
-diffs symbols, then runs the differential suite for every feature combination in
-both `debug` and `release`).
-
-All 13 rows pass, in both profiles, across randomized inputs:
-
-- 15 tests pass (12 differential + 3 symbol-parity) per configuration.
-- Default suite performs ~5,400 differential `driver` comparisons.
-- `extended_randomized_sweep` (`cargo test -- --ignored`) performs a further
-  **210,000** comparisons (200k seeded random + dense walks at both range ends);
-  all byte-identical.
-
-### Harness-integrity note (important)
-
-`cargo test` does **not** build the `cdylib` for this crate (`crate-type =
-["cdylib"]`). Two harness defects were found and fixed while validating that the
-tests can actually fail:
-
-1. **Stale artifact.** The path search silently fell back to an older
-   `libdriver.so`, so edits to `src/lib.rs` were not being tested at all.
-   `assert_so_is_fresh` now aborts if the `.so` predates any `src/**/*.rs`.
-2. **Non-restored fd 1.** A panic inside the capture window left fd 1 pointing
-   at the temp file, discarding every later message (including the panic report
-   that explained the failure). The redirect is now restored via `Drop`, and
-   library loading happens before the redirect.
-
-### Mutation testing (proof the suite has detection power)
-
-Each deliberate bug was injected into `src/lib.rs`, rebuilt, and the suite re-run:
-
-| mutation | result |
-|---|---|
-| `to_ne_bytes` -> `to_be_bytes` (byte order) | 12 tests FAILED |
-| `%02x` -> `%x` (lost zero-padding) | 12 tests FAILED |
-| removed the trailing `printf("\n")` | 12 tests FAILED |
-| printed 3 bytes instead of `sizeof(int)` | 12 tests FAILED |
-
-`src/lib.rs` was restored to its original contents afterwards (verified).
+`translation/Cargo.toml` has **no `[features]` section**, hence exactly one
+configuration: the default (`--no-default-features` is equivalent). Verified by
+the loop in `run_all.sh`.

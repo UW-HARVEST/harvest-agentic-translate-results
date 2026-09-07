@@ -1,91 +1,133 @@
-# CONFIGS.md — Phase B configuration surface
+# CONFIGS.md — Configuration-surface table (Phase A, gates Phase B)
 
-Mechanically derived from `c_src/src/lib.c` (the only translation unit) and
-`c_src/include/lib.h` (the only public header).
+## Axes derived mechanically from the C source
 
-## Public entry points
+`c_src/include/lib.h` exposes exactly one entry point, so the "full set of
+public entry points, including the lowest-level ones" is a single function:
 
-`nm -D` and the header agree: there is exactly **one** public entry point, and
-it is already the lowest level one — there is no convenience wrapper, no
-one-shot helper, no init/destroy pair, no context object:
+```c
+void hsv_to_rgb(float *dest, const float *src);   /* the ONLY entry point */
+```
 
-| entry point | signature |
-|---|---|
-| `hsv_to_rgb` | `void hsv_to_rgb(float *dest, const float *src)` |
+There are **no runtime options, modes, flags, context/handle objects,
+init/teardown calls, byte-order switches or element-type switches** — grep for
+`#ifdef` / `#if` / global state in `c_src/src/lib.c` returns nothing, and the
+Rust crate declares **no** `[features]` in `Cargo.toml`, so there is exactly
+one feature combination (`--no-default-features` ≡ default ≡ all-features).
 
-## Axes the C actually branches on
+The axes the C code *actually branches on* are therefore purely input-shape:
 
-Derived from every `if` / `switch` / conversion in the source; there are no
-`#ifdef`s, no runtime option setters, no global/`static` state, and no
-Cargo features in `translation/Cargo.toml` (so exactly one feature
-combination exists — see `check_all_features.sh`).
+* **A1 — `s == 0` predicate** (line 12): `{ s is ±0.0 → early return, s is anything else → full path }`.
+  NB: `s = NaN` and `s` subnormal both take the *full* path.
+* **A2 — `i = (int)floorf(h/60.0f)`, the `switch` discriminant** (line 24–55),
+  6 distinguished outcomes: `{0, 1, 2, 3, 4, default}`, where `default` splits
+  into sub-shapes the conversion itself distinguishes:
+  `{i<0, i>=5, i==INT_MIN-from-NaN, i==INT_MIN-from-overflow}`.
+* **A3 — fractional part `f = h - i`** feeding `q` and `t`: `{f == 0 exactly
+  (h a multiple of 60), 0 < f < 1 generic, f near 1}`.
+* **A4 — float value class of each of `h`, `s`, `v`** independently:
+  `{normal, ±0.0, subnormal, ±Inf, NaN, huge (near f32 max), tiny}`.
+* **A5 — `s` magnitude relative to 1** (drives sign of `1 - s`, hence sign of
+  `p`, `q`, `t`): `{0<s<1 canonical, s == 1 exactly, s > 1, s < 0}`.
+* **A6 — pointer shape of `dest` vs `src`** (params are **not** `restrict`):
+  `{disjoint, dest == src, dest == src+1, dest == src-1, unaligned}`.
 
-| axis | values the C distinguishes | where |
-|---|---|---|
-| A1 saturation branch | `s == 0` (true, incl. `-0.0`) / `s != 0` (incl. NaN) | `lib.c:12` |
-| A2 `switch` arm | `i == 0`, `1`, `2`, `3`, `4`, `default` (unsigned `ja` bound check ⇒ every negative `i` and every `i > 4`) | `lib.c:24-55` |
-| A3 hue→selector conversion | `(int)floorf(h/60)` in range / NaN / `>= 2^31` / `<= -2^31` (`cvttss2si` ⇒ `INT_MIN`) | `lib.c:18-19` |
-| A4 `h` value class | in `[0,360)`, exact multiple of 60 (`f == 0`), `±0`, negative, `>= 360`, subnormal, huge finite, `±inf`, quiet/signalling NaN (payloads) | `lib.c:18-20` |
-| A5 `s` value class | `+0`, `-0`, subnormal, `(0,1)`, exactly `1`, `>1`, negative, `±inf`, NaN | `lib.c:12,21-23` |
-| A6 `v` value class | `+0`, `-0`, subnormal, `(0,1]`, `>1`, huge, negative, `±inf`, NaN | `lib.c:13-15,21-23` |
-| A7 buffer aliasing | `dest`/`src` disjoint, `dest == src`, `dest == src±1`, `dest == src±2` (the C snapshots `h,s,v` into locals before storing, so in-place is well defined) | `lib.c:8-10` vs `56-58` |
-| A8 pointer alignment | 4-byte aligned / misaligned by 1,2,3 bytes (unaligned `movss`, no alignment check) | `lib.c:8-10,56-58` |
-| A9 written extent | exactly `dest[0..3]`; `src` never written | `lib.c:13-15,56-58` |
-| A10 call sequencing | stateless: repeated and interleaved C/Rust calls must be identical (also catches MXCSR/FTZ contamination between the two objects) | whole file |
+Rows below are the cross-product of A1–A6 pruned to the combinations the code
+distinguishes. Every row is exercised with **many randomized inputs**
+(`SEED = 0x5eed_1234`, deterministic xorshift PRNG) and compared **bit-for-bit**
+(`f32::to_bits`) between the C `.so` and the Rust `.so`, both loaded through
+`libloading`.
 
-## Configuration table (one row per combination the C treats differently)
+## Row table
 
-Every row is driven with **many** randomized inputs (fixed seed, `Rng::new`)
-in addition to the hand-picked boundary values, and every row asserts
-bit-identical `[u32; 3]` output from the C `.so` and the Rust `.so`.
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `hsv_to_rgb` | A1 early-return: `s = +0.0`, `h`/`v` randomized over all normal ranges, disjoint buffers | [x] |
+| 2 | `hsv_to_rgb` | A1 early-return: `s = -0.0`, randomized `h`/`v` | [x] |
+| 3 | `hsv_to_rgb` | A1 early-return with `v` from the special set {±0.0, ±Inf, NaN, subnormal, f32::MAX/MIN} | [x] |
+| 4 | `hsv_to_rgb` | A2 `i == 0`: `h ∈ [0,60)` randomized, `s ∈ (0,1)`, `v ∈ [0,1]` (canonical HSV) | [x] |
+| 5 | `hsv_to_rgb` | A2 `i == 1`: `h ∈ [60,120)` randomized, canonical `s`,`v` | [x] |
+| 6 | `hsv_to_rgb` | A2 `i == 2`: `h ∈ [120,180)` randomized, canonical `s`,`v` | [x] |
+| 7 | `hsv_to_rgb` | A2 `i == 3`: `h ∈ [180,240)` randomized, canonical `s`,`v` | [x] |
+| 8 | `hsv_to_rgb` | A2 `i == 4`: `h ∈ [240,300)` randomized, canonical `s`,`v` | [x] |
+| 9 | `hsv_to_rgb` | A2 `default` via `i == 5`: `h ∈ [300,360)` randomized, canonical `s`,`v` | [x] |
+| 10 | `hsv_to_rgb` | A2 `default` via `i >= 6`: `h ∈ [360, 1e6)` randomized (no hue wrapping in C) | [x] |
+| 11 | `hsv_to_rgb` | A2 `default` via `i < 0`: `h ∈ (-1e6, 0)` randomized negative hue | [x] |
+| 12 | `hsv_to_rgb` | A3 `f == 0` exactly: `h = 60*k` for k = 0..8 and k negative, randomized `s`,`v` | [x] |
+| 13 | `hsv_to_rgb` | A3 `f` just below 1: `h = nextafter(60*(k+1), -inf)`, randomized `s`,`v` | [x] |
+| 14 | `hsv_to_rgb` | A5 `s == 1.0` exactly (⇒ `p == 0`, sign-of-zero observable), randomized `h`,`v` | [x] |
+| 15 | `hsv_to_rgb` | A5 `s > 1` (e.g. `s ∈ (1, 1e6)`) ⇒ `1-s` negative ⇒ negative `p`,`q`,`t`; randomized `h`,`v` | [x] |
+| 16 | `hsv_to_rgb` | A5 `s < 0` (`s ∈ (-1e6, 0)`, excluding `-0.0`) ⇒ `1-s > 1`; randomized `h`,`v` | [x] |
+| 17 | `hsv_to_rgb` | A4 `v` special {±Inf, NaN, ±0.0, subnormal, MAX} × A2 all 6 arms, `s ∈ (0,1)` randomized | [x] |
+| 18 | `hsv_to_rgb` | A4 `s` special {±Inf, NaN, subnormal, MAX} × A2 all 6 arms, randomized `v` | [x] |
+| 19 | `hsv_to_rgb` | A4 `h` special {±Inf, NaN, subnormal, ±f32::MAX, 2^31·60, 1e30} × randomized `s`,`v` | [x] |
+| 20 | `hsv_to_rgb` | A4 fully unconstrained: all three components drawn as **uniform random 32-bit patterns** (any float incl. NaN payloads/Inf/subnormal), 200 000 iterations | [x] |
+| 21 | `hsv_to_rgb` | A4 `h`,`s`,`v` drawn from a curated boundary pool (cross-product of ~30 boundary floats³ ≈ 27 000 exhaustive triples) | [x] |
+| 22 | `hsv_to_rgb` | A6 `dest == src` (full alias), randomized inputs on the full path | [x] |
+| 23 | `hsv_to_rgb` | A6 `dest == src` (full alias) on the `s == 0` early path | [x] |
+| 24 | `hsv_to_rgb` | A6 `dest == src + 1` (forward-overlap), randomized inputs | [x] |
+| 25 | `hsv_to_rgb` | A6 `dest == src - 1` (backward-overlap), randomized inputs | [x] |
+| 26 | `hsv_to_rgb` | A6 unaligned `src` and `dest` (byte-offset 1/2/3 within a `u8` arena), randomized inputs | [x] |
+| 27 | `hsv_to_rgb` | A6 disjoint buffers with guard canaries either side of the 3-float window (verifies exactly 3 reads / 3 writes) | [x] |
+| 28 | `hsv_to_rgb` | repeated back-to-back invocations reusing the same buffers (verifies no hidden static/global state in either library) | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | test | ✔ |
-|---|----------------|--------------------------------------------|------|---|
-| 1 | `hsv_to_rgb` | A1=`s==+0.0`; random normal `h∈[-1e3,1e3]`, `v∈[-2,2]`; disjoint aligned | `b01_s_zero_random` | [x] |
-| 2 | `hsv_to_rgb` | A1=`s==-0.0`; random normal `h`, `v` | `b02_s_negative_zero_random` | [x] |
-| 3 | `hsv_to_rgb` | A1=`s==±0`; A6 = every `SPECIAL` and every NaN `v` | `b03_s_zero_v_special` | [x] |
-| 4 | `hsv_to_rgb` | A1=`s==±0`; A4 = every `SPECIAL`/NaN `h` (must be ignored) | `b04_s_zero_h_special` | [x] |
-| 5 | `hsv_to_rgb` | A1=`s==+0`; A7 `dest == src` (in-place) | `b05_s_zero_in_place` | [x] |
-| 6 | `hsv_to_rgb` | A1=`s==+0`; A7 `dest == src+1` and `src == dest+1` | `b06_s_zero_overlap_one` | [x] |
-| 7 | `hsv_to_rgb` | A1=`s==+0`; A7 `dest == src+2` and `src == dest+2` | `b07_s_zero_overlap_two` | [x] |
-| 8 | `hsv_to_rgb` | A1=`s==+0`; A8 misaligned `src` and `dest` (1,2,3 byte offsets) | `b08_s_zero_misaligned` | [x] |
-| 9 | `hsv_to_rgb` | A1=`s==+0`; A9 canary/immutability check | `b09_s_zero_extent` | [x] |
-| 10 | `hsv_to_rgb` | A2 arm 0 (`h∈[0,60)`), `s∈(0,1]`, `v∈[0,1]` random | `b10_arm0_random` | [x] |
-| 11 | `hsv_to_rgb` | A2 arm 1 (`h∈[60,120)`) | `b11_arm1_random` | [x] |
-| 12 | `hsv_to_rgb` | A2 arm 2 (`h∈[120,180)`) | `b12_arm2_random` | [x] |
-| 13 | `hsv_to_rgb` | A2 arm 3 (`h∈[180,240)`) | `b13_arm3_random` | [x] |
-| 14 | `hsv_to_rgb` | A2 arm 4 (`h∈[240,300)`) | `b14_arm4_random` | [x] |
-| 15 | `hsv_to_rgb` | A2 `default` via `i==5` (`h∈[300,360)`) | `b15_arm5_default_random` | [x] |
-| 16 | `hsv_to_rgb` | A2 `default` via `i>=6` (`h∈[360,3600)`, no hue wrap) | `b16_arm_ge6_default_random` | [x] |
-| 17 | `hsv_to_rgb` | A2 `default` via `i<0` (`h∈(-3600,0)`) | `b17_arm_negative_default_random` | [x] |
-| 18 | `hsv_to_rgb` | A4 `h` exactly `k*60`, `k∈[-64,64]` (`f == 0` boundary) × random `s`,`v` | `b18_hue_exact_multiples` | [x] |
-| 19 | `hsv_to_rgb` | A4 `h` = `nextafter(k*60, ±inf)` for `k∈[-8,8]` (arm boundaries) | `b19_hue_next_to_multiples` | [x] |
-| 20 | `hsv_to_rgb` | A4 `h == ±0.0`, `s∈(0,1]`, random `v` | `b20_hue_signed_zero` | [x] |
-| 21 | `hsv_to_rgb` | A4 `h` subnormal / tiny (`±1e-45`, `±1e-40`, `±MIN_POSITIVE`) | `b21_hue_subnormal` | [x] |
-| 22 | `hsv_to_rgb` | A3 `h` huge finite but `h/60 < 2^31` (large in-range `i`) | `b22_hue_huge_in_int_range` | [x] |
-| 23 | `hsv_to_rgb` | A3 `h/60` at/just past `±2^31` ⇒ `cvttss2si` `INT_MIN` | `b23_hue_int_conversion_boundary` | [x] |
-| 24 | `hsv_to_rgb` | A4 `h == ±inf` × all `s`,`v` classes | `b24_hue_infinite` | [x] |
-| 25 | `hsv_to_rgb` | A4 `h` = every NaN in `NANS` (quiet, signalling, payloads) × `s`,`v` classes | `b25_hue_nan` | [x] |
-| 26 | `hsv_to_rgb` | A5 `s == 1.0` exactly × all 8 arms × random `v` | `b26_s_exactly_one` | [x] |
-| 27 | `hsv_to_rgb` | A5 `s` subnormal/tiny (`1e-45`, `1e-40`, `MIN_POSITIVE`) × all arms | `b27_s_subnormal` | [x] |
-| 28 | `hsv_to_rgb` | A5 `s > 1` (`1.5`, `1e30`, `f32::MAX`) × all arms | `b28_s_above_one` | [x] |
-| 29 | `hsv_to_rgb` | A5 `s < 0` (`-1e-45`, `-0.5`, `-1e30`, `f32::MIN`) × all arms | `b29_s_negative` | [x] |
-| 30 | `hsv_to_rgb` | A5 `s == ±inf` × all arms × `v` classes (includes `0*inf`) | `b30_s_infinite` | [x] |
-| 31 | `hsv_to_rgb` | A5 `s` = every NaN in `NANS` × all arms × `v` classes | `b31_s_nan` | [x] |
-| 32 | `hsv_to_rgb` | A6 `v == ±0` with `s != 0` × all arms (invalid-operation NaN generation) | `b32_v_zero` | [x] |
-| 33 | `hsv_to_rgb` | A6 `v` ∈ `SPECIAL ∪ NANS` × all arms × `s∈{0.25,1,1.5,-0.5,inf}` | `b33_v_special` | [x] |
-| 34 | `hsv_to_rgb` | full cross-product fuzz: `h`,`s`,`v` uniform over **all** `f32` bit patterns, 300 000 triples | `b34_full_random_bitpatterns` | [x] |
-| 35 | `hsv_to_rgb` | A7 `dest == src` in-place, main path, all arms × randomized `s`,`v` | `b35_in_place_main_path` | [x] |
-| 36 | `hsv_to_rgb` | A7 partial overlap `dest = src±1`, `dest = src±2`, main path, randomized | `b36_overlap_main_path` | [x] |
-| 37 | `hsv_to_rgb` | A8 misaligned `src`/`dest` (offsets 1,2,3), main path, randomized | `b37_misaligned_main_path` | [x] |
-| 38 | `hsv_to_rgb` | A9 exact written extent + `src` immutability, main path, randomized | `b38_extent_main_path` | [x] |
-| 39 | `hsv_to_rgb` | A10 statelessness: identical repeated calls, and C/Rust calls interleaved in randomized order | `b39_stateless_interleaved` | [x] |
-| 40 | `hsv_to_rgb` | deterministic grid sweep `h = -720..1080 step 0.25` × `s,v ∈ {0, 1e-45, 0.25, 0.5, 0.75, 1, 1.5}` | `b40_grid_sweep` | [x] |
-| 41 | `hsv_to_rgb` | NaN-payload cross product: 24 NaN encodings (quiet/signalling, both signs, min/max payloads) for `(s,v)`, `(h,s)`, `(h,v)` and `(h,s,v)`, crossed with every arm — the axis on which a real divergence was found (SSE destination-operand-wins NaN selection) | `b41_nan_payload_cross_product` | [x] |
-| 42 | `hsv_to_rgb` | strided exhaustive sweep of the whole 2^32 bit-pattern space of each axis (prime stride 65521 ⇒ every exponent, both signs, subnormals, infinities, NaNs) × 6 pinned settings of the other two | `b42_strided_bitpattern_sweeps` | [x] |
+## Binary / driver
 
-Rows 1-9 cover the `s == 0` early-return configuration against every input
-shape; rows 10-34 cover the main path against every value class and every
-`switch` arm; rows 35-40 re-run the shape axes (aliasing / alignment / extent /
-sequencing) on the main path, because the C reaches its stores through a
-different code path there; rows 41-42 add depth where an actual bug was found.
+`c_src/CMakeLists.txt` declares only `add_library(... SHARED src/lib.c)` — there
+is **no** `add_executable`, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]` with no `[[bin]]` and no `src/main.rs`. The
+project builds **no binary executable**, so the "compare C and Rust stdout"
+gate is not applicable (nothing to run).
+
+## Feature combinations
+
+`translation/Cargo.toml` has no `[features]` table. The complete set of feature
+combinations is therefore `{ default }` = `{ --no-default-features }` =
+`{ --all-features }`; the suite is run under all three invocations to confirm.
+
+## Verification results
+
+All 28 rows are implemented as one `#[test]` each in
+`tests/phase_b_configs.rs` and pass with **0 divergences**:
+
+```
+tests/phase_b_configs.rs: 28 passed; 0 failed
+tests/phase_c_errors.rs:  20 passed; 0 failed; 1 ignored (child-process helper)
+```
+
+Re-run everything with `./run_all.sh` (all feature combos × both profiles) and
+`./check_parity.sh` (symbol parity). Confirmed green for:
+
+| profile | features | result |
+|---------|----------|--------|
+| release | default | PASS |
+| release | `--no-default-features` | PASS |
+| release | `--all-features` | PASS |
+| dev | default | PASS |
+| dev | `--no-default-features` | PASS |
+| dev | `--all-features` | PASS |
+
+### C-codegen independence
+
+The suite was additionally replayed against the C library rebuilt at three
+optimization levels (via `HARNESS_C_SO`, without modifying `c_src/`):
+
+| C build | float→int / floor codegen | result |
+|---------|---------------------------|--------|
+| `-O0` | `call floorf@plt` + `cvttss2si` | PASS |
+| `-O2` | inlined `roundss` + `cvttss2si` | PASS |
+| `-O3` | inlined `roundss` + `cvttss2si` | PASS |
+
+This proves the Rust `f32::floor` is bit-identical to libm `floorf` here and
+that the `c_float_to_int` model of `cvttss2si` (NaN / out-of-range →
+`INT_MIN`) matches the real hardware conversion the C performs.
+
+### Harness integrity (important)
+
+`cargo test` does **not** rebuild a `crate-type = ["cdylib"]` lib target, so an
+opportunistic "load `target/release/*.so`" harness silently tests a **stale**
+artifact. This was caught by a negative control: an intentional bug injected
+into the `default:` arm of `src/lib.rs` was **not** detected. The harness now
+shells out to `cargo build --release --lib` into a dedicated
+`CARGO_TARGET_DIR` on every run; after that fix the same injected bug was
+detected by 10 of the 28 rows, and the control was reverted.

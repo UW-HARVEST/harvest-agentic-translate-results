@@ -6,9 +6,7 @@
 //!
 //! The behaviour of the C original is reproduced exactly, including its quirks
 //! (e.g. the out-of-bounds `outDirName[strlen(outDirName)-1]` read when
-//! `outDirName` is the empty string, and the `exit(30)` on allocation failure),
-//! and including the fatal signal it raises on a NULL argument — the C performs
-//! no null checks whatsoever, so neither does this translation.
+//! `outDirName` is the empty string, and the `exit(30)` on allocation failure).
 
 #![allow(non_snake_case)]
 
@@ -21,6 +19,12 @@ use core::ffi::{c_char, c_int, c_void};
 // released by the caller with free(), therefore it must come from the very same
 // allocator the C code used: libc's calloc().
 // ---------------------------------------------------------------------------
+// The string routines are imported from libc as well, rather than
+// re-implemented, so that every observable detail matches the C original
+// bit-for-bit -- including what happens for invalid inputs. A hand-written Rust
+// `strlen` would, under `-C debug-assertions`, trip Rust's raw-pointer UB checks
+// and `abort()` (SIGABRT) where the C faults (SIGSEGV); calling the very same
+// libc symbols the C calls removes that whole class of divergence.
 unsafe extern "C" {
     fn calloc(nmemb: usize, size: usize) -> *mut c_void;
     fn exit(status: c_int) -> !;
@@ -28,13 +32,6 @@ unsafe extern "C" {
     fn strerror(errnum: c_int) -> *mut c_char;
     fn __errno_location() -> *mut c_int;
 
-    // The C source calls these libc routines directly, so the translation binds
-    // to the very same implementations rather than re-implementing them. This
-    // matters for more than just speed: a hand-written Rust `strlen` triggers
-    // rustc's "null pointer dereference occurred" check, which turns into a
-    // non-unwinding panic (SIGABRT) inside an `extern "C"` function, whereas the
-    // C faults inside glibc with SIGSEGV. Binding to libc reproduces the C's
-    // fatal-signal behaviour exactly, under every build profile.
     fn strlen(s: *const c_char) -> usize;
     fn strrchr(s: *const c_char, c: c_int) -> *mut c_char;
     fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
@@ -62,16 +59,19 @@ const SEPARATOR: c_char = b'/' as c_char;
 /// or `path` itself when the separator does not occur.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn extractFilename(path: *const c_char, separator: c_char) -> *const c_char {
-    // `strrchr(path, separator)`: the C `char` argument undergoes the usual
-    // integer promotion to `int`, i.e. it is SIGN-extended (`char` is signed on
-    // this target). `separator as c_int` reproduces that promotion exactly.
     // SAFETY: `path` is a NUL terminated C string, as required by the C API.
+    // The `char` argument is promoted to `int` exactly as the C compiler does
+    // for the `strrchr(path, separator)` call (sign-extending on platforms with
+    // a signed `char`).
     let search: *const c_char = unsafe { strrchr(path, separator as c_int) };
     if search.is_null() {
         return path;
     }
-    // SAFETY: `search` points inside `path`, so one-past it is in bounds.
-    unsafe { search.add(1) }
+    // `search+1` mirrors the C literally; `wrapping_add` avoids imposing any
+    // Rust-only provenance/bounds requirement that the C does not have (e.g.
+    // `separator == 0`, where `search` points at the terminator and the result
+    // is deliberately one past the end of the string).
+    search.wrapping_add(1)
 }
 
 /// ```c
@@ -128,18 +128,18 @@ pub unsafe extern "C" fn FIO_createFilename_fromOutDir(
         // that out-of-bounds access is preserved verbatim here.
         if *outDirName.wrapping_add(outDirLen.wrapping_sub(1)) == separator {
             memcpy(
-                result.add(outDirLen) as *mut c_void,
+                result.wrapping_add(outDirLen) as *mut c_void,
                 filenameStart as *const c_void,
                 filenameLen,
             );
         } else {
             memcpy(
-                result.add(outDirLen) as *mut c_void,
+                result.wrapping_add(outDirLen) as *mut c_void,
                 &separator as *const c_char as *const c_void,
                 1,
             );
             memcpy(
-                result.add(outDirLen).add(1) as *mut c_void,
+                result.wrapping_add(outDirLen).wrapping_add(1) as *mut c_void,
                 filenameStart as *const c_void,
                 filenameLen,
             );

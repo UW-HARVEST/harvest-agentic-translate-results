@@ -148,20 +148,10 @@ pub unsafe extern "C" fn cJSON_GetStringValue(item: *const cJSON) -> *mut c_char
     (*item).valuestring
 }
 
-/// The value of cJSON.c's `NAN` macro.
-///
-/// `cJSON.c` is compiled as C89 (`-std=c89` in `CMakeLists.txt`), so glibc's
-/// `<math.h>` leaves `NAN` undefined (it is guarded by `__USE_ISOC99`) and the
-/// library's own fallback `#define NAN 0.0/0.0` takes effect.  The compiler
-/// constant-folds `0.0/0.0` the way the hardware computes it, which on IEEE-754
-/// targets yields the *negative* default quiet NaN, i.e. the bit pattern
-/// `0xFFF8_0000_0000_0000` — not Rust's positive `f64::NAN`.
-const C_NAN: f64 = f64::from_bits(0xFFF8_0000_0000_0000);
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cJSON_GetNumberValue(item: *const cJSON) -> f64 {
     if cJSON_IsNumber(item) == 0 {
-        return C_NAN;
+        return f64::NAN;
     }
 
     (*item).valuedouble

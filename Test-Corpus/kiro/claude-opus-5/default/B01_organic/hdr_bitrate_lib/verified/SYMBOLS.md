@@ -1,60 +1,44 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
 
-Derived mechanically from `nm -D` on both shared libraries.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Commands used:
+* C  `.so`: `c_src/build/libharvest-work-qKupep.so`
+* Rust `.so`: `translation/target/release/libhdr_bitrate_lib.so`
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only build/libharvest-work-DqQCoH.so
+## C `.so` exported (defined, dynamic) symbols
 
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only target/release/libhdr_bitrate_lib.so
+```
+$ nm -D --defined-only c_src/build/libharvest-work-qKupep.so
+00000000000010f9 T hdr_bitrate
 ```
 
-## C `.so` dynamic symbol table (defined)
+The C library defines exactly **one** dynamic symbol. `c_src/include/lib.h`
+declares exactly one function and no renaming macros, so the linker name equals
+the source name. `halfrate.0` is a function-local `static const` and is a
+`LOCAL` symbol in `.symtab` only — it is not exported, so it is not part of the
+ABI surface.
 
-| # | symbol | type | source |
-|---|--------|------|--------|
-| 1 | `hdr_bitrate` | `T` (global text) | `c_src/src/lib.c` |
+## Parity table
 
-`c_src/include/lib.h` declares exactly one function and there are no
-namespace-renaming macros, no `#define`-generated symbol aliases, and no other
-translation units in `CMakeLists.txt` (`add_library(... SHARED src/lib.c)`), so
-the surface is a single symbol.
+| # | C symbol | type | present in Rust `.so`? | Rust item |
+|---|----------|------|------------------------|-----------|
+| 1 | `hdr_bitrate` | `T` (global text) | YES — `T hdr_bitrate` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn hdr_bitrate` in `src/lib.rs` |
 
-`halfrate.0` appears in the *static* symbol table (`nm` without `-D`) as a
-function-local `static const` array. It is **not** a dynamic symbol and is not
-part of the ABI, so it is not required in the Rust `.so`.
+## Symbol diff
 
-## Rust `.so` dynamic symbol table (defined, non-libc)
+```
+$ diff <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
+       <(nm -D --defined-only RUST.so | awk '{print $3}' | sort | grep -vE '^(_ZN|rust_|__rust|_ITM_|__cxa|_Unwind)')
+(empty)
+```
 
-| # | symbol | type | source |
-|---|--------|------|--------|
-| 1 | `hdr_bitrate` | `T` (global text) | `translation/src/lib.rs` (`#[unsafe(no_mangle)] pub unsafe extern "C" fn`) |
+**Missing symbols: 0.** No module of the C source was left untranslated
+(`c_src/src/lib.c` is 14 lines and is the only C translation unit in
+`CMakeLists.txt`). No stubs or `unimplemented!()` were added.
 
-## Diff
+## Undefined (imported) symbols
 
-| symbol | in C `.so` | in Rust `.so` | status |
-|--------|-----------|--------------|--------|
-| `hdr_bitrate` | yes | yes | MATCH |
-
-**Missing from Rust: none.** No implementation had to be added and no C module
-was left untranslated — `src/lib.c` is the only C source file and its single
-function is fully translated.
-
-## Undefined (imported) symbols in the Rust `.so`
-
-All `U` entries are the standard C runtime / unwinder imports emitted for any
-`cdylib` (`__cxa_thread_atexit_impl`, `_ITM_*`, `__tls_get_addr`,
-`__gmon_start__`, and libc/`libgcc_s` entries). There are **0 undefined
-non-libc symbols** — the library has no unresolved Rust-side references.
-
-## Verification gate
-
-- [x] `nm -D` shows 0 symbols present in the C `.so` but missing from the Rust `.so`.
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in the Rust `.so`.
-- [x] No symbol is a stub / `unimplemented!()`; `hdr_bitrate` is a real translation.
+The Rust `.so` imports only libc/runtime symbols
+(`__libc_start_main`-class, unwinder, `memcpy`-class). Because
+`panic = "abort"` is set for the release profile, no Rust-specific unresolved
+symbols remain. 0 missing/undefined non-libc symbols.

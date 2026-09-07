@@ -1,21 +1,33 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Derived from:
+Generated from:
 
 ```text
+nm -D ../c_src/build/libdriver.so
 nm -D --defined-only ../c_src/build/libdriver.so
+nm -D --defined-only target/release/libdriver.so
 ```
 
-Undefined imports such as `printf`, `putchar`, and ELF runtime support symbols
-are not library exports and are therefore excluded from the parity surface.
+## C-defined public symbols
 
-| # | C symbol | C type | Rust symbol | status |
-|---|----------|--------|-------------|--------|
-| 1 | `driver` | `T` (global function) | `driver` | [x] present |
+| symbol | C `.so` | Rust `.so` | status |
+|--------|----------|------------|--------|
+| `driver` | `T` | `T` | [x] exact export present |
 
-The C library has one defined dynamic symbol. The Rust library exports the same
-symbol with the exact name.
+Missing C-defined symbols in Rust: **0**.
 
-Phase D status: [x] complete. The sorted `nm -D --defined-only` C-to-Rust
-symbol diff is empty under both the default and empty no-default feature
-configurations, and `ldd -r` reports no unresolved symbols.
+## C dynamic dependencies
+
+These appear in the complete `nm -D` output but are not symbols implemented by
+this library.
+
+| symbol | kind | classification |
+|--------|------|----------------|
+| `_ITM_deregisterTMCloneTable` | weak undefined | compiler/runtime hook |
+| `_ITM_registerTMCloneTable` | weak undefined | compiler/runtime hook |
+| `__cxa_finalize@GLIBC_2.2.5` | weak undefined | libc/runtime |
+| `__gmon_start__` | weak undefined | compiler/runtime hook |
+| `printf@GLIBC_2.2.5` | undefined | libc |
+| `putchar@GLIBC_2.2.5` | undefined | libc |
+
+Undefined non-libc application/library symbols: **0**.

@@ -1,81 +1,88 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — Error-surface table (Phase A, gates Phase C)
 
-Mechanically derived from `c_src/src/lib.c` + `c_src/include/lib.h`.
-
-## Mechanical grep of every rejection-capable construct
+Mechanically grepped from `c_src/src/lib.c` and `c_src/include/lib.h`:
 
 ```
-$ grep -n -E "return|assert|NULL|error|ERROR|if|switch|case|default|INT_|MAX|MIN" \
-      c_src/src/lib.c c_src/include/lib.h
-c_src/src/lib.c:12:    if (s == 0) {
-c_src/src/lib.c:16:        return;          <- plain `return;`, void, NOT an error return
-c_src/src/lib.c:24:    switch (i) {
-c_src/src/lib.c:25:    case 0:
-c_src/src/lib.c:30:    case 1:
-c_src/src/lib.c:35:    case 2:
-c_src/src/lib.c:40:    case 3:
-c_src/src/lib.c:45:    case 4:
-c_src/src/lib.c:50:    default:
+$ grep -nE 'return|assert|NULL|-1|errno|if *\(|ERROR|<|>|==|!=' c_src/src/lib.c
+12:    if (s == 0) {          # NOT an error: an alternate output path
+16:        return;            # bare `return;` (void), not an error return
+24:    switch (i) {           # value dispatch, `default:` is a valid arm
+50:    default:               # NOT an error: fallback arm, produces output
+59:}
 ```
 
-Findings (these are facts about the C, not assumptions):
+## Enumerated rejection paths: **NONE**
 
-* the public API is a single `void`-returning function — **there is no error
-  channel at all**: no `return -1`, no `return NULL`, no `errno`, no status
-  enum, no out-parameter flag;
-* there are **zero** `assert()` / `static_assert` / `abort()` calls;
-* there are **zero** null-pointer checks (`dest` and `src` are dereferenced
-  unconditionally);
-* there are **zero** range checks on `h`, `s`, `v` (no clamping to `[0,360)`
-  or `[0,1]`, no `fmodf` wrap);
-* there are **zero** length/count parameters, therefore no zero-length or
-  oversized-length rejection can exist;
-* there are **zero** enum parameters; the only enum-like selector is the
-  *internal* `int i`, and the `switch` handles every out-of-domain value with
-  `default:` (gcc emits `cmpl $4,i; ja default`, i.e. an **unsigned** bound
-  check, so all negative `i` reach `default` too).
+The C function is `void`, takes no length/count argument, has **no** error
+return value, **no** out-parameter status, **no** `errno` write, **no**
+`assert`, **no** `NULL` check, **no** range check, and **no** min/max
+constants. Every syntactic branch (`if (s == 0)`, the six `switch` arms) is a
+*valid* output path, not a rejection. There is therefore no error code or
+sentinel to compare — the only observable result for *any* input is the 3
+floats written to `dest`.
 
-Consequently the "error surface" of this library consists of (a) the one
-short-circuit branch, (b) the `default:` catch-all that absorbs every
-out-of-domain selector value, and (c) the undefined-behaviour cases whose
-*observable* behaviour in the compiled `.so` is the ground truth the Rust must
-reproduce. Each of those is one row below.
+Consequently the "same error/rejection" assertion for this library degenerates
+to: **for every input class below, C and Rust must write bit-identical
+`dest[0..3]` (or identically write nothing).** That is what each row's test
+asserts, comparing raw `u32` bit patterns (so NaN payloads and −0.0 vs +0.0
+are distinguished).
 
-`INT_MIN` below means `0x8000_0000` — the "integer indefinite" value that
-`cvttss2si` (the instruction gcc emits for `(int)floorf(h)`, verified by
-`objdump -d`) returns for NaN and for every operand outside `[-2^31, 2^31)`.
+## Row table — degenerate / boundary / "one step past" inputs
 
-## Error-surface table
+Rows 1–2 are the C's only `return`-shaped branches. Rows 3+ are the generic
+C-API boundaries mandated for Phase C (null pointers, zero/oversized lengths,
+one-step-past-range values, out-of-range enum-like discriminants). The
+`switch (i)` on the *unbounded* `int i` is this library's enum-like
+discriminant: `i` has 5 named arms (0–4) and `default`, and `i` is derived from
+attacker-controlled float data, so every `i` with "no valid variant"
+(negative, ≥5, `INT_MIN`) is a real input.
 
-| # | function | trigger (exact invalid input/condition) | expected C result | test | ✔ |
-|---|----------|------------------------------------------|-------------------|------|---|
-| 1 | `hsv_to_rgb` | `s == 0.0f` (line 12) — short-circuit "rejects" the whole HSV computation | writes `dest[0]=dest[1]=dest[2]=v`, returns; `h` is never used, `src[0]` is still loaded | `err01_s_is_positive_zero` | [x] |
-| 2 | `hsv_to_rgb` | `s == -0.0f` — IEEE `-0.0 == 0` is *true*, so the same short-circuit fires | same as row 1 (NOT the main path) | `err02_s_is_negative_zero` | [x] |
-| 3 | `hsv_to_rgb` | `s` is NaN — `ucomiss` sets PF, `s == 0` is *false*, so NaN is **not** rejected | falls through to the main path; NaN propagates into `p`/`q`/`t` | `err03_s_is_nan_takes_main_path` | [x] |
-| 4 | `hsv_to_rgb` | `s` is a *signalling* NaN | same as row 3 (comparison quiets it, no trap) | `err04_s_is_signalling_nan` | [x] |
-| 5 | `hsv_to_rgb` | `i = (int)floorf(h/60) > 4`, i.e. `h >= 300` (`i == 5`) — first value past the last `case` | `switch` `default:` arm: `r=v, g=p, b=q` | `err05_i_one_past_last_case` | [x] |
-| 6 | `hsv_to_rgb` | `i` far above the case range (`h >= 360`, no hue wrap-around) | `default:` arm | `err06_i_far_above_range` | [x] |
-| 7 | `hsv_to_rgb` | `i < 0` (`h < 0`, one step below `case 0`) — reaches `default` via the **unsigned** `ja` bound check | `default:` arm | `err07_i_negative` | [x] |
-| 8 | `hsv_to_rgb` | `h` is NaN → `floorf(NaN)=NaN` → `(int)NaN` is UB; `cvttss2si` yields `INT_MIN` | `i == INT_MIN` → `default:` arm; `f = NaN`, `q = NaN` | `err08_h_nan_gives_int_min` | [x] |
-| 9 | `hsv_to_rgb` | `h` is a signalling NaN | quieted by `floorf`, then as row 8 | `err09_h_signalling_nan` | [x] |
-| 10 | `hsv_to_rgb` | `h/60 >= 2^31` (incl. `h == +INFINITY`) → float→int conversion out of range (UB) | `cvttss2si` yields `INT_MIN` → `default:` arm | `err10_h_above_int_range` | [x] |
-| 11 | `hsv_to_rgb` | `h/60 <= -2^31` (incl. `h == -INFINITY`) → out of range (UB) | `cvttss2si` yields `INT_MIN` → `default:` arm | `err11_h_below_int_range` | [x] |
-| 12 | `hsv_to_rgb` | `h/60 == -2147483648.0f` exactly — the in-range boundary that Rust's saturating `as` and `cvttss2si` agree on | `i == INT_MIN` → `default:` arm | `err12_h_at_int_min_boundary` | [x] |
-| 13 | `hsv_to_rgb` | `s` outside the documented `[0,1]`: `s < 0` (one step past the low bound) | no check; `p/q/t` may exceed `[0,1]` | `err13_s_below_range` | [x] |
-| 14 | `hsv_to_rgb` | `s > 1` (one step past the high bound) | no check; `p = v*(1-s)` goes negative | `err14_s_above_range` | [x] |
-| 15 | `hsv_to_rgb` | `s == ±INFINITY` | no check; `1-s = ∓inf`, products are `±inf` or NaN | `err15_s_infinite` | [x] |
-| 16 | `hsv_to_rgb` | `v` outside `[0,1]` (negative / `>1` / huge) | no check; outputs simply scale | `err16_v_out_of_range` | [x] |
-| 17 | `hsv_to_rgb` | `v == ±INFINITY` or NaN | no check; propagates | `err17_v_inf_or_nan` | [x] |
-| 18 | `hsv_to_rgb` | invalid-operation producing operand pair, e.g. `v == 0` with `s == ±inf` → `0 * inf` | default QNaN `0xffc0_0000` in the affected channel | `err18_zero_times_inf_qnan` | [x] |
-| 19 | `hsv_to_rgb` | `dest == NULL` (no null check, line 13/56) | UB: `SIGSEGV` on the first store — for **both** the `s==0` path and the main path | `err19_null_dest_crash_parity` | [x] |
-| 20 | `hsv_to_rgb` | `src == NULL` (no null check, line 8) | UB: `SIGSEGV` on the `src[0]` load | `err20_null_src_crash_parity` | [x] |
-| 21 | `hsv_to_rgb` | both pointers NULL | UB: `SIGSEGV` (load faults first) | `err21_both_null_crash_parity` | [x] |
-| 22 | `hsv_to_rgb` | `src[0]` unreadable while `src[1..2]` are readable **and** `s == 0` — line 8 loads `src[0]` *before* the line-12 short-circuit, so the early-return path still faults | UB: `SIGSEGV` even though `h` is unused | `err22_unconditional_h_load_faults` | [x] |
-| 23 | `hsv_to_rgb` | `dest[2]` unwritable, `dest[0..1]` writable | UB: `SIGSEGV` *after* `dest[0]`/`dest[1]` were already stored (partial write is observable) | `err23_partial_store_before_fault` | [x] |
-| 24 | `hsv_to_rgb` | out-of-range selector sweep: every `i` in `{-2^31 … -1} ∪ {5 … 2^31-1}` reachable from a float `h`, including `INT_MIN`, `INT_MAX`, `±1`, `5`, `6` | always `default:`; never an out-of-bounds jump-table read | `err24_selector_sweep` | [x] |
-| 25 | `hsv_to_rgb` | misaligned `src`/`dest` (not 4-byte aligned) — no alignment check, gcc emits unaligned `movss` | no fault, same results as aligned | `err25_misaligned_pointers` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|---------------------------------------------|-------------------|
+| 1 | `hsv_to_rgb` | `s == 0.0f` exactly (early-`return` branch, line 12–17) | `dest[0..3] = v` verbatim (bit-identical, incl. `v = ±0.0`, NaN, ±Inf); `h` ignored entirely |
+| 2 | `hsv_to_rgb` | `s == -0.0f` (negative zero — C `-0.0f == 0` is **true**) | takes the same early-`return`: `dest[0..3] = v` |
+| 3 | `hsv_to_rgb` | `s = NaN` (`s == 0` is **false**, so no early return) | falls through; `p`,`q`,`t` all NaN → arm-dependent NaN/`v` mix, bit-identical |
+| 4 | `hsv_to_rgb` | `h = NaN` → `floorf(NaN) = NaN` → `(int)NaN` is **UB in C**; x86-64 `cvttss2si` yields the integer-indefinite `0x80000000` (`INT_MIN`) | `i = INT_MIN` → `switch` takes `default:` arm; `f = h - (float)INT_MIN` = NaN |
+| 5 | `hsv_to_rgb` | `h = +Inf` → `h/60 = +Inf` → `(int)+Inf` UB; `cvttss2si` yields `INT_MIN` | `i = INT_MIN` → `default:` arm; `f = Inf - -2^31 = +Inf` |
+| 6 | `hsv_to_rgb` | `h = -Inf` → `(int)-Inf` UB; `cvttss2si` yields `INT_MIN` | `i = INT_MIN` → `default:` arm; `f = -Inf - -2^31 = -Inf` |
+| 7 | `hsv_to_rgb` | `h` so large that `h/60 >= 2^31` (e.g. `h = 1e30f`) — **oversized value, one step past the representable `int` range** | `(int)` conversion overflows → `cvttss2si` → `INT_MIN` → `default:` arm |
+| 8 | `hsv_to_rgb` | `h/60` exactly `2147483648.0f` (`= 2^31`, first value past `INT_MAX`) | `INT_MIN` → `default:` arm |
+| 9 | `hsv_to_rgb` | `h/60` exactly `-2147483648.0f` (`= -2^31`, the in-range endpoint) | conversion is in range and *also* yields `INT_MIN` → `default:` arm (same observable result) |
+| 10 | `hsv_to_rgb` | `h/60` = `2147483520.0f` (largest `f32` < 2^31) — one step *inside* the range | valid conversion → `i = 2147483520` → `default:` arm |
+| 11 | `hsv_to_rgb` | `i = 5` — first value one step past the last named `case 4` | `default:` arm (`r=v, g=p, b=q`), **not** a wrap to `case 0` |
+| 12 | `hsv_to_rgb` | `i = -1` (negative hue, e.g. `h = -30.0f`) — below the first named `case 0` | `default:` arm; note `floorf(-0.5) = -1`, so `f = 0.5` (positive) |
+| 13 | `hsv_to_rgb` | `i` large positive (`h = 1e9f`, wraps no arm) | `default:` arm |
+| 14 | `hsv_to_rgb` | `v = NaN` / `±Inf` / `±0.0` with `s != 0` | products propagate: `0*Inf = NaN`, `Inf*0 = NaN`, sign of `±0.0` preserved — bit-identical |
+| 15 | `hsv_to_rgb` | `s = ±Inf` | `p = v*(1-Inf) = -Inf*v`, `q`/`t` NaN-or-Inf per arm — bit-identical |
+| 16 | `hsv_to_rgb` | subnormal `h`/`s`/`v` (e.g. `1e-45f`), and `s` subnormal ⇒ `s == 0` is **false** so the early return is skipped | full path taken, bit-identical (no flush-to-zero) |
+| 17 | `hsv_to_rgb` | `dest == src` (fully aliasing pointers) — C params are not `restrict`, so this is legal input | C writes `dest[0]` only after all reads → well-defined; Rust must read all three before writing |
+| 18 | `hsv_to_rgb` | `dest == src` on the `s == 0` early path | `dest[0..3] = v = src[2]` (`src[0]`/`src[1]` clobbered identically) |
+| 19 | `hsv_to_rgb` | `dest` overlapping `src` at an offset (`dest = src + 1`, `dest = src - 1`) | partial overlap; store order `dest[0]`,`dest[1]`,`dest[2]` must match |
+| 20 | `hsv_to_rgb` | unaligned `src`/`dest` (byte-offset buffers) — `float*` in C on x86-64 tolerates it via `movss` | same values written; Rust must not use aligned-only reads |
+| 21 | `hsv_to_rgb` | `dest = NULL` and/or `src = NULL` | **UB in C** (immediate SIGSEGV on deref). Not differentially testable without crashing the harness; asserted out-of-process instead — both C and Rust must fault identically (see `test_null_pointers_both_segfault`). No C code path checks for `NULL`, so Rust must **not** add a check that would silently return. |
+| 22 | `hsv_to_rgb` | "zero length" — the API has **no length parameter**; `src` shorter than 3 floats / `dest` shorter than 3 floats is UB out-of-bounds access with no check in C | no check exists in C; Rust must also read exactly 3 and write exactly 3 — verified by guard-canary test that no 4th element is touched |
 
-There is deliberately **no** row for "returns an error code": the C cannot.
-Every row above is verified by a differential test that asserts the *same*
-concrete outcome (identical 3×`u32` output bit patterns, or the identical
-termination signal for the UB/crash rows) from the C `.so` and the Rust `.so`.
+## Checklist (checked only when a passing differential test exists)
+
+- [x] 1  `s == +0.0` early return
+- [x] 2  `s == -0.0` early return
+- [x] 3  `s = NaN`
+- [x] 4  `h = NaN` → `INT_MIN` → `default`
+- [x] 5  `h = +Inf`
+- [x] 6  `h = -Inf`
+- [x] 7  `h` overflows `int`
+- [x] 8  `h/60 == 2^31`
+- [x] 9  `h/60 == -2^31`
+- [x] 10 `h/60 == 2147483520.0` (largest in-range)
+- [x] 11 `i == 5` (one past `case 4`)
+- [x] 12 `i == -1`
+- [x] 13 `i` large positive
+- [x] 14 `v` special values
+- [x] 15 `s = ±Inf`
+- [x] 16 subnormals
+- [x] 17 `dest == src` full alias
+- [x] 18 `dest == src` on early path
+- [x] 19 offset overlap
+- [x] 20 unaligned buffers
+- [x] 21 `NULL` pointers (out-of-process fault parity)
+- [x] 22 no 4th element read/written (canary)

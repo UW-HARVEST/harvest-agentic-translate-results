@@ -1,30 +1,30 @@
-# Configuration Surface
+# Configuration surface
 
-The only public entry point is `colourblind`. Its switch distinguishes the
-three `cb_impairment` values. Each selected helper snapshots the three pointed
-to floats and then writes `R`, `G`, and `B` in order, making the five pointer
-alias partitions observable input shapes. There are no runtime flags, lengths,
-formats, element types, byte-order options, conditional-compilation branches,
-or lower-level public entry points.
+The public headers expose one entry point and one runtime option:
+`colourblind(cb_impairment, float *, float *, float *)`, where the switch has
+three cases. The implementation reads all three pointed-to values before
+writing outputs in `R`, `G`, `B` order, making the five pointer-equivalence
+layouts below observably distinct. Every row is exercised with deterministic
+randomized values spanning all `f32` bit patterns, including signed zero,
+subnormals, infinities, and NaNs.
 
-Every row is exercised with reproducible randomized `f32` bit patterns,
-including ordinary finite values, signed zeros, subnormals, infinities, and
-NaNs.
+There are no Cargo features and no C preprocessor configuration branches, so
+there is one effective build configuration.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `colourblind` | `cbProtanopia`; `R`, `G`, and `B` are distinct pointers | [x] |
-| 2 | `colourblind` | `cbProtanopia`; `R == G`, with distinct `B` | [x] |
-| 3 | `colourblind` | `cbProtanopia`; `R == B`, with distinct `G` | [x] |
-| 4 | `colourblind` | `cbProtanopia`; `G == B`, with distinct `R` | [x] |
-| 5 | `colourblind` | `cbProtanopia`; `R == G == B` | [x] |
-| 6 | `colourblind` | `cbDeuteranopia`; `R`, `G`, and `B` are distinct pointers | [x] |
-| 7 | `colourblind` | `cbDeuteranopia`; `R == G`, with distinct `B` | [x] |
-| 8 | `colourblind` | `cbDeuteranopia`; `R == B`, with distinct `G` | [x] |
-| 9 | `colourblind` | `cbDeuteranopia`; `G == B`, with distinct `R` | [x] |
-| 10 | `colourblind` | `cbDeuteranopia`; `R == G == B` | [x] |
-| 11 | `colourblind` | `cbTritanopia`; `R`, `G`, and `B` are distinct pointers | [x] |
-| 12 | `colourblind` | `cbTritanopia`; `R == G`, with distinct `B` | [x] |
-| 13 | `colourblind` | `cbTritanopia`; `R == B`, with distinct `G` | [x] |
-| 14 | `colourblind` | `cbTritanopia`; `G == B`, with distinct `R` | [x] |
-| 15 | `colourblind` | `cbTritanopia`; `R == G == B` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `colourblind` | Protanopia (`0`); `R`, `G`, `B` distinct | [x] |
+| 2 | `colourblind` | Protanopia (`0`); `R == G`, `B` distinct | [x] |
+| 3 | `colourblind` | Protanopia (`0`); `R == B`, `G` distinct | [x] |
+| 4 | `colourblind` | Protanopia (`0`); `G == B`, `R` distinct | [x] |
+| 5 | `colourblind` | Protanopia (`0`); `R == G == B` | [x] |
+| 6 | `colourblind` | Deuteranopia (`1`); `R`, `G`, `B` distinct | [x] |
+| 7 | `colourblind` | Deuteranopia (`1`); `R == G`, `B` distinct | [x] |
+| 8 | `colourblind` | Deuteranopia (`1`); `R == B`, `G` distinct | [x] |
+| 9 | `colourblind` | Deuteranopia (`1`); `G == B`, `R` distinct | [x] |
+| 10 | `colourblind` | Deuteranopia (`1`); `R == G == B` | [x] |
+| 11 | `colourblind` | Tritanopia (`2`); `R`, `G`, `B` distinct | [x] |
+| 12 | `colourblind` | Tritanopia (`2`); `R == G`, `B` distinct | [x] |
+| 13 | `colourblind` | Tritanopia (`2`); `R == B`, `G` distinct | [x] |
+| 14 | `colourblind` | Tritanopia (`2`); `G == B`, `R` distinct | [x] |
+| 15 | `colourblind` | Tritanopia (`2`); `R == G == B` | [x] |

@@ -1,65 +1,56 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Derived mechanically from `nm -D` on both shared libraries.
 
-Build commands used:
+Commands:
 
 ```
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
+nm -D --defined-only c_src/build/libdriver.so
+nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-## C `.so` exported (dynamic, defined) symbols
+## Defined (exported) symbols
 
-`nm -D --defined-only c_src/build/libdriver.so`
+| # | symbol | C `.so` | Rust `.so` | notes |
+|---|--------|---------|------------|-------|
+| 1 | `driver` | T (present) | T (present) | `void driver(const char *in)` — declared in `include/driver.h`. Rust: `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver` |
+| 2 | `run`    | T (present) | T (present) | `void run(house_t *the_house, int extra_bedrooms)` — NOT in the public header, but non-`static` in `src/driver.c`, therefore an exported symbol and a real low-level entry point. Rust: `#[unsafe(no_mangle)] pub unsafe extern "C" fn run` |
 
-| symbol | type | source | present in Rust `.so`? |
-|--------|------|--------|------------------------|
-| `driver` | `T` (global text) | `c_src/src/driver.c:72` — `void driver(const char *in)` | YES (`#[unsafe(no_mangle)] pub unsafe extern "C" fn driver`) |
-| `run`    | `T` (global text) | `c_src/src/driver.c:50` — `void run(house_t *the_house, int extra_bedrooms)` | YES (`#[unsafe(no_mangle)] pub unsafe extern "C" fn run`) |
+**Symbol diff (C-defined minus Rust-defined): EMPTY.** ✔
 
-**Missing from Rust `.so`: NONE.** The symbol diff is empty.
+## `static` C functions (deliberately NOT exported by either library)
 
-## Rust `.so` exported (dynamic, defined) symbols
+These have internal linkage in C, so they must NOT appear in `nm -D` for either
+side. They are private helpers in the Rust translation as well.
 
-`nm -D --defined-only translation/target/release/libdriver.so`
-
-| symbol | type |
-|--------|------|
-| `driver` | `T` |
-| `run`    | `T` |
-
-No extra symbols are exported by Rust (no Rust-mangled leakage, no
-`rust_eh_personality`, etc.), so the surfaces are identical in both directions.
-
-## C `static` (file-local, NOT exported) functions
-
-These are `t` (local text) in the C `.so` and therefore not part of the ABI
-surface. They are translated as private Rust `fn`s and are exercised
-indirectly through `driver` / `run`.
-
-| C symbol | nm type | Rust counterpart |
-|----------|---------|------------------|
-| `add_floor`    | `t` | `fn add_floor(&mut house_t)` |
-| `add_bedrooms` | `t` | `fn add_bedrooms(&mut house_t, c_int)` |
-| `print_house`  | `t` | `fn print_house(&house_t)` |
-| `parse_val`    | `t` | `fn parse_val(*const c_char, &mut c_int) -> bool` |
+| C function | linkage | Rust counterpart |
+|---|---|---|
+| `static void add_floor(house_t *)` | internal | `fn add_floor` (private) |
+| `static void add_bedrooms(house_t *, int)` | internal | `fn add_bedrooms` (private) |
+| `static void print_house(house_t *)` | internal | `fn print_house` (private) |
+| `static bool parse_val(const char *, int *)` | internal | `fn parse_val` (private) |
 
 ## Undefined (imported) symbols
 
-| symbol | C `.so` | Rust `.so` | note |
-|--------|---------|------------|------|
-| `printf`            | U | U | Rust calls libc `printf` directly, so `%d` / `%.1f` formatting is byte-identical by construction. |
-| `puts`              | U | (not used) | GCC rewrites `printf("An error occurred\n")` into `puts("An error occurred")` even at `-O0`. This is a pure libc-level optimisation: the bytes written to stdout are identical (`puts` appends the newline). Rust emits the `printf` call. **Behaviourally equivalent, verified by the differential tests.** |
-| `strtol`            | U | U | Rust calls libc `strtol` so parsing/`errno` semantics are identical. |
-| `__errno_location`  | U | U | glibc `errno` accessor; the C `errno` macro expands to `*__errno_location()`. |
+Both libraries import only libc symbols; the Rust `.so` additionally imports the
+Rust runtime's libc/unwind set. No non-libc undefined symbols on either side.
 
-There are **0 missing / unresolved non-libc symbols** in the Rust `.so`.
+C imports: `__errno_location`, `printf`, `puts`, `strtol` (+ weak
+`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
 
-## Feature combinations
+Note: GCC rewrites the C `printf("An error occurred\n")` call into `puts`,
+which is why `puts` appears in the C imports. This is a pure
+compiler optimization — the bytes written to stdout are identical, so the Rust
+side may legitimately keep using `printf`. (`puts` also appears in the Rust
+imports via the Rust std runtime.)
 
-`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
-build configuration is the default one (`--no-default-features` is equivalent).
-Phase D's "repeat for every feature combination" reduces to the single default
-combination; this is verified by `check_features.sh`.
+Rust extra imports are all glibc/`libgcc_s` (`_Unwind_*`, `malloc`, `memcpy`,
+`mmap64`, `pthread_key_*`, `write`, …) pulled in by `std`. None are
+project symbols.
+
+## Verification checklist
+
+- [x] Every symbol exported by the C `.so` is exported by the Rust `.so` with the
+      exact same name.
+- [x] No extra project symbols exported by the Rust `.so`.
+- [x] 0 missing / 0 undefined non-libc symbols in the Rust `.so`.

@@ -1,97 +1,94 @@
-# CONFIGS.md — Configuration-surface table (Phase B gate)
+# CONFIGS.md — Phase B configuration-surface table
 
-## Axes derived from the C source
+## Axes, derived mechanically from `c_src/src/lib.c`
 
-The library has **no** runtime options, modes, flags, `#ifdef`s or global state.
-`c_src/include/lib.h` exports exactly one entry point:
+There are **no runtime options, modes or flags**: the public header exposes a
+single function taking one argument, and the source contains no `#if`/`#ifdef`,
+no `getenv`, no `switch`, no global/static mutable state (`grep -n
+'#if\|#ifdef\|#ifndef\|getenv\|extern\|switch' src/lib.c include/lib.h` → no
+matches). The entire configuration surface is therefore the **input shape**
+cross the branch classes of the two `static` helpers.
 
-```c
-char *decode_base64(const char *src);
-```
+### Axis 1 — public entry points (the full set, incl. lowest level)
 
-There is no context struct, no init/teardown, no byte-order or width option.
-`grep -n '#if\|#ifdef\|switch\|extern\|static [a-z_]* [a-z_]* =' c_src/src/lib.c`
-finds no configuration state — only `#define TRUE 1` / `#define FALSE 0`.
+| entry point | linkage | reachability |
+|-------------|---------|--------------|
+| `decode_base64(const char *src)` | global, in `include/lib.h` | called directly via `.so` export |
+| `decode(char c)` | `static` | not exported; driven indirectly, one row per branch class below |
+| `is_base64(char c)` | `static` | not exported; driven indirectly, one row per accept/reject class below |
 
-Therefore the whole configuration surface is the **input-shape** axis, and the
-axes are exactly the branch conditions in the source:
+Because the two low-level helpers have internal linkage in C they cannot be
+called across the FFI boundary in either library; the rows below drive **each of
+their branches individually** through the single public entry point, which is the
+strongest available equivalent.
 
-* **A1 — `decode()` character class** (`lib.c:12-25`): `A-Z` / `a-z` / `0-9` /
-  `'+'` / fall-through-63 (reachable as `'/'` and `'='`). 5 values.
-* **A2 — `is_base64()` accept/reject** (`lib.c:31-37`): accepted
-  (`[A-Za-z0-9+/=]`) vs. dropped (everything else, incl. bytes ≥ 0x80 which are
-  negative `char`). 2 values.
-* **A3 — filtered length modulo 4** (`lib.c:79-89` guards `k+1<l`, `k+2<l`,
-  `k+3<l`): `l%4 ∈ {0,1,2,3}`, plus the degenerate `l == 0`. 5 values.
-* **A4 — `'='` position within a 4-char group** (`lib.c:98`, `lib.c:102`): none /
-  at `c3` / at `c4` / at both / at `c1` or `c2` (which the C does **not**
-  special-case — it decodes `'='` as 63 there). 5 values.
-* **A5 — group count**: 0 / 1 / 2 / many. 4 values.
-* **A6 — output containing NUL bytes** (the returned buffer is NUL-terminated
-  *and* may contain interior `0x00`, so comparison must be over the whole
-  `strlen(src)+1+13` allocation, not `strlen(dest)`). 2 values.
+### Axis 2 — `decode()` branch classes (lines 10-27)
 
-Rows below are the pruned cross-product: one row per combination the C actually
-treats differently. Each row is driven with **many randomized inputs**
-(deterministic `SplitMix64`, fixed seed `0x5EED_1234_ABCD_F00D`), and both `.so`s
-are compared over the entire allocated buffer (`strlen(src) + 1 + 13` bytes) plus
-the NULL-ness of the returned pointer and the `strlen` of the result.
+`A`..`Z` → `c-'A'` | `a`..`z` → `c-'a'+26` | `0`..`9` → `c-'0'+52` | `'+'` → 62 |
+fallthrough → 63 (reached by `'/'`, `'='`, and every other byte)
 
-Allocation sizes and counts are compared separately and exactly, by interposing
-`calloc`/`malloc`/`free` (`tests/alloc_contract.rs`) — see `ERRORS.md`.
-`malloc_usable_size` is deliberately **not** used as a size oracle: glibc reuses
-binned chunks and hands a chunk over whole when the remainder is too small to
-split, so it reflects heap state rather than the requested size, and it produced
-two false divergences before being replaced.
+### Axis 3 — `is_base64()` classes (lines 30-38)
 
-## Table
+accept: `A`-`Z`, `a`-`z`, `0`-`9`, `'+'`, `'/'`, `'='` — reject: all others
+(including every byte `>= 0x80`, which is **negative** as a signed `char`).
+
+### Axis 4 — filtered length `l` modulo 4 (loop at line 72)
+
+`l % 4 == 0` (full groups) | `== 1` | `== 2` | `== 3` — controls whether
+`c2`/`c3`/`c4` keep their `'A'` defaults.
+
+### Axis 5 — padding-suppression branches (lines 99, 103)
+
+`c3 != '='` gate on output byte 2, `c4 != '='` gate on output byte 3:
+neither `=` | `c4=='='` only | `c3=='='` and `c4=='='` | `c3=='='` but `c4!='='`
+| `'='` at the `c1`/`c2` slots | `'='` interior to the string.
+
+### Axis 6 — filtered-vs-raw length (filter loop, line 67)
+
+no ignored bytes | some ignored bytes interspersed | all bytes ignored (`l==0`).
+
+### Axis 7 — size
+
+0 (error, see ERRORS.md) | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | many | 1 MiB.
+
+### Axis 8 — byte range
+
+ASCII base64 alphabet only | printable ASCII | full `0x01..0x7F` (incl.
+controls) | full `0x01..0xFF` (incl. high-bit / negative `char`).
+
+---
+
+## Table — one row per combination the C actually distinguishes
+
+Every row runs **both** `.so` exports and compares the *entire* `calloc`'d
+region (`strlen(src) + 14` bytes, whose contents are fully determined because
+`calloc` zeroes it) byte-for-byte — this catches over-writes and under-writes,
+not just the NUL-terminated prefix. Rows marked *randomized* use
+`≥ 256` seeded inputs (SplitMix64, fixed seed) rather than one hand-picked value.
 
 | # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| 1 | `decode_base64` | A1=`A-Z` only, A2=all accepted, A3 random, A5=many, randomized lengths 1..256 | `cfg_01_upper_only` | [x] |
-| 2 | `decode_base64` | A1=`a-z` only, A2=all accepted, randomized lengths 1..256 | `cfg_02_lower_only` | [x] |
-| 3 | `decode_base64` | A1=`0-9` only, randomized lengths 1..256 | `cfg_03_digits_only` | [x] |
-| 4 | `decode_base64` | A1=`'+'` only (decode→62), randomized lengths 1..256 | `cfg_04_plus_only` | [x] |
-| 5 | `decode_base64` | A1=fall-through, `'/'` only (decode→63), randomized lengths 1..256 | `cfg_05_slash_only` | [x] |
-| 6 | `decode_base64` | A1=fall-through, `'='` only (decode→63 **and** triggers both suppression branches), randomized lengths 1..256 | `cfg_06_equals_only` | [x] |
-| 7 | `decode_base64` | A1=full 64-char alphabet mixed, A3=`l%4==0`, A5=many | `cfg_07_alphabet_mod4_0` | [x] |
-| 8 | `decode_base64` | A1=full alphabet, A3=`l%4==1` (c2,c3,c4 default `'A'`) | `cfg_08_alphabet_mod4_1` | [x] |
-| 9 | `decode_base64` | A1=full alphabet, A3=`l%4==2` (c3,c4 default `'A'`) | `cfg_09_alphabet_mod4_2` | [x] |
-| 10 | `decode_base64` | A1=full alphabet, A3=`l%4==3` (c4 defaults `'A'`) | `cfg_10_alphabet_mod4_3` | [x] |
-| 11 | `decode_base64` | A5=1 group exactly (4 chars), random alphabet | `cfg_11_single_group` | [x] |
-| 12 | `decode_base64` | A5=2 groups exactly (8 chars), random alphabet | `cfg_12_two_groups` | [x] |
-| 13 | `decode_base64` | canonical RFC-style padded base64, one `'='` at tail (A4=`c4`) | `cfg_13_canonical_pad1` | [x] |
-| 14 | `decode_base64` | canonical RFC-style padded base64, two `'=='` at tail (A4=`c3`+`c4`) | `cfg_14_canonical_pad2` | [x] |
-| 15 | `decode_base64` | canonical padded base64, no padding needed (A4=none) | `cfg_15_canonical_pad0` | [x] |
-| 16 | `decode_base64` | `'='` injected at **random interior** positions (A4=`c1`/`c2`/`c3`/`c4` uniformly, mid-string, multiple times) | `cfg_16_equals_interior_random` | [x] |
-| 17 | `decode_base64` | base64 chars interleaved with random **non**-base64 ASCII (A2 mixed) — filter loop drops them, so filtered length ≠ input length | `cfg_17_mixed_with_noise` | [x] |
-| 18 | `decode_base64` | base64 chars interleaved with **high-bit** bytes 0x80..0xFF (negative `char`, all rejected by `is_base64`) | `cfg_18_mixed_with_high_bit` | [x] |
-| 19 | `decode_base64` | A3=`l == 0`: input is entirely non-base64 (noise only) → decode loop never runs, returns zero-filled buffer | `cfg_19_all_noise_empty_result` | [x] |
-| 20 | `decode_base64` | A6: input engineered so decoded output contains interior `0x00` bytes (`"AAAA..."`, `"QUJD AAAA"` style) | `cfg_20_output_with_interior_nuls` | [x] |
-| 21 | `decode_base64` | boundary characters one step outside each `decode`/`is_base64` range: `'@' '[' '`' '{' '/' ':' '*' ',' '.' '-' '_' ' '` mixed with valid chars | `cfg_21_range_boundary_chars` | [x] |
-| 22 | `decode_base64` | fully arbitrary bytes `0x01..0xFF` (uniform fuzz), randomized lengths 1..512 — crosses A1×A2×A3×A4×A6 simultaneously | `cfg_22_arbitrary_bytes_fuzz` | [x] |
-| 23 | `decode_base64` | single-character inputs, **exhaustive** over all 255 non-NUL byte values | `cfg_23_exhaustive_single_char` | [x] |
-| 24 | `decode_base64` | two-character inputs, **exhaustive** over the 64-char base64 alphabet + `'='` (65×65 = 4225 pairs) — covers every `c1`×`c2` pair with `c3`/`c4` defaulted | `cfg_24_exhaustive_char_pairs` | [x] |
-| 25 | `decode_base64` | long inputs: randomized lengths 1000..4096 over the full alphabet, ensures no divergence in the `int`-typed `k`/`l` arithmetic at scale | `cfg_25_long_inputs` | [x] |
-| 26 | `decode_base64` | ASCII-only fuzz (0x20..0x7E) with `'='` over-represented, randomized lengths 1..300 — stresses A4 suppression interacting with A2 filtering | `cfg_26_ascii_fuzz_equals_heavy` | [x] |
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one (`--no-default-features` is equivalent). This is
-verified mechanically by `check_features.sh`, which parses `Cargo.toml` and loops
-over the feature power set.
-
-## Test-sensitivity evidence
-
-Passing tests only mean something if they can fail. `mutation_sweep.sh` perturbs
-one behaviour of the Rust translation at a time, forces a rebuild, and reruns the
-suite. Current result: **23 of 23 non-equivalent mutants caught, 0 missed**, and
-the one deliberately semantically-equivalent mutant correctly not caught
-(`(b3 & 0x7) << 6` equals `(b3 & 0x3) << 6` in 8 bits, in Rust and in C alike).
-
-The sweep forces a rebuild after every edit because cargo's mtime fingerprinting
-can treat a same-second source edit as up to date and silently test a **stale**
-`.so`. That happened during this verification and briefly produced two bogus
-"divergences"; `run_verification.sh` and `mutation_sweep.sh` both delete or
-`touch` artifacts to prevent it.
+|---|----------------|-------------------------------------------|------|-----|
+| 1 | `decode_base64` | axis2=upper only; `l % 4 == 0`; no ignored bytes; sizes 4,8,12; *randomized* | `cfg_01_upper_only` | [x] |
+| 2 | `decode_base64` | axis2=lower only; `l % 4 == 0`; *randomized* | `cfg_02_lower_only` | [x] |
+| 3 | `decode_base64` | axis2=digits only; `l % 4 == 0`; *randomized* | `cfg_03_digits_only` | [x] |
+| 4 | `decode_base64` | axis2=`'+'` only (value 62 path); lengths 1..8 | `cfg_04_plus_only` | [x] |
+| 5 | `decode_base64` | axis2=`'/'` only (fallthrough → 63); lengths 1..8 | `cfg_05_slash_only` | [x] |
+| 6 | `decode_base64` | full 64-char alphabet mixed, `l % 4 == 0`; *randomized* | `cfg_06_full_alphabet_mod0` | [x] |
+| 7 | `decode_base64` | full alphabet, `l % 4 == 1` (dangling 1); *randomized* | `cfg_07_mod1` | [x] |
+| 8 | `decode_base64` | full alphabet, `l % 4 == 2`; *randomized* | `cfg_08_mod2` | [x] |
+| 9 | `decode_base64` | full alphabet, `l % 4 == 3`; *randomized* | `cfg_09_mod3` | [x] |
+| 10 | `decode_base64` | canonical padding `xxx=` (`c4 == '='`, `c3 != '='`); *randomized* | `cfg_10_pad_one` | [x] |
+| 11 | `decode_base64` | canonical padding `xx==` (`c3 == '='` **and** `c4 == '='`); *randomized* | `cfg_11_pad_two` | [x] |
+| 12 | `decode_base64` | pathological `x=x=` / `x==x` (`'='` at `c2`; `c3=='='` with `c4!='='`); *randomized* | `cfg_12_pad_pathological` | [x] |
+| 13 | `decode_base64` | `'='` at the `c1` slot (`"=xxx"`, `"===x"`); *randomized* | `cfg_13_pad_leading` | [x] |
+| 14 | `decode_base64` | `'='` interior, followed by more data (multi-group, decoding continues) ; *randomized* | `cfg_14_pad_interior_multigroup` | [x] |
+| 15 | `decode_base64` | axis6=ignored bytes interspersed among valid ones (printable non-alphabet); *randomized* | `cfg_15_ignored_interspersed` | [x] |
+| 16 | `decode_base64` | axis6=**all** bytes ignored → `l == 0`, loop never entered; *randomized* | `cfg_16_all_ignored` | [x] |
+| 17 | `decode_base64` | axis8=full `0x01..0xFF` random bytes (incl. negative `char`, controls); *randomized*, 2000 cases | `cfg_17_arbitrary_bytes` | [x] |
+| 18 | `decode_base64` | axis7=exhaustive short lengths 1..=8 over the alphabet; *randomized* per length | `cfg_18_all_short_lengths` | [x] |
+| 19 | `decode_base64` | axis7=exhaustive **all 255** single-byte inputs `0x01..0xFF` | `cfg_19_single_byte_exhaustive` | [x] |
+| 20 | `decode_base64` | axis7=exhaustive **all 65 025** two-byte inputs over `0x01..0xFF` | `cfg_20_two_byte_exhaustive` | [x] |
+| 21 | `decode_base64` | axis7=large input, 1 MiB of mixed alphabet + ignored bytes | `cfg_21_large_input` | [x] |
+| 22 | `decode_base64` | boundary chars only: `@ A Z [ ` a z { / 0 9 : + * , =` (one either side of every range check) | `cfg_22_range_boundaries` | [x] |
+| 23 | `decode_base64` | repeated calls / no cross-call state (same input 3×, interleaved with others) | `cfg_23_no_hidden_state` | [x] |
+| 24 | `decode_base64` | real-world base64 round trips (known vectors incl. RFC 4648) | `cfg_24_known_vectors` | [x] |

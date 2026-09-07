@@ -1,72 +1,62 @@
-# SYMBOLS.md — Phase A: exported-symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-Commands used:
-
-```sh
-nm -D --defined-only  c_src/build/libdriver.so
-nm -D --defined-only  translation/target/release/libdriver.so
-nm -D --undefined-only c_src/build/libdriver.so
-nm -D --undefined-only translation/target/release/libdriver.so
-```
-
-## Defined (exported) dynamic symbols
-
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `driver` | `T` (text, global) | `T` (text, global) | PRESENT in both |
-
-`nm -D --defined-only` on the C `.so` yields exactly one line (`T driver`).
-The Rust `.so` yields exactly one line (`T driver`).
-
-**Symbol diff (C-defined minus Rust-defined): EMPTY.**
+Build commands used:
 
 ```
-$ comm -23 <(nm -D --defined-only c_src/build/libdriver.so   | awk '{print $NF}' | sort -u) \
-           <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort -u)
-(no output)
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libdriver.so
+
+cd translation && cargo build --release
+# -> translation/target/release/libdriver.so
 ```
 
-## Non-exported C symbols (intentionally NOT in the Rust `.so`)
+## C `.so` exported (defined) dynamic symbols
 
-| C symbol | C linkage | Rust counterpart | why not exported |
-|----------|-----------|------------------|------------------|
-| `print_hex` | `static void print_hex(unsigned char *p, int len)` — internal, `t` in `nm` only, absent from `nm -D` | private `unsafe fn print_hex` in `src/lib.rs` | `static` in C gives it internal linkage, so it is not part of the C `.so`'s dynamic symbol table. Exporting it from Rust would ADD a symbol the C does not have. It is exercised indirectly, and exhaustively, through `driver` (which is its only caller). |
+`nm -D --defined-only c_src/build/libdriver.so`
 
-No C source file or module was skipped: `c_src` contains exactly one
-translation unit (`src/driver.c`, 40 lines) and one public header
-(`include/driver.h`), and both are fully translated in `translation/src/lib.rs`.
-No symbol is stubbed or `unimplemented!()`.
+| # | symbol | type | source | exported by Rust `.so`? |
+|---|--------|------|--------|-------------------------|
+| 1 | `driver` | `T` (global text) | `c_src/src/driver.c:36`, declared `c_src/include/driver.h:27` | YES — `T driver` |
 
-## Undefined (imported) symbols
+Total C defined dynamic symbols: **1**. Total missing from Rust `.so`: **0**.
 
-The C `.so` imports only `printf` and `putchar` from glibc (plus the standard
-weak `_ITM_*` / `__cxa_finalize` / `__gmon_start__` set that every
-`gcc`-produced shared object has).
+## Not exported, by design
 
-The Rust `.so` imports those same two glibc stdio functions — the translation
-deliberately binds to libc's `printf`/`putchar` rather than
-`std::io::stdout`, so writes land in the *same* stdio `FILE` buffer with the
-same formatting and flush semantics. Its remaining imports are all
-libc/`libgcc` runtime support pulled in by the Rust standard library
-(`_Unwind_*`, `malloc`/`free`/`realloc`/`calloc`/`posix_memalign`, `memcpy`,
-`memmove`, `memset`, `bcmp`, `strlen`, `abort`, `__errno_location`,
-`pthread_key_*`, `dl_iterate_phdr`, `open64`/`read`/`write`/`close`/`lseek64`,
-`stat64`/`fstat64`/`statx`, `mmap64`/`munmap`, `getcwd`/`getenv`/`readlink`/
-`realpath`, `syscall`, `writev`, `gettid`, `__tls_get_addr`,
-`__cxa_thread_atexit_impl`).
+| C symbol | why absent from `nm -D` in BOTH `.so`s |
+|----------|----------------------------------------|
+| `print_hex` | declared `static void print_hex(unsigned char *p, int len)` in `c_src/src/driver.c:29` → internal linkage, absent from the C `.so` dynamic table. The Rust translation mirrors this as a private `unsafe fn print_hex` (no `#[no_mangle]`), so it is likewise absent. Adding it would be a *parity violation*, not a fix. |
 
-**Undefined non-libc symbols in the Rust `.so`: 0.** Every `U`/`w` entry above
-resolves against `libc.so.6` / `libgcc_s.so.1` / `ld-linux`, which is verified
-by the fact that `libloading::Library::new` opens the Rust `.so` with
-`RTLD_NOW` in the test suite and succeeds — `RTLD_NOW` forces eager resolution
-of every undefined symbol at load time, so an unresolvable one would fail the
-load.
+No macro-generated symbols exist: `c_src/src/driver.c` contains no function-defining
+macros (`grep -nE '#if|#ifdef|#ifndef' c_src/src/` → no matches).
 
-## Completion checklist
+## Undefined symbols
 
-- [x] `nm -D` shows 0 symbols present in the C `.so` and missing from the Rust `.so`.
-- [x] `nm -D` shows 0 missing/undefined **non-libc** symbols in the Rust `.so`
-      (proved by a successful `RTLD_NOW` load in `tests/differential.rs`).
-- [x] No extra public symbols invented on the Rust side.
+The C `.so` imports `printf@GLIBC_2.2.5` and `putchar@GLIBC_2.2.5` (GCC lowers
+the source-level `printf("\n")` at `driver.c:32` into a `putchar` call), plus the
+usual weak CRT hooks (`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
+
+The Rust `.so` imports the same `printf` and `putchar` — the translation binds
+libc's stdio deliberately rather than using `std::io::stdout`, so both libraries
+write through the *same* `FILE *stdout` with identical buffering semantics. Its
+remaining undefined symbols are all libc / libgcc-unwind / Rust-std runtime
+(`malloc`, `memcpy`, `_Unwind_*`, `pthread_key_*`, `dl_iterate_phdr`, …).
+
+**0 missing or undefined non-libc symbols in the Rust `.so`.**
+
+## Feature combinations
+
+`translation/Cargo.toml` has no `[features]` section and no `optional`
+dependencies, so exactly **one** feature combination exists (the empty/default
+set). `--no-default-features` is therefore identical to the default build; both
+are exercised in Phase D.
+
+## Binary / driver executable
+
+`c_src/CMakeLists.txt` contains no `add_executable`, and `translation/Cargo.toml`
+declares `crate-type = ["cdylib"]` with no `[[bin]]`. Neither project builds an
+executable, so the "compare C and Rust binary stdout" gate is **not applicable**;
+stdout is instead compared through the FFI boundary by fd-redirect capture in the
+differential tests.

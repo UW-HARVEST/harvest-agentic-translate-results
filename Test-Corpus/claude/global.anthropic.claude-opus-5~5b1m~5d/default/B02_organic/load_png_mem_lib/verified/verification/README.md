@@ -1,12 +1,3 @@
-> **Superseded.** This directory is the earlier C-based differential harness. It
-> was written against a C build with `NDEBUG` defined, which is *not* what
-> `c_src/CMakeLists.txt` produces: with no `CMAKE_BUILD_TYPE` the reference
-> library is compiled at `-O0` with live `assert()`s, so many malformed inputs
-> abort with `SIGABRT` instead of returning an error. The authoritative
-> verification is now the Rust harness in `../tests/`, which `dlopen`s both
-> `.so`s and compares exit status as well as output; see `../README.md`,
-> `../SYMBOLS.md`, `../ERRORS.md` and `../CONFIGS.md`.
-
 # Differential verification tooling
 
 These are the scripts used to verify the translation against the C library.

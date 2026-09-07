@@ -1,113 +1,108 @@
 # ERRORS.md — Phase C error / rejection surface table
 
-## How this table was derived
+## How this table was derived (mechanically, not from docs)
 
-Mechanical grep of the whole C source for every rejection construct:
+```
+grep -nE 'return|assert|NULL|errno|error|ERROR|exit|abort|if *\(|switch|#if|<|>|==|!=' \
+     c_src/src/driver.c c_src/include/driver.h
+```
+after stripping the license comment block yields **exactly two matches**:
 
-```sh
-grep -nE "return|assert|NULL|errno|error|ERROR|if *\(|switch|#if" \
-    c_src/src/driver.c c_src/include/driver.h
+```
+src/driver.c:30:    for (int i = 0; i < len; i++) {     <- fma_array loop guard
+src/driver.c:37:    for (int i = 0; i < len; i++) {     <- inner  print loop guard
 ```
 
-The **only** hit is the `#ifndef DRIVER_H_` include guard in the header.
+Therefore the C source contains:
 
-`c_src/src/driver.c` therefore contains:
+* **0** `return -1` / `return NULL` / `RETURN_ERROR`-style statements
+  (both public functions are `void` and have no `return` statement at all),
+* **0** `assert()` calls,
+* **0** explicit range checks, null checks, or min/max constants,
+* **0** enums — so there is **no out-of-range-enum input class for this API**
+  (the only scalar parameter is a plain `int len`; every one of its 2^32 values
+  is an "in-range" argument as far as the C is concerned).
 
-* **0** `return` statements with a value (both public functions are `void`)
-* **0** `assert` / `NULL` checks / range checks
-* **0** error enums, error codes, sentinel returns or `errno` writes
-* **0** `if` / `switch` / `#ifdef` branches
-* **0** min/max constants
-
-There is no explicit error surface. Every "rejection" this API has is
-**implicit**: it is produced by the loop bound `i < len`, by the C conversion
-rules on `len * sizeof(int)`, or it is undefined behaviour that manifests as a
-fault. The rows below are therefore the complete set of *implicit* rejections
-and boundaries derived from the four executable statements of the source
-(lines 29-46).
-
-Legend for the `mode` column:
-
-* `in-proc` — safe to call directly in the test process.
-* `forked`  — the condition faults (UB); the differential test runs each call
-  in its own `fork()`ed child and asserts the C child and the Rust child are
-  terminated **the same way** (same exit code, or same signal), so "same
-  rejection" is compared, not merely "both failed somehow".
+The library's entire rejection behaviour is therefore *implicit*: it consists of
+the two loop guards silently treating non-positive `len` as "nothing to do", plus
+the ABI-level boundaries (null pointers, degenerate and oversized lengths,
+signed-overflow values). Every one of those is enumerated below — one row per
+distinct condition the C actually distinguishes.
 
 ## Table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | mode | test | [x] |
-|---|----------|----------------------------------------------|-------------------|------|------|-----|
-| 1 | `fma_array` | `len == 0` (loop guard `0 < 0` false on first evaluation, line 30) | no-op: zero iterations, no load, no store, returns void | in-proc | `err_01_fma_len_zero_no_writes` | [x] |
-| 2 | `fma_array` | `len == -1` (negative length; `0 < -1` false) | no-op: zero iterations, no memory touched | in-proc | `err_02_fma_len_negative` | [x] |
-| 3 | `fma_array` | `len == INT_MIN` (most negative length, one past the negative range) | no-op: zero iterations, no memory touched | in-proc | `err_03_fma_len_int_min` | [x] |
-| 4 | `fma_array` | all four pointers `NULL` **and** `len == 0` (null ptr never dereferenced because loop body is unreachable) | no-op, no fault | in-proc | `err_04_fma_all_null_len_zero` | [x] |
-| 5 | `fma_array` | all four pointers `NULL` **and** `len < 0` | no-op, no fault | in-proc | `err_05_fma_all_null_len_negative` | [x] |
-| 6 | `fma_array` | `out == NULL`, `len > 0` (store through null on line 31) | fault — `SIGSEGV` | forked | `err_06_fma_null_out_len_positive` | [x] |
-| 7 | `fma_array` | `mul1 == NULL`, `len > 0` (load through null on line 31) | fault — `SIGSEGV` | forked | `err_07_fma_null_mul1_len_positive` | [x] |
-| 8 | `fma_array` | `mul2 == NULL`, `len > 0` | fault — `SIGSEGV` | forked | `err_08_fma_null_mul2_len_positive` | [x] |
-| 9 | `fma_array` | `add == NULL`, `len > 0` | fault — `SIGSEGV` | forked | `err_09_fma_null_add_len_positive` | [x] |
-| 10 | `fma_array` | `len` greater than the real allocation (oversized length ⇒ out-of-range index read/write far past the buffer) | fault — `SIGSEGV` | forked | `err_10_fma_len_oversized` | [x] |
-| 11 | `fma_array` | signed integer overflow of `mul1[i] * mul2[i]` (e.g. `INT_MAX * INT_MAX`) — UB in C, no check present | wraps modulo 2^32 (x86-64 `imul`) | in-proc | `err_11_fma_mul_overflow_wraps` | [x] |
-| 12 | `fma_array` | signed integer overflow of `… + add[i]` (e.g. product `INT_MAX`, `add == 1`) — UB in C, no check present | wraps modulo 2^32 (x86-64 `add`) | in-proc | `err_12_fma_add_overflow_wraps` | [x] |
-| 13 | `fma_array` | `INT_MIN * -1` (the one product with no two's-complement representation) | wraps to `INT_MIN` | in-proc | `err_13_fma_int_min_times_minus_one` | [x] |
-| 14 | `driver` | `len == 0` — zero-length VLA `int out[0]` (line 43) plus `memcpy(out, data, 0)` | no fault, prints nothing | in-proc | `err_14_driver_len_zero_no_output` | [x] |
-| 15 | `driver` | `data == NULL` **and** `len == 0` (`memcpy` with null source and zero count) | no fault, prints nothing | in-proc | `err_15_driver_null_data_len_zero` | [x] |
-| 16 | `driver` | `data == NULL` **and** `len > 0` (`memcpy` reads through null) | fault — `SIGSEGV` | forked | `err_16_driver_null_data_len_positive` | [x] |
-| 17 | `driver` | `len == -1`: VLA of negative size, and `len * sizeof(int)` converts `int -1` to `size_t` ⇒ `0xFFFFFFFFFFFFFFFC` byte copy | fault — `SIGSEGV` | forked | `err_17_driver_len_minus_one` | [x] |
-| 18 | `driver` | `len == INT_MIN` (one step past the negative range): `size_t` byte count `0xFFFFFFFF_00000000` | fault — `SIGSEGV` | forked | `err_18_driver_len_int_min` | [x] |
-| 19 | `driver` | `len` larger than the source buffer (oversized length ⇒ `memcpy` reads past the end) | fault — `SIGSEGV` | forked | `err_19_driver_len_oversized` | [x] |
-| 20 | `driver` | `len` so large the VLA exceeds the stack (`len == 1 << 28`, 1 GiB) | fault — `SIGSEGV` (stack overflow) | forked | `err_20_driver_vla_stack_overflow` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `fma_array` | `len == 0`, valid non-null buffers | loop guard `0 < 0` false → returns without writing a single byte; `out` unmodified | [x] PASS |
+| 2 | `fma_array` | `len == -1` (one step past the low end of the useful range), valid buffers | negative length silently accepted as empty; no writes; `out` unmodified | [x] PASS |
+| 3 | `fma_array` | `len == INT_MIN`, valid buffers | same as row 2: no writes, no crash | [x] PASS |
+| 4 | `fma_array` | `len == 0` **and** all four pointers `NULL` | no dereference occurs → returns cleanly (null pointers never loaded) | [x] PASS |
+| 5 | `fma_array` | `len < 0` **and** all four pointers `NULL` | no dereference occurs → returns cleanly | [x] PASS |
+| 6 | `fma_array` | `mul1[i]*mul2[i]` overflows `int` (e.g. `INT_MAX * 2`, `INT_MIN * -1`, `65536*65536`) — signed overflow, UB in C, `imul` in the emitted code | wrapped two's-complement 32-bit product | [x] PASS |
+| 7 | `fma_array` | `mul1[i]*mul2[i] + add[i]` overflows `int` (product in range, sum out of range) | wrapped two's-complement 32-bit sum | [x] PASS |
+| 8 | `fma_array` | *both* the multiply and the add overflow, at `INT_MIN`/`INT_MAX` extremes | double-wrapped 32-bit result | [x] PASS |
+| 9 | `fma_array` | `out` fully aliases `mul1`,`mul2`,`add` (the exact call `inner` makes) — writes are observed by later reads | in-place sequential update: `out[i] = out[i]*out[i] + out[i]` element by element | [x] PASS |
+| 10 | `driver` | `len == 0`, valid `data` | VLA `int out[0]`, `memcpy(...,0)`, both loops skipped → **empty stdout**, no crash | [x] PASS |
+| 11 | `driver` | `len == 0`, `data == NULL` | `memcpy(dst, NULL, 0)` copies nothing → **empty stdout**, no crash | [x] PASS |
+| 12 | `driver` | `len == 1` (minimum non-degenerate length) | one line of stdout | [x] PASS |
+| 13 | `driver` | `len < 0` (`-1`, `INT_MIN`) | `len * sizeof(int)` converts `int`→`size_t` (sign-extend) giving `0xFFFF_FFFF_FFFF_FFFC`, so `memcpy` copies an astronomical byte count → the **process dies on SIGSEGV before any output**. Verified differentially in a *child process*: C and Rust must die with the identical signal and produce identical (empty) stdout. | [x] PASS |
+| 14 | `driver` | `len` so large the VLA exceeds the stack (e.g. `len == 1<<30`) | stack-clash → **SIGSEGV**, no output. Same child-process differential check as row 13. | [x] PASS |
+| 15 | `driver` | data values that make `out[i]*out[i]+out[i]` overflow (`INT_MIN`, `INT_MAX`, `0x7fffffff`, `46341`) | wrapped 32-bit values printed with `%d` | [x] PASS |
 
-## Generic FFI boundaries required by Phase C
+Rows 13 and 14 are undefined behaviour in ISO C; they are nevertheless *real
+inputs an external caller can pass*, so they are verified as differential
+**crash-equivalence** tests in forked child processes (same terminating signal,
+same stdout) rather than being skipped.
 
-| boundary | applies here? | covered by |
-|---|---|---|
-| null pointers | yes — every pointer parameter, with both harmless (`len <= 0`) and faulting (`len > 0`) lengths | rows 4-9, 15, 16 |
-| zero length | yes | rows 1, 4, 14, 15 |
-| oversized length | yes | rows 10, 19, 20 |
-| one step past a valid range | yes — `INT_MIN` length, `INT_MIN * -1`, `INT_MAX + 1` | rows 3, 12, 13, 18 |
-| **out-of-range enum values across FFI** | **not applicable** — the public API (`c_src/include/driver.h`) declares no `enum`, and neither `driver` nor `fma_array` takes an enum, flag, mode or `int` tag parameter. The only non-pointer parameter is `len`, whose entire `int` range (negative, zero, positive, `INT_MIN`, oversized) is covered by rows 1-3, 10, 17-20. | rows 1-3, 10, 17-20 |
+Deliberately **not** given a row, with justification:
 
-## Divergences found and fixed (Rust changed, C untouched)
+* `fma_array` with `len` larger than the actual buffers, or `driver(data, len)`
+  with `len` larger than `data` — out-of-bounds *reads of the caller's memory*.
+  The C performs no bounds check (there is nothing to compare against: no length
+  is passed for the buffers other than `len` itself), so the "expected C result"
+  is "read whatever is adjacent", which is not a deterministic value in either
+  language and therefore cannot have a byte-identical expectation. Row 13/14
+  cover the observable, deterministic part of this class (the crash).
 
-Both were rejection-path bugs invisible to the happy path; both were found by
-this table's rows, not by the valid-path tests.
+## Divergences actually found and fixed (both in `driver`, both in rows 13/14)
 
-1. **`driver` with an over-long `len` aborted instead of faulting.**
-   Found by the `len == INT_MAX` case of `boundary_sweep_len_domain_faulting`.
-   The C `int out[len]` is a stack VLA, so a `len` whose array cannot fit in the
-   remaining stack dies with `SIGSEGV` (signal 11). The translation used
-   `vec![0; len]`, so the same input hit a *heap* allocation failure and Rust's
-   allocation-error handler aborted with `SIGABRT` (signal 6), after printing
-   `memory allocation of 8589934588 bytes failed`.
-   Fix: `driver` now calls `vla_stack_probe(n_bytes)` before allocating. It
-   reads the current thread's stack extent (`pthread_getattr_np` /
-   `pthread_attr_getstack`) and, when the array would not fit, performs the same
-   below-the-stack access the C `memcpy` performs, producing an identical
-   `SIGSEGV`. Sizes under 64 KiB and byte counts that wrap the address space
-   (negative `len`) skip the probe, because the C faults inside `memcpy` in those
-   cases and the translation already does too (rows 17-18).
+Every `fma_array` row and every valid-path row passed on the first run. The two
+real translation defects were both in `driver`'s VLA modelling, and both were
+only reachable through the ERRORS.md rows — no happy-path test could see them.
 
-2. **`fma_array` with a NULL pointer aborted instead of faulting — in debug
-   builds only.** Found by running rows 6-9 against the *debug* `.so` as well as
-   the release one. With `debug-assertions` on, rustc inserts a UB precondition
-   check on raw-pointer dereferences, so the null deref panicked and, because
-   unwinding cannot cross `extern "C"`, aborted with `SIGABRT` (6) where the C
-   dies with `SIGSEGV` (11). The release `.so` had no such check and matched.
-   Fix: `debug-assertions` and `overflow-checks` are disabled for **both**
-   profiles in `Cargo.toml`, since the C reference performs no null, alignment
-   or overflow checking; the loop counters were also switched to explicit
-   `wrapping_add` so the source does not depend on that profile setting.
+**Bug 1 — allocation failure aborted instead of faulting (row 14, `len == INT_MAX`).**
+The Rust used `vec![0; len as usize]`, so an ~8 GiB request went to the Rust
+global allocator, failed, and was routed through `handle_alloc_error` → `abort()`
+→ **SIGABRT (6)**. The C simply moves `rsp` past the stack guard → **SIGSEGV (11)**.
+Fixed by switching to a raw, uninitialised `std::alloc::alloc` whose failure is
+deliberately *not* routed through `handle_alloc_error`: the resulting null
+pointer makes the following `memcpy` fault with SIGSEGV, matching the C.
 
-## Harness sensitivity check
+**Bug 2 — the optimizer deleted the `memcpy` for non-positive `len` (row 13, `len == -1`).**
+After bug 1 was fixed the zero-length case was backed by a 4-byte local array, so
+a `memcpy` of ~2^64 bytes into it was *provable* UB; LLVM concluded the branch was
+unreachable and emitted `test %esi,%esi ; jle <epilogue> ; ret`. The Rust
+therefore **exited 0** where the C dies with **SIGSEGV**. Fixed by transliterating
+gcc's emitted VLA arithmetic literally —
 
-To confirm these tests can actually fail (rather than passing vacuously or
-accidentally loading the C library twice), three mutations were injected into
-`src/lib.rs`, each caught, then reverted:
+```
+size_bytes = (u64)(i64)len * 4                  // movslq ; lea (,rax,4)
+frame      = (size_bytes wrapping+ 15) / 16 * 16 // add ; div $16 ; imul $16
+out        = align_up_4(rsp - frame)             // sub %rax,%rsp ; (rsp+3)>>2<<2
+memcpy(out, data, size_bytes)                    // count is size_bytes, not frame
+```
 
-| mutation | caught by |
-|---|---|
-| `wrapping_add` → `saturating_add` in `fma_array` | `cfg_09`, `cfg_10`, `cfg_11`, … (all `Full`/`Boundary` rows) |
-| loop bound `i < len` → `i < len - 1` | 20+ `cfg_*` rows across both entry points |
-| `vla_stack_probe` call removed | `boundary_sweep_len_domain_faulting` (signal 11 vs 6) |
+— and passing the destination through `core::hint::black_box` so the call cannot
+be reasoned away. The wrapping `+15` is load-bearing: for `len ∈ {-1,-2,-3}` it
+wraps and `frame` collapses to `0`, so the C's `out` is a *valid* stack address
+and only the count is absurd; for `len <= -4` `frame` is astronomical and `out`
+itself is wild. Both sub-cases now die the same way in both libraries.
+
+## Verification commands
+
+```
+./verify_all.sh          # builds both libs, runs all phases × all feature combos
+```
+
+All 24 CONFIGS.md rows, all 15 ERRORS.md rows and the 4 Phase D gates pass under
+`default`, `--no-default-features`, and in both the `release` and `dev` profiles.

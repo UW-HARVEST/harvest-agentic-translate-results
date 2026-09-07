@@ -1,11 +1,13 @@
-# Error Surface
+# Error-surface table
 
-Mechanical searches of `../c_src/include/driver.h` and
-`../c_src/src/driver.c` found no error-return statements, assertions, range
-checks, null checks, enums, lengths, or min/max constants.
+Mechanical scans covered `../c_src/include/driver.h` and
+`../c_src/src/driver.c` for error returns, `assert`, conditionals, range
+checks, null checks, enums, and min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | Status |
+|---|----------|---------------------------------------------|-------------------|--------|
 
-`driver` accepts one `double` by value. Every binary64 bit pattern is accepted,
-so the generic pointer, length, and out-of-range enum boundaries do not apply.
+There are no rejection paths. The sole public API accepts one `double` by
+value and returns `void`; it has no pointers, lengths, enums, documented
+ranges, or invalid bit patterns. Therefore the generic null, zero/oversized
+length, and out-of-range enum boundary cases are not applicable.

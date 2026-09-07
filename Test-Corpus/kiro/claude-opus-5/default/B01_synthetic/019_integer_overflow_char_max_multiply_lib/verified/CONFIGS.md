@@ -1,78 +1,82 @@
-# CONFIGS.md — Configuration surface table (Phase A, gates Phase B)
+# CONFIGS.md — Configuration surface table (Phase B)
 
-Derived mechanically from `c_src/include/driver.h` + `c_src/src/driver.c`.
+Derived mechanically from `c_src/src/driver.c` + `c_src/include/driver.h`.
 
 ## Axes the C code actually branches on
 
-**Runtime options / modes (the only one the public API can set):**
+**A. Runtime option / mode flag** — there is exactly one, the `driver` parameter:
 
-* `driver(int useGood)` — a two-mode selector, `if (useGood)`. State it toggles:
-  `good()` (⇒ `goodG2B()` then `goodB2G()`) vs `bad()`. Any non-zero `int` is
-  mode "good"; exactly `0` is mode "bad". No other option, flag, global, or
-  `#ifdef` exists in the library (`grep -c '#if' src/driver.c` → only the
-  header's `#ifndef DRIVER_H_` include guard).
+| flag | set via | C branch | state it selects |
+|---|---|---|---|
+| `useGood` | `driver(int useGood)` line 91 | `if (useGood)` / `else` | `good()` (both mitigations) vs `bad()` (the overflow) |
 
-**Public entry points — the FULL set, low-level first (from `nm -D`, not just
-the `driver.h` convenience wrapper):**
+There are no globals, no `#ifdef`s in `driver.c`, no init/teardown, no
+environment lookups — the library is **stateless** (relevant axis: call order /
+repetition must not change results).
 
-| level | entry point | note |
+**B. Public entry points** — the full set exported by the `.so`, not just the
+top-level `driver` convenience wrapper:
+
+| level | entry point | signature |
 |---|---|---|
-| lowest | `printHexCharLine(char)` | leaf output primitive |
-| lowest | `printLine(const char*)`  | leaf output primitive |
-| middle | `bad(void)`               | composed of `printHexCharLine` |
-| middle | `good(void)`              | composed of both leaves via the two `static` helpers |
-| top    | `driver(int)`             | the only entry point declared in `driver.h` |
+| lowest | `printLine` | `void(const char *)` |
+| lowest | `printHexCharLine` | `void(char)` |
+| mid | `bad` | `void(void)` |
+| mid | `good` | `void(void)` (composes the two `static` helpers) |
+| top | `driver` | `void(int)` |
 
-Note `bad`, `good`, `printLine`, `printHexCharLine` are exported but **not
-declared in the header** — they are still part of the ABI surface a real
-consumer can reach by `dlsym`, so they are driven directly below.
+`goodG2B` / `goodB2G` are `static`; they are reachable only *through* `good`, so
+`good` is the lowest-level handle on them.
 
-**Input shapes the code special-cases:**
+**C. Input shapes the code special-cases**
 
-* `printLine`: null vs non-null (explicit check); empty vs 1-byte vs many-byte;
-  interior NUL (C string truncation); bytes ≥ 0x80; format specifiers; 64 KiB.
-* `printHexCharLine`: sign of the `char` (drives `%02x` printing 2 digits vs 8
-  after the int promotion); zero (zero-pad path); the full 256-value domain;
-  dirty upper argument-register bits.
-* `driver`: zero vs non-zero; sign; low-byte-zero-but-non-zero; `INT_MIN` /
-  `INT_MAX` boundaries.
+- `printLine`: NULL vs non-NULL (line 32); length 0 / 1 / many; bytes containing
+  `%` conversion specifiers; bytes containing embedded newlines; high-bit
+  (non-ASCII / negative `char`) bytes; long strings that cross the stdio buffer
+  size (>4096) so that flush behaviour is exercised.
+- `printHexCharLine`: the `char` value domain — `< 16` (needs `%02x`
+  zero-padding), `16..=127` (2 digits, no padding), `0`, and `< 0` (sign-extended
+  to 8 hex digits). Full 256-value sweep.
+- `driver`: `0` vs non-zero; and among non-zero, values whose *low byte* is zero
+  (`256`, `0x10000`, `INT_MIN`) to prove the whole `int` is tested.
+- Composition: repeated / interleaved calls, to confirm statelessness and
+  identical stdio buffering.
 
-**Observable compared:** the exact stdout byte stream. Both libraries write
-through the *same* process glibc `stdout`, so the harness redirects fd 1 to a
-file, calls the symbol, `fflush(NULL)`s, and compares the bytes.
-
-## Rows (cross-product, pruned to what the C distinguishes)
+## Table — one row per combination the C treats differently
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `printHexCharLine` | exhaustive sweep of the entire domain: all 256 byte values `0x00..0xFF` reinterpreted as the platform `char` | [x] |
-| C2 | `printHexCharLine` | randomized (seeded LCG, 4096 draws) over the full byte domain — value-dependent path coverage | [x] |
-| C3 | `printHexCharLine` | boundary values only: `0`, `1`, `0x0F`, `0x10`, `0x7F` (`CHAR_MAX`), `0x80` (`CHAR_MIN`), `0xFF` — the 2-digit/8-digit and zero-pad transitions | [x] |
-| C4 | `printHexCharLine` | argument passed with dirty upper register bits (int-valued arg into a `char` parameter): `0x1FF`, `0xDEADBE7F`, `-256` | [x] |
-| C5 | `printLine` | `NULL` (null-check branch) | [x] |
-| C6 | `printLine` | empty string `""` (zero length) | [x] |
-| C7 | `printLine` | single-byte strings, exhaustive over all 255 non-NUL byte values | [x] |
-| C8 | `printLine` | randomized (seeded, 512 draws) strings, length 0..64, bytes drawn from the full non-NUL range `0x01..0xFF` | [x] |
-| C9 | `printLine` | strings with an interior NUL — C truncates at the first NUL | [x] |
-| C10 | `printLine` | strings containing `printf` conversion specifiers (`%s`, `%d`, `%n`, `%p`, `%%`) as data | [x] |
-| C11 | `printLine` | the exact literal `goodB2G` uses: `"data value is too large to perform arithmetic safely."` | [x] |
-| C12 | `printLine` | oversized: 1 KiB, 4 KiB (stdio buffer boundary), 64 KiB strings | [x] |
-| C13 | `bad` | no options — direct low-level call; exercises the `data = CHAR_MAX` overflow path (`127 * 2` truncated to `char`) | [x] |
-| C14 | `bad` | called repeatedly (16×) — confirms no state carried between calls | [x] |
-| C15 | `good` | no options — direct call; exercises the composed pipeline `goodG2B` **then** `goodB2G` (two output lines, order-sensitive) | [x] |
-| C16 | `good` | called repeatedly (16×) — confirms no state carried between calls | [x] |
-| C17 | `driver` | mode "bad": `useGood == 0` | [x] |
-| C18 | `driver` | mode "good": `useGood == 1` | [x] |
-| C19 | `driver` | mode "good" via other truthy shapes: `-1`, `2`, `42`, `0x100`, `0x7FFFFFFF` (`INT_MAX`), `0x80000000` (`INT_MIN`), `0xFFFFFF00` | [x] |
-| C20 | `driver` | randomized (seeded, 2048 draws) over the full `i32` domain, mixing zero and non-zero | [x] |
-| C21 | mixed pipeline | interleaved sequence across ALL five entry points in one capture (`driver(0)`, `printLine`, `printHexCharLine`, `bad`, `good`, `driver(1)`, …) driven from a seeded random program — catches divergence only visible in composition / stdio buffering | [x] |
-| C22 | mixed pipeline | randomized 256-step program of random entry points with random arguments, single capture, byte-compared as a whole | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `printLine` | non-NULL, single ASCII line, randomized length 1..64, randomized printable bytes | [x] |
+| C2 | `printLine` | non-NULL, **empty** string `""` (length 0) | [x] |
+| C3 | `printLine` | non-NULL, length exactly 1, swept over all 255 non-NUL byte values (incl. high-bit / negative `char`) | [x] |
+| C4 | `printLine` | non-NULL, randomized bytes drawn from the **full** `1..=255` range (non-ASCII / UTF-8-invalid) | [x] |
+| C5 | `printLine` | non-NULL, contains `%s`, `%n`, `%d`, `%%`, `%p` — must be treated as data, never as a format | [x] |
+| C6 | `printLine` | non-NULL, contains embedded `\n`, `\t`, `\r` (multi-line payload) | [x] |
+| C7 | `printLine` | non-NULL, **long** string crossing the stdio buffer (randomized lengths 4000..9000) | [x] |
+| C8 | `printLine` | NULL pointer (the line-32 false branch) — see also ERRORS.md E1 | [x] |
+| C9 | `printHexCharLine` | full sweep of all 256 `char` bit patterns `-128..=127` (covers `<16` padded, `>=16` unpadded, `0`, and sign-extended negatives) | [x] |
+| C10 | `printHexCharLine` | randomized `char` values, 512 draws from a fixed seed | [x] |
+| C11 | `bad` | no options; called once (exercises `CHAR_MAX` overflow path, lines 46-48) | [x] |
+| C12 | `bad` | called repeatedly (randomized 1..16 repeats) — statelessness + accumulated buffered output | [x] |
+| C13 | `good` | no options; called once (runs `goodG2B` then `goodB2G`, incl. the line-72 range-check rejection) | [x] |
+| C14 | `good` | called repeatedly (randomized 1..16 repeats) | [x] |
+| C15 | `driver` | `useGood = 0` → `bad()` path | [x] |
+| C16 | `driver` | `useGood = 1` → `good()` path | [x] |
+| C17 | `driver` | `useGood` = randomized non-zero `i32` (full range incl. negatives, fixed seed) → `good()` path | [x] |
+| C18 | `driver` | `useGood` ∈ {`256`, `0x10000`, `0x7FFFFF00`, `INT_MIN`, `INT_MAX`, `-1`, `2`} — non-zero ints whose low byte may be `0` | [x] |
+| C19 | `driver` | randomized **sequence** of mixed `0` / non-zero calls (interleaving both modes in one capture) | [x] |
+| C20 | mixed pipeline | randomized interleaving of `driver`, `good`, `bad`, `printLine`, `printHexCharLine` in one capture — end-to-end composed byte stream | [x] |
 
-All 22 rows have a passing differential test — see `tests/differential.rs`
-(`phase_b_*` tests).
+Every row is driven from `tests/differential.rs::phase_b_*`, calling **both**
+`.so`s through `libloading` and comparing captured `stdout` byte-for-byte.
+Randomized rows use a fixed-seed xorshift PRNG (see `Rng` in the test file) so
+runs are reproducible.
 
-## Feature combinations
+## Binary executable
 
-`Cargo.toml` has no `[features]` table ⇒ exactly one combination (default =
-empty = `--no-default-features`). Enumerated mechanically by
-`check_features.sh`; the test suite is run under it.
+`c_src/CMakeLists.txt` defines a single `add_library(driver SHARED ...)` target
+and **no** `add_executable`, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]` with no `src/main.rs` / `[[bin]]`. There is no
+driver binary, so the "compare C and Rust stdout from the binaries" gate is
+**not applicable**; the equivalent coverage is obtained by capturing `stdout` at
+the file-descriptor level around every `.so` call (rows C1-C20).

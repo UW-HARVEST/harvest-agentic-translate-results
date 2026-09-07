@@ -9,7 +9,7 @@
 //     T driver
 //     T run
 //
-// Both are exported here with `#[no_mangle] extern "C"` and identical
+// Both are exported here with `#[no_mangle] extern "C"` and the identical
 // signatures. Everything else in driver.c is `static` (internal linkage) and is
 // therefore translated to private Rust functions.
 //
@@ -21,14 +21,10 @@
 //     caller, and `%.1f` rounding would come from a different implementation.
 //   * Parsing goes through the platform C library's `strtol` plus `errno`, so
 //     leading-whitespace handling, partial parses, and ERANGE reporting match
-//     the C code exactly (including its quirks, e.g. trailing garbage such as
-//     "12abc" is accepted and NULL is not checked).
-//   * `house_t` is only ever touched through raw pointers, never through a Rust
-//     reference, so an invalid pointer faults (SIGSEGV) exactly like the C
-//     rather than tripping a Rust null/alignment assertion (SIGABRT).
+//     the C code exactly (including its bugs, e.g. trailing garbage such as
+//     "12abc" is accepted).
 
 use std::ffi::{c_char, c_double, c_int, c_long, c_void};
-use std::mem::{offset_of, size_of, MaybeUninit};
 
 // ---------------------------------------------------------------------------
 // libc bindings (declared directly to avoid an external crate dependency)
@@ -42,44 +38,78 @@ extern "C" {
 }
 
 // ---------------------------------------------------------------------------
-// Unchecked field access
+// Raw field access that faults exactly like C's `house->field`
 // ---------------------------------------------------------------------------
 //
-// The C dereferences `house_t *` with no null or alignment check, so an invalid
-// pointer produces a hardware fault (SIGSEGV). Rust inserts a "null pointer
-// dereference" check at every raw-pointer place projection (`(*p).field`) when
-// `-C debug-assertions` is on, which turns that fault into a SIGABRT panic and
-// so is observably different. To be faithful under *every* build profile, the
-// field loads and stores below go through libc's `memcpy` at an address
-// computed by integer arithmetic: no Rust dereference happens at all, and a bad
-// address faults inside `memcpy` exactly as the C does.
+// A plain Rust dereference (`(*p).floors`, or `&mut *p`) is instrumented when
+// the crate is built with `-C debug-assertions` (the default `dev` profile):
+// rustc inserts a null/alignment UB check that turns an invalid pointer into a
+// non-unwinding panic and SIGABRT. The C library has no such check, so
+// `run(NULL, ...)` there dies with SIGSEGV. To keep the observable behaviour of
+// an invalid pointer identical in EVERY cargo profile, every field access goes
+// through libc `memcpy` on a byte-offset address: the address arithmetic never
+// dereferences in Rust, and the faulting load/store happens inside libc,
+// producing the same SIGSEGV the C code produces.
+//
+// For valid pointers this is semantically identical to a direct field access:
+// `house_t` is `#[repr(C)]` with no padding between `floors`, `bedrooms`, and
+// `bathrooms`, and each `memcpy` touches exactly the bytes of one field.
 
-/// Byte address of a field, computed without dereferencing `base`.
 #[inline]
-fn field_addr(base: usize, off: usize) -> usize {
-    base.wrapping_add(off)
+unsafe fn load_field<T: Copy>(base: *const house_t, byte_offset: usize) -> T {
+    let src = (base as *const u8).add(byte_offset);
+    let mut out = core::mem::MaybeUninit::<T>::uninit();
+    memcpy(
+        out.as_mut_ptr() as *mut c_void,
+        src as *const c_void,
+        core::mem::size_of::<T>(),
+    );
+    out.assume_init()
 }
 
-/// `*(T *)(base + off)`
 #[inline]
-unsafe fn load<T: Copy>(base: usize, off: usize) -> T {
-    let mut v = MaybeUninit::<T>::uninit();
+unsafe fn store_field<T: Copy>(base: *mut house_t, byte_offset: usize, value: T) {
+    let dst = (base as *mut u8).add(byte_offset);
     memcpy(
-        v.as_mut_ptr() as *mut c_void,
-        field_addr(base, off) as *const c_void,
-        size_of::<T>(),
+        dst as *mut c_void,
+        &value as *const T as *const c_void,
+        core::mem::size_of::<T>(),
     );
-    v.assume_init()
 }
 
-/// `*(T *)(base + off) = val;`
+const OFF_FLOORS: usize = core::mem::offset_of!(house_t, floors);
+const OFF_BEDROOMS: usize = core::mem::offset_of!(house_t, bedrooms);
+const OFF_BATHROOMS: usize = core::mem::offset_of!(house_t, bathrooms);
+
+/// `house->floors`
 #[inline]
-unsafe fn store<T: Copy>(base: usize, off: usize, val: T) {
-    memcpy(
-        field_addr(base, off) as *mut c_void,
-        &val as *const T as *const c_void,
-        size_of::<T>(),
-    );
+unsafe fn get_floors(h: *const house_t) -> c_int {
+    load_field(h, OFF_FLOORS)
+}
+/// `house->floors = v`
+#[inline]
+unsafe fn set_floors(h: *mut house_t, v: c_int) {
+    store_field(h, OFF_FLOORS, v)
+}
+/// `house->bedrooms`
+#[inline]
+unsafe fn get_bedrooms(h: *const house_t) -> c_int {
+    load_field(h, OFF_BEDROOMS)
+}
+/// `house->bedrooms = v`
+#[inline]
+unsafe fn set_bedrooms(h: *mut house_t, v: c_int) {
+    store_field(h, OFF_BEDROOMS, v)
+}
+/// `house->bathrooms`
+#[inline]
+unsafe fn get_bathrooms(h: *const house_t) -> c_double {
+    load_field(h, OFF_BATHROOMS)
+}
+/// `house->bathrooms = v`
+#[inline]
+unsafe fn set_bathrooms(h: *mut house_t, v: c_double) {
+    store_field(h, OFF_BATHROOMS, v)
 }
 
 /// `errno = value;`
@@ -109,10 +139,6 @@ pub struct house_t {
     pub bathrooms: c_double,
 }
 
-const OFF_FLOORS: usize = offset_of!(house_t, floors);
-const OFF_BEDROOMS: usize = offset_of!(house_t, bedrooms);
-const OFF_BATHROOMS: usize = offset_of!(house_t, bathrooms);
-
 // ---------------------------------------------------------------------------
 // static void add_floor(house_t *house)
 // ---------------------------------------------------------------------------
@@ -121,9 +147,13 @@ const OFF_BATHROOMS: usize = offset_of!(house_t, bathrooms);
 ///
 /// Signed overflow is undefined behaviour in C; gcc's actual codegen wraps, so
 /// `wrapping_add` reproduces the observed behaviour instead of panicking.
-unsafe fn add_floor(house: usize) {
-    let v: c_int = load(house, OFF_FLOORS);
-    store(house, OFF_FLOORS, v.wrapping_add(1));
+///
+/// Takes a raw pointer rather than `&mut house_t` so that a NULL argument
+/// faults with SIGSEGV exactly as the C original does. Forming a Rust
+/// reference from NULL would instead trip a debug-mode UB check and abort
+/// (SIGABRT), which is an observable difference from the C behaviour.
+unsafe fn add_floor(house: *mut house_t) {
+    set_floors(house, get_floors(house).wrapping_add(1));
 }
 
 // ---------------------------------------------------------------------------
@@ -131,9 +161,8 @@ unsafe fn add_floor(house: usize) {
 // ---------------------------------------------------------------------------
 
 /// `house->bedrooms += extra_bedrooms;`
-unsafe fn add_bedrooms(house: usize, extra_bedrooms: c_int) {
-    let v: c_int = load(house, OFF_BEDROOMS);
-    store(house, OFF_BEDROOMS, v.wrapping_add(extra_bedrooms));
+unsafe fn add_bedrooms(house: *mut house_t, extra_bedrooms: c_int) {
+    set_bedrooms(house, get_bedrooms(house).wrapping_add(extra_bedrooms));
 }
 
 // ---------------------------------------------------------------------------
@@ -141,12 +170,14 @@ unsafe fn add_bedrooms(house: usize, extra_bedrooms: c_int) {
 // ---------------------------------------------------------------------------
 
 /// `printf("The house has %d floors, %d bedrooms, and %.1f bathrooms\n", ...)`
-unsafe fn print_house(house: usize) {
+unsafe fn print_house(house: *const house_t) {
     const FMT: &[u8] = b"The house has %d floors, %d bedrooms, and %.1f bathrooms\n\0";
-    let floors: c_int = load(house, OFF_FLOORS);
-    let bedrooms: c_int = load(house, OFF_BEDROOMS);
-    let bathrooms: c_double = load(house, OFF_BATHROOMS);
-    printf(FMT.as_ptr() as *const c_char, floors, bedrooms, bathrooms);
+    printf(
+        FMT.as_ptr() as *const c_char,
+        get_floors(house),
+        get_bedrooms(house),
+        get_bathrooms(house),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -156,22 +187,17 @@ unsafe fn print_house(house: usize) {
 /// # Safety
 ///
 /// `the_house` must point to a valid, writable `house_t`, exactly as required
-/// by the C original (which likewise does not check for NULL).
+/// by the C original (which likewise does not check for NULL). A NULL argument
+/// faults on the first dereference, matching the C library's SIGSEGV.
 #[no_mangle]
 pub unsafe extern "C" fn run(the_house: *mut house_t, extra_bedrooms: c_int) {
-    let h = the_house as usize;
-
-    print_house(h);
-    add_floor(h);
-    print_house(h);
-    {
-        // `the_house->bathrooms += 1.0;`
-        let v: c_double = load(h, OFF_BATHROOMS);
-        store(h, OFF_BATHROOMS, v + 1.0);
-    }
-    print_house(h);
-    add_bedrooms(h, extra_bedrooms);
-    print_house(h);
+    print_house(the_house);
+    add_floor(the_house);
+    print_house(the_house);
+    set_bathrooms(the_house, get_bathrooms(the_house) + 1.0);
+    print_house(the_house);
+    add_bedrooms(the_house, extra_bedrooms);
+    print_house(the_house);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +224,7 @@ unsafe fn parse_val(str_: *const c_char, val: *mut c_int) -> bool {
     let tmp: c_long = strtol(str_, &mut endp, 10);
     if endp != str_ as *mut c_char && get_errno() == 0 && tmp >= INT_MIN && tmp <= INT_MAX {
         // C's implicit long -> int narrowing conversion.
-        store(val as usize, 0, tmp as c_int);
+        *val = tmp as c_int;
         true
     } else {
         false
@@ -224,8 +250,8 @@ pub unsafe extern "C" fn driver(in_: *const c_char) {
             bedrooms: 5,
             bathrooms: 2.5,
         };
-        run(&mut the_house as *mut house_t, x);
-        run(&mut the_house as *mut house_t, x);
+        run(&mut the_house, x);
+        run(&mut the_house, x);
     } else {
         const MSG: &[u8] = b"An error occurred\n\0";
         printf(MSG.as_ptr() as *const c_char);

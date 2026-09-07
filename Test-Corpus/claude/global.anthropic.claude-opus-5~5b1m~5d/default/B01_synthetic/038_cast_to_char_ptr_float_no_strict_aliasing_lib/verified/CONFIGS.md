@@ -1,107 +1,90 @@
-# CONFIGS.md — Configuration-surface table (Phase A / gate for Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-## Mechanical derivation of the axes
+Mechanically derived from the C source. The axes below are exactly the ones the
+C code branches on — nothing else exists in `c_src/`.
 
-### Full set of public entry points
+## Enumerating the axes from the source
 
-From `c_src/include/driver.h` (the only public header) — everything it declares:
+**Public entry points** (`c_src/include/driver.h`, the only public header):
 
-| entry point | signature | level |
-|-------------|-----------|-------|
-| `driver` | `void driver(float x)` | this is simultaneously the highest AND the lowest-level public entry point — there is no convenience wrapper and no underlying public primitive |
+* `void driver(float x)` — the *only* public entry point. It is simultaneously
+  the highest- and lowest-level exported function; there is no convenience
+  wrapper layer to skip past.
+* `static void print_hex(unsigned char *p, int len)` — internal, `static`, not
+  exported (see `SYMBOLS.md`). Its only call site is `driver`, always with
+  `len == sizeof(float) == 4` and `p` pointing at a 4-byte local buffer. It is
+  therefore exercised transitively via `driver`, with `len` fixed.
 
-Internal (`static`, not exported, not reachable through any other public symbol):
+**Runtime options / modes / flags:** *none.* Greps over `c_src/` for `#ifdef`,
+`#if`, `switch`, setter functions, or global configuration state find nothing:
+there is no state, no mode, no flag, no global variable. `CMakeLists.txt` sets
+only `-fno-strict-aliasing` (a codegen flag, not a behavioral option) and
+defines a single build configuration.
 
-| function | signature | reachable from public API? |
-|----------|-----------|----------------------------|
-| `print_hex` | `static void print_hex(unsigned char *p, int len)` | only via `driver`, always with `len == sizeof(float) == 4` and `p` = address of the 4-byte copy of `x` |
+**Control flow the C actually branches on:**
 
-So the "call hierarchy" is exactly `driver` → `print_hex` → `printf`, and the
-lowest-level entry point available to an external consumer *is* `driver`. Tests
-therefore exercise `driver` directly through the `.so` export (there is nothing
-lower to reach), and additionally reconstruct `print_hex`'s behaviour indirectly.
+* `for (int i = 0; i < len; i++)` in `print_hex` — the only branch. `len` is
+  always 4, so the loop always runs exactly 4 iterations.
+* `printf("%02x", p[i])` — `p[i]` is an `unsigned char` promoted to `int`, so the
+  branch-relevant input *shapes* are the 256 possible values of each byte
+  (notably ≥ 0x80, which a signed-char mistranslation would print as
+  `ffffff80`, and < 0x10, which requires the `%02x` zero-padding).
+* `memcpy(raw, &x, sizeof(x))` — reinterprets the float's object
+  representation, so **byte order** (native little-endian on the test host) and
+  the exact bit pattern of the argument are behavioral axes.
 
-### Axis 1 — runtime options / modes / flags
-
-| option / mode / flag | exists? | evidence |
-|----------------------|---------|----------|
-| any parameter other than `x` | no | `driver.h:27` declares a single `float` parameter |
-| global/`static` mutable state, init function, context struct | no | `driver.c` has no file-scope variables; nothing to configure or tear down |
-| `#ifdef`-selected behaviour | no | the only preprocessor conditional is the `DRIVER_H_` include guard |
-| build-time knobs | one, non-behavioural | `CMakeLists.txt:28` `-fno-strict-aliasing` (affects codegen legality of the `char raw[]` type-pun only, not observable output) |
-| Rust cargo features | none | `translation/Cargo.toml` has no `[features]` section and no optional deps |
-
-**There are zero runtime options.** The configuration surface is consequently
-driven entirely by the *shape and value* of the single `float` argument, plus the
-*call pattern* (how the shared `stdout` stream is used across calls).
-
-### Axis 2 — input shapes the code distinguishes
-
-`driver` performs no value inspection, but the *IEEE-754 class* of the argument
-partitions the 32-bit input space into the regions where a translation can
-plausibly diverge (canonicalisation, flush-to-zero, x87 vs SSE argument passing,
-`%02x` sign-extension of bytes ≥ 0x80). Derived from the byte-level operations
-the C actually performs — `memcpy` of 4 bytes, then `p[i]` promoted to `int` for
-`%02x`:
-
-| shape axis | distinct values the code's byte-level behaviour ranges over |
-|------------|-----------------------------------------------------------|
-| float class | +0, −0, subnormal, normal, ±inf, qNaN, sNaN |
-| sign bit | 0, 1 |
-| exponent field | 0x00 (zero/subnormal), 0x01…0xFE (normal), 0xFF (inf/NaN) |
-| mantissa | 0, 1 (min), 0x7fffff (max), arbitrary payload |
-| per-byte value | each of the 4 bytes < 0x80 vs ≥ 0x80 (exercises `%02x` on a *signed* `char` copy — `raw` is `char`, cast to `unsigned char*`) |
-| digit shape | bytes needing the `0` pad (`< 0x10`) vs not; hex digits `a`–`f` (lowercase) vs `0`–`9` |
-| byte order | native only (LE on x86-64); `memcpy`/`to_ne_bytes` must agree |
-
-### Axis 3 — call pattern (shared `stdout` state)
-
-| axis | values |
-|------|--------|
-| number of calls per capture | 0, 1, 2, many |
-| interleaving | C-only run, Rust-only run, and C-then-Rust in the *same* process/stream |
-| stream destination | pipe/file-backed fd 1 (fully buffered) — the case where a mismatched buffer would reorder output |
+**Distinct input shapes the code special-cases:** the argument is a single
+scalar `float` passed by value, so the shape axis is the IEEE-754 binary32
+*class* of the value plus its exact bit pattern: `+0`, `-0`, positive/negative
+subnormal, positive/negative normal, `FLT_MIN`, `FLT_MAX`, `±inf`, quiet NaN,
+signalling NaN, NaN with non-canonical payload. There are no lengths, counts,
+arrays, element types, or formats — the API accepts no such parameters, so
+"empty / one / many" collapses onto "one call / many calls".
 
 ## Configuration-surface table
 
-Cross-product of the axes above, pruned to the combinations the C actually
-treats differently. Every row is tested in `translation/tests/valid_paths.rs`
-with **many randomised inputs (fixed seed, deterministic SplitMix64)** unless the
-row is a singleton bit pattern, comparing the C `.so` and Rust `.so` byte-for-byte.
+One row per combination the C treats differently (cross-product of
+{entry point} × {value class} × {byte values} × {call multiplicity}, pruned to
+what the code distinguishes). Every row is verified with many randomized inputs
+(fixed seed `0x9E3779B97F4A7C15`) against both `.so`s, byte-for-byte.
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `driver` | no options (none exist) + positive zero `0x00000000`; all four bytes 0x00, all-padded digits | [x] |
-| C2 | `driver` | negative zero `0x80000000`; sign byte 0x80 ≥ 0x80 → exercises signed-`char` promotion | [x] |
-| C3 | `driver` | smallest positive subnormal `0x00000001` … randomised subnormals with exponent field 0x00, mantissa ∈ [1, 0x7fffff], sign 0 | [x] |
-| C4 | `driver` | randomised *negative* subnormals (exponent 0x00, sign 1) — top byte ≥ 0x80 | [x] |
-| C5 | `driver` | largest subnormal `0x007fffff` and `FLT_MIN` `0x00800000` (the subnormal/normal boundary pair) | [x] |
-| C6 | `driver` | randomised positive normals: sign 0, exponent ∈ [0x01,0xFE], random mantissa | [x] |
-| C7 | `driver` | randomised negative normals: sign 1, exponent ∈ [0x01,0xFE], random mantissa | [x] |
-| C8 | `driver` | small exact integers as floats (`0.0,1.0,2.0,…,±1..±1000` randomised) — the "ordinary consumer" shape | [x] |
-| C9 | `driver` | simple fractions/decimals (`0.1, 0.5, 1.5, 3.14159, 1e-10, 1e10`, randomised `f32` from random `f64` division) | [x] |
-| C10 | `driver` | `FLT_MAX 0x7f7fffff`, `-FLT_MAX 0xff7fffff`, `FLT_EPSILON 0x34000000`, `FLT_MIN`, `-FLT_MIN` | [x] |
-| C11 | `driver` | `+inf 0x7f800000` and `-inf 0xff800000` (exponent 0xFF, mantissa 0) | [x] |
-| C12 | `driver` | qNaN / sNaN / signed NaN with randomised 23-bit payloads (exponent 0xFF, mantissa ≠ 0) | [x] |
-| C13 | `driver` | inputs chosen so **every** byte value 0x00…0xFF appears in each of the 4 byte positions (drives `%02x` over its whole domain, incl. `a`–`f` lowercase and zero-padding) | [x] |
-| C14 | `driver` | fully unconstrained randomised 32-bit patterns reinterpreted as `float` (uniform over the entire input space, 200 000 samples, seeded) | [x] |
-| C15 | `driver` | exhaustive sweep of the *structured* space: every exponent 0x00…0xFF × sign × a set of mantissa corner values | [x] |
-| C16 | `driver` | call pattern: **zero** calls inside a capture (must produce empty output, no stray newline) | [x] |
-| C17 | `driver` | call pattern: single call (baseline; output is exactly 9 bytes = 8 hex digits + `\n`) | [x] |
-| C18 | `driver` | call pattern: many sequential calls in one capture — C's N-call output must equal Rust's N-call output *and* the concatenation of individual outputs (shared `stdout` buffering) | [x] |
-| C19 | `driver` (both libs) | call pattern: C and Rust `driver` invoked **alternately into the same fd-1 stream** in one process — verifies both write through the same libc `FILE*` and neither buffers independently | [x] |
-| C20 | `driver` | fd 1 redirected to a *file* (fully buffered, not line-buffered) with many calls, so a translation using a private buffer flushed at a different time would reorder | [x] |
-| C21 | `driver` | structural invariant across all of the above: output is always `^[0-9a-f]{8}\n$` per call, lowercase, no uppercase, no `0x` prefix, exactly 9 bytes | [x] |
-| C22 | `driver` | byte-order agreement: output equals `x.to_ne_bytes()` hex — asserted against an independent oracle computed in the test, for randomised inputs | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `driver` | positive normal floats, randomized over the whole normal exponent range (10 000 samples) | [x] |
+| 2 | `driver` | negative normal floats, randomized (10 000 samples) — exercises the sign bit landing in byte 3 ≥ 0x80 | [x] |
+| 3 | `driver` | small-magnitude "everyday" values: randomized floats in `[-1.0, 1.0]` (10 000 samples) | [x] |
+| 4 | `driver` | large-magnitude values: randomized floats scaled toward `FLT_MAX` (10 000 samples) | [x] |
+| 5 | `driver` | positive subnormals: randomized mantissas with zero exponent (5 000 samples) | [x] |
+| 6 | `driver` | negative subnormals: randomized mantissas with zero exponent, sign set (5 000 samples) | [x] |
+| 7 | `driver` | signed zeros: `+0.0` and `-0.0` | [x] |
+| 8 | `driver` | integral-valued floats from randomized `i32`s cast to `float` (10 000 samples) | [x] |
+| 9 | `driver` | `±inf` | [x] |
+| 10 | `driver` | quiet NaNs with randomized payloads, both signs (5 000 samples) — payload must survive the FFI boundary unquieted/unmodified | [x] |
+| 11 | `driver` | signalling NaNs with randomized payloads, both signs (5 000 samples) | [x] |
+| 12 | `driver` | IEEE boundary constants: `FLT_MIN`, `FLT_MAX`, `FLT_EPSILON`, `FLT_TRUE_MIN`, largest subnormal, smallest normal, `1.0`, `-1.0`, `2.0`, `0.5` | [x] |
+| 13 | `driver` (→ `print_hex` byte loop) | every byte value 0x00–0xff placed in byte position 0, 1, 2 and 3 (1 024 patterns) — exercises `%02x` zero-padding and `unsigned char` promotion in all 4 loop iterations | [x] |
+| 14 | `driver` | unconstrained bit patterns: 200 000 random `u32`s reinterpreted as `float`, covering every value class simultaneously | [x] |
+| 15 | `driver` | call multiplicity: one single call (fresh stdout capture), verifying exactly 9 bytes are emitted (8 hex + `\n`) | [x] |
+| 16 | `driver` | call multiplicity: 1 000 calls to C then 1 000 identical calls to Rust in a single capture — verifies no hidden state and identical stdout buffering/flush behavior | [x] |
+| 17 | `driver` | call multiplicity: C and Rust calls **interleaved** within one capture, asserting the output alternates in identical pairs | [x] |
+| 18 | `driver` | output-shape invariant: for randomized inputs, the emitted text is exactly `[0-9a-f]{8}\n` (lowercase hex, zero-padded, native little-endian byte order) | [x] |
 
-## Feature-combination axis
+## Feature combinations
 
-`translation/Cargo.toml` declares no `[features]`, so the complete set of cargo
-feature combinations is `{ default }` ≡ `{ --no-default-features }` ≡
-`{ --all-features }`. `run_all_features.sh` runs the whole suite under all three
-invocations; see `SYMBOLS.md`.
+`translation/Cargo.toml` declares **no `[features]` section**, therefore the
+only configuration is the default (empty) feature set. Verified by:
 
-## Phase B gate
+```
+$ grep -n '^\[features\]' translation/Cargo.toml   # no match
+```
 
-All 22 rows checked `[x]` — each passes across its randomised inputs against both
-`.so`s. Phase C may proceed.
+The test suite is nevertheless run under `--no-default-features` as well as the
+default build, and both pass (see `run_all.sh`).
+
+## Binary executable
+
+`CMakeLists.txt` builds only `add_library(driver SHARED src/driver.c)` — there is
+no `add_executable`, and `translation/Cargo.toml` declares only `[lib]` with
+`crate-type = ["cdylib"]`. **No driver binary exists**, so the "compare C and
+Rust binary stdout" gate is not applicable; the equivalent coverage is provided
+by rows 15–18, which compare the libraries' actual stdout bytes.

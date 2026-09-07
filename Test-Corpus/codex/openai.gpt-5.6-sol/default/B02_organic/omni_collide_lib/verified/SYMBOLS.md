@@ -1,69 +1,58 @@
 # Dynamic symbol surface
 
-Source of truth:
+Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-18164a.so
-```
-
-Rust comparison:
-
-```text
+nm -D --defined-only ../c_src/build/libharvest-work-uMUtVU.so
 nm -D --defined-only target/release/libomni_collide_lib.so
 ```
 
-| # | C symbol | Rust export |
-|---|----------|-------------|
-| 1 | `c22` | present |
-| 2 | `c23` | present |
-| 3 | `c2AABBtoAABB` | present |
-| 4 | `c2AABBtoCapsule` | present |
-| 5 | `c2Add` | present |
-| 6 | `c2BBVerts` | present |
-| 7 | `c2CCW90` | present |
-| 8 | `c2CapsuletoCapsule` | present |
-| 9 | `c2CircletoAABB` | present |
-| 10 | `c2CircletoCapsule` | present |
-| 11 | `c2CircletoCircle` | present |
-| 12 | `c2Clampv` | present |
-| 13 | `c2Collided` | present |
-| 14 | `c2D` | present |
-| 15 | `c2Det2` | present |
-| 16 | `c2Div` | present |
-| 17 | `c2Dot` | present |
-| 18 | `c2GJK` | present |
-| 19 | `c2GJKSimplexMetric` | present |
-| 20 | `c2L` | present |
-| 21 | `c2Len` | present |
-| 22 | `c2MakeProxy` | present |
-| 23 | `c2Maxv` | present |
-| 24 | `c2Minv` | present |
-| 25 | `c2Mulrv` | present |
-| 26 | `c2MulrvT` | present |
-| 27 | `c2Mulvs` | present |
-| 28 | `c2Mulxv` | present |
-| 29 | `c2Neg` | present |
-| 30 | `c2Norm` | present |
-| 31 | `c2RotIdentity` | present |
-| 32 | `c2Skew` | present |
-| 33 | `c2Sub` | present |
-| 34 | `c2Support` | present |
-| 35 | `c2V` | present |
-| 36 | `c2Witness` | present |
-| 37 | `c2xIdentity` | present |
-| 38 | `omni_collide` | present |
-| 39 | `ptr_from_parts` | present |
+The C shared object exports 39 defined public symbols. The Rust shared object
+exports the same 39 names.
 
-Undefined dynamic dependencies in the C library are only `malloc` and `sqrtf`
-(plus toolchain weak/runtime symbols); neither is part of the library's public
-defined-symbol surface.
+| # | C symbol | C kind | Rust export |
+|---|----------|--------|-------------|
+| 1 | `c22` | `T` | [x] |
+| 2 | `c23` | `T` | [x] |
+| 3 | `c2AABBtoAABB` | `T` | [x] |
+| 4 | `c2AABBtoCapsule` | `T` | [x] |
+| 5 | `c2Add` | `T` | [x] |
+| 6 | `c2BBVerts` | `T` | [x] |
+| 7 | `c2CCW90` | `T` | [x] |
+| 8 | `c2CapsuletoCapsule` | `T` | [x] |
+| 9 | `c2CircletoAABB` | `T` | [x] |
+| 10 | `c2CircletoCapsule` | `T` | [x] |
+| 11 | `c2CircletoCircle` | `T` | [x] |
+| 12 | `c2Clampv` | `T` | [x] |
+| 13 | `c2Collided` | `T` | [x] |
+| 14 | `c2D` | `T` | [x] |
+| 15 | `c2Det2` | `T` | [x] |
+| 16 | `c2Div` | `T` | [x] |
+| 17 | `c2Dot` | `T` | [x] |
+| 18 | `c2GJK` | `T` | [x] |
+| 19 | `c2GJKSimplexMetric` | `T` | [x] |
+| 20 | `c2L` | `T` | [x] |
+| 21 | `c2Len` | `T` | [x] |
+| 22 | `c2MakeProxy` | `T` | [x] |
+| 23 | `c2Maxv` | `T` | [x] |
+| 24 | `c2Minv` | `T` | [x] |
+| 25 | `c2Mulrv` | `T` | [x] |
+| 26 | `c2MulrvT` | `T` | [x] |
+| 27 | `c2Mulvs` | `T` | [x] |
+| 28 | `c2Mulxv` | `T` | [x] |
+| 29 | `c2Neg` | `T` | [x] |
+| 30 | `c2Norm` | `T` | [x] |
+| 31 | `c2RotIdentity` | `T` | [x] |
+| 32 | `c2Skew` | `T` | [x] |
+| 33 | `c2Sub` | `T` | [x] |
+| 34 | `c2Support` | `T` | [x] |
+| 35 | `c2V` | `T` | [x] |
+| 36 | `c2Witness` | `T` | [x] |
+| 37 | `c2xIdentity` | `T` | [x] |
+| 38 | `omni_collide` | `T` | [x] |
+| 39 | `ptr_from_parts` | `T` | [x] |
+
+The C object's undefined dynamic dependencies are only `malloc`, `sqrtf`, and
+standard ELF/libc runtime weak symbols. There are no undefined project symbols.
 
 Missing Rust symbols: **0**
-
-Final Phase D verification (2026-09-03):
-
-- C defined exports: 39
-- Rust defined exports: 39
-- Missing exports: 0
-- Extra exports: 0
-- `ldd -r` reports no unresolved symbols for either shared library.

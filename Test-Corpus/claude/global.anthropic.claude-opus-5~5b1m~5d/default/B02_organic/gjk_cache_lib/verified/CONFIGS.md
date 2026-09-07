@@ -1,176 +1,178 @@
-# CONFIGS.md — configuration surface table (Phase A, gate for Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-Mechanically derived from `c_src/src/lib.c` + `c_src/include/lib.h`. The axes
-below are exactly the things the C `if`/`switch` statements branch on. There is
-no `#ifdef` in the source and no `[features]` table in `Cargo.toml`, so the
-compile-time axis is a single point.
+Derived mechanically from the branches in `c_src/src/lib.c`. Axes the C code
+actually distinguishes:
 
-## Axes the C actually branches on
+**A. Runtime options of `c2GJK`** (the only function with options):
 
-| axis | values the C distinguishes | source |
-|------|----------------------------|--------|
-| `typeA` / `typeB` | `C2_TYPE_CIRCLE` (1 vert, radius `r`), `C2_TYPE_AABB` (4 verts, radius 0), `C2_TYPE_CAPSULE` (2 verts, radius `r`) | `c2MakeProxy` lines 114–134 |
-| `ax_ptr` / `bx_ptr` | `NULL` → identity, non-`NULL` → arbitrary `c2x` (translation + rotation, incl. non-unit `c2r`) | lines 368–375, used by `c2Mulxv`/`c2MulrvT` |
-| `use_radius` | `0` (raw Minkowski distance), non-`0` (shrink by `rA+rB`) | line 482 |
-| radius sub-branch | `dist > rA+rB && dist > FLT_EPSILON` vs the `else` midpoint collapse; plus the `a==b ⇒ dist=0` re-check | lines 485–498 |
-| `cache` | `NULL`; non-`NULL` cold (`count == 0`); non-`NULL` warm (replayed from a previous call) | lines 383–408, 500–509 |
-| cache accept/reject | `!(min_metric < max_metric*2 && metric < -1e8f)` — accept in practice; reject only for a huge negative metric | line 405 |
-| `outA` / `outB` / `iterations` | `NULL` vs non-`NULL` (independently) | lines 510–515 |
-| overlap state | separated (`hit == 0`, `count` ends 1 or 2) vs penetrating (`hit == 1`, `count == 3`) | line 441 |
-| loop exit reason | `count == 3`; `d1 > d0`; `dot(d,d) < eps²`; duplicate support point; `iter == 20` | lines 441, 447, 451, 471, 425 |
-| simplex `count` in the reduction `switch` | 1 (no-op), 2 (`c22`), 3 (`c23`), anything else (no case ⇒ no-op) | lines 431–440 |
-| `c22` arms | `v <= 0`; `u <= 0`; else | lines 191–205 |
-| `c23` arms | 7 distinct arms (3× vertex, 3× edge, 1× interior) | lines 222–261 |
-| `c2D` arms | `count == 1`; `count == 2` with `det > 0` (`c2Skew`); `count == 2` with `det <= 0` (`c2CCW90`); `count == 3`/default | lines 283–295 |
-| `c2Witness` / `c2L` / `c2GJKSimplexMetric` arms | `count` = 1, 2, 3, default | lines 313–335, 348–356, 161–169 |
-| `c2Support` | `count` = 0/1/2/4/8, ties, `NaN`s, `d == {0,0}` | lines 298–309 |
-| `gjk_cache` `reverse` | `0` → `(AABB, CAPSULE)`; non-`0` → `(CAPSULE, AABB)` | line 552 |
-| float input shape | normal; `±0.0`; denormal; `FLT_MIN`/`FLT_MAX`; `±inf`; `NaN` (both payload signs); exact integers; values that make `c2Dot` overflow | every arithmetic helper |
+| axis | values the C branches on | branch site |
+|------|--------------------------|-------------|
+| `typeA`, `typeB` | `C2_TYPE_CIRCLE` (count 1, radius r) / `C2_TYPE_AABB` (count 4, radius 0) / `C2_TYPE_CAPSULE` (count 2, radius r) | `c2MakeProxy` `switch` |
+| `ax_ptr`, `bx_ptr` | `NULL` → identity / non-NULL identity / non-NULL pure translation / non-NULL pure rotation / non-NULL rotation+translation | `if (!ax_ptr)`, and `c2Mulrv` / `c2MulrvT` become non-trivial only when `r.s != 0` |
+| `use_radius` | `0` (raw Minkowski distance) / `1` (radius-shrunk) — and inside `1`: the `dist > rA+rB && dist > FLT_EPSILON` branch vs. the midpoint branch | `else if (use_radius)` + inner `if` |
+| `outA` / `outB` / `iterations` | `NULL` / non-NULL (each independently) | trailing `if (outA)` … |
+| `cache` | `NULL` / non-NULL cold (`count==0`) / non-NULL warm (written by a previous call) / warm re-used after the shapes moved | `if (cache)`, `cache_was_good`, `cache_was_read` |
 
-## Rows — one per combination the C treats differently
+**B. Input shapes / data configurations the C special-cases:**
 
-Every row is driven with **many** randomized inputs from a fixed-seed
-xorshift PRNG (see `tests/common/mod.rs`), plus the hand-picked boundary values
-named in the row. Both `.so`s are loaded with `libloading` and every output
-(return value, all out-params, and the full `cache` / `c2Simplex` / `c2Proxy`
-byte images) is compared **bit-for-bit** (`to_bits()`, not `==`).
+| axis | values |
+|------|--------|
+| separation | widely separated / just touching / overlapping / deeply overlapping / identical shapes |
+| resulting simplex `count` | 1 (vertex region) / 2 (edge region) / 3 (containment → `hit=1`) — the `c22` / `c23` / `if (s.count==3)` branches |
+| termination path | `count==3` (`hit`) / `d1 > d0` / `dot(d,d) < FLT_EPSILON²` / `dup` / `iter == 20` |
+| degeneracy | zero-radius circle / zero-extent AABB (min==max) / inverted AABB (min>max) / capsule with `a==b` / negative radius |
+| magnitude | ~1 / ~1e3 / ~1e-6 (denormal-adjacent) / ~1e18 (overflow-adjacent) |
 
-### Group 1 — leaf vector helpers (lowest level, called directly)
+**C. Low-level entry points** (all are public and tested directly, not only
+through `c2GJK`): the pure-vector helpers, the simplex mutators `c22`/`c23`,
+the simplex queries `c2D`/`c2L`/`c2Witness`/`c2GJKSimplexMetric`, `c2Support`,
+`c2MakeProxy`/`c2BBVerts`, plus `c2GJK` and `gjk_cache`.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+Every row is driven with **many randomized inputs (fixed seed, xorshift64\*)**,
+not one hand-picked value, and asserted **bit-for-bit** (`to_bits()` on every
+returned/written `f32`, so `NaN` payloads and `-0.0` are compared exactly).
+
+---
+
+## Rows
+
+### Group 1 — pure vector helpers (lowest level)
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| C01 | `c2V` | 4096 random `(x, y)` bit patterns incl. all-`NaN`, `±inf`, `±0`, denormals | [x] |
-| C02 | `c2Mulvs` | random `c2v` × random scalar; scalar ∈ {0, -0, 1, -1, inf, -inf, NaN, denormal, FLT_MAX} | [x] |
-| C03 | `c2Add`, `c2Sub` | random pairs + overflow-to-`inf` pairs + `inf - inf` (`NaN`) + `±0` mixes | [x] |
-| C04 | `c2Dot` | random pairs; products that cancel exactly; overflow; `0*inf` | [x] |
-| C05 | `c2Det2` | random pairs; collinear (det `0`); antiparallel; `NaN`/`inf` | [x] |
-| C06 | `c2Len` | random `c2v`; zero vector; huge (overflow inside `c2Dot`); `NaN`; negative-zero components | [x] |
-| C07 | `c2Div` | random `c2v` × divisor ∈ random ∪ {0, -0, 1, inf, NaN} | [x] |
-| C08 | `c2Norm` | random `c2v`; unit vectors; zero vector; huge; `NaN` | [x] |
-| C09 | `c2Neg`, `c2Skew`, `c2CCW90` | random bit patterns incl. `±0` and `NaN` (bit-exact sign check) | [x] |
-| C10 | `c2Maxv`, `c2Minv` | random pairs; `a == b`; `+0` vs `-0`; one `NaN`; both `NaN` | [x] |
-| C11 | `c2Clampv` | `lo < hi` random; `lo == hi`; `lo > hi` inverted; `a` inside / below / above; `NaN` in each of the three | [x] |
-| C12 | `c2RotIdentity`, `c2xIdentity` | no inputs — called repeatedly, result compared bit-exact | [x] |
-| C13 | `c2Mulrv` | random `c2r` (incl. non-unit, zero, `NaN`, `inf`) × random `c2v`; exact rotations (0°, 90°, 180°, 270°) | [x] |
-| C14 | `c2MulrvT` | same matrix as C13 — separate row because the C spells the sign differently (`-a.s * b.x`), which matters for `NaN` sign and `-0.0` | [x] |
-| C15 | `c2Mulrv` ∘ `c2MulrvT` | round-trip on random rotations, verifying both directions agree between C and Rust | [x] |
-| C16 | `c2Mulxv` | random `c2x` (identity, pure translation, pure rotation, both, degenerate `c2r`) × random `c2v` | [x] |
+| 1 | `c2V` | random finite `(x,y)`; plus `±0.0`, `±inf`, `NaN`, denormals | [x] |
+| 2 | `c2Mulvs` | random `c2v` × random scalar; plus scalar `0`, `-0.0`, `inf`, `NaN`; overflow-producing pairs | [x] |
+| 3 | `c2Sub` | random pairs; equal vectors (→ `±0.0` signs); `inf - inf` (→ NaN); NaN operands | [x] |
+| 4 | `c2Add` | random pairs; `x + (-x)` (→ `+0.0`); `inf + -inf`; NaN operands | [x] |
+| 5 | `c2Dot` | random pairs; orthogonal pairs (exact `0`); overflow-to-`inf`; NaN; cancellation cases (`a.x*b.x == -a.y*b.y`) | [x] |
+| 6 | `c2Det2` | random pairs; parallel pairs (exact `0`); antiparallel; NaN; overflow | [x] |
+| 7 | `c2Len` | random vectors; `(0,0)`; huge (overflowing dot); tiny/denormal; NaN component | [x] |
+| 8 | `c2Neg` | random; `±0.0` (sign flip); `±inf`; NaN (sign of payload) | [x] |
+| 9 | `c2Skew`, `c2CCW90` | random; `(0,0)`; NaN / signed-zero components | [x] |
+| 10 | `c2Div` | random vector × random divisor; divisor `0`, `-0.0`, `inf`, `NaN`, denormal | [x] |
+| 11 | `c2Norm` | random vectors; `(0,0)` (→ NaN); unit vectors; huge; NaN | [x] |
+| 12 | `c2Maxv`, `c2Minv` | random pairs; equal; `+0.0` vs `-0.0` both orders; NaN in `a` only, in `b` only, in both (order-dependent result) | [x] |
+| 13 | `c2Clampv` | random `a`/`lo`/`hi` with `lo<hi`; `a` below / inside / above; `lo==hi`; **inverted `lo>hi`**; NaN in each of the three args | [x] |
+| 14 | `c2RotIdentity`, `c2xIdentity` | no inputs — exact bit pattern of the returned struct | [x] |
+| 15 | `c2Mulrv` | random `c2r` × random `c2v`; `c2r` identity (`c:1,s:0`); pure 90°/180° rotations; non-unit `c2r`; NaN/inf in `c2r` and in `c2v` | [x] |
+| 16 | `c2MulrvT` | same matrix as row 15 (transpose path, incl. the `-a.s * b.x` sign-of-NaN case); random + identity + NaN + inf | [x] |
+| 17 | `c2Mulxv` | random `c2x` × random `c2v`; `c2x` identity; pure translation (`s==0`); pure rotation (`p==0`); rotation+translation; NaN/inf | [x] |
 
 ### Group 2 — proxy construction
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| C17 | `c2BBVerts` | random AABB; normal box; inverted box; empty box (`min == max`); `±inf` corners; `NaN` corners | [x] |
-| C18 | `c2MakeProxy` | `type = CIRCLE`, random `c2Circle` (r = 0, r < 0, r huge, `NaN`); `p` pre-poisoned with a known pattern so untouched fields are observable | [x] |
-| C19 | `c2MakeProxy` | `type = AABB`, random `c2AABB` incl. inverted/empty/`NaN`; poisoned `p` | [x] |
-| C20 | `c2MakeProxy` | `type = CAPSULE`, random `c2Capsule` incl. `a == b`, r = 0, r < 0, `NaN`; poisoned `p` | [x] |
+| 18 | `c2BBVerts` | random AABB; `min == max` (degenerate point box); **inverted `min > max`**; huge / NaN / signed-zero corners | [x] |
+| 19 | `c2MakeProxy` | `type = C2_TYPE_CIRCLE`, random `c2Circle`; radius `0`, negative, huge, NaN — verify `radius`/`count=1`/`verts[0]` and that `verts[1..8]` are untouched | [x] |
+| 20 | `c2MakeProxy` | `type = C2_TYPE_AABB`, random `c2AABB` incl. inverted + degenerate — verify `radius=0`/`count=4`/`verts[0..4]`, `verts[4..8]` untouched | [x] |
+| 21 | `c2MakeProxy` | `type = C2_TYPE_CAPSULE`, random `c2Capsule`; `a==b`; radius `0`/negative/NaN — verify `radius`/`count=2`/`verts[0..2]`, `verts[2..8]` untouched | [x] |
 
-### Group 3 — simplex reduction primitives, driven directly
+### Group 3 — simplex primitives (driven with hand-built `c2Simplex` state)
 
-The `c2Simplex` is built by hand (all 152 bytes controlled) so every arm of
-`c22` / `c23` / `c2D` / `c2L` / `c2Witness` / `c2GJKSimplexMetric` is reachable
-without going through `c2GJK`. Full struct image compared after each call.
-
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| C21 | `c22` | `count = 2`, random `a.p`/`b.p`; targeted `v <= 0` arm (origin beyond `b`) | [x] |
-| C22 | `c22` | targeted `u <= 0` arm (origin beyond `a`) — checks the `s->a = s->b` copy of the *whole* `c2sv` (`sA`,`sB`,`p`,`iA`,`iB`) | [x] |
-| C23 | `c22` | targeted interior arm (`u > 0 && v > 0`) — checks `div = u + v` | [x] |
-| C24 | `c22` | degenerate `a.p == b.p`; `NaN` points; `±inf` points | [x] |
-| C25 | `c23` | arm 1: `vAB <= 0 && uCA <= 0` (vertex A region) | [x] |
-| C26 | `c23` | arm 2: `uAB <= 0 && vBC <= 0` (vertex B region) — checks `a = b` full copy | [x] |
-| C27 | `c23` | arm 3: `uBC <= 0 && vCA <= 0` (vertex C region) — checks `a = c` full copy | [x] |
-| C28 | `c23` | arm 4: edge AB (`wABC <= 0`) | [x] |
-| C29 | `c23` | arm 5: edge BC (`uABC <= 0`) — checks the `a = b; b = c` shift | [x] |
-| C30 | `c23` | arm 6: edge CA (`vABC <= 0`) — checks the `b = a; a = c` swap | [x] |
-| C31 | `c23` | arm 7: interior (all barycentrics positive), both CW and CCW winding (sign of `area`) | [x] |
-| C32 | `c23` | degenerate: collinear points (`area == 0`), all-equal points, `NaN`, `±inf` | [x] |
-| C33 | `c23` | 4096 fully random triangles — hits the arms in their natural proportions and catches arm-ordering mistakes | [x] |
-| C34 | `c2D` | `count = 1` random `a.p`; `count = 2` with `det2 > 0` (→ `c2Skew`); `count = 2` with `det2 <= 0` (→ `c2CCW90`); `det2 == 0` exactly; `count = 3` | [x] |
-| C35 | `c2L` | `count = 1`; `count = 2` with random `u`s and `div`; `div` = 0 / `NaN` / huge; `count = 3` | [x] |
-| C36 | `c2Witness` | `count = 1`; `count = 2`; `count = 3`; random `sA`/`sB`/`u`/`div` for each | [x] |
-| C37 | `c2GJKSimplexMetric` | `count = 1`; `count = 2` (→ `c2Len`); `count = 3` (→ `c2Det2`); random points | [x] |
-| C38 | `c2Support` | `count` ∈ {1,2,4,8} × random verts × random `d`, plus `d = {0,0}`, tie-inducing verts, `NaN` verts | [x] |
+| 22 | `c2GJKSimplexMetric` | `count = 1` (→ 0); `count = 2` random points; `count = 3` random points; also `count = 0/4/-1` (default path) | [x] |
+| 23 | `c22` | `count = 2`, random `a.p`/`b.p` covering all three branches: `v<=0` (vertex A), `u<=0` (vertex B), else (edge); plus `a.p==b.p`, collinear-with-origin, NaN | [x] |
+| 24 | `c23` | `count = 3`, random triangles covering **all seven** branches (3 vertex regions, 3 edge regions, interior); plus CW and CCW winding, degenerate/collinear, all-equal points, NaN | [x] |
+| 25 | `c2D` | `count = 1`; `count = 2` with `det2(ab,-a.p) > 0` (skew) and `<= 0` (CCW90) and `== 0`; `count = 3`; `count = 0/4` | [x] |
+| 26 | `c2L` | `count = 1`; `count = 2` with random `u`/`div` (incl. `div=0`, `div=NaN`, `u=0`); `count = 3` / `0` (default) | [x] |
+| 27 | `c2Witness` | `count = 1/2/3` with random `sA`/`sB`/`u`/`div`; `div = 0` / `NaN` / `-0.0`; `count = 0/4/-1` (default → zeros) | [x] |
+| 28 | `c2Support` | `count = 1` … `8` with random verts and random `d`; `d = (0,0)`; all-equal verts (tie → index 0); NaN verts; `count = 0` and negative | [x] |
 
-### Group 4 — `c2GJK`, the real driver (cross-product of its options)
+### Group 4 — `c2GJK`, shape-type cross-product (`use_radius = 1`, `cache = NULL`, identity transforms)
 
-Rows C39–C47 are the 3×3 shape-type cross product; each is run with random
-shapes in three separation regimes (well separated / touching / deeply
-overlapping) and with `use_radius` both 0 and 1, `cache` NULL, and identity
-transforms — i.e. the baseline. Rows C48+ then vary one option at a time on top
-of the full 3×3 grid.
-
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| C39 | `c2GJK` | `CIRCLE` vs `CIRCLE` × {separated, touching, overlapping} × `use_radius` ∈ {0,1} | [x] |
-| C40 | `c2GJK` | `CIRCLE` vs `AABB` × same | [x] |
-| C41 | `c2GJK` | `CIRCLE` vs `CAPSULE` × same | [x] |
-| C42 | `c2GJK` | `AABB` vs `CIRCLE` × same | [x] |
-| C43 | `c2GJK` | `AABB` vs `AABB` × same | [x] |
-| C44 | `c2GJK` | `AABB` vs `CAPSULE` × same | [x] |
-| C45 | `c2GJK` | `CAPSULE` vs `CIRCLE` × same | [x] |
-| C46 | `c2GJK` | `CAPSULE` vs `AABB` × same | [x] |
-| C47 | `c2GJK` | `CAPSULE` vs `CAPSULE` × same | [x] |
-| C48 | `c2GJK` | full 3×3 grid, `ax_ptr` non-NULL (random translation + random *unit* rotation), `bx_ptr` NULL | [x] |
-| C49 | `c2GJK` | full 3×3 grid, `ax_ptr` NULL, `bx_ptr` non-NULL (random translation + rotation) | [x] |
-| C50 | `c2GJK` | full 3×3 grid, both transforms non-NULL, random unit rotations | [x] |
-| C51 | `c2GJK` | full 3×3 grid, both transforms non-NULL with **non-unit / degenerate** `c2r` (scale ≠ 1, `{0,0}`, `{inf,0}`, `{NaN,NaN}`) | [x] |
-| C52 | `c2GJK` | full 3×3 grid, `cache` non-NULL & cold (`count = 0`) — verifies the write-back (`metric`, `count`, `iA[]`, `iB[]`, `div`) byte-for-byte | [x] |
-| C53 | `c2GJK` | full 3×3 grid, `cache` non-NULL, called **twice** with the same cache (the `gjk_cache` pattern) — second call replays the cache; both return values, both out-pairs, both `iterations`, and the final cache image compared | [x] |
-| C54 | `c2GJK` | full 3×3 grid, same cache reused **8 times** while the shapes are perturbed between calls — exercises cache replay against a *changed* proxy, incl. stale indices that are still in range | [x] |
-| C55 | `c2GJK` | full 3×3 grid × `outA = NULL` / `outB = NULL` / `iterations = NULL` (each alone and all together) with `cache` non-NULL, confirming the cache is still written | [x] |
-| C56 | `c2GJK` | `use_radius = 1` with radii large enough that `dist <= rA+rB` (midpoint-collapse branch) | [x] |
-| C57 | `c2GJK` | `use_radius = 1` with `dist` just above/below `FLT_EPSILON` (boundary of line 485) | [x] |
-| C58 | `c2GJK` | `use_radius` non-boolean (`-1`, `2`, `INT_MIN`, `INT_MAX`) on the full 3×3 grid | [x] |
-| C59 | `c2GJK` | degenerate shapes: zero-radius circle, empty AABB (`min == max`), inverted AABB, zero-length capsule (`a == b`), negative radii — full 3×3 grid | [x] |
-| C60 | `c2GJK` | coincident shapes (A and B at exactly the same place) — drives the `hit == 1` / `count == 3` path and the `dup` break | [x] |
-| C61 | `c2GJK` | shapes far apart at `FLT_MAX`-scale coordinates → `c2Dot` overflows to `inf`, exercising the `d1 > d0` early-out | [x] |
-| C62 | `c2GJK` | shapes with `NaN` coordinates — full 3×3 grid | [x] |
-| C63 | `c2GJK` | tiny (denormal-scale) shapes → `dot(d,d) < eps²` early-out | [x] |
-| C64 | `c2GJK` | many-iteration case: thin sliver AABB vs long capsule, tuned so `iter` climbs; verifies `*iterations` matches exactly.  Measured histogram over 200 k configurations: `iter` ∈ 0..5 (the largest value reachable at all is **6**; the `iter < 20` cap is dead code — see ERRORS.md E46) | [x] |
-| C65 | `c2GJK` | 4096 fully random draws over the whole option cross-product (types × transforms × `use_radius` × cache-mode × NULL-out mask), seeded — the property-style sweep | [x] |
+| 29 | `c2GJK` | circle × circle — separated / touching / overlapping / concentric, random | [x] |
+| 30 | `c2GJK` | circle × AABB — separated / edge-region / corner-region / inside, random | [x] |
+| 31 | `c2GJK` | circle × capsule — separated / overlapping / centre-on-segment, random | [x] |
+| 32 | `c2GJK` | AABB × circle (reversed operand order of row 30) | [x] |
+| 33 | `c2GJK` | AABB × AABB — disjoint / touching / overlapping / nested, random | [x] |
+| 34 | `c2GJK` | AABB × capsule — the `gjk_cache` non-reverse case, random | [x] |
+| 35 | `c2GJK` | capsule × circle | [x] |
+| 36 | `c2GJK` | capsule × AABB — the `gjk_cache` reverse case, random | [x] |
+| 37 | `c2GJK` | capsule × capsule — parallel / crossing / collinear / coincident segments, random | [x] |
 
-### Group 5 — `gjk_cache`, the header's public entry point
+### Group 5 — `c2GJK`, option axes (each crossed with all 9 type pairs where meaningful)
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| C66 | `gjk_cache` | `reverse = 0`, random `a1..a4` / `b1..b5`; `a9`/`b9` non-NULL and pre-poisoned (must stay untouched) | [x] |
-| C67 | `gjk_cache` | `reverse = 1`, same | [x] |
-| C68 | `gjk_cache` | `reverse` ∈ {`-1`, `2`, `0x7F`, `-128`} (non-boolean `char`) | [x] |
-| C69 | `gjk_cache` | `a9 = NULL`, `b9 = NULL`, both `reverse` values | [x] |
-| C70 | `gjk_cache` | degenerate params: inverted AABB, empty AABB, zero-length capsule, `b5 = 0`, `b5 < 0` | [x] |
-| C71 | `gjk_cache` | extreme params: `±inf`, `NaN`, `FLT_MAX`, `FLT_MIN`, denormals, `±0` | [x] |
-| C72 | `gjk_cache` | 4096 fully random parameter draws × both `reverse` values (seeded sweep) | [x] |
+| 38 | `c2GJK` | `use_radius = 0`, all 9 type pairs, random shapes | [x] |
+| 39 | `c2GJK` | `use_radius = 1`, forced into the `dist > rA+rB && dist > eps` branch (well-separated, positive radii) | [x] |
+| 40 | `c2GJK` | `use_radius = 1`, forced into the midpoint branch (`dist <= rA+rB`, overlapping) | [x] |
+| 41 | `c2GJK` | `use_radius` = `2` / `-1` / `INT_MIN` (non-canonical truthy values) | [x] |
+| 42 | `c2GJK` | `ax_ptr = NULL, bx_ptr = NULL` (identity fallback) | [x] |
+| 43 | `c2GJK` | `ax_ptr` = explicit identity, `bx_ptr = NULL` (and the mirror) — must equal row 42 bit-for-bit | [x] |
+| 44 | `c2GJK` | `ax_ptr`/`bx_ptr` = pure translation (`r = {1,0}`, random `p`) | [x] |
+| 45 | `c2GJK` | `ax_ptr`/`bx_ptr` = pure rotation (random unit `{c,s}`, `p = 0`) — exercises `c2Mulrv` **and** `c2MulrvT` inside the support function | [x] |
+| 46 | `c2GJK` | `ax_ptr`/`bx_ptr` = rotation + translation, both non-identity, random | [x] |
+| 47 | `c2GJK` | non-unit / scaled `c2r` (`c`,`s` random, not normalised) — the C never validates | [x] |
+| 48 | `c2GJK` | `outA = NULL`; `outB = NULL`; both NULL — return value must still match | [x] |
+| 49 | `c2GJK` | `iterations = NULL`; and non-NULL to compare the iteration count itself | [x] |
 
-## Compile-time configuration matrix
+### Group 6 — `c2GJK` cache axis
 
-| # | feature set | command | [ ] |
-|---|-------------|---------|-----|
-| F1 | default, release profile | `cargo test --release` | [x] |
-| F2 | `--no-default-features`, release profile | `cargo test --release --no-default-features` | [x] |
-| F3 | default, dev profile | `cargo test` | [x] |
-| F4 | `--no-default-features`, dev profile | `cargo test --no-default-features` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 50 | `c2GJK` | `cache = NULL` (baseline) | [x] |
+| 51 | `c2GJK` | cold cache (`count = 0`) — compare the full `c2GJKCache` struct written back | [x] |
+| 52 | `c2GJK` | warm cache: call twice with identical shapes, compare both results *and* the cache after each call (the `gjk_cache` `d0`/`d1` pattern) | [x] |
+| 53 | `c2GJK` | warm cache re-used after the shapes **moved** — the stale-simplex quirk path | [x] |
+| 54 | `c2GJK` | warm cache re-used after the shape **types changed** — all 9 → 9 type-pair transitions. Carried-over indices are folded into the new proxies' initialised range (`clamp_cache`), because an index ≥ the new `count` makes the C read uninitialised stack (ERRORS.md rows 14/15, UB) | [x] |
+| 55 | `c2GJK` | long chain: 8 successive cached calls along a random motion path, comparing distance + cache at every step | [x] |
+| 56 | `c2GJK` | cache carried across *different* type pairs in sequence (written by circle×circle, read by AABB×capsule, …) through all 9 pairs, indices clamped as in row 54 | [x] |
 
-`Cargo.toml` has no `[features]` table, so F1/F2 and F3/F4 are the same code;
-they are run separately anyway because the *profile* is a real axis (see the
-`[profile.dev]` note in `Cargo.toml`: `debug-assertions` and `overflow-checks`
-had to be turned off so that a NULL dereference faults with SIGSEGV in both
-libraries instead of aborting from a libcore UB-check).  `./verify.sh` walks all
-four automatically and would pick up any features added later.
+### Group 7 — data-shape / degeneracy / magnitude axes for `c2GJK`
 
-Result: **113 tests, 0 failures, in all four configurations; 31/31 symbols
-present in each.**
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 57 | `c2GJK` | zero-radius circle and zero-radius capsule (`r = 0`), `use_radius` both 0 and 1 | [x] |
+| 58 | `c2GJK` | negative radius (circle and capsule), `use_radius = 1` | [x] |
+| 59 | `c2GJK` | degenerate AABB `min == max` (point box) | [x] |
+| 60 | `c2GJK` | inverted AABB `min > max` (reversed winding) | [x] |
+| 61 | `c2GJK` | capsule with `a == b` (point capsule) | [x] |
+| 62 | `c2GJK` | identical shapes at the identical location (exact containment → `hit = 1`) | [x] |
+| 63 | `c2GJK` | tiny magnitudes (`~1e-6`…`1e-20`, denormal-adjacent) — exercises the `dot(d,d) < FLT_EPSILON²` exit | [x] |
+| 64 | `c2GJK` | huge magnitudes (`~1e18`…`1e30`) — exercises overflow to `inf` and the `d1 > d0` exit | [x] |
+| 65 | `c2GJK` | mixed huge/tiny operands (catastrophic cancellation) | [x] |
+| 66 | `c2GJK` | fully unconstrained random bit patterns for all shape floats (NaN / inf / denormal included), all 9 type pairs | [x] |
 
-## Test files backing the rows
+### Group 8 — the public `gjk_cache` entry point
 
-| file | rows | tests |
-|------|------|-------|
-| `tests/abi_sanity.rs` | ABI/ground-truth anchors (absolute hand-computed answers, not just C-vs-Rust agreement) | 4 |
-| `tests/leaf_helpers.rs` | C01–C16 | 16 |
-| `tests/proxy.rs` | C17–C20 | 4 |
-| `tests/simplex.rs` | C21–C38 | 9 |
-| `tests/gjk.rs` | C39–C65 | 27 |
-| `tests/gjk_cache_entry.rs` | C66–C72 | 7 |
-| `tests/nan_payloads.rs` | NaN-payload / signed-zero hardening for C01–C16 + `c2GJK` | 13 |
-| `tests/error_paths.rs` | E01–E93 | 30 |
-| `tests/coverage_probes.rs` | branch-reachability searches (E43, E46) | 3 |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 67 | `gjk_cache` | `reverse = 0`, random finite AABB + capsule params; `a9`/`b9` non-NULL pre-poisoned (must stay untouched) | [x] |
+| 68 | `gjk_cache` | `reverse = 1`, same | [x] |
+| 69 | `gjk_cache` | `reverse` = `-1` / `0x7F` / `0x80` / `'A'` (`char` truthiness incl. sign) | [x] |
+| 70 | `gjk_cache` | `a9 = NULL`, `b9 = NULL` (never dereferenced) | [x] |
+| 71 | `gjk_cache` | degenerate / NaN / inf / huge / tiny float arguments, both `reverse` values | [x] |
+
+---
+
+## Row → test mapping
+
+| rows | test file | `#[test]` count |
+|------|-----------|-----------------|
+| 1..17  | `tests/phase_b_vectors.rs`    | 12 |
+| 18..21 | `tests/phase_b_proxy.rs`      | 4  |
+| 22..28 | `tests/phase_b_simplex.rs`    | 7  |
+| 29..56 | `tests/phase_b_gjk.rs`        | 22 |
+| 57..66 | `tests/phase_b_degenerate.rs` | 8  |
+| 67..71 | `tests/phase_b_gjk_cache.rs`  | 4  |
+| (Phase C: `ERRORS.md` rows 1..60) | `tests/phase_c_errors.rs` | 30 |
+
+**87 tests total**, all passing in both the `debug` and `release` profiles.
+
+Several rows additionally assert *branch coverage*, so they cannot pass
+vacuously: `c22` must reach all three of its outcomes, `c23` must produce
+result counts 1, 2 and 3, `c2D` must take both the `c2Skew` and the `c2CCW90`
+path, `use_radius` must reach both the shrink and the midpoint branch, and
+identical shapes must produce `dist == 0`.
+
+## Feature combinations
+
+`translation/Cargo.toml` has **no `[features]` table**, so the complete set of
+feature combinations is `{ default }` ≡ `{ --no-default-features }`. Both are
+run by `run_all.sh`. There is **no binary target** in either project
+(`c_src/CMakeLists.txt` only calls `add_library(... SHARED ...)`), so there is
+no stdout comparison in scope.

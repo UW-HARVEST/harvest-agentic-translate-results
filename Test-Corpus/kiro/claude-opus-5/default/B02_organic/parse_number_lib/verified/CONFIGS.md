@@ -1,100 +1,98 @@
-# CONFIGS.md — configuration surface table (Phase A, gates Phase B)
+# CONFIGS.md — configuration-surface table (Phase A, gate for Phase B)
 
-## Enumeration of the axes the C actually branches on
+## The public surface
 
-Derived from `c_src/include/lib.h` (public surface) and every `if` / `switch` /
-`#ifdef` in `c_src/src/lib.c`.
+`c_src/include/lib.h` declares exactly **one** function:
 
-**Public entry points (complete set).** `include/lib.h` declares exactly one
-function: `parse_number(cJSON *const, parse_buffer *const)`. There are no
-convenience wrappers and no one-shot helpers — `parse_number` *is* the
-lowest-level entry point, so "test the low-level API, not just the wrappers"
-reduces to driving `parse_number` directly with fully hand-built
-`parse_buffer` / `cJSON` state, which is what every row below does.
+```c
+cJSON_bool parse_number(cJSON * const item, parse_buffer * const input_buffer);
+```
 
-**Runtime options / modes / flags.** The library exposes no setters and no
-global mode. The entire configuration is carried in the two caller-owned
-structs, so the option axes are the struct fields:
+There is no init/config function, no global, no `#ifdef`-guarded mode, and no
+convenience wrapper layered over a lower-level entry point — `parse_number`
+*is* the lowest-level entry point and it is called directly by every test.
+"Configuration" for this library is therefore carried entirely by:
 
-| axis | field / source | states the C distinguishes |
-|------|----------------|----------------------------|
-| A1 `content` | `parse_buffer.content` | `NULL` (→ ERRORS E2) vs non-`NULL`; also *what bytes it holds* (axes A5–A9) |
-| A2 `length` | `parse_buffer.length` | `0`; small; `== offset`; `< offset`; `SIZE_MAX` (oversized) |
-| A3 `offset` | `parse_buffer.offset` | `0`; interior `0 < offset < length`; `== length`; `> length`; wrapping (`offset + i` overflows `size_t`) |
-| A4 `depth` | `parse_buffer.depth` | declared in the public struct but **never read or written** by `parse_number` — must round-trip unchanged for arbitrary values |
-| A5 accepted-run length | `switch` in the scan loop | `0`; `1`; many; runs that reach `length` with no terminator |
-| A6 `has_decimal_point` | `case '.'` sets it; gates the `'.' → decimal_point` rewrite loop | `false` (loop skipped) vs `true` (loop runs over `number_string_length` bytes) |
-| A7 exponent spelling | `case 'e'` / `case 'E'` | absent; `e`; `E`; `e+`/`e-`/`E+`/`E-` |
-| A8 sign spelling | `case '+'` / `case '-'` | absent; leading `-`; leading `+`; interior/duplicated signs (accepted by the scan, rejected mid-string by `strtod`) |
-| A9 terminator | `default: goto loop_end` | no terminator (run ends at `length`); terminator is `'\0'`; terminator is whitespace; terminator is any of the other 241 non-accepted byte values |
-| A10 `strtod` consumption | `number_c_string == after_end` | zero bytes consumed (→ E4, `false`); partial (`after_end` inside the run — `offset` advances less than the run); full (`after_end` at the `'\0'`) |
-| A11 magnitude regime | `number >= INT_MAX` / `number <= (double)INT_MIN` / `else (int)number` | `+inf`; `> INT_MAX`; exactly `INT_MAX`; in-range positive; `+0.0`; `-0.0`; subnormal; in-range negative; exactly `INT_MIN`; `< INT_MIN`; `-inf` |
-| A12 `item` initial state | `cJSON.type` / `.valueint` / `.valuedouble` | arbitrary garbage on entry — the C writes all three only on the success path, none on failure paths |
+* the **`parse_buffer` state** the caller sets up (`content`, `length`,
+  `offset`, `depth`), and
+* the **`cJSON` pre-state** (`type`, `valueint`, `valuedouble`), which the C
+  only partially overwrites, so the caller's bytes are observable on the
+  failure paths.
 
-**Compile-time (`#ifdef`) branches.** `lib.h` has `#ifdef true` / `#ifdef false`
-guards, which only `#undef` a possible pre-existing macro; they select no
-alternative code. `lib.c` has no `#ifdef` at all. `translation/Cargo.toml`
-declares no `[features]`. Therefore there is exactly **one** build
-configuration; Phase D's cross-feature requirement collapses onto it.
+## Axes the C actually branches on
 
-## Table — one row per meaningful combination the C treats differently
+| axis | values the C distinguishes | source |
+|---|---|---|
+| A1 `input_buffer` | NULL / non-NULL | line 23 |
+| A2 `content` | NULL / non-NULL | line 23 |
+| A3 `offset` | `0` / `0 < offset < length` / `== length` / `> length` / `SIZE_MAX` (wrapping `offset + index`) | line 8 |
+| A4 `length` | `0` / `1` / small / large / bogus-huge | line 8 |
+| A5 byte class in scan loop | `0`–`9` / `+` / `-` / `e` / `E` (all → `number_string_length++`) · `.` (→ also sets `has_decimal_point`) · anything else (→ `goto loop_end`) | lines 34–58 |
+| A6 `has_decimal_point` | `false` (skip replacement loop) / `true` (run it) | lines 72–83 |
+| A7 `strtod` consumption | all of the temp string / a strict prefix of it / none (→ error) | line 85 |
+| A8 saturation branch | `number >= (double)INT_MAX` / `number <= (double)INT_MIN` / in-range `(int)number` | lines 95–106 |
+| A9 sign | `+` / `-` / `-0.0` (sign bit only) | via `strtod` |
+| A10 magnitude | overflow → `±inf` / underflow → `±0` or subnormal / normal / needs >17-digit rounding | via `strtod` |
+| A11 run termination | run stops at a non-accepted byte / run reaches `length` | line 8 vs `default:` |
+| A12 `content` NUL-termination | NUL-terminated / not terminated at all (garbage follows) | lines 68–70 |
+| A13 `depth` | never read/written — must be preserved bit-exactly | (absent from `lib.c`) |
+| A14 `item` pre-state | tag `== cJSON_Number` / tag out-of-range; sentinel `valueint`/`valuedouble` | lines 92–108 |
 
-Every row is exercised with **many randomized inputs** (seeded `SplitMix64`,
-fixed seed `0x5EED_1234_ABCD_EF01`) against both `.so`s, comparing the return
-value, all three `cJSON` fields (`valuedouble` compared **by bit pattern**), and
-all four `parse_buffer` fields.
+## Configuration rows (each verified with randomized inputs, seed `0x5EED_C0FFEE`)
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+| # | entry point(s) | configuration (options set + input shape) | test | [ ] |
 |---|----------------|-------------------------------------------|------|-----|
-| C1 | `parse_number` | A3=0, A6=false, A7=absent, A8=absent, A9=`'\0'`, A11=in-range positive small integer — plain unsigned integer, random digit count 1..9 | `c1_plain_positive_int` | [x] |
-| C2 | `parse_number` | as C1 but A8=leading `-` → A11=in-range negative | `c2_plain_negative_int` | [x] |
-| C3 | `parse_number` | as C1 but A8=leading `+` (accepted by scan **and** by `strtod`) | `c3_leading_plus_int` | [x] |
-| C4 | `parse_number` | A6=**true** (decimal point present → rewrite loop runs), A7=absent, random fraction, A11=in-range | `c4_fraction_no_exponent` | [x] |
-| C5 | `parse_number` | A6=true, A7=`e` lowercase, unsigned exponent, A11=in-range | `c5_fraction_lower_e` | [x] |
-| C6 | `parse_number` | A6=true, A7=`E` uppercase, unsigned exponent, A11=in-range | `c6_fraction_upper_e` | [x] |
-| C7 | `parse_number` | A6=true, A7=`e+`/`e-`/`E+`/`E-` (all four), A8 random leading sign, full float spelling | `c7_full_float_all_exponent_spellings` | [x] |
-| C8 | `parse_number` | A6=false, A7=`e`/`E` with signed exponent, integer mantissa (`1e5`, `-2E-3`) | `c8_int_mantissa_with_exponent` | [x] |
-| C9 | `parse_number` | A11=`+inf` via huge exponent (`e999`…`e400000`) → E7 saturation, `valuedouble == inf` | `c9_positive_infinity` | [x] |
-| C10 | `parse_number` | A11=`-inf` via `-…e999` → E8 saturation, `valuedouble == -inf` | `c10_negative_infinity` | [x] |
-| C11 | `parse_number` | A11 boundary sweep around `INT_MAX`: `2147483645 … 2147483649` incl. `.0`, `.5`, `.9999999` and `2147483647` exactly (`>=` boundary) | `c11_int_max_boundary` | [x] |
-| C12 | `parse_number` | A11 boundary sweep around `INT_MIN`: `-2147483646 … -2147483650` incl. `-2147483648` exactly (`<=` boundary, must saturate) | `c12_int_min_boundary` | [x] |
-| C13 | `parse_number` | A11=`+0.0` / `-0.0` (`"0"`, `"-0"`, `"0.0"`, `"-0.0"`, `"-0e5"`) — sign-of-zero must round-trip in `valuedouble` bits | `c13_signed_zero` | [x] |
-| C14 | `parse_number` | A11=subnormal / underflow (`1e-320`, `4.9e-324`, `1e-999`) — `strtod` sets `ERANGE`, C ignores it; `valueint` must be `0` | `c14_subnormal_and_underflow` | [x] |
-| C15 | `parse_number` | A11=in-range with many significant digits (17–40 digits) — exercises `strtod` rounding identically | `c15_high_precision_mantissa` | [x] |
-| C16 | `parse_number` | A9=**no terminator**: the accepted run runs exactly to `length`, and the bytes at/after `length` are poison (`0xFF`, more digits). Verifies `can_access_at_index` bound and that nothing past `length` is read | `c16_run_ends_at_length_with_poison_after` | [x] |
-| C17 | `parse_number` | A9=terminator is a **random non-accepted byte**, run length 1..12, poison after | `c17_random_terminator_byte` | [x] |
-| C18 | `parse_number` | A9 sweep over **all 256 byte values** as the byte following a valid `"12"` prefix (the 15 accepted values extend the run; the other 241 stop it) | `c18_terminator_sweep_all_256` | [x] |
-| C19 | `parse_number` | A3=**interior** `0 < offset < length` with digits *before* `offset` that must be ignored, and a terminator after the run | `c19_interior_offset` | [x] |
-| C20 | `parse_number` | A10=**partial consumption**: the accepted run is longer than what `strtod` accepts (`"1.2.3"`, `"1e"`, `"1e+"`, `"1-2"`, `"12e-"`, `"1.2E"`, `"5+"`, `".5.5"`) → `offset` advances by `after_end - start` only | `c20_partial_strtod_consumption` | [x] |
-| C21 | `parse_number` | A5/A8: **duplicated / interior signs** accepted by the scan (`"+-1"`, `"1+1"`, `"-+2"`, `"3-4e5"`) — mixes partial consumption and E4 | `c21_duplicated_and_interior_signs` | [x] |
-| C22 | `parse_number` | A5=**long run** (256–4096 accepted bytes) of random accepted characters — stress on the rewrite loop, the `memcpy`, and `strtod`'s partial stop | `c22_long_random_accepted_runs` | [x] |
-| C23 | `parse_number` | A6=true with **many** `'.'` characters (rewrite loop iterates over most of the buffer) | `c23_many_decimal_points` | [x] |
-| C24 | `parse_number` | A4=`depth` set to random values incl. `0`, `1`, `SIZE_MAX`; A12=`item` pre-filled with random garbage (incl. NaN bit patterns in `valuedouble`, `INT_MIN`/`INT_MAX`/random in `valueint`, random in `type`) on both success and failure paths | `c24_depth_and_item_garbage_roundtrip` | [x] |
-| C25 | `parse_number` | **repeated calls on the same buffer** (streaming): parse a whitespace/comma-separated list of numbers, calling `parse_number` N times and advancing `offset` from the previous call's result — exercises the composed pipeline rather than one isolated call | `c25_streaming_repeated_calls` | [x] |
-| C26 | `parse_number` | A2=`length` **shorter than the real allocation** (extra valid digits live past `length`) combined with interior `offset` — the classic off-by-one region | `c26_length_shorter_than_allocation` | [x] |
-| C27 | `parse_number` | **fully random byte soup**: random `length` 0..64, random bytes from a biased alphabet (accepted chars over-represented), random `offset` in `0..=length+2`, random `depth`, random `item` garbage — 20 000 cases | `c27_random_byte_soup` | [x] |
-| C28 | `parse_number` | **fully random ASCII soup** over the whole `0x00..=0xFF` range with random `offset`/`length`, 20 000 cases — catches value-dependent and out-of-range-index bugs the shaped rows above cannot | `c28_random_full_byte_range_soup` | [x] |
-| C29 | `parse_number` | **locale axis** (`LC_NUMERIC`): `C`, `POSIX`, `C.utf8`, `de_DE.utf8`, `de_DE`, `fr_FR.utf8`, `ru_RU.utf8` × dot- and comma-spelled numbers. `strtod(3)` is locale-sensitive and the C's `decimal_point` variable exists because of it, so this is a genuine configuration axis even though the C hard-codes `'.'`. Each locale runs in a forked child (`setlocale` is process-global). | `h5_locale_dependent_strtod` | [x] |
-| C30 | `parse_number` | **aliased out-parameters**: `item` and `input_buffer` overlapping in one arena at relative offsets 0/8/16/24/32. The C writes `item->{valuedouble,valueint,type}` and only then re-reads `input_buffer->offset`, so a translation that caches `offset` across the `item` writes diverges. Whole arena compared byte-for-byte. | `h1_aliased_item_and_buffer` | [x] |
-| C31 | `parse_number` | `content` **non-NULL but unmapped** (`0x1`, `0xDEAD`, `SIZE_MAX`, `1<<47`, …) combined with `offset >= length` so the bound check guarantees a zero-length scan — the C computes `content + offset` and `memcpy(…, 0)` without dereferencing, so it must return `false` rather than fault. | `h2_bogus_nonnull_content_with_zero_length_scan` | [x] |
-| C32 | `parse_number` | **misaligned** `cJSON` / `parse_buffer` pointers (byte skew 1..7), which a C caller inside a packed buffer can produce. | `h3_misaligned_struct_pointers` | [x] |
-| C33 | `parse_number` | the **same `item` reused** across an interleaved success/failure sequence, verifying a failure never partially overwrites a previous success. | `h4_item_reuse_across_success_and_failure` | [x] |
+| 1 | `parse_number` | A3=`0`, A4=small, run = 1–9 digits reaching end of buffer, A6=false, A7=all, A8=in-range, A11=reaches `length`, A12=not terminated | `cfg_row01_digits_to_end` | [x] |
+| 2 | `parse_number` | A3=`0`, digit run followed by a random non-accepted terminator byte, A6=false, A11=early stop | `cfg_row02_digits_then_terminator` | [x] |
+| 3 | `parse_number` | A3=`0 < offset < length` (mid-buffer), digit run at `offset`, junk before and after | `cfg_row03_mid_buffer_offset` | [x] |
+| 4 | `parse_number` | A3=`== length` (empty accessible range), A4>0, A7=none | `cfg_row04_offset_at_length` | [x] |
+| 5 | `parse_number` | A3=`> length` (offset past end), A7=none | `cfg_row05_offset_past_length` | [x] |
+| 6 | `parse_number` | A3=`SIZE_MAX` and `SIZE_MAX - k` — exercises the wrapping `offset + index` in `can_access_at_index` | `cfg_row06_offset_size_max_wrap` | [x] |
+| 7 | `parse_number` | A4=`0` with non-NULL `content`, A7=none | `cfg_row07_length_zero` | [x] |
+| 8 | `parse_number` | A4=`1`, single accepted byte (digit / `+` / `-` / `.` / `e` / `E`) — mixes A7=all and A7=none | `cfg_row08_length_one_each_accepted_byte` | [x] |
+| 9 | `parse_number` | A6=**true**, fractional form `<digits>.<digits>`, A8=in-range | `cfg_row09_decimal_fraction` | [x] |
+| 10 | `parse_number` | A6=true, leading `.` (`".<digits>"`) — `strtod` accepts | `cfg_row10_leading_decimal_point` | [x] |
+| 11 | `parse_number` | A6=true, trailing `.` (`"<digits>."`) — `strtod` accepts and consumes the `.` | `cfg_row11_trailing_decimal_point` | [x] |
+| 12 | `parse_number` | A6=true, **two** decimal points (`"1.2.3"`) → A7=**strict prefix**, offset advances by less than the scanned run | `cfg_row12_two_decimal_points_partial` | [x] |
+| 13 | `parse_number` | exponent, lowercase `e`, A6=false (`"<d>e<d>"`) | `cfg_row13_exponent_lower_e` | [x] |
+| 14 | `parse_number` | exponent, uppercase `E` (`"<d>E<d>"`) | `cfg_row14_exponent_upper_e` | [x] |
+| 15 | `parse_number` | exponent with explicit `+`/`-` sign (`"<d>e+<d>"`, `"<d>e-<d>"`) | `cfg_row15_signed_exponent` | [x] |
+| 16 | `parse_number` | **dangling** exponent (`"<d>e"`, `"<d>E"`, `"<d>e+"`, `"<d>e-"`) → A7=strict prefix; `strtod` backs up to before the `e` | `cfg_row16_dangling_exponent_partial` | [x] |
+| 17 | `parse_number` | **repeated** exponent (`"1e2e3"`, `"1E2E3"`) → A7=strict prefix | `cfg_row17_repeated_exponent_partial` | [x] |
+| 18 | `parse_number` | leading `+` (`"+<d>"`) — accepted by the scan *and* by `strtod` | `cfg_row18_leading_plus` | [x] |
+| 19 | `parse_number` | leading `-` (`"-<d>"`), A9=negative, A8=in-range | `cfg_row19_leading_minus` | [x] |
+| 20 | `parse_number` | A9=`-0.0` (`"-0"`, `"-0.0"`, `"-0e5"`) — sign bit of `valuedouble` must survive; `valueint` must be `0` | `cfg_row20_negative_zero` | [x] |
+| 21 | `parse_number` | embedded sign mid-run (`"1-2"`, `"1+2"`, `"1--2"`) — scan accepts the whole run, `strtod` stops at the sign → A7=strict prefix | `cfg_row21_embedded_sign_partial` | [x] |
+| 22 | `parse_number` | A10=overflow → `+inf` (`"1e999"`, `"9"*400`), A8=`>= INT_MAX` | `cfg_row22_overflow_to_pos_inf` | [x] |
+| 23 | `parse_number` | A10=overflow → `-inf` (`"-1e999"`), A8=`<= INT_MIN` | `cfg_row23_overflow_to_neg_inf` | [x] |
+| 24 | `parse_number` | A10=underflow: `"1e-999"` → `0`, `"1e-320"`/`"4.9e-324"` → **subnormal**, `"-1e-999"` → `-0.0` | `cfg_row24_underflow_and_subnormal` | [x] |
+| 25 | `parse_number` | A8 boundary: values straddling `(double)INT_MAX` — `2147483646/7/8`, `2147483647.5`, `nextafter` neighbours | `cfg_row25_int_max_boundary` | [x] |
+| 26 | `parse_number` | A8 boundary: values straddling `(double)INT_MIN` — `-2147483647/8/9`, `-2147483647.5` | `cfg_row26_int_min_boundary` | [x] |
+| 27 | `parse_number` | A10=>17 significant digits, random long mantissa + random exponent → exercises `strtod` correct rounding identically on both sides | `cfg_row27_long_mantissa_rounding` | [x] |
+| 28 | `parse_number` | A4=large: accepted run of 1–4096 bytes (large `malloc` size), random accepted-charset soup | `cfg_row28_very_long_accepted_run` | [x] |
+| 29 | `parse_number` | **property fuzz**, charset restricted to `[0-9+\-eE.]` — every byte accepted, so A5/A6/A7 hit every combination at random; both A7=all/prefix/none occur | `cfg_row29_fuzz_accepted_charset` | [x] |
+| 30 | `parse_number` | **property fuzz**, full `0..=255` random bytes at a random `offset` in a random-length buffer — A11 early stop dominates; covers arbitrary junk | `cfg_row30_fuzz_arbitrary_bytes` | [x] |
+| 31 | `parse_number` | A12=**not NUL-terminated**: numeric run occupies the final bytes of the allocation with no NUL anywhere (verifies the C's own `'\0'` append is reproduced) | `cfg_row31_unterminated_content` | [x] |
+| 32 | `parse_number` | A4=bogus-huge `length` (`SIZE_MAX`, `length ≫ allocation`) with a non-accepted byte inside the real allocation stopping the scan | `cfg_row32_bogus_huge_length` | [x] |
+| 33 | `parse_number` | **stateful pipeline**: one buffer holding many numbers separated by delimiters, `parse_number` called repeatedly so each call starts from the `offset` the previous call left — the composed multi-call path | `cfg_row33_sequential_multi_call_pipeline` | [x] |
+| 34 | `parse_number` | A14: `item` pre-filled with an out-of-range type tag and sentinel `valueint`/`valuedouble` (incl. NaN and `-0.0` sentinels), on both the success and the failure path | `cfg_row34_item_prestate_sentinels` | [x] |
+| 35 | `parse_number` | A13: `depth` set to `0`, `1`, `SIZE_MAX`, random — must be preserved bit-exactly (checked on every row by `assert_same`, plus explicitly here) | `cfg_row35_depth_preserved` | [x] |
+| 36 | `parse_number` | hex/keyword-looking input (`"0x1A"`, `"0X1f"`, `"nan"`, `"inf"`, `"NaN"`, `"Infinity"`, `"null"`, `"true"`) — the scan's charset stops before `strtod` could ever see a hex float or a NaN/inf keyword | `cfg_row36_hex_and_keyword_lookalikes` | [x] |
+| 37 | `parse_number` | leading whitespace / NUL (`" 12"`, `"\t12"`, `"\n12"`, `"\012"`) — `strtod` *would* skip whitespace but the scan stops first | `cfg_row37_leading_whitespace_or_nul` | [x] |
+| 38 | `parse_number` | ABI check: `size_of`/`align_of`/field offsets of `cJSON` and `parse_buffer` as seen by the C `.so` vs the Rust `.so` | `abi_struct_layout_matches_c` | [x] |
 
-## Mutation-sensitivity evidence
+| 39a | `parse_number` | **EXHAUSTIVE** — every string of length 1–4 over the 16-byte alphabet `0123456789+-eE.}` (69 904 inputs). Covers every combination of scan byte-class, `has_decimal_point`, and all three `strtod` consumption outcomes with no reliance on the RNG. | `cfg_row39a_exhaustive_len1_to_4` | [x] |
+| 39b | `parse_number` | **EXHAUSTIVE** — every length-5 string over the same alphabet (1 048 576 inputs) | `cfg_row39b_exhaustive_len5` | [x] |
+| 39c | `parse_number` | **EXHAUSTIVE** — every 2-byte input over the full `0..=255` range, no charset restriction (65 536 inputs) | `cfg_row39c_exhaustive_all_byte_pairs` | [x] |
+| 39d | `parse_number` | **EXHAUSTIVE** — every length-3 string over a 24-byte mixed alphabet (accepted bytes + whitespace + NUL + JSON delimiters + `xX`) × **every start offset 0..=3** (55 296 calls) | `cfg_row39d_exhaustive_len3_every_offset` | [x] |
+| 39e | `parse_number` | **EXHAUSTIVE** — every length-6 string over the 16-byte alphabet (16 777 216 inputs) | `cfg_row39e_exhaustive_len6` | [x] |
+| 39f | `parse_number` | **EXHAUSTIVE** — every length-7 string over the 16-byte alphabet (268 435 456 inputs). `#[ignore]`d for runtime; executed and passing (`cargo test --release -- --ignored`, 31 s). | `cfg_row39f_exhaustive_len7` | [x] |
 
-Passing tests only prove the suite *ran*; they do not prove it is *sensitive*.
-`mutation_check.sh` injects 37 targeted bugs into the Rust translation and
-requires the suite to fail on each. Result: **32 killed, 5 provably-equivalent
-survivors, 0 blind spots.** The five survivors are semantically equivalent to
-the original, each with a proof recorded next to it in the script:
+| 40 | `parse_number` | **`LC_NUMERIC` locale axis.** The C hard-codes `decimal_point = '.'` (so its localisation loop is a no-op) but then delegates to libc `strtod`, whose radix character *is* locale-dependent. Verified under the `C` locale **and** under `de_DE.utf8` (comma radix, where `strtod` stops at `'.'` instead of consuming it — changing both the value and the resulting `offset`). Includes an exhaustive length-1..=4 sweep over an alphabet containing **both** `.` and `,`. | `tests/locale.rs::locale_axis_c_de_and_fr` | [x] |
 
-1. `>= INT_MAX` → `> INT_MAX` — differs only at exactly `2147483647.0`, where the
-   `else` branch computes `(int)2147483647.0 == INT_MAX` anyway.
-2. `<= INT_MIN` → `< INT_MIN` — same argument at exactly `-2147483648.0`.
-3. never setting `has_decimal_point` — the rewrite loop replaces `'.'` with
-   `decimal_point`, which *is* `'.'`, so the loop is a no-op.
-4. `wrapping_add` → `saturating_add` in the bound check — `offset + i` can never
-   overflow while the loop runs (induction: reaching iteration `i` requires
-   `offset + (i-1) < length <= SIZE_MAX`, hence `offset + i <= SIZE_MAX`).
-5. writing `type` before `valueint` — two stores to distinct addresses with no
-   intervening read of either, or of anything they could alias.
+Every row is driven through **both** `.so` files via `libloading` (never by
+calling the Rust function directly), and every call compares, byte-for-byte:
+the `cJSON_bool` return value, the full 16-byte `cJSON` image (so `type`,
+`valueint`, and the *bit pattern* of `valuedouble`, incl. NaN payload and the
+sign of zero), and the full 32-byte `parse_buffer` image (so `content`,
+`length`, `offset`, `depth`).

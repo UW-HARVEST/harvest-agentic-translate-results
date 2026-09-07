@@ -10,6 +10,18 @@ name = "md5_digest_lib"
 [dev-dependencies]
 libloading = "0.8"
 
+# The whole point of this crate is to reproduce the C's behavior byte-for-byte,
+# *including* what the C does on inputs the C standard leaves undefined (a NULL
+# `m` faults with SIGSEGV, a misaligned `m` loads fine on x86-64). rustc's
+# optional UB checks — enabled implicitly by `debug-assertions` — turn those
+# faulting loads into `SIGABRT` panics ("null pointer dereference occurred"),
+# which is a *different* observable outcome from the C's SIGSEGV. Disabling
+# them makes the dev/test artifact behave like the release artifact, so the
+# differential suite gives the same verdict under every profile.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
 [profile.release]
 panic = "abort"
 

@@ -1,16 +1,15 @@
-# Configuration Surface
+# Configuration-Surface Table
 
-Mechanical inspection of the only public header and source found:
-
-- one public entry point, `driver`;
-- no runtime options, modes, flags, element types, formats, or counts;
-- one fixed input shape, a by-value C `int`;
-- a fixed `sizeof(int)`-iteration loop that prints the native-order object
-  bytes as two lowercase hexadecimal digits each, followed by one newline.
-
-There are no Cargo features, C preprocessor feature branches, or alternative
-public entry points.
+Mechanical source scan covered the public header and every branch, loop, and
+size-dependent operation in `../c_src/src/driver.c`.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `driver` | No options; every by-value `c_int` bit pattern, including zero, positive/negative values, and `INT_MIN`/`INT_MAX`; output is the native-order `sizeof(c_int)` object representation plus newline. | [x] |
+| 1 | `driver(int)` | No options or modes; one by-value C `int`. Exercise zero, signed extrema, sign-boundary values, repeated-byte and alternating-byte patterns, plus randomized values across all 32 bits. Output is the `sizeof(int)` native-endian object representation as lowercase hexadecimal followed by newline. | [x] |
+
+There are no Cargo features, C preprocessor feature branches, runtime flags,
+alternate formats, pointers, variable lengths, or additional public entry
+points.
+
+Verified with 20 boundary/pattern values and 10,000 fixed-seed randomized
+values under both the default and `--no-default-features` Cargo configurations.

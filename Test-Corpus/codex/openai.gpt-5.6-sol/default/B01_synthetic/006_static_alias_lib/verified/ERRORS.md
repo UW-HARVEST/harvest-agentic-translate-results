@@ -1,22 +1,19 @@
-# Error Surface
+# Error surface
 
-Mechanical searches covered `RETURN_ERROR`, `return -1`, `return NULL`,
-`assert`, `if`, `switch`, preprocessor branches, null checks, enums, and
-min/max constants in `../c_src/include` and `../c_src/src`.
+Mechanical scans covered `RETURN_ERROR`, `return -1`, `return NULL`, `assert`,
+conditionals, null checks, range checks, enums, and min/max constants in
+`../c_src/include` and `../c_src/src`.
 
-The C implementation contains no explicit rejection, error return, assertion,
-range check, null check, enum, or length parameter. The mandatory generic null
-pointer boundary is still recorded because `static_alias` dereferences its
-pointer unconditionally.
+The C source contains no explicit rejection branch, error return, assertion,
+enum, documented numeric range, length parameter, or min/max constant.
+`driver(..., iterations <= 0)` is accepted and performs zero iterations, so it
+is a valid configuration listed in `CONFIGS.md`, not an error.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|----------------------------------------------|-------------------|---|
-| 1 | `static_alias` | `outer == NULL`; line 30 evaluates `*outer` without a null check | process terminates with `SIGSEGV`; there is no return value | [x] |
+The mandatory generic FFI boundary that applies is:
 
-Generic boundary applicability:
+| # | function | trigger (the exact invalid input/condition) | expected C result | |
+|---|----------|----------------------------------------------|-------------------|-|
+| 1 | `static_alias` | `outer == NULL`; line 30 dereferences it without a null check | process terminates with `SIGSEGV` on the test platform; no return value | [x] |
 
-- Zero, oversized, and one-past-range lengths: not applicable; neither API has
-  a length parameter.
-- Out-of-range enums: not applicable; the public API defines no enum.
-- `driver` accepts every `int` value for both parameters. `iterations <= 0` is
-  a valid no-op path, not an error.
+Generic boundary categories that do not exist in this API: lengths, enum
+arguments, and documented bounded values.

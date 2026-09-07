@@ -1,27 +1,29 @@
-# Error Surface
+# Error-surface table
 
-Derived from every `return`, null check, and explicit min/max check in
-`../c_src/src/lib.c`. Conditions that are valid empty-input branches are listed
-in `CONFIGS.md` instead.
+Mechanical source scan covered every `return -1`, `return NULL`, error/sentinel
+return, explicit range check, null check, `assert`, and min/max constant in
+`../c_src/src/lib.c`. The source contains no enums, length parameters, or
+`assert` statements.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
-|---|----------|---------------------------------------------|-------------------|--------|
-| E01 | `add_node` | `node_count >= MAX_NODES` (`MAX_NODES` is 100) | `-1` | [x] |
-| E02 | `find_node_by_id` | no active stored node has the requested `id` | `NULL` | [x] |
-| E03 | `calculate_subtree_sum` | `find_node_by_id(node_id) == NULL` | `0.0` | [x] |
-| E04 | `safe_double_to_int` | `d > (double)INT_MAX` (including positive infinity) | `INT_MAX` | [x] |
-| E05 | `safe_double_to_int` | `d < (double)INT_MIN` (including negative infinity) | `INT_MIN` | [x] |
-| E06 | `safe_double_to_int` | `d != d` (NaN) | `0` | [x] |
-| E07 | `maxnmin` | `(param1 % 6) + 1` selects no node (negative non-multiple-of-6 `param1`) | skip name and subtree contributions; return the remaining computed result | [x] |
-| E08 | `maxnmin` | `(param2 % 6) + 1` selects no node (negative non-multiple-of-6 `param2`) | skip multiplied-value contribution; return the remaining computed result | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `add_node` | `node_count >= MAX_NODES` (`MAX_NODES == 100`) before insertion | returns `-1`; storage/count unchanged | [x] |
+| 2 | `find_node_by_id` | no stored node has both `id == requested_id` and nonzero `active` | returns `NULL` | [x] |
+| 3 | `calculate_subtree_sum` | `find_node_by_id(node_id) == NULL` (missing or inactive root) | returns `0.0` | [x] |
+| 4 | `safe_double_to_int` | `d > (double)INT_MAX` (including positive infinity) | returns `INT_MAX` | [x] |
+| 5 | `safe_double_to_int` | `d < (double)INT_MIN` (including negative infinity) | returns `INT_MIN` | [x] |
+| 6 | `safe_double_to_int` | `d != d` (NaN) | returns `0` | [x] |
 
-## Pointer Boundaries
+## Generic FFI boundary cases
 
-`add_node` and `process_string` dereference their pointer arguments without a
-null check. A null pointer therefore has undefined behavior in C, not a defined
-error code or sentinel. Differential tests exercise these calls in subprocesses
-so a fault cannot terminate the test runner. There are no public length
-arguments or enum arguments in this library.
+The pointer-taking C APIs have no explicit null checks. These are still tested,
+in isolated subprocesses because the C behavior is a fatal invalid-memory
+access rather than a returned error.
 
-The subprocess tests confirmed matching fault signals for both pointer-taking
-entry points under the default and no-default-features configurations.
+| # | function | boundary input | observed C rejection to match | verified |
+|---|----------|----------------|-------------------------------|----------|
+| 7 | `add_node` | `name == NULL` while capacity remains | process terminates by signal while `strncpy` reads `name` | [x] |
+| 8 | `process_string` | `str == NULL` | process terminates by signal while evaluating `*str` | [x] |
+
+There are no public length or enum parameters, so zero/oversized lengths and
+out-of-range enum discriminants do not apply.

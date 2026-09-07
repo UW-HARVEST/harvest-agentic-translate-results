@@ -33,18 +33,25 @@ pub unsafe extern "C" fn printLine(line: *const c_char) {
 /// and then formatted with `%02x` (i.e. reinterpreted as `unsigned int`), so a
 /// negative value prints as eight hex digits.
 ///
-/// ABI note: the exported wrapper takes a `c_int` and narrows it itself. On the
-/// x86-64 SysV ABI the upper 24 bits of a `char` argument register are
-/// unspecified, and gcc's callee prologue for this function discards them
-/// explicitly (`mov %edi,%eax; mov %al,-0x4(%rbp); movsbl -0x4(%rbp),%eax`).
-/// Declaring the parameter as `c_char` instead makes rustc assume the caller
-/// already narrowed, so it forwards the whole register (`mov %edi,%esi`) and a
-/// caller that leaves the upper bits dirty gets e.g. `1ff` where C prints
-/// `ffffffff`. Taking a `c_int` and truncating reproduces C's narrowing exactly
-/// while remaining ABI-compatible with well-formed `char` callers.
+/// ABI note: gcc compiles the `char` parameter as a *narrowing* read of the
+/// argument register — `mov %edi,%eax; mov %al,-0x4(%rbp); movsbl -0x4(%rbp),%eax`
+/// — so a caller that leaves garbage in the upper 24 bits of `edi` (e.g. one
+/// using a mismatched `void(int)` prototype) still only observes the low byte.
+/// Declaring the parameter as `c_char` here is NOT equivalent: rustc/LLVM tags
+/// it `signext i8`, assumes the caller already extended it, and forwards the
+/// whole register (`mov %edi,%esi`), which prints `100` where C prints `00`.
+/// The parameter is therefore taken as `c_int` (identical register on the
+/// SysV x86-64 ABI, which is what the C library is built for) and truncated
+/// explicitly, reproducing gcc's observable behaviour for every input.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn printHexCharLine(charHex: c_int) {
-    let charHex = charHex as c_char;
+    print_hex_char_line(charHex as c_char);
+}
+
+/// Internal, correctly-typed body of `printHexCharLine`, used by the callers
+/// inside this translation unit (where the argument really is a `char`).
+#[inline]
+unsafe fn print_hex_char_line(charHex: c_char) {
     printf(b"%02x\n\0".as_ptr() as *const c_char, charHex as c_int);
 }
 
@@ -58,7 +65,7 @@ pub unsafe extern "C" fn bad() {
     data = CHAR_MAX;
     if data > 0 {
         let result: c_char = data.wrapping_mul(2);
-        printHexCharLine(result as c_int);
+        print_hex_char_line(result);
     }
 }
 
@@ -68,7 +75,7 @@ unsafe fn goodG2B() {
     data = 2;
     if data > 0 {
         let result: c_char = data.wrapping_mul(2);
-        printHexCharLine(result as c_int);
+        print_hex_char_line(result);
     }
 }
 
@@ -80,7 +87,7 @@ unsafe fn goodB2G() {
     if data > 0 {
         if data < (CHAR_MAX / 2) {
             let result: c_char = data.wrapping_mul(2);
-            printHexCharLine(result as c_int);
+            print_hex_char_line(result);
         } else {
             printLine(
                 b"data value is too large to perform arithmetic safely.\0".as_ptr()

@@ -3,18 +3,18 @@
 Generated from:
 
 ```text
-nm -D ../c_src/build/libdriver.so
+nm -D --defined-only ../c_src/build/libdriver.so
+nm -D --defined-only target/release/libdriver.so
 ```
 
-## C-defined public symbols
+| C symbol | C type | Rust symbol | Rust type | Status |
+|----------|--------|-------------|-----------|--------|
+| `driver` | `T` | `driver` | `T` | present |
 
-| symbol | C type | Rust export | status |
-|--------|--------|-------------|--------|
-| `driver` | `T` | `T` | present |
+Missing C symbols in Rust: **0**
 
-The other C dynamic-symbol entries are undefined runtime dependencies or weak
-toolchain hooks, not symbols defined by this library:
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`, `printf`, and `putchar`.
+The C library has no other defined public dynamic symbols.
 
-Missing C-defined symbols in the Rust shared library: **0**.
+Phase D status: **complete**. The final defined-symbol name/type diff is empty,
+and `ldd -r target/release/libdriver.so` reports no unresolved symbols. Its
+dynamic imports are supplied by GLIBC and `libgcc_s`.

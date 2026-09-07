@@ -1,73 +1,92 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Configuration-surface table (Phase A → gates Phase B)
 
 Mechanically derived from `c_src/include/slicing.h` + `c_src/src/slicing.c`.
 
-## Axes the C code actually branches on
+## Axes the C actually branches on
 
-| axis | values the C distinguishes | source evidence |
-|------|----------------------------|-----------------|
-| entry point | `slice` — the **only** public symbol, and it is itself the lowest-level entry point. There are no convenience wrappers and no internal helpers to call separately. | `include/slicing.h` declares one prototype; `nm -D` shows one `T` symbol |
-| `start_ptr` mode | `NULL` (⇒ `start = 0`) / non-`NULL` (⇒ `start = *start_ptr`) | `if (start_ptr) { ... } else { start = 0; }` |
-| `stop_ptr` mode | `NULL` (⇒ `stop = len`, via `size_t`→`int` truncation) / non-`NULL` | `} else stop = len;` |
-| `len` shape | `0` / `1` / small / large; `len` drives both range checks and the default `stop` | `size_t len = strlen(mystr);` |
-| `start` value | `0` / interior / `len-1` / `len` (accepted boundary, strict `>` check) | `if (start > len)` |
-| `stop` value | `start+1` (narrowest slice) / interior / `len` (accepted boundary) | `if (stop > len)`, `if (stop <= start)` |
-| byte content | arbitrary bytes `0x01..0xFF`; the slice is emitted with `%.*s`, so the content is copied verbatim including non-UTF-8 bytes, control bytes, `%` characters, and embedded newlines | `printf("%.*s\n", stop - start, mystr + start)` |
-| output width | `stop - start == 0` (only reachable with `start == len` and `stop_ptr == NULL`) / `> 0` | precision argument of `%.*s` |
-| compile-time config | none — no `#ifdef`, no build options in `CMakeLists.txt`, no Cargo features | `grep -c '#if' c_src/src/slicing.c` → 1 (the header include guard only) |
+There are no compile-time `#ifdef`s, no global/runtime option setters, and no
+opaque handle to configure — the entire configuration space of this library is
+carried in the three arguments of the single entry point. The axes below are
+exactly the things the C source tests.
 
-There is no runtime option/flag/mode API beyond the two pointer parameters, so
-the configuration space is the cross-product of the pointer modes, the string
-shape, and the index values — pruned below to the combinations the code treats
-differently.
+**Axis 1 — `start_ptr` presence** (`if (start_ptr)` at line 43)
+- `NULL` → `start = 0` implicitly, and the `start > len` check is skipped
+- non-`NULL` → `start = *start_ptr`, range-checked
 
-Every row is exercised with **many randomized inputs** (seeded, deterministic
-`SplitMix64`, `SEED = 0x5DEE_CE66_D15E_A5E5`) — at least 64 iterations per row,
-256 for the index-sweeping rows — and both `.so`s are compared on
-**(return code, exact stdout bytes)**.
+**Axis 2 — `stop_ptr` presence** (`if (stop_ptr)` at line 52)
+- `NULL` → `stop = len` (via a `size_t`→`int` truncating assignment), and
+  *both* the `stop > len` and `stop <= start` checks are skipped
+- non-`NULL` → `stop = *stop_ptr`, range-checked twice
+
+Axes 1 × 2 give the four presence modes: `(NULL,NULL)`, `(set,NULL)`,
+`(NULL,set)`, `(set,set)`. These are genuinely different code paths, not just
+different data.
+
+**Axis 3 — input string shape** (feeds `strlen`, and the `mystr + start`
+pointer arithmetic and `%.*s` in the final `printf`)
+- `len == 0` (empty string) — degenerate: makes `start`'s only valid value `0`
+  and makes every `stop_ptr != NULL` an error
+- `len == 1` — single element
+- `len` many (short, and long enough to cross glibc's `printf` fast paths)
+- byte content: pure ASCII; bytes with the high bit set (0x80–0xFF, i.e.
+  non-UTF-8 — the C is byte-oriented and must **not** be validated as UTF-8 by
+  the Rust); bytes that are `printf` format metacharacters (`%`, `%n`, `%s`) —
+  these travel as *data* through the `%.*s` argument and must not be
+  reinterpreted; `\n`, `\t`, `\0`-adjacent and 0x7F control bytes
+
+**Axis 4 — index values within the valid range** (drives `stop - start` and
+`mystr + start`)
+- `start == 0` (front)
+- `start` interior
+- `start == len` (the maximum *valid* start: `start > len` is false, so a start
+  exactly at the terminator is accepted)
+- `stop == len` (maximum valid stop)
+- `stop == start + 1` (minimum valid width — `stop <= start` is rejected, so 1
+  is the narrowest slice)
+- `stop - start` == full length
+
+## Entry points
+
+There is exactly **one** public entry point, `slice`, and it *is* the
+lowest-level entry point — there are no convenience wrappers, no one-shot
+helpers, and no internal functions with external linkage
+(`nm -D --defined-only` on the C `.so` lists only `slice`; see `SYMBOLS.md`).
+Every row below therefore calls `slice` directly through the `.so` export.
+
+The observable output of `slice` is twofold and **both** are compared
+byte-for-byte in every row:
+1. the `int` return value, and
+2. everything written to **stdout** (captured by redirecting fd 1 around each
+   call, then `fflush(NULL)`).
 
 ## Table
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `slice` | `start_ptr=NULL`, `stop_ptr=NULL`, `len == 0` (empty string) | [x] |
-| 2 | `slice` | `start_ptr=NULL`, `stop_ptr=NULL`, `len == 1` | [x] |
-| 3 | `slice` | `start_ptr=NULL`, `stop_ptr=NULL`, random printable ASCII, `len` 2..64 | [x] |
-| 4 | `slice` | `start_ptr=NULL`, `stop_ptr=NULL`, long string, `len` 256..4096 | [x] |
-| 5 | `slice` | `start_ptr=NULL`, `stop_ptr=NULL`, random **non-UTF-8** bytes `0x80..0xFF` | [x] |
-| 6 | `slice` | `start_ptr=NULL`, `stop_ptr=NULL`, content containing `%`, `%s`, `%n`, `%%` (format-specifier bytes as *data*) | [x] |
-| 7 | `slice` | `start_ptr=NULL`, `stop_ptr=NULL`, content containing embedded `\n` and control bytes `0x01..0x1F` | [x] |
-| 8 | `slice` | `start_ptr=&0`, `stop_ptr=NULL`, random `len` 1..64 (explicit start 0 vs. implicit) | [x] |
-| 9 | `slice` | `start_ptr=&s`, `stop_ptr=NULL`, random interior `0 < s < len` | [x] |
-| 10 | `slice` | `start_ptr=&(len-1)`, `stop_ptr=NULL` (last character only) | [x] |
-| 11 | `slice` | `start_ptr=&len`, `stop_ptr=NULL` — **accepted boundary**, zero-width output (`stop - start == 0`) | [x] |
-| 12 | `slice` | `start_ptr=NULL`, `stop_ptr=&e`, random `1 <= e <= len` | [x] |
-| 13 | `slice` | `start_ptr=NULL`, `stop_ptr=&len` — accepted `stop` boundary (whole string) | [x] |
-| 14 | `slice` | `start_ptr=NULL`, `stop_ptr=&1` — narrowest slice from the front | [x] |
-| 15 | `slice` | both non-`NULL`, random `0 <= s < e <= len`, `len` 1..64 printable ASCII | [x] |
-| 16 | `slice` | both non-`NULL`, `e == s + 1` (minimum valid width), random `s` | [x] |
-| 17 | `slice` | both non-`NULL`, `s == 0`, `e == len` (whole string, both boundaries explicit) | [x] |
-| 18 | `slice` | both non-`NULL`, `s == len-1`, `e == len` (last character, both boundaries explicit) | [x] |
-| 19 | `slice` | both non-`NULL`, `len == 1`, `s == 0`, `e == 1` (degenerate single-char string) | [x] |
-| 20 | `slice` | both non-`NULL`, random **non-UTF-8** / control-byte content, random valid `s < e` | [x] |
-| 21 | `slice` | both non-`NULL`, long string `len` 256..4096, random valid `s < e` | [x] |
-| 22 | `slice` | `start_ptr=&0`, `stop_ptr=NULL`, `len == 0` (empty string, explicit start at the boundary `0 == len`) | [x] |
-| 23 | `slice` | full 2×2 pointer-mode matrix swept exhaustively over **every** valid `(s, e)` pair for `len` 0..8 (exhaustive small-case oracle, valid pairs only) | [x] |
-| 24 | `slice` | **sequence** of many `slice` calls without an intervening flush — verifies stdout buffering/ordering and that no state leaks between calls | [x] |
-| 25 | `slice` | any valid configuration — assert `*start_ptr` / `*stop_ptr` are **unmodified** after the call (no out-params) | [x] |
-| 26 | `slice` | any valid configuration — assert the `mystr` buffer (incl. its NUL terminator) is **unmodified** after the call (read-only input) | [x] |
+Every row is exercised with many randomized inputs (fixed seed, deterministic
+xorshift PRNG in `tests/common/mod.rs`) — not one hand-picked value.
 
-## Known-untestable configuration
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|--------------------------------------------|------|-----|
+| C1 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`; randomized ASCII strings, `len` 1..64 → prints whole string | `c1_both_null_ascii` | [x] |
+| C2 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`; `len == 0` (empty string) → precision 0, prints bare newline | `c2_both_null_empty` | [x] |
+| C3 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`; randomized **arbitrary bytes** 0x01–0xFF (non-UTF-8, high-bit set, control bytes) | `c3_both_null_arbitrary_bytes` | [x] |
+| C4 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`; strings containing `printf` metacharacters (`%s`, `%n`, `%d`, `%%`) as data | `c4_both_null_format_metachars` | [x] |
+| C5 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`; long strings (`len` 256..4096) crossing `printf` buffering paths | `c5_both_null_long` | [x] |
+| C6 | `slice` | `start_ptr` set, `stop_ptr = NULL`; `start` randomized in `0..=len` (so `stop = len` implicitly) | `c6_start_set_stop_null` | [x] |
+| C7 | `slice` | `start_ptr` set, `stop_ptr = NULL`; `start == len` exactly (maximum valid start → zero-width slice, prints bare newline) | `c7_start_equals_len_stop_null` | [x] |
+| C8 | `slice` | `start_ptr` set, `stop_ptr = NULL`; `len == 0` and `start == 0` (only valid combination for the empty string) | `c8_start_zero_empty_stop_null` | [x] |
+| C9 | `slice` | `start_ptr = NULL`, `stop_ptr` set; `stop` randomized in `1..=len` (start implicitly 0; `stop == 0` is the E9 error) | `c9_start_null_stop_set` | [x] |
+| C10 | `slice` | `start_ptr = NULL`, `stop_ptr` set; `stop == len` exactly (full string via explicit stop) | `c10_start_null_stop_equals_len` | [x] |
+| C11 | `slice` | `start_ptr` set **and** `stop_ptr` set; randomized valid pair `0 <= start < stop <= len`, interior slices | `c11_both_set_interior` | [x] |
+| C12 | `slice` | `start_ptr` set **and** `stop_ptr` set; boundary widths — `stop == start + 1` (narrowest legal slice) and `start == 0, stop == len` (widest) | `c12_both_set_width_boundaries` | [x] |
+| C13 | `slice` | `slice` with **unconstrained randomized `int` values** for `start`/`stop` over the full `i32` range, and randomized `NULL`/non-`NULL` for each pointer, over randomized byte strings incl. `len == 0` — the cross-product fuzz that mixes valid and rejected configurations in one sweep (return value **and** stdout compared) | `c13_full_cross_product_fuzz` | [x] |
+| C14 | `slice` | repeated/sequential invocation: many `slice` calls in a row without intervening flush, verifying stdout **accumulation and ordering** is identical (stateless-ness of the library) | `c14_sequential_calls_stream_order` | [x] |
+| C15 | `slice` | `start_ptr` and `stop_ptr` aliasing the **same** `int` object (legal C, forces `stop == start` → E8 path) and pointing into a shared array; also `start_ptr`/`stop_ptr` pointing at adjacent stack ints to confirm neither is written back | `c15_aliased_index_pointers` | [x] |
 
-`len > INT_MAX`, which would make the `else stop = len;` `size_t`→`int`
-truncation observable, requires a >2 GiB string. Both implementations perform
-the identical truncation (`len as c_int` vs. C's implicit conversion), so the
-behaviour is matched by construction, but it is not covered by an executed test.
+## Binary executable
 
-## Negative control
+`c_src/CMakeLists.txt` contains a single `add_library(String_Slice SHARED ...)`
+and no `add_executable`, so the project builds **no driver binary** — there is
+no stdout-of-binary comparison to make. `translation/Cargo.toml` likewise
+declares only `crate-type = ["cdylib"]` and has no `[[bin]]`.
 
-`./mutation_check.sh` also covers the valid-path rows: an off-by-one in the
-printed width, an off-by-one in the slice offset, `stop = len-1` instead of
-`len` when `stop_ptr` is NULL, `start = 1` instead of `0` when `start_ptr` is
-NULL, dropping the trailing newline from the `%.*s` format, and writing back
-through `start_ptr`. All are caught.
+**Gate: 15/15 rows pass across randomized inputs. PASS.**

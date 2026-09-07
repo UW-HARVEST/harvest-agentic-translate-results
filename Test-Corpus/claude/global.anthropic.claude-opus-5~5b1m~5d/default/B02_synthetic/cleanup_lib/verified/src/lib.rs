@@ -62,15 +62,8 @@ pub unsafe extern "C" fn cleanup(a: c_int, b: c_int, c: c_int, d: c_int) -> c_in
     let mut result: c_int = 0;
 
     unsafe {
-        // `black_box` keeps the two pointers opaque to the optimizer. Without it
-        // LLVM proves both operands are the same constant object and folds the
-        // `strncmp` call away entirely, which would make this library's
-        // observable libc call sequence differ from the C original (gcc emits a
-        // real `strlen` + `strncmp` pair here at every optimisation level).
-        // The comparison result is unchanged either way.
-        let expected_str: *const c_char =
-            core::hint::black_box(STR_VALID.as_ptr()) as *const c_char;
-        let input_str: *const c_char = core::hint::black_box(STR_VALID.as_ptr()) as *const c_char;
+        let expected_str: *const c_char = STR_VALID.as_ptr() as *const c_char;
+        let input_str: *const c_char = STR_VALID.as_ptr() as *const c_char;
         if strncmp(input_str, expected_str, strlen(expected_str)) != 0 {
             printf(MSG_INPUT_VALIDATION_FAILED.as_ptr() as *const c_char);
             // goto cleanup;

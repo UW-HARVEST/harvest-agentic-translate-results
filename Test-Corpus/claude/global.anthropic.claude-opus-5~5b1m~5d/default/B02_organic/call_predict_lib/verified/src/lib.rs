@@ -388,3 +388,97 @@ pub extern "C" fn call_predict(pfcn: c_int) -> c_int {
     }
     result
 }
+
+// ---------------------------------------------------------------------------
+// TEST-ONLY probe surface (feature `internal_probe`, off by default).
+//
+// The 14 predictor helpers are `static` in C, so they are not reachable through
+// the shared library's dynamic symbol table and their arithmetic is invisible to
+// a differential test that can only call `call_predict`. These wrappers expose
+// them under `probe_*` names so a C probe translation unit that `#include`s
+// `c_src/src/lib.c` can be compared against them one function at a time.
+//
+// This feature only ADDS symbols; it never removes or renames any, so symbol
+// parity with the C `.so` is unaffected. It must not be enabled in a release.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "internal_probe")]
+mod internal_probe {
+    use super::*;
+
+    macro_rules! probe {
+        ($export:ident => $inner:ident) => {
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $export(
+                psamp: *mut c_int,
+                idx: c_int,
+                pfcn: c_int,
+                ridx: *mut btac1c_idxstate,
+            ) -> c_int {
+                unsafe { $inner(psamp, idx, pfcn, ridx) }
+            }
+        };
+    }
+
+    probe!(probe_PredictSample => BTAC1C2_PredictSample);
+    probe!(probe_Pfn0  => BTAC1C2_PredictSample_Pfn0);
+    probe!(probe_Pfn1  => BTAC1C2_PredictSample_Pfn1);
+    probe!(probe_Pfn2  => BTAC1C2_PredictSample_Pfn2);
+    probe!(probe_Pfn3  => BTAC1C2_PredictSample_Pfn3);
+    probe!(probe_Pfn4  => BTAC1C2_PredictSample_Pfn4);
+    probe!(probe_Pfn5  => BTAC1C2_PredictSample_Pfn5);
+    probe!(probe_Pfn6  => BTAC1C2_PredictSample_Pfn6);
+    probe!(probe_Pfn7  => BTAC1C2_PredictSample_Pfn7);
+    probe!(probe_Pfn8  => BTAC1C2_PredictSample_Pfn8);
+    probe!(probe_Pfn9  => BTAC1C2_PredictSample_Pfn9);
+    probe!(probe_Pfn10 => BTAC1C2_PredictSample_Pfn10);
+    probe!(probe_Pfn11 => BTAC1C2_PredictSample_Pfn11);
+
+    /// Mirrors `BTAC1C2_GetPredictFunc`'s dispatch decision as an observable
+    /// index: `0..=11` for the specialised `_PfnN`, `-1` for the `default:`
+    /// arm that yields `BTAC1C2_PredictSample`.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn probe_GetPredictFunc_index(pfcn: c_int) -> c_int {
+        let fcn = BTAC1C2_GetPredictFunc(pfcn);
+        let table: [PredictFn; 12] = [
+            BTAC1C2_PredictSample_Pfn0,
+            BTAC1C2_PredictSample_Pfn1,
+            BTAC1C2_PredictSample_Pfn2,
+            BTAC1C2_PredictSample_Pfn3,
+            BTAC1C2_PredictSample_Pfn4,
+            BTAC1C2_PredictSample_Pfn5,
+            BTAC1C2_PredictSample_Pfn6,
+            BTAC1C2_PredictSample_Pfn7,
+            BTAC1C2_PredictSample_Pfn8,
+            BTAC1C2_PredictSample_Pfn9,
+            BTAC1C2_PredictSample_Pfn10,
+            BTAC1C2_PredictSample_Pfn11,
+        ];
+        for (i, f) in table.iter().enumerate() {
+            if fcn == *f as *mut c_void {
+                return i as c_int;
+            }
+        }
+        if fcn == BTAC1C2_PredictSample as *mut c_void {
+            return -1;
+        }
+        -2 // unreachable in the C source
+    }
+
+    /// Reports `size_of` / `align_of` of `btac1c_idxstate` so the test can
+    /// confirm the Rust `#[repr(C)]` layout matches the C struct exactly.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn probe_idxstate_size() -> usize {
+        core::mem::size_of::<btac1c_idxstate>()
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn probe_idxstate_align() -> usize {
+        core::mem::align_of::<btac1c_idxstate>()
+    }
+
+    /// Byte offset of the `firfx` member.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn probe_idxstate_firfx_offset() -> usize {
+        core::mem::offset_of!(btac1c_idxstate, firfx)
+    }
+}

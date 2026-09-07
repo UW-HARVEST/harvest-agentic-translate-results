@@ -262,7 +262,7 @@ pub unsafe extern "C" fn cJSON_GetStringValue(item: *const cJSON) -> *mut c_char
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cJSON_GetNumberValue(item: *const cJSON) -> c_double {
     if unsafe { cJSON_IsNumber(item) } == 0 {
-        return -c_double::NAN;
+        return c_double::NAN;
     }
     unsafe { (*item).valuedouble }
 }
@@ -1020,7 +1020,12 @@ pub unsafe extern "C" fn cJSON_Duplicate(item: *const cJSON, recurse: cJSON_bool
     unsafe { cJSON_Duplicate_rec(item, 0, recurse) }
 }
 
-unsafe fn cJSON_Duplicate_rec(item: *const cJSON, depth: usize, recurse: cJSON_bool) -> *mut cJSON {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cJSON_Duplicate_rec(
+    item: *const cJSON,
+    depth: usize,
+    recurse: cJSON_bool,
+) -> *mut cJSON {
     if item.is_null() {
         return ptr::null_mut();
     }
@@ -1425,6 +1430,7 @@ unsafe fn parse_string(item: *mut cJSON, input: &mut ParseBuffer) -> cJSON_bool 
     let output: *mut c_uchar;
 
     if unsafe { *start } != b'"' {
+        input.offset = unsafe { input_pointer.offset_from(input.content) } as usize;
         return 0;
     }
 

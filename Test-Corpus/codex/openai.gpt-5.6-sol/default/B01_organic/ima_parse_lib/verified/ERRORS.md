@@ -1,18 +1,16 @@
-# Error Surface
+# Error surface
 
-Mechanically derived from every rejection return and conditional check in
-`../c_src/src/lib.c`. The public API has no length argument, enum argument,
-assertion, null check, range check, or min/max constant.
+Mechanically derived from every explicit rejection in `../c_src/src/lib.c`.
+The source contains no `assert`, error macro, range check, null check, public
+enum, or length argument.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `ima_parse` | `ima_btoh32(header->type) != 0x63616666` (the first four input bytes are not `caff`) | `-1` | [x] |
-| 2 | `ima_parse` | file type is valid and `ima_btoh16(header->version) != 1` | `-2` | [x] |
-| 3 | `ima_parse` | header is valid, `desc` and `pakt` precede `data`, and `ima_btoh32(desc->format_id) != 0x696d6134` (the description format bytes are not `ima4`) | `-3` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `ima_parse` | `ima_btoh32(header->type)` is not the four-byte CAF file type (`caff` bytes in the input) | `-1` [x] |
+| 2 | `ima_parse` | header type is valid and `ima_btoh16(header->version) != 1` | `-2` [x] |
+| 3 | `ima_parse` | parsing reaches a `data` chunk after setting `desc` and `pakt`, and `ima_btoh32(desc->format_id)` is not the four-byte IMA4 format ID (`ima4` bytes in the input); the last preceding `desc` chunk is the one checked | `-3` [x] |
 
-## Generic FFI Boundaries
-
-`ima_parse` has no length or enum parameter, so zero/oversized lengths and
-out-of-range enum values are not applicable. C performs no null checks:
-null `data` and null `info` with otherwise valid data have process-level
-undefined behavior and are compared in isolated subprocess probes.
+Additional ABI-boundary cases are tested separately because the C source does
+not reject them: null `data` and null `info` dereference and terminate the
+caller rather than returning an error. There are no public enums or explicit
+lengths for zero/oversized/out-of-range tests.

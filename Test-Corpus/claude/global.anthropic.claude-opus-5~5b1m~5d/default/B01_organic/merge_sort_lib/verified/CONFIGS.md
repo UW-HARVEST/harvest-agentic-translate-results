@@ -1,114 +1,118 @@
-# CONFIGS.md — Phase A: configuration surface table (valid inputs)
+# CONFIGS.md — Phase B configuration surface table (valid inputs)
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
+Mechanically derived from the branches the C in `c_src/src/lib.c` actually takes.
 
-## Axes the C code actually branches on
+## Axes the C code branches on
 
-**Runtime options / modes / flags: NONE.** `lib.h` exposes one function and one
-struct; there is no flag, mode, context object, global state, `#ifdef`, or
-`switch` anywhere in the C (`grep -nE '#if|switch|case' src/lib.c` → no matches).
-So the configuration surface is entirely made of **input shapes**.
+**A. Runtime options / flags.** The public header exposes exactly one function
+and no options struct, no mode flags, no globals, no `#ifdef`. So there are
+**zero runtime option axes**. All variation comes from input shape and data.
 
-**Public entry points** (`nm -D` → exactly one; `lib.h` declares exactly one):
+**B. Public entry points (full set, incl. lowest level).**
 
-* `merge_sort(spritebatch_sprite_t *a, spritebatch_sprite_t *b, int size)`
+| entry point | linkage | reachable from a `.so` consumer? |
+|---|---|---|
+| `merge_sort(a, b, size)` | extern | yes — the only dynamic symbol |
+| `spritebatch_internal_merge_sort_recurse(b, lo, hi, a)` | `static` | no (not exported by C either); exercised *indirectly* via every `size >= 2` row, which is why the deep/odd sizes below matter |
+| `spritebatch_internal_merge_sort_iteration(a, lo, split, hi, b)` | `static` | no; exercised indirectly. Its `i < split` / `j >= hi` / predicate branches are covered by rows 6-14 |
+| `spritebatch_internal_sprite_less_than_or_equal(a, b)` | `static` | no; its three `return`s are covered by rows 10-13 |
 
-**Lowest-level entry points** `spritebatch_internal_sprite_less_than_or_equal`,
-`spritebatch_internal_merge_sort_iteration` and
-`spritebatch_internal_merge_sort_recurse` are `static`: they are **not** in the C
-`.so`'s dynamic symbol table, so no direct differential call is possible for
-either side. They are driven *through* `merge_sort`, and the axes below are
-chosen specifically to reach every branch of each (see the "reaches" column).
+Note: because the three low-level functions are `static`, "exercising the
+low-level entry points directly" means driving `merge_sort` with the input
+shapes that force each internal branch — which is what the table below does,
+one row per distinct internal branch combination.
 
-### Axis S — `size` (drives `hi - lo <= 1` and the `(lo+hi)/2` split shape)
+**C. Input shapes the code special-cases.**
 
-`S0`=0, `S1`=1, `S2`=2, `S3`=3, `S4`=4, `S5`=5, `S7`=7, `S8`=8, `S9`=9,
-`S15`=15, `S16`=16, `S17`=17, `S31`=31, `S32`=32, `S33`=33, `S100`=100,
-`S255`=255, `S256`=256, `S257`=257, `S1000`=1000, `S4096`=4096, `S4097`=4097.
-(Powers of two split evenly; odd sizes force uneven splits and `hi-lo==1` leaves
-on one side only.)
-
-### Axis K — `sort_bits` value pattern (drives `_less_than_or_equal`)
-
-* `K-EQ` all identical → every compare hits line 7 tie path (stability)
-* `K-ASC` strictly ascending → `_iteration` always takes the left run
-* `K-DESC` strictly descending → `_iteration` always takes the right run
-* `K-RAND` uniform random `i32` (full range, both signs)
-* `K-FEW` random from a 2–4 value alphabet → many ties interleaved
-* `K-ALT` alternating high/low
-* `K-NEG` all negative → signed-comparison correctness
-* `K-EXT` only `INT_MIN` / `INT_MAX` / `0` / `-1` → signed boundary values
-* `K-ONE` sorted except a single displaced element
-* `K-SORTED-DUPS` non-decreasing with runs of duplicates
-
-### Axis T — `texture_id` value pattern (drives the DEAD line-9 branch)
-
-* `T-ZERO` all zero
-* `T-RAND` uniform random `u64`
-* `T-EXT` only `0` / `u64::MAX` / `1` / `u64::MAX-1` → tests that the *unsigned*
-  `<=` on line 9 is never reached and never influences order
-* `T-ANTI` `texture_id` descending while `sort_bits` ties → the input that
-  *would* differ if line 9 were reachable; pins the dead-code behaviour
-
-### Axis P — struct padding bytes (offsets 12..16)
-
-* `P-ZERO` padding all `0x00`
-* `P-GARBAGE` padding filled with distinct non-zero bytes → verifies the
-  `memcpy` **and** the `b[k]=a[i]` struct assignment propagate padding
-  byte-identically (C emits two 8-byte `mov`s, confirmed by `objdump`)
-
-### Axis F — scratch buffer `b` pre-fill
-
-* `F-ZERO` `b` zeroed before the call
-* `F-SENTINEL` `b` pre-filled with `0xAA` → detects any region of `b` that C
-  leaves untouched but Rust writes (or vice-versa)
-
-### Axis A — buffer aliasing / geometry
-
-* `A-DISJOINT` `a` and `b` are separate allocations (normal use)
-* `A-SAME` `a == b` (documented in `ERRORS.md` #18)
-
-### Axis O — output surface compared
-
-Both buffers are compared on **every** row, as all 16 bytes of both:
-`a` (which is where the final result lands for `size >= 2`) **and** `b` (the
-scratch buffer, which is only *partially* written).
+1. `size` vs the `hi - lo <= 1` guard: `0`, `1`, `>= 2`.
+2. `size` parity / split structure: `(lo+hi)/2` makes odd sizes produce
+   unequal halves, powers of two produce perfectly balanced trees.
+3. Recursion depth: `ceil(log2(size))` — determines which of `a`/`b` holds the
+   final sorted run (the buffers are swapped at every level), so BOTH buffers
+   must be compared, and the *parity of the depth* is itself an axis.
+4. `sort_bits` relations driving the predicate: `<`, `==`, `>`; ascending,
+   descending, all-equal, random, negative, `INT_MIN`/`INT_MAX`.
+5. `texture_id` relations: irrelevant to ordering (dead second `if`) — must be
+   verified to be irrelevant identically in both, incl. `0` and `u64::MAX`.
+6. Struct padding: 4 trailing padding bytes; `memcpy` copies them, member-wise
+   struct assignment may or may not. Compared explicitly.
+7. Buffer state: `b` pre-filled with a sentinel (detects partial/extra writes);
+   guard elements past `size` (detects overruns).
+8. Aliasing: `a == b`.
 
 ## Configuration table
 
-Every row is exercised with **many randomized inputs** (fixed seed
-`0x5EED_5P12_3ABC_DEF0`, splitmix64) across the whole `size` list of the row, and
-both `a` and `b` are compared byte-for-byte between the C and Rust `.so`.
+Every row is run with **many randomized inputs** (fixed seed, deterministic
+xorshift PRNG) unless the row is a fixed boundary. Every row asserts that the
+**entire `a` arena and the entire `b` arena** (including guard regions and
+padding bytes) are byte-identical between the C `.so` and the Rust `.so`.
 
-| # | entry point(s) | configuration (options set + input shape) | reaches | [x] |
-|---|----------------|-------------------------------------------|---------|-----|
-| 1 | `merge_sort` | `S0`, `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | `recurse` `hi-lo==0` guard; zero-length memcpy | [x] |
-| 2 | `merge_sort` | `S1`, `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | `recurse` `hi-lo==1` guard; 16-byte memcpy | [x] |
-| 3 | `merge_sort` | `S2`, `K-RAND`, `T-RAND`, `P-ZERO`, `F-ZERO`, `A-DISJOINT` | first `_iteration` call; both compare outcomes | [x] |
-| 4 | `merge_sort` | `S2`, `K-EQ`, `T-ANTI`, `P-ZERO`, `F-ZERO`, `A-DISJOINT` | tie → line 7; proves line 9 dead at minimal size | [x] |
-| 5 | `merge_sort` | `S3`, `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | odd split `(0+3)/2==1`; one leaf, one 2-elem subtree | [x] |
-| 6 | `merge_sort` | `S4`, `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | balanced 2-level ping-pong (result parity) | [x] |
-| 7 | `merge_sort` | `S5`,`S7`,`S9` (odd), `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | uneven splits at several depths | [x] |
-| 8 | `merge_sort` | `S8`,`S16`,`S32`,`S256` (powers of 2), `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | perfectly balanced recursion; deepest ping-pong | [x] |
-| 9 | `merge_sort` | `S15`,`S17`,`S31`,`S33`,`S255`,`S257` (2^n±1), `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | most irregular split trees | [x] |
-| 10 | `merge_sort` | `S100`,`S1000`, `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | bulk random, mixed parity | [x] |
-| 11 | `merge_sort` | `S4096`,`S4097`, `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | large input, deep recursion | [x] |
-| 12 | `merge_sort` | ALL sizes, `K-EQ`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | every compare is a tie → left-run-always path | [x] |
-| 13 | `merge_sort` | ALL sizes, `K-EQ`, `T-ANTI`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | pins dead line 9 across all split shapes | [x] |
-| 14 | `merge_sort` | ALL sizes, `K-ASC`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | `_iteration` right-run-exhausted (`j>=hi`) path | [x] |
-| 15 | `merge_sort` | ALL sizes, `K-DESC`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | `_iteration` left-run-exhausted (`i>=split`) path | [x] |
-| 16 | `merge_sort` | ALL sizes, `K-FEW`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | ties interleaved with strict compares (stability) | [x] |
-| 17 | `merge_sort` | ALL sizes, `K-ALT`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | maximal alternation between the two merge branches | [x] |
-| 18 | `merge_sort` | ALL sizes, `K-NEG`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | signed `<=` on negative `sort_bits` | [x] |
-| 19 | `merge_sort` | ALL sizes, `K-EXT`, `T-EXT`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | `INT_MIN`/`INT_MAX` × `0`/`u64::MAX` boundaries | [x] |
-| 20 | `merge_sort` | ALL sizes, `K-ONE`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | nearly-sorted (single displaced element) | [x] |
-| 21 | `merge_sort` | ALL sizes, `K-SORTED-DUPS`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | non-decreasing runs of duplicates | [x] |
-| 22 | `merge_sort` | ALL sizes, `K-RAND`, `T-ZERO`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT` | `texture_id` constant → order determined by `sort_bits` only | [x] |
-| 23 | `merge_sort` | ALL sizes, `K-RAND`, `T-RAND`, **`P-GARBAGE`**, `F-SENTINEL`, `A-DISJOINT` | padding propagation through memcpy + struct assign | [x] |
-| 24 | `merge_sort` | ALL sizes, `K-EQ`, `T-RAND`, **`P-GARBAGE`**, `F-SENTINEL`, `A-DISJOINT` | padding propagation on the all-ties (left-run) path | [x] |
-| 25 | `merge_sort` | ALL sizes, `K-DESC`, `T-RAND`, **`P-GARBAGE`**, `F-ZERO`, `A-DISJOINT` | padding propagation on the right-run path | [x] |
-| 26 | `merge_sort` | ALL sizes, `K-RAND`, `T-RAND`, `P-ZERO`, **`F-ZERO`**, `A-DISJOINT` | scratch buffer starting zeroed (untouched regions) | [x] |
-| 27 | `merge_sort` | `S0..S17` + `S100`, `K-RAND`, `T-RAND`, `P-GARBAGE`, `F-SENTINEL`, **`A-SAME`** | aliased `a == b` ping-pong (see `ERRORS.md` #18) | [x] |
-| 28 | `merge_sort` | ALL sizes, `K-RAND`, `T-RAND`, `P-ZERO`, `F-SENTINEL`, `A-DISJOINT`, **called twice in a row on the same buffers** | idempotency / no hidden state between calls | [x] |
-| 29 | `merge_sort` | random `size` in `1..=600` + random `K`/`T`/`P`/`F` combo, 4000 iterations (property-style fuzz over the full cross-product) | catch-all for unpruned axis interactions | [x] |
-| 30 | `merge_sort` | buffer `b` **larger** than `size` (slack tail), ALL sizes, `K-RAND`, `F-SENTINEL` | proves C writes only `[0,size)` of `b` and Rust does not over-write | [x] |
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|--------------------------------------------|------|-----|
+| 1 | `merge_sort` | `size = 0`; both buffers non-null, pre-filled with random sentinel; expect no mutation. Randomized sentinels. | `row01_size_zero_no_mutation` | [x] |
+| 2 | `merge_sort` | `size = 1`; random element; `memcpy` path only, `recurse` early-out. Randomized. | `row02_size_one` | [x] |
+| 3 | `merge_sort` | `size = 2`, already ascending (`sort_bits[0] < sort_bits[1]`) — forces `i < split && pred == 1` branch at depth 1. Randomized values. | `row03_size_two_ascending` | [x] |
+| 4 | `merge_sort` | `size = 2`, descending (`sort_bits[0] > sort_bits[1]`) — forces the `else` branch (`pred == 0`). Randomized. | `row04_size_two_descending` | [x] |
+| 5 | `merge_sort` | `size = 2`, equal `sort_bits`, distinct random `texture_id`s — exercises the dead second `if`. Randomized. | `row05_size_two_tied_keys_dead_branch` | [x] |
+| 6 | `merge_sort` | `size = 3` (odd; split = 1, unbalanced halves, depth 2). Randomized `sort_bits`. | `row06_size_three_odd_split` | [x] |
+| 7 | `merge_sort` | `size = 4` (power of two; balanced tree, depth 2 — even depth, result parity differs from row 6). Randomized. | `row07_size_four_power_of_two` | [x] |
+| 8 | `merge_sort` | `size = 5, 6, 7` (odd + even non-power-of-two, depth 3). Randomized. | `row08_sizes_five_six_seven` | [x] |
+| 9 | `merge_sort` | `size = 8, 16, 32, 64` (powers of two, depths 3-6). Randomized. | `row09_powers_of_two` | [x] |
+| 10 | `merge_sort` | every `size` in `1..=40`, fully random `sort_bits` over the whole `i32` range and random `texture_id` over the whole `u64` range; many seeds per size. Covers all split/depth/parity combinations densely. | `row10_dense_sweep_random_keys` | [x] |
+| 11 | `merge_sort` | every `size` in `1..=40`, `sort_bits` drawn from a **tiny alphabet** (`0..3`) so runs of equal keys are frequent — stresses the `pred` tie path and merge stability, with random `texture_id`. | `row11_dense_sweep_tiny_alphabet` | [x] |
+| 12 | `merge_sort` | every `size` in `1..=40`, **all `sort_bits` identical**, `texture_id` strictly increasing / strictly decreasing / random — proves `texture_id` is ignored identically. | `row12_all_keys_equal` | [x] |
+| 13 | `merge_sort` | every `size` in `1..=40`, strictly ascending and strictly descending `sort_bits` (best/worst case for the merge branches). | `row13_sorted_and_reverse_sorted` | [x] |
+| 14 | `merge_sort` | `sort_bits` drawn from the extreme set `{INT_MIN, INT_MIN+1, -1, 0, 1, INT_MAX-1, INT_MAX}` and `texture_id` from `{0, 1, u64::MAX/2, u64::MAX}`, sizes `2..=24`, randomized permutations. | `row14_extreme_values` | [x] |
+| 15 | `merge_sort` | large input: `size = 1000`, `4096`, `4097` — deep recursion (depth 10-13), randomized data. | `row15_large_inputs` | [x] |
+| 16 | `merge_sort` | `b` arena pre-filled with a random sentinel pattern *and* guard elements after index `size-1` in both arenas — detects any write outside `[0, size)` and any difference in which buffer the final run lands in. Sizes `0..=33`. | `row16_guard_regions_and_sentinel` | [x] |
+| 17 | `merge_sort` | struct **padding bytes set to a non-zero random pattern** (arena written as raw bytes, not as structs) — checks that C's `memcpy` + member/struct assignment and Rust's 16-byte copy agree on the padding bytes. Sizes `0..=17`. | `row17_nonzero_padding` | [x] |
+| 18 | `merge_sort` | aliased buffers `a == b` (same pointer), sizes `0..=17`, randomized data. | `row18_aliased_buffers` | [x] |
+| 19 | `merge_sort` | misaligned-relative-offset buffers: `a` and `b` are non-overlapping slices of one arena separated by a random gap, so their relative distance varies; sizes `1..=17`. | `row19_windows_varying_gap` | [x] |
+| 20 | `merge_sort` | repeated invocation: call `merge_sort(a, b, size)` twice in a row on the same buffers (idempotency/state-carryover), sizes `1..=17`, randomized. | `row20_repeated_invocation` | [x] |
+
+## Additional randomized coverage (`tests/stress_random.rs`)
+
+On top of the per-row tests, ~322 000 randomized configurations are compared
+byte-for-byte with fixed seeds. Every trial randomizes the size, the guard width,
+the key distribution (full-`i32` / binary / tiny-alphabet / ascending /
+descending / extremes), the `texture_id` distribution, **and all padding bytes**:
+
+| test | trials | shape |
+|---|---|---|
+| `stress_small_inputs_200k_trials` | 200 000 | `size` 0..8 |
+| `stress_medium_inputs_50k_trials` | 50 000 | `size` 0..40 |
+| `stress_large_inputs_2k_trials` | 2 000 | `size` 0..600 |
+| `stress_aliased_50k_trials` | 50 000 | `a == b`, `size` 0..16 |
+| `stress_permutation_invariant` | 20 000 | also checks the winning buffer is a sorted permutation of the input |
+
+## Divergences found and fixed during Phase B
+
+| # | divergence | root cause | fix |
+|---|---|---|---|
+| 1 | Rows 17 and 19 failed: the 4 **struct padding bytes** differed at every element the merge wrote. | gcc compiles the C struct assignment `b[k] = a[i]` as a full 16-byte move (`mov 0x8(%rax),%rdx; mov (%rax),%rax; mov %rax,(%rcx); mov %rdx,0x8(%rcx)`), i.e. it copies the padding. The Rust `*b.offset(k) = *a.offset(i)` on the `#[repr(C)]` struct copied only the two initialised fields and left the destination's padding intact. Observable to any caller that inspects the buffers as raw bytes. | `src/lib.rs`: `spritebatch_internal_merge_sort_iteration` now moves the element through a `[u8; 16]` temporary (`read_unaligned` / `write_unaligned`), reproducing gcc's 16-byte move — including when `src == dst` in the aliased case. |
+
+Note that rows 1-16, 18 and 20 all passed *before* this fix, because they write
+their sprites through the `Sprite` struct and therefore leave padding zeroed.
+The bug was only visible once the padding was deliberately randomized — which is
+exactly why row 17 exists.
+
+## Binary / driver
+
+`c_src/CMakeLists.txt` builds **only** `add_library(... SHARED src/lib.c)` —
+there is no `add_executable`, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]` with no `[[bin]]`. **The project builds no
+binary executable**, so the "compare C and Rust stdout" gate is vacuous / not
+applicable.
+
+## Feature combinations
+
+`translation/Cargo.toml` has **no `[features]` table**. The only combination is
+the default, which is identical to `--no-default-features`. `verify.sh`
+enumerates features mechanically from `Cargo.toml` (it would build the full
+powerset if any existed) and runs the whole suite for each.
+
+Because the behaviour being matched (row 17's struct-padding move) is
+**codegen-sensitive**, `verify.sh` additionally runs the entire suite against
+BOTH the `release` and the `debug` build of the Rust cdylib, selected via the
+`MERGE_SORT_RUST_SO` environment variable. That is 2 feature configurations x 2
+optimisation levels = **4 verified configurations**, all passing.

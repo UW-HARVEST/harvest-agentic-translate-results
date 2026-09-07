@@ -1,92 +1,69 @@
-# SYMBOLS.md — Phase A symbol map
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Derived mechanically from `nm -D` on both shared libraries.
+Derived mechanically from `nm -D` on both shared objects.
 
-## C shared library
+* C  `.so`: `c_src/build/libharvest-work-jbdC4v.so` (built via CMakeLists.txt)
+* Rust `.so`: `translation/target/release/libget_predict_func_lib.so`
+  (`[lib] name = "get_predict_func_lib"`, `crate-type = ["cdylib"]`)
 
-Built with:
-
-```
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-```
-
-Artifact: `c_src/build/libharvest-work-DEAujn.so` (the CMake project name is derived
-from the parent directory name, so the file name tracks the checkout directory).
-
-`nm -D c_src/build/libharvest-work-DEAujn.so`:
+## Defined dynamic symbols
 
 ```
-                 w _ITM_deregisterTMCloneTable
-                 w _ITM_registerTMCloneTable
-                 w __cxa_finalize@GLIBC_2.2.5
-                 w __gmon_start__
+$ nm -D --defined-only c_src/build/libharvest-work-jbdC4v.so
 00000000000024c8 T get_predict_func
-```
 
-## Rust shared library
-
-Artifact: `translation/target/release/libget_predict_func_lib.so`
-
-`nm -D --defined-only target/release/libget_predict_func_lib.so`:
-
-```
+$ nm -D --defined-only translation/target/release/libget_predict_func_lib.so
 00000000000120c0 T get_predict_func
 ```
 
-## Parity table
+| # | C symbol | type | exported by Rust `.so`? | notes |
+|---|----------|------|-------------------------|-------|
+| 1 | `get_predict_func` | `T` (global text) | **YES** — exact name | `int get_predict_func(int pfcn)`, the only symbol in `include/lib.h`. Rust: `#[unsafe(no_mangle)] pub extern "C" fn get_predict_func`. |
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `get_predict_func` | `T` (defined) | `T` (defined) | the only public API symbol; declared in `c_src/include/lib.h` |
+**Missing symbols: NONE.** The symbol diff (C-defined minus Rust-defined) is empty.
 
-### Weak / toolchain symbols (not part of the API surface)
+## Why the C `.so` exports only one symbol
 
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__` are weak undefined symbols emitted by the GCC/glibc CRT glue.
-They are not definitions and not part of the library's API, so they are excluded
-from the parity requirement.
+Every other function in `c_src/src/lib.c` has C internal linkage (`static`) and
+is therefore *deliberately* absent from the dynamic symbol table:
 
-### Missing-symbol analysis
+| C function | linkage | translated in Rust? | Rust item |
+|------------|---------|---------------------|-----------|
+| `BTAC1C2_PredictSample`       | `static` | yes | `BTAC1C2_PredictSample` (private) |
+| `BTAC1C2_PredictSample_Pfn0`  | `static` | yes | `BTAC1C2_PredictSample_Pfn0` (private) |
+| `BTAC1C2_PredictSample_Pfn1`  | `static` | yes | `BTAC1C2_PredictSample_Pfn1` (private) |
+| `BTAC1C2_PredictSample_Pfn2`  | `static` | yes | `BTAC1C2_PredictSample_Pfn2` (private) |
+| `BTAC1C2_PredictSample_Pfn3`  | `static` | yes | `BTAC1C2_PredictSample_Pfn3` (private) |
+| `BTAC1C2_PredictSample_Pfn4`  | `static` | yes | `BTAC1C2_PredictSample_Pfn4` (private) |
+| `BTAC1C2_PredictSample_Pfn5`  | `static` | yes | `BTAC1C2_PredictSample_Pfn5` (private) |
+| `BTAC1C2_PredictSample_Pfn6`  | `static` | yes | `BTAC1C2_PredictSample_Pfn6` (private) |
+| `BTAC1C2_PredictSample_Pfn7`  | `static` | yes | `BTAC1C2_PredictSample_Pfn7` (private) |
+| `BTAC1C2_PredictSample_Pfn8`  | `static` | yes | `BTAC1C2_PredictSample_Pfn8` (private) |
+| `BTAC1C2_PredictSample_Pfn9`  | `static` | yes | `BTAC1C2_PredictSample_Pfn9` (private) |
+| `BTAC1C2_PredictSample_Pfn10` | `static` | yes | `BTAC1C2_PredictSample_Pfn10` (private) |
+| `BTAC1C2_PredictSample_Pfn11` | `static` | yes | `BTAC1C2_PredictSample_Pfn11` (private) |
+| `BTAC1C2_GetPredictFunc`      | `static` | yes | `BTAC1C2_GetPredictFunc` (private) |
 
-**0 missing symbols.** The Rust `.so` exports every symbol the C `.so` defines,
-with the exact same name.
+Exporting any of these from the Rust `.so` would be an ABI *divergence*, so they
+stay private.  They are still differentially tested: see
+`tests/difftest_c_harness.c`, a test-only harness that lives OUTSIDE `c_src/`,
+`#include`s `c_src/src/lib.c` verbatim, and re-exports the internal predictors
+through `__difftest_predict`.  The Rust crate exposes the mirror-image hook
+`__difftest_predict` behind the `difftest` Cargo feature.
 
-## Internal (non-exported) C functions
+## Non-default feature builds
 
-Every other function in `c_src/src/lib.c` is declared `static`, i.e. it has
-internal linkage and therefore appears in **neither** `.so`'s dynamic symbol
-table. They are:
+| build | Rust-defined dynamic symbols | C symbols missing |
+|-------|------------------------------|-------------------|
+| `--no-default-features` (== default; there are no default features) | `get_predict_func` | none |
+| `--features difftest` | `get_predict_func`, `__difftest_predict` | none |
 
-| C function | linkage | Rust counterpart | exported? |
-|---|---|---|---|
-| `BTAC1C2_PredictSample` | `static` | `BTAC1C2_PredictSample` (private) | no (correct) |
-| `BTAC1C2_PredictSample_Pfn0` .. `_Pfn11` (12 fns) | `static` | same names (private) | no (correct) |
-| `BTAC1C2_GetPredictFunc` | `static` | `BTAC1C2_GetPredictFunc` (private) | no (correct) |
+`__difftest_predict` is a superset symbol used only by the test harness; the
+shipped default build does not contain it, so the production ABI is identical.
 
-These are **not** completeness failures: they are absent from the C `.so`'s
-dynamic symbol table too, so exporting them from Rust would be a *divergence*.
+## Undefined (imported) symbols
 
-They are still translated in `translation/src/lib.rs`, because
-`get_predict_func`'s return value is derived from comparing their addresses, and
-because their arithmetic is part of the translation unit's behaviour.
-
-### How the internal functions are still differentially tested
-
-`translation/src/lib.rs` gains four extra exports — `__difftest_predict`,
-`__difftest_selector`, `__difftest_call_selected` and `__difftest_layout` — **only**
-under the non-default `difftest` cargo feature. The test harness builds a
-matching C shim (`translation/difftest_c/shim.c`) which `#include`s
-`c_src/src/lib.c` verbatim (c_src itself is never modified) and exposes the same
-`__difftest_predict` dispatcher. That lets all 13 internal predictors be compared
-across the FFI boundary.
-
-The default-feature Rust `.so` exports `get_predict_func` and nothing else, so
-default-build parity with the C `.so` is exact.
-
-## Feature combinations checked
-
-| features | Rust exported symbols | matches C default surface |
-|---|---|---|
-| (default, none) | `get_predict_func` | yes — exact |
-| `difftest` | `get_predict_func`, `__difftest_call_selected`, `__difftest_layout`, `__difftest_predict`, `__difftest_selector` | superset; the extra symbols are test-only and gated off by default |
+Both libraries import only libc / unwinder symbols.  The C `.so` imports 4 weak
+CRT symbols; the Rust `.so` additionally imports glibc + `_Unwind_*` symbols
+pulled in by the Rust runtime (`malloc`, `memcpy`, `abort`, `dl_iterate_phdr`,
+…).  **0 missing / undefined non-libc symbols in the Rust `.so`.**

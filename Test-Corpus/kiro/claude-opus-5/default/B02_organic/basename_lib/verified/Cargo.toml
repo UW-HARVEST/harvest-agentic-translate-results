@@ -10,28 +10,8 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 libloading = "0.8"
-libc = "0.2.155"
 
 [profile.release]
 panic = "abort"
-
-# Behavioural parity with the C library.
-#
-# The C compiler emits no null-pointer or overflow instrumentation, so
-# `tool_basename(NULL)` in C faults with SIGSEGV. Rust's debug builds enable
-# `cfg(ub_checks)` (it follows `debug-assertions`), which turns the same NULL
-# dereference into a panic and therefore SIGABRT — a real, observable divergence
-# from the ground truth, caught by `tests/phase_c_error_paths.rs`
-# (`err_row1_null_pointer_same_fatal_signal`). Disabling the checks makes the dev
-# artifact behave exactly like the C one, matching the release profile. `panic =
-# "abort"` keeps a panic from unwinding across the `extern "C"` boundary.
-[profile.dev]
-debug-assertions = false
-overflow-checks = false
-panic = "abort"
-
-[profile.test]
-debug-assertions = false
-overflow-checks = false
 
 [workspace]

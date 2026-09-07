@@ -114,19 +114,10 @@ pub unsafe extern "C" fn multiply_with_log(
     b: c_int,
     log_msg: *mut *mut c_char,
 ) -> c_int {
-    // The C code dereferences `log_msg` unconditionally, with no NULL check, so
-    // a NULL out-param faults. `ptr::write`/`ptr::read` are used rather than
-    // `*log_msg = ...` / `*log_msg` because rustc's `debug_assertions` null-check
-    // instrumentation turns a plain raw-pointer place assignment into a *panic*
-    // ("null pointer dereference occurred" -> SIGABRT), whereas the compiled C
-    // takes a SIGSEGV. `ptr::write`/`ptr::read` emit the bare machine access, so
-    // debug and release builds both fault exactly like the C.
+    // The C code dereferences `log_msg` unconditionally, with no NULL check.
     unsafe {
-        ptr::write(
-            log_msg,
-            create_result_string(c"multiply".as_ptr(), a.wrapping_mul(b)),
-        );
-        if ptr::read(log_msg).is_null() {
+        *log_msg = create_result_string(c"multiply".as_ptr(), a.wrapping_mul(b));
+        if (*log_msg).is_null() {
             return 0;
         }
     }

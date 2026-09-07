@@ -1,26 +1,26 @@
 # Dynamic Symbol Surface
 
-Reference library:
-`../c_src/build/libharvest-work-v0LDLj.so`
+Generated from:
 
-Rust library:
-`target/release/libdequantize_granule_lib.so`
-
-Mechanical inventory command:
-
-```sh
-nm -D --defined-only <library>
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-b2y2gT.so
+nm -D --defined-only target/release/libdequantize_granule_lib.so
 ```
 
-| C symbol | Type | Rust export | Status |
-|----------|------|-------------|--------|
-| `dequantize_granule` | `T` | `dequantize_granule` | [x] |
+| C symbol | C type | Rust symbol present | Rust type | Status |
+|----------|--------|---------------------|-----------|--------|
+| `dequantize_granule` | `T` | yes | `T` | [x] |
 
-The C library has no other defined dynamic symbols. `get_bits` is `static` and
-does not appear in the dynamic symbol table.
+The weak undefined toolchain symbols in the C shared object
+(`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+`__cxa_finalize`, and `__gmon_start__`) are not library API exports.
 
-Missing C symbols in Rust: **0**
+## Missing C API symbols in Rust
 
-Undefined non-runtime symbols required from Rust: **0**. The Rust library's
-undefined dynamic symbols are supplied by libc, libgcc unwinding, pthreads, or
-the ELF runtime.
+None.
+
+## Final parity gate
+
+- [x] Re-run the symbol comparison after all fixes.
+- [x] Confirm zero C-defined symbols are missing from Rust.
+- [x] Confirm the Rust library has no undefined non-runtime project symbols.

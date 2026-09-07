@@ -6,6 +6,37 @@ static mut ACCUMULATOR: c_int = 0;
 static mut MULTIPLIER: c_int = 1;
 static mut OPERATION_COUNT: c_int = 0;
 
+#[cfg(target_arch = "x86_64")]
+unsafe fn c_signed_divide(dividend: c_int, divisor: c_int) -> c_int {
+    let mut quotient = dividend;
+    unsafe {
+        core::arch::asm!(
+            "cdq",
+            "idiv ecx",
+            in("ecx") divisor,
+            inout("eax") quotient,
+            lateout("edx") _,
+            options(nostack),
+        );
+    }
+    quotient
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+unsafe fn c_signed_divide(dividend: c_int, divisor: c_int) -> c_int {
+    unsafe extern "C" {
+        fn raise(signal: c_int) -> c_int;
+    }
+
+    if dividend == c_int::MIN && divisor == -1 {
+        const SIGFPE: c_int = 8;
+        unsafe {
+            raise(SIGFPE);
+        }
+    }
+    dividend.wrapping_div(divisor)
+}
+
 unsafe extern "C" {
     fn sprintf(dest: *mut c_char, format: *const c_char, ...) -> c_int;
     fn strcpy(dest: *mut c_char, src: *const c_char) -> *mut c_char;
@@ -44,7 +75,7 @@ pub extern "C" fn subtract_from_accumulator(a: c_int, b: c_int) -> c_int {
 pub extern "C" fn divide_multiplier(_a: c_int, b: c_int) -> c_int {
     unsafe {
         if b != 0 {
-            MULTIPLIER = MULTIPLIER.wrapping_div(b);
+            MULTIPLIER = c_signed_divide(MULTIPLIER, b);
         }
         OPERATION_COUNT = OPERATION_COUNT.wrapping_add(1);
         MULTIPLIER

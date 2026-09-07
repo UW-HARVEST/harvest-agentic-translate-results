@@ -1,139 +1,111 @@
-# CONFIGS.md — Configuration-surface table
+# CONFIGS.md — configuration-surface table (valid inputs)
 
-Mechanically derived from the branches `c_src/src/lib.c` actually takes.
+## Axes mechanically derived from `c_src/src/lib.c`
 
-## Axes the C code branches on
+There is no compile-time configuration (`#ifdef`) and no runtime "option
+struct". The library's configuration surface is the *state the public API can
+put a `ProcessState` into* plus the *shape of each argument*. The axes the C
+actually branches on:
 
-**Build-time configuration.** None. There is no `#ifdef` in `lib.c`, no
-build options in `CMakeLists.txt`, and the Rust crate declares **no cargo
-features**, so the default configuration is the only configuration.
+* **A1 — entry point.** All six external symbols, including the low-level ones
+  (`create_state`, `destroy_state`, `update_flags`, `process_buffer`,
+  `confuse_types`), not just the `confusion` one-shot wrapper.
+* **A2 — `create_state.capacity`.** Controls `malloc` size *and* the `snprintf`
+  truncation bound: `0`, `1`, shorter-than-output (truncating), exactly-fitting,
+  generous (`128`), huge.
+* **A3 — `create_state.initial_val`.** Decides the buffer text *and* the union
+  bit pattern read later by `confuse_types`: `0`, small +, small −, `INT_MIN`,
+  `INT_MAX`, and bit patterns that are NaN / ±inf / denormal / >2^31 as `float`.
+* **A4 — `update_flags.param`.** Branches on bits 0,1,2 (`flag1..3`) and bits
+  3–5 (`mode`, 8 values), and on the *sign* of `param` (`param >> 3` is an
+  arithmetic shift). Also the **call count**, since `counter` is a 5-bit field
+  incremented per call and wrapping at 32.
+* **A5 — `process_buffer.target`.** Byte classes: absent, present once, present
+  many times, `'\0'`, ASCII, high-bit-set (signed `char` vs `unsigned char`
+  comparison in `memchr`).
+* **A6 — `confuse_types.operation`.** The four `switch` arms `0,1,2,3` (each a
+  different reinterpretation of the union) plus out-of-range.
+* **A7 — union state at the time `confuse_types` runs.** Fresh from
+  `create_state` vs. after a `confuse_types(state, 0)` overwrite
+  (`1078530011` == `3.14159f`). This is the *interaction* axis: arm 1/2/3 read
+  whatever arm 0 wrote.
+* **A8 — `confusion.param1..param4`.** `param3 % 10` selects the search byte
+  (negative → non-digit); `param4 % 4` selects the arm (negative → no arm).
 
-**Runtime "options" / modes** (the state the public API can set):
-
-| axis | set by | distinct values the C distinguishes |
-|------|--------|-------------------------------------|
-| `flags.flag1` | `update_flags(param & 1)` | 0, 1 |
-| `flags.flag2` | `update_flags((param & 2) >> 1)` | 0, 1 |
-| `flags.flag3` | `update_flags((param & 4) >> 2)` | 0, 1 |
-| `flags.mode` (3 bits) | `update_flags((param >> 3) & 7)`; init `3` | 0..7 |
-| `flags.counter` (5 bits) | `create_state` init 0; `+1 & 0x1F` per `update_flags` | 0..31, wraps |
-| `flags.status` (5 bits) | `create_state` init 15 only | 15 |
-| `flags.reserved` (16 bits) | `create_state` init 0 only | 0 |
-| `data` interpretation | `confuse_types(operation)` | `0`=write int, `1`=read float, `2`=read uint, `3`=read bytes, other=no-op |
-
-**Input shapes:**
-
-| axis | distinct shapes |
-|------|-----------------|
-| `capacity` | 0; 1..16 (snprintf truncates); 17 (exact boundary for short values); 18+ full; 128 (`confusion`'s constant); huge; negative (fails) |
-| `initial_val` | 0; 1-digit; multi-digit; negative (adds `-`, changes rendered length); `INT_MIN`; `INT_MAX`; bit patterns that reinterpret as NaN/Inf/denormal/normal float; `1078530011` (the magic value written by op 0) |
-| `target` (`process_buffer`) | digit present; digit absent; `':'` (occurs twice); letters `S`,`t`,`a`,`e`,`M`,`o`,`d`; `'\0'`; high-bit / negative `char`; a char occurring 3+ times |
-| `param3` (`confusion`) | 0..9; ≥10; negative; `INT_MIN` |
-| `param4` (`confusion`) | 0..3; ≥4; negative; `INT_MIN` |
-| call sequence | single call; `update_flags` repeated 1/2/32/33 times; `confuse_types` op 0 then op 1/2/3 (write-then-reinterpret) |
-
-**Entry points.** All six exports, low-level first:
-`create_state`, `destroy_state`, `process_buffer`, `update_flags`,
-`confuse_types`, and the composed one-shot wrapper `confusion`.
-
-## Table
+## Rows (pruned cross-product — combinations the C treats differently)
 
 | #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|-------------------------------------------|-----|
-| 1  | `create_state` + `destroy_state` | `capacity = 128`, randomized `initial_val` over full `i32`; compare returned struct bytes (flags/data/capacity) and buffer contents | [x] |
-| 2  | `create_state` + `destroy_state` | `capacity = 17` (exact-fit boundary), randomized small `initial_val` | [x] |
-| 3  | `create_state` + `destroy_state` | `capacity ∈ 1..16` (snprintf truncation) × randomized `initial_val` | [x] |
-| 4  | `create_state` + `destroy_state` | `capacity` large (4096, 65536, 1<<20) × randomized `initial_val` | [x] |
-| 5  | `create_state` | randomized `initial_val`, `capacity = 20`: verify initial bit-fields `flag1=1 flag2=0 flag3=1 counter=0 mode=3 status=15 reserved=0` are byte-identical in the raw 4-byte storage unit | [x] |
-| 6  | `update_flags` | `capacity=128`; `param` sweeping **all 64** low-6-bit patterns (flag1×flag2×flag3×mode cross-product), one call | [x] |
-| 7  | `update_flags` | randomized full-range `param` (incl. negatives), one call — exercises arithmetic `>>` | [x] |
-| 8  | `update_flags` | randomized `param`, **2 calls** — counter=2, mode from the last call | [x] |
-| 9  | `update_flags` | randomized `param`, **32 calls** — counter wraps `31 → 0` | [x] |
-| 10 | `update_flags` | randomized `param`, **33 calls** — counter = 1 after wrap | [x] |
-| 11 | `update_flags` | `param` sequence randomized per call (mode changes every call) × 40 calls | [x] |
-| 12 | `process_buffer` | `capacity=128`, randomized `initial_val`, `target` = each digit `'0'..'9'` (present/absent depends on `initial_val`) | [x] |
-| 13 | `process_buffer` | `capacity=128`, `target = ':'` (2 occurrences in `State:N:Mode:M`) | [x] |
-| 14 | `process_buffer` | `capacity=128`, `target ∈ {'S','t','a','e','M','o','d','-'}` (literal-text chars, `'-'` only for negative `initial_val`) | [x] |
-| 15 | `process_buffer` | `capacity=128`, `target` randomized over **all 256** byte values | [x] |
-| 16 | `process_buffer` | `capacity ∈ 1..16` (truncated buffer) × randomized `target` — short/empty haystack | [x] |
-| 17 | `process_buffer` | `capacity=128`, called **repeatedly** on the same state (idempotence + `LOG_OPERATION` count sequence) | [x] |
-| 18 | `process_buffer` | after `confuse_types` op 0 (buffer untouched by op 0 — confirms no aliasing) | [x] |
-| 19 | `confuse_types` | `operation = 0` (write magic `1078530011`) × randomized `initial_val` | [x] |
-| 20 | `confuse_types` | `operation = 1` (read as float) × randomized `initial_val` over full `i32` — hits normal, denormal, NaN, ±Inf, huge → `cvttss2si` | [x] |
-| 21 | `confuse_types` | `operation = 2` (read as uint) × randomized `initial_val` | [x] |
-| 22 | `confuse_types` | `operation = 3` (read as signed bytes) × randomized `initial_val` | [x] |
-| 23 | `confuse_types` | `operation = 0` **then** `1` — float read of the magic constant (`1078530011` ≈ `3.14159f`) | [x] |
-| 24 | `confuse_types` | `operation = 0` then `2`, and `0` then `3` — write-then-reinterpret chains | [x] |
-| 25 | `confuse_types` | full ordered sequence `0,1,2,3` on one state × randomized `initial_val` | [x] |
-| 26 | composed pipeline | `create_state` → `update_flags` → `process_buffer` → `confuse_types` → read `flags.counter`/`flags.mode`, driven directly on the low-level exports with randomized inputs (mirrors `confusion` by hand) | [x] |
-| 27 | `confusion` | randomized `param1..param4` over the full `i32` range (2000 cases) | [x] |
-| 28 | `confusion` | `param3 ∈ 0..9` × `param4 ∈ 0..3` full cross-product (40 combos) × randomized `param1`, `param2` | [x] |
-| 29 | `confusion` | `param2` sweeping all 64 low-6-bit patterns × randomized `param1`,`param3`,`param4` | [x] |
-| 30 | `confusion` | boundary `param1 ∈ {0, ±1, INT_MIN, INT_MAX, 1078530011, 0x7F7FFFFF, 0x7F800000, 0x7FC00000, 0x00800000, 0x00000001}` × randomized rest | [x] |
-| 31 | `confusion` | boundary `param3 ∈ {INT_MIN, -1, 0, 9, 10, INT_MAX}` × boundary `param4 ∈ {INT_MIN, -3..4, INT_MAX}` cross-product | [x] |
-| 32 | `confusion` | repeated invocation (state is created/destroyed per call → no cross-call carry-over) | [x] |
+|----|----------------|--------------------------------------------|-----|
+| 1  | `create_state` + `destroy_state` | `capacity = 128` (generous), `initial_val` randomized over full `i32` | [x] |
+| 2  | `create_state` + `destroy_state` | `capacity = 1` (NUL only), randomized `initial_val` | [x] |
+| 3  | `create_state` + `destroy_state` | `capacity = 2..16` (truncating `snprintf`), randomized `initial_val` | [x] |
+| 4  | `create_state` + `destroy_state` | `capacity` exactly `strlen("State:%d:Mode:3")+1` for the given `initial_val` (boundary) | [x] |
+| 5  | `create_state` + `destroy_state` | `capacity` huge but plausible (`1<<20`), randomized `initial_val` | [x] |
+| 6  | `create_state` | `initial_val ∈ {0, 1, -1, INT_MIN, INT_MAX}` × `capacity ∈ {1,8,16,128}` (boundary matrix) | [x] |
+| 7  | `update_flags` | single call, `param` randomized over full `i32` (covers all `flag1..3` × `mode` combinations and both signs) | [x] |
+| 8  | `update_flags` | `param = 0..63` exhaustively (all 8 `mode` values × all 8 low-bit combinations) | [x] |
+| 9  | `update_flags` | 40 successive calls on the same state → `counter` saturates through 31 and **wraps to 0** (5-bit field) | [x] |
+| 10 | `update_flags` | negative `param` (`INT_MIN`, `-1`, randomized negatives) → arithmetic `>>3` into `mode` | [x] |
+| 11 | `process_buffer` | target present exactly once in the buffer (a digit of `initial_val`) | [x] |
+| 12 | `process_buffer` | target present many times (`':'`, or a repeated digit e.g. `initial_val = 1111111`) | [x] |
+| 13 | `process_buffer` | target absent (`'Z'`, `'~'`), randomized `initial_val` | [x] |
+| 14 | `process_buffer` | `target = '\0'` (never inside the `strlen` bound) | [x] |
+| 15 | `process_buffer` | `target` high-bit-set / negative `char` (`-1`, `-128`, randomized `i8 < 0`) | [x] |
+| 16 | `process_buffer` | called on a truncated buffer (`capacity = 2..16`) — occurrence count depends on truncation | [x] |
+| 17 | `process_buffer` | called twice in a row on the same state (idempotence — the loop must not consume state) | [x] |
+| 18 | `confuse_types` | `operation = 0` on a fresh state, randomized `initial_val` (writes `1078530011`) | [x] |
+| 19 | `confuse_types` | `operation = 1` on a **fresh** state → `float_val` is the raw `initial_val` bit pattern; randomized over full `i32`, so NaN, ±inf, denormals and values whose `*100` overflows `int` all occur | [x] |
+| 20 | `confuse_types` | `operation = 1` **after** `operation = 0` → reads `3.14159f`, returns `314` | [x] |
+| 21 | `confuse_types` | `operation = 2` on a fresh state, randomized `initial_val` (`uint_val & 0xFF`) | [x] |
+| 22 | `confuse_types` | `operation = 2` after `operation = 0` | [x] |
+| 23 | `confuse_types` | `operation = 3` on a fresh state, randomized `initial_val` (signed `char` byte sum, can be negative) | [x] |
+| 24 | `confuse_types` | `operation = 3` after `operation = 0` | [x] |
+| 25 | `confuse_types` | targeted `initial_val` bit patterns for arm 1: `0x7F800000` (+inf), `0xFF800000` (−inf), `0x7FC00000` (NaN), `0x00000001` (denormal), `0x4F000000` (2^31, overflows on `*100`), `0x00000000` (+0), `0x80000000` (−0) | [x] |
+| 26 | `create_state`→`update_flags`→`process_buffer`→`confuse_types` | full low-level pipeline in C order, all four inputs randomized, comparing every intermediate return value **and** the final `flags`/`data` bytes read back through the struct | [x] |
+| 27 | pipeline with reordering | `confuse_types(0)` *before* `process_buffer` (buffer text is unaffected — union and buffer are independent) | [x] |
+| 28 | `confusion` | all four params randomized over full `i32` (1000+ cases, fixed seed) | [x] |
+| 29 | `confusion` | `param3 ≥ 0` → digit search byte; `param3 < 0` → non-digit byte from negative `%` | [x] |
+| 30 | `confusion` | `param4 % 4 ∈ {0,1,2,3}` each forced, and `param4 < 0` → `{-1,-2,-3}` no-arm | [x] |
+| 31 | `confusion` | `param1 ∈ {0,1,-1,INT_MIN,INT_MAX}` × `param2 ∈ {0..63}` × `param3 ∈ {-10..10}` × `param4 ∈ {-4..4}` boundary matrix | [x] |
+| 32 | `confusion` | repeated invocations in one process (no cross-call state leaks; also exercises the stdout stream) | [x] |
+| 33 | stdout comparison | every one of rows 1–32 additionally compared on **captured stdout bytes** (all six functions print), via `dup2` redirection into a temp file | [x] |
 
-## Verification result
+## Phase D — feature combinations
 
-All 32 rows pass in `tests/phase_b_valid.rs` (34 tests, one per row plus
-`row26b` and a harness smoke test), under both the `--release` and debug
-profiles. Each row drives BOTH `.so`s through their exported symbols with many
-randomized inputs from a fixed-seed splitmix64 PRNG biased toward boundary and
-float-special bit patterns, and compares three things byte-for-byte:
+`Cargo.toml` has no `[features]` table, so the complete set of feature
+combinations is `{default}` == `{no-default-features}`. Both were exercised:
 
-1. every return value,
-2. the full 32-bit `flags` word, the 32-bit `data` word, `capacity`, and the
-   NUL-terminated `buffer` contents after the operation,
-3. all bytes printed to `stdout` (fd 1 is redirected around each call, so the
-   `printf`/`snprintf` formatting is compared too, including `%f` rendering of
-   `nan` / `inf` / `340282346638528859811704183484516925440.000000`).
+```
+cargo test --release
+cargo test --release --no-default-features
+cargo test --release --all-features
+```
 
-Row 5 (`capacity == 0`) compares only the defined observables: `malloc(0)`
-returns a non-NULL block and `snprintf(buf, 0, ...)` writes nothing, so the
-buffer contents are indeterminate in the C and must not be compared.
+No `[[bin]]` target exists, so there is no driver executable to compare
+stdout for; the stdout comparison is done at the FFI level instead (row 33).
 
-### Coverage beyond what `create_state` can produce
+## Verification record
 
-`create_state` always initializes `flags` to `0x00007b05` and always writes a
-`"State:N:Mode:M"` buffer, so per-wrapper tests cannot observe whether the
-bit-field read-modify-write preserves `status`/`reserved`, nor how the `memchr`
-loop behaves on arbitrary bytes. `tests/phase_c_errors.rs` therefore builds
-`ProcessState` values by hand with libc `malloc`
-(`common::make_state`) to reach:
+All rows above are checked: each is covered by a test in `tests/phase_b.rs`
+(`row01_…` … `row32_…`), driven with a fixed-seed RNG (`Rng::new`, splitmix64)
+over many inputs per row, and every one compares the C and Rust `.so`s on
+return values, the `flags` bit-field word, the `data` union word, `capacity`,
+the `buffer` bytes, AND the exact captured stdout (row 33).
 
-- arbitrary 32-bit `flags` contents (`update_flags_preserves_unrelated_bitfields`),
-- a NULL `buffer` (rows 8, 10),
-- buffers of arbitrary bytes including `0xFF`/`0x80`, repeats, and adjacent
-  matches (`process_buffer_randomized_arbitrary_buffers`).
+Additional coverage beyond the table, in `tests/deep.rs` and `tests/interop.rs`:
 
-### Mutation testing — the suite is not vacuous
+| sweep | calls per side | what it pins down |
+|-------|----------------|-------------------|
+| `deep_op1_strided_full_float_space` via `sweep_full.sh` | 536,870,912 | every 8th binary32 pattern across the WHOLE 2^32 space through arm 1 |
+| `deep_op1_float_to_int_overflow_band` | 63,947 | exponents 140–170 x 1024 mantissa steps x both signs (where `cvttss2si` differs from a saturating cast) |
+| `deep_op1_float_to_int_structured` | 36,896 | all 256 exponents x both signs (zero, denormal, normal, inf, NaN) |
+| `deep_op1_float_to_int_low_exponents` | 30,051 | exponents 0–140 + every small integer and /100, /3 |
+| `deep_op2_and_op3_full_byte_coverage` | 85,536 x 3 arms | all 65,536 low-two-byte combinations |
+| `deep_update_flags_wide` | 240,001 | params -70k..70k exhaustively + 100k random i32 |
+| `deep_process_buffer_wide` | 40,286 cases / 165,944 matches | random byte soup incl. 0x80–0xff, dense 2-symbol alphabets, uniform buffers to length 1000, every one of the 256 target values |
+| `deep_confusion_wide` | 45,120 | all four params random + inf/NaN/overflow-inducing `param1` |
+| `cross_library_pipeline_agrees` | 300 x 4 combos | a state allocated by one `.so` driven by the other `.so`'s functions |
 
-`mutation_check.py` injects known C→Rust bug classes into a scratch copy of the
-crate, rebuilds it, and runs the whole suite against the mutated `.so` via
-`RUST_SO_PATH`. Detected (failing-test counts):
-
-| injected bug | tests that caught it |
-|--------------|----------------------|
-| saturating `as` cast instead of `cvttss2si` semantics | 10 |
-| `rem_euclid(10)` instead of C truncating `%` for `param3` | 6 |
-| `rem_euclid(4)` instead of C truncating `%` for `param4` | 6 |
-| zero-extending negative `capacity` (loses the malloc failure) | 4 |
-| `& 0xFFF` instead of `& 0xFF` in `confuse_types` op 2 | 11 |
-| `mode * 4` instead of `mode * 3` in `confusion` | 7 |
-| off-by-one on `remaining` in the `memchr` loop | 9 |
-| zero-extending `bytes[i]` instead of sign-extending | 11 |
-| initial `status` 14 instead of 15 | 28 |
-| `snprintf` given `capacity - 1` | 6 |
-| 5-bit counter masked with `0x0F` instead of `0x1F` | 4 |
-| `status` bit-field placed at bit 10 instead of 11 | 34 |
-
-Three further mutations produced 0 failures and were confirmed to be
-**semantically equivalent**, not test gaps:
-
-- logical vs. arithmetic `param >> 3`: the subsequent `& 0x7` keeps only bits
-  3..5, which the sign fill never touches.
-- signed vs. unsigned byte comparison in the `memchr` scan: byte equality is
-  independent of signedness.
-- computing `float_val * 100` in `f64` then narrowing: `100.0` needs 7 mantissa
-  bits and an `f32` needs 24, so the product fits exactly in `f64`'s 53-bit
-  significand; rounding once to `f32` gives the same value as an `f32` multiply.
+`tests/interop.rs` additionally pins `sizeof`/field offsets and the bit-field
+positions inside `PackedFlags` by having each implementation read back state
+that the other one wrote.

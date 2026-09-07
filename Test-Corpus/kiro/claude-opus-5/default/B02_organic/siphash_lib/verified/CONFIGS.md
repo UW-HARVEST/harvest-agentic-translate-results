@@ -1,116 +1,80 @@
-# CONFIGS.md — configuration surface table (Phase B gate)
+# CONFIGS.md — Phase B configuration-surface table
 
-## Mechanical derivation of the axes
+Derived mechanically from the branches `c_src/src/lib.c` actually takes.
 
-Enumerated from the branches the C source actually takes (`c_src/src/lib.c`) and
-the full public API (`c_src/include/lib.h` + non-`static` definitions in `lib.c`).
+## Axes the C code branches on
 
-### Public entry points (FULL set, lowest-level first)
+| axis | values the C distinguishes | source |
+|------|----------------------------|--------|
+| entry point | `stbds_hash_bytes` (low-level, 3 args), `siphash` (one-shot driver, prints 64 rows) | `include/lib.h`, `src/lib.c:110,114` |
+| `len` vs block size | `len < 8` (main loop never runs) / `len >= 8` (loop runs `len/8` times) | `src/lib.c:18` |
+| `len % 8` | 0,1,2,3,4,5,6,7 — eight distinct fall-through paths of the tail `switch` | `src/lib.c:48-65` |
+| block count | 0, 1, 2, many blocks (loop trip count changes `v0..v3` mixing depth) | `src/lib.c:18-46` |
+| `d[3]` high bit, main loop | `< 0x80` / `>= 0x80` → signed-`int` overflow sign-extends into the upper 32 bits of `data` | `src/lib.c:20` |
+| `d[7]` high bit, main loop | `< 0x80` / `>= 0x80` → sign extension present but shifted out by `<< 16 << 16` | `src/lib.c:21-22` |
+| `d[3]` high bit, tail `case 4` | `< 0x80` / `>= 0x80` → same signed-overflow sign extension in the tail | `src/lib.c:56` |
+| `len` top byte | only `len & 0xff` survives `len << 56` | `src/lib.c:47` |
+| `seed` | XOR'd in twice → **cancels**; value must be irrelevant, verified rather than assumed | `src/lib.c:10-17` |
+| pointer provenance | `p` non-null; `len == 0` allows `p == NULL` (never dereferenced) | `src/lib.c:7` |
+| `init` (for `siphash`) | any `int`; wraps `unsigned char` on fill and overflows signed on `z++` at `INT_MAX` | `src/lib.c:117-118` |
+| `#ifdef` / compile-time modes | **none** — no preprocessor configuration in the library | grep: 0 `#if` |
+| Cargo features | **none declared** in `translation/Cargo.toml` → the only combination is the default (empty) feature set | `Cargo.toml` |
 
-| level | symbol | signature |
-|-------|--------|-----------|
-| low   | `stbds_hash_bytes` | `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)` — direct, parameterised access to the hash core (`lib.c:110`) |
-| high  | `siphash`          | `void siphash(int init)` — one-shot convenience wrapper: builds a 64-byte buffer from `init` and prints 64 hashes (`lib.c:114`) |
+There is no `add_executable` in `c_src/CMakeLists.txt`, so there is no driver
+binary to stdout-diff; `siphash`'s stdout is diffed as a library call by
+redirecting fd 1 around the FFI call (row C21).
 
-(`stbds_siphash_bytes` is `static`, reachable only via `stbds_hash_bytes`.)
+## Configuration table
 
-### Runtime options / modes
+Every row is exercised through **both** `.so` files via `libloading` with many
+randomized inputs (fixed seed `0x5eed_1234_5678_9abc`, `SplitMix64`), and the
+returned `size_t` / printed bytes compared byte-for-byte.
 
-There are **no** flags, modes, globals, setters, or `#ifdef`s. Grep confirms:
-0 `#if`/`#ifdef`, 0 global/`static` mutable state, 0 option struct. The only
-runtime-selectable inputs are the function arguments themselves:
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `stbds_hash_bytes` | `len == 0`, `p` non-null, `seed == 0` — empty input, no loop, tail `case 0` | [x] |
+| C2 | `stbds_hash_bytes` | `len == 0`, `p == NULL` — empty + null pointer | [x] |
+| C3 | `stbds_hash_bytes` | `len == 1` — no block, tail `case 1`; randomized byte over full 0..=255 | [x] |
+| C4 | `stbds_hash_bytes` | `len == 2` — tail `case 2`, randomized bytes | [x] |
+| C5 | `stbds_hash_bytes` | `len == 3` — tail `case 3`, randomized bytes | [x] |
+| C6 | `stbds_hash_bytes` | `len == 4`, `d[3] < 0x80` — tail `case 4`, no sign extension | [x] |
+| C7 | `stbds_hash_bytes` | `len == 4`, `d[3] >= 0x80` — tail `case 4`, **signed-overflow sign extension** | [x] |
+| C8 | `stbds_hash_bytes` | `len == 5` — tail `case 5` (`d[4] << 32`), randomized, both `d[3]` polarities | [x] |
+| C9 | `stbds_hash_bytes` | `len == 6` — tail `case 6` (`d[5] << 40`), randomized, both `d[3]` polarities | [x] |
+| C10 | `stbds_hash_bytes` | `len == 7` — tail `case 7` (`d[6] << 48`), randomized, both `d[3]` polarities | [x] |
+| C11 | `stbds_hash_bytes` | `len == 8` — exactly 1 block, tail `case 0`; randomized, all high-bit polarities of `d[3]`/`d[7]` | [x] |
+| C12 | `stbds_hash_bytes` | `len == 8`, forced `d[3] >= 0x80` — main-loop low-word sign extension | [x] |
+| C13 | `stbds_hash_bytes` | `len == 8`, forced `d[7] >= 0x80` — main-loop high-word sign bits shifted out | [x] |
+| C14 | `stbds_hash_bytes` | `len == 8`, forced `d[3] >= 0x80` **and** `d[7] >= 0x80` — both overflow paths at once | [x] |
+| C15 | `stbds_hash_bytes` | `len == 16` — 2 blocks, tail `case 0` | [x] |
+| C16 | `stbds_hash_bytes` | `len` in 9..=15 — 1 block + every non-zero tail case, randomized | [x] |
+| C17 | `stbds_hash_bytes` | `len` in 17..=255 — many blocks × every `len % 8`, randomized data | [x] |
+| C18 | `stbds_hash_bytes` | `len` in 256..=1024 — `len << 56` top-byte aliasing region (`len & 0xff` wraps) | [x] |
+| C19 | `stbds_hash_bytes` | all-zero buffer and all-`0xff` buffer at each `len % 8` — extreme value shapes | [x] |
+| C20 | `stbds_hash_bytes` | `seed` swept over `0`, `1`, `SIZE_MAX`, and randomized values at fixed data — seed-cancellation must match | [x] |
+| C21 | `stbds_hash_bytes` | unaligned `p` (offsets 1..=7 into a buffer) — C reads bytewise, must be identical | [x] |
+| C22 | `siphash` | `init == 0` — stdout of all 64 rows captured via fd-1 redirect, byte-compared | [x] |
+| C23 | `siphash` | `init` = 1, 42, 200, 255, 256, `-1`, `INT_MIN`, `INT_MAX`, plus randomized `i32` values | [x] |
+| C24 | composed pipeline | `siphash(init)` cross-checked against 64 direct `stbds_hash_bytes` calls on the same `mem` fill, in both libraries, so the composition (not just each wrapper) is verified | [x] |
+| C25 | `stbds_hash_bytes` | broad randomized fuzz over the whole space: 30 000 short (`len` 0..=32), 8 000 long (`len` 0..=2048, many blocks), 20 000 sparse-high (mostly zero with 1..4 bytes forced to `0x80`/`0xff`), each with a randomized `seed` | [x] |
 
-- `seed` (`size_t`) — mixed into all four of `v0..v3` **and** into `~seed` for
-  `v1`/`v3`; a pure data axis with no branching.
-- `len` (`size_t`) — the **branching** axis (see below).
-- `p` (`void *`) — buffer contents; the branching axis for the signed-overflow
-  paths.
-- `init` (`int`, `siphash` only) — seeds the synthetic buffer contents.
-
-### Input shapes the C special-cases
-
-Branch points, exhaustively:
-
-1. `for (i = 0; i + sizeof(size_t) <= len; ...)` → **block count** `nblocks = len / 8`
-   ∈ {0, 1, many}.
-2. `switch (len - i)` → **tail remainder** `len % 8` ∈ {0,1,2,3,4,5,6,7} — eight
-   distinct fall-through entry points (`case 7` … `case 0`).
-3. `data |= (d[3] << 24)` / `d[3]`, `d[7]` in the block path → **byte-value
-   class**: top byte `< 0x80` (positive `int`) vs `>= 0x80` (signed overflow →
-   sign-extension into the upper 32 bits of `size_t`). This is a *value-dependent*
-   code path, not a size-dependent one.
-4. `data = len << 56` → **length byte** `len & 0xFF`; lengths congruent mod 256
-   collide in this term (e.g. 0 vs 256), so length must be varied past 255.
-5. `seed` / `~seed` → **seed class**: 0, all-ones, low/high-half-only, random.
-6. Byte order / element type: **none** — the C is byte-oriented and reads bytes
-   individually (`d[0] | d[1]<<8 | ...`), i.e. it hard-codes little-endian
-   assembly of `data` regardless of host endianness. One row records this.
-
-Cross-product = {block count 0/1/many} × {tail 0..7} × {top-byte class} ×
-{seed class}, pruned to the combinations the code actually distinguishes.
-
-## Table
-
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `stbds_hash_bytes` | `nblocks=0`, `tail=0` → `len == 0`; `seed = 0`. Empty message, loop skipped, `case 0`. | [x] |
-| C2 | `stbds_hash_bytes` | `nblocks=0`, `tail=1..7` → `len ∈ 1..7`; `seed = 0`; randomized bytes. Tail-only, each `switch` arm. | [x] |
-| C3 | `stbds_hash_bytes` | `nblocks=0`, `tail=1..7`; bytes forced so `d[3] >= 0x80` (`case 4` sign-extension path) and `d[3] < 0x80`, both. | [x] |
-| C4 | `stbds_hash_bytes` | `nblocks=1`, `tail=0` → `len == 8`; randomized bytes; `seed = 0`. Exactly one loop iteration, `case 0`. | [x] |
-| C5 | `stbds_hash_bytes` | `nblocks=1`, `tail=1..7` → `len ∈ 9..15`; randomized bytes. One block + every tail arm. | [x] |
-| C6 | `stbds_hash_bytes` | `nblocks=many` (2..64), `tail=0..7` → `len ∈ 16..520`, all residues mod 8; randomized bytes. | [x] |
-| C7 | `stbds_hash_bytes` | Block path, `d[3] < 0x80` **and** `d[7] < 0x80` for every block (no signed overflow anywhere). | [x] |
-| C8 | `stbds_hash_bytes` | Block path, `d[3] >= 0x80`, `d[7] < 0x80` (low-half sign-extension only → upper 32 bits of `data` become all-ones before the `hi` OR). | [x] |
-| C9 | `stbds_hash_bytes` | Block path, `d[3] < 0x80`, `d[7] >= 0x80` (high-half negative → `(size_t)neg << 16 << 16` drops the sign bits). | [x] |
-| C10 | `stbds_hash_bytes` | Block path, `d[3] >= 0x80` **and** `d[7] >= 0x80` in every block (both overflow paths simultaneously). | [x] |
-| C11 | `stbds_hash_bytes` | All-zero buffer, `len ∈ 0..80`, `seed = 0` — degenerate content, isolates the `len << 56` length term. | [x] |
-| C12 | `stbds_hash_bytes` | All-`0xFF` buffer, `len ∈ 0..80` — maximal sign-extension in every position. | [x] |
-| C13 | `stbds_hash_bytes` | `seed = 0` vs `SIZE_MAX` vs `0x00000000FFFFFFFF` vs `0xFFFFFFFF00000000` vs `1` vs `SIZE_MAX-1`, each over randomized `len ∈ 0..200` and bytes (seed-class × shape cross-product). | [x] |
-| C14 | `stbds_hash_bytes` | Randomized `seed` (full 64-bit) × randomized `len ∈ 0..1024` × randomized bytes — the broad property-style sweep, fixed PRNG seed. | [x] |
-| C15 | `stbds_hash_bytes` | `len & 0xFF` aliasing: `len ∈ {0,256,512}`, `{1,257,513}`, `{255,511}` with the same repeating content — checks the `len << 56` truncation is reproduced. | [x] |
-| C16 | `stbds_hash_bytes` | Unaligned buffer start (`p = base+1 .. base+7`) with `len ∈ 0..64` — the C reads byte-wise so alignment must not matter; catches a Rust translation that used a `usize` load. | [x] |
-| C17 | `stbds_hash_bytes` | Endianness/element-type row: multi-byte integers written as native `u16`/`u32`/`u64`/`f64` arrays then hashed as bytes; the C assembles `data` little-endian-by-construction. | [x] |
-| C18 | `stbds_hash_bytes` | Exact-size heap allocations (no slack) for `len ∈ 0..24`, so any over-read is caught by the allocator/ASAN-style bounds. | [x] |
-| C19 | `siphash` (wrapper) | `init = 0` — the documented/default invocation; compare all 64 printed lines byte-for-byte. | [x] |
-| C20 | `siphash` (wrapper) | `init ∈ {1, -1, 42, 127, 128, 192, 255, 256, -256, 0x7A, 0xF9, 250}` — drives `mem[]` across the `0x80` byte-class boundary and through `unsigned char` truncation of a negative/large `int`. | [x] |
-| C21 | `siphash` (wrapper) | `init = INT_MAX`, `INT_MIN` — `z++` signed-overflow wrap inside the fill loop. | [x] |
-| C22 | `siphash` (wrapper) | Randomized `init` (full `int` range, fixed PRNG seed), full stdout compared. Exercises the wrapper's internal `len = 0..63` sweep, i.e. the composed pipeline `siphash → stbds_hash_bytes → stbds_siphash_bytes`. | [x] |
-
-## Feature combinations
-
-`translation/Cargo.toml` has **no `[features]` section** and no optional
-dependencies, therefore exactly one build configuration exists:
+## How to run
 
 ```
-$ grep -c '\[features\]' Cargo.toml
-0
+cd translation && ./scripts/verify_all.sh
 ```
 
-The default (and only) combination is verified; `--no-default-features` is
-equivalent to the default here. Both the **debug** and **release** Rust `cdylib`
-are loaded and differentially tested, since `[profile.release] panic = "abort"`
-and debug overflow-checks make them genuinely different builds of the same code.
+The script builds the C `.so`, then for every feature combination and for both
+the `release` and `dev` profiles: builds the Rust `.so` + driver, diffs
+`nm -D` output, and runs all test binaries. Building before testing is
+mandatory — see the methodology note in `SYMBOLS.md`.
 
-## Test sensitivity (negative control)
+Test files:
 
-Row coverage only means something if the tests can actually see a divergence.
-`./mutation_check.sh` injects 17 deliberate behavioural changes into
-`src/lib.rs` — dropped sign-extensions, wrong rotate constants, off-by-one tail
-`switch` boundaries, wrong shift amounts, dropped finalisation steps, an altered
-block-loop bound, `wrapping` → `saturating` in the `siphash` fill loop — rebuilds
-both cdylib profiles and re-runs the suite for each. Result: **17 killed,
-0 survived.**
-
-One mutation is deliberately excluded as an *equivalent* mutant rather than a
-coverage gap: removing the sign-extension in
-`let hi_sext = (hi as i32) as i64 as u64 as usize` is bit-identical, because the
-following `<< 16 << 16` discards every bit the sign extension sets. This is
-proven exhaustively over the boundary values (and over 200k random ones) by
-`d6_high_half_sign_extension_is_a_no_op` in `tests/phase_d_symbols.rs`.
-
-## Reproducing
-
-```
-./verify_all.sh        # C build + symbol parity + all phases, all combinations
-./mutation_check.sh    # negative control: the suite must kill every mutant
-```
+* `tests/common/mod.rs` — `libloading` harness, SplitMix64 PRNG (fixed seed
+  `0x5eed_1234_5678_9abc`), stale-artifact guard, driver-subprocess stdout capture.
+* `tests/phase_b_valid.rs` — rows C1..C25.
+* `tests/phase_c_errors.rs` — rows E1..E20 plus generic boundaries.
+* `tests/phase_d_symbols.rs` — `nm -D` parity, enforced as tests.
+* `examples/siphash_driver.rs` — dlopens one `.so` and calls `siphash(init)` in
+  its own process, so captured stdout cannot be polluted by test-harness output.

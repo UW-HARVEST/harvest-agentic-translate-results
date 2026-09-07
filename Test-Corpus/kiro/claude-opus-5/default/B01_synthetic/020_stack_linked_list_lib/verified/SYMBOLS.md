@@ -1,77 +1,69 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
 
 Derived mechanically from `nm -D` on both shared libraries.
 
-Commands used:
+Build commands used:
 
-```sh
-# C
+```
 cd c_src && mkdir -p build && cd build \
   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D c_src/build/libSimpleList.so
+#   -> c_src/build/libSimpleList.so
 
-# Rust
 cd translation && cargo build --release
-nm -D translation/target/release/libSimpleList.so
+#   -> translation/target/release/libSimpleList.so
 ```
 
-## Defined (exported) symbols
+## C `.so` exported (defined) dynamic symbols
 
-Every symbol the C `.so` defines, and whether the Rust `.so` defines it too.
+`nm -D --defined-only c_src/build/libSimpleList.so`
 
-| # | symbol | C `.so` | Rust `.so` | source of truth | status |
-|---|--------|---------|------------|-----------------|--------|
-| 1 | `smallestValue` | `T` (defined, global) | `T` (defined, global) | `c_src/include/simplestruct.h:31`, `c_src/src/simplestruct.c:26` | MATCH |
+| # | symbol | type | source of truth | present in Rust `.so`? |
+|---|--------|------|-----------------|------------------------|
+| 1 | `smallestValue` | `T` (global text) | `c_src/src/simplestruct.c:26`, declared `c_src/include/simplestruct.h:31` | YES — `T smallestValue` |
 
-The public header contains no function-renaming or symbol-generating
-preprocessor macros (`grep -nE '#define' c_src/include/simplestruct.h` yields only
-the include guard `SIMPLESTRUCT_H_`), so there are no macro-generated symbols to
-account for. `struct ListNode` is a type, not a linker symbol.
+There are no other C translation units (`CMakeLists.txt` lists exactly
+`src/simplestruct.c`), no macro-generated / renamed exports, no versioned
+aliases, and no exported data objects. The public header declares exactly one
+function and no global variables, so the complete public ABI surface is the
+single row above.
 
-**Missing from Rust `.so`: 0.** No `#[no_mangle]` wrappers to add and no
-untranslated C module: `c_src/src/` contains exactly one translation unit,
-`simplestruct.c`, and its single function is translated in
-`translation/src/lib.rs`.
+## Rust `.so` exported (defined) dynamic symbols
 
-## Weak / linker-provided symbols
+`nm -D --defined-only translation/target/release/libSimpleList.so`
 
-Present in both, supplied by the toolchain rather than by library source; not
-part of the API surface:
+| # | symbol | type | Rust definition |
+|---|--------|------|-----------------|
+| 1 | `smallestValue` | `T` (global text) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn smallestValue` in `src/lib.rs` |
 
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
-`__cxa_finalize@GLIBC_2.2.5`, `__gmon_start__`.
+`crate-type = ["cdylib"]` means Rust internals are not exported, so the Rust
+export set is exactly the one C symbol — no extra public symbols leak.
 
-## Undefined symbols
+## Symbol diff
 
-- C `.so`: none beyond the weak toolchain symbols above.
-- Rust `.so`: undefined entries exist, but **all** are libc (`malloc`, `free`,
-  `memcpy`, `open64`, `read`, `write`, `pthread_key_create`, …) or the C++/Rust
-  unwinder (`_Unwind_*@GCC_*`) pulled in by the Rust standard library. There are
-  **0 undefined non-libc/non-runtime symbols**, i.e. no unresolved references to
-  library code that was never translated.
-
-## Verdict
-
-Symbol parity is exact: the set of defined, non-toolchain symbols is
-`{smallestValue}` for both libraries. Symbol diff is **empty**.
-
-## Phase D completion evidence
-
-Command:
-
-```sh
-clean() { nm -D --defined-only "$1" | awk '$2!="w" && $1!="w"' \
-          | awk '{print $NF}' \
-          | grep -vE '^(_ITM_|__cxa_|__gmon_start__)' | sort -u; }
-diff <(clean c_src/build/libSimpleList.so) \
-     <(clean translation/target/release/libSimpleList.so)
+```
+comm -23 <(nm -D --defined-only c_src/build/libSimpleList.so    | awk '{print $NF}' | sort -u) \
+         <(nm -D --defined-only translation/.../libSimpleList.so | awk '{print $NF}' | sort -u)
 ```
 
-Result: **empty diff**. Both sides yield exactly `smallestValue`.
+Result: **empty**. Missing-symbol count = **0**.
 
-Rust undefined symbols outside libc / the unwinder: **none** (filtering
-`@GLIBC`, `@GCC`, `_Unwind_*`, `statx`, `gettid` leaves an empty list).
+No symbol required translation work: the single C function is fully translated
+(not stubbed, no `unimplemented!()`), and no C module was skipped.
 
-Asserted programmatically as well, by the `symbol_parity` test in
-`tests/differential.rs`, which shells out to `nm -D` on both libraries and fails
-if the export sets differ.
+## Undefined (imported) symbols
+
+* C `.so` undefined: only the four standard glibc/toolchain weak/undef entries
+  (`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+  `__cxa_finalize`, `__gmon_start__`).
+* Rust `.so` undefined: the same four, plus only libc / libgcc-unwind imports
+  pulled in by the Rust standard library (`malloc`, `free`, `memcpy`, `mmap64`,
+  `pthread_key_create`, `_Unwind_*`, …).
+
+**0 missing/undefined non-libc symbols in the Rust `.so`.** ✅
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` table**, so there is exactly
+one build configuration (the default, which is also `--no-default-features`).
+Symbol parity and all tests were re-checked under both invocations; see
+`CONFIGS.md` / `ERRORS.md` for results.

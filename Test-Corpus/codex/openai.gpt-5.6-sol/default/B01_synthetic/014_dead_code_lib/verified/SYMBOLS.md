@@ -1,20 +1,23 @@
 # Dynamic Symbol Surface
 
-Reference library: `../c_src/build/libdriver.so`
+Derived mechanically with:
 
-Command used:
-
-```sh
+```text
 nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-| C symbol | C type | Rust symbol | Status |
-|----------|--------|-------------|--------|
-| `bad` | `T` | `bad` | present |
-| `driver` | `T` | `driver` | present |
-| `good` | `T` | `good` | present |
-| `printLine` | `T` | `printLine` | present |
+Only globally defined dynamic symbols are library API symbols. Undefined
+entries (`puts`) and toolchain weak symbols are not implementations supplied by
+the C library.
 
-- [x] Final `nm -D` parity check has zero missing C symbols.
-- [x] Rust has zero undefined non-system/application symbols. Its undefined
-  imports are limited to GLIBC, libgcc unwinding, and weak toolchain hooks.
+| C symbol | C type | Rust `.so` status |
+|----------|--------|-------------------|
+| `bad` | `T` | present |
+| `driver` | `T` | present |
+| `good` | `T` | present |
+| `printLine` | `T` | present |
+
+Missing C symbols in Rust: **0**
+
+- [x] Final `nm -D` comparison has zero missing defined symbols.
+- [x] The complete C `nm -D` name set is a subset of the Rust name set.

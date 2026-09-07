@@ -1,82 +1,95 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-* C  `.so`: `c_src/build/libharvest-work-OhlKp8.so` (name comes from
-  `CMakeLists.txt`, which derives `project_name` from the parent directory name).
+* C  `.so`: `c_src/build/libharvest-work-tEO4wk.so` (name comes from the parent
+  directory name via `cmake_path(GET parent FILENAME project_name)`).
 * Rust `.so`: `translation/target/release/libnormalize_lib.so`
-  (`[lib] crate-type = ["cdylib"], name = "normalize_lib"`).
+  (`[lib] name = "normalize_lib"`, `crate-type = ["cdylib"]`).
 
-Reproduce with:
+## C `.so` — `nm -D` verbatim
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-OhlKp8.so | awk '{print $3}' | sort > /tmp/c_syms.txt
-nm -D --defined-only translation/target/release/libnormalize_lib.so | awk '{print $3}' | sort > /tmp/r_syms.txt
-comm -23 /tmp/c_syms.txt /tmp/r_syms.txt   # must print nothing
+```
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U memset@GLIBC_2.2.5
+0000000000001119 T normalize
+                 U sqrtf@GLIBC_2.2.5
 ```
 
-## Defined (exported) symbols
+## Exported (defined, `T`/`D`/`B`) symbol parity table
 
-| # | symbol | in C `.so` | in Rust `.so` | source of the Rust export |
-|---|--------|-----------|---------------|---------------------------|
-| 1 | `normalize` | yes (`T`) | yes (`T`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn normalize` in `src/lib.rs` |
+Only `--defined-only` entries are real exports; `U` = undefined import,
+`w` = weak toolchain/CRT hook (not part of the library's API surface).
 
-The C translation unit `c_src/src/lib.c` contains exactly one function
-definition and `c_src/include/lib.h` declares exactly one prototype, so the
-public surface is a single symbol. There are no macro-generated symbols, no
-namespace/prefix macros, no `#ifdef`-gated alternate names, no exported
-globals, and no additional C source files in `add_library(...)`.
+| # | C symbol | type | present in Rust `.so`? | Rust export site |
+|---|----------|------|------------------------|------------------|
+| 1 | `normalize` | `T` | YES — `T normalize` | `src/lib.rs`, `#[unsafe(no_mangle)] pub unsafe extern "C" fn normalize` |
 
-**Missing symbols: 0.** Nothing needed to be exported or translated.
+`nm -D --defined-only` counts:
 
-## Undefined (imported) symbols
+| object | defined global symbols |
+|--------|------------------------|
+| C      | 1 (`normalize`)        |
+| Rust   | 1 (`normalize`)        |
 
-C `.so` imports: `_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
-`__cxa_finalize`, `__gmon_start__`, `memset`, `sqrtf`.
+**Symbol diff (C defined − Rust defined): EMPTY.**
 
-Rust `.so` imports: the same CRT/ITM hooks plus libc (`memset`, `memcpy`,
-`malloc`, `free`, …), libgcc unwinder (`_Unwind_*`) and glibc syscall wrappers
-pulled in by `std`. `sqrtf` is absent because rustc lowers `f32::sqrt` to the
-`sqrtss` instruction rather than a libm call — this is a codegen difference,
-not a behavioural one (both are the IEEE-754 correctly-rounded square root).
+There are no macro-generated / namespace-renamed symbols: `include/lib.h`
+contains a single line (`void normalize(float *dest, const float *src, int size);`)
+with no renaming macros, so the linker name equals the source name.
 
-**Undefined non-libc / non-toolchain symbols in the Rust `.so`: 0.**
+No C source file was left untranslated: `CMakeLists.txt` lists exactly one
+source (`src/lib.c`, 18 lines) which defines exactly one function.
+
+## Undefined symbols in the Rust `.so`
+
+All `U`/`w` entries in the Rust `.so` resolve to libc / libgcc-unwind /
+pthread (`memset`, `memcpy`, `malloc`, `free`, `abort`, `_Unwind_*`,
+`dl_iterate_phdr`, `pthread_key_*`, …). These come from the Rust standard
+library's panic/backtrace machinery, not from missing translated code.
+
+**0 missing/undefined non-libc symbols in the Rust `.so`.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, therefore the
-only configuration is the default (empty) feature set. `--no-default-features`
-and the default build are the same build. Verified with:
+`translation/Cargo.toml` has **no `[features]` section**, therefore the only
+build configuration is the default (empty) feature set. `--no-default-features`
+and the default build are the same compilation. Verified by
+`check_features.sh`.
 
-```sh
-grep -n '^\[features\]' translation/Cargo.toml   # no match
-```
+## No driver binary
 
-Both `cargo test` and `cargo test --no-default-features` are run by
-`run_all.sh`, and both must be green.
+`CMakeLists.txt` declares only `add_library(... SHARED src/lib.c)` — there is
+no `add_executable`, and the crate declares only `crate-type = ["cdylib"]` with
+no `src/main.rs` / `[[bin]]`. So the "compare C and Rust binary stdout"
+requirement is **not applicable** (no binary is built by either side).
 
-## Results
+## Negative control (proof the differential harness detects divergence)
 
-Checked mechanically by `tests/symbols.rs` (3 tests) and again, independently of
-cargo, by section 4 of `run_all.sh`:
+"All tests pass" is only meaningful if the harness can fail. Five mutants of
+`src/lib.rs` were built into a scratch crate and the *unmodified* suite was run
+against each mutant `.so` via `RUST_SO=…`:
 
-```
-===== nm -D symbol diff (C vs Rust debug) =====
-OK: 0 symbols missing from the Rust .so (debug)
-C exports: normalize
-===== nm -D symbol diff (C vs Rust release) =====
-OK: 0 symbols missing from the Rust .so (release)
-C exports: normalize
-```
+| mutant | change | detected by |
+|--------|--------|-------------|
+| 1 | `sum > 0.0f32` → `sum >= 0.0f32` | `error_path`: 5 failures (rows 5, 6, 8, 9, 14) |
+| 2 | accumulate in `f64`, narrow at the end | `valid_path`: 17 failures |
+| 3 | accumulate in descending index order | `valid_path`: 14 failures |
+| 4 | `1.0/sqrt(sum)` → `sqrt(1.0/sum)` | `valid_path`: 20 failures |
+| 5 | drop the `dest != src` guard | `error_path`: SIGSEGV (row 3/15 reach the huge `memset`) |
 
-* `symbols_rust_defines_everything_the_c_so_defines` — the `nm -D
-  --defined-only` set difference (C minus Rust) is empty.
-* `symbols_rust_has_no_unresolved_non_runtime_imports` — every undefined symbol
-  in the Rust `.so` is either a libc/libgcc/CRT import or one the C `.so`
-  imports too.
-* `symbols_c_surface_is_still_just_normalize` — fails loudly if the C source
-  grows another entry point, so this file cannot silently go stale.
+5/5 detected. The scratch crate was deleted afterwards; the shipped
+`translation/src/lib.rs` is unmodified.
 
-Nothing had to be added: no symbol was missing, and no C module was left
-untranslated (`c_src` contains exactly `include/lib.h` and `src/lib.c`, and
-`add_library` lists only `src/lib.c`).
+## Machine-checked parity
+
+`tests/symbols.rs` re-derives this table at test time (`nm -D` on both objects)
+so the parity claim cannot silently rot:
+
+* `phase_d_every_c_export_is_exported_by_rust` — asserts the C-minus-Rust
+  defined-symbol diff is empty.
+* `phase_d_no_unresolved_non_libc_symbols_in_rust` — asserts every `U` entry in
+  the Rust object is libc / libgcc-unwind / pthread.

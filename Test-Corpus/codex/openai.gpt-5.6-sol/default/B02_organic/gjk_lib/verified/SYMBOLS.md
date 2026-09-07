@@ -1,47 +1,45 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Generated from:
+Derived with:
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-m0JAPI.so
-nm -D --defined-only translation/target/release/libgjk_lib.so
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-pZoI7S.so
+nm -D --defined-only target/release/libgjk_lib.so
 ```
 
-| # | C symbol | Rust export |
-|---:|----------|-------------|
-| 1 | `c22` | [x] |
-| 2 | `c23` | [x] |
-| 3 | `c2Add` | [x] |
-| 4 | `c2BBVerts` | [x] |
-| 5 | `c2CCW90` | [x] |
-| 6 | `c2Clampv` | [x] |
-| 7 | `c2D` | [x] |
-| 8 | `c2Det2` | [x] |
-| 9 | `c2Div` | [x] |
-| 10 | `c2Dot` | [x] |
-| 11 | `c2GJK` | [x] |
-| 12 | `c2GJKSimplexMetric` | [x] |
-| 13 | `c2L` | [x] |
-| 14 | `c2Len` | [x] |
-| 15 | `c2MakeProxy` | [x] |
-| 16 | `c2Maxv` | [x] |
-| 17 | `c2Minv` | [x] |
-| 18 | `c2Mulrv` | [x] |
-| 19 | `c2MulrvT` | [x] |
-| 20 | `c2Mulvs` | [x] |
-| 21 | `c2Mulxv` | [x] |
-| 22 | `c2Neg` | [x] |
-| 23 | `c2Norm` | [x] |
-| 24 | `c2RotIdentity` | [x] |
-| 25 | `c2Skew` | [x] |
-| 26 | `c2Sub` | [x] |
-| 27 | `c2Support` | [x] |
-| 28 | `c2V` | [x] |
-| 29 | `c2Witness` | [x] |
-| 30 | `c2xIdentity` | [x] |
-| 31 | `gjk` | [x] |
+| C symbol | Rust export |
+|----------|-------------|
+| `c22` | present |
+| `c23` | present |
+| `c2Add` | present |
+| `c2BBVerts` | present |
+| `c2CCW90` | present |
+| `c2Clampv` | present |
+| `c2D` | present |
+| `c2Det2` | present |
+| `c2Div` | present |
+| `c2Dot` | present |
+| `c2GJK` | present |
+| `c2GJKSimplexMetric` | present |
+| `c2L` | present |
+| `c2Len` | present |
+| `c2MakeProxy` | present |
+| `c2Maxv` | present |
+| `c2Minv` | present |
+| `c2Mulrv` | present |
+| `c2MulrvT` | present |
+| `c2Mulvs` | present |
+| `c2Mulxv` | present |
+| `c2Neg` | present |
+| `c2Norm` | present |
+| `c2RotIdentity` | present |
+| `c2Skew` | present |
+| `c2Sub` | present |
+| `c2Support` | present |
+| `c2V` | present |
+| `c2Witness` | present |
+| `c2xIdentity` | present |
+| `gjk` | present |
 
-- C-defined dynamic symbols: **31**
-- Missing Rust exports: **0**
-- The C library's only strong undefined dependency is `sqrtf@GLIBC_2.2.5`.
-- [x] Completion gate: zero missing C-defined symbols.
+Missing C symbols in Rust: **0**.
+

@@ -178,20 +178,15 @@ pub extern "C" fn c2xIdentity() -> c2x {
     }
 }
 
-/// The C reads `bb` through the pointer on every line, interleaved with the
-/// writes to `out`. The two are not `restrict`-qualified, so `out` may legally
-/// overlap `*bb` (`c2MakeProxy` in fact does exactly that when its `shape`
-/// argument aliases its `c2Proxy`: `bb` lands on `p+0` while `out` is
-/// `p->verts` at `p+8`, so `out[1]` overwrites `bb->max`). Snapshotting
-/// `min`/`max` up front would therefore change the result, so each field is
-/// re-read at its point of use exactly as the C does.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2BBVerts(out: *mut c2v, bb: *mut c2AABB) {
     unsafe {
-        *out.add(0) = (*bb).min;
-        *out.add(1) = c2V((*bb).max.x, (*bb).min.y);
-        *out.add(2) = (*bb).max;
-        *out.add(3) = c2V((*bb).min.x, (*bb).max.y);
+        let min = (*bb).min;
+        let max = (*bb).max;
+        *out.add(0) = min;
+        *out.add(1) = c2V(max.x, min.y);
+        *out.add(2) = max;
+        *out.add(3) = c2V(min.x, max.y);
     }
 }
 
@@ -401,44 +396,40 @@ pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c
     }
 }
 
-/// `*a` is sequenced before the operands of `*b` are read, and neither pointer
-/// is `restrict`-qualified, so a caller may legally point `a` or `b` into `*s`
-/// (or at the same `c2v`). Snapshotting `s->verts` up front would hide the
-/// earlier write from the later reads, so every field is re-read through the
-/// pointer at its point of use, exactly as the C does.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) {
     unsafe {
         let den = 1.0f32 / (*s).div;
+        let v = (*s).verts;
         match (*s).count {
             1 => {
-                *a = (*s).verts[0].sA;
-                *b = (*s).verts[0].sB;
+                *a = v[0].sA;
+                *b = v[0].sB;
             }
             2 => {
                 *a = c2Add(
-                    c2Mulvs((*s).verts[0].sA, den * (*s).verts[0].u),
-                    c2Mulvs((*s).verts[1].sA, den * (*s).verts[1].u),
+                    c2Mulvs(v[0].sA, den * v[0].u),
+                    c2Mulvs(v[1].sA, den * v[1].u),
                 );
                 *b = c2Add(
-                    c2Mulvs((*s).verts[0].sB, den * (*s).verts[0].u),
-                    c2Mulvs((*s).verts[1].sB, den * (*s).verts[1].u),
+                    c2Mulvs(v[0].sB, den * v[0].u),
+                    c2Mulvs(v[1].sB, den * v[1].u),
                 );
             }
             3 => {
                 *a = c2Add(
                     c2Add(
-                        c2Mulvs((*s).verts[0].sA, den * (*s).verts[0].u),
-                        c2Mulvs((*s).verts[1].sA, den * (*s).verts[1].u),
+                        c2Mulvs(v[0].sA, den * v[0].u),
+                        c2Mulvs(v[1].sA, den * v[1].u),
                     ),
-                    c2Mulvs((*s).verts[2].sA, den * (*s).verts[2].u),
+                    c2Mulvs(v[2].sA, den * v[2].u),
                 );
                 *b = c2Add(
                     c2Add(
-                        c2Mulvs((*s).verts[0].sB, den * (*s).verts[0].u),
-                        c2Mulvs((*s).verts[1].sB, den * (*s).verts[1].u),
+                        c2Mulvs(v[0].sB, den * v[0].u),
+                        c2Mulvs(v[1].sB, den * v[1].u),
                     ),
-                    c2Mulvs((*s).verts[2].sB, den * (*s).verts[2].u),
+                    c2Mulvs(v[2].sB, den * v[2].u),
                 );
             }
             _ => {

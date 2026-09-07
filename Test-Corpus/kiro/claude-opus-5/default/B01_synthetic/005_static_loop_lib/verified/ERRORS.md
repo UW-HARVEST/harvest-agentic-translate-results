@@ -1,69 +1,73 @@
-# ERRORS.md — Error-surface table (Phase A / Phase C)
+# ERRORS.md — Error-surface table (Phase A / gate for Phase C)
 
-## Mechanical derivation
-
-Every rejection/error construct was searched for in the complete C source
-(`c_src/src/staticloop.c`, `c_src/include/staticloop.h` — the only C files):
+Derived mechanically from the C source. Grep used:
 
 ```sh
-grep -nE "assert|NULL|ERROR|RETURN_ERROR|errno|return *-1|goto|exit|abort" c_src/src/*.c c_src/include/*.h
-grep -n  "return" c_src/src/*.c c_src/include/*.h
-grep -nE "if *\(|switch|#ifdef|#if |MAX|MIN" c_src/src/*.c c_src/include/*.h
+grep -nEi 'return|assert|NULL|-1|if|switch|#if|else|error|max|min' \
+    c_src/src/staticloop.c c_src/include/staticloop.h
 ```
 
-Results (verbatim, comment/licence lines excluded):
+Non-comment hits (the complete set):
 
-- `return` statements: exactly two — `staticloop.c:31 return sum;` and
-  `staticloop.c:42 return;` (a bare `void` return).
-- `assert` / `NULL` / `ERROR` / `RETURN_ERROR` / `errno` / `return -1` / `goto` /
-  `exit` / `abort`: **0 matches**.
-- conditionals: exactly one — `staticloop.c:39 for (int i = 0; i < 10; i++)`,
-  a fixed trip-count loop bound, not an input validation check.
-- `#ifdef` / `#if` (other than the header's include guard): 0 matches.
-- min/max constants, range checks, null checks: 0 matches.
-- pointer parameters anywhere in the public API: 0 (`int static_sum(int)`,
-  `void driver(int)`).
-- enum types anywhere in the public API: 0.
+```
+src/staticloop.c:31:  return sum;      # normal value return, not an error return
+src/staticloop.c:42:  return;          # bare return at end of void driver()
+include/staticloop.h:24:#ifndef STATICLOOP_H_   # header include guard only
+include/staticloop.h:30:#endif //STATICLOOP_H_  # header include guard only
+```
 
-**Conclusion: the C library has an EMPTY explicit error surface.** It validates
-nothing, has no error codes, no sentinel return values, and no reserved
-parameter values. `static_sum` returns the accumulator, and every one of the
-2^32 `int` values is a legitimate return value — so no return value can be
-interpreted as "error". `driver` returns `void`. Both accept the full `int`
-domain. There are therefore **zero rejection rows** to derive.
+## Findings
 
-## Error-surface rows
+The library has **NO error surface**:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| — | — | *(no explicit rejection exists anywhere in the C source)* | — |
+* no error-return macro (`RETURN_ERROR`-style) exists anywhere;
+* no `return -1`, no sentinel return, no error enum, no `errno` use;
+* no `assert` / `NDEBUG` / abort path;
+* no `NULL` check — **no function takes a pointer**, so no null-pointer input is
+  representable across the FFI boundary;
+* no explicit range check, no min/max constant, no clamping;
+* no `if` / `switch` / `#ifdef` branch in the implementation at all (the only
+  control flow is `driver`'s fixed `for (int i = 0; i < 10; i++)` loop, whose
+  bounds are compile-time constants and not input-dependent);
+* no enum parameter, so there is no out-of-range-enum input class;
+* no length/size/count parameter, so there is no zero-length or oversized-length
+  input class.
 
-## Generic-boundary rows (mandated coverage, tested even though the C rejects nothing)
+Both entry points are total functions of a single `int`: **every** `int` value is
+a valid input, and neither can reject anything. Therefore the error-surface table
+has **zero rows** for library-defined rejections.
 
-Because the table above is empty, Phase C is discharged by proving that the C
-accepts these boundary inputs *without* erroring and that the Rust behaves
-identically (same returned value / same stdout bytes / no panic, no abort, no
-trap). A Rust `debug_assert`, overflow panic, or `unimplemented!()` on any of
-these rows would be a divergence, so these are genuine error-path tests.
+| # | function | trigger (exact invalid input/condition) | expected C result |
+|---|----------|------------------------------------------|-------------------|
+| — | — | *(none: the C source contains no rejection, error return, assert, range check, null check, or min/max constant)* | — |
 
-| # | function | boundary condition constructed | expected C result | test | ✓ |
-|---|----------|--------------------------------|-------------------|------|:-:|
-| B1 | `static_sum` | `update = 0` (zero-length/no-op input) | returns accumulator unchanged; no error | `error_paths::b1_zero_update` | [x] |
-| B2 | `static_sum` | `update = INT_MAX` (max in-range value) | returns `sum + INT_MAX`, two's-complement wrap; no error | `error_paths::b2_int_max_update` | [x] |
-| B3 | `static_sum` | `update = INT_MIN` (min in-range value) | returns `sum + INT_MIN`, two's-complement wrap; no error | `error_paths::b3_int_min_update` | [x] |
-| B4 | `static_sum` | `update = -1` (the classic C error sentinel, here a *valid* input) | returns `sum - 1`; **must not** be treated as an error | `error_paths::b4_minus_one_sentinel` | [x] |
-| B5 | `static_sum` | signed-overflow past the valid `int` range: accumulator driven to `INT_MAX` then `update = 1` (one step past the documented range) | wraps to `INT_MIN`; no trap/abort | `error_paths::b5_overflow_one_past_max` | [x] |
-| B6 | `static_sum` | signed-underflow one step past `INT_MIN`: accumulator at `INT_MIN` then `update = -1` | wraps to `INT_MAX`; no trap/abort | `error_paths::b6_underflow_one_past_min` | [x] |
-| B7 | `driver` | `stride = 0` (degenerate/empty-effect stride) | prints the current accumulator 10× ; no error | `error_paths::b7_driver_zero_stride` | [x] |
-| B8 | `driver` | `stride = INT_MAX` — makes the internal `i * stride` overflow on every `i >= 2` | wraps; prints 10 lines; no trap/abort | `error_paths::b8_driver_int_max_stride` | [x] |
-| B9 | `driver` | `stride = INT_MIN` — `i * stride` overflow, negative direction | wraps; prints 10 lines; no trap/abort | `error_paths::b9_driver_int_min_stride` | [x] |
-| B10 | `driver` | `stride = -1` (negative "oversized-length"-analogue / sentinel) | prints 10 descending sums; no error | `error_paths::b10_driver_minus_one` | [x] |
-| B11 | `driver` | `stride` chosen so the *accumulated* `sum` overflows mid-loop (`stride = INT_MAX/8`) | wraps mid-loop; still prints exactly 10 lines | `error_paths::b11_driver_sum_overflow_midloop` | [x] |
-| B12 | both | out-of-range *enum* value across the FFI boundary | **N/A — the public API declares no enum type** (verified by grep: 0 `enum` in `c_src`). The `int` domain is fully covered by B1–B11 + Phase B randomization, so every representable bit pattern of every parameter is a tested input. | — | [x] |
-| B13 | both | null pointer arguments | **N/A — the public API takes no pointer arguments** (verified by grep: `int static_sum(int)`, `void driver(int)`). | — | [x] |
-| B14 | both | zero / oversized *lengths* | **N/A — no length, size, count, or buffer parameter exists.** The nearest analogues are B1 (zero) and B2/B3/B8/B9 (extremal magnitudes). | — | [x] |
+## Generic-boundary rows tested anyway (Phase C)
 
-Rows B1–B11 are exercised as differential tests in
-`translation/tests/error_paths.rs`; each asserts C and Rust agree on the exact
-returned `int` (not merely "both succeeded") and, for `driver`, on the exact
-stdout byte stream.
+Because "no error path" is itself a claim that must be verified differentially,
+the generic boundaries every C API has are still tested — for these signatures
+the only representable extremes are the `int` domain boundaries and the
+undefined-behaviour-adjacent arithmetic edges. Each row below asserts that C and
+Rust return the *same* value (and, for `driver`, the same stdout), i.e. that both
+accept the input identically rather than one of them rejecting/trapping.
+
+| # | function | boundary condition constructed | expected C result | test | status |
+|---|----------|--------------------------------|-------------------|------|--------|
+| E1 | `static_sum` | `update = 0` (identity / zero-length analogue) | returns accumulator unchanged; no rejection | `err_e1_static_sum_zero` | [x] |
+| E2 | `static_sum` | `update = INT_MAX` (max representable) | wraps `sum + INT_MAX` two's-complement; no rejection | `err_e2_static_sum_int_max` | [x] |
+| E3 | `static_sum` | `update = INT_MIN` (min representable, one past `-INT_MAX`) | wraps `sum + INT_MIN` two's-complement; no rejection | `err_e3_static_sum_int_min` | [x] |
+| E4 | `static_sum` | positive signed-overflow of the accumulator (`sum` driven past `INT_MAX`) | wraps to negative; no rejection/trap | `err_e4_static_sum_overflow_positive` | [x] |
+| E5 | `static_sum` | negative signed-overflow of the accumulator (`sum` driven past `INT_MIN`) | wraps to positive; no rejection/trap | `err_e5_static_sum_overflow_negative` | [x] |
+| E6 | `driver` | `stride = 0` (degenerate stride) | prints 10 lines, accumulator unchanged; returns `void` | `err_e6_driver_zero_stride` | [x] |
+| E7 | `driver` | `stride = INT_MAX` (max representable ⇒ `i * stride` overflows for `i >= 2`) | prints 10 wrapped values; no rejection/trap | `err_e7_driver_int_max` | [x] |
+| E8 | `driver` | `stride = INT_MIN` (min representable ⇒ `i * stride` overflows for `i >= 2`) | prints 10 wrapped values; no rejection/trap | `err_e8_driver_int_min` | [x] |
+| E9 | `driver` | `stride` just past the largest non-overflowing stride (`INT_MAX/9 + 1`) — one step past the "valid" range | prints 10 values, last one wrapped; no rejection | `err_e9_driver_one_past_nonoverflow_range` | [x] |
+| E10 | both | out-of-range "enum" analogue: arbitrary bit patterns reinterpreted as `int` (`0x80000000`, `0xFFFFFFFF`, `0x7FFFFFFF`) passed across FFI | accepted as ordinary `int`s; identical results | `err_e10_arbitrary_bit_patterns` | [x] |
+| E11 | both | wrong-arity / garbage upper 32 bits: value passed in the 64-bit register with dirty high half (`i64` cast to `i32` at the boundary) | only low 32 bits significant; identical results | `err_e11_dirty_high_bits` | [x] |
+
+All rows above pass. Tests live in `tests/phase_c_errors.rs` (plus the extra
+`err_generic_boundary_sweep`, which sweeps every value one step around each
+interesting point for both entry points). Run with:
+
+```sh
+cargo test --test phase_c_errors -- --test-threads=1
+```

@@ -72,85 +72,62 @@ pub extern "C" fn tflac_size_memory(blocksize: tflac_u32) -> tflac_u32 {
 }
 
 /// `int flac_validate(tflac *t)`
-///
-/// The C performs **no** null check — its first statement is `t->blocksize` —
-/// so this translation must not introduce one either. Two Rust constructs would
-/// silently add one under `-C debug-assertions`: forming `&mut *t`, and reading
-/// a field through the place expression `(*t).field`. Both lower to a
-/// `null pointer dereference occurred` panic, which becomes `SIGABRT` across an
-/// `extern "C"` boundary, whereas the C raises `SIGSEGV`. Field access
-/// therefore goes through `addr_of!` + `ptr::read`/`ptr::write`, which emit a
-/// bare load/store and trap exactly like the C in every profile.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn flac_validate(t: *mut tflac) -> c_int {
-    /// Read `t->field` with no null/alignment assertion (C semantics).
-    macro_rules! get {
-        ($f:ident) => {
-            core::ptr::read(core::ptr::addr_of!((*t).$f))
-        };
-    }
-    /// Write `t->field = value` with no null/alignment assertion.
-    macro_rules! set {
-        ($f:ident, $v:expr) => {
-            core::ptr::write(core::ptr::addr_of_mut!((*t).$f), $v)
-        };
-    }
+    let t = unsafe { &mut *t };
 
-    unsafe {
-        if get!(blocksize) < 16 {
-            return -1;
-        }
-        if get!(blocksize) > 65535 {
-            return -1;
-        }
-        if get!(samplerate) == 0 {
-            return -1;
-        }
-        if get!(samplerate) > 655350 {
-            return -1;
-        }
-        if get!(channels) == 0 {
-            return -1;
-        }
-        if get!(channels) > 8 {
-            return -1;
-        }
-        if get!(bitdepth) == 0 {
-            return -1;
-        }
-        if get!(bitdepth) > 32 {
-            return -1;
-        }
-        if get!(channel_mode) != TFLAC_CHANNEL_INDEPENDENT
-            && (get!(channels) != 2 || get!(bitdepth) == 32)
-        {
-            set!(channel_mode, TFLAC_CHANNEL_INDEPENDENT);
-        }
-        if get!(max_rice_value) == 0 {
-            if get!(bitdepth) <= 16 {
-                set!(max_rice_value, 14);
-            } else {
-                set!(max_rice_value, 30);
-            }
-        } else if get!(max_rice_value) > 30 {
-            return -1;
-        }
-        if get!(max_partition_order) > 15 {
-            return -1;
-        }
-        if get!(min_partition_order) > get!(max_partition_order) {
-            return -1;
-        }
-        set!(partition_order, get!(min_partition_order));
-        // `1 << (partition_order + 1)`: partition_order <= max_partition_order
-        // <= 15 here, so the shift amount is at most 16 and the divisor never
-        // overflows (matching the C's `int` shift, which is likewise in range).
-        while (get!(blocksize) % (1u32 << (get!(partition_order) as u32 + 1)) == 0)
-            && get!(partition_order) < get!(max_partition_order)
-        {
-            set!(partition_order, get!(partition_order) + 1);
-        }
-        set!(cur_blocksize, get!(blocksize));
-        0
+    if t.blocksize < 16 {
+        return -1;
     }
+    if t.blocksize > 65535 {
+        return -1;
+    }
+    if t.samplerate == 0 {
+        return -1;
+    }
+    if t.samplerate > 655350 {
+        return -1;
+    }
+    if t.channels == 0 {
+        return -1;
+    }
+    if t.channels > 8 {
+        return -1;
+    }
+    if t.bitdepth == 0 {
+        return -1;
+    }
+    if t.bitdepth > 32 {
+        return -1;
+    }
+    if t.channel_mode != TFLAC_CHANNEL_INDEPENDENT
+        && (t.channels != 2 || t.bitdepth == 32)
+    {
+        t.channel_mode = TFLAC_CHANNEL_INDEPENDENT;
+    }
+    if t.max_rice_value == 0 {
+        if t.bitdepth <= 16 {
+            t.max_rice_value = 14;
+        } else {
+            t.max_rice_value = 30;
+        }
+    } else if t.max_rice_value > 30 {
+        return -1;
+    }
+    if t.max_partition_order > 15 {
+        return -1;
+    }
+    if t.min_partition_order > t.max_partition_order {
+        return -1;
+    }
+    t.partition_order = t.min_partition_order;
+    // `1 << (partition_order + 1)`: partition_order <= max_partition_order <= 15
+    // here, so the shift amount is at most 16 and the divisor never overflows.
+    while (t.blocksize % (1u32 << (t.partition_order as u32 + 1)) == 0)
+        && t.partition_order < t.max_partition_order
+    {
+        t.partition_order += 1;
+    }
+    t.cur_blocksize = t.blocksize;
+    0
 }

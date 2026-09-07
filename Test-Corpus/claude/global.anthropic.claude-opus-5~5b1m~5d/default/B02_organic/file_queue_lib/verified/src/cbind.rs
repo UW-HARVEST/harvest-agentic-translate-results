@@ -41,7 +41,7 @@ pub struct stat {
     pub st_mode: c_uint,
     pub st_uid: c_uint,
     pub st_gid: c_uint,
-    pub __pad0: c_int,
+    pub __pad0: c_uint,
     pub st_rdev: c_ulong,
     pub st_size: c_long,
     pub st_blksize: c_long,

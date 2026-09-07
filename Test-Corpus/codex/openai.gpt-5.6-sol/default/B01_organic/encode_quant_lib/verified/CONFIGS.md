@@ -1,86 +1,58 @@
 # Configuration Surface
 
-The public surface contains only `encode_quant`. Its branch-distinct
-configuration axes are:
+The only public entry point is the lowest-level function `encode_quant`.
+Rows below are the mechanically derived, feasible cross-product of branches
+in `src/lib.c`:
 
-- `lsbit == 0`: leave candidate low bits unchanged.
-- `lsbit == 4`: clear bit 0, then synthesize it from bits 1 and 2.
-- `lsbit` odd: force bit 0.
-- `lsbit` even, nonzero, and not 4: clear bit 0.
-- `uni & 7 == 0`: the decrement candidate is clamped.
-- `uni & 7 == 7`: the increment candidate is clamped.
-- `uni & 8`: selects the sign of the quantized difference.
+- `lsbit`: zero; exactly four; odd nonzero; even nonzero other than four.
+- `uni & 7`: low octet edge (`0`); interior (`1..=6`); high octet edge (`7`).
+- `uni & 8`: clear or set.
+- final comparison outcomes: `(d1 < d0, d2 < d0)`.
 
-Crossing the four `lsbit` classes with every low nibble of `uni` captures the
-full pruned cross-product of these branches, including the bit patterns used
-by the `lsbit == 4` synthesis. For every row, tests randomize the high 28 bits
-of `uni` and all 32 bits of `step`, `pred`, `tgt`, and `tgt2`; they also use
-multiple representative values from the row's `lsbit` equivalence class.
+Combinations omitted from the table are infeasible because candidate
+normalization makes the relevant prediction identical to `p0`, or because the
+two adjacent candidates cannot both improve on `p0`.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| C001 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x0` | [x] |
-| C002 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x1` | [x] |
-| C003 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x2` | [x] |
-| C004 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x3` | [x] |
-| C005 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x4` | [x] |
-| C006 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x5` | [x] |
-| C007 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x6` | [x] |
-| C008 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x7` | [x] |
-| C009 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x8` | [x] |
-| C010 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0x9` | [x] |
-| C011 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0xa` | [x] |
-| C012 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0xb` | [x] |
-| C013 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0xc` | [x] |
-| C014 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0xd` | [x] |
-| C015 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0xe` | [x] |
-| C016 | `encode_quant` | `lsbit == 0`; `uni & 0xf == 0xf` | [x] |
-| C017 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x0` | [x] |
-| C018 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x1` | [x] |
-| C019 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x2` | [x] |
-| C020 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x3` | [x] |
-| C021 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x4` | [x] |
-| C022 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x5` | [x] |
-| C023 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x6` | [x] |
-| C024 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x7` | [x] |
-| C025 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x8` | [x] |
-| C026 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0x9` | [x] |
-| C027 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0xa` | [x] |
-| C028 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0xb` | [x] |
-| C029 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0xc` | [x] |
-| C030 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0xd` | [x] |
-| C031 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0xe` | [x] |
-| C032 | `encode_quant` | `lsbit == 4`; `uni & 0xf == 0xf` | [x] |
-| C033 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x0` | [x] |
-| C034 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x1` | [x] |
-| C035 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x2` | [x] |
-| C036 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x3` | [x] |
-| C037 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x4` | [x] |
-| C038 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x5` | [x] |
-| C039 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x6` | [x] |
-| C040 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x7` | [x] |
-| C041 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x8` | [x] |
-| C042 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0x9` | [x] |
-| C043 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0xa` | [x] |
-| C044 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0xb` | [x] |
-| C045 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0xc` | [x] |
-| C046 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0xd` | [x] |
-| C047 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0xe` | [x] |
-| C048 | `encode_quant` | odd `lsbit`; `uni & 0xf == 0xf` | [x] |
-| C049 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x0` | [x] |
-| C050 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x1` | [x] |
-| C051 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x2` | [x] |
-| C052 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x3` | [x] |
-| C053 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x4` | [x] |
-| C054 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x5` | [x] |
-| C055 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x6` | [x] |
-| C056 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x7` | [x] |
-| C057 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x8` | [x] |
-| C058 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0x9` | [x] |
-| C059 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0xa` | [x] |
-| C060 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0xb` | [x] |
-| C061 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0xc` | [x] |
-| C062 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0xd` | [x] |
-| C063 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0xe` | [x] |
-| C064 | `encode_quant` | even nonzero `lsbit != 4`; `uni & 0xf == 0xf` | [x] |
+| 1 | `encode_quant` | `lsbit=0`; `uni&7=0`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 2 | `encode_quant` | `lsbit=0`; `uni&7=0`; `uni&8=0`; comparisons `(true,false)` | [x] |
+| 3 | `encode_quant` | `lsbit=0`; `uni&7=0`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 4 | `encode_quant` | `lsbit=0`; `uni&7=0`; `uni&8!=0`; comparisons `(true,false)` | [x] |
+| 5 | `encode_quant` | `lsbit=0`; `uni&7=1..=6`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 6 | `encode_quant` | `lsbit=0`; `uni&7=1..=6`; `uni&8=0`; comparisons `(false,true)` | [x] |
+| 7 | `encode_quant` | `lsbit=0`; `uni&7=1..=6`; `uni&8=0`; comparisons `(true,false)` | [x] |
+| 8 | `encode_quant` | `lsbit=0`; `uni&7=1..=6`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 9 | `encode_quant` | `lsbit=0`; `uni&7=1..=6`; `uni&8!=0`; comparisons `(false,true)` | [x] |
+| 10 | `encode_quant` | `lsbit=0`; `uni&7=1..=6`; `uni&8!=0`; comparisons `(true,false)` | [x] |
+| 11 | `encode_quant` | `lsbit=0`; `uni&7=7`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 12 | `encode_quant` | `lsbit=0`; `uni&7=7`; `uni&8=0`; comparisons `(false,true)` | [x] |
+| 13 | `encode_quant` | `lsbit=0`; `uni&7=7`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 14 | `encode_quant` | `lsbit=0`; `uni&7=7`; `uni&8!=0`; comparisons `(false,true)` | [x] |
+| 15 | `encode_quant` | `lsbit=4`; `uni&7=0`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 16 | `encode_quant` | `lsbit=4`; `uni&7=0`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 17 | `encode_quant` | `lsbit=4`; `uni&7=1..=6`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 18 | `encode_quant` | `lsbit=4`; `uni&7=1..=6`; `uni&8=0`; comparisons `(true,false)` | [x] |
+| 19 | `encode_quant` | `lsbit=4`; `uni&7=1..=6`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 20 | `encode_quant` | `lsbit=4`; `uni&7=1..=6`; `uni&8!=0`; comparisons `(true,false)` | [x] |
+| 21 | `encode_quant` | `lsbit=4`; `uni&7=7`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 22 | `encode_quant` | `lsbit=4`; `uni&7=7`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 23 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=0`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 24 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=0`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 25 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=1..=6`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 26 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=1..=6`; `uni&8=0`; comparisons `(true,false)` | [x] |
+| 27 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=1..=6`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 28 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=1..=6`; `uni&8!=0`; comparisons `(true,false)` | [x] |
+| 29 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=7`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 30 | `encode_quant` | `lsbit` odd and nonzero; `uni&7=7`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 31 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=0`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 32 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=0`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 33 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=1..=6`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 34 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=1..=6`; `uni&8=0`; comparisons `(true,false)` | [x] |
+| 35 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=1..=6`; `uni&8!=0`; comparisons `(false,false)` | [x] |
+| 36 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=1..=6`; `uni&8!=0`; comparisons `(true,false)` | [x] |
+| 37 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=7`; `uni&8=0`; comparisons `(false,false)` | [x] |
+| 38 | `encode_quant` | `lsbit` even, nonzero, and not four; `uni&7=7`; `uni&8!=0`; comparisons `(false,false)` | [x] |
 
+Each row is tested with many fixed-seed randomized inputs. A separate
+valid-path boundary corpus covers zero, negative values, and `int` extrema.

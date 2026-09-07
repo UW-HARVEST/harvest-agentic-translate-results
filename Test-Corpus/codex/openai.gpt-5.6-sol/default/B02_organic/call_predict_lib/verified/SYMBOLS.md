@@ -1,21 +1,21 @@
 # Dynamic Symbol Surface
 
-Reference library:
-`../c_src/build/libharvest-work-7iUyaQ.so`
+Generated from:
 
-Translation library:
-`target/release/libcall_predict_lib.so`
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-uQuYXX.so
+```
 
-The table is derived from `nm -D --defined-only` on the reference shared
-library. Undefined weak runtime symbols are loader dependencies, not public
-definitions, and are not part of the callable library API.
+| C symbol | C type | Rust export present | Rust type |
+|----------|--------|---------------------|-----------|
+| `call_predict` | `T` | [x] | `T` |
 
-| C symbol | C type | Rust type | Status |
-|----------|--------|-----------|--------|
-| `call_predict` | `T` | `T` | present |
+The C shared object exports no other defined dynamic symbols. In particular,
+`get_predict_func` is declared in `include/lib.h` but has no definition in the
+C source and is not present in the C dynamic symbol table.
 
-Missing C definitions in Rust: **0**
+## Completion checks
 
-The public header declares `get_predict_func(int)`, but the C source does not
-define it and the reference shared library does not export it. The implemented
-external entry point is `call_predict(int)`.
+- [x] Every defined dynamic C symbol has an exact-name Rust export.
+- [x] Missing C symbols from Rust: 0.
+- [x] Undefined non-runtime/non-libc C symbols from Rust: 0.

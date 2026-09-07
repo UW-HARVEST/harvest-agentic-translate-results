@@ -1,149 +1,97 @@
-# CONFIGS.md — Phase A: configuration surface table (valid inputs)
+# CONFIGS.md — Phase B configuration surface table
 
 Mechanically derived from the branches `c_src/src/lib.c` actually takes.
 
 ## Axes the C code branches on
 
-| axis | where | distinct values the C distinguishes |
-|---|---|---|
-| mode string | `classify_mode`, `lib.c:30-37` | `"standard"`, `"enhanced"`, `"turbo"`, `"extreme"`, anything else (5) |
-| `level` | `apply_multiplier` `switch`, `lib.c:45-60` | `4`, `3`, `2`, `1`, `0`, other (6 fall-through arms) |
-| `base` magnitude | `apply_multiplier` accumulator | small / near `INT_MAX` (overflow) / near `INT_MIN` |
-| `factor` magnitude | `convert_time_factor`, `×1e12` then `(int)` | in-range / boundary / out-of-range / non-finite |
-| `value` magnitude | `convert_negative_overflow`, `×-1e15` then `(int)` | in-range / boundary / out-of-range / non-finite |
-| `offset_days`,`offset_hours` | `get_modified_time`, `int` products | non-overflowing / overflowing, each sign |
-| `time_t` byte pattern | `hash_time_value`, per-byte `<<(i%4)*8` | 8 byte lanes, high-bit set vs clear, sign of `t` |
-| **wall clock** `time(NULL)` | `get_modified_time`, `lib.c:80-81` | `current >> 29` — sign of the clock (arithmetic vs logical shift), the `2^29` multiples, and the `time_t` extremes.  Driven with an `LD_PRELOAD` interposer, see rows C64–C69. |
-| `mode_selector % 4` | `modeselect`, array index | `0`,`1`,`2`,`3` (and negative → Phase C) |
-| `complexity % 5` | `modeselect` → `apply_multiplier` | `0`,`1`,`2`,`3`,`4` (and negative → Phase C) |
-| `seed % 24` | `modeselect` → `get_modified_time(offset_hours)` | `0`, positive, negative |
-| `time_offset` | `modeselect` → `get_modified_time(offset_days)` + `factor2` | `0`, ±small, ±overflowing |
-| `seed` | `modeselect` → `factor1` | `0` (→ `result1 == 0`) vs non-zero (→ `INT_MIN`) |
-| stdout | 8 `printf` calls in `modeselect` | `%s`, `%X`, `%d`, `%ld`, `%.2e` formatting all compared byte-for-byte |
+There is no runtime option struct, no global state, and no `#ifdef` in the C
+source — the "configuration" of this library is entirely **the shape of the
+arguments**. The axes, grepped from the source:
 
-There are **no compile-time `#ifdef`s, no runtime option/flag setters, no
-opaque context object and no global state** in `lib.c`; the only "configuration"
-is the argument tuple of each entry point.  All 7 public entry points are
-exercised directly below, including the six low-level ones that `modeselect`
-composes (`classify_mode`, `apply_multiplier`, `convert_time_factor`,
-`convert_negative_overflow`, `get_modified_time`, `hash_time_value`) — not just
-the `modeselect` convenience wrapper declared in `include/lib.h`.
+* **A1 — `classify_mode` string identity**: 4 exact-match branches (`"standard"`,
+  `"enhanced"`, `"turbo"`, `"extreme"`) + the no-match fall-through (lib.c:30-39).
+* **A2 — `apply_multiplier` level**: 5 fall-through `case` labels `4→3→2→1→0`
+  (each a *different* accumulated sum) + `default` (lib.c:45-59). 6 distinct paths.
+* **A3 — `apply_multiplier` base magnitude**: small / near `INT_MAX` / near
+  `INT_MIN` (signed overflow in `result +=`).
+* **A4 — double → int conversion domain** (`convert_time_factor` ×`1e12`,
+  `convert_negative_overflow` ×`-1e15`): in-range, out-of-range, `NaN`, `±inf`,
+  `±0.0`, denormal, exactly-at-`INT_MIN`/`INT_MAX`, negative vs positive.
+* **A5 — `get_modified_time` offsets**: sign of `offset_days`, sign of
+  `offset_hours`, zero, `int`-overflowing products, `int`-overflowing sum.
+* **A6 — `hash_time_value` `t` byte pattern**: `sizeof(time_t) == 8` so the loop
+  runs 8 times with `i % 4` wrapping twice — zero, small positive, negative,
+  `INT64_MIN`, `INT64_MAX`, all-`0xFF`, random 64-bit patterns.
+* **A7 — `modeselect` `mode_selector % 4`**: selects which of the 4 modes, i.e.
+  couples A1 to the top-level entry point. Values `0,1,2,3` and `4k+r`.
+* **A8 — `modeselect` `complexity % 5`**: selects the A2 path (`0..4`), negative
+  `complexity` reaches `default`.
+* **A9 — `modeselect` `seed % 24`**: feeds `offset_hours`; sign follows `seed`.
+* **A10 — `modeselect` `seed`/`time_offset` magnitude**: drives A4 via
+  `seed*1e8` and `time_offset*-1e7`, and the `result1 & 0xFF` /
+  `result2 & 0xFF00` mixing masks.
+* **A11 — entry-point level**: the six *low-level* exports are called directly
+  (not only through the `modeselect` convenience wrapper), because
+  `c_src/include/lib.h` hides them but the `.so` exports them.
 
-Every row is driven with **many randomized inputs** from a fixed-seed
-SplitMix64 PRNG (`SEED = 0x9E3779B97F4A7C15`), not a single hand-picked value.
+`sizeof(time_t)` is 8 on this ABI, and `time(NULL) >> 29` is constant for ~17
+years, so `get_modified_time`/`modeselect` are deterministic *within a test run*
+and are compared C-vs-Rust back to back.
 
-## Table
+## Rows (pruned cross-product of the axes the C distinguishes)
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|--------------------------------------------|-----|
-| C1  | `classify_mode` | exact `"standard"` | [x] |
-| C2  | `classify_mode` | exact `"enhanced"` | [x] |
-| C3  | `classify_mode` | exact `"turbo"` | [x] |
-| C4  | `classify_mode` | exact `"extreme"` | [x] |
-| C5  | `classify_mode` | randomized unknown ASCII strings, length 1..64 (2000 samples) | [x] |
-| C6  | `classify_mode` | randomized unknown strings over full byte range 0x01..0xFF, length 1..64 (2000 samples) | [x] |
-| C7  | `classify_mode` | randomized 1-byte mutations of the 4 valid modes (insert/replace/truncate/extend, 2000 samples) | [x] |
-| C8  | `classify_mode` | long strings (256, 1024, 4096 bytes) of random bytes | [x] |
-| C9  | `apply_multiplier` | `level = 0`, randomized `base` over the full `i32` range (2000 samples) | [x] |
-| C10 | `apply_multiplier` | `level = 1`, randomized `base` over the full `i32` range | [x] |
-| C11 | `apply_multiplier` | `level = 2`, randomized `base` over the full `i32` range | [x] |
-| C12 | `apply_multiplier` | `level = 3`, randomized `base` over the full `i32` range | [x] |
-| C13 | `apply_multiplier` | `level = 4`, randomized `base` over the full `i32` range | [x] |
-| C14 | `apply_multiplier` | `base = 0xA0` (the literal `modeselect` uses) × `level ∈ 0..=4` | [x] |
-| C15 | `apply_multiplier` | `base ∈ {0, 1, -1, INT_MAX, INT_MIN, INT_MAX-0x300, INT_MIN+0x300}` × `level ∈ 0..=4` (overflow corners) | [x] |
-| C16 | `convert_time_factor` | in-range: random `factor` with `|factor| ≤ 2.147e-3` so the `×1e12` product fits `int` (2000 samples) | [x] |
-| C17 | `convert_time_factor` | boundary sweep: `factor = k/1e12` for `k` within ±4 ULP of `INT_MAX`/`INT_MIN`, plus `±2147483647e-12`, `±2147483648e-12` | [x] |
-| C18 | `convert_time_factor` | `0.0`, `-0.0`, `f64::MIN_POSITIVE`, subnormal (`5e-324`), `1e-300` | [x] |
-| C19 | `convert_time_factor` | randomized full-range `f64` bit patterns (finite, 2000 samples) — mixes in-range and out-of-range | [x] |
-| C20 | `convert_negative_overflow` | in-range: random `value` with `|value| ≤ 2.147e-6` so the `×-1e15` product fits `int` (2000 samples) | [x] |
-| C21 | `convert_negative_overflow` | boundary sweep around `∓2147483647e-15` / `∓2147483648e-15` (note the sign flip from `-1e15`) | [x] |
-| C22 | `convert_negative_overflow` | `0.0`, `-0.0`, `f64::MIN_POSITIVE`, subnormal, `1e-300` | [x] |
-| C23 | `convert_negative_overflow` | randomized full-range `f64` bit patterns (finite, 2000 samples) | [x] |
-| C24 | `get_modified_time` | `(0, 0)` | [x] |
-| C25 | `get_modified_time` | randomized non-overflowing `offset_days ∈ ±24855`, `offset_hours ∈ ±596523` such that the sum fits `int` (2000 samples) | [x] |
-| C26 | `get_modified_time` | randomized negative-only offsets in the non-overflowing range | [x] |
-| C27 | `get_modified_time` | randomized `offset_days` over the full `i32` range, `offset_hours = 0` (product overflow) | [x] |
-| C28 | `get_modified_time` | `offset_days = 0`, randomized `offset_hours` over the full `i32` range (product overflow) | [x] |
-| C29 | `get_modified_time` | both randomized over the full `i32` range (product **and** sum overflow, 4000 samples) | [x] |
-| C30 | `get_modified_time` | corners: `{0, ±1, 24855, 24856, -24855, -24856, INT_MAX, INT_MIN}²` | [x] |
-| C31 | `hash_time_value` | `t ∈ {0, 1, -1, 2, -2, i64::MIN, i64::MAX, 0x5A5A5A5A5A5A5A5A}` | [x] |
-| C32 | `hash_time_value` | randomized full-range `i64` (4000 samples) — exercises all 8 byte lanes incl. high-bit-set bytes | [x] |
-| C33 | `hash_time_value` | single-byte walks: `t = 0xNN << (8*k)` for every byte value `NN ∈ {0x01,0x7F,0x80,0xFF}` and every lane `k ∈ 0..8` | [x] |
-| C34 | `hash_time_value` | plausible `time_t` values: `now`, `now>>29`, `now ± random`, `2^29·k` boundaries | [x] |
-| C35 | `get_modified_time` → `hash_time_value` | **composed pipeline**: feed the output of C25/C29 straight into `hash_time_value` and compare (2000 samples) | [x] |
-| C36 | `classify_mode` ∘ `apply_multiplier` ∘ `get_modified_time` ∘ `hash_time_value` | **hand-composed re-implementation** of `modeselect`'s body from the low-level exports of *one* library, cross-checked against the other library's `modeselect` return value | [x] |
-| C37 | `modeselect` | `mode_selector%4 = 0`, `complexity%5 = 0`, randomized `time_offset`, `seed` (return value **and** full stdout) | [x] |
-| C38 | `modeselect` | `mode_selector%4 = 0`, `complexity%5 = 1`, randomized `time_offset`, `seed` | [x] |
-| C39 | `modeselect` | `mode_selector%4 = 0`, `complexity%5 = 2`, randomized `time_offset`, `seed` | [x] |
-| C40 | `modeselect` | `mode_selector%4 = 0`, `complexity%5 = 3`, randomized `time_offset`, `seed` | [x] |
-| C41 | `modeselect` | `mode_selector%4 = 0`, `complexity%5 = 4`, randomized `time_offset`, `seed` | [x] |
-| C42 | `modeselect` | `mode_selector%4 = 1`, `complexity%5 = 0`, randomized `time_offset`, `seed` | [x] |
-| C43 | `modeselect` | `mode_selector%4 = 1`, `complexity%5 = 1`, randomized `time_offset`, `seed` | [x] |
-| C44 | `modeselect` | `mode_selector%4 = 1`, `complexity%5 = 2`, randomized `time_offset`, `seed` | [x] |
-| C45 | `modeselect` | `mode_selector%4 = 1`, `complexity%5 = 3`, randomized `time_offset`, `seed` | [x] |
-| C46 | `modeselect` | `mode_selector%4 = 1`, `complexity%5 = 4`, randomized `time_offset`, `seed` | [x] |
-| C47 | `modeselect` | `mode_selector%4 = 2`, `complexity%5 = 0`, randomized `time_offset`, `seed` | [x] |
-| C48 | `modeselect` | `mode_selector%4 = 2`, `complexity%5 = 1`, randomized `time_offset`, `seed` | [x] |
-| C49 | `modeselect` | `mode_selector%4 = 2`, `complexity%5 = 2`, randomized `time_offset`, `seed` | [x] |
-| C50 | `modeselect` | `mode_selector%4 = 2`, `complexity%5 = 3`, randomized `time_offset`, `seed` | [x] |
-| C51 | `modeselect` | `mode_selector%4 = 2`, `complexity%5 = 4`, randomized `time_offset`, `seed` | [x] |
-| C52 | `modeselect` | `mode_selector%4 = 3`, `complexity%5 = 0`, randomized `time_offset`, `seed` | [x] |
-| C53 | `modeselect` | `mode_selector%4 = 3`, `complexity%5 = 1`, randomized `time_offset`, `seed` | [x] |
-| C54 | `modeselect` | `mode_selector%4 = 3`, `complexity%5 = 2`, randomized `time_offset`, `seed` | [x] |
-| C55 | `modeselect` | `mode_selector%4 = 3`, `complexity%5 = 3`, randomized `time_offset`, `seed` | [x] |
-| C56 | `modeselect` | `mode_selector%4 = 3`, `complexity%5 = 4`, randomized `time_offset`, `seed` | [x] |
-| C57 | `modeselect` | shape: `seed = 0` (⇒ `factor1 = 0`, `result1 = 0`, `%.2e` prints `0.00e+00`) × all 4 mode indices | [x] |
-| C58 | `modeselect` | shape: `time_offset = 0` (⇒ `factor2 = -0.0`, `result2 = 0`, `%.2e` prints `-0.00e+00`) × all 4 mode indices | [x] |
-| C59 | `modeselect` | shape: `seed = 0 && time_offset = 0` (both conversions in range) | [x] |
-| C60 | `modeselect` | shape: `seed` negative ⇒ `seed % 24` negative ⇒ negative `offset_hours` (2000 samples) | [x] |
-| C61 | `modeselect` | shape: `time_offset` chosen to overflow `offset_days * 86400` (|v| > 24855), randomized (2000 samples) | [x] |
-| C62 | `modeselect` | shape: all four arguments randomized over the **full `i32` range**, restricted to `mode_selector % 4 >= 0` (10000 samples) | [x] |
-| C63 | `modeselect` | corners: `{0, ±1, ±4, ±5, 24856, INT_MAX, INT_MIN}` cross-product on all 4 arguments, filtered to `mode_selector % 4 >= 0` | [x] |
+Every row is driven with **many randomized inputs** (`SeedableRng`-style xorshift,
+fixed seed `0x5EED_1234_ABCD_EF01`) unless it is a pure enumeration.
 
-### The `time(NULL)` axis (`tests/phase_b_faketime.rs`)
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|------------------------------------------|------|-----|
+| 1 | `classify_mode` | each of the 4 exact literals `"standard"/"enhanced"/"turbo"/"extreme"` | `cfg_01_classify_mode_exact_literals` | [x] |
+| 2 | `classify_mode` | 4096 random byte strings (len 0..16, bytes 1..=255) — mostly non-matching, exercises `strcmp` on arbitrary data | `cfg_02_classify_mode_random_strings` | [x] |
+| 3 | `classify_mode` | random strings drawn from a small alphabet so near-misses of the literals occur often (1-char mutations of the 4 literals) | `cfg_03_classify_mode_near_misses` | [x] |
+| 4 | `apply_multiplier` | `level` enumerated `0..=4` (the 5 distinct fall-through sums) × `base` = `0` | `cfg_04_apply_multiplier_levels_base_zero` | [x] |
+| 5 | `apply_multiplier` | `level` `0..=4` × 4096 random `base` (full `i32` range, incl. overflow) | `cfg_05_apply_multiplier_levels_random_base` | [x] |
+| 6 | `apply_multiplier` | `level` `0..=4` × `base` ∈ {`INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `INT_MAX-1`, `INT_MAX`} (boundary bases, A3) | `cfg_06_apply_multiplier_boundary_bases` | [x] |
+| 7 | `apply_multiplier` | 4096 fully random `(base, level)` pairs — level mostly outside `0..=4` | `cfg_07_apply_multiplier_random_pairs` | [x] |
+| 8 | `convert_time_factor` | in-range domain: `factor` ∈ `(-2.147e-3, 2.147e-3)` random, so `factor*1e12` fits in `int` (the only non-overflowing shape) | `cfg_08_convert_time_factor_in_range` | [x] |
+| 9 | `convert_time_factor` | random `f64` over many magnitudes (`2^-60 … 2^60`, both signs) — mixed in-range / out-of-range | `cfg_09_convert_time_factor_random_magnitudes` | [x] |
+| 10 | `convert_time_factor` | random raw 64-bit bit patterns reinterpreted as `f64` (includes NaNs, infinities, denormals, negative zero) | `cfg_10_convert_time_factor_random_bits` | [x] |
+| 11 | `convert_negative_overflow` | in-range domain: `value` ∈ `(-2.147e-6, 2.147e-6)` random, so `value*-1e15` fits in `int`; checks the sign flip | `cfg_11_convert_negative_overflow_in_range` | [x] |
+| 12 | `convert_negative_overflow` | random `f64` over many magnitudes, both signs | `cfg_12_convert_negative_overflow_random_magnitudes` | [x] |
+| 13 | `convert_negative_overflow` | random raw 64-bit bit patterns as `f64` | `cfg_13_convert_negative_overflow_random_bits` | [x] |
+| 14 | `get_modified_time` | `(days, hours)` = `(0,0)` and small non-overflowing values, both signs (A5 sign cross-product) | `cfg_14_get_modified_time_small_offsets` | [x] |
+| 15 | `get_modified_time` | 4096 random `(days, hours)` over the full `i32` range (products and sums overflow `int`) | `cfg_15_get_modified_time_random_offsets` | [x] |
+| 16 | `get_modified_time` | boundary offsets: each of `{INT_MIN, INT_MIN+1, -24856, -1, 0, 1, 24855, 24856, INT_MAX}` × `{INT_MIN, -1, 0, 1, 23, 596523, INT_MAX}` | `cfg_16_get_modified_time_boundary_offsets` | [x] |
+| 17 | `hash_time_value` | `t` enumerated over boundary values `{0, 1, -1, i64::MIN, i64::MAX, 0xFFFF_FFFF, 0x1_0000_0000, time(NULL)>>29}` | `cfg_17_hash_time_value_boundaries` | [x] |
+| 18 | `hash_time_value` | 8192 random 64-bit `t` values (exercises the `i%4` byte-lane wrap over all 8 bytes) | `cfg_18_hash_time_value_random` | [x] |
+| 19 | `hash_time_value` | `t` values with exactly one byte non-zero, for each of the 8 byte positions and each of 256 byte values — isolates the `<< ((i%4)*8)` lane mapping | `cfg_19_hash_time_value_single_byte_lanes` | [x] |
+| 20 | `modeselect` | full 4×5 cross-product of `mode_selector ∈ 0..4` (A7) × `complexity ∈ 0..5` (A8) with `time_offset = seed = 0` | `cfg_20_modeselect_mode_x_complexity` | [x] |
+| 21 | `modeselect` | `mode_selector ∈ 0..4` × `complexity ∈ 0..5` × `seed ∈ {0,1,23,24,25}` (A9 `%24` wrap) × `time_offset ∈ {0,1,-1}` | `cfg_21_modeselect_mode_complexity_seed_offset` | [x] |
+| 22 | `modeselect` | 2048 randomized `(mode_selector, time_offset, complexity, seed)` with `mode_selector >= 0` (in-bounds index) over the full `i32` range — drives A4/A10 overflow mixing | `cfg_22_modeselect_random_full_range` | [x] |
+| 23 | `modeselect` | randomized with `seed` restricted to `|seed| < 22` so `seed*1e8*1e12` stays in-range and `result1 & 0xFF` is *non-zero* (otherwise the overflow sentinel masks the mixing) | `cfg_23_modeselect_seed_in_range_conversion` | [x] |
+| 24 | `modeselect` | randomized with `time_offset` restricted so `time_offset*-1e7*-1e15` is in-range, making `result2 & 0xFF00` meaningful | `cfg_24_modeselect_time_offset_in_range_conversion` | [x] |
+| 25 | `modeselect` | boundary parameter tuples: every component ∈ `{0, 1, 3, 4, 5, 23, 24, INT_MAX}` (non-negative selector) | `cfg_25_modeselect_boundary_tuples` | [x] |
+| 26 | **stdout** of `modeselect` (all 8 `printf` calls) | stdout of C vs Rust captured byte-for-byte in a forked child, over the 4×5 mode/complexity grid plus randomized tuples — covers `%s`, `%d`, `%X`, `%ld`, `%.2e` formatting | `cfg_26_modeselect_stdout_byte_identical` | [x] |
+| 27 | **composed pipeline** | `get_modified_time` → `hash_time_value` chained through the `.so`s (the exact composition `modeselect` performs), randomized, so a bug that cancels inside `modeselect` is still caught | `cfg_27_pipeline_get_modified_time_into_hash` | [x] |
+| 28 | **composed pipeline** | `classify_mode` fed by the 4 mode literals → value folded exactly as `modeselect` does, cross-checked against `modeselect`'s own arithmetic | `cfg_28_pipeline_classify_into_modeselect_arithmetic` | [x] |
 
-`get_modified_time` reads the wall clock, and with the real clock `time(NULL) >> 29`
-is the constant `3` until 2038.  That hides an entire axis, so the rows below
-re-run the suite in a child process with an `LD_PRELOAD` `time()` interposer
-(`examples/faketime.rs`) forcing 25 different clock values: `0, ±1, ±2,
-2^29−1, 2^29, 2^29+1, −(2^29−1), −2^29, −(2^29+1), 1756000000, ±2^31, 2^32,
-i64::MIN, i64::MIN+1, i64::MAX` and 6 random `i64`s.
+## C codegen sensitivity (measured, not assumed)
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|--------------------------------------------|-----|
-| C64 | `get_modified_time` | 25 forced clock values × 2015 offset pairs each (15 corner pairs + 1500 full-range random + 500 realistic) — asserts the C's exact `base + (int)(d*86400 + h*3600)` wraparound | [x] |
-| C65 | `get_modified_time` → `hash_time_value` | composed, for every (clock, offset) pair of C64 | [x] |
-| C66 | `modeselect` | 25 forced clocks × full 4×5 cross product of mode index and complexity level × 6 `(time_offset, seed)` shapes, return value **and** stdout | [x] |
-| C67 | `modeselect` | the `Modified time: %ld` field for **negative** clock bases (`%ld` of a negative `time_t`) | [x] |
-| C68 | `modeselect` | negative `mode_selector` multiples of 4 (`-4`, `-8`, `INT_MIN`) under each forced clock | [x] |
-| C69 | `hash_time_value` | the exact `time_t` values each forced clock produces, ±4, plus `clock` itself and `2·(clock>>29)` | [x] |
+`c_src/CMakeLists.txt` sets no optimisation flags, so the ground-truth build is
+gcc's default (`-O0`). `run_all.sh` additionally re-runs the entire suite against
+the same C source rebuilt at `-O0`, `-O2` and `-O3 -fwrapv`; all three agree with
+the Rust on every row.
 
-This axis is what makes the arithmetic `>> 29` observable: with clock `-536870913`
-the base is `-2`, whereas a logical shift would give `34359738366`.  Both
-`current >>= 29` mutants (logical shift, and shift-by-28) are detected only by
-these rows.
+At plain `-O3`, gcc **stops agreeing with itself**: `hash_time_value(0)` returns
+`0x7E4B2761` instead of the `0xF6F605A` produced at `-O0`, `-O2` and
+`-O3 -fwrapv`, because `hash *= 0x1F` overflows `int` (undefined behaviour) and
+`-O3` reassociates the loop on that assumption. `0xF6F605A` is the wrapping
+two's-complement value, which is what the Rust reproduces, so the translation
+matches the C as the project actually builds it. `-O3` without `-fwrapv` is
+therefore excluded from the sweep as a C-side UB artefact, not a translation
+defect.
 
-Legend: `[x]` = passes byte-for-byte against the C `.so` across all randomized
-inputs for that row.  Row → test mapping: `tests/phase_b_valid.rs` (C1–C63),
-`tests/phase_b_faketime.rs` (C64–C69).
+## Binary executable
 
-## Anti-vacuity evidence
-
-The suite was mutation-tested: 24 single-edit mutants were injected into
-`src/lib.rs`, rebuilt, and run.  **22 of 24 were detected.**  The two survivors
-are *provably equivalent* mutants, not coverage gaps:
-
-| mutant | why it cannot be detected |
-|---|---|
-| `result1 & 0xFF` → `& 0x1FF` | inside `modeselect`, `result1` is only ever `0` or `INT_MIN` (E27); `0x80000000 & 0x1FF == 0x80000000 & 0xFF == 0` |
-| `result2 & 0xFF00` → `& 0xFFFF` | likewise `result2 ∈ {0, INT_MIN}` (E28); `0x80000000 & 0xFFFF == 0` |
-
-Detected mutants included: saturating instead of x86 `cvttsd2si` `double`→`int`
-conversion, `d2i` boundary off-by-one, NaN→0, a removed `switch` fall-through
-edge, wrong `default:` sentinel, `hash *= 0x1F`→`0x1E`, `& 0x7FFFFFFF`→`& 0xFFFFFFFF`,
-wrong hash seed, `(i%4)*8`→`(i%8)*8`, `i64` instead of wrapping `i32` offset
-arithmetic, logical instead of arithmetic `>>29`, `>>29`→`>>28`, `86400`→`86399`,
-`% 4`→`& 3` for the mode index, `% 5`→`% 4`, `% 24`→`% 23`, `% 0x1000`→`% 0x800`,
-`0xBEEF`→`0xBEEE`, `1e12`→`1e11`, `-1e15`→`1e15`, `1e8`→`1e7`, a swapped
-`classify_mode` branch, a changed return sentinel, a `printf` argument change,
-and two format-string changes (`%.2e`→`%.3e`, `%ld`→`%d`, dropped `\n`).
+`c_src/CMakeLists.txt` builds **no executable** (`add_library` only, no `main` in
+`lib.c`), so the "compare C and Rust binary stdout" gate is satisfied by row 26,
+which compares the library's own stdout byte-for-byte instead.

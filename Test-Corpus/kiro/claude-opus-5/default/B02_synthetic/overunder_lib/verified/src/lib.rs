@@ -32,19 +32,20 @@ use std::mem::MaybeUninit;
 // byte-identical output (and identical stream/buffering behaviour when the
 // library is loaded next to other C code), we call libc's printf directly
 // rather than going through Rust's own stdout.
+//
+// `memcpy` and `strncpy` are likewise called through libc so that the
+// translation performs the *same* library calls the C source does, with the
+// same behaviour on every argument the C accepts (including the degenerate
+// ones), independently of the Rust build profile.
 unsafe extern "C" {
     #[link_name = "printf"]
     unsafe fn c_printf(fmt: *const c_char, ...) -> c_int;
     #[link_name = "sqrt"]
     safe fn c_sqrt(x: c_double) -> c_double;
-    // The C source calls `memcpy` directly. Using libc's `memcpy` rather than
-    // `ptr::copy_nonoverlapping` keeps behaviour identical to C for *every*
-    // argument, including the invalid ones: `copy_nonoverlapping` carries
-    // debug-profile precondition assertions that turn a NULL pointer into a
-    // Rust panic/SIGABRT, whereas C faults with SIGSEGV. Calling `memcpy`
-    // reproduces the C fault mode in both the debug and release profiles.
     #[link_name = "memcpy"]
     unsafe fn c_memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+    #[link_name = "strncpy"]
+    unsafe fn c_strncpy(dest: *mut c_char, src: *const c_char, n: usize) -> *mut c_char;
 }
 
 /// C: `INT_MAX` from <limits.h>
@@ -136,7 +137,9 @@ pub extern "C" fn process_with_fallthrough(code: c_int, base_value: c_int) -> c_
 
 /// `void copy_data_block(DataBlock *dest, const DataBlock *src)`
 ///
-/// A raw `memcpy` of `sizeof(DataBlock)` bytes, padding included.
+/// A raw `memcpy` of `sizeof(DataBlock)` bytes, padding included. This calls
+/// libc `memcpy` — the very function the C source calls — so the behaviour is
+/// identical for every argument, degenerate ones included.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn copy_data_block(dest: *mut DataBlock, src: *const DataBlock) {
     unsafe {
@@ -221,17 +224,8 @@ pub extern "C" fn overunder(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {
         // strncpy(dst, "Source", sizeof(label) - 1) copies "Source" and then
         // zero-pads out to 19 bytes; label[19] is then explicitly cleared.
         let label = &mut (*p).label;
-        let src = b"Source";
-        let n = label.len() - 1; // 19
-        let mut i = 0usize;
-        while i < n && i < src.len() {
-            label[i] = src[i] as c_char;
-            i += 1;
-        }
-        while i < n {
-            label[i] = 0;
-            i += 1;
-        }
+        let n = label.len() - 1; // sizeof(source_block.label) - 1 == 19
+        c_strncpy(label.as_mut_ptr(), b"Source\0".as_ptr() as *const c_char, n);
         label[label.len() - 1] = 0;
         &mut *p
     };

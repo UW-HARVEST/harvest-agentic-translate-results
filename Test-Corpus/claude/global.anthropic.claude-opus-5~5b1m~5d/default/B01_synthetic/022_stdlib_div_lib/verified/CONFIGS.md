@@ -1,82 +1,93 @@
 # CONFIGS.md — Phase B configuration-surface table
 
-## Axes derived from the C source
+## Mechanical derivation
 
-`c_src/src/driver.c` contains no options, no modes, no flags, no global state and
-no `#ifdef`s, and `c_src/include/driver.h` exposes exactly one entry point:
+### Runtime options / modes / flags
 
-```c
-void driver(int x, int y);
+```
+$ grep -nE 'if *\(|switch|#ifdef|#if |enum|struct|extern|set[A-Z_]|_flag|option|mode' \
+      c_src/include/driver.h c_src/src/driver.c
+<no matches other than the #ifndef DRIVER_H_ include guard>
 ```
 
-So there is exactly **one** public entry point, and it is simultaneously the
-lowest-level one — there is no convenience wrapper to hide behind, and no
-per-call configuration to set. The behavioural axes are therefore entirely
-**input shape**, and they come from what the two callees actually distinguish:
+There are **none**. The public header declares exactly one function,
+`void driver(int x, int y);`. There is no init/config/context object, no
+setter, no global, no environment variable read, and no compile-time
+`#ifdef` that alters behaviour. So the configuration axes reduce entirely to
+**input shape**.
 
-**Axis A — `div(3)` / `idivl` truncation semantics.** C99 division truncates
-toward zero and the remainder takes the sign of the *numerator*. The sign
-quadrant of `(x, y)` is a real branch in the observable result, so all four
-quadrants must be covered separately.
+### Feature combinations (Rust side)
 
-**Axis B — magnitude relationship.** `|x| < |y|` (quotient `0`, remainder `x`),
-`|x| == |y|` (quotient `±1`, remainder `0`), `|x| > |y|`.
+```
+$ grep -nE '^\[features\]|feature *=' translation/Cargo.toml translation/src/lib.rs
+<no matches>
+```
 
-**Axis C — exactness.** `x % y == 0` versus `x % y != 0`; these produce different
-remainder text.
+`translation/Cargo.toml` declares **no `[features]` table**, and no
+`#[cfg(feature = …)]` appears in `src/`. The only Cargo feature axis is therefore
+the empty set: `--no-default-features` and the default build are the *same*
+compilation. Both are still run in Phase D for completeness.
 
-**Axis D — degenerate/identity divisors.** `y == 1` (quotient `x`), `y == -1`
-(quotient `-x`, the trap case when `x == INT_MIN`), `x == 0` (both outputs `0`).
+### Full set of public entry points
 
-**Axis E — extreme values.** `INT_MIN`, `INT_MIN + 1`, `INT_MAX`, `INT_MAX - 1`
-in either position. These matter because `INT_MIN` has no positive counterpart,
-and because they are the widest `%d` conversions.
+`driver` is the only exported symbol (see `SYMBOLS.md`). It **is** the lowest-level
+entry point — there is no convenience wrapper layered over a lower API, so
+"exercise the low-level entry points directly" is satisfied by calling `driver`
+itself via `dlsym`.
 
-**Axis F — `printf("%d")` formatting width/sign.** The output text is the only
-observable, so the number of digits and the presence of `-` are part of the
-surface: 1-digit, multi-digit, 10-digit, and negative renderings of *both*
-`quot` and `rem`, independently.
+### Input shapes the code actually distinguishes
 
-**Axis G — ABI shape of the call.** `int` parameters occupy the low 32 bits of
-`rdi`/`rsi`; the upper 32 bits are undefined per the SysV ABI. Passing dirty high
-bits is a valid caller behaviour that both libraries must ignore identically.
+`driver` has no branches of its own, but the `div(3)` it calls, and the `%d`
+conversions `printf` performs, do distinguish these axes:
 
-**Axis H — repeated / interleaved invocation and stdout buffering.** `printf` is
-buffered and the buffer is process-global; call sequencing and flush behaviour
-are observable in the byte stream, so single-call and many-call-in-sequence
-shapes are distinct configurations.
+* **sign of `x`** — negative / zero / positive (drives the sign of `quot` *and*
+  independently the sign of `rem`; C99 truncates toward zero, so `rem` takes the
+  sign of the *dividend*).
+* **sign of `y`** — negative / positive.
+* **magnitude relation** — `|x| < |y|` (quotient 0, remainder `x`) vs `|x| >= |y|`.
+* **divisibility** — `x % y == 0` (remainder 0) vs non-zero remainder.
+* **identity/negation divisors** — `y == 1`, `y == -1`.
+* **extremes** — `x` or `y` equal to `INT_MIN` / `INT_MAX`, and their neighbours
+  `INT_MIN+1` / `INT_MAX-1` (one step inside the boundary).
+* **`%d` formatting width** — 1-digit, multi-digit, and the `-2147483648` case
+  (11 characters, the only value whose negation is unrepresentable), because the
+  printed *bytes* are the observable output.
 
-Rows below are the cross-product of these axes, pruned to combinations the code
-actually distinguishes. Every row is driven with **many randomized inputs**
-(seeded, reproducible LCG — seed `0x5EED_1234_ABCD_0001`) rather than one
-hand-picked value, except where the row names a specific boundary constant.
+## The table
 
-## Configuration table
+One row per meaningful combination the C treats differently. Every row is driven
+with **many pseudo-random inputs from a fixed seed** (SplitMix64, seed
+`0x243F6A8885A308D3`), not a single hand-picked value, and compared byte-for-byte
+between the C `.so` and the Rust `.so`.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| 1 | `driver` | quadrant `x>0, y>0`, `|x|>|y|`, inexact; randomized | `cfg_row01_pos_pos_inexact` | [x] |
-| 2 | `driver` | quadrant `x<0, y>0`, `|x|>|y|`, inexact; randomized (remainder must be negative) | `cfg_row02_neg_pos_inexact` | [x] |
-| 3 | `driver` | quadrant `x>0, y<0`, `|x|>|y|`, inexact; randomized (quotient negative, remainder positive) | `cfg_row03_pos_neg_inexact` | [x] |
-| 4 | `driver` | quadrant `x<0, y<0`, `|x|>|y|`, inexact; randomized (quotient positive, remainder negative) | `cfg_row04_neg_neg_inexact` | [x] |
-| 5 | `driver` | all four quadrants, exact division (`x = k*y`); randomized `k`, `y` | `cfg_row05_exact_all_quadrants` | [x] |
-| 6 | `driver` | `|x| < |y|` in all four quadrants → quotient `0`, remainder `x`; randomized | `cfg_row06_smaller_magnitude` | [x] |
-| 7 | `driver` | `|x| == |y|` in all four quadrants → quotient `±1`, remainder `0`; randomized | `cfg_row07_equal_magnitude` | [x] |
-| 8 | `driver` | `x == 0`, random non-zero `y` (both signs) | `cfg_row08_zero_numerator` | [x] |
-| 9 | `driver` | `y == 1`, random `x` incl. `INT_MIN`/`INT_MAX` (identity divisor) | `cfg_row09_divisor_one` | [x] |
-| 10 | `driver` | `y == -1`, random `x` **excluding** `INT_MIN` (negation divisor; `INT_MIN` is `ERRORS.md` row 3) | `cfg_row10_divisor_minus_one` | [x] |
-| 11 | `driver` | `x` ∈ {`INT_MIN`, `INT_MIN+1`, `INT_MAX`, `INT_MAX-1`} × random `y` (both signs) | `cfg_row11_extreme_numerator` | [x] |
-| 12 | `driver` | `y` ∈ {`INT_MIN`, `INT_MIN+1`, `INT_MAX`, `INT_MAX-1`} × random `x` (both signs) | `cfg_row12_extreme_divisor` | [x] |
-| 13 | `driver` | full boundary cross-product: `x`,`y` ∈ {`INT_MIN`, `INT_MIN+1`, `-2`, `-1`, `0`, `1`, `2`, `INT_MAX-1`, `INT_MAX`}, minus the trapping combinations | `boundary_extremes_cross_product` | [x] |
-| 14 | `driver` | `%d` width sweep: operands chosen so `quot` and `rem` independently render as 1, 2, 5, 9 and 10 digits, and as negative | `cfg_row14_printf_width_sweep` | [x] |
-| 15 | `driver` | powers of two and powers-of-two ± 1 for `y` (the shapes a compiler would strength-reduce differently from a true `idiv`) | `cfg_row15_power_of_two_divisors` | [x] |
-| 16 | `driver` | unrestricted random `(x, y)`, `y != 0`, large-volume fuzz sweep (20 000 pairs) over the whole `int` range | `cfg_row16_unrestricted_fuzz` | [x] |
-| 17 | `driver` | ABI: dirty high 32 bits in the 64-bit argument registers, randomized garbage | `abi_high_garbage_bits_ignored` | [x] |
-| 18 | `driver` | many sequential calls without an intervening flush (stdout buffering / output ordering over a long run) | `cfg_row18_buffering_long_run` | [x] |
-| 19 | `driver` | C and Rust calls interleaved within one captured stream, sharing the one process-global `stdout` buffer | `cfg_row19_interleaved_shared_stdout` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `driver` | no options (none exist); `x > 0`, `y > 0`, **exactly divisible** (`x = k*y`) → `rem == 0` | [x] |
+| C2 | `driver` | no options; `x > 0`, `y > 0`, **not divisible** → `quot > 0`, `rem > 0` | [x] |
+| C3 | `driver` | no options; `x < 0`, `y > 0` → `quot <= 0`, `rem <= 0` (remainder takes dividend's sign) | [x] |
+| C4 | `driver` | no options; `x > 0`, `y < 0` → `quot <= 0`, `rem >= 0` | [x] |
+| C5 | `driver` | no options; `x < 0`, `y < 0` → `quot >= 0`, `rem <= 0` | [x] |
+| C6 | `driver` | no options; `x == 0`, `y` any non-zero (both signs, incl. extremes) → `quot == 0, rem == 0` | [x] |
+| C7 | `driver` | no options; `\|x\| < \|y\|`, all four sign combinations → `quot == 0`, `rem == x` | [x] |
+| C8 | `driver` | no options; `y == 1`, `x` full range incl. `INT_MIN`/`INT_MAX` → `quot == x, rem == 0` | [x] |
+| C9 | `driver` | no options; `y == -1`, `x` full range **excluding** `INT_MIN` → `quot == -x`, `rem == 0` (`x == INT_MIN` is error row E5) | [x] |
+| C10 | `driver` | no options; `x == INT_MIN`, `y` random non-zero and `y != -1`, both signs → tests the 11-byte `-2147483648` formatting path and asymmetric-range division | [x] |
+| C11 | `driver` | no options; `x == INT_MAX`, `y` random non-zero, both signs | [x] |
+| C12 | `driver` | no options; `y == INT_MIN` with `x` random (incl. `x == INT_MIN`, `INT_MAX`, `0`) → `quot` is 0 or 1 or -1, `rem == x` except `x == INT_MIN` | [x] |
+| C13 | `driver` | no options; boundary neighbours — `x, y` drawn from `{INT_MIN, INT_MIN+1, -2, -1, 1, 2, INT_MAX-1, INT_MAX}` cross-product (skipping `y == 0` and the `INT_MIN / -1` pair) → "one step past / inside" the range | [x] |
+| C14 | `driver` | no options; **`x`, `y` uniform over the whole `i32` domain**, `y != 0`, `(x,y) != (INT_MIN,-1)` — 20 000 randomized pairs, catches value-dependent bugs no shaped row would pick | [x] |
+| C15 | `driver` | no options; **repeated / interleaved invocation** — C and Rust `driver` called alternately many times in one process against the same shared libc `stdout`, verifying there is no hidden per-call state, no cached/leaked buffer, and identical stream-buffering behaviour across a composed sequence rather than one isolated call | [x] |
 
-## Feature combinations
+## Binary executable
 
-`Cargo.toml` has no `[features]`, so the default set is the only set; the runner
-script nonetheless executes the whole suite under both the default build and
-`--no-default-features` to satisfy the Phase D requirement.
+`c_src/CMakeLists.txt` contains only `add_library(driver SHARED src/driver.c)` —
+there is **no `add_executable`**, so the C project builds **no driver binary** and
+there is no stdout-of-binary comparison to make. `translation/Cargo.toml` likewise
+declares only `crate-type = ["cdylib"]` with no `[[bin]]`. This gate is
+**N/A / vacuously satisfied**; recorded here so it is not mistaken for skipped work.
+
+## Result
+
+All 15 rows pass in `translation/tests/valid_paths.rs`. Every row compares the
+**exact stdout bytes** emitted by the C `.so` against those emitted by the Rust
+`.so` for the identical argument pair.

@@ -70,25 +70,44 @@ pub unsafe extern "C" fn merror(
 }
 
 /// `static const char *(s_month[]) = {"Jan", ... "Dec"};`
-static S_MONTH: [&[u8]; 12] = [
-    b"Jan\0", b"Feb\0", b"Mar\0", b"Apr\0", b"May\0", b"Jun\0", b"Jul\0", b"Aug\0", b"Sep\0",
-    b"Oct\0", b"Nov\0", b"Dec\0",
-];
+///
+/// Held as a raw `[*const c_char; 12]` so that indexing can be reproduced
+/// exactly as the C does it -- see `copy_month`.
+#[repr(transparent)]
+struct MonthTable([*const c_char; 12]);
+
+// The table is immutable, read-only data; the raw pointers only exist because
+// the C declares `const char *[]`.
+unsafe impl Sync for MonthTable {}
+
+static S_MONTH: MonthTable = MonthTable([
+    b"Jan\0".as_ptr() as *const c_char,
+    b"Feb\0".as_ptr() as *const c_char,
+    b"Mar\0".as_ptr() as *const c_char,
+    b"Apr\0".as_ptr() as *const c_char,
+    b"May\0".as_ptr() as *const c_char,
+    b"Jun\0".as_ptr() as *const c_char,
+    b"Jul\0".as_ptr() as *const c_char,
+    b"Aug\0".as_ptr() as *const c_char,
+    b"Sep\0".as_ptr() as *const c_char,
+    b"Oct\0".as_ptr() as *const c_char,
+    b"Nov\0".as_ptr() as *const c_char,
+    b"Dec\0".as_ptr() as *const c_char,
+]);
 
 /// `strncpy(fileq->mon, s_month[p->tm_mon], 3);`
 ///
-/// The C code indexes `s_month` without validating `tm_mon`; an out-of-range
-/// month is undefined behaviour there (it reads past the end of a 12 element
-/// table).  There is nothing meaningful to mirror, so the copy is skipped.
+/// The C indexes `s_month` without validating `tm_mon`, so an out-of-range
+/// month reads past the end of the 12-entry table and then `strncpy`s from
+/// whatever pointer that yields. That is undefined behaviour in C, but it is
+/// NOT a rejection the C performs, and adding a bounds check here would make
+/// the Rust behave *differently* from the ground truth for in-range-looking
+/// callers of `Init_FileQueue`/`Read_FileMon`. The unchecked read is therefore
+/// reproduced verbatim rather than "fixed".
 #[inline]
 unsafe fn copy_month(fileq: *mut file_queue, tm_mon: c_int) {
-    if tm_mon >= 0 && (tm_mon as usize) < 12 {
-        strncpy(
-            (*fileq).mon.as_mut_ptr(),
-            cs(S_MONTH[tm_mon as usize]),
-            3,
-        );
-    }
+    let entry = *S_MONTH.0.as_ptr().offset(tm_mon as isize);
+    strncpy((*fileq).mon.as_mut_ptr(), entry, 3);
 }
 
 /// ```c
@@ -162,16 +181,11 @@ unsafe fn Handle_Queue(fileq: *mut file_queue, flags: c_int) -> c_int {
         }
 
         if fseek((*fileq).fp, 0, SEEK_END) < 0 {
-            // `merror(FSEEK_ERROR, fileq->file_name, errno, strerror(errno));`
-            // The compiled C evaluates `strerror(errno)` FIRST and re-reads
-            // `errno` for the `%d` argument afterwards; bind the message first so
-            // the two `errno` reads happen in the same order here.
-            let err_msg = strerror(errno());
             merror(
                 cs(FSEEK_ERROR),
                 (*fileq).file_name.as_ptr(),
                 errno(),
-                err_msg,
+                strerror(errno()),
             );
             fclose((*fileq).fp);
             (*fileq).fp = ptr::null_mut();
@@ -182,13 +196,11 @@ unsafe fn Handle_Queue(fileq: *mut file_queue, flags: c_int) -> c_int {
     /* File change time */
     if !(*fileq).fp.is_null() {
         if fstat(fileno((*fileq).fp), &mut (*fileq).f_status) < 0 {
-            // Same `errno` / `strerror` evaluation order as the compiled C.
-            let err_msg = strerror(errno());
             merror(
                 cs(FSTAT_ERROR),
                 (*fileq).file_name.as_ptr(),
                 errno(),
-                err_msg,
+                strerror(errno()),
             );
             fclose((*fileq).fp);
             (*fileq).fp = ptr::null_mut();
@@ -219,10 +231,7 @@ pub unsafe extern "C" fn Init_FileQueue(
     (*fileq).flags = 0;
 
     (*fileq).day = (*p).tm_mday;
-    // `fileq->year = p->tm_year + 1900;` -- the C performs plain `int`
-    // addition, which simply wraps on the target; `wrapping_add` keeps that
-    // behaviour instead of panicking in an overflow-checked Rust build.
-    (*fileq).year = (*p).tm_year.wrapping_add(1900);
+    (*fileq).year = (*p).tm_year + 1900;
 
     copy_month(fileq, (*p).tm_mon);
     memset(
@@ -276,10 +285,7 @@ pub unsafe extern "C" fn Read_FileMon(
     }
 
     (*fileq).day = (*p).tm_mday;
-    // `fileq->year = p->tm_year + 1900;` -- the C performs plain `int`
-    // addition, which simply wraps on the target; `wrapping_add` keeps that
-    // behaviour instead of panicking in an overflow-checked Rust build.
-    (*fileq).year = (*p).tm_year.wrapping_add(1900);
+    (*fileq).year = (*p).tm_year + 1900;
     copy_month(fileq, (*p).tm_mon);
 
     /* Get latest file */

@@ -1,19 +1,20 @@
 # Dynamic Symbol Surface
 
-Generated from:
+Source library: `../c_src/build/libpow.so`
+
+Command used to derive the public API:
 
 ```text
 nm -D --defined-only ../c_src/build/libpow.so
-nm -D --defined-only target/release/libpow.so
 ```
 
-| C symbol | C type | Rust type | Status |
-|----------|--------|-----------|--------|
-| `my_pow` | `T` | `T` | [x] exact export present |
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `my_pow` | `T` (global text/function) | `my_pow` | [x] present |
 
-The C shared object has no other defined dynamic symbols. Its undefined
-symbols (`__errno_location`, `fprintf`, `pow`, and `stderr`) are provided by
-libc/libm; the weak toolchain symbols are not library API.
+No C-defined public symbol is missing from `target/release/libpow.so`.
 
-- [x] Missing C API symbols in Rust: 0
-- [x] Undefined non-libc/non-libm C API symbols in Rust: 0
+The complete unfiltered `nm -D` output also contains undefined imports
+(`__errno_location`, `fprintf`, `pow`, and `stderr`) and weak toolchain/runtime
+imports. These are dependencies of the shared object, not public symbols
+defined by the C library.

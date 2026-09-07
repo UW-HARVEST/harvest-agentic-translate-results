@@ -1,54 +1,43 @@
-# Configuration Surface
+# Configuration surface
 
-The crate declares no Cargo features, and the C API has no runtime option
-structure, mode enum, byte-order flag, format, or element-type selector. The
-configuration axes below come from the eleven exported entry points and the
-branches on divisor, floating-point class, index ordering, array count,
-callback, and pointer ordering.
+The C library has no compile-time feature flags or runtime option object. Its
+configuration axes are the exported entry point, callback selected by
+`process_with_foreach`, array count shape, index ordering, and numeric input
+shape. The rows below are the pruned cross-product of branches present in
+`../c_src/src/lib.c`.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C1 | `add_operation` | ordinary signed operands; unused arguments varied; no signed overflow | [x] |
-| C2 | `multiply_operation` | ordinary signed operands; unused arguments varied; no signed overflow | [x] |
-| C3 | `subtract_operation` | ordinary signed operands; unused arguments varied; no signed overflow | [x] |
-| C4 | `modulo_operation` | nonzero positive divisor; mixed-sign dividend | [x] |
-| C5 | `modulo_operation` | nonzero negative divisor; dividend excludes `INT32_MIN` when divisor is `-1` | [x] |
-| C6 | `safe_double_to_int` | finite in-range values: negative, zero, positive, and fractional | [x] |
-| C7 | `safe_double_to_int` | upper saturation boundary: exact/above `INT32_MAX` and positive infinity | [x] |
-| C8 | `safe_double_to_int` | lower saturation boundary: exact/below `INT32_MIN` and negative infinity | [x] |
-| C9 | `safe_double_to_int` | NaN | [x] |
-| C10 | `compute_scaled_value` | finite product strictly inside integer range, including negative/zero/fractional scales | [x] |
-| C11 | `compute_scaled_value` | product reaches upper saturation, including positive infinity | [x] |
-| C12 | `compute_scaled_value` | product reaches lower saturation, including negative infinity | [x] |
-| C13 | `compute_scaled_value` | product is NaN | [x] |
-| C14 | `compare_results_in_array` | both indices valid and `idx1 < idx2` | [x] |
-| C15 | `compare_results_in_array` | both indices valid and `idx1 == idx2` | [x] |
-| C16 | `compare_results_in_array` | both indices valid and `idx1 > idx2` | [x] |
-| C17 | `compare_results_in_array` | first index at/above count | [x] |
-| C18 | `compare_results_in_array` | second index at/above count, first valid | [x] |
-| C19 | `init_result_array` | negative count: stored unchanged; no values read | [x] |
-| C20 | `init_result_array` | zero count, including null `values`: no values read | [x] |
-| C21 | `init_result_array` | one element | [x] |
-| C22 | `init_result_array` | many elements with `1 < count < 10` | [x] |
-| C23 | `init_result_array` | exact capacity, `count == 10` | [x] |
-| C24 | `init_result_array` | oversized request, `count > 10`: capped at ten | [x] |
-| C25 | `process_with_foreach` + `add_operation` | empty array | [x] |
-| C26 | `process_with_foreach` + `add_operation` | one element | [x] |
-| C27 | `process_with_foreach` + `add_operation` | many elements with varied values/ranks | [x] |
-| C28 | `process_with_foreach` + `multiply_operation` | empty array | [x] |
-| C29 | `process_with_foreach` + `multiply_operation` | one element | [x] |
-| C30 | `process_with_foreach` + `multiply_operation` | many elements with varied values/ranks | [x] |
-| C31 | `process_with_foreach` + `subtract_operation` | empty array | [x] |
-| C32 | `process_with_foreach` + `subtract_operation` | one element | [x] |
-| C33 | `process_with_foreach` + `subtract_operation` | many elements with varied values/ranks | [x] |
-| C34 | `process_with_foreach` + `modulo_operation` | empty array | [x] |
-| C35 | `process_with_foreach` + `modulo_operation` | one element, rank zero triggers zero-divisor branch | [x] |
-| C36 | `process_with_foreach` + `modulo_operation` | many elements; rank zero then nonzero ranks | [x] |
-| C37 | `compute_weighted_sum` | negative count: loop does not execute | [x] |
-| C38 | `compute_weighted_sum` | empty array | [x] |
-| C39 | `compute_weighted_sum` | one element: `current == base`, weight one | [x] |
-| C40 | `compute_weighted_sum` | many elements: base uses weight one, later elements use pointer-distance weights | [x] |
-| C41 | `compute_weighted_sum` | values whose weighted products saturate high/low | [x] |
-| C42 | `arrayfunc` | randomized ordinary four-parameter end-to-end inputs, avoiding C signed-overflow cases | [x] |
-| C43 | `arrayfunc` | zero and mixed-sign inputs, including modulo divisors that become zero | [x] |
-| C44 | `arrayfunc` | large-magnitude inputs that remain defined through all C arithmetic | [x] |
+| # | entry point(s) | configuration (options set + input shape) | |
+|---|----------------|--------------------------------------------|---|
+| 1 | `add_operation` | randomized four-argument calls; result depends on `a` and `b`, unused arguments varied | [x] |
+| 2 | `multiply_operation` | randomized four-argument calls; result depends on `a` and `b`, unused arguments varied | [x] |
+| 3 | `subtract_operation` | randomized four-argument calls; result depends on `a` and `b`, unused arguments varied | [x] |
+| 4 | `modulo_operation` | `b != 0`, randomized positive/negative dividends and divisors, excluding the C-overflow pair `INT_MIN % -1` | [x] |
+| 5 | `safe_double_to_int` | finite values strictly between `INT32_MIN` and `INT32_MAX`, including negative, zero, positive, and fractional values | [x] |
+| 6 | `compute_scaled_value` → `safe_double_to_int` | randomized base/scale pairs whose product remains strictly inside the integer range | [x] |
+| 7 | `compare_results_in_array` | valid indices with `idx1 < idx2` | [x] |
+| 8 | `compare_results_in_array` | valid indices with `idx1 > idx2` | [x] |
+| 9 | `compare_results_in_array` | valid indices with `idx1 == idx2` | [x] |
+| 10 | `init_result_array` | empty shape, `count == 0` (`count < 10` arm) | [x] |
+| 11 | `init_result_array` | singleton shape, `count == 1` (`count < 10` arm) | [x] |
+| 12 | `init_result_array` | many-element shape, `2 <= count <= 9` (`count < 10` arm) | [x] |
+| 13 | `init_result_array` | exact-capacity shape, `count == 10` (else arm) | [x] |
+| 14 | `init_result_array` | over-capacity shape, `count > 10` (else arm, capped to ten) | [x] |
+| 15 | `process_with_foreach` + `add_operation` | empty array (`count == 0`) | [x] |
+| 16 | `process_with_foreach` + `add_operation` | singleton array (`count == 1`) | [x] |
+| 17 | `process_with_foreach` + `add_operation` | many-element array (`2 <= count <= 10`) | [x] |
+| 18 | `process_with_foreach` + `multiply_operation` | empty array (`count == 0`) | [x] |
+| 19 | `process_with_foreach` + `multiply_operation` | singleton array (`count == 1`) | [x] |
+| 20 | `process_with_foreach` + `multiply_operation` | many-element array (`2 <= count <= 10`) | [x] |
+| 21 | `process_with_foreach` + `subtract_operation` | empty array (`count == 0`) | [x] |
+| 22 | `process_with_foreach` + `subtract_operation` | singleton array (`count == 1`) | [x] |
+| 23 | `process_with_foreach` + `subtract_operation` | many-element array (`2 <= count <= 10`) | [x] |
+| 24 | `process_with_foreach` + `modulo_operation` | empty array (`count == 0`) | [x] |
+| 25 | `process_with_foreach` + `modulo_operation` | singleton array; rank zero selects the callback's `b == 0` branch | [x] |
+| 26 | `process_with_foreach` + `modulo_operation` | many-element array; rank zero and nonzero callback-divisor branches both occur | [x] |
+| 27 | `compute_weighted_sum` | empty array (`count == 0`) | [x] |
+| 28 | `compute_weighted_sum` | singleton array; `current == base`, so weight is `1` | [x] |
+| 29 | `compute_weighted_sum` | many-element array; first element uses weight `1`, later elements use pointer distance/index | [x] |
+| 30 | `arrayfunc` | fixed eight-element end-to-end pipeline with randomized mixed-sign and boundary integer parameters | [x] |
+
+Feature combinations from `Cargo.toml`: no named features. Both the default
+invocation and `--no-default-features` must pass.

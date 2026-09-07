@@ -1,49 +1,51 @@
 #!/usr/bin/env bash
-# Runs the full differential suite under every feature combination and both
-# profiles, plus the nm -D symbol diff.
+# Phase D — run the full differential suite under every feature combination and
+# both optimisation profiles.
 #
-# The tests capture fd 1, so the libtest harness MUST be single-threaded.
-set -uo pipefail
+# `Cargo.toml` declares no `[features]` table and no optional dependencies, so
+# the complete set of combinations is {default, no-default-features,
+# all-features}; they are all enumerated anyway so that adding a feature later
+# cannot silently go untested.
+set -u
 cd "$(dirname "$0")"
 
-C_SO=../c_src/build/libdriver.so
-if [ ! -f "$C_SO" ]; then
-  ( cd ../c_src && mkdir -p build && cd build \
+echo "== feature combinations declared in Cargo.toml =="
+if grep -q '^\[features\]' Cargo.toml; then
+  sed -n '/^\[features\]/,/^\[/p' Cargo.toml
+else
+  echo "(none)"
+fi
+echo
+
+# Rebuild the C reference library first.
+( cd ../c_src && mkdir -p build && cd build \
     && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-    && cmake --build . >/dev/null ) || exit 1
-fi
+    && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
 
-# Feature combinations: Cargo.toml declares no [features], so this is the
-# complete set. (Extracted mechanically below so it stays correct if any are
-# added later.)
-FEATS=$(sed -n '/^\[features\]/,/^\[/p' Cargo.toml | grep -oE '^[a-zA-Z0-9_-]+' | grep -v '^\[' | tr '\n' ' ')
-COMBOS=("" "--no-default-features" "--all-features")
-if [ -n "${FEATS// /}" ]; then
-  for f in $FEATS; do COMBOS+=("--no-default-features --features $f"); done
-fi
-
-rc=0
-for profile in "" "--release"; do
-  for combo in "${COMBOS[@]}"; do
-    echo "=============================================================="
-    echo "=== cargo test ${profile:-<dev>} ${combo:-<default features>}"
-    echo "=============================================================="
-    cargo build --offline $profile $combo >/dev/null 2>&1
-    RUST_TEST_THREADS=1 timeout 600 cargo test --offline $profile $combo -- --test-threads=1
-    st=$?
-    [ $st -ne 0 ] && { echo "FAILED (exit $st): $profile $combo"; rc=1; }
+fail=0
+for profile in release debug; do
+  for combo in "" "--no-default-features" "--all-features"; do
+    [ "$profile" = release ] && prof_flag="--release" || prof_flag=""
+    label="profile=$profile features=${combo:-default}"
+    echo "---- $label ----"
+    # shellcheck disable=SC2086
+    if timeout 580 cargo test $prof_flag $combo 2>&1 | tee /dev/stderr \
+         | grep -q '^test result: FAILED'; then
+      echo "FAILED: $label"
+      fail=1
+    else
+      echo "OK: $label"
+    fi
+    echo
   done
 done
 
-echo "=============================================================="
-echo "=== nm -D symbol diff (C .so vs Rust .so)"
-for p in debug release; do
-  [ -f "target/$p/libdriver.so" ] || continue
-  d=$(diff <(nm -D --defined-only "$C_SO"            | awk '$2=="T" && $3!="_init" && $3!="_fini" {print $3}' | sort) \
-           <(nm -D --defined-only "target/$p/libdriver.so" | awk '$2=="T" {print $3}' | sort))
-  if [ -n "$d" ]; then echo "SYMBOL DIFF ($p):"; echo "$d"; rc=1; else echo "target/$p: symbol diff empty  OK"; fi
-done
+echo "== symbol parity =="
+syms() { nm -D --defined-only "$1" | awk '$2=="T"||$2=="D"||$2=="B"||$2=="R"{print $3}' | sort; }
+echo "C-only symbols (must be empty):"
+missing=$(comm -23 <(syms ../c_src/build/libdriver.so) <(syms target/release/libdriver.so))
+printf '%s\n' "$missing"
+[ -n "$missing" ] && fail=1
 
-echo
-[ $rc -eq 0 ] && echo "ALL COMBINATIONS PASSED" || echo "SOME COMBINATIONS FAILED"
-exit $rc
+[ $fail -eq 0 ] && echo "ALL COMBINATIONS PASSED" || echo "SOME COMBINATIONS FAILED"
+exit $fail

@@ -1,80 +1,68 @@
-# ERRORS.md — Error / rejection surface table (Phase C)
+# ERRORS.md — Phase C error-surface table
 
-## How this table was derived
+## Mechanical derivation
 
-Mechanical grep of the *entire* C source (`c_src/src/sieve.c`,
-`c_src/include/sieve.h`), excluding the license header comment:
+Every rejection/error construct was grepped out of the *entire* C source
+(`c_src/src/sieve.c`, `c_src/include/sieve.h`):
 
 ```
-grep -nE 'return|assert|NULL|errno|exit|abort|RETURN_ERROR|==|!=|if|switch|#if|malloc|free|\[' \
-     c_src/src/sieve.c c_src/include/sieve.h
+$ grep -nE 'return|assert|NULL|errno|exit|abort|RETURN_ERROR|goto|\berr' \
+      c_src/src/sieve.c c_src/include/sieve.h | grep -v '^\S*:[0-9]*: *[/*]'
+include/sieve.h:24:#ifndef SIEVE_H_          <- include guard, not an error path
+src/sieve.c:24:#include <stdio.h>            <- matched "include", not an error path
+
+$ grep -nE 'if *\(|else|switch|case|\?' c_src/src/sieve.c | grep -v ': *[/*]'
+src/sieve.c:35:        if (val % 10 == 9) {   <- the ONLY branch in the library
 ```
 
-Total matches in code (non-comment) lines:
+Findings, stated exactly as the C code is written:
 
-| construct | occurrences | where |
-|-----------|-------------|-------|
-| `return` statement | **0** | — (`sieve` returns `void`) |
-| error-return macro (`RETURN_ERROR`, …) | **0** | — |
-| `assert` | **0** | — |
-| `NULL` check | **0** | — (no pointer parameters exist) |
-| `errno` / `exit` / `abort` | **0** | — |
-| explicit range / bounds check | **0** | — |
-| min/max constant (`INT_MAX`, `#define …MAX`) | **0** | — |
-| enum type | **0** | — |
-| array indexing / allocation | **0** | — |
-| `if` | **1** | `sieve.c:35` — `if (val % 10 == 9) { break; }` (loop-exit test, **not** an error path) |
-| `#if*` | **1** | `sieve.h:24` — `SIEVE_H_` include guard |
+* `sieve` has return type `void` — there is **no error code, no sentinel, and no
+  out-parameter** through which failure could be reported.
+* There are **zero** `return` statements (not even a bare `return;`), zero
+  `assert`s, zero `NULL` checks, zero `errno` uses, zero range checks, zero
+  min/max constants, zero enums, and zero `#ifdef` branches.
+* `sieve` takes a single **by-value `int`** — there is no pointer parameter, so a
+  "null pointer" argument is not representable; the closest analogue is the
+  integer `0`, which is a perfectly valid input (row 3).
+* Consequently the library **rejects nothing**. Every one of the 2^32 `int`
+  values is accepted and drives the loop. The error surface is therefore not
+  "empty because we did not look" — it is empty *by construction*, and the rows
+  below record the boundary/degenerate conditions that stand in for it, i.e. the
+  inputs where the C code's behaviour is surprising, unbounded, or
+  undefined-in-C. Each row still gets a differential test asserting C and Rust
+  agree on the *same* observable result (identical stdout bytes / identical
+  non-crash), not merely "both did something".
 
-**Conclusion: the C library has an empty explicit error surface.** `sieve` has
-no return value, no out-parameters, no sentinel, and no rejection branch. It
-accepts every one of the 2^32 possible `int` bit patterns. Consequently, the
-"same error code / same sentinel" comparison degenerates to "same observable
-behaviour (the exact stdout byte stream) and same termination status".
+The `int` parameter is 4-byte two's-complement on this target
+(`sizeof(int) == 4`, verified by the harness), so the "one step past the valid
+range" boundaries are `INT_MIN`/`INT_MAX` wraparound, covered by rows 7–10.
 
-The rows below enumerate every *distinct* way the C code can behave
-anomalously or hit an implicit/undefined boundary — i.e. the real
-rejection-adjacent surface — plus the generic C-API boundaries the task
-mandates covering even when absent from the source.
+## Error-surface table
 
-## The table
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|----------------------------------------------|-------------------|------|--------|
+| 1 | `sieve` | No error-return construct exists anywhere in the library (grep above): return type is `void`, zero `return`/`assert`/`NULL`/range checks | Nothing can be rejected; C never signals failure. Asserted by verifying `sieve` returns normally (no crash, no abort) and produces the same stdout as Rust for every input class in rows 2–14 | `err_row01_no_rejection_path_exists` | [x] |
+| 2 | `sieve` | `val` whose last base-10 digit **is** 9 and is positive (`val % 10 == 9` true on entry) — the degenerate single-iteration case, loop body runs exactly once and `val++` never executes | prints `"<val>\n"` and returns; exactly 1 line | `err_row02_immediate_break_positive` | [x] |
+| 3 | `sieve` | `val == 0` (the closest representable analogue of a "null" argument, and the zero-length/zero-value boundary) | `0 % 10 == 0 != 9`, so prints `0\n1\n...\n9\n`; 10 lines | `err_row03_zero_argument` | [x] |
+| 4 | `sieve` | `val < 0` — C's `%` truncates toward zero, so `val % 10` is in `{0,-1,...,-9}` and can **never** equal 9. The `== 9` test is unreachable while negative; the loop cannot terminate early | counts all the way up through 0 to 9: prints `val..9`, i.e. `-val + 10` lines. **Not** an early exit | `err_row04_negative_never_matches` | [x] |
+| 5 | `sieve` | `val == -9` — the trap case: `-9 % 10 == -9`, **not** `9`, so it does *not* break despite "ending in 9" | prints `-9\n-8\n...\n9\n`; 19 lines (not 1) | `err_row05_negative_nine_does_not_break` | [x] |
+| 6 | `sieve` | `val == -19, -29, -99, -109` — every other negative "ends in 9" value; `val % 10 == -9 != 9` | never breaks early; runs up to 9 | `err_row05_negative_nine_does_not_break` | [x] |
+| 7 | `sieve` | `val == INT_MAX` (`2147483647`, one step past the largest value the loop can legally increment). `2147483647 % 10 == 7 != 9`, so C executes `val++` on `INT_MAX` → **signed integer overflow, undefined behaviour in C** | The compiled C (`-O0`, no `-fwrapv` needed at this opt level) wraps to `INT_MIN` and keeps counting; output is effectively unbounded (~2^32 lines). Asserted by comparing a bounded 256 KiB stdout prefix from a forked child, C vs Rust | `err_row07_int_max_overflow_prefix` | [x] |
+| 8 | `sieve` | `val` in `[INT_MAX-7, INT_MAX] = [2147483640, 2147483647]` — the full set of starting values from which no value ending in 9 is reachable before overflow | all 8 overflow exactly as row 7 | `err_row08_overflow_window_all_eight` | [x] |
+| 9 | `sieve` | `val == INT_MAX - 8 == 2147483639` — one step *inside* the valid range; `% 10 == 9`, so it breaks instead of overflowing (boundary of row 8) | prints one line `2147483639\n`, no overflow | `err_row09_last_safe_value` | [x] |
+| 10 | `sieve` | `val == INT_MIN` (`-2147483648`, the smallest representable argument). `INT_MIN % 10 == -8 != 9` | counts up from `INT_MIN` to 9: ~2.1 billion lines, unbounded for practical purposes. Asserted via bounded 256 KiB prefix, C vs Rust | `err_row10_int_min_prefix` | [x] |
+| 11 | `sieve` | `val == INT_MIN + 1 .. INT_MIN + 3` — just inside the low boundary | same unbounded upward count; bounded-prefix comparison | `err_row11_near_int_min_prefix` | [x] |
+| 12 | `sieve` | Argument passed as an **out-of-range "enum-like" int**: the API takes a bare `int`, so a C caller may legally pass any `int32` bit pattern including ones no sane caller would use (`0x80000000`, `0x7FFFFFFF`, `-1`, `0xDEADBEEF as i32`, `i32::MIN/2`). C has no variant check and must not reject them | each is treated as an ordinary integer start value; identical stdout from C and Rust (bounded prefix where the output is unbounded) | `err_row12_arbitrary_bit_patterns` | [x] |
+| 13 | `sieve` | Called **repeatedly / re-entrantly** with no init or teardown function (there is no state to corrupt: no globals, no allocation) — a caller "misusing" the API by calling it many times in a row | each call is independent; concatenated stdout matches C's | `err_row13_repeated_calls_no_state` | [x] |
+| 14 | `sieve` | Called while stdout is a **closed / non-writable fd** — `printf` fails and returns negative; the C code ignores the return value, so the loop must still terminate normally rather than hang or crash | returns normally, produces no output, no crash; Rust identical | `err_row14_stdout_write_failure` | [x] |
 
-| # | function | trigger (exact invalid input/condition) | expected C result | test | ✔ |
-|---|----------|------------------------------------------|-------------------|------|---|
-| 1 | `sieve` | No `return`/error code exists anywhere: `void sieve(int)`. Any `int` is accepted. | No error can ever be signalled; only stdout bytes observable. Rust must likewise never reject. | `err_01_no_error_return_channel_exists` | [x] |
-| 2 | `sieve` | `val < 0` — C's `%` truncates toward zero, so `val % 10 ∈ {-9,…,0}` and **can never equal 9**. The documented "stops when it ends in 9" contract is violated for all negative inputs. | Does **not** stop at the negative value ending in 9; keeps incrementing through `0` up to `+9`, printing every intermediate value, then stops. Emits `10 - val` lines. | `err_02_negative_never_matches_mod9` | [x] |
-| 3 | `sieve` | `val = -9` specifically (input literally "ends in 9" in the human sense, but `-9 % 10 == -9 != 9`). | Prints `-9,-8,…,8,9` = 19 lines. Does *not* stop at `-9`. | `err_03_negative_nine_does_not_terminate_early` | [x] |
-| 4 | `sieve` | `val` negative and ending in `0` (`val % 10 == 0`, e.g. `-10`, `-1000`): the "0" remainder case for negatives. | Same as row 2 — runs up to `+9`. | `err_04_negative_multiple_of_ten` | [x] |
-| 5 | `sieve` | `val ∈ [INT_MAX-7, INT_MAX] = [2147483640, 2147483647]` — no representable value ≥ `val` ends in 9, so `val++` **signed-overflows**: undefined behaviour in C. The project compiles with no `-O` flag (`CMakeLists.txt` sets none ⇒ `-O0`), and the emitted code is a plain `addl $1, -0x4(%rbp)`, i.e. it *wraps* to `INT_MIN`. | Prints `val … 2147483647`, then wraps and continues from `-2147483648` upward (≈2^31 further lines) until it finally reaches `+9`. Effectively non-terminating for a test. Rust must produce a byte-identical **prefix**. | `err_05_int_max_overflow_wraps` (bounded prefix, child process killed after 1 MiB) | [x] |
-| 6 | `sieve` | `val = INT_MAX = 2147483647` exactly (the extreme of row 5; also the widest positive `%d` rendering). | `2147483647\n` then `-2147483648\n`, `-2147483647\n`, … | `err_06_int_max_exact_prefix` | [x] |
-| 7 | `sieve` | `val = INT_MIN = -2147483648` (extreme of row 2; `INT_MIN % 10 == -8`; also the only `%d` value whose negation is unrepresentable). | Prints `-2147483648\n-2147483647\n…`, ~2^31 lines up to `+9`. Non-terminating for a test ⇒ prefix comparison. | `err_07_int_min_prefix` | [x] |
-| 8 | `sieve` | Out-of-range "enum" value across FFI: the C API declares **no enum**, so the mandated out-of-range-enum probe becomes "an `int` argument with no distinguished meaning". Every 32-bit pattern is a valid `c_int`. | Accepted unconditionally; behaviour determined solely by `val % 10` and sign. Verified for hostile bit patterns (`0x80000000`, `0x7FFFFFFF`, `0xFFFFFFFF`, `0xAAAAAAAA`, …) reinterpreted as `int`. | `err_08_arbitrary_bit_patterns` | [x] |
-| 9 | `sieve` | Null pointer / zero length / oversized length: **no pointer or length parameter exists** in the ABI (`void sieve(int)`), so there is no null check to diverge on. Probe instead: the boundary scalars `0`, `-1`, `1`. | `0` ⇒ 10 lines `0..9`; `-1` ⇒ 11 lines `-1..9`; `1` ⇒ 9 lines `1..9`. No rejection. | `err_09_generic_scalar_boundaries` | [x] |
-| 10 | `sieve` | Calling convention abuse: extra/garbage in unused argument registers, and calling `sieve` through a mismatched-but-compatible prototype (`int` vs `unsigned` reinterpretation at the boundary). | Only the low 32 bits of `edi` are read (`mov %edi,-0x4(%rbp)`); upper bits of `rdi` ignored. Rust `extern "C" fn(c_int)` must behave identically. | `err_10_upper_register_bits_ignored` | [x] |
-| 11 | `sieve` | Repeated invocation / no reset: the C function keeps **no static or global state**, so an "uninitialised/stale state" error class cannot exist. | N-th call is independent; output = concatenation of individual calls. | `err_11_no_hidden_state_between_calls` | [x] |
-| 12 | `sieve` | `printf` return value ignored — the C code never checks it, so a write error (e.g. stdout closed / `EBADF` / full pipe) is **silently swallowed** and the loop still runs to completion. | Loop still terminates normally; no error propagated; no crash. Rust must also ignore the `printf` result. | `err_12_ignores_printf_failure_on_closed_stdout` | [x] |
+## Not applicable (recorded so the absence is deliberate, not an oversight)
 
-## Notes on rows 5–7 (unbounded loops)
-
-Rows 5, 6 and 7 describe inputs for which the C function performs on the order
-of 2^31 `printf` calls (tens of gigabytes of output) before returning. They
-cannot be run to completion inside a test budget. They are verified
-**differentially but boundedly**: each side is run in a *separate child
-process* whose `stdout` is redirected to a file; the parent waits until 1 MiB
-has been written, then `SIGKILL`s the child and compares the first 1 MiB of
-each side byte-for-byte. Because the byte stream is produced strictly in
-order, prefix equality over a 1 MiB window covers the wrap point and the
-first ~100 000 post-wrap values, which is exactly the interesting region.
-
-Because row 5 rests on undefined behaviour, the wrap was additionally checked
-to be *stable across optimisation levels*, so the Rust `wrapping_add(1)` is
-correct no matter how the C is built:
-
-| C build | first bytes of `sieve(INT_MAX)` |
-|---------|---------------------------------|
-| `-O0` (what `CMakeLists.txt` produces) | `2147483647\n-2147483648\n-2147483647\n…` |
-| `-O2` | `2147483647\n-2147483648\n-2147483647\n…` |
-| `-O3` | `2147483647\n-2147483648\n-2147483647\n…` |
-
-GCC 11.5 does not exploit the overflow to remove the loop at any of these
-levels; it always wraps, matching the Rust translation.
+| construct | why absent |
+|-----------|------------|
+| null-pointer argument | `sieve` has no pointer parameter (`void sieve(int)`) |
+| zero / oversized length argument | `sieve` has no length or size parameter |
+| out-of-range enum variant | the library declares no `enum`; row 12 covers the bare-`int` equivalent |
+| error code / sentinel return | return type is `void`; nothing to compare but stdout + termination |
+| allocation failure | the library never allocates |

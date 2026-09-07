@@ -1,131 +1,90 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Phase B configuration-surface table (VALID inputs)
 
-The mirror of `ERRORS.md`: every **valid** input configuration the C actually
-branches on. Derived mechanically from the `if` / `switch` / loop-guard
-structure of `c_src/src/lib.c`, not from what looks important.
+## Axes the C code actually branches on
 
-## Axes the C branches on
+Derived mechanically from `c_src/src/lib.c`. There is no global state, no
+init/teardown, no option struct — every "option" is an argument value, so the
+configuration axes are the *value classes* each `if`/`switch`/loop-condition
+distinguishes:
 
-This library has **no** runtime options, no global state, no `#ifdef`, and no
-compile-time feature flags — `grep -c '#if\|#ifdef\|static ' c_src/src/lib.c` is
-`0`. The configuration surface is therefore entirely made of **input shapes**:
+| axis | values the C distinguishes | site |
+|---|---|---|
+| A. entry point | `safe_double_to_int`, `process_array_reverse`, `switch_fallthrough_calculator`, `allocate_and_compute`, `foreach_sum`, `fallcalc` (all 6 exported; only `fallcalc` is the "convenience wrapper" — the other 5 are the low-level entry points and are tested directly) | `nm -D` |
+| B. `operation` arm | `0` (×8, +0200, &0777), `1` (+0200, &0777), `2` (&0777), `3` (×3, +0100), `4` (+0100), `default` (⇒0) | `switch_fallthrough_calculator` |
+| C. double class | NaN, +Inf, −Inf, `>= (double)INT_MAX`, `<= (double)INT_MIN`, in-range positive, in-range negative, ±0.0, subnormal, fractional (truncation toward zero) | `safe_double_to_int` |
+| D. count / size shape | `< 0`, `0`, `1`, `2`, small (2..10), exactly `5` (as used by `fallcalc`), large | all loops, `malloc` |
+| E. pointer position | `array` = buffer start (forward walk) vs `end` = buffer *last* element (backward walk); also mid-buffer `end` so the backward walk stays in bounds | `foreach_sum` vs `process_array_reverse` |
+| F. `multiplier` class | `0.0`, `1.5` (the value `fallcalc` hardcodes), negative, tiny, huge-finite, NaN, ±Inf | `allocate_and_compute` |
+| G. `param3 % 5` | truncating C remainder ⇒ `{0,1,2,3,4}` for `param3 >= 0`, `{0,-1,-2,-3,-4}` for `param3 < 0` (the negative ones hit `default`) | `fallcalc` |
+| H. `param4 % 10 + 1` | `1..10` (`param4 >= 0`), `0` (`param4 % 10 == -1`), `-8..-1` (`param4 % 10 <= -2` ⇒ alloc failure) | `fallcalc` |
+| I. `param3 > 0200` flag | `param3 < 128`, `param3 == 128` (no flag, strict `>`), `param3 > 128` (flag set) | `fallcalc` |
+| J. overflow | signed-overflowing `param1 * 0100`, `value * 010`, `value * 3`, `sum` accumulation | wrapping arithmetic |
+| K. feature set | none — `Cargo.toml` has no `[features]`; default == `--no-default-features` | `Cargo.toml` |
 
-| axis | values the C distinguishes | where |
-|------|----------------------------|-------|
-| A. `double` class | NaN, +Inf, -Inf, `>= 2^31-1`, `<= -2^31`, in-range +/-, `0.0`, `-0.0`, subnormal, fractional (truncation direction) | `safe_double_to_int` L49-64 |
-| B. `count` shape | `<0`, `0`, `1`, many | `process_array_reverse` L71, `foreach_sum` L130 (`FOREACH`) |
-| C. element values | positive, negative, mixed, magnitudes that overflow the `int` accumulator | both sum loops |
-| D. `operation` arm | `0` (3-deep fallthrough), `1` (2-deep), `2` (`break`), `3` (2-deep), `4` (`break`), `default` | `switch_fallthrough_calculator` L82-97 |
-| E. `value` magnitude | small, and large enough that `*8`, `*3`, `+0200` wrap `int` | same |
-| F. `size` shape | `<0`, `0`, `1`, small-many, huge | `allocate_and_compute` L103-117 |
-| G. `multiplier` class | `0.0`, `1.5`, negative, huge (`->Inf`), NaN, subnormal | same |
-| H. `param3 > 0200` flag | true / false — the `result \|= 0200` bit | `fallcalc` L167 |
-| I. `param3 % 5` sign | `0..4` (real arm) vs `-4..-1` (default arm, E8) | `fallcalc` L158 |
-| J. `param4 % 10 + 1` sign | `>0` (alloc succeeds) vs `<=0` (alloc returns `-1`) | `fallcalc` L163 |
-| K. `param1`/`param2` magnitude | small, and large enough to wrap `param1 * 0100 + param2` and the float math | `fallcalc` L140, L160 |
+Every row below is checked by a **randomized, fixed-seed (SplitMix64, seed
+`0x5EED_1234_ABCD_0001`) property test** with many inputs per row (not a single
+hand-picked value), comparing the C `.so` and Rust `.so` through `dlsym`.
 
-## Rows (pruned cross-product of the axes the code actually distinguishes)
+## Rows
 
-Every row is driven through **both** `.so`s via `libloading` with many
-randomized inputs (fixed seed, deterministic SplitMix64 PRNG) unless marked
-*exhaustive*.
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|-------------------------------------------|--------|
+| 1 | `safe_double_to_int` | in-range positive integral doubles, randomized over `0.0 ..= 2147483646.0` | [x] |
+| 2 | `safe_double_to_int` | in-range negative integral doubles, randomized over `-2147483647.0 ..= -1.0` | [x] |
+| 3 | `safe_double_to_int` | in-range **fractional** doubles (truncation toward zero, both signs, incl. `±0.5`, `±0.999`) | [x] |
+| 4 | `safe_double_to_int` | uniformly random 64-bit bit patterns reinterpreted as `f64` (hits NaN/Inf/subnormal/huge classes at random) | [x] |
+| 5 | `safe_double_to_int` | the exact boundary ladder `nextafter` around `(double)INT_MAX` and `(double)INT_MIN`, ±few ULP | [x] |
+| 6 | `switch_fallthrough_calculator` | `operation == 0`, randomized `value` over full `i32` range (×010, +0200, &0777 fallthrough chain) | [x] |
+| 7 | `switch_fallthrough_calculator` | `operation == 1`, randomized full-range `value` | [x] |
+| 8 | `switch_fallthrough_calculator` | `operation == 2`, randomized full-range `value` | [x] |
+| 9 | `switch_fallthrough_calculator` | `operation == 3`, randomized full-range `value` (×3 then +0100, **unmasked** result) | [x] |
+| 10 | `switch_fallthrough_calculator` | `operation == 4`, randomized full-range `value` | [x] |
+| 11 | `switch_fallthrough_calculator` | randomized `operation` over the full `i32` range × randomized `value` (mostly `default`, plus random hits on 0..4) | [x] |
+| 12 | `foreach_sum` | `count == 1`, randomized element value | [x] |
+| 13 | `foreach_sum` | `count == 5` (the shape `fallcalc` uses), randomized elements | [x] |
+| 14 | `foreach_sum` | `count` random in `2..=64`, randomized full-range elements (sum wraps) | [x] |
+| 15 | `foreach_sum` | `count` random in `2..=64`, all elements near `INT_MAX`/`INT_MIN` so the running total signed-overflows repeatedly | [x] |
+| 16 | `foreach_sum` | `count == 1` but pointer aimed at the *last* element of a larger buffer (offset ≠ 0) | [x] |
+| 17 | `process_array_reverse` | `count == 1`, `end` = buffer start, randomized value | [x] |
+| 18 | `process_array_reverse` | `count == 5`, `end` = `buf + 4` (exactly the `fallcalc` shape), randomized elements | [x] |
+| 19 | `process_array_reverse` | `count` random in `2..=64`, `end` = `buf + count - 1`, randomized full-range elements | [x] |
+| 20 | `process_array_reverse` | `end` = interior element `buf + k` with `count = k + 1 <= k+1` (partial backward walk, stays in bounds), randomized `k` | [x] |
+| 21 | `process_array_reverse` | overflow shape: `count` in `2..=64`, elements near `INT_MAX`/`INT_MIN` | [x] |
+| 22 | `foreach_sum` + `process_array_reverse` | same buffer driven through BOTH low-level entry points in sequence (composed pipeline as `fallcalc` does it), randomized buffers | [x] |
+| 23 | `allocate_and_compute` | `size == 1`, randomized finite `multiplier` (only `points[0].value == 0` contributes ⇒ 0) | [x] |
+| 24 | `allocate_and_compute` | `size == 2`, randomized finite `multiplier` | [x] |
+| 25 | `allocate_and_compute` | `size` random in `1..=10` (the range `fallcalc` produces), `multiplier == 1.5` (the value `fallcalc` hardcodes) | [x] |
+| 26 | `allocate_and_compute` | `size` random in `1..=10`, `multiplier == 0.0` and `multiplier` negative | [x] |
+| 27 | `allocate_and_compute` | `size` random in `1..=4096`, randomized moderate `multiplier` (`sum` grows large, may saturate) | [x] |
+| 28 | `allocate_and_compute` | `size` random in `2..=64`, `multiplier` randomized *huge* (`1e250..1e308`) ⇒ `sum` saturates to `INT_MAX`/`INT_MIN` via the isinf/`>=INT_MAX` guards | [x] |
+| 29 | `allocate_and_compute` | `size` random in `2..=64`, `multiplier` = random tiny/subnormal ⇒ `sum` truncates to 0 | [x] |
+| 30 | `allocate_and_compute` | `size` random in `1..=10` × `multiplier` drawn from random 64-bit bit patterns (finite and non-finite mixed) | [x] |
+| 31 | `fallcalc` | all four params random in `0..=100` (small non-negative: `param3 % 5` in `0..4`, `param4 % 10 + 1` in `1..10`, flag mostly off) | [x] |
+| 32 | `fallcalc` | `param3` swept `0..=260` (crosses the `> 0200` flag boundary and every `% 5` arm), other params randomized | [x] |
+| 33 | `fallcalc` | `param4` swept `-30..=30` (covers `size` ∈ `-8..10`, incl. the `0` and negative-⇒-`-1` cases), other params randomized | [x] |
+| 34 | `fallcalc` | `param1`, `param2` randomized over full `i32` (base_value and switch arms overflow), `param3`,`param4` small non-negative | [x] |
+| 35 | `fallcalc` | all four params randomized over the FULL `i32` range (5000 iterations, cross-product of every axis at random) | [x] |
+| 36 | `fallcalc` | params drawn from a biased "interesting values" pool (`0, ±1, ±2, 4, 5, 9, 10, 127, 128, 129, 511, 512, INT_MAX, INT_MIN, INT_MAX-1, INT_MIN+1, ±10^k`) — full 4-way cross-product sampling | [x] |
+| 37 | all 6 exported symbols | one combined randomized driver run that calls every symbol in the same process, in `fallcalc`'s internal call order, on the same random inputs (detects state/ordering divergence) | [x] |
+| 38 | all 6 | default feature set == `--no-default-features` (no `[features]` in `Cargo.toml`); entire suite re-run under both flags | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `safe_double_to_int` | axis A: in-range positive fractional values (truncation toward zero) | [x] |
-| C2 | `safe_double_to_int` | axis A: in-range negative fractional values (truncation toward zero) | [x] |
-| C3 | `safe_double_to_int` | axis A: `0.0`, `-0.0`, `+/-MIN_POSITIVE`, subnormals, tiny fractions | [x] |
-| C4 | `safe_double_to_int` | axis A: exact `int` boundaries `+/-2147483646/7/8` and one ULP either side | [x] |
-| C5 | `safe_double_to_int` | axis A: uniformly random `u64` reinterpreted as `f64` (all classes incl. NaN/Inf) | [x] |
-| C6 | `process_array_reverse` | axis B=`0` / B=`1`, `end` = last element of a real buffer | [x] |
-| C7 | `process_array_reverse` | axis B=many (2..64) x axis C=small positive values | [x] |
-| C8 | `process_array_reverse` | axis B=many x axis C=full-range random `i32` (accumulator wraps) | [x] |
-| C9 | `process_array_reverse` | axis B=many x axis C=all `i32::MAX` / all `i32::MIN` (forced overflow) | [x] |
-| C10 | `foreach_sum` | axis B=`0` / B=`1` (`FOREACH` degenerate iterations) | [x] |
-| C11 | `foreach_sum` | axis B=many (2..64) x axis C=full-range random `i32` (wrapping) | [x] |
-| C12 | `foreach_sum` + `process_array_reverse` | same buffer through both: forward vs backward traversal must agree | [x] |
-| C13 | `switch_fallthrough_calculator` | axis D=`0` x axis E=small/random/extreme `value` (`*8` then `+0200` then `&0777`) | [x] |
-| C14 | `switch_fallthrough_calculator` | axis D=`1` x axis E (`+0200` then `&0777`) | [x] |
-| C15 | `switch_fallthrough_calculator` | axis D=`2` x axis E (`&0777` only) | [x] |
-| C16 | `switch_fallthrough_calculator` | axis D=`3` x axis E (`*3` then `+0100`, **no** mask) | [x] |
-| C17 | `switch_fallthrough_calculator` | axis D=`4` x axis E (`+0100`, **no** mask) | [x] |
-| C18 | `switch_fallthrough_calculator` | axis D=`default` x axis E (negative + `>4` operations) | [x] |
-| C19 | `switch_fallthrough_calculator` | *exhaustive* over `operation` in `-8..=12` x a fixed set of extreme `value`s | [x] |
-| C20 | `allocate_and_compute` | axis F=`0` (`malloc(0)`, both loops skipped) x axis G | [x] |
-| C21 | `allocate_and_compute` | axis F=`1` x axis G=`1.5` (the value `fallcalc` uses) | [x] |
-| C22 | `allocate_and_compute` | axis F=`2..=64` x axis G=`1.5` (float accumulation order) | [x] |
-| C23 | `allocate_and_compute` | axis F small-many x axis G=random finite (incl. negative, subnormal) | [x] |
-| C24 | `allocate_and_compute` | axis F small-many x axis G=`0.0` / `-0.0` (sum stays zero / neg-zero) | [x] |
-| C25 | `allocate_and_compute` | axis F large-many (1..=4096) x axis G=huge (`sum` overflows to `+/-Inf` -> clamp) | [x] |
-| C26 | `allocate_and_compute` | axis F=`1..=10` — exactly the range `fallcalc` can request — x G=`1.5` | [x] |
-| C27 | `fallcalc` | axis I=`0..4` x axis H=false x axis J=positive: each real switch arm reachable | [x] |
-| C28 | `fallcalc` | axis I=negative (default arm) x axis J=negative (inner `-1`) | [x] |
-| C29 | `fallcalc` | axis H=true (`param3 > 0200`) x axis I both signs | [x] |
-| C30 | `fallcalc` | axis H boundary: `param3` in `126..=130` (`> 0200` is strict) | [x] |
-| C31 | `fallcalc` | axis K=small `param1`/`param2` (`-1000..=1000`), all `param3`/`param4` residues | [x] |
-| C32 | `fallcalc` | axis K=full-range random `i32` for all four params (wrapping + float rounding) | [x] |
-| C33 | `fallcalc` | axis K=extremes: every combination drawn from `{INT_MIN, INT_MIN+1, -1, 0, 1, INT_MAX-1, INT_MAX}` (*exhaustive* 7^4 = 2401) | [x] |
-| C34 | `fallcalc` | *exhaustive* over `param3 % 5` x `param4 % 10` residue classes (5 x 10 x 2 signs) | [x] |
-| C35 | composed pipeline | `fallcalc` recomputed from the five low-level exports of the **other** library (cross-checks the composition, not just each part) | [x] |
+## Cross-check: 2,000,000-iteration native differential sweep
 
-All 35 rows pass. C1–C26 live in `tests/phase_b_low_level.rs`, C27–C35 in
-`tests/phase_b_fallcalc.rs`, keyed by the row id in the test name.
+Beyond the Rust test suite, a standalone C driver (`dlopen` on both libraries)
+ran 2,000,000 random 4-tuples through `fallcalc`, plus `switch_fallthrough_calculator`,
+`safe_double_to_int` over random 64-bit patterns, and `allocate_and_compute` over
+random sizes/multipliers:
 
-## Suite validity (does it have teeth?)
+| comparison | mismatches |
+|---|---|
+| C (cmake default build) vs **Rust** | **0** |
+| C `-O0` vs C `-O2` | 0 |
+| C `-O0` vs C `-O3 -march=native` | 3053 (±1 on `fallcalc`) |
+| C `-O3 -march=native -ffp-contract=off` vs **Rust** | **0** |
 
-Passing tests only mean something if the suite can fail. `mutation_check.sh`
-compiles 25 deliberately-broken copies of `c_src/src/lib.c` (in `$TMPDIR` —
-`c_src/` is never modified), points the suite at each via `C_SO_PATH`, and
-requires rejection: wrong octal constants, removed `switch` fallthroughs,
-`ptr--` → `ptr++`, `>=` → `>` on the flag guard, off-by-one array init and
-allocation size, perturbed float coefficients, a flipped sign, and a changed
-`-1` sentinel.
-
-Result under **both** the dev and release profiles: **25 caught, 0 missed**,
-plus 2 mutants proven *semantically equivalent* rather than missed — relaxing
-`d >= (double)INT_MAX` to `>` (and the `INT_MIN` mirror) changes nothing,
-because at exactly `(double)INT_MAX` the fallthrough `(int)d` already yields
-`INT_MAX`. Verified by brute force: 0 differences across 5,173,210 doubles
-including exhaustive one-ULP sweeps around both thresholds. A control run with
-an unmutated rebuild passes, confirming the mutation harness's `gcc` flags
-reproduce the CMake build.
-
-## Soak
-
-`tests/soak.rs` (`#[ignore]`d; run with `-- --ignored`) adds 13.75M randomized
-differential cases, concentrated on the only rounding-sensitive code — the
-`fallcalc` float expression and the `allocate_and_compute` accumulator. Passes
-in dev and release, ruling out FMA contraction, x87 excess precision and
-reassociation differences.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no** `[features]` table, so the only feature
-configurations are `<default>`, `--no-default-features` and `--all-features`
-(all identical, since there is no `default` feature). There are no
-`#[cfg(feature = ...)]` attributes in `src/lib.rs`, so no code path can differ
-between them.
-
-Because a *feature* axis alone would be vacuous here, `run_all_feature_combos.sh`
-crosses the 3 feature configurations with 11 build configurations that genuinely
-change generated code — which is what actually mattered, since the one real bug
-in this translation only appeared at `-O2`+:
-
-| profile config | why it matters |
-|----------------|----------------|
-| `dev` | `debug-assertions` + `overflow-checks` on by default |
-| `dev+overflow-checks` | proves no `wrapping_*` path was written as `+`/`*` |
-| `dev+opt2` | optimizations with debug assertions still on |
-| `dev+debug-assertions-off` | assertions off, unoptimized |
-| `release` | `panic = "abort"`, `opt-level=3` |
-| `release+overflow-checks` | optimized *and* overflow-checked |
-| `release+opt3` / `release+opt-s` | different inlining/vectorization decisions |
-| `release+lto-thin` / `release+lto-fat` | cross-crate optimization (set via `CARGO_PROFILE_RELEASE_LTO`, since `-C lto` conflicts with cargo's `-C embed-bitcode=no`) |
-| `release+codegen-units=1` | whole-`.so` optimization, most aggressive elision |
-
-**Result: 33 configurations, 55 tests each, 0 failures.** The script also runs
-`cargo check --all-targets` for every feature configuration.
-
-The feature/profile sweep is what caught the release-only `malloc` elision bug
-documented in `ERRORS.md`; the dev profile alone would have reported everything
-green.
+The `-march=native` rows are a **C-compiler codegen artifact, not a translation
+bug**: gcc contracts `param1*3.7 + param2*2.3 - param3*0.5` into an FMA, which
+changes the rounding of `floating_calc` by 1 ULP and therefore `converted` by 1.
+Disabling contraction makes the optimized C agree with Rust exactly. The
+ground-truth build (`cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON`, no
+`-march=native`) matches the Rust `.so` bit-for-bit.

@@ -1,83 +1,85 @@
-# ERRORS.md — error / rejection surface of `c_src/src/lib.c`
+# ERRORS.md — error-surface table (Phase A / gate for Phase C)
 
-Derived mechanically from the C source. The complete set of error-signalling
-statements in the library is:
+Derived mechanically by grepping `c_src/src/lib.c` for every `return`, every
+`if`, every explicit check, and every constant bound. There are **no**
+`assert`s, no `RETURN_ERROR`-style macros, no error enums, and no `errno`
+usage in this library. The only failure channel is the `char *` return value,
+whose documented sentinel is `NULL`:
 
-```sh
-$ grep -n 'return NULL\|return -\|assert\|exit(\|abort(' c_src/src/lib.c
-34:        return NULL;      # if (!src)
-43:        return NULL;      # if (!out)   -- calloc failed
+```
+/* ... Returns encoded string otherwise NULL */
 ```
 
-There are **no** `assert`s, **no** error enums, **no** error codes and **no**
-`errno` usage. The *only* failure signal in the whole ABI is a `NULL` return
-from `encode_base64`. There are also **no enum parameters**, so there is no
-out-of-range-enum class of input for this API (the only scalar parameter is a
-plain `int size`, and every one of its 2^32 values is exercised below or
-explicitly excluded with a reason).
+## Rejection / error branches
 
-`encode()` is `static` and total (its final `return '/'` is the catch-all), so
-it has no rejection paths of its own.
+Exactly two statements in the C can produce the `NULL` sentinel
+(`lib.c:34` and `lib.c:43`):
 
-## Error-surface table
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `encode_base64` | `src == NULL` (`if (!src)`, lib.c:33) — checked **before** `size` is looked at, so it fires for every `size`, including `0`, negative, `INT_MIN`, `INT_MAX` | returns `NULL` |
+| 2 | `encode_base64` | `calloc(1, size*4/3 + 4)` fails (`if (!out)`, lib.c:42). Reachable with a *valid* non-NULL `src` because `size*4` is **signed `int`** arithmetic: any `size >= 0x2000_0000` (536 870 912) overflows to a negative `int`, which sign-extends to a huge `size_t` at the `calloc` call, so the allocation is refused | returns `NULL` |
 
-`cap` below denotes the C expression `size * 4 / 3 + 4`, evaluated in **signed
-`int`** arithmetic and then implicitly converted to `size_t` at the `calloc`
-call site (`c_src/src/lib.c:40`). A negative `cap` becomes an enormous
-`size_t`, so `calloc` fails and line 43 returns `NULL`.
+## Non-rejections that must NOT become errors
 
-| #  | function | trigger (exact invalid input/condition) | expected C result |
-|----|----------|-----------------------------------------|-------------------|
-| 1  | `encode_base64` | `src == NULL`, `size == 1` (line 33 null check) | `NULL` |
-| 2  | `encode_base64` | `src == NULL`, `size == 0` — null check *precedes* the `strlen` on line 37, so no crash | `NULL` (no `strlen` call) |
-| 3  | `encode_base64` | `src == NULL`, `size == -1` (negative) | `NULL` |
-| 4  | `encode_base64` | `src == NULL`, `size == INT_MAX` | `NULL` |
-| 5  | `encode_base64` | `src == NULL`, `size == INT_MIN` | `NULL` |
-| 6  | `encode_base64` | `src == NULL`, 256 pseudo-random `size` values incl. extremes | `NULL` for every one |
-| 7  | `encode_base64` | `size == -4` → `cap == -1` → `calloc(1, SIZE_MAX)` fails (line 42) | `NULL` |
-| 8  | `encode_base64` | `size == -5` → `cap == -2` → `calloc(1, SIZE_MAX-1)` fails | `NULL` |
-| 9  | `encode_base64` | `size == -6` → `cap == -4` → fails | `NULL` |
-| 10 | `encode_base64` | every `size` in `-4 ..= -4096` (all give `cap < 0`) | `NULL` for every one |
-| 11 | `encode_base64` | `size == INT_MIN + 4 ..= INT_MIN + 16` (very negative, `size*4` still wraps to a negative `int`) | `NULL` / whatever C does — asserted equal, no assumption |
-| 12 | `encode_base64` | positive **signed-overflow** `size == 536870912` (`2^29`): `size*4` wraps to `INT_MIN`, `cap == -715827878` → `calloc` fails *before* `src` is read | `NULL` |
-| 13 | `encode_base64` | positive overflow `size ∈ {536870913, 600000000, 900000000, 1073741820, 1073741819, 1610612736, 2000000000}` (all give `cap < 0`) | `NULL` |
-| 14 | `encode_base64` | `size == -3` → `cap == 0` → `calloc(1, 0)` (boundary: glibc returns a **non-NULL** zero-length chunk) | non-`NULL`; buffer not dereferenced |
-| 15 | `encode_base64` | `size == -1` → `cap == 3`, `size == -2` → `cap == 2`: allocation succeeds, `for (i = 0; i < size; ...)` never runs | non-`NULL`, all-zero buffer, i.e. `""` |
-| 16 | `encode_base64` | `size == INT_MIN` → `size*4` wraps to `0` → `cap == 4`, loop skipped | non-`NULL`, `""` |
-| 17 | `encode_base64` | `size == INT_MIN + 1` → `cap == 5`, loop skipped | non-`NULL`, `""` |
-| 18 | `encode_base64` | `size == 0`, `src == ""` → `strlen` gives 0, `cap == 4`, loop skipped | non-`NULL`, `""` |
-| 19 | `encode_base64` | `size == 0`, `src` = `"\0garbage"` → `strlen` stops at the first NUL | non-`NULL`, `""` (trailing bytes ignored) |
-| 20 | `encode_base64` | `size == 1` with `src` pointing at a 1-byte buffer (smallest non-empty; `cap == 5`, two `'='` pads) | non-`NULL`, 4 chars ending `"=="` |
+The C accepts several inputs that a "defensive" translation would be tempted to
+reject. Replicating the *acceptance* is as important as replicating the
+rejections, so these are tested as error-path rows too — the assertion is that
+**neither** implementation returns `NULL`.
 
-### Ranges deliberately EXCLUDED from testing (both implementations crash identically)
+| # | function | trigger | expected C result |
+|---|----------|---------|-------------------|
+| 3 | `encode_base64` | `size == 0` with non-NULL `src` (`if (!size)`, lib.c:37) — *not* an error; `size` is silently replaced by `strlen(src)`, truncated from `size_t` to `int` | non-NULL; encodes the NUL-terminated string. `src = ""` yields a 4-byte all-zero buffer (empty output) |
+| 4 | `encode_base64` | `size < 0` with non-NULL `src`. No negative check exists, so the behaviour is decided purely by `cap = size*4/3 + 4` in signed `int`: **only `size ∈ {-1, -2, -3}` is accepted** (`cap` = 3, 2, 0 respectively — note `calloc(1, 0)` still returns non-NULL on glibc). For `size <= -4`, `cap <= -1`, which sign-extends to `SIZE_MAX`-ish and the `calloc` fails | `size` in `-3..=-1`: non-NULL zeroed buffer, empty string (the loop never iterates). `size <= -4`: `NULL` — **verified empirically over `-64..=-1`: the C returns `NULL` for every value in `-64..=-4` and non-NULL for `-3..=-1`** |
+| 5 | `encode_base64` | `size == INT_MIN` — `size*4` wraps to exactly `0`, so `cap = 0/3 + 4 = 4`; `calloc(1,4)` succeeds and the loop never runs | non-NULL, empty string (a *successful tiny* allocation from a wildly out-of-range `size`) |
+| 6 | `encode_base64` | `size` large negative — `size*4` wraps, and whether `cap` lands positive or negative is value-dependent, so accept/reject alternates in bands. Observed: `-2_000_000_000` → non-NULL, `-1_610_612_736` → `NULL`, `-1_073_741_824` → non-NULL, `-1_000_000_000` → non-NULL, `-536_870_912` → `NULL` | must match the C band-for-band; when accepted, an empty string |
+| 7 | `encode_base64` | `size == INT_MAX` — `size*4` overflows to `-4`, `-4/3 == -1` (truncation toward zero), `cap = 3`; `calloc(1,3)` succeeds, but the loop *does* run and would write past the 3-byte buffer | undefined behaviour in C. **Excluded from the differential suite**: the C is not observable here (heap corruption), so there is no ground truth to match. Documented for completeness. |
 
-The general rule: a `size` is **safe to call** with an `N`-byte buffer iff
-`size <= N` (the read stays in bounds), or `cap < 0` (the `calloc` fails before
-`src` is touched), or `size < 0` (the loop never runs). Everything else makes
-the **C itself** read out of bounds, so a differential test would only compare
-two `SIGSEGV`s. `tests/errors.rs::error_generic_out_of_range_scalar_sweep`
-encodes this rule as a `safe()` predicate and skips exactly those values.
+## Boundary inputs every C API has (covered in Phase C even though not rows above)
 
-Concretely excluded:
+| # | condition | expected |
+|---|-----------|----------|
+| 8 | NULL pointer × the full set of interesting `size` values (`0`, `1`, `-1`, `INT_MIN`, `INT_MAX`) | row 1: always `NULL` |
+| 9 | zero length (`size == 0`) on an empty string | row 3: non-NULL, empty output |
+| 10 | oversized length: `size` one step past the `int`-overflow threshold, `0x2000_0000` | row 2: `NULL` |
+| 11 | one step *before* the overflow threshold, `0x2000_0000 - 1` = `0x1FFF_FFFF` | large but positive `cap`; allocation attempted. Both sides must agree on `NULL` vs non-NULL. Excluded from byte-comparison (would require a 512 MiB readable `src`); the *allocation decision* is compared. |
+| 12 | out-of-range enum values across the FFI boundary | **N/A** — the public API (`char *encode_base64(int, const char *)`) declares no enum, struct, or flag parameter. `int` and `const char *` have no invalid-bit-pattern range beyond what rows 1–7 already enumerate; every one of the 2^32 `int` values is an accepted input, and the interesting equivalence classes (`0`, `>0`, `<0`, `INT_MIN`, `INT_MAX`, overflow threshold) are all covered above. |
 
-* `size ∈ {2^30-3, 2^30-2, 2^30-1, 2^30}` = `1073741821 ..= 1073741824` —
-  `size * 4` wraps to `-12 ..= 0`, so `cap ∈ {-1... 4}` is **non-negative**
-  (e.g. `size == 2^30-1` → `cap == 3`), `calloc` succeeds, and the loop then
-  reads ~1 GiB → `SIGSEGV`. *This was found the hard way: an early version of
-  `error_13` listed `1073741823` as a "calloc must fail" case and crashed the
-  test process.*
-* `size ∈ [2^30, 1610612735]` — same shape, `size * 4` wraps to a small
-  positive `int`.
-* `size == INT_MAX` — `size * 4` wraps to `-4`, `cap == 3`, `calloc` succeeds,
-  loop reads 2 GiB → `SIGSEGV`.
-* any `size` in `[1, 536870911]` larger than the caller's buffer — a plain
-  out-of-bounds read; the API performs no length validation whatsoever.
-* `size == 0` with a non-NUL-terminated `src` — unbounded `strlen`.
+## Status
 
-## Row status
+All rows verified against both `.so` files, under both the release and the
+debug Rust cdylib (the debug build has overflow checks ON, so it would trap any
+accidentally non-`wrapping` arithmetic).
 
-All rows 1–20 are covered by `tests/errors.rs` (the test names carry the row
-numbers) plus two extra generic-boundary tests, and all 22 pass against **both**
-`.so`s. Each test compares the returned sentinel *and* the exact `calloc`
-request `(nmemb, size)` recorded by the interposed `calloc`, so "both returned
-NULL" is always backed by "both asked the allocator for the same thing".
+| row | test | status |
+|-----|------|--------|
+| 1 | `err_row1_null_src_every_size` | [x] passes |
+| 2 | `err_row2_calloc_failure_int_overflow` | [x] passes |
+| 3 | `err_row3_size_zero_is_strlen_not_error` | [x] passes |
+| 4 | `err_row4_negative_size_accept_reject_bands` | [x] passes |
+| 5 | `err_row5_int_min_wraps_to_tiny_alloc` | [x] passes |
+| 6 | `err_row6_large_negative_size` | [x] passes |
+| 7 | — | [x] excluded (C-side UB, no ground truth — see below) |
+| 8 | `err_row1_null_src_every_size`, `boundary_null_pointer_takes_precedence_over_every_other_condition` | [x] passes |
+| 9 | `err_row3_size_zero_is_strlen_not_error`, `cfg_row15_strlen_mode_empty_string` | [x] passes |
+| 10 | `err_row2_calloc_failure_int_overflow` | [x] passes |
+| 11 | `err_row11_one_below_overflow_threshold` (with a real 0x1FFF_FFFF-byte source buffer) | [x] passes |
+| 12 | — | [x] N/A (no enum in the ABI; the `int` equivalence classes are covered by rows 1–11) |
+| extra | `boundary_zero_and_one_past_every_documented_edge` | [x] passes |
+| extra | `boundary_int_extremes_exhaustive_neighbourhoods` | [x] passes |
+
+### The observable/UB boundary for positive `size`
+
+`cap = size*4/3 + 4` in wrapping signed `int` decides everything. Enumerated:
+
+| `size` band | `cap` | C behaviour | testable? |
+|---|---|---|---|
+| `1 .. 0x1FFF_FFFF` | large positive, `>= 4*ceil(size/3)` | correct encode | yes — needs a `size`-byte source |
+| `0x2000_0000 .. 0x3FFF_FFFC` | `<= -1` → `SIZE_MAX`-ish | `calloc` fails → `NULL` | yes, with a tiny source (loop unreached) |
+| `0x3FFF_FFFD .. INT_MAX` | wraps to `0`, `2`, `3`, `4`, … | `calloc` **succeeds** with a few bytes, then the loop writes gigabytes past it | **no** — heap corruption, ERRORS.md row 7 |
+
+The last band is the only place C and Rust can differ, and only because the C
+has no defined behaviour there: Rust's bounds-checked slice write aborts, while
+the C silently corrupts the heap. Every `size` the C defines a result for is
+covered by a passing differential test.
+

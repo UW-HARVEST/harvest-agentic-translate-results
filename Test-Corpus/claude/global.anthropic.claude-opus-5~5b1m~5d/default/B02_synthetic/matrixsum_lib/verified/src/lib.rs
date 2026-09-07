@@ -44,36 +44,6 @@ extern "C" {
 }
 
 // ---------------------------------------------------------------------------
-// Raw memory access helpers
-//
-// The C library accesses `DynamicArray` fields and `int` elements with plain
-// `mov` instructions, which on x86-64 impose NO alignment requirement: a caller
-// that hands in a misaligned `DynamicArray*` (or a misaligned `data`) gets a
-// perfectly normal result out of the C.
-//
-// A direct `*ptr` / `*ptr = v` in Rust is a different contract: with
-// `debug-assertions` on, rustc emits `Assert(PointerAlignment)` and
-// `Assert(NullPointerDereference)` before every raw-pointer load/store, and both
-// lower to `panic_nounwind` -> `abort()`. That aborts where the C returns
-// normally (misaligned pointer) and raises SIGABRT where the C raises SIGSEGV
-// (`data == NULL`), i.e. it is a real divergence in the debug profile.
-//
-// Going through `read_unaligned`/`write_unaligned` reproduces the C's plain-`mov`
-// contract exactly and emits no such checks, so the translation behaves
-// identically under every cargo profile. Covered by `tests/phase_c_crash.rs`.
-// ---------------------------------------------------------------------------
-
-#[inline(always)]
-unsafe fn rd<T>(p: *const T) -> T {
-    core::ptr::read_unaligned(p)
-}
-
-#[inline(always)]
-unsafe fn wr<T>(p: *mut T, v: T) {
-    core::ptr::write_unaligned(p, v)
-}
-
-// ---------------------------------------------------------------------------
 // Global data
 // ---------------------------------------------------------------------------
 
@@ -118,16 +88,7 @@ const SIZEOF_INT: size_t = core::mem::size_of::<c_int>();
 // ---------------------------------------------------------------------------
 // DynamicArray* init_array(size_t initial_capacity)
 // ---------------------------------------------------------------------------
-// `#[inline(never)]` on every exported function: the C `matrixsum` reaches
-// `init_array`, `add_element`, `process_flags`, `calculate_matrix_checksum` and
-// `free_array` through real calls (via the PLT, see `objdump` of the C `.so`), so
-// it performs `malloc(24)` + `malloc(8)` + `realloc` + `free` + `free`. Without
-// `inline(never)` LLVM inlines the whole chain into `matrixsum` and then SROAs
-// the `DynamicArray` away entirely, dropping the 24-byte allocation — which
-// changes the allocator traffic and the set of allocation-failure points that can
-// return `-1`. Covered by `tests/phase_d_alloc_traffic.rs`.
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn init_array(initial_capacity: size_t) -> *mut DynamicArray {
     let arr = malloc(core::mem::size_of::<DynamicArray>()) as *mut DynamicArray;
     if arr.is_null() {
@@ -138,14 +99,14 @@ pub unsafe extern "C" fn init_array(initial_capacity: size_t) -> *mut DynamicArr
     // C, so it wraps on overflow rather than trapping.
     let bytes = initial_capacity.wrapping_mul(SIZEOF_INT);
     let data = malloc(bytes) as *mut c_int;
-    wr(&raw mut (*arr).data, data);
-    if rd(&raw const (*arr).data).is_null() {
+    (*arr).data = data;
+    if (*arr).data.is_null() {
         free(arr as *mut c_void);
         return core::ptr::null_mut();
     }
 
-    wr(&raw mut (*arr).size, 0);
-    wr(&raw mut (*arr).capacity, initial_capacity);
+    (*arr).size = 0;
+    (*arr).capacity = initial_capacity;
     arr
 }
 
@@ -153,24 +114,21 @@ pub unsafe extern "C" fn init_array(initial_capacity: size_t) -> *mut DynamicArr
 // int expand_array(DynamicArray *arr)
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn expand_array(arr: *mut DynamicArray) -> c_int {
     if arr.is_null() {
         return 0;
     }
 
-    let new_capacity = rd(&raw const (*arr).capacity).wrapping_mul(2);
-    let new_data = realloc(
-        rd(&raw const (*arr).data) as *mut c_void,
-        new_capacity.wrapping_mul(SIZEOF_INT),
-    ) as *mut c_int;
+    let new_capacity = (*arr).capacity.wrapping_mul(2);
+    let new_data =
+        realloc((*arr).data as *mut c_void, new_capacity.wrapping_mul(SIZEOF_INT)) as *mut c_int;
 
     if new_data.is_null() {
         return 0;
     }
 
-    wr(&raw mut (*arr).data, new_data);
-    wr(&raw mut (*arr).capacity, new_capacity);
+    (*arr).data = new_data;
+    (*arr).capacity = new_capacity;
     1
 }
 
@@ -178,39 +136,20 @@ pub unsafe extern "C" fn expand_array(arr: *mut DynamicArray) -> c_int {
 // int add_element(DynamicArray *arr, int value)
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn add_element(arr: *mut DynamicArray, value: c_int) -> c_int {
     if arr.is_null() {
         return 0;
     }
 
-    if rd(&raw const (*arr).size) >= rd(&raw const (*arr).capacity) {
+    if (*arr).size >= (*arr).capacity {
         if expand_array(arr) == 0 {
             return 0;
         }
     }
 
-    // `arr->data[arr->size++] = value;`
-    //
-    // The order of the two side effects is unspecified in C, and GCC (which is
-    // what builds the reference `.so`) commits `arr->size = old + 1` FIRST and
-    // performs the element store SECOND:
-    //
-    //     mov  (%rax),%rsi        ; data
-    //     mov  0x8(%rax),%rax     ; old size
-    //     lea  0x1(%rax),%rcx
-    //     mov  %rcx,0x8(%rdx)     ; arr->size = old + 1   <-- first
-    //     mov  %eax,(%rdx)        ; data[old] = value     <-- second
-    //
-    // That ordering is observable whenever the element store faults (e.g. `data`
-    // pointing into a PROT_NONE page, recovered from with a SIGSEGV handler):
-    // the C leaves `size` incremented. Mirror it exactly.
-    let data = rd(&raw const (*arr).data);
-    let idx = rd(&raw const (*arr).size);
-    wr(&raw mut (*arr).size, idx.wrapping_add(1));
-    // `data + idx` is a wrapping byte offset in the C (`shl $0x2` + `add`), so
-    // never use the offset-overflow-checking `add` here.
-    wr(data.wrapping_add(idx), value);
+    let idx = (*arr).size;
+    *(*arr).data.add(idx) = value;
+    (*arr).size = idx.wrapping_add(1);
     1
 }
 
@@ -218,10 +157,9 @@ pub unsafe extern "C" fn add_element(arr: *mut DynamicArray, value: c_int) -> c_
 // void free_array(DynamicArray *arr)
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn free_array(arr: *mut DynamicArray) {
     if !arr.is_null() {
-        free(rd(&raw const (*arr).data) as *mut c_void);
+        free((*arr).data as *mut c_void);
         free(arr as *mut c_void);
     }
 }
@@ -230,7 +168,6 @@ pub unsafe extern "C" fn free_array(arr: *mut DynamicArray) {
 // int process_flags(int flags)
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub extern "C" fn process_flags(flags: c_int) -> c_int {
     let count: c_int;
 
@@ -261,24 +198,20 @@ pub extern "C" fn process_flags(flags: c_int) -> c_int {
 // a call with no arguments is identical to `extern "C" fn() -> c_int`.
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub extern "C" fn calculate_matrix_checksum() -> c_int {
     let mut sum: c_int = 0;
 
-    // Read through a raw pointer to the exported object: `matrix` is publicly
-    // mutable data, so every element has to be loaded from memory on each call
-    // (a caller can `dlsym("matrix")` and overwrite it between calls).
-    let m = (&raw const matrix) as *const c_int;
+    let m = &raw const matrix;
     let mut i: c_int = 0;
     while i < 3 {
         let mut j: c_int = 0;
         while j < 4 {
-            // row-major: `matrix[i][j]` is flat index `i * 4 + j`
-            let v = unsafe { rd(m.wrapping_add((i as size_t) * 4 + (j as size_t))) };
+            // Read through a raw pointer: `matrix` is publicly mutable data.
+            let v = unsafe { (*m)[i as usize][j as usize] };
             sum = sum.wrapping_add(v);
-            j = j.wrapping_add(1);
+            j += 1;
         }
-        i = i.wrapping_add(1);
+        i += 1;
     }
 
     sum
@@ -288,7 +221,6 @@ pub extern "C" fn calculate_matrix_checksum() -> c_int {
 // int matrixsum(int param1, int param2, int param3, int param4)
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn matrixsum(
     param1: c_int,
     param2: c_int,
@@ -339,9 +271,9 @@ pub unsafe extern "C" fn matrixsum(
 
     let mut sum: c_int = 0;
     let mut i: size_t = 0;
-    while i < rd(&raw const (*arr).size) {
-        sum = sum.wrapping_add(rd(rd(&raw const (*arr).data).wrapping_add(i)));
-        i = i.wrapping_add(1);
+    while i < (*arr).size {
+        sum = sum.wrapping_add(*(*arr).data.add(i));
+        i += 1;
     }
 
     let flag_count = process_flags(permissions);

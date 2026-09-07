@@ -1,98 +1,189 @@
-# CONFIGS.md — configuration / valid-input surface table
+# CONFIGS.md — configuration / valid-input surface table (Phase B gate)
 
-## Axis inventory (mechanically derived from `c_src/src/lib.c`)
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
 
-**Runtime options / modes / flags:** none. The library has no init function, no
-global state, no setters, and no flag parameters. `regcomp` is always called
-with `REG_EXTENDED` and `regexec` always with `eflags == 0` (both hard-coded at
-L40/L45). There are no `#ifdef`s. The *only* configuration axes are input
-shapes, so they are enumerated exhaustively below.
+## Axes the C actually branches on
 
-**Public entry points (all three, including the low-level ones):**
+**Compile-time options.** None. `c_src/CMakeLists.txt` defines no
+`target_compile_definitions`; `grep -n '#if\|#ifdef\|#ifndef' c_src/src/lib.c
+c_src/include/lib.h` → no hits. Rust side: `Cargo.toml` has no `[features]`
+table, so `default` is the only feature combination.
 
-| entry point | declared in header? | level |
-|---|---|---|
-| `parse_uname_string(char *uname, os_data *osd)` | yes | top-level composed pipeline |
-| `get_os_arch(char *os_header)` | no (exported anyway) | **low-level**, called by `parse_uname_string` L142 |
-| `w_regexec(const char*, const char*, size_t, regmatch_t*)` | no (exported anyway) | **low-level**, called by `parse_uname_string` L75/L82/L89/L117/L124 |
+**Runtime options.** None in the usual sense — there is no options struct and
+no flag argument. The "configuration" is carried entirely by *input shape*:
 
-**Branch axes in `parse_uname_string`:**
+| axis | values the C distinguishes | where |
+|------|---------------------------|-------|
+| A1 entry point | `get_os_arch`, `w_regexec`, `parse_uname_string` | 3 non-`static` functions |
+| A2 top-level marker | `" [Ver: "` present (Windows branch) / absent but `" ["` present (Unix branch) / neither | `parse_uname_string` outer `if/else` |
+| A3 `": "` in `os_name` | present / absent | Unix branch inner `if/else` |
+| A4 `" ("` in `os_version` | present / absent | codename sub-branch |
+| A5 `"\|"` in `os_name` | present / absent | platform sub-branch |
+| A6 major regex `^([0-9]+)\.*` | match / no match | 4 call sites (2 Ver, 2 Unix) |
+| A7 minor regex `^[0-9]+\.([0-9]+)\.*` | match / no match | 2 branches |
+| A8 build regex `^[0-9]+\.[0-9]+\.([0-9]+(\.[0-9]+)*)\.*` | match / no match, 1 / 2 / N dotted components | Ver branch only |
+| A9 arch token | each of the 12 `ARCHS` entries, in priority order; none; several at once; overlapping (`i386` vs `i686`, `amd64` vs `ia64`, `x86_64` vs `i86pc`, `aarch64` vs `arm64`) | `get_os_arch` loop |
+| A10 arch position | before `" ["`, after `" ["`, absent | `get_os_arch(uname)` is called on the already-truncated buffer |
+| A11 `nmatch` | 0, 1, 2, 3, 8, 4096 | passed straight to `regexec` |
+| A12 `pmatch` | valid array / `NULL` | no null check |
+| A13 group count of the pattern | 0, 1, 2, nested | interacts with A11 |
+| A14 string length | empty, 1 char, typical, 64 KiB | no length limits |
+| A15 `os_data` pre-state | zeroed / already populated | fields are blindly overwritten |
+| A16 in-place mutation of the caller's buffer | truncation at each marker, `strip_last_char` writes | all branches |
 
-| axis | source | values |
-|---|---|---|
-| A1 marker | L68 `strstr(uname, " [Ver: ")` | present → Windows branch / absent |
-| A2 marker | L98 `strstr(uname, " [")` | present → Unix branch / absent → arch-only |
-| A3 separator | L102 `strstr(os_name, ": ")` | present / absent |
-| A4 codename | L109 `strstr(os_version, " (")` | present / absent |
-| A5 platform | L135 `strstr(os_name, "\|")` | present-before-`": "` / present-after / absent |
-| A6 version shape | L75/L82/L89/L117/L124 regexes | none · `M` · `M.m` · `M.m.b` · `M.m.b.r…` · leading zeros · huge digit runs · digits-then-text |
-| A7 architecture | L18 `ARCHS[]` | each of the 12 literals · none · several (ARCHS-order precedence, **not** string-order) · before vs. after `" ["` |
-| A8 length/emptiness | L72/L105/L112/L131 `*(p+strlen(p)-1)` | non-empty / 1 char / empty (the OOB-strip shapes) |
-| A9 multiplicity | `strstr` returns the **first** occurrence | 1 vs. many occurrences of each marker |
+## Row table (cross-product, pruned to combinations the C treats differently)
 
-**Branch axes in `get_os_arch`:** position of the literal in the haystack; which
-of the 12 literals; overlapping literals (`i386` ⊂ `x86_64`? no, but `arm64` ⊂
-`aarch64`? no — however `i386`/`i686`/`i86pc` and `armv6`/`armv7`/`arm64`/
-`aarch64` and `x86_64`/`amd64`/`ia64` all share substrings, so precedence
-matters); embedded in a longer token; count of literals present.
+Each row is exercised with **many randomized inputs** (fixed seed `0x5EED_1234`,
+xorshift64* PRNG) through **both** `.so` exports, comparing the return value,
+all 9 `os_data` fields, the full `pmatch` array, the mutated input buffer
+(including 8 guard bytes on each side), and the child's `stderr`.
 
-**Branch axes in `w_regexec`:** `nmatch` (0/1/2/3/oversized); `pmatch` NULL when
-`nmatch == 0`; match vs. no-match; group participation; anchored vs. floating;
-ERE metacharacters; subject length 0/1/many; the five literal patterns the
-library itself uses.
+### `get_os_arch` (low-level entry point, not in the header)
 
-## Configuration table
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `get_os_arch` | exactly one arch token, randomized surrounding text/position — one row-instance per each of the 12 `ARCHS` entries | [x] |
+| 2 | `get_os_arch` | two or more distinct arch tokens present → must return the *first in `ARCHS` order*, not the leftmost in the string | [x] |
+| 3 | `get_os_arch` | overlapping tokens: `i386`/`i686`, `amd64`/`ia64`, `x86_64`/`i86pc`, `aarch64`/`arm64`, `armv6`/`armv7` | [x] |
+| 4 | `get_os_arch` | arch token as a *substring* of a longer word (`xxx86_64yyy`, `Xarm64Y`) — still matches, `strstr` is not word-anchored | [x] |
+| 5 | `get_os_arch` | arch token split across the string so it does *not* occur (`x86-64`, `arm_64`) → `NULL` | [x] |
+| 6 | `get_os_arch` | random ASCII/high-byte noise, length 0..64, no arch → `NULL` | [x] |
+| 7 | `get_os_arch` | realistic full uname lines (Linux/Darwin/AIX/SunOS/Windows) | [x] |
+| 8 | `get_os_arch` | 64 KiB input with the arch at the very end | [x] |
 
-Every row is exercised with **many randomized inputs** (fixed seed, see
-`tests/common/mod.rs::Rng`), both `.so`s loaded via `libloading`, all 9
-`os_data` fields plus the mutated `uname` buffer compared byte-for-byte.
+### `w_regexec` (low-level entry point, not in the header)
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|-------------------------------------------|------|-----|
-| C1 | `get_os_arch` | haystack containing exactly one of the 12 ARCHS literals, at a random position, with random surrounding noise (all 12 literals covered) | `c1_arch_single` | [x] |
-| C2 | `get_os_arch` | haystack containing 2–5 ARCHS literals in random string-order → must return the ARCHS-**array**-order winner, not the leftmost | `c2_arch_precedence` | [x] |
-| C3 | `get_os_arch` | literal embedded inside a longer token (`"xx86_64yy"`, `"aarch64le"`, `"arm64e"`) — `strstr` is a plain substring search, so it still matches | `c3_arch_embedded` | [x] |
-| C4 | `get_os_arch` | random ASCII/hi-byte noise with no literal, plus near-misses (`"x86-64"`, `"i38"`, `"ARM64"`, `"aix"`) | `c4_arch_noise` | [x] |
-| C5 | `get_os_arch` | boundary lengths: `""`, 1 char, literal at offset 0, literal at the very end, 4 KiB haystack | `c5_arch_lengths` | [x] |
-| C6 | `w_regexec` | the 5 patterns `parse_uname_string` actually uses, against randomized version-like subjects, `nmatch=2`, comparing return value **and** both `regmatch_t` slots | `c6_regexec_library_patterns` | [x] |
-| C7 | `w_regexec` | `nmatch ∈ {0,1,2,3,8}` × (match, no-match), `pmatch` buffer pre-poisoned with a sentinel so untouched slots are detectable | `c7_regexec_nmatch_matrix` | [x] |
-| C8 | `w_regexec` | ERE feature matrix: alternation, `+ * ? {n,m}`, character classes, `[[:digit:]]`, anchors `^ $`, nested groups, back-to-back groups — random subjects | `c8_regexec_ere_features` | [x] |
-| C9 | `w_regexec` | subject length 0 / 1 / long (4 KiB); pattern length 0 / 1 / long; NUL-terminated exactly | `c9_regexec_lengths` | [x] |
-| C10 | `parse_uname_string` | **Windows branch**, version = `M` only (random 1–6 digit major) | `c10_win_major_only` | [x] |
-| C11 | `parse_uname_string` | **Windows branch**, version = `M.m` | `c11_win_major_minor` | [x] |
-| C12 | `parse_uname_string` | **Windows branch**, version = `M.m.b` (the canonical real-world shape) | `c12_win_major_minor_build` | [x] |
-| C13 | `parse_uname_string` | **Windows branch**, version = `M.m.b.r` and `M.m.b.r.s` → build regex captures the multi-dot tail | `c13_win_multidot_build` | [x] |
-| C14 | `parse_uname_string` | **Windows branch**, version with leading zeros / very long digit runs / trailing dots (`"0006.0001."`) | `c14_win_odd_numbers` | [x] |
-| C15 | `parse_uname_string` | **Windows branch**, version starting with non-digits (`"abc 1.2"`) → anchored regexes all fail | `c15_win_leading_text` | [x] |
-| C16 | `parse_uname_string` | **Windows branch**, `os_name` part empty / random / containing `"\|"` and `": "` (which are *not* looked for in this branch) | `c16_win_name_shapes` | [x] |
-| C17 | `parse_uname_string` | **Windows branch**, `" [Ver: "` occurring 2–3 times → first occurrence wins | `c17_win_multiple_markers` | [x] |
-| C18 | `parse_uname_string` | **Windows branch** where the string *also* contains `" ["` and an ARCHS literal → `" [Ver: "` wins and arch is never probed | `c18_win_shadows_unix` | [x] |
-| C19 | `parse_uname_string` | **Windows branch**, version remainder of length 1 (strip yields `""`) and length 0 (strip writes at `str_tmp-1`) | `c19_win_short_version` | [x] |
-| C20 | `parse_uname_string` | **Unix branch**, full shape `"<name> [<dist>: <ver> (<codename>)]"` with randomized parts | `c20_unix_full` | [x] |
-| C21 | `parse_uname_string` | **Unix branch**, `": "` present, no `" ("` → no codename | `c21_unix_no_codename` | [x] |
-| C22 | `parse_uname_string` | **Unix branch**, no `": "` → `os_name` loses its last byte, nothing else set | `c22_unix_no_colon` | [x] |
-| C23 | `parse_uname_string` | **Unix branch**, `"\|"` before `": "` → `os_platform` = text after `"\|"`, `os_name` = text before | `c23_unix_pipe_platform` | [x] |
-| C24 | `parse_uname_string` | **Unix branch**, `"\|"` present *and* no `": "` → pipe search runs on the last-byte-stripped name | `c24_unix_pipe_no_colon` | [x] |
-| C25 | `parse_uname_string` | **Unix branch**, multiple `"\|"` → first wins; `"\|"` at position 0 → empty `os_name` | `c25_unix_pipe_shapes` | [x] |
-| C26 | `parse_uname_string` | **Unix branch**, version shapes `M`, `M.m`, `M.m.p`, `M-suffix`, non-numeric (note: **no build regex** in this branch) | `c26_unix_version_shapes` | [x] |
-| C27 | `parse_uname_string` | **Unix branch**, multiple `" ("` in the version → first wins; codename containing `": "`, `"\|"`, `"("`, `")"` | `c27_unix_codename_shapes` | [x] |
-| C28 | `parse_uname_string` | **Unix branch**, multiple `": "` → first wins (later ones stay inside `os_version`) | `c28_unix_multiple_colons` | [x] |
-| C29 | `parse_uname_string` | **Unix branch**, multiple `" ["` → first wins | `c29_unix_multiple_brackets` | [x] |
-| C30 | `parse_uname_string` | **Unix branch** × each of the 12 ARCHS literals placed in the prefix (before `" ["`) → `os_arch` set | `c30_unix_arch_each` | [x] |
-| C31 | `parse_uname_string` | **Unix branch**, several ARCHS literals in the prefix → ARCHS-order precedence through the composed pipeline | `c31_unix_arch_precedence` | [x] |
-| C32 | `parse_uname_string` | **Unix branch**, ARCHS literal straddling the `" ["` boundary (partially truncated) | `c32_unix_arch_straddle` | [x] |
-| C33 | `parse_uname_string` | **arch-only branch** (no `" ["` at all) × each ARCHS literal → only `os_arch` written | `c33_archonly_each` | [x] |
-| C34 | `parse_uname_string` | **arch-only branch**, `" ["` -like near-misses (`"["`, `" [ "` with no closing, `"[Ver: "` without the leading space, `" [Ver:"` without the trailing space) | `c34_archonly_near_misses` | [x] |
-| C35 | `parse_uname_string` | pre-poisoned (non-NULL, non-zero) `os_data` for every branch → proves exactly which fields the C leaves untouched | `c35_poisoned_struct` | [x] |
-| C36 | `parse_uname_string` | fully random byte soup (printable + `[`, `]`, `(`, `)`, `:`, `\|`, space, digits, arch fragments) — 20 000 seeded cases, any branch | `c36_fuzz_mixed` | [x] |
-| C37 | `parse_uname_string` | random *real-world corpus* shapes (Windows/Ubuntu/CentOS/Debian/macOS/AIX/Solaris uname strings) with randomized numbers | `c37_realworld_corpus` | [x] |
-| C38 | `parse_uname_string` | composed low-level interaction: the same `regmatch_t` array is reused across the 3 (Windows) / 2 (Unix) `w_regexec` calls — inputs where an earlier regex matches and a later one fails, so stale offsets are live | `c38_pmatch_reuse_pipeline` | [x] |
-| C39 | `parse_uname_string` | long inputs: 4 KiB and 64 KiB uname strings in each branch (offset arithmetic > `i16`, and `regoff_t` sanity) | `c39_long_inputs` | [x] |
-| C40 | `parse_uname_string` | high-bit / non-UTF-8 bytes (`0x80`–`0xFF`) in name, version, codename and platform parts | `c40_non_utf8_bytes` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 9 | `w_regexec` | the 3 *actual* patterns used by `parse_uname_string` × randomized version-like strings, `nmatch=2`, 2-entry `pmatch` | [x] |
+| 10 | `w_regexec` | 0-group pattern (`^[0-9]+`), `nmatch=2` → `pmatch[1] = {-1,-1}` | [x] |
+| 11 | `w_regexec` | 1-group pattern, `nmatch=1` → only `pmatch[0]` written, `pmatch[1]` keeps caller's sentinel | [x] |
+| 12 | `w_regexec` | 2-group / nested-group pattern (`([0-9]+(\.[0-9]+)*)`), `nmatch=3` | [x] |
+| 13 | `w_regexec` | `nmatch=0` with a non-`NULL` `pmatch` → array untouched, return still correct | [x] |
+| 14 | `w_regexec` | `nmatch=8` with an 8-entry array on a 1-group pattern → surplus `{-1,-1}` | [x] |
+| 15 | `w_regexec` | `nmatch=4096` with a 4096-entry array | [x] |
+| 16 | `w_regexec` | anchored (`^…`) vs unanchored patterns, match at offset 0 vs deeper | [x] |
+| 17 | `w_regexec` | alternation / character classes / `+` / `*` / `{m,n}` REG_EXTENDED constructs | [x] |
+| 18 | `w_regexec` | empty pattern `""` against random strings | [x] |
+| 19 | `w_regexec` | empty subject `""` against random patterns | [x] |
+| 20 | `w_regexec` | subject containing NUL-free high bytes (0x80..0xFF) and `\n` | [x] |
+| 21 | `w_regexec` | 64 KiB subject, match near the end (unanchored) | [x] |
 
-## Feature combinations
+### `parse_uname_string` (public header entry point)
 
-There is no `[features]` table in `Cargo.toml` and no `cfg` in the source, so
-the default configuration is the complete matrix. `scripts/feature_matrix.sh`
-verifies this mechanically and runs the whole suite for every combination it
-finds (which is exactly one: the default).
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 22 | `parse_uname_string` | **Ver branch**, `major.minor.build` (3 components), randomized digits | [x] |
+| 23 | `parse_uname_string` | Ver branch, `major.minor.build.rev` (4+ dotted components → build regex's inner `(\.[0-9]+)*` repeats) | [x] |
+| 24 | `parse_uname_string` | Ver branch, `major.minor` only → `os_build` `NULL` | [x] |
+| 25 | `parse_uname_string` | Ver branch, `major` only → `os_minor`, `os_build` `NULL` | [x] |
+| 26 | `parse_uname_string` | Ver branch, non-numeric version → all three `NULL`, `os_version` still set | [x] |
+| 27 | `parse_uname_string` | Ver branch, leading zeros / very long digit runs (40 digits) | [x] |
+| 28 | `parse_uname_string` | Ver branch, trailing extra text after the version (`"10.0.19041 SP1]"`) | [x] |
+| 29 | `parse_uname_string` | Ver branch, arch token present in the prefix → `os_arch` must stay `NULL` (Ver branch never calls `get_os_arch`) | [x] |
+| 30 | `parse_uname_string` | Ver branch, `" [Ver: "` occurring *after* a plain `" ["` → Ver branch still wins | [x] |
+| 31 | `parse_uname_string` | Ver branch, two `" [Ver: "` occurrences → leftmost used | [x] |
+| 32 | `parse_uname_string` | Ver branch, empty prefix (`" [Ver: 6.1.7601]"`) → `os_name = ""` | [x] |
+| 33 | `parse_uname_string` | **Unix branch**, `name [os: major.minor (codename)]` — full shape, randomized | [x] |
+| 34 | `parse_uname_string` | Unix branch, `name [os: major.minor]` — no codename → `os_codename` `NULL` | [x] |
+| 35 | `parse_uname_string` | Unix branch, `name [os]` — no `": "` → `else` arm, only `os_name` (last char stripped) | [x] |
+| 36 | `parse_uname_string` | Unix branch, `os_name` contains `"\|"` → `os_platform` from the tail; both with and without `": "` | [x] |
+| 37 | `parse_uname_string` | Unix branch, `"\|"` present *and* codename present (all sub-branches at once) | [x] |
+| 38 | `parse_uname_string` | Unix branch, version has major but no minor → `os_minor` `NULL` | [x] |
+| 39 | `parse_uname_string` | Unix branch, non-numeric version → `os_major`/`os_minor` `NULL` | [x] |
+| 40 | `parse_uname_string` | Unix branch, arch token *before* `" ["` → `os_arch` set | [x] |
+| 41 | `parse_uname_string` | Unix branch, arch token *after* `" ["` only → `os_arch` `NULL` (buffer already truncated) | [x] |
+| 42 | `parse_uname_string` | Unix branch, arch tokens on both sides → the pre-`" ["` one wins | [x] |
+| 43 | `parse_uname_string` | Unix branch, multiple `": "` occurrences → leftmost splits | [x] |
+| 44 | `parse_uname_string` | Unix branch, multiple `" ("` occurrences → leftmost splits | [x] |
+| 45 | `parse_uname_string` | Unix branch, multiple `"\|"` occurrences → leftmost splits | [x] |
+| 46 | `parse_uname_string` | Unix branch, multiple `" ["` occurrences → leftmost used | [x] |
+| 47 | `parse_uname_string` | **Neither branch**, arch present → only `os_arch` set | [x] |
+| 48 | `parse_uname_string` | Neither branch, no arch → all fields `NULL` | [x] |
+| 49 | `parse_uname_string` | `"["` without the leading space (`"a[b: 1]"`) → neither branch | [x] |
+| 50 | `parse_uname_string` | `" [Ver:"` without the trailing space → falls through to `" ["` branch | [x] |
+| 51 | `parse_uname_string` | real-world corpus: Wazuh-style agent unames for Ubuntu/CentOS/Debian/Amazon Linux/macOS/Windows/AIX/Solaris/Alpine | [x] |
+| 52 | `parse_uname_string` | 64 KiB uname, markers at random positions | [x] |
+| 53 | `parse_uname_string` | high bytes (0x80..0xFF) and embedded `\n`/`\t` in every field | [x] |
+| 54 | `parse_uname_string` | `os_data` pre-populated with sentinel pointers → confirms which fields are overwritten vs preserved (`os_uname` never touched) | [x] |
+| 55 | `parse_uname_string` | called twice in a row on the same buffer + same `os_data` (second call sees the already-truncated buffer) | [x] |
+| 56 | `parse_uname_string` | fully random byte soup (length 0..96) with the four marker substrings injected at random offsets — 4000 iterations | [x] |
+
+### Driver binary
+
+| # | entry point(s) | configuration | [x] |
+|---|----------------|---------------|-----|
+| 57 | binary executable | **N/A** — `c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/lib.c)`; there is no `add_executable`, and `translation/Cargo.toml` has no `[[bin]]` and no `src/main.rs`. No stdout comparison is possible or required. | [x] |
+
+## Status — row → test mapping
+
+Every row is covered by a test in `translation/tests/configs.rs` (the test name
+carries the row number). Each test builds its cases with the seeded xorshift64\*
+PRNG from `tests/common/mod.rs` and calls `assert_same`, which compares the C
+and Rust `.so` byte-for-byte.
+
+| CONFIGS row(s) | test in `tests/configs.rs` |
+|----------------|-----------------------------|
+| 1 | `cfg01_arch_single_token_each_arch` (12 archs × 200 randomized) |
+| 2 | `cfg02_arch_multiple_tokens_priority_order` (800 randomized + all 144 ordered pairs) |
+| 3 | `cfg03_arch_overlapping_tokens` |
+| 4 | `cfg04_arch_token_inside_word` |
+| 5 | `cfg05_arch_near_misses` |
+| 6 | `cfg06_arch_random_noise` (2000 randomized) |
+| 7 | `cfg07_arch_realistic_unames` |
+| 8 | `cfg08_arch_huge_input` (64 KiB) |
+| 9 | `cfg09_regexec_real_patterns` (800 randomized × 3 patterns) |
+| 10 | `cfg10_regexec_zero_group_pattern` |
+| 11 | `cfg11_regexec_nmatch_one` |
+| 12 | `cfg12_regexec_nested_groups` |
+| 13 | `cfg13_regexec_nmatch_zero` |
+| 14 | `cfg14_regexec_nmatch_surplus` |
+| 15 | `cfg15_regexec_nmatch_4096` |
+| 16 | `cfg16_regexec_anchoring` |
+| 17 | `cfg17_regexec_extended_constructs` |
+| 18 | `cfg18_regexec_empty_pattern` |
+| 19 | `cfg19_regexec_empty_subject` |
+| 20 | `cfg20_regexec_high_bytes` |
+| 21 | `cfg21_regexec_huge_subject` (64 KiB) |
+| 22 | `cfg22_parse_ver_three_components` (600 randomized) |
+| 23 | `cfg23_parse_ver_many_components` (4–9 components × 200) |
+| 24 | `cfg24_parse_ver_two_components` |
+| 25 | `cfg25_parse_ver_one_component` |
+| 26 | `cfg26_parse_ver_non_numeric` |
+| 27 | `cfg27_parse_ver_long_digit_runs` (up to 400 digits) |
+| 28 | `cfg28_parse_ver_trailing_text` |
+| 29 | `cfg29_parse_ver_never_sets_arch` |
+| 30, 31 | `cfg30_parse_marker_precedence` |
+| 32 | `cfg32_parse_ver_empty_prefix` |
+| 33 | `cfg33_parse_unix_full` (800 randomized) |
+| 34 | `cfg34_parse_unix_no_codename` (800 randomized) |
+| 35 | `cfg35_parse_unix_no_colon_space` |
+| 36, 37 | `cfg36_parse_unix_pipe_platform` |
+| 38, 39 | `cfg38_parse_unix_version_shapes` |
+| 40, 41, 42 | `cfg40_parse_unix_arch_position` (12 × 12 arch cross-product) |
+| 43, 44, 45, 46 | `cfg43_parse_unix_duplicate_markers` |
+| 47, 48, 49, 50 | `cfg47_parse_neither_branch` |
+| 51 | `cfg51_parse_realistic_corpus` |
+| 52 | `cfg52_parse_huge_input` (64 KiB, marker at 4 different positions) |
+| 53 | `cfg53_parse_high_bytes` |
+| 54 | `cfg54_parse_prepopulated_osdata` |
+| 55 | `cfg55_parse_repeated_calls` |
+| 56 | `cfg56_parse_random_soup` (4000), `cfg56b_parse_marker_alphabet_soup` (4000) |
+| 57 | N/A — no binary target exists (see the row) |
+
+Result: 46 tests, 46 passing, 0 failing — in the `debug` and `release`
+profiles, under both feature combinations.
+
+### What is compared per case
+
+* `get_os_arch`: returned string (or NULL) **and** the input buffer plus its
+  8-byte guard padding on each side (`get_os_arch` must not mutate it).
+* `w_regexec`: the `int` return value **and** every `regmatch_t` entry of the
+  caller's array (pre-filled with `{-7777, -8888}` so "untouched" is
+  distinguishable from "written"), **and** the child's `stderr`.
+* `parse_uname_string`: all 9 `os_data` fields (NULL vs contents) **and** the
+  full mutated input buffer including both guard regions, so in-place
+  truncations and the one-byte-back `strip_last_char` writes are observed.
+* Always: the child's exit status / fatal signal.
+
+- [x] Every row passes across randomized inputs (see `tests/configs.rs`).

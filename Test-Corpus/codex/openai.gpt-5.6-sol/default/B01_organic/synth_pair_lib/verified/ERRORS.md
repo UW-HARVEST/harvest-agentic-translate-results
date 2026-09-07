@@ -1,29 +1,33 @@
 # Error Surface
 
-Mechanical search scope: `../c_src/include/` and `../c_src/src/`.
+Mechanical searches covered `RETURN_ERROR`, `return -1`, `return NULL`, error
+enums, assertions, null checks, range checks, and min/max constants in
+`../c_src/include` and `../c_src/src`.
 
-Search terms covered error-return macros/statements, `assert`, null checks,
-range checks, comparisons, and min/max constants. The only comparisons found
-are the valid-result conversion branches in `mp3d_scale_pcm`; the C API has no
-error return, assertion, null check, enum, length argument, or explicit input
-rejection.
+The C implementation contains **no input validation and no explicit rejection
+path**. The comparisons against `32766.5f` and `-32767.5f` are output
+saturation paths, not errors, and are covered in `CONFIGS.md`.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
+|---|----------|----------------------------------------------|-------------------|
 
-There are zero source-derived rejection rows.
+## Generic ABI boundary cases
 
-## Mandatory generic FFI boundaries
+These are required boundary probes even though they are not C rejection rows.
+Pointer faults are isolated in subprocesses because dereferencing null is not a
+recoverable library error.
 
-The C contract does not define these inputs and returns no rejection sentinel.
-They are tracked separately to compare the observable process-level behavior
-required by Phase C.
+| # | function | boundary input | expected C behavior | verified |
+|---|----------|----------------|---------------------|----------|
+| G1 | `synth_pair` | `pcm == NULL`, valid `z` | process receives `SIGSEGV` on output write | [x] |
+| G2 | `synth_pair` | valid `pcm`, `z == NULL` | process receives `SIGSEGV` on input read | [x] |
+| G3 | `synth_pair` | `nch == 0` | accepted; second output aliases and overwrites `pcm[0]` | [x] |
+| G4 | `synth_pair` | `nch == -1` with centered writable `pcm` | accepted; second output is written 16 samples before `pcm` | [x] |
+| G5 | `synth_pair` | large `nch == 4096` with sufficient writable storage | accepted; second output is written at sample `65536` | [x] |
 
-| boundary | condition | expected C behavior | status |
-|----------|-----------|---------------------|--------|
-| null `pcm` | `pcm == NULL`, valid readable `z`, `nch == 1` | invalid write; no API error result | [x] |
-| null `z` | valid writable `pcm`, `z == NULL`, `nch == 1` | invalid read; no API error result | [x] |
+There are no length arguments, public enums, documented numeric input ranges,
+or error return values in this API, so zero/oversized lengths and out-of-range
+enum probes are not applicable.
 
-Length and enum boundary probes are not applicable: `synth_pair` has no length
-parameter and no enum parameter. `nch == 0` is accepted by C and is covered as
-a valid aliasing configuration in `CONFIGS.md`.
+All generic boundary probes passed against both shared libraries in default and
+`--no-default-features` modes.

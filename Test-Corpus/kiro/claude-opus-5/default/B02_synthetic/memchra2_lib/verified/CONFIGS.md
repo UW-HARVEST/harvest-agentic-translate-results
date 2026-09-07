@@ -1,180 +1,128 @@
-# CONFIGS.md — Configuration-surface table (Phase A / Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-The mirror of `ERRORS.md` for **valid** inputs. Axes are derived mechanically
-from the `if` / comparison branches the C code actually takes, not from a guess
-about which inputs "matter".
+Derived mechanically from `c_src/src/lib.c` (branch inventory from the same
+`grep -n -E '\bif\b|\bswitch\b|#if|continue|break'` run recorded in
+`ERRORS.md`).
 
-## Public entry points
+## Entry points
 
-`c_src/include/lib.h` declares exactly one:
+`c_src/include/lib.h` declares exactly one symbol, and `nm -D` confirms it is
+the only exported one:
 
 ```c
 int memchra2(int a, int b, int c, int d);
 ```
 
-There are no convenience-vs-low-level tiers to choose between: `memchra2` *is*
-the lowest-level public entry point, and it is the only one. The 8 helpers
+There are **no convenience wrappers vs. low-level entry points** to distinguish:
+`memchra2` *is* the lowest-level public entry point. The eight helpers
 (`memchra`, `process_buffer`, `int_to_float_bits`, `process_strings`,
 `safe_sum_array`, `interpret_as_int`, `count_occurrences`,
-`complex_iteration`) are `static`, so they are not part of the linkable
-surface — they are reachable only through `memchra2`, and every row below
-drives the whole composed pipeline end to end through it.
+`complex_iteration`) are `static`, so they are only reachable through
+`memchra2`, and driving them means choosing `(a,b,c,d)` tuples that steer each
+one. Every row below therefore names the helper path(s) it drives.
 
 ## Runtime options / modes / flags
 
-Grep census: the C source contains **no** `#ifdef`, **no** `#if`, **no**
-`switch`, no global/`static` mutable state, no setter functions, no
-environment-variable reads, and no configuration struct.
-
-```
-$ grep -c '#ifdef\|#if \|switch\|setenv\|getenv\|static [a-z_]* [a-z_]* =' c_src/src/lib.c
-0
-```
-
-`memchra2` is therefore a pure function of its four `int` arguments, and the
-"configuration" axes are exactly the input **shapes** the body branches on.
-There is likewise no `[features]` table in `translation/Cargo.toml`, so there is
-one build configuration.
+**None.** There is no configuration struct, no setter, no global, no mode enum,
+no `#ifdef` in the translation unit (`grep -n '#if' c_src/src/lib.c` → no
+matches), and no compile-time feature in `translation/Cargo.toml`. The entire
+configuration surface is the *shape of the four integer arguments*, so the axes
+below are input-shape axes.
 
 ## Axes the C actually branches on
 
-**Axis 1 — IEEE-754 class of `a`** (from `int_to_float_bits(a)` and the
-`if (f > 0.0f && f < 1000.0f)` test). Seven classes the branch distinguishes:
+| axis | site | distinct states |
+|------|------|-----------------|
+| A1 — sign of each argument | `snprintf("test%d-%d-%d-%d")` emits a `-` per negative value, which `count_occurrences`/`memchra` then count | 2⁴ = 16 sign patterns → `dash_count ∈ 3..7` → `result += dash_count*10` |
+| A2 — `a` reinterpreted as `float` | `if (f > 0.0f && f < 1000.0f)` (line 152) | (i) `a ≤ 0` → not taken; (ii) `1 ≤ a < 0x3F800000` → taken, `0 < f < 1` so `(int)f == 0`; (iii) `0x3F800000 ≤ a < 0x447A0000` → taken, `1 ≤ f < 1000`, `(int)f ∈ 1..999`; (iv) `a ≥ 0x447A0000` → not taken (`f ≥ 1000`, `+inf`, or `NaN`) |
+| A3 — decimal width of the formatted text | length of `buffer` drives `strlen`, `memchra`'s `n`, and `process_buffer`'s loop | shortest `"test0-0-0-0"` (11 bytes) … longest `"test-2147483648-…"` (51 bytes); 64-byte `snprintf` cap is never reached |
+| A4 — `buf_sum > 0` | line 157 | `buffer` holds only ASCII 45–57 (`-` and digits) plus `"test"`, all positive, and is non-empty → the guard is always **true**; the false branch is unreachable (recorded as row C13 so the Rust is checked for not inverting it) |
+| A5 — low bytes of `b`, `c`, `d` | `interpret_as_int` reads `{b&0xFF, c&0xFF, d&0xFF, 0}` as a little-endian `int`, then `result ^= …` | `0x00`, `0xFF`, `0x80` (byte sign bit), mixed; top byte pinned to 0 so the value is always in `0 … 0x00FFFFFF` |
+| A6 — low bytes of all four args | `complex_iteration` folds `result ^= (int)((unsigned)*i & 0xFF)` over 4 elements | xor-cancelling patterns (all equal low bytes → 0) vs. non-cancelling |
+| A7 — signed wraparound | `safe_sum_array` accumulates `int sum += *i`; `memchra2` accumulates into `int result` | sums that stay in range vs. sums that overflow `int` in both directions |
+| A8 — fixed-shape helper inputs | `process_strings(test_strings, 4, "test")`, `safe_sum_array(values, 4)`, `interpret_as_int(bytes, 4)`, `complex_iteration(values, 4)` | single state each (`count`/`len` are literals) — pinned, not variable; covered by every row |
+| A9 — FFI argument reinterpretation | the exported ABI itself | called as `(i32,i32,i32,i32)->i32` and as `(u32,u32,u32,u32)->u32` |
 
-| class | `a` (as `uint32`) | `f` | branch | contribution |
-|-------|-------------------|-----|--------|--------------|
-| `Zero` | `0x00000000` | `+0.0` | not taken | 0 |
-| `PosSubnormal` | `0x00000001` … `0x007FFFFF` | `0 < f < 2^-126` | taken | `(int)f == 0` |
-| `PosNormLtOne` | `0x00800000` … `0x3F7FFFFF` | `2^-126 <= f < 1.0` | taken | `(int)f == 0` |
-| `PosNormInRange` | `0x3F800000` … `0x4479FFFF` | `1.0 <= f < 1000.0` | taken | `(int)f` ∈ `[1, 999]` |
-| `PosGeThousand` | `0x447A0000` … `0x7F7FFFFF` | `f >= 1000.0` | not taken | 0 |
-| `PosInfNan` | `0x7F800000` … `0x7FFFFFFF` | `+inf` / `+NaN` | not taken | 0 |
-| `Negative` | `0x80000000` … `0xFFFFFFFF` | `-0.0`, negative, `-inf`, `-NaN` | not taken | 0 |
+## Table (one row per combination the C treats differently)
 
-**Axis 2 — sign pattern of `(b, c, d)`** (8 combinations). Each negative value
-makes `snprintf` emit an extra `'-'`, which changes `count_occurrences(buffer,
-'-')` (the `dash_count * 10` term), the buffer length, and hence the
-`process_buffer` byte sum. Note `a`'s sign is already pinned by Axis 1, and
-also contributes a `'-'`; the total dash count ranges over `3..=7`.
+Every row is exercised with **many randomized tuples** (`SplitMix64`, fixed
+seed `0x5EED_1234_ABCD_9876`) drawn from that row's constrained domain, not a
+single hand-picked value. Both `.so`s are called through `libloading` and the
+returned `int`s are compared bit-for-bit.
 
-**Axis 3 — low-byte shape of `(b, c, d)`** (the `x & 0xFF` extractions feeding
-`interpret_as_int`'s little-endian load and `complex_iteration`'s XOR fold).
-Distinguished sub-shapes: all-zero low bytes, all-`0xFF` low bytes, low bytes
-that XOR-cancel in pairs, low bytes crossing the `char` sign boundary
-(`0x7F`/`0x80`), and unconstrained/random.
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| C1 | `memchra2` | A1 = all 16 sign patterns × A3 mixed widths; magnitudes random in `±1..±999_999_999` (drives `count_occurrences`/`memchra` dash counting, `process_buffer`, `safe_sum_array`, `complex_iteration`) | [x] |
+| C2 | `memchra2` | A2 state (i): `a ≤ 0`, float term omitted; `b,c,d` random | [x] |
+| C3 | `memchra2` | A2 state (ii): `a ∈ [1, 0x3F800000)`, float term taken but `(int)f == 0` (positive subnormal / `f < 1`) | [x] |
+| C4 | `memchra2` | A2 state (iii): `a ∈ [0x3F800000, 0x447A0000)`, float term taken with `(int)f ∈ 1..999` — the only rows where the truncating `(int)f` cast is observable | [x] |
+| C5 | `memchra2` | A2 state (iv): `a ≥ 0x447A0000`, float term omitted because `f ≥ 1000` / non-finite | [x] |
+| C6 | `memchra2` | A5: `b,c,d` low bytes all `0x00` (`interpret_as_int == 0`, the xor is a no-op) with random high bytes | [x] |
+| C7 | `memchra2` | A5: `b,c,d` low bytes all `0xFF` (`interpret_as_int == 0x00FFFFFF`) with random high bytes | [x] |
+| C8 | `memchra2` | A5: `b,c,d` low bytes all `0x80` (byte sign bit set; assembled value still positive because the top byte is pinned to 0) | [x] |
+| C9 | `memchra2` | A6: `a,b,c,d` share one low byte → `complex_iteration` xor-cancels to `0`; high bytes and signs random | [x] |
+| C10 | `memchra2` | A6: pairwise-cancelling low bytes (`a,b` equal and `c,d` equal, but the two pairs differ) → xor `0` via a different path | [x] |
+| C11 | `memchra2` | A7: tuples chosen so `a+b+c+d` overflows `INT_MAX` (positive wraparound in `safe_sum_array`) | [x] |
+| C12 | `memchra2` | A7: tuples chosen so `a+b+c+d` underflows `INT_MIN` (negative wraparound) | [x] |
+| C13 | `memchra2` | A3/A4 longest text: all four args in `[-2147483648, -1000000000]` → 51-byte buffer, `dash_count == 7`, largest `buf_sum` (checks `buf_sum > 0` is not inverted and `snprintf` truncation is not triggered) | [x] |
+| C14 | `memchra2` | A3 shortest text: all four args in `-9..9` → 11–15-byte buffer, smallest `buf_sum` | [x] |
+| C15 | `memchra2` | A3 uniform 10-digit positive magnitudes `[1000000000, 2147483647]` → `dash_count == 3`, `buf_sum` near its maximum for the no-minus case | [x] |
+| C16 | `memchra2` | A1×A2×A5×A6×A7 catch-all: fully uniform random over the whole `i32⁴` domain (10 000 tuples) — the cross-product no constrained row reaches | [x] |
+| C17 | `memchra2` | A2 × A1: `a` swept over every float-window boundary (`0, 1, 0x3F7FFFFF, 0x3F800000, 0x4479FFFF, 0x447A0000`) crossed with all 16 sign patterns of `b,c,d` (and `a`'s own sign implied) | [x] |
+| C18 | `memchra2` | A9: identical 4-word inputs sent through the `(u32,u32,u32,u32)->u32` FFI signature; raw result words compared (also re-checks the same tuples via the signed signature) | [x] |
+| C19 | `memchra2` | A2 state (iii) × A6 cancelling: `a` in the `1 ≤ f < 1000` window *and* low bytes arranged to xor-cancel — interaction row, since the float term and the xor term are the two that a per-helper test would check in isolation | [x] |
+| C20 | `memchra2` | A7 overflow × A1 all-negative × A3 longest: interaction of wraparound, 7 dashes, and maximum buffer length simultaneously | [x] |
+| C21 | `memchra2` | A3/A4 unreachable-path proof: over 50 004 inputs (4 extremes + 50 000 random), assert the formatted text never exceeds 51 bytes and never contains a byte ≥ 0x80 — this makes the two surviving mutants (`snprintf` cap off-by-one, `char` signedness in `process_buffer`) *provably* equivalent rather than untested | [x] |
 
-**Axis 4 — magnitude shape** (decimal width of the `%d` conversions, driving
-buffer length ∈ `11..=51`, and `int` overflow of `a+b+c+d` in
-`safe_sum_array`): single-digit values, 10-digit values, `INT_MIN`/`INT_MAX`
-mixes, and sum-overflowing tuples.
+## Notes on unreachable states (recorded so the Rust is still checked)
 
-Rows below are the cross product of Axes 1 × 2 (56 rows — the code takes a
-genuinely different path for each), pruned of nothing, plus 12 targeted rows
-covering Axes 3 and 4 which are value-dependent rather than branch-dependent.
+- A4's false branch (`buf_sum <= 0`) is unreachable; C13/C14/C15 confirm the
+  Rust also always takes the true branch.
+- The 64-byte `snprintf` truncation path is unreachable (max output 51 bytes);
+  C13 pins the worst case.
+- `process_strings` always returns `3` (`+15`); every row depends on that
+  constant, so a divergence there fails all rows.
 
-Each row is exercised with **400 randomized inputs** drawn from that row's
-class (fixed seed `0x5EED_0000 + row`, so runs are reproducible) **plus** the
-row's exhaustive boundary representatives. A row is checked off only after all
-of its inputs match byte-for-byte between the C `.so` and the Rust `.so`.
+## Additional coverage beyond the row table
 
-## Rows 1–56 — Axis 1 × Axis 2 (IEEE-754 class of `a` × sign pattern of `b,c,d`)
+| test | what it adds |
+|------|--------------|
+| `phase_b_soak::soak_uniform_random` | 1 000 000 uniform random tuples over the whole `i32⁴` domain |
+| `phase_b_soak::soak_stratified_cells` | every cell of (16 sign patterns) × (4 float-window states) × (4 low-byte classes) = 256 cells × 40 tuples — guarantees no cell is left to chance by uniform sampling |
+| `phase_b_soak::soak_exhaustive_dense_block` | exhaustive `(a,b) ∈ [-60,60]²` × 2 `(c,d)` shapes, plus a dense sweep of `a = bits(k as f32)` for `k ∈ 0..1000` (every integral `(int)f` step in the window) |
+| `phase_a_harness::*` | negative control — proves the two `.so`s resolve to distinct addresses in distinct `/proc/self/maps` mappings (so no global-symbol interposition makes the suite vacuous), that the byte comparison can fail, and that both implementations are deterministic |
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`+++` → dash_count=3, dash term=30 | [x] |
-| 2 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`++-` → dash_count=4, dash term=40 | [x] |
-| 3 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`+-+` → dash_count=4, dash term=40 | [x] |
-| 4 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`+--` → dash_count=5, dash term=50 | [x] |
-| 5 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`-++` → dash_count=4, dash term=40 | [x] |
-| 6 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`-+-` → dash_count=5, dash term=50 | [x] |
-| 7 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`--+` → dash_count=5, dash term=50 | [x] |
-| 8 | `memchra2` | `Zero`: a == 0x00000000 (f=+0.0, float branch NOT taken); sign(b,c,d)=`---` → dash_count=6, dash term=60 | [x] |
-| 9 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`+++` → dash_count=3, dash term=30 | [x] |
-| 10 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`++-` → dash_count=4, dash term=40 | [x] |
-| 11 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`+-+` → dash_count=4, dash term=40 | [x] |
-| 12 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`+--` → dash_count=5, dash term=50 | [x] |
-| 13 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`-++` → dash_count=4, dash term=40 | [x] |
-| 14 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`-+-` → dash_count=5, dash term=50 | [x] |
-| 15 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`--+` → dash_count=5, dash term=50 | [x] |
-| 16 | `memchra2` | `PosSubnormal`: a in [0x00000001,0x007FFFFF] (positive subnormal, branch taken, (int)f=0); sign(b,c,d)=`---` → dash_count=6, dash term=60 | [x] |
-| 17 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`+++` → dash_count=3, dash term=30 | [x] |
-| 18 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`++-` → dash_count=4, dash term=40 | [x] |
-| 19 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`+-+` → dash_count=4, dash term=40 | [x] |
-| 20 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`+--` → dash_count=5, dash term=50 | [x] |
-| 21 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`-++` → dash_count=4, dash term=40 | [x] |
-| 22 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`-+-` → dash_count=5, dash term=50 | [x] |
-| 23 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`--+` → dash_count=5, dash term=50 | [x] |
-| 24 | `memchra2` | `PosNormLtOne`: a in [0x00800000,0x3F7FFFFF] (0<f<1.0, branch taken, (int)f=0); sign(b,c,d)=`---` → dash_count=6, dash term=60 | [x] |
-| 25 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`+++` → dash_count=3, dash term=30 | [x] |
-| 26 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`++-` → dash_count=4, dash term=40 | [x] |
-| 27 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`+-+` → dash_count=4, dash term=40 | [x] |
-| 28 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`+--` → dash_count=5, dash term=50 | [x] |
-| 29 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`-++` → dash_count=4, dash term=40 | [x] |
-| 30 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`-+-` → dash_count=5, dash term=50 | [x] |
-| 31 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`--+` → dash_count=5, dash term=50 | [x] |
-| 32 | `memchra2` | `PosNormInRange`: a in [0x3F800000,0x4479FFFF] (1.0<=f<1000.0, branch taken, (int)f in [1,999]); sign(b,c,d)=`---` → dash_count=6, dash term=60 | [x] |
-| 33 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`+++` → dash_count=3, dash term=30 | [x] |
-| 34 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`++-` → dash_count=4, dash term=40 | [x] |
-| 35 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`+-+` → dash_count=4, dash term=40 | [x] |
-| 36 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`+--` → dash_count=5, dash term=50 | [x] |
-| 37 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`-++` → dash_count=4, dash term=40 | [x] |
-| 38 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`-+-` → dash_count=5, dash term=50 | [x] |
-| 39 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`--+` → dash_count=5, dash term=50 | [x] |
-| 40 | `memchra2` | `PosGeThousand`: a in [0x447A0000,0x7F7FFFFF] (f>=1000.0, branch NOT taken); sign(b,c,d)=`---` → dash_count=6, dash term=60 | [x] |
-| 41 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`+++` → dash_count=3, dash term=30 | [x] |
-| 42 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`++-` → dash_count=4, dash term=40 | [x] |
-| 43 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`+-+` → dash_count=4, dash term=40 | [x] |
-| 44 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`+--` → dash_count=5, dash term=50 | [x] |
-| 45 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`-++` → dash_count=4, dash term=40 | [x] |
-| 46 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`-+-` → dash_count=5, dash term=50 | [x] |
-| 47 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`--+` → dash_count=5, dash term=50 | [x] |
-| 48 | `memchra2` | `PosInfNan`: a in [0x7F800000,0x7FFFFFFF] (+inf/+NaN, branch NOT taken); sign(b,c,d)=`---` → dash_count=6, dash term=60 | [x] |
-| 49 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`+++` → dash_count=4, dash term=40 | [x] |
-| 50 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`++-` → dash_count=5, dash term=50 | [x] |
-| 51 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`+-+` → dash_count=5, dash term=50 | [x] |
-| 52 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`+--` → dash_count=6, dash term=60 | [x] |
-| 53 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`-++` → dash_count=5, dash term=50 | [x] |
-| 54 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`-+-` → dash_count=6, dash term=60 | [x] |
-| 55 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`--+` → dash_count=6, dash term=60 | [x] |
-| 56 | `memchra2` | `Negative`: a in [0x80000000,0xFFFFFFFF] (negative/-0.0/-inf/-NaN, branch NOT taken); sign(b,c,d)=`---` → dash_count=7, dash term=70 | [x] |
+## Mutation-testing result (`./mutation_check.sh`)
 
-## Rows 57–68 — Axis 3 (low-byte shape) and Axis 4 (magnitude shape)
+10 deliberate mutations were injected into `src/lib.rs` and the suite re-run.
+**8 KILLED, 2 SURVIVED**, and both survivors are provably *equivalent* mutants:
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 57 | `memchra2` | Axis 3: low bytes of b,c,d all `0x00` → `interpret_as_int` loads `0x00000000`, `complex_iteration` XOR-folds `a&0xFF` only | [x] |
-| 58 | `memchra2` | Axis 3: low bytes of b,c,d all `0xFF` → `interpret_as_int` loads `0x00FFFFFF` | [x] |
-| 59 | `memchra2` | Axis 3: low bytes of b,c,d pairwise equal (XOR cancellation in `complex_iteration`) | [x] |
-| 60 | `memchra2` | Axis 3: low bytes of b,c,d at the `char` sign boundary `0x7F`/`0x80` (signed-vs-unsigned `(char)c` behaviour) | [x] |
-| 61 | `memchra2` | Axis 3: low byte of `a` sweeps all 256 values with b,c,d fixed (isolates `complex_iteration`'s `a` term) | [x] |
-| 62 | `memchra2` | Axis 3: low bytes of b,c,d sweep all 256 values each (16.7M-pruned: 256 diagonal + 4096 random pairs) | [x] |
-| 63 | `memchra2` | Axis 4: all four args single-digit `0..9` → shortest buffer (11 bytes), exhaustive 10^4 cross product | [x] |
-| 64 | `memchra2` | Axis 4: all four args = `INT_MIN` → longest buffer (51 bytes), max dash count 7 | [x] |
-| 65 | `memchra2` | Axis 4: all four args = `INT_MAX` → 10-digit widths, dash count 3 | [x] |
-| 66 | `memchra2` | Axis 4: `a+b+c+d` overflows `int` positively (wrap-around in `safe_sum_array`) | [x] |
-| 67 | `memchra2` | Axis 4: `a+b+c+d` overflows `int` negatively (wrap-around in `safe_sum_array`) | [x] |
-| 68 | `memchra2` | Axis 1+4: `a` chosen so `(int)f` hits every integer in `[1,999]` (all 999 values, 3 ulp probes each) | [x] |
+| mutation | outcome | why |
+|----------|---------|-----|
+| `memchra` target byte `^ 1` | KILLED | |
+| `interpret_as_int` LE → BE | KILLED | |
+| `safe_sum_array` init `0` → `1` | KILLED | |
+| float window `< 1000.0` → `< 100.0` | KILLED | |
+| `complex_iteration` mask `0xFF` → `0xFE` | KILLED | |
+| `matches * 5` → `* 6` | KILLED | |
+| `buf_sum % 256` → `% 255` | KILLED | |
+| `dash_count * 10` → `* 11` | KILLED | |
+| `snprintf` cap `len-1` → `len-2` | SURVIVED | the formatted text is at most 51 bytes, so no cap ≥ 52 ever binds — proven by `c21_unreachable_paths_are_provably_unreachable` |
+| `process_buffer` `as i8` → `as u8` | SURVIVED | every byte of the formatted text is < 0x80 (`'-'`, digits, `"test"`), so signed and unsigned widening coincide — proven by the same test |
 
-**68 / 68 rows pass** across their randomized inputs and boundary
-representatives; see `tests/configs.rs`.
+Row **C21** exists specifically to turn those two "it can't be reached"
+arguments into checked invariants over 50 004 inputs, so the survivors are
+documented equivalences rather than untested code.
 
-## Robustness: C optimization level
+## Build/profile matrix also verified
 
-`c_src/CMakeLists.txt` sets no `CMAKE_BUILD_TYPE`, so the reference `.so` is
-built at `-O0`. This library relies on signed-integer overflow wrapping
-(`a+b+c+d` in `safe_sum_array`) and on type punning through a union
-(`int_to_float_bits`), both of which a compiler is entitled to treat
-differently at higher optimization levels. To confirm the Rust matches the C's
-*semantics* and not merely one build of it, the whole suite was re-run against
-`c_src/src/lib.c` compiled out-of-tree (nothing in `c_src/` was modified) at
-`-O0`, `-O1`, `-O2`, `-O3`, and `-Os`:
+The full suite was additionally run with the harness pointed at the **debug**
+profile cdylib (`MEMCHRA2_RUST_SO=target/debug/libmemchra2_lib.so`), where
+Rust's integer-overflow checks are enabled. All tests pass, confirming no
+accumulation in the translation relies on release-mode wrapping to avoid a
+panic — every one uses explicit `wrapping_*`.
 
-| C optimization | tests passed | failed |
-|----------------|--------------|--------|
-| `-O0` (the CMake default, i.e. the reference build) | 46 | 0 |
-| `-O1` | 46 | 0 |
-| `-O2` | 46 | 0 |
-| `-O3` | 46 | 0 |
-| `-Os` | 46 | 0 |
-
-Reproduce with `MEMCHRA2_C_SO=<path to alternative .so> cargo test --release`.
+The C side was cross-checked at `-O0`, `-O1`, `-O2`, `-O3` and `-Os` (plus the
+default CMake build) against each other over 200 007 inputs: **all six agree**,
+so the C's signed-overflow and type-punning UB is stable and the reference
+behaviour is unambiguous.

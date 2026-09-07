@@ -1,79 +1,160 @@
-# CONFIGS.md — configuration surface for VALID inputs
+# CONFIGS.md — Phase A: configuration surface table (valid inputs)
 
-Derived mechanically from the C, the mirror of `ERRORS.md`.
+## Axes derived mechanically from the C source
 
-## Public entry points (the complete set)
+### Axis 1 — `Impairment` (the only runtime option/mode; the `switch` in `colourblind`)
 
-`nm -D` on the C `.so` exports exactly one function, and `lib.h` declares
-exactly that one:
+`grep -n 'case' c_src/src/lib.c` →
 
-```c
-void colourblind(cb_impairment Impairment, float *R, float *G, float *B);
-```
-
-There is no convenience-vs-low-level split to worry about: `colourblind` **is**
-the lowest-level entry point. The three per-impairment transforms
-(`Protanopia`, `Deuteranopia`, `Tritanopia`) are `static`, hence unreachable
-from outside — the only way to drive them is through `colourblind`, so every row
-below goes through it and selects the helper via `Impairment`.
-
-## Axes the C actually branches on
-
-| axis | where the C branches | values enumerated |
+| value | enumerator | branch taken |
 |---|---|---|
-| **A. impairment / mode** | `switch (Impairment)`, `lib.c:25` — three `case` labels selecting three different coefficient matrices | `cbProtanopia`(0), `cbDeuteranopia`(1), `cbTritanopia`(2) |
-| **B. expression shape per component** | each helper writes 3 components with a *different* expression shape: `a*R + b*G + c*B` (add-chain), `a*R + b*G - c*B` (sub tail), `a*R + b*G + B` (raw `B` addend, `Protanopia`/`Deuteranopia` blue), `R + b*G - c*B` (raw `R` addend, `Tritanopia` red) | all 4 shapes, covered by A |
-| **C. pointer aliasing** | not a branch, but observable state: all three helpers read `*Red,*Green,*Blue` into locals **first** (`lib.c:4,11,18`) then store Red→Green→Blue, so aliasing changes the result | distinct; `R==G`; `R==B`; `G==B`; `R==G==B`; reversed/permuted distinct pointers |
-| **D. float value class** | no branch in the source, but the hardware branches: `mulss`/`addss`/`subss` behave differently per IEEE class, and the coefficients span 1e-11…8.7e-1 so class mixing is reachable | in-gamut `[0,1]`; wide normals; `±0`; subnormals; near-`MIN_POSITIVE`; near-`MAX` (overflow to `±INF`); `±INF`; qNaN; sNaN; sign-mismatched NaN pairs; exact powers of two |
-| **E. non-finite mixing** | `INF*0`, `INF-INF`, two NaNs meeting in one expression (the *destination* operand of `mulss`/`addss`/`subss` wins the NaN tie, so operand order is observable) | all three impairments × NaN/INF placements in R, G, B |
-| **F. memory placement / alignment** | `movss` has no alignment requirement | 4-byte aligned; deliberately misaligned by 1,2,3 bytes; three separate allocations vs one contiguous array |
-| **G. call sequencing** | no internal state, but a stateful bug in the Rust would show here | single call; repeated calls on the same buffer (iterated transform); interleaved impairments on the same buffer |
-| **H. build configuration** | `grep -rE '#if|#ifdef|#define' c_src/` → **none**. `[features]` in `Cargo.toml` → **none** | exactly one configuration exists (`--no-default-features` ≡ default) |
+| 0 | `cbProtanopia`   | `Protanopia(R, G, B)` |
+| 1 | `cbDeuteranopia` | `Deuteranopia(R, G, B)` |
+| 2 | `cbTritanopia`   | `Tritanopia(R, G, B)` |
 
-Axis **A × C × D/E** is the meaningful cross-product; **B** is implied by A,
-**F**/**G** are orthogonal robustness axes applied on top, and **H** collapses to
-a single configuration.
+There are **no other flags, modes, `#ifdef`s, env vars, or global state** in
+the library. `grep -cE '#if|#ifdef|getenv|static [^v]' c_src/src/lib.c` finds
+only the three `static void` helpers.
 
-Every row is checked with **many randomized inputs** from a fixed-seed
-(`0x5EED_C0DE_1234_5678`) SplitMix64 generator, and compared **bit-exactly**
-(`f32::to_bits`) between the C `.so` and the Rust `.so`, both loaded with
-`libloading`. Row counts are per-row `N` in the test source. Rows 25-28 are
-*exhaustive* rather than sampled.
+### Axis 2 — the three lowest-level entry points
 
-Total compared calls across the suite: **~830 million** per profile
-(`cargo test --release` takes ~25 s). Run everything, including the anti-vacuity
-gates, with `scripts/verify_all.sh`.
+`colourblind` is the ONLY exported symbol, but it is a pure dispatcher: the
+real work lives in three distinct straight-line matrix multiplies. Each must be
+driven directly (i.e. one row per helper, not one row for "the wrapper"):
 
-## Configuration table
+* `Protanopia`   — reached with `Impairment = 0`
+* `Deuteranopia` — reached with `Impairment = 1`
+* `Tritanopia`   — reached with `Impairment = 2`
+
+Their coefficient matrices differ, and `Tritanopia`'s *R* row has a different
+expression **shape** (`R + k*G - k*B` — a bare `R` term and a subtraction,
+vs. the other two rows' `k*R + k*G ± k*B`), so its operand/rounding order is a
+separate code path.
+
+Per-helper expression shapes (each row is a distinct rounding/operand order):
+
+| helper | R row | G row | B row |
+|---|---|---|---|
+| Protanopia   | `a*R + b*G + c*B` (c ≈ 2.9e-9)  | `a*R + b*G - c*B` (subtract) | `-a*R + b*G + B` (bare B, negative coeff) |
+| Deuteranopia | `a*R + b*G + c*B` (c ≈ 3.6e-9)  | `a*R + b*G - c*B` (subtract) | `-a*R + b*G + B` (bare B, negative coeff) |
+| Tritanopia   | `R + b*G - c*B` (**bare R**, subtract) | `-a*R + b*G + c*B` (tiny negative a) | `a*R + b*G + c*B` (tiny positive a) |
+
+### Axis 3 — input SHAPE of the three `float` channels
+
+The C does no branching on values, but IEEE-754 does. Distinct shapes the
+hardware/rounding treats differently:
+
+| shape | representative values |
+|---|---|
+| S1 unit-range colour | uniform random in `[0.0, 1.0]` (the library's intended domain) |
+| S2 byte-range colour | uniform random in `[0.0, 255.0]` |
+| S3 signed / out-of-gamut | uniform random in `[-1e3, 1e3]` |
+| S4 zeros | `+0.0`, `-0.0` in every position (sign-of-zero of the result is observable) |
+| S5 subnormals | `f32::from_bits(1)`, `MIN_POSITIVE/2`, random subnormal bit patterns (tests absence of FTZ/DAZ) |
+| S6 huge / overflow to ±Inf | `f32::MAX`, `MAX/2`, `3.0e38` (products/sums overflow → ±Inf) |
+| S7 tiny / underflow to 0 | `f32::MIN_POSITIVE`, `1e-40` (products underflow: note the `2.9e-9`/`3.6e-9`/`4.5e-11` coefficients) |
+| S8 ±Infinity | `±f32::INFINITY` in 1, 2 and 3 channels (`Inf*0` and `Inf - Inf` → NaN inside the expression) |
+| S9 single NaN | one channel NaN (quiet, both signs), others finite |
+| S10 multi-NaN, differing signs & payloads | 2 or 3 channels NaN with **different sign bits and different payloads** — this is the operand-order-sensitive case: `ADDSS`/`MULSS`/`SUBSS` return the *destination* operand when both are NaN, so the surviving NaN's bits reveal the exact operand order the compiler chose. This is the single most divergence-prone shape. |
+| S11 signalling NaN | `f32::from_bits(0x7F80_0001)` and `0xFF80_0001` (must be quieted identically) |
+| S12 fully random bit patterns | `u32` random → `f32::from_bits` (covers all classes at once, incl. NaN payloads) |
+
+### Axis 4 — pointer ALIASING (a real, observable API shape)
+
+Each helper snapshots `*Red`, `*Green`, `*Blue` into locals **before** any
+store, then stores in the order `*Red`, `*Green`, `*Blue`. With distinct
+pointers this is invisible; with aliasing pointers it is fully observable.
+`colourblind` takes three independent `float*`, so a caller can legally pass:
+
+| A1 | `R`, `G`, `B` all distinct |
+| A2 | `R == G`, `B` distinct |
+| A3 | `R == B`, `G` distinct |
+| A4 | `G == B`, `R` distinct |
+| A5 | `R == G == B` (one variable) |
+
+### Axis 5 — memory layout / repeated invocation
+
+| L1 | three separate stack slots |
+| L2 | three adjacent elements of one array (contiguous) |
+| L3 | heap `Vec<f32>` pixel buffer, function applied per pixel over many pixels (real consumer pattern, catches state leakage between calls) |
+| L4 | the same triple fed through `colourblind` repeatedly (idempotence/accumulation must match) |
+
+## The configuration table (pruned cross-product)
+
+Every row is run against **both** `.so`s via `libloading` and compared
+**bit-for-bit** (`to_bits()`, so NaN payloads and signed zeros count).
+Rows marked "randomised" use ≥2000 seeded-random inputs (seed fixed,
+`SplitMix64`), not one hand-picked value.
 
 | # | entry point(s) | configuration (options set + input shape) | test | [x] |
 |---|----------------|-------------------------------------------|------|-----|
-| 1 | `colourblind` | `cbProtanopia`, distinct pointers, in-gamut random `[0,1]` (N=20000) | `cfg_row01_protanopia_in_gamut` | [x] |
-| 2 | `colourblind` | `cbDeuteranopia`, distinct pointers, in-gamut random `[0,1]` (N=20000) | `cfg_row02_deuteranopia_in_gamut` | [x] |
-| 3 | `colourblind` | `cbTritanopia`, distinct pointers, in-gamut random `[0,1]` (N=20000) | `cfg_row03_tritanopia_in_gamut` | [x] |
-| 4 | `colourblind` | all 3 impairments, distinct pointers, **uniform random bit patterns** (any of the 2³² floats incl. NaN/INF/subnormal) (N=60000 each) | `cfg_row04_all_impairments_random_bitpatterns` | [x] |
-| 5 | `colourblind` | all 3 impairments, **wide normals** `±1e±38` log-uniform → exercises overflow to `±INF` and underflow to subnormal (N=20000 each) | `cfg_row05_all_impairments_wide_normals` | [x] |
-| 6 | `colourblind` | all 3 impairments, **signed zeros** — all 8 sign combinations of `±0.0` | `cfg_row06_signed_zeros` | [x] |
-| 7 | `colourblind` | all 3 impairments, **subnormals**: smallest/largest subnormal and random subnormal triples, both signs (N=5000) | `cfg_row07_subnormals` | [x] |
-| 8 | `colourblind` | all 3 impairments, **near-`f32::MAX`** so each component overflows to `±INF` (N=5000) | `cfg_row08_overflow_to_infinity` | [x] |
-| 9 | `colourblind` | all 3 impairments, `±INF` in every position — all 3⁴ combinations of {`-INF`,`0`,`+INF`} plus `INF*tiny_coeff`, `INF-INF` | `cfg_row09_infinities_all_positions` | [x] |
-| 10 | `colourblind` | all 3 impairments, **qNaN with random payloads**, both signs, in each of R/G/B and in all pairs/triples — pins NaN-payload *and* NaN-sign propagation (`addss`/`subss`/`mulss` keep the destination operand) (N=8000) | `cfg_row10_quiet_nan_payload_propagation` | [x] |
-| 11 | `colourblind` | all 3 impairments, **sNaN** in each position — must quieten identically (payload + sign) | `cfg_row11_signalling_nan_quieting` | [x] |
-| 12 | `colourblind` | all 3 impairments, **two NaNs with opposite signs / different payloads meeting in one expression** — the exact case where operand order is observable | `cfg_row12_nan_vs_nan_operand_order` | [x] |
-| 13 | `colourblind` | all 3 impairments, **exact powers of two** and dyadic values (exact-arithmetic corners, ties-to-even in the add chain) (N=5000) | `cfg_row13_powers_of_two_and_ties` | [x] |
-| 14 | `colourblind` | all 3 impairments, aliasing **`R == G`** (2 distinct pointers), random data (N=6000) | `cfg_row14_alias_r_eq_g` | [x] |
-| 15 | `colourblind` | all 3 impairments, aliasing **`R == B`**, random data (N=6000) | `cfg_row15_alias_r_eq_b` | [x] |
-| 16 | `colourblind` | all 3 impairments, aliasing **`G == B`**, random data (N=6000) | `cfg_row16_alias_g_eq_b` | [x] |
-| 17 | `colourblind` | all 3 impairments, aliasing **`R == G == B`** (1 pointer) — only the last store survives, random data incl. exotic bits (N=6000) | `cfg_row17_alias_all_three` | [x] |
-| 18 | `colourblind` | all 3 impairments, **permuted / reversed distinct pointers** into one array (`&a[2],&a[1],&a[0]` and all 6 permutations) — proves argument order, not memory order, drives the maths (N=3000) | `cfg_row18_permuted_pointers` | [x] |
-| 19 | `colourblind` | all 3 impairments, **misaligned** pointers (offset 1,2,3 bytes) with random data (N=3000) | `cfg_row19_misaligned_layout` | [x] |
-| 20 | `colourblind` | all 3 impairments, **three separate heap allocations** vs one contiguous array (same values) — result must be layout-independent (N=3000) | `cfg_row20_separate_allocations` | [x] |
-| 21 | `colourblind` | all 3 impairments, **repeated in-place application** (100 iterations on the same buffer) — an idempotence/stateless check that also walks values far outside `[0,1]` (N=500 seeds) | `cfg_row21_repeated_in_place` | [x] |
-| 22 | `colourblind` | **interleaved impairments** on the same buffer in random order (mode switching, e.g. P→T→D→P…), 50 calls per buffer (N=500 seeds) | `cfg_row22_interleaved_impairments` | [x] |
-| 23 | `colourblind` | all 3 impairments, **every valid impairment × every value class**, full cross-product sweep from a class table (`{in-gamut, ±0, subnormal, MIN_POSITIVE, 1.0, MAX, ±INF, qNaN, sNaN}`³ × 3 modes) | `cfg_row23_mode_by_class_cross_product` | [x] |
-| 24 | `colourblind` | all 3 impairments, **`u8` 0..=255 sweep scaled to `[0,1]`** — the library's real-world use (24-bit sRGB pixels), all 16.7M triples sampled deterministically (N=200000) | `cfg_row24_srgb_pixel_sweep` | [x] |
-| 25 | `colourblind` | all 3 impairments, **EXHAUSTIVE over all 2^24 NaN encodings** (sign × 23-bit payload) in each channel position, against 4 partner pairs (normal/normal, opposite-signed NaN, ±INF, sNaN+qNaN) — 604 M compared calls | `cfg_row25_exhaustive_nan_payload_and_sign_in_each_channel` | [x] |
-| 26 | `colourblind` | all 3 impairments, **EXHAUSTIVE over all 2^24 NaN encodings with all three channels NaN at once** (three distinct payloads/signs, 3 rotations) — the only shape where every add/sub has two NaN operands, so the destination-wins tie-break is decisive. 75 M compared calls | `cfg_row26_exhaustive_nan_in_all_three_channels` | [x] |
-| 27 | `colourblind` | all 3 impairments, **EXHAUSTIVE over every biased-exponent pair** (256×256) × 4 mantissas × rotating signs — systematically hits overflow, gradual underflow, cancellation and zero/subnormal/normal/inf/NaN class boundaries | `cfg_row27_exhaustive_exponent_cross_product` | [x] |
-| 28 | `colourblind` | all 3 impairments × all 3 positions, **strided sweep of the entire 2^32 input space** of one channel (step 0x101, so every exponent and a spread of every mantissa region is visited) with the other two channels randomised — 150 M compared calls | `cfg_row28_strided_full_u32_channel_sweep` | [x] |
-| 29 | `colourblind` | **feature configuration H**: the whole suite re-run under `--no-default-features` and under every combination emitted by `scripts/feature_matrix.sh`, in BOTH the `debug` and `release` profiles (debug enables Rust's UB checks, which is a genuinely different code path — see the `movss` note in `src/lib.rs`). There are no `[features]`, so the matrix is the single default configuration; the script derives that from `Cargo.toml` rather than assuming it | `scripts/feature_matrix.sh` | [x] |
+| C1 | `Protanopia` (`Impairment=0`) | S1 unit-range, A1 distinct, L1 — randomised | `cfg_c1` | [x] |
+| C2 | `Deuteranopia` (`Impairment=1`) | S1 unit-range, A1 distinct, L1 — randomised | `cfg_c2` | [x] |
+| C3 | `Tritanopia` (`Impairment=2`) | S1 unit-range, A1 distinct, L1 — randomised | `cfg_c3` | [x] |
+| C4 | all 3 | S2 byte-range `[0,255]`, A1, L1 — randomised | `cfg_c4` | [x] |
+| C5 | all 3 | S3 signed out-of-gamut `[-1e3,1e3]`, A1, L1 — randomised | `cfg_c5` | [x] |
+| C6 | all 3 | S4 ±0.0 — exhaustive over all 8 sign combinations × 3 impairments | `cfg_c6` | [x] |
+| C7 | all 3 | S5 subnormals, A1 — randomised subnormal bit patterns | `cfg_c7` | [x] |
+| C8 | all 3 | S6 huge → overflow to ±Inf, A1 — randomised near `f32::MAX` | `cfg_c8` | [x] |
+| C9 | all 3 | S7 tiny → underflow, A1 — randomised | `cfg_c9` | [x] |
+| C10 | all 3 | S8 ±Inf in 1/2/3 channels — exhaustive over the pattern set × 3 impairments | `cfg_c10` | [x] |
+| C11 | all 3 | S9 single quiet NaN (both signs, several payloads) × channel position × 3 impairments | `cfg_c11` | [x] |
+| C12 | all 3 | **S10 multi-NaN, differing signs and payloads** — exhaustive over channel subsets × sign/payload combos × 3 impairments (operand-order-sensitive) | `cfg_c12` | [x] |
+| C13 | all 3 | S11 signalling NaN, both signs, each channel × 3 impairments | `cfg_c13` | [x] |
+| C14 | all 3 | S12 fully random `u32` bit patterns, A1 — large randomised sweep (all float classes mixed) | `cfg_c14` | [x] |
+| C15 | all 3 | A2 `R==G` aliasing × S1 and S12 — randomised | `cfg_c15` | [x] |
+| C16 | all 3 | A3 `R==B` aliasing × S1 and S12 — randomised | `cfg_c16` | [x] |
+| C17 | all 3 | A4 `G==B` aliasing × S1 and S12 — randomised | `cfg_c17` | [x] |
+| C18 | all 3 | A5 `R==G==B` single slot × S1 and S12 — randomised | `cfg_c18` | [x] |
+| C19 | all 3 | L2 contiguous array-of-3 (checks no out-of-bounds write past the triple; guard elements verified untouched) | `cfg_c19` | [x] |
+| C20 | all 3 | L3 heap pixel buffer, per-pixel application over 4096 random pixels, whole buffer compared | `cfg_c20` | [x] |
+| C21 | all 3 | L4 repeated application (10 iterations) of the same impairment to one triple — convergence/accumulation path | `cfg_c21` | [x] |
+| C22 | all 3 | mixed sequence: apply impairments 0,1,2,0,1,2… in one process to the same buffer (cross-helper state leakage) | `cfg_c22` | [x] |
+| C23 | all 3 | S1 but with one channel exactly `1.0` / `0.0` / `-1.0` boundary constants × all positions × 3 impairments | `cfg_c23` | [x] |
+| C24 | all 3 | values chosen so a sum is an exact tie needing round-to-nearest-even (`x`, `x+ulp` pairs around powers of two) — randomised around `2^k` | `cfg_c24` | [x] |
+
+## Feature combinations
+
+`Cargo.toml` has **no `[features]` table**, so the only combination is the
+default (== `--no-default-features`). Verified by running the suite under both
+`cargo test --release` and `cargo test --release --no-default-features`.
+
+## Finding: NaN-payload selection is C-compiler-optimisation dependent
+
+Recorded here because it constrains what "byte-identical" can mean.
+
+`c_src/CMakeLists.txt` sets no `CMAKE_BUILD_TYPE`, and the generated
+`flags.make` confirms the compile line is exactly `C_FLAGS = -fPIC` — i.e. gcc
+at its default **`-O0`**. The Rust is pinned to that build and matches it with
+**0 failing tests**.
+
+Rebuilding the *same* C source at other optimisation levels and re-running the
+suite (only the `C_SO` env var changes):
+
+| C build | failing tests |
+|---|---|
+| `gcc -O0` (**the canonical CMake build**) | **0** |
+| `gcc -O1` | 3 |
+| `gcc -O2` | 3 |
+| `gcc -O3` | 3 |
+| `gcc -Os` | 3 |
+
+All three failures in the optimised builds are `cfg_c11` / `cfg_c12` /
+`cfg_c13` — the NaN rows — and every reported difference is only *which* NaN
+operand survives, e.g. for `Impairment=0`, input
+`[0x7F800001, 0xFFC00000, 0x3F800000]`:
+
+```
+gcc -O0 / Rust -> [0x7FC00001, 0xFFC00000, 0xFFC00000]
+gcc -O2         -> [0x7FC00001, 0x7FC00001, 0x7FC00001]
+```
+
+`ADDSS`/`SUBSS`/`MULSS` return the **destination** operand when both operands
+are NaN, so the surviving payload is decided purely by the operand order the
+compiler picked. gcc reorders those operands at `-O1` and above, so the two C
+builds **disagree with each other** on these inputs — no single Rust
+implementation can match both. The translation therefore matches the build that
+`c_src/CMakeLists.txt` actually produces (`-O0`). Every non-NaN input agrees
+across all five C builds.
+
+`./run_all.sh` prints this comparison as an informational step.

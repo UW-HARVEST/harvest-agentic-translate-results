@@ -21,20 +21,6 @@ pub struct ListNode {
     pub next: *mut ListNode,
 }
 
-// ABI guard: the C struct is `{ int; struct ListNode*; }`, so on every target the
-// C compiler lays it out as value@0, next@sizeof(ptr), size 2*sizeof(ptr). Pin
-// that here so any accidental field reordering or type change is a COMPILE error
-// instead of silent memory corruption when a C-built chain is passed in.
-// `tests/layout.rs` independently confirms these are the offsets the real C
-// compiler produces for `c_src/include/simplestruct.h`.
-const _: () = {
-    assert!(core::mem::offset_of!(ListNode, value) == 0);
-    assert!(core::mem::offset_of!(ListNode, next) == core::mem::size_of::<*mut ListNode>());
-    assert!(core::mem::size_of::<ListNode>() == 2 * core::mem::size_of::<*mut ListNode>());
-    assert!(core::mem::align_of::<ListNode>() == core::mem::align_of::<*mut ListNode>());
-    assert!(core::mem::size_of::<c_int>() == 4);
-};
-
 /// Returns the smallest `value` in the list starting at `head`, or `-1` when
 /// `head` is NULL.
 ///

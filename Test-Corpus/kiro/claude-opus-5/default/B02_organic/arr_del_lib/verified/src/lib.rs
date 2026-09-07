@@ -27,6 +27,33 @@ unsafe extern "C" {
     fn strlen(s: *const c_char) -> usize;
     fn strcmp(a: *const c_char, b: *const c_char) -> c_int;
     fn sprintf(s: *mut c_char, fmt: *const c_char, ...) -> c_int;
+    fn abort() -> !;
+}
+
+// ---------------------------------------------------------------------------
+// STBDS_ASSERT
+//
+// `c_src/src/lib.c` does `#define STBDS_ASSERT assert` and the CMake build sets
+// no build type, so `NDEBUG` is never defined and every `STBDS_ASSERT` is LIVE:
+// a failure calls `abort()` and raises SIGABRT. At least one of them is
+// reachable from the public API (`stbds_hmdel_key`'s `slot >= 0` fires when
+// `mode` is an out-of-enum-range value such as 2 on a string map), so the
+// translation has to reproduce the abort rather than continue with a wild
+// pointer.
+// ---------------------------------------------------------------------------
+
+#[cold]
+#[inline(never)]
+unsafe fn stbds_assert_fail() -> ! {
+    unsafe { abort() }
+}
+
+macro_rules! stbds_assert {
+    ($cond:expr) => {
+        if !($cond) {
+            unsafe { stbds_assert_fail() }
+        }
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +310,10 @@ unsafe fn stbds_make_hash_index(
     if slot_count <= STBDS_BUCKET_LENGTH {
         (*t).used_count_shrink_threshold = 0;
     }
+    // STBDS_ASSERT(t->used_count_threshold + t->tombstone_count_threshold < t->slot_count);
+    stbds_assert!(
+        (*t).used_count_threshold.wrapping_add((*t).tombstone_count_threshold) < (*t).slot_count
+    );
 
     if !ot.is_null() {
         (*t).string = (*ot).string;
@@ -853,6 +884,8 @@ pub unsafe extern "C" fn stbds_hmput_key(
         }
         raw_a = stbds_arr_to_hash(a, elemsize);
 
+        // STBDS_ASSERT((size_t) i+1 <= stbds_arrcap(a));
+        stbds_assert!((i as usize).wrapping_add(1) <= stbds_arrcap(a));
         (*stbds_header(a)).length = (i + 1) as usize;
         bucket = (*table).storage.wrapping_add(pos >> STBDS_BUCKET_SHIFT);
         (*bucket).hash[pos & STBDS_BUCKET_MASK] = hash;
@@ -931,9 +964,13 @@ pub unsafe extern "C" fn stbds_hmdel_key(
     let mut i: c_int = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
     let old_index: isize = (*b).index[i as usize];
     let final_index: isize = stbds_arrlen(raw_a) - 1 - 1;
+    // STBDS_ASSERT(slot < (ptrdiff_t) table->slot_count);
+    stbds_assert!(slot < (*table).slot_count as isize);
     (*table).used_count -= 1;
     (*table).tombstone_count += 1;
     stbds_temp_set(raw_a, 1);
+    // STBDS_ASSERT(table->used_count >= 0);  -- `used_count` is `size_t`, so
+    // this is a tautology in C and can never fire.
     (*b).hash[i as usize] = STBDS_HASH_DELETED;
     (*b).index[i as usize] = STBDS_INDEX_DELETED;
 
@@ -966,10 +1003,14 @@ pub unsafe extern "C" fn stbds_hmdel_key(
             ) as *mut c_void;
             slot = stbds_hm_find_slot(a, elemsize, kp, keysize, keyoffset, mode);
         }
+        // STBDS_ASSERT(slot >= 0);
+        stbds_assert!(slot >= 0);
         b = (*table)
             .storage
             .wrapping_offset(slot >> STBDS_BUCKET_SHIFT);
         i = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
+        // STBDS_ASSERT(b->index[i] == final_index);
+        stbds_assert!((*b).index[i as usize] == final_index);
         (*b).index[i as usize] = old_index;
     }
     (*stbds_header(raw_a)).length -= 1;
@@ -993,8 +1034,8 @@ pub unsafe extern "C" fn stbds_hmdel_key(
 // String arena
 // ---------------------------------------------------------------------------
 
-const STBDS_STRING_ARENA_BLOCKSIZE_MIN: u32 = 512;
-const STBDS_STRING_ARENA_BLOCKSIZE_MAX: u32 = 1 << 20;
+const STBDS_STRING_ARENA_BLOCKSIZE_MIN: usize = 512;
+const STBDS_STRING_ARENA_BLOCKSIZE_MAX: usize = 1 << 20;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stbds_stralloc(
@@ -1006,14 +1047,13 @@ pub unsafe extern "C" fn stbds_stralloc(
     if len > (*a).remaining {
         // C: `size_t blocksize = a->block;`
         //    `blocksize = (size_t) (STBDS_STRING_ARENA_BLOCKSIZE_MIN) << (blocksize>>1);`
-        // The 512 is cast to `size_t` *before* the shift, so this is a 64-bit
-        // shift.  x86-64 `shl` masks the count with 63, which is what
-        // `wrapping_shl` reproduces for the (UB in C) counts >= 64.
+        // The `(size_t)` cast makes this a 64-bit shift, and `a->block` is
+        // caller-visible state that can reach 255, so the shift count can reach
+        // 127. x86-64 `shl` masks the count by 63, which `wrapping_shl` does too.
         let shift = ((*a).block as usize) >> 1;
-        let blocksize: usize =
-            (STBDS_STRING_ARENA_BLOCKSIZE_MIN as usize).wrapping_shl(shift as u32);
+        let blocksize: usize = STBDS_STRING_ARENA_BLOCKSIZE_MIN.wrapping_shl(shift as u32);
 
-        if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX as usize {
+        if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
             (*a).block = (*a).block.wrapping_add(1);
         }
 
@@ -1047,6 +1087,8 @@ pub unsafe extern "C" fn stbds_stralloc(
         }
     }
 
+    // STBDS_ASSERT(len <= a->remaining);
+    stbds_assert!(len <= (*a).remaining);
     p = (ptr::addr_of_mut!((*(*a).storage).storage) as *mut c_char)
         .wrapping_add((*a).remaining)
         .wrapping_sub(len);

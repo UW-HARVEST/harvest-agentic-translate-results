@@ -1,25 +1,25 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Derived with:
+Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-m1bNJW.so
+nm -D --defined-only ../c_src/build/libharvest-work-wWTQN6.so
 nm -D --defined-only target/release/libconfusion_lib.so
 ```
 
-Only globally defined dynamic symbols reported by the C library are part of
-this table. All six are functions defined in `c_src/src/lib.c`.
+Only defined dynamic symbols are API candidates. The C header declares only
+`confusion`, but the shared object also exposes the five non-static helper
+functions below, so all six are part of the observed FFI surface.
 
-| C symbol | Rust export | Status |
-|----------|-------------|--------|
-| `confuse_types` | `confuse_types` | present |
-| `confusion` | `confusion` | present |
-| `create_state` | `create_state` | present |
-| `destroy_state` | `destroy_state` | present |
-| `process_buffer` | `process_buffer` | present |
-| `update_flags` | `update_flags` | present |
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `confuse_types` | `T` | `confuse_types` | [x] present |
+| `confusion` | `T` | `confusion` | [x] present |
+| `create_state` | `T` | `create_state` | [x] present |
+| `destroy_state` | `T` | `destroy_state` | [x] present |
+| `process_buffer` | `T` | `process_buffer` | [x] present |
+| `update_flags` | `T` | `update_flags` | [x] present |
 
-Missing C symbols in Rust: **0**
+Missing C exports in Rust: **0**.
 
-- [x] Final release-build symbol diff is empty.
-- [x] Rust has no undefined non-libc symbols required from the C library.
+Undefined non-libc C API symbols in Rust: **0**.

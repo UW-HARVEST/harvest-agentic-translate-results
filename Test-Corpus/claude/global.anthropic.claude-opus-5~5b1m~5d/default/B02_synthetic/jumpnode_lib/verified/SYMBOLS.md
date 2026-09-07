@@ -1,105 +1,85 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Phase A: public symbol surface
 
-Derived mechanically from `nm -D` on the built libraries.
+Source of truth: `nm -D --defined-only` on the C shared library
+`c_src/build/libharvest-work-X6YTtt.so`, compared against the Rust
+`translation/target/release/libjumpnode_lib.so`.
 
-## Build commands
+## C `.so` exported (defined, dynamic) symbols
+
+| # | symbol | type | present in Rust `.so`? | notes |
+|---|--------|------|------------------------|-------|
+| 1 | `jumpnode` | `T` (text, global) | YES (`#[unsafe(no_mangle)] pub unsafe extern "C" fn jumpnode`) | the only public entry point; declared in `c_src/include/lib.h` |
+
+`nm -D --defined-only` output, verbatim:
 
 ```
-# C
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-nTzw79.so   (project name = parent dir name,
-#                                             see cmake_path() in CMakeLists.txt)
-
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libjumpnode_lib.so
+C:    000000000000136b T jumpnode
+Rust: 0000000000011b40 T jumpnode
 ```
 
-## C `.so` dynamic symbols
+**Symbol diff (C exported \ Rust exported): EMPTY.**
 
-`nm -D --defined-only c_src/build/libharvest-work-nTzw79.so`
+## Static (file-local) C functions — deliberately NOT exported
 
-| symbol | type | in Rust `.so`? |
-|--------|------|----------------|
-| `jumpnode` | `T` (global text) | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn jumpnode` |
+These are `static` in `c_src/src/lib.c` and therefore absent from the C `.so`'s
+dynamic symbol table. The Rust translation keeps them private too, so the
+default-feature Rust `.so` exports exactly the same set as the C `.so`.
 
-**That is the entire exported surface: exactly one symbol.**
+| C symbol | Rust counterpart | exported? |
+|----------|------------------|-----------|
+| `find_node_by_id` | `find_node_by_id` | no (private, matches C) |
+| `add_node` | `add_node` | no (private, matches C) |
+| `process_backward` | `process_backward` | no (private, matches C) |
+| `compute_size_metric` | `compute_size_metric` | no (private, matches C) |
+| `safe_double_to_int` | `safe_double_to_int` | no (private, matches C) |
+| `initialize_test_data` | `initialize_test_data` | no (private, matches C) |
+| `node_storage` (static array) | `NODE_STORAGE` | no (private, matches C) |
+| `node_count` (static int) | `NODE_COUNT` | no (private, matches C) |
 
-Undefined (imported) symbols in the C `.so`, for reference — these are libc/libm
-and are NOT part of the surface the Rust must export:
+No C source file was left untranslated: `c_src/src/lib.c` is the whole library
+and every one of its 6 functions + 2 file-static objects has a Rust counterpart.
 
-| symbol | source |
-|--------|--------|
-| `sprintf@GLIBC_2.2.5` | libc — used by `jumpnode` case `0003` |
-| `strlen@GLIBC_2.2.5` | libc — used by `compute_size_metric` |
-| `sqrt` | libm — used by `jumpnode` case `0004` |
-| `_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`, `__gmon_start__` | weak, toolchain-generated |
+## Undefined (imported) symbols
 
-## C file-local (`static`) symbols — NOT exported, so NOT required in Rust
+The Rust `.so` imports only libc / libgcc-unwind symbols (`memcpy`, `malloc`,
+`abort`, `_Unwind_*`, …) — 0 missing/undefined non-libc symbols.
+The C `.so` imports `sprintf`, `sqrt`, `strlen`; the Rust translation
+reimplements `sprintf`/`strlen` internally (`c_sprintf_node_depth`,
+`c_strlen`) and uses `f64::sqrt`, which is a legitimate implementation
+difference and is verified behaviourally in Phase B.
 
-`nm` (static table) shows these as `t`/`b` (local). They are reachable only from
-inside the translation unit. Each one still has a faithful Rust counterpart so
-that the behaviour of `jumpnode` matches; none of them may be exported, because
-the C does not export them.
+## Feature-gated extra symbols (non-default)
 
-| C local symbol | kind | Rust counterpart | exported? |
-|----------------|------|------------------|-----------|
-| `find_node_by_id` | `t` static fn | `find_node_by_id` (private) | no (correct) |
-| `add_node` | `t` static fn | `add_node` (private) | no (correct) |
-| `process_backward` | `t` static fn | `process_backward` (private) | no (correct) |
-| `compute_size_metric` | `t` static fn | `compute_size_metric` (private) | no (correct) |
-| `safe_double_to_int` | `t` static fn | `safe_double_to_int` (private) | no (correct) |
-| `initialize_test_data` | `t` static fn | `initialize_test_data` (private) | no (correct) |
-| `node_storage` | `b` static array | `NODE_STORAGE` (private `static mut`) | no (correct) |
-| `node_count` | `b` static int | `NODE_COUNT` (private `static mut`) | no (correct) |
+All of `c_src/src/lib.c`'s helpers are `static`, and the only caller of
+`add_node` / `initialize_test_data` is itself dead code, so none of them are
+reachable through the shipped `.so`. To verify them differentially anyway, the
+crate exposes matching test hooks behind the non-default
+`expose_init_test_data` feature, and `tests/c_harness/harness.c` exposes hooks
+with **identical names** over the original C by `#include`ing
+`c_src/src/lib.c` verbatim. `c_src/` is never modified.
 
-### Note on `initialize_test_data`
+| symbol | C helper it drives |
+|--------|--------------------|
+| `jumpnode_initialize_test_data` | `initialize_test_data` |
+| `jumpnode_test_add_node` | `add_node` (incl. the `>= MAX_NODES` rejection) |
+| `jumpnode_test_set_node_count` | writes `node_count` |
+| `jumpnode_test_get_node_count` | reads `node_count` |
+| `jumpnode_test_find_node_index` | `find_node_by_id` (as an index; `-1` for NULL) |
+| `jumpnode_test_compute_size_metric` | `compute_size_metric` |
+| `jumpnode_test_safe_double_to_int` | `safe_double_to_int` |
+| `jumpnode_test_process_backward` | `process_backward` |
+| `jumpnode_test_get_node` | reads `node_storage[i]` |
+| `jumpnode_test_sizeof_node` | `sizeof(Node)` (layout parity check) |
+| `jumpnode_test_max_nodes` | `MAX_NODES` |
 
-In the C source `initialize_test_data()` is `static` and **is never called** by
-any reachable code path. Consequently, in the shipped `.so`:
+None are in the C `.so`, and none are compiled into the default build.
 
-* `node_count` is permanently `0`,
-* `node_storage` is permanently all-zero,
-* `find_node_by_id()` therefore *always* returns `NULL`,
-* so `jumpnode` cases `0001`, `0002` and `0004` *always* take their
-  early-return error branch.
+Verified by `verify.sh` under all 4 configurations (2 feature combos x
+release/debug):
 
-This is faithfully reproduced by the Rust translation (the private
-`initialize_test_data` exists and is likewise never called).
+* `--no-default-features` → Rust `.so` exports exactly `{jumpnode}`, i.e.
+  **symbol-identical to the C `.so`**.
+* `--features expose_init_test_data` → exports `jumpnode` plus the 11 hooks
+  above.
 
-## Feature combinations
-
-`Cargo.toml` declares one optional feature, giving two combinations:
-
-| # | feature set | Rust exported symbols | matches C? |
-|---|-------------|-----------------------|------------|
-| 1 | *(default / none)* | `jumpnode` | YES — exact parity |
-| 2 | `expose_init_test_data` | `jumpnode`, `jumpnode_initialize_test_data` | superset (see below) |
-
-Combination 2 additionally exports `jumpnode_initialize_test_data`, a test-only
-hook that invokes the otherwise-unreachable `initialize_test_data`. It is
-**not** part of the C surface, and it is off by default, so the default build
-has exact symbol parity with the C `.so`.
-
-To differentially verify the *deep* code paths that `initialize_test_data`
-unlocks (cases `0001`/`0002`/`0004` bodies, `add_node`, `process_backward`,
-`safe_double_to_int`), the test suite compiles a **C shim** from the
-*unmodified* `c_src/src/lib.c`:
-
-```c
-#include "<c_src>/src/lib.c"
-void jumpnode_initialize_test_data(void) { initialize_test_data(); }
-```
-
-giving a C library with exactly the same two exports, so combination 2 is also
-compared against real C rather than against assumptions. `c_src/` itself is
-never modified.
-
-## Result
-
-* Symbols exported by C but missing from Rust: **0**
-* Undefined non-libc symbols in the Rust `.so`: **0**
-
-Verified by `tests/symbols.rs` (`symbol_parity_c_vs_rust`) and by
-`check_all_features.sh`.
+In every configuration `comm -23 <C syms> <Rust syms>` is **empty**.

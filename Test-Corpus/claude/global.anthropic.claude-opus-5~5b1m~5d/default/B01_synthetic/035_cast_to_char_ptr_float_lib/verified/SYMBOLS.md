@@ -1,84 +1,65 @@
-# SYMBOLS.md — Phase A: public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Build commands used:
+## C `.so` (`c_src/build/libdriver.so`)
 
 ```
-cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-```
-
-## C `.so` dynamic symbol table (`nm -D --defined-only c_src/build/libdriver.so`)
-
-```
+$ nm -D --defined-only c_src/build/libdriver.so
 0000000000001173 T driver
 ```
 
-That is the complete list: **1** exported symbol.
+| # | symbol | type | in Rust `.so`? | notes |
+|---|--------|------|----------------|-------|
+| 1 | `driver` | `T` (global text) | YES | `#[unsafe(no_mangle)] pub extern "C" fn driver(x: f32)` in `src/lib.rs` |
 
-## Rust `.so` dynamic symbol table (`nm -D --defined-only translation/target/release/libdriver.so`, local/weak filtered)
+## Rust `.so` (`translation/target/release/libdriver.so`)
 
 ```
+$ nm -D --defined-only translation/target/release/libdriver.so
 0000000000011720 T driver
 ```
 
-## Parity table
+## Non-exported C symbols (intentionally NOT in the dynamic table)
 
-| # | C symbol | type | exported by Rust `.so`? | notes |
-|---|----------|------|-------------------------|-------|
-| 1 | `driver` | `T` (global text) | YES — `#[unsafe(no_mangle)] pub extern "C" fn driver(x: f32)` | signature `void driver(float)` |
-
-**Missing symbols: 0.**
-**Extra non-libc/non-runtime symbols in Rust: 0.**
-
-## Non-exported (file-local) C symbols — intentionally NOT exported
-
-`nm` on the C object shows these `t`/`d`/`b` local symbols. They are `static`
-or CRT/toolchain artifacts and are *not* part of the ABI surface, so the Rust
-`.so` is correct not to export them:
-
-| C local symbol | class | reason not exported |
-|----------------|-------|---------------------|
-| `print_hex` | `t` | declared `static` in `src/driver.c` |
-| `_init`, `_fini` | `t` | linker-generated |
-| `frame_dummy`, `__do_global_dtors_aux`, `register_tm_clones`, `deregister_tm_clones` | `t` | glibc CRT glue |
-| `_DYNAMIC`, `_GLOBAL_OFFSET_TABLE_`, `__TMC_END__`, `__dso_handle`, `__frame_dummy_init_array_entry`, `__do_global_dtors_aux_fini_array_entry`, `completed.0` | `d`/`b` | linker/CRT data |
-
-`print_hex` IS translated in Rust (as a private `unsafe fn print_hex`), matching
-the C's `static` linkage — the implementation is present, only the (correctly
-absent) export is missing. No stubs, no `unimplemented!()` anywhere.
-
-## Translated-source completeness
-
-| C source file | translated? | where |
-|---------------|-------------|-------|
-| `c_src/src/driver.c` (`print_hex`, `driver`) | YES, fully | `translation/src/lib.rs` |
-| `c_src/include/driver.h` (`void driver(float)`) | YES | `translation/src/lib.rs` |
-
-No C source file or function in `c_src/` is untranslated.
+| C symbol | linkage | Rust counterpart | exported? |
+|----------|---------|------------------|-----------|
+| `print_hex` | `static void print_hex(unsigned char *p, int len)` | `unsafe fn print_hex(p: *const c_uchar, len: c_int)` (private) | No — matches C `static` |
 
 ## Undefined (imported) symbols
 
-The C `.so` imports exactly:
+| `.so` | undefined non-libc symbols |
+|-------|----------------------------|
+| C | none (only `printf`, `putchar`/`puts` family + libc startup from glibc) |
+| Rust | none (only `printf` + libc/`std` runtime from glibc) |
+
+## Diff result
 
 ```
-printf@GLIBC_2.2.5   U
-putchar@GLIBC_2.2.5  U     <- GCC rewrites printf("\n") into putchar('\n')
-_ITM_*/__cxa_finalize/__gmon_start__   w  (weak CRT hooks)
+comm -3 <(nm -D --defined-only c_src/build/libdriver.so   | awk '{print $3}' | sort) \
+        <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+=> (empty)
 ```
 
-The Rust `.so` imports the same `printf` **and** the same `putchar` (LLVM
-applies the identical `printf("\n")` → `putchar('\n')` simplification), because
-the translation calls libc `printf` via `extern "C"` rather than using Rust's
-`std::io`. Stdout formatting *and* stream buffering therefore go through the
-identical libc code path in both libraries. The rest of the Rust `.so`'s
-undefined list is std/`libunwind`/libc (`malloc`, `memcpy`, `_Unwind_*`, …).
+**Status: symbol parity achieved — 0 missing, 0 extra, 0 undefined non-libc symbols.**
 
-**0 missing/undefined non-libc symbols in the Rust `.so`** — in particular no
-unresolved `driver`/`print_hex`, i.e. no untranslated C module is being
-referenced. Asserted by `tests/phase_d_symbols.rs::rust_so_has_no_unresolved_project_symbols`.
+Re-verified for BOTH cargo profiles after every fix:
 
-## Verdict
+```
+$ diff <(nm -D --defined-only c_src/build/libdriver.so            | awk '{print $3}' | sort) \
+       <(nm -D --defined-only translation/target/difftest/debug/libdriver.so   | awk '{print $3}' | sort)
+SYMBOL DIFF EMPTY
+$ diff <(nm -D --defined-only c_src/build/libdriver.so            | awk '{print $3}' | sort) \
+       <(nm -D --defined-only translation/target/difftest/release/libdriver.so | awk '{print $3}' | sort)
+SYMBOL DIFF EMPTY
+```
 
-Symbol parity: **COMPLETE** (diff is empty).
+`nm -D --undefined-only` on the Rust `.so` lists only glibc/libgcc imports
+(`printf`, `putchar`, `malloc`, `memcpy`, `_Unwind_*`, ...) — **0 undefined
+non-libc symbols**. This is enforced as a test in `tests/phase_d_symbols.rs`
+(`every_c_symbol_is_exported_by_rust`, `no_undefined_non_libc_symbols_in_rust`,
+`c_source_tree_is_fully_translated`).
+
+No C source file / module was left untranslated: `c_src` contains exactly one
+translation unit (`src/driver.c`, 37 lines incl. the 22-line license header)
+plus one public header (`include/driver.h`).

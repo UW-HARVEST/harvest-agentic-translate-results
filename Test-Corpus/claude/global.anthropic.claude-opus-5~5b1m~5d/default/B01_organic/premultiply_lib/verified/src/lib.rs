@@ -46,46 +46,44 @@ const PIXEL_SIZE: usize = core::mem::size_of::<cp_pixel_t>();
 ///     `int` -> `wrapping_add(4)`.
 ///   * channel writes are `(uint8_t)(x * 255.0f)`, a C float->integer
 ///     conversion that truncates toward zero.
+/// Note on pointer handling: the fields are read through *raw* pointers
+/// (`ptr::addr_of!` + `read`) rather than by forming a `&mut cp_image_t`. C's
+/// `img->w` is a plain load with no validity precondition, so when a caller
+/// passes `img == NULL` (or an unaligned pointer) the C traps with `SIGSEGV`
+/// from the load itself. Creating a Rust reference instead would additionally
+/// assert non-null/aligned/unique validity, which in debug builds aborts with
+/// `SIGABRT` *before* any load and therefore diverges from the C. Raw loads
+/// reproduce the C's observable behaviour on every profile.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn premultiply(img: *mut cp_image_t) {
-    // Read the fields through the raw pointer rather than materialising a
-    // `&mut cp_image_t`. A reference would assert non-nullness/dereferenceability
-    // to the optimiser, whereas the C code simply loads through the pointer; for
-    // `img == NULL` we want exactly the C behaviour (a faulting load).
-    //
-    // `read_unaligned` (not a plain `*` dereference) because the C code imposes
-    // no alignment requirement on `cp_image_t *`: on x86-64 an unaligned
-    // `img->w` load simply works, so a caller may legitimately pass a
-    // misaligned struct pointer. A plain dereference would additionally trip
-    // Rust's debug-only "misaligned pointer dereference" check and abort, which
-    // the C never does.
-    let w: c_int = core::ptr::read_unaligned(core::ptr::addr_of!((*img).w));
-    let h: c_int = core::ptr::read_unaligned(core::ptr::addr_of!((*img).h));
+    let w: c_int = core::ptr::addr_of!((*img).w).read();
+    let h: c_int = core::ptr::addr_of!((*img).h).read();
     // int stride = w * sizeof(cp_pixel_t);
     let stride: c_int = w.wrapping_mul(PIXEL_SIZE as c_int);
-    let data: *mut u8 = core::ptr::read_unaligned(core::ptr::addr_of!((*img).pix)) as *mut u8;
+    let data: *mut u8 = core::ptr::addr_of!((*img).pix).read() as *mut u8;
 
     // for (int i = 0; i < (int)stride * h; i += sizeof(cp_pixel_t))
     let limit: c_int = stride.wrapping_mul(h);
     let mut i: c_int = 0;
     while i < limit {
-        // `wrapping_offset`, not `offset`: the C code performs plain address
-        // arithmetic with no in-bounds guarantee, and `offset` would let the
-        // optimiser assume the result stays inside one allocation.
+        // `wrapping_offset` / `wrapping_add`, not `offset` / `add`: C's `data[i]`
+        // is plain pointer arithmetic with no "must stay inside one allocation"
+        // precondition, and this library is routinely handed `w`/`h` that
+        // describe more pixels than the buffer holds.
         let base = data.wrapping_offset(i as isize);
 
-        let a = f32::from(*base.add(3)) / 255.0f32;
-        let mut r = f32::from(*base.add(0)) / 255.0f32;
-        let mut g = f32::from(*base.add(1)) / 255.0f32;
-        let mut b = f32::from(*base.add(2)) / 255.0f32;
+        let a = f32::from(base.wrapping_add(3).read()) / 255.0f32;
+        let mut r = f32::from(base.wrapping_add(0).read()) / 255.0f32;
+        let mut g = f32::from(base.wrapping_add(1).read()) / 255.0f32;
+        let mut b = f32::from(base.wrapping_add(2).read()) / 255.0f32;
 
         r *= a;
         g *= a;
         b *= a;
 
-        *base.add(0) = c_float_to_u8(r * 255.0f32);
-        *base.add(1) = c_float_to_u8(g * 255.0f32);
-        *base.add(2) = c_float_to_u8(b * 255.0f32);
+        base.wrapping_add(0).write(c_float_to_u8(r * 255.0f32));
+        base.wrapping_add(1).write(c_float_to_u8(g * 255.0f32));
+        base.wrapping_add(2).write(c_float_to_u8(b * 255.0f32));
 
         i = i.wrapping_add(PIXEL_SIZE as c_int);
     }

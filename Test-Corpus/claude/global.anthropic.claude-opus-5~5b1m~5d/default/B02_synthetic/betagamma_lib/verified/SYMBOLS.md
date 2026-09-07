@@ -1,71 +1,50 @@
-# SYMBOLS.md — Phase A: exported-surface map
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+C `.so`: `c_src/build/libharvest-work-Iq61VS.so`
+Rust `.so`: `translation/target/release/libbetagamma_lib.so`
 
-* C   `.so`: `c_src/build/libharvest-work-ean4Zy.so` (built via `c_src/CMakeLists.txt`,
-  no `CMAKE_BUILD_TYPE` → unoptimized)
-* Rust `.so`: `translation/target/release/libbetagamma_lib.so`
-
-Regenerate with:
-
-```sh
-nm -D --defined-only c_src/build/libharvest-work-ean4Zy.so   | awk '{print $3}' | sort > /tmp/c.syms
-nm -D --defined-only translation/target/release/libbetagamma_lib.so | awk '{print $3}' | sort > /tmp/r.syms
-comm -23 /tmp/c.syms /tmp/r.syms     # MUST be empty
+Command used:
+```
+nm -D --defined-only <so> | grep ' T '
+nm -D --undefined-only <so>
 ```
 
 ## Defined (exported) symbols
 
-| # | symbol | C `.so` | Rust `.so` | C source | notes |
-|---|--------|---------|------------|----------|-------|
-| 1 | `create_block`   | T | T | `src/lib.c:40` | returns `DataBlock` (40 B) **by value** → x86-64 SysV memory/`sret` return |
-| 2 | `allocate_block` | T | T | `src/lib.c:48` | returns `MemoryBlock*` from `malloc` |
-| 3 | `free_block`     | T | T | `src/lib.c:67` | `void` |
-| 4 | `compute_hash`   | T | T | `src/lib.c:74` | reads only the *addresses*/`data` fields; no deref of `data` |
-| 5 | `betagamma`      | T | T | `src/lib.c:92`, declared in `include/lib.h:24` | the only symbol in the public header |
+| # | symbol | C `.so` | Rust `.so` | notes |
+|---|--------|---------|------------|-------|
+| 1 | `create_block`   | T | T | returns `DataBlock` **by value** (sret, 40 bytes) |
+| 2 | `allocate_block` | T | T | returns `MemoryBlock*` (heap) |
+| 3 | `free_block`     | T | T | void |
+| 4 | `compute_hash`   | T | T | pointer-comparison based, no NULL checks |
+| 5 | `betagamma`      | T | T | the only symbol declared in `include/lib.h` |
 
-**Missing-from-Rust symbols: 0.** Nothing had to be added or translated;
-`src/lib.rs` already carries all five implementations with
-`#[unsafe(no_mangle)] pub unsafe extern "C"` wrappers, so no stubbing was
-required.
+**Missing from Rust `.so`: NONE (0).** The whole C translation unit
+(`c_src/src/lib.c`, the only source file in `CMakeLists.txt`) is translated in
+`translation/src/lib.rs`; no module was skipped and no symbol is stubbed.
 
-Note that only `betagamma` appears in `include/lib.h`; the other four are
-non-`static` definitions in `src/lib.c` and therefore have external linkage and
-are part of the ABI surface. All four are treated as public entry points and are
-tested directly through the `.so` (Phase B requirement: "including the
-lowest-level ones").
+## Undefined symbols
 
-## Non-exported C types (needed to call the ABI)
+C: `calloc`, `free`, `malloc`, `strcpy` (all glibc) + weak ITM/`__cxa_finalize`/`__gmon_start__`.
 
-| type | layout | size / align |
-|------|--------|--------------|
-| `DataBlock`   | `int id; char name[32]; uint8_t flags;` | 40 / 4 (3 tail padding bytes) |
-| `MemoryBlock` | `int *data; size_t size;`               | 16 / 8 |
+Rust: superset of the above; every extra entry is glibc or the language runtime
+(`libunwind` `_Unwind_*`, `memcpy`, `mmap64`, `dl_iterate_phdr`, `pthread_key_*`,
+… — pulled in by `std`/panic machinery). **0 missing/undefined non-libc symbols.**
 
-Verified against the Rust `#[repr(C)]` definitions by
-`tests/differential.rs::layout_parity`.
+## Types crossing the FFI boundary
 
-## Undefined (imported) symbols
+```c
+typedef struct { int id; char name[32]; uint8_t flags; } DataBlock;   /* size 40, align 4 */
+typedef struct { int *data; size_t size; }              MemoryBlock; /* size 16, align 8 */
+```
+Both are `#[repr(C)]` in Rust with identical layout (verified by
+`size_of`/`offset_of` assertions in the differential tests).
+Bytes 37..40 of `DataBlock` are padding and are **uninitialised in both
+implementations**; tests compare `id`/`name`/`flags`, never the padding.
 
-The Rust `.so` must not pull in any non-libc dependency. Both objects import
-`malloc`, `calloc`, `free`, `strcpy` from glibc — the Rust translation
-deliberately calls the *platform* allocator rather than Rust's, because
-`compute_hash` observes raw allocator addresses.
+## Feature combinations
 
-| object | imported non-libc symbols |
-|--------|--------------------------|
-| C      | none (only `malloc`/`calloc`/`free`/`strcpy` + `__cxa_finalize`/`__gmon_start__`/ITM weak stubs) |
-| Rust   | none (glibc + `_Unwind_*` from libgcc, which is part of the platform runtime) |
-
-`nm -D --undefined-only` on the Rust `.so` shows **0 missing/undefined non-libc
-symbols**: every entry is glibc (`GLIBC_*` versioned), a libgcc unwinder
-(`_Unwind_*@GCC_*`), or a weak optional hook.
-
-## Cargo feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table** and no optional
-dependencies, so the crate has exactly one feature configuration. The
-`--no-default-features` build is byte-identical in surface; it is still exercised
-by `run_all.sh` to prove parity. The two build profiles (`dev` and
-`release`, the latter with `panic = "abort"`) are treated as the second
-configuration axis and both are verified.
+`translation/Cargo.toml` declares **no `[features]` table** ⇒ the only
+configuration is the default one. `--no-default-features` is therefore
+equivalent to the default build (verified by running the full test suite under
+both, see `FEATURES` section of the test run log).

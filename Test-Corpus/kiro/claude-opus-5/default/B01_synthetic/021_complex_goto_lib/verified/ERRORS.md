@@ -1,90 +1,82 @@
-# ERRORS.md — error / rejection surface table (Phase C gate)
+# ERRORS.md — error / rejection surface table (Phase A, gated in Phase C)
 
-## How this table was derived
+Derived mechanically from `c_src/src/driver.c` and `c_src/include/driver.h`.
 
-`c_src` is a single 53-line translation unit. Mechanical greps for every
-rejection idiom:
+## Mechanical grep evidence
 
-```sh
-grep -nE 'return|assert|NULL|errno|exit\(|abort|RETURN_ERROR' c_src/src/driver.c c_src/include/driver.h
-grep -nE '<=|>=|<|>|==|!=' c_src/src/driver.c
-grep -nE '#(if|ifdef|ifndef|define|else|elif)' c_src/src/driver.c c_src/include/driver.h
+```
+$ grep -nE 'return|assert|NULL|errno|exit\(|abort|RETURN_ERROR' c_src/src/driver.c c_src/include/driver.h
+(no matches)
 ```
 
-Findings, verbatim:
+The complete set of conditionals in the C source is:
 
-* `return` — **0 occurrences**
-* `assert` — **0 occurrences**
-* `NULL` — **0 occurrences**
-* `errno` / `exit(` / `abort` / `RETURN_ERROR` / error enums — **0 occurrences**
-* comparison/guard sites — exactly 5, at `src/driver.c:30,33,38,44,49`
-* preprocessor conditionals — only the `DRIVER_H_` include guard
+```
+src/driver.c:30:    while (x > 0 || y > 0) {
+src/driver.c:33:        if (x == 1 && y == 4) {   -> goto label2
+src/driver.c:38:        if (x > 0) {
+src/driver.c:44:        if (y == 0) {             -> continue
+src/driver.c:49:        if (x < 3) {              -> goto label1
+```
 
-So `driver` has **no error-return channel at all**: its signature is
-`void driver(int x, int y)`, it takes no pointers, no lengths, no enums, and no
-buffers. There is nothing it can validate and nothing it can report. The
-"rejection" surface therefore consists of the guard conditions under which the C
-declines to do work (the loop guard and the two in-body skip guards), plus the
-one input class on which the C never returns. Each is one row below, and each
-row's expected result is stated as the C's *only* observable: the exact bytes
-written to `stdout` (and whether the call returns at all).
+Consequences for the error surface:
 
-The generic C-API boundaries requested by the protocol are recorded as rows
-too, with their `N/A` justification stated explicitly rather than omitted.
+* `driver` returns `void`. There is **no** error code, sentinel, `errno` write,
+  `assert`, `abort`, or `exit` anywhere in the library — so there are no
+  error-return rows in the classic sense. Equality of "error result" is
+  therefore asserted as: *both implementations return normally and emit the
+  identical (possibly empty) byte stream on `stdout`*.
+* Both parameters are by-value `int`. There are **no pointer parameters**, so
+  null-pointer rows are not applicable (there is no pointer to pass).
+* There are **no `enum` types, no length/size parameters, and no arrays or
+  buffers**, so out-of-range-enum and oversized-length rows are not applicable.
+  The generic-boundary obligation is instead discharged over the full `int`
+  domain: `INT_MIN`, `-1`, `0`, `1`, and `INT_MAX` on each parameter, plus the
+  one-step-past values around every constant the code compares against
+  (`0`, `1`, `3`, `4`).
+* The only *rejection* the C performs is the loop-entry guard
+  `while (x > 0 || y > 0)`: when it is false the function returns immediately
+  having produced **no output at all**. Rows 1–6 enumerate the distinct value
+  classes that make this guard reject.
+* Rows 12–14 are inputs on which the C **does not terminate** (and, in doing
+  so, signed-overflows `y--`, i.e. C undefined behaviour). They are recorded
+  because they are part of the mechanically-derived surface, and are excluded
+  from execution — a differential test cannot call a function that never
+  returns. The Rust translation reproduces the same non-terminating shape
+  (`y = y.wrapping_sub(1)`), which is what the C compiler actually emits.
 
 ## Table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|---------------------------------------------|-------------------|------|--------|
-| 1 | `driver` | `src/driver.c:30` loop guard `x > 0 \|\| y > 0` false on entry: `x == 0 && y == 0` | returns immediately, writes **0 bytes** | `err_row_01_guard_zero_zero` | [x] |
-| 2 | `driver` | guard false on entry, both strictly negative: `x < 0 && y < 0` (randomized) | returns immediately, 0 bytes | `err_row_02_guard_both_negative` | [x] |
-| 3 | `driver` | guard false on entry, `x < 0 && y == 0` (randomized) | returns immediately, 0 bytes | `err_row_03_guard_negx_zeroy` | [x] |
-| 4 | `driver` | guard false on entry, `x == 0 && y < 0` (randomized) | returns immediately, 0 bytes | `err_row_04_guard_zerox_negy` | [x] |
-| 5 | `driver` | guard false at the extreme boundary: `x == INT_MIN && y == INT_MIN` | returns immediately, 0 bytes | `err_row_05_guard_int_min_both` | [x] |
-| 6 | `driver` | guard false, mixed extremes: `(INT_MIN, 0)`, `(0, INT_MIN)`, `(INT_MIN, -1)`, `(-1, INT_MIN)` | returns immediately, 0 bytes | `err_row_06_guard_extreme_mixed` | [x] |
-| 7 | `driver` | `src/driver.c:38` skip guard `x > 0` false at `label1` while the loop still runs (`x <= 0 && y > 0`) | `label1` block suppressed: no `"x\n"` is ever emitted; output is `"loop\n"` then `y` `"y\n"` lines | `err_row_07_skip_label1_x_not_positive` | [x] |
-| 8 | `driver` | `src/driver.c:44` rejection `if (y == 0) continue;` reached with the loop still running (`x > 0 && y == 0`) | `y`-block suppressed every pass: no `"y\n"` is ever emitted; output is `x` copies of `"loop\nx\n"` | `err_row_08_reject_y_zero_continue` | [x] |
-| 9 | `driver` | `src/driver.c:44` `continue` taken on a *later* pass, after `y` has been drained to 0 by the body (`x > 0 && y > 0`) | the `continue` fires on the pass where `y` first reaches 0; byte-exact stream must match | `err_row_09_reject_y_zero_after_drain` | [x] |
-| 10 | `driver` | `src/driver.c:49` back-edge guard `x < 3` false (`x >= 3 && y > 0`) — `goto label1` declined, control falls to the `while` re-test | no intra-iteration replay; each outer pass emits one `"loop\n"` | `err_row_10_no_backedge_x_ge_3` | [x] |
-| 11 | `driver` | `src/driver.c:33` special-case guard `x == 1 && y == 4` — forward `goto label2` skips `label1` exactly once | first pass emits `"loop\n"` then `"y\n"` with **no** `"x\n"`; subsequent passes do not re-skip | `err_row_11_goto_label2_skip_once` | [x] |
-| 12 | `driver` | `x > 0 && y < 0`: `y` is decremented forever at `src/driver.c:47`. The C **never returns** (and signed-overflow UB past `INT_MIN`). This is the one input class with no return at all. | infinite loop; unbounded `"loop\n"/"x\n"/"y\n"` stream. Rust must diverge identically, with a byte-identical output prefix. | `err_row_12_nonterminating_x_pos_y_neg` (forked subprocess, byte-compares a 16 KiB stdout prefix and asserts both children hang) | [x] |
-| 13 | `driver` | null-pointer arguments | **N/A** — `void driver(int, int)` has no pointer parameter; there is no pointer to make null. Nearest analogue covered by rows 5–6 (extreme scalar values). | — | [x] |
-| 14 | `driver` | zero-length / oversized length arguments | **N/A** — no length or count parameter exists. Nearest analogue: `0` (rows 1–4) and `INT_MIN`/`INT_MAX` (rows 5–6, and `CONFIGS.md` rows 20–21). | — | [x] |
-| 15 | `driver` | out-of-range enum value crossing the FFI boundary | **N/A** — the API declares no enum and no struct; both parameters are plain `int`, so *every* `int` bit pattern is an in-range value. The full `int` domain is instead partitioned across `CONFIGS.md` (valid, terminating) and row 12 (non-terminating). | — | [x] |
-| 16 | `driver` | value one step past a documented valid range | **N/A as a rejection** — `driver.h` documents no range; the C accepts all `int`s. The one-step-past-boundary inputs the code actually branches on (`x` = -1/0/1/2/3/4, `y` = -1/0/1/3/4/5) are covered as `CONFIGS.md` rows 7–19 and rows 1–11 here. | — | [x] |
-| 17 | `driver` | non-zero return / error code | **N/A** — return type is `void`; there is no error code to compare. The differential assertion is therefore on the stdout byte stream, which is the complete observable behaviour of this function. | — | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| 1 | `driver` | guard `x > 0 \|\| y > 0` false via `x == 0, y == 0` | returns immediately, **zero bytes** of output | [x] |
+| 2 | `driver` | guard false via `x == 0, y < 0` (`y == -1`) | returns immediately, zero bytes | [x] |
+| 3 | `driver` | guard false via `x < 0, y == 0` (`x == -1`) | returns immediately, zero bytes | [x] |
+| 4 | `driver` | guard false via `x < 0, y < 0` (`x == -1, y == -1`) | returns immediately, zero bytes | [x] |
+| 5 | `driver` | guard false at extreme lower boundary `x == INT_MIN, y == INT_MIN` | returns immediately, zero bytes | [x] |
+| 6 | `driver` | guard false, mixed extreme `x == INT_MIN, y == 0` / `x == 0, y == INT_MIN` | returns immediately, zero bytes | [x] |
+| 7 | `driver` | one step past the rejecting range on `x` only: `x == 1, y == 0` (guard passes on `x`; `y == 0` forces the `continue` branch every iteration) | enters loop, prints `loop\nx\n`, then exits; no `y` line ever | [x] |
+| 8 | `driver` | one step past the rejecting range on `y` only: `x == 0, y == 1` (guard passes on `y`; `if (x > 0)` at `label1` is never taken) | enters loop, prints `loop\ny\n`, then exits; no `x` line ever | [x] |
+| 9 | `driver` | `x == INT_MIN, y > 0` — most-negative `x` with a live `y`; `x--` is never reached so no underflow, `x < 3` is always true so the `goto label1` back-edge is taken every time | terminates, emits `loop\n` once followed by `y\n` repeated `y` times | [x] |
+| 10 | `driver` | `y < 0` with `x <= 0` (e.g. `x == 0, y == INT_MIN`) — negative `y` that is nevertheless rejected by the guard before any decrement | returns immediately, zero bytes (no overflow occurs) | [x] |
+| 11 | `driver` | degenerate/extreme-but-terminating magnitudes on the accepted side: `x == 0, y == 4096`; `x == 4096, y == 0`; `x == 4096, y == 4096` | terminates; both implementations must emit identical byte streams | [x] |
+| 12 | `driver` | **non-terminating**: `x == 1, y == -1` (guard passes on `x`; `y != 0` so `y--` runs forever, signed-overflowing `y` = C UB) | never returns | n/a — excluded, cannot be differentially executed |
+| 13 | `driver` | **non-terminating**: `x > 0, y < 0` generally (e.g. `x == 5, y == -1`; `x == INT_MAX, y == INT_MIN`) | never returns | n/a — excluded, cannot be differentially executed |
+| 14 | `driver` | **impractical**: `x == INT_MAX, y == 0` / `y == INT_MAX` — terminates but emits O(2^31) lines | terminates after ~2^31 lines | n/a — excluded for runtime; covered by bounded row 11 |
 
-## Notes
+Rows 1–11 are executed by `translation/tests/differential.rs`
+(`phase_c_error_surface_rows_1_through_11`, plus the shared boundary sweep in
+`phase_c_generic_int_boundaries`). Rows 12–14 are recorded as excluded above.
 
-* Rows 1–11 are exercised with **randomized** inputs drawn from the region each
-  row describes (fixed seed), not single hand-picked values.
-* Row 12 is the only row where the C does not return. It is verified by forking,
-  redirecting the child's `stdout` to a file, letting both implementations run,
-  byte-comparing the first 16 KiB each produced, and asserting that **both**
-  children are still alive (i.e. both diverge) before they are killed. Asserting
-  "both hang" plus "identical output prefix" is the strongest available
-  equivalence for a function that never returns.
+## Phase C result (evidence for the checkmarks above)
 
-## Harness and result
+```
+phase C: ERRORS.md rows 1-11 all matched
+phase C boundaries: 134 executed, 40 non-terminating (ERRORS rows 12-13), 22 impractical (row 14)
+```
 
-`tests/phase_c_errors.rs` — 14 executing tests covering rows 1–17. Same
-`libloading`-only discipline as Phase B (see `CONFIGS.md`): both `.so`s are
-loaded and called through their exported `driver` symbol.
-
-Rows 7, 8, 10 and 11 do not merely compare bytes; they additionally assert the
-*shape* the rejection must produce (no `"x"` line when `label1` is suppressed,
-no `"y"` line when the `y == 0` `continue` fires, `x == 3` differing from
-`x == 2` at the S5 boundary, and the forward `goto` skipping `label1` exactly
-once), so a Rust translation that happened to match a wrong C reading would
-still be caught.
-
-Row 12 works by re-executing the test binary as a child process
-(`hang_child_worker`, `#[ignore]`d so it never runs on its own), pointing the
-child's fd 1 at a file, waiting for 16 KiB of output, asserting the child is
-**still alive**, then killing it — for each of `(1,-1)`, `(2,-1)`, `(3,-1)`,
-`(4,-7)`, `(9,-3)` and `(1, INT_MIN+1)`. Both implementations must diverge *and*
-agree on the 16 KiB prefix. `./mutation_check.sh` confirms this row is load-
-bearing: a mutation that makes the Rust return early on `x > 0 && y < 0` is
-detected only here.
-
-All 14 tests pass against both the debug and the release Rust `.so`.
+The boundary sweep is the full cross-product of
+`{INT_MIN, INT_MIN+1, -4097, -2, -1, 0, 1, 2, 3, 4, 5, 6, 4096, INT_MAX}` on
+both parameters; the 40 + 22 skips are exactly rows 12–14 above, and the skip
+predicate itself is asserted sound by
+`phase_c_nontermination_predicate_is_sound`.

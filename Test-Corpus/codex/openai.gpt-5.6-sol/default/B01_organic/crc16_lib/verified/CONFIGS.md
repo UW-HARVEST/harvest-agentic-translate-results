@@ -1,17 +1,27 @@
 # Configuration Surface
 
-Mechanical scan scope: the sole public declaration in
-`../c_src/include/lib.h` and both loops in `../c_src/src/lib.c`.
+Public header inspection finds one entry point:
 
-There are no Cargo features and no C preprocessor feature branches. The input
-bytes and initial CRC span their full `uint8_t` and `uint16_t` domains; tests
-randomize both for every applicable row.
+```c
+tflac_u16 crc16(const tflac_u8 *d, tflac_u32 len, tflac_u16 crc16);
+```
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `crc16` | `len == 0`; neither loop executes; null and non-null `d`; boundary initial CRC values | [x] |
-| 2 | `crc16` | `1 <= len <= 7`; byte-at-a-time tail loop only | [x] |
-| 3 | `crc16` | `len == 8`; one slicing-by-eight iteration, no tail | [x] |
-| 4 | `crc16` | `9 <= len <= 15`; one slicing-by-eight iteration followed by tail bytes | [x] |
-| 5 | `crc16` | `len >= 16` and divisible by 8; multiple slicing-by-eight iterations, no tail | [x] |
-| 6 | `crc16` | `len >= 16` and not divisible by 8; multiple slicing-by-eight iterations followed by tail bytes | [x] |
+There are no runtime modes, option setters, flags, enums, formats, element
+types, byte-order options, compile-time `#ifdef` branches, Cargo features, or
+binary drivers.
+
+The C implementation branches only on input length:
+
+- `len >= 8`: one or more slicing-by-8 iterations;
+- remaining `len != 0`: zero or more byte-at-a-time tail iterations.
+
+Randomized coverage for every row includes arbitrary byte values and arbitrary
+initial CRC values across the full `uint16_t` range.
+
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `crc16` | Empty input (`len == 0`): neither loop executes | [x] |
+| 2 | `crc16` | Tail only (`len == 1..7`): byte loop executes, slicing loop does not | [x] |
+| 3 | `crc16` | Exactly one full slice (`len == 8`): slicing loop executes once, no tail | [x] |
+| 4 | `crc16` | One full slice plus tail (`len == 9..15`): both loops execute | [x] |
+| 5 | `crc16` | Multiple full slices (`len >= 16`), covering both multiples of 8 and a final tail | [x] |

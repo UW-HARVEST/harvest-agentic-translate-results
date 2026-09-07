@@ -282,8 +282,8 @@ unsafe fn decode(s: *mut CpState, tree: *mut u32, mut hi: c_int) -> c_int {
             }
         }
         let key = *tree.add((lo - 1) as usize);
-        let len = 32 - (key & 0xf);
-        assert!((search >> len) == (key >> len));
+        let length_shift = 32 - (key & 0xf);
+        assert!((search >> length_shift) == (key >> length_shift));
         let code = consume_bits(s, (key & 0xf) as c_int);
         let _ = code;
         ((key >> 4) & 0xfff) as c_int

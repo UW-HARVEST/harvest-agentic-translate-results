@@ -1,55 +1,123 @@
-# ERRORS.md — Phase C error / rejection surface
+# ERRORS.md — Phase C error-surface table
 
-Mechanically derived from `c_src/src/lib.c`. The library has **no** error enum,
-no `RETURN_ERROR` macro, no `assert`, and no function returning a pointer (so no
-`return NULL`). Every rejection is either an early `return` of a sentinel value,
-a clamp, or a guard-free path whose "error" behaviour is a hardware trap.
-Each `if` that rejects/clamps/short-circuits input gets its own row, plus the
-generic FFI boundaries (null pointers, zero/oversized lengths, one-past-range
-values, out-of-range "enum"-like selectors).
+Derived mechanically from `c_src/src/lib.c`. The C code contains **no**
+`RETURN_ERROR`-style macros, **no** `assert`, **no** error enums, and **no**
+`NULL` checks. Every rejection is either an early `return` of a sentinel value,
+a clamp, or an unchecked dereference. Enumerated by grepping every `if`,
+ternary, and `return` in the file:
 
-Grep audit of every `return`/branch that is a rejection or clamp:
-
-```
-lib.c:71   if (b == 0) return 0;                       modulo_operation
-lib.c:76   if (d >= (double)INT32_MAX) return INT32_MAX; safe_double_to_int
-lib.c:79   if (d <= (double)INT32_MIN) return INT32_MIN; safe_double_to_int
-lib.c:82   if (d != d) return 0;                        safe_double_to_int
-lib.c:94   if (idx1 >= arr->count || idx2 >= arr->count) return 0;  compare_results_in_array
-lib.c:108  arr->count = count < 10 ? count : 10;        init_result_array  (clamp)
-lib.c:133  keep && count_iter != size                   process_with_foreach (FOREACH guard)
-lib.c:151  (current > base) ? (int)(current - base) : 1  compute_weighted_sum (i==0 special case)
+```sh
+grep -nE 'return|assert|\?|if *\(|==|>=|<=' c_src/src/lib.c
 ```
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | ok |
-|---|----------|---------------------------------------------|-------------------|------|----|
-| E1 | `modulo_operation` | `b == 0` (any `a`, incl. `INT_MIN`, `0`, `INT_MAX`) | returns `0`, no trap | `err_e1_modulo_zero_divisor` | [x] |
-| E2 | `modulo_operation` | `b == -1 && a == INT_MIN` → `idiv` overflow | **SIGFPE (signal 8)**, process dies; no value returned | `err_e2_modulo_intmin_by_neg1_traps` (out-of-process, compares signal) | [x] |
-| E3 | `safe_double_to_int` | `d >= (double)INT32_MAX`, i.e. `d >= 2147483647.0` — incl. exactly `2147483647.0`, `2147483647.5`, `1e300`, `+INFINITY` | returns `INT32_MAX` (`2147483647`) | `err_e3_sdti_upper_clamp` | [x] |
-| E4 | `safe_double_to_int` | `d <= (double)INT32_MIN`, i.e. `d <= -2147483648.0` — incl. exactly `-2147483648.0`, `-1e300`, `-INFINITY` | returns `INT32_MIN` (`-2147483648`) | `err_e4_sdti_lower_clamp` | [x] |
-| E5 | `safe_double_to_int` | `d != d` (`NaN`, quiet or signalling, +/- sign, any payload) — reached only because NaN fails **both** relational tests above | returns `0` | `err_e5_sdti_nan` | [x] |
-| E6 | `safe_double_to_int` | one step *inside* the clamp: `nextafter(2147483647.0, 0)` and `nextafter(-2147483648.0, 0)` | falls through to `(int)d` truncation, i.e. `2147483646` / `-2147483647` | `err_e6_sdti_one_step_inside` | [x] |
-| E7 | `compute_scaled_value` | `base * scale_factor` overflows the int range (`base=INT_MAX, scale=1e10`), underflows (`base=INT_MIN, scale=1e10`), or is `NaN` (`base=0, scale=INFINITY` → `0*inf = NaN`) | delegates to `safe_double_to_int`: `INT32_MAX` / `INT32_MIN` / `0` | `err_e7_csv_overflow_underflow_nan` | [x] |
-| E8 | `compare_results_in_array` | `idx1 >= arr->count` (e.g. `count=3, idx1=3`) | returns `0` (no address compare) | `err_e8_cmp_idx1_out_of_range` | [x] |
-| E9 | `compare_results_in_array` | `idx2 >= arr->count` (e.g. `count=3, idx2=3`) | returns `0` | `err_e9_cmp_idx2_out_of_range` | [x] |
-| E10 | `compare_results_in_array` | `arr->count == 0`, any indices `>= 0` | returns `0` (both guards fire) | `err_e10_cmp_count_zero` | [x] |
-| E11 | `compare_results_in_array` | **negative** index — there is *no* lower-bound check, so `idx1 = -1` passes the guard and an out-of-bounds address is formed and compared | address arithmetic only (no deref): `-1 vs 0` → `-1`; `0 vs -1` → `1`; `-4 vs -4` → `0` | `err_e11_cmp_negative_index_unchecked` | [x] |
-| E12 | `compare_results_in_array` | `idx1 == idx2` and in range | returns `0` (third branch) | `err_e12_cmp_equal_index` | [x] |
-| E13 | `compare_results_in_array` | `arr->count` larger than the real array (`count = INT_MAX`), indices far past `data[10]` (`idx=1000`) | guard passes, OOB addresses compared, still `-1/0/1` by index order | `err_e13_cmp_count_lies` | [x] |
-| E14 | `init_result_array` | `count > 10` (oversized length: `11`, `1000`, `INT_MAX`) | clamps `arr->count = 10`, reads only `values[0..10)` | `err_e14_init_count_clamped` | [x] |
-| E15 | `init_result_array` | `count == 0` (zero length) | `arr->count = 0`, **`values` is never dereferenced** — even a null `values` is safe | `err_e15_init_count_zero_null_values_ok` | [x] |
-| E16 | `init_result_array` | `count < 0` (negative length) | `count < 10` is true, so `arr->count` is set to the **negative** value; the `for` loop body never runs. Poisons the struct for later calls. | `err_e16_init_negative_count_poisons` | [x] |
-| E17 | `process_with_foreach` | `arr->count == 0` | `count_iter != size` false immediately → returns `0`, array untouched | `err_e17_foreach_count_zero` | [x] |
-| E18 | `process_with_foreach` | `arr->count < 0` (from E16). FOREACH tests `count_iter != size`, **not** `<`, so the loop runs away past `data[10]` | undefined behaviour: runs off the struct and traps/scribbles. Not a defined "error result" — excluded from in-process differential assertion; equivalence is established structurally (`while count_iter != size`) and by an out-of-process both-die check | `err_e18_foreach_negative_count_runs_away` | [x] |
-| E19 | `compute_weighted_sum` | `arr->count == 0` | loop never runs → returns `0` | `err_e19_weighted_count_zero` | [x] |
-| E20 | `compute_weighted_sum` | `arr->count < 0` | `i < count` is false immediately → returns `0` (differs from E18: this loop uses `<`) | `err_e20_weighted_negative_count` | [x] |
-| E21 | `compute_weighted_sum` | element 0: `current > base` is false, so `weight = 1`, **not** `0` | `data[0]` contributes `sdti(value*1*0.8)`, not `0` | `err_e21_weighted_index0_weight_is_one` | [x] |
-| E22 | `compute_weighted_sum` | `value * weight * 0.8` leaves int range (`value=INT_MAX`, `count=10` → weight up to 9) | per-element `safe_double_to_int` clamp to `INT32_MAX`; `sum` then wraps (2's complement) | `err_e22_weighted_saturates_then_wraps` | [x] |
-| E23 | `arrayfunc` | `param4 = INT_MIN` → `param4 / 2` (division by the literal `2`; no trap, but the only division in `arrayfunc`) | `-1073741824`, `+1` → `-1073741823`; full pipeline result must match | `err_e23_arrayfunc_intmin_params` | [x] |
-| E24 | `arrayfunc` | signed overflow in the `values[]` initialiser: `param1+param2`, `param2-param3`, `param3*2` at `INT_MAX`/`INT_MIN` | C UB; gcc emits 2's-complement wraparound. Rust must produce the identical wrapped value | `err_e24_arrayfunc_overflow_in_values` | [x] |
-| E25 | all `ResultArray*` entry points (`compare_results_in_array`, `init_result_array`, `process_with_foreach`, `compute_weighted_sum`) | **null `arr` pointer** | immediate null deref → **SIGSEGV (signal 11)** in every case (`arr->count` is read first in all four) | `err_e25_null_arr_segv_all_entry_points` (out-of-process, compares signal per function) | [x] |
-| E26 | `init_result_array` | **null `values`** with `count > 0` | null deref reading `values[0]` → **SIGSEGV** | `err_e26_null_values_segv` (out-of-process) | [x] |
-| E27 | `process_with_foreach` | **null `op`** function pointer with `arr->count > 0` | call through null → **SIGSEGV** | `err_e27_null_op_segv` (out-of-process) | [x] |
-| E28 | `process_with_foreach` | `op` is an *out-of-range selector*: the C API takes a raw `operation_func`, so a caller can pass any callable. Passing a callback that itself returns extreme values (`INT_MIN`, `INT_MAX`) or a non-`operations[]` function is a legal input the C handles | `result*0.75` then `safe_double_to_int` clamp; `total` wraps | `err_e28_foreach_arbitrary_callback` | [x] |
-| E29 | operation selector as an out-of-range enum-like value | `arrayfunc` picks `operations[i]` for `i` in `0..4` only; the index is **not** caller-controlled, so no out-of-range enum value can reach it. The equivalent FFI hazard is the raw `operation_func` in E27/E28 (null / arbitrary), which is covered. Documented so the row is not silently skipped. | n/a — not reachable from the public API | `err_e29_no_caller_controlled_enum` (documents + asserts the 4 selectors are the only ones) | [x] |
-| E30 | `modulo_operation` | negative operands: C `%` truncates toward zero, so the result takes the sign of `a` (`-7 % 3 == -1`, `7 % -3 == 1`) — a classic divergence point vs. floor-mod languages | sign follows the dividend | `err_e30_modulo_sign_follows_dividend` | [x] |
+## Table
+
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
+|---|----------|----------------------------------------------|-------------------|------|---|
+| 1 | `modulo_operation` | `b == 0` (line 71 guard), any `a` | returns `0` (does **not** trap) | `err_modulo_zero_divisor` | [x] |
+| 2 | `modulo_operation` | `a == INT32_MIN && b == -1` — passes the `b==0` guard, then `idiv` overflows | process dies on **SIGFPE (8)**; no value returned | `err_modulo_intmin_neg1_sigfpe` + `err_fatal_traps_and_indirect_call` (subprocess) | [x] |
+| 3 | `safe_double_to_int` | `d >= (double)INT32_MAX` — incl. `2147483647.0`, `2147483648.0`, `+INFINITY`, `1e300` | returns `INT32_MAX` (2147483647) | `err_sdti_upper_clamp` | [x] |
+| 4 | `safe_double_to_int` | `d <= (double)INT32_MIN` — incl. `-2147483648.0`, `-2147483649.0`, `-INFINITY`, `-1e300` | returns `INT32_MIN` (-2147483648) | `err_sdti_lower_clamp` | [x] |
+| 5 | `safe_double_to_int` | `d != d` (NaN — quiet, signalling, negative, arbitrary payload) | returns `0` | `err_sdti_nan` | [x] |
+| 6 | `compute_scaled_value` | `base * scale_factor` overflows `int` (e.g. `base=INT32_MAX, scale=2.0`) | saturates via #3/#4 → `INT32_MAX` / `INT32_MIN` | `err_compute_scaled_value_saturation` | [x] |
+| 7 | `compute_scaled_value` | `scale_factor` is NaN, or `0 * INFINITY` | `0` (NaN path, row #5) | `err_compute_scaled_value_nan` | [x] |
+| 8 | `compare_results_in_array` | `idx1 >= arr->count` (line 94, first disjunct) | returns `0` | `err_compare_idx1_too_large` | [x] |
+| 9 | `compare_results_in_array` | `idx2 >= arr->count` (line 94, second disjunct) | returns `0` | `err_compare_idx2_too_large` | [x] |
+| 10 | `compare_results_in_array` | `arr->count <= 0` — **every** index fails `>= count`, including `0` | returns `0` for all index pairs | `err_compare_empty_array` | [x] |
+| 11 | `compare_results_in_array` | **negative** `idx1`/`idx2` — there is *no* lower-bound check, so the guard passes and out-of-bounds addresses are formed (never dereferenced) and compared | `-1` / `0` / `1` by address order, i.e. `sign(idx1 - idx2)` | `err_compare_negative_indices` | [x] |
+| 12 | `init_result_array` | `count > 10` (oversized length) — clamp at line 110 | `arr->count` set to `10`; only 10 elements written | `err_init_count_oversized` | [x] |
+| 13 | `init_result_array` | `count < 0` — the ternary keeps the negative value | `arr->count` set to the negative value; loop body never runs; `data` untouched | `err_init_count_negative` | [x] |
+| 14 | `init_result_array` | `count == 0` (zero length) | `arr->count = 0`; `data` untouched; `values` never read (may be NULL) | `err_init_count_zero` | [x] |
+| 15 | `process_with_foreach` | `arr->count == 0` — `FOREACH` condition `count_iter != size` is false immediately | returns `0`; `op` never called; array untouched | `err_foreach_empty` | [x] |
+| 16 | `arrayfunc` | `param4 == INT32_MIN` — `param4 / 2` at the signed-division boundary (divisor is the literal `2`, so div-by-zero is impossible) | well-defined `-1073741824`, feeds slot 7 | `err_arrayfunc_extreme_params` | [x] |
+| 17 | `arrayfunc` | signed overflow in the derived slots: `param1+param2`, `param2-param3`, `param3*2` at `INT32_MIN`/`INT32_MAX` | two's-complement wraparound (what gcc emits at `-O0`) | `err_arrayfunc_extreme_params` | [x] |
+| 18 | `compare_results_in_array` | `arr == NULL` — no null check, `arr->count` is loaded | **SIGSEGV (11)** | `err_null_pointer_dereferences` (subprocess) | [x] |
+| 19 | `init_result_array` | `arr == NULL` — no null check, `arr->count` is stored | **SIGSEGV (11)** | `err_null_pointer_dereferences` (subprocess) | [x] |
+| 20 | `init_result_array` | `values == NULL` with `count > 0` — `values[i]` is loaded | **SIGSEGV (11)** | `err_null_pointer_dereferences` (subprocess) | [x] |
+| 21 | `process_with_foreach` | `arr == NULL` | **SIGSEGV (11)** | `err_null_pointer_dereferences` (subprocess) | [x] |
+| 22 | `process_with_foreach` | `op == NULL` with `count > 0` — indirect call through a null function pointer | **SIGSEGV (11)** | `err_fatal_traps_and_indirect_call` (subprocess) | [x] |
+| 23 | `compute_weighted_sum` | `arr == NULL` | **SIGSEGV (11)** | `err_null_pointer_dereferences` (subprocess) | [x] |
+| 24 | `compute_weighted_sum` | `arr->count` values that make every product saturate (`value=INT32_MAX`, weight up to 9) | each term clamps via row #3/#4; `sum` wraps two's-complement | `err_weighted_sum_saturation` | [x] |
+| 25 | `add_operation` / `subtract_operation` / `multiply_operation` | signed overflow (`INT32_MAX + 1`, `INT32_MIN - 1`, `INT32_MIN * -1`, …) | two's-complement wraparound; no guard exists | `err_binops_overflow` | [x] |
+
+## Out-of-range "enum" values across the FFI boundary
+
+The C API declares **no enums**. The equivalent unchecked-integer inputs that a
+caller can push across the boundary are covered above:
+
+- `int count` outside `[0, 10]` → rows 12, 13, 14 (and the excluded case below).
+- `int idx1`/`idx2` outside `[0, count)` → rows 8, 9, 10, 11.
+- `operation_func op` — an arbitrary pointer-sized value; `NULL` is row 22.
+  Rows 1–2 and `cfg_foreach_add` / `cfg_foreach_multiply` / `cfg_foreach_subtract` / `cfg_foreach_modulo` cover every *valid* variant, and
+  `cfg_foreach_cross_abi` passes the C `.so`'s function pointers into the Rust
+  `process_with_foreach` (and vice versa) to prove the callback ABI matches.
+- `double d` outside the `int` range, plus `±Inf` / NaN → rows 3, 4, 5.
+
+## Conditions deliberately NOT differential-tested (unbounded memory corruption)
+
+These are reachable but produce non-deterministic out-of-bounds *writes*, so
+"identical output" is not a meaningful assertion for either side. Both
+implementations perform the same unchecked arithmetic; documented for
+completeness.
+
+| condition | why excluded |
+|-----------|--------------|
+| `process_with_foreach` with `arr->count < 0` | `FOREACH` compares `count_iter != size`; a negative `size` is never reached going upward, so it writes `item->scaled` / `item->value` for ~2^31 increasing out-of-bounds indices before wrapping. Both sides scribble over the heap and die at an implementation-defined address. |
+| `compute_weighted_sum` / `process_with_foreach` with `arr->count > 10` | Reads/writes past `data[10]`. Only reachable if the caller writes `count` directly (`init_result_array` clamps it). Tested only up to the in-bounds maximum of 10. |
+| `compare_results_in_array` with a wildly negative index (e.g. `INT32_MIN`) | `arr->data + INT32_MIN` overflows the pointer; no dereference occurs, but the address is not representable. Tested with small negative indices (row 11) where both sides agree. |
+
+## Finding: fatal-signal parity depends on the Rust build profile
+
+Rows 18–21 and 23 (the null-pointer *dereferences*) were the only place any
+divergence appeared during verification, and it is a property of the Rust build
+profile rather than of the translation. Measured terminating signals:
+
+| case | C `.so` | Rust `.so` (release) | Rust `.so` (debug) |
+|------|---------|----------------------|--------------------|
+| `mod_intmin_neg1` (row 2)   | SIGFPE 8   | SIGFPE 8   | SIGFPE 8   |
+| `foreach_null_op` (row 22)  | SIGSEGV 11 | SIGSEGV 11 | SIGSEGV 11 |
+| `cmp_null_arr` (row 18)     | SIGSEGV 11 | SIGSEGV 11 | **SIGABRT 6** |
+| `init_null_arr` (row 19)    | SIGSEGV 11 | SIGSEGV 11 | **SIGABRT 6** |
+| `init_null_values` (row 20) | SIGSEGV 11 | SIGSEGV 11 | **SIGABRT 6** |
+| `foreach_null_arr` (row 21) | SIGSEGV 11 | SIGSEGV 11 | **SIGABRT 6** |
+| `wsum_null_arr` (row 23)    | SIGSEGV 11 | SIGSEGV 11 | **SIGABRT 6** |
+
+Cause: with `debug-assertions` on, rustc inserts `ub_checks` instrumentation
+that intercepts the raw-pointer dereference and raises a non-unwinding panic
+(`null pointer dereference occurred` → `abort`) *before* the hardware fault
+would occur. It is a compiler diagnostic with no C counterpart, and it cannot
+be switched off on stable rustc (`profile.dev.ub-checks` is an unstable
+manifest key — verified: cargo reports it as an unused key).
+
+Resolution: the artifact this crate ships is the **release** cdylib — the
+profile `Cargo.toml` explicitly configures (`panic = "abort"`), and the one a C
+consumer would link. It matches the C on **all seven** fatal cases. The default
+`cargo test` run therefore enforces full parity. `run_all.sh` additionally
+re-runs the whole suite against the debug `.so` as an overflow-check stress
+pass, skipping exactly one test (`err_null_pointer_dereferences`) and nothing
+else; row 22 and row 2 are still asserted there because an indirect call
+through a null function pointer and an `idiv` trap are not dereferences and are
+not instrumented.
+
+`foreach_null_op` (row 22) also confirms the translation does not add a null
+check that the C lacks: both sides jump to address 0 and fault.
+
+## Harness sensitivity (negative controls)
+
+To prove the differential harness is not comparing one library against itself,
+three deliberate bugs were injected into `src/lib.rs`, each built and run, then
+reverted (`src/lib.rs` restored byte-identical):
+
+| injected bug | tests that caught it |
+|--------------|----------------------|
+| `compute_weighted_sum`: `current > base` → `current >= base` | `cfg_weighted_counts_random`, `cfg_weighted_saturating`, `cfg_weighted_single`, `err_weighted_sum_saturation` |
+| `arrayfunc`: `param4 / 2` → `param4 >> 1` | all 4 `cfg_arrayfunc_*`, `cfg_pipeline_arrayfunc_replica`, `err_arrayfunc_extreme_params` |
+| `safe_double_to_int`: truncate → `d.round()` | 27 tests across every layer |
+
+The first is worth noting: the `arrayfunc`- and pipeline-level tests did **not**
+catch it, because `data[0].value` is always 0 by the time `arrayfunc` reaches
+`compute_weighted_sum` (the `multiply_operation` pass multiplies slot 0 by its
+own `rank`, which is 0), so slot 0's weight is unobservable through the
+top-level API. Only the tests that call `compute_weighted_sum` **directly** at
+low level expose it — which is exactly why `CONFIGS.md` enumerates the
+lowest-level entry points rather than just the one function in `include/lib.h`.

@@ -1,16 +1,17 @@
 # Error Surface
 
-The public header declares only `void driver(float x)`. Mechanical searches of
-`../c_src/include` and `../c_src/src` find no error-return macro or statement,
-`assert`, error enum, explicit range check, null check, or min/max constant.
-The API has no pointer, length, option, or enum argument. Every 32-bit object
-representation is accepted as a `float`, including infinities, signed zeros,
-subnormals, and all NaN payloads.
+Mechanically inspected `../c_src/include/driver.h` and
+`../c_src/src/driver.c` for error-return macros/statements, assertions,
+explicit range checks, null checks, enums, and min/max constants.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
+|---|----------|----------------------------------------------|-------------------|
 
-There are no rejection rows to test. The generic pointer, length, and invalid
-enum boundaries are not applicable to this scalar-only API.
+There are no rejection branches in the C source.
 
-- [x] Every rejection row has a passing differential test (empty set).
+The sole public API is `void driver(float x)`. It accepts its scalar argument
+by value and has no pointer, length, enum, option, or documented range, so the
+generic null-pointer, zero/oversized-length, and out-of-range-enum probes are
+not applicable.
+
+Phase C status: **[x] complete (0 applicable rows)**.

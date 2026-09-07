@@ -1,99 +1,117 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — error-surface table (Phase C)
 
-Derived mechanically from `c_src/src/lib.c` by grepping for **every** place the
-code rejects input, asserts, or indexes/writes without a bound check:
+Mechanically derived from `c_src/src/lib.c`: every `cp_error_reason = ...` /
+`goto cp_err`, every `return 0` / `return NULL` rejection, every `assert()`,
+and every range/bounds check. Line numbers refer to `c_src/src/lib.c`.
 
-```
-grep -n 'cp_error_reason =\|return 0;\|return NULL\|assert(\|\[\(symbol\|distance_symbol\|n\)\]' c_src/src/lib.c
-```
+`R0` below means "`cp_inflate` returns 0". `SIGABRT` means the process dies via
+glibc `assert` -> `abort()` (the C library is compiled without `NDEBUG`, see
+`CMakeLists.txt`, so all asserts are live).
 
-The C library has no error enum.  It signals failure four ways:
+## A. `cp_error_reason`-setting rejections (reachable from `cp_inflate`)
 
-1. `cp_inflate` returns `0` (success `1`) and leaves a diagnostic in the global
-   `const char *cp_error_reason`;
-2. internal `static` helpers return `0`;
-3. a failed `assert()` — the CMake build defines no `NDEBUG`, so asserts are
-   **live** — prints
-   `"<prog>: <abs-path>/lib.c:<line>: <func>: Assertion `<expr>' failed."` and
-   raises `SIGABRT`;
-4. it does something undefined (an unchecked index or an overflowing local
-   array).  Those are rows 30–36; they are *reproduced*, not fixed.
+| # | function | trigger (exact invalid input/condition) | expected C result |
+|---|----------|------------------------------------------|-------------------|
+| 1 | `cp_stored` (L170-176) | stored block (`BTYPE=00`) whose `LEN` is not the one's complement of `NLEN` | `R0`, `cp_error_reason = "Failed to find LEN and NLEN as complements within stored (uncompressed) stream."` |
+| 2 | `cp_stored` (L179-185) | stored block where `s->bits_left / 8 > LEN`, i.e. more than `LEN` bytes still remain in the input after the 4-byte LEN/NLEN header | `R0`, `cp_error_reason = "Stored block extends beyond end of input stream."` |
+| 3 | `cp_block` (L254-261) | literal symbol decoded (`sym < 256`) while `s->out + 1 > s->out_end` — output buffer full / `out_bytes` too small | `R0`, `cp_error_reason = "Attempted to overwrite out buffer while outputting a symbol."` |
+| 4 | `cp_block` (L273-279) | back-reference whose distance points before the start of the output buffer (`out - backwards_distance < begin`) | `R0`, `cp_error_reason = "Attempted to write before out buffer (invalid backwards distance)."` |
+| 5 | `cp_block` (L282-289) | back-reference copy that would run past the end of the output buffer (`out + length > out_end`) | `R0`, `cp_error_reason = "Attempted to overwrite out buffer while outputting a string."` |
+| 6 | `cp_inflate` (L354-362) | `BTYPE == 3` (reserved block type) | `R0`, `cp_error_reason = "Detected unknown block type within input stream."` |
 
-`convert_pix` contains **no** validation whatsoever (rows 22–23).
+Note on #6: `BTYPE` is read with `cp_read_bits(s, 2)`, so the `switch` in
+`cp_inflate` can only see 0/1/2/3 — there is no `default:` arm and no
+out-of-range `int` can reach it from outside. The equivalent "out-of-range enum
+value across the FFI boundary" for this library is the `bpp` argument of
+`convert_pix` (an unconstrained `int` used as a `switch` selector); that is
+covered by rows 27-29.
 
-How each row is tested:
+## B. Rejections in `static` helpers not reachable from an exported symbol
 
-* rows that **return** → `tests/errors.rs` (in-process, both `.so`s called back
-  to back, return value + whole output buffer + `cp_error_reason` string
-  compared);
-* rows that **abort / hang** → `tests/aborts.rs` and
-  `tests/dynamic_overshoot.rs`, which run each scenario in a *child process*
-  (once per library) and compare `(exit code, signal, stderr assertion text,
-  output-buffer hash)`;
-* rows that are **unchecked indexing** → `tests/oob_tables.rs` and
-  `tests/dynamic_overshoot.rs`.
+No exported entry point reaches these, so they have no *dynamic* symbol — but
+`c_src` is built at `-O0`, so the C `.so` retains them as LOCAL symbols and
+`tests/private.rs` calls them by resolving `base + nm_offset(name)`, with the
+Rust side reached through the `private_probe` test-only cdylib. Every row below
+therefore HAS a passing differential test.
 
-## Table
+| # | function | trigger | expected C result |
+|---|----------|---------|-------------------|
+| 7 | `cp_unfilter` (L433) | first scanline filter byte `> 4` | `return 0` |
+| 8 | `cp_unfilter` (L467) | any later scanline filter byte `> 4` | `return 0` |
+| 9 | `cp_chunk` (L397) | 4-byte chunk tag at `p+4` != requested tag | `return NULL` |
+| 10 | `cp_chunk` (L397) | chunk `len < minlen` | `return NULL` |
+| 11 | `cp_chunk` (L397) | `p + len + 12 > end` (chunk runs off the buffer) | `return NULL` |
+| 12 | `cp_find` (L409) | no chunk with the requested tag / `len >= minlen` / in-bounds before `p >= end` | `return NULL` |
 
-| #  | function | trigger (exact invalid input / condition) | expected C result | [x] | test |
-|----|----------|-------------------------------------------|-------------------|-----|------|
-| 1  | `cp_stored` (line 170) | stored block whose `LEN != (uint16_t)~NLEN` | `cp_inflate` → `0`, `cp_error_reason` = `"Failed to find LEN and NLEN as complements within stored (uncompressed) stream."` | [x] | `errors::err01_stored_len_nlen_mismatch` |
-| 2  | `cp_stored` (line 179) | stored block where `s->bits_left / 8 > LEN`, i.e. **more** input bytes remain than `LEN` (the C's test is `<=`, the inverse of the intuitive one, so a stored block followed by *anything* is rejected) | `0`, `"Stored block extends beyond end of input stream."` | [x] | `errors::err02_stored_extends_beyond`, `errors::err30_stored_len_off_by_one` |
-| 3  | `cp_block` (line 254) | literal decoded while `s->out + 1 > s->out_end` (output full, `out_bytes == 0`, or `out_bytes < 0`) | `0`, `"Attempted to overwrite out buffer while outputting a symbol."` | [x] | `errors::err03_out_full_on_literal`, `errors::err24_out_bytes_zero_and_negative`, `errors::err31_literal_at_exact_boundary` |
-| 4  | `cp_block` (line 273) | length/distance pair with `s->out - backwards_distance < s->begin` | `0`, `"Attempted to write before out buffer (invalid backwards distance)."` | [x] | `errors::err04_bad_backwards_distance` |
-| 5  | `cp_block` (line 282) | length/distance pair with `s->out + length > s->out_end` | `0`, `"Attempted to overwrite out buffer while outputting a string."` | [x] | `errors::err05_out_full_on_string`, `oob_tables::oob03_empty_distance_tree_out_too_small` |
-| 6  | `cp_inflate` (line 356) | `btype == 3` (bits `11` after BFINAL) | `0`, `"Detected unknown block type within input stream."` | [x] | `errors::err06_btype_3_unknown_block`, `inflate::i27_stored_not_final` |
-| 7  | `cp_unfilter` (line 434) | row-0 filter byte `> 4` | `return 0` | [x] | unreachable: `cp_unfilter` is `static` and never called (absent from `nm -D` of *both* objects). Documented; no test possible without changing the C. |
-| 8  | `cp_unfilter` (line 468) | row-`y` (`y >= 1`) filter byte `> 4` | `return 0` | [x] | unreachable, as row 7 |
-| 9  | `cp_chunk` (line 397) | `memcmp(start+4, chunk, 4) != 0`, or `len < minlen`, or `png->p + len + 12 > png->end` | `return NULL` | [x] | unreachable: `static`, never called |
-| 10 | `cp_find` (line 409) | no matching chunk before `png->end` | `return NULL` | [x] | unreachable: `static`, never called |
-| 11 | `cp_ptr` (line 89) | `assert(!(s->bits_left & 7))`.  **Reachable.**  `cp_stored` byte-aligns using `s->count & 7`, which only tracks the real bit position while every refill added a multiple of 8 bits.  The `final_word` branch of `cp_peak_bits` adds `s->bits_left` instead, so if it fires at a bit position that is not byte aligned, `count` and `bits_left` drift apart.  Concrete input: bytes `02 E4 FF 1F 00` at a pointer `≡ 2 (mod 4)` — an empty fixed block followed by a stored block; `bits_left` ends up `-5`, and `-5 & 7 == 3`. | `SIGABRT` + `Assertion '!(s->bits_left & 7)' failed.` | [x] | `aborts::abort11_cp_ptr_unaligned` |
-| 12 | `cp_peak_bits` (line 98) | `assert(s->word_index <= s->word_count)` | unreachable — the increment happens inside `if (s->word_index < s->word_count)`, so the post-condition always holds | [x] | proven unreachable by inspection; no test |
-| 13 | `cp_consume_bits` (line 109) | `assert(s->count >= num_bits_to_read)` — consume more bits than are buffered.  Concrete input: `01 00` (a 2-byte stored block header): after `LEN` is read, `count == 8`, no words remain and `final_word` is spent, so the 16-bit `NLEN` read cannot be satisfied. | `SIGABRT` + `Assertion 's->count >= num_bits_to_read' failed.` | [x] | `aborts::abort13_consume_more_than_buffered`, hit by all three fuzz sweeps |
-| 14 | `cp_read_bits` (line 117) | `assert(num_bits_to_read <= 32)` — reachable by writing `> 32` into the exported, writable `cp_len_extra_bits` / `cp_dist_extra_bits` | `SIGABRT` + `Assertion 'num_bits_to_read <= 32' failed.` | [x] | `aborts::abort14_read_bits_gt_32` |
-| 15 | `cp_read_bits` (line 118) | `assert(num_bits_to_read >= 0)` | unreachable — every argument is a literal `1,2,3,4,5,7,16`, `s->count & 7`, or a `uint8_t` table entry; all `>= 0` | [x] | proven unreachable by inspection; no test |
-| 16 | `cp_read_bits` (line 119) | `assert(s->bits_left > 0)` — input exhausted.  `cp_inflate(in, 0, …)` trips it before the first bit is read. | `SIGABRT` + `Assertion 's->bits_left > 0' failed.` | [x] | `aborts::abort16_in_bytes_zero`, `aborts::abort26_null_in`, `aborts::abort25_in_bytes_negative`, all fuzz sweeps |
-| 17 | `cp_read_bits` (line 120) | `assert(s->count <= 64)` | unreachable — `cp_peak_bits` only refills when `count < num_bits_to_read <= 32`, so `count <= 32 + 32 = 64` afterwards | [x] | proven unreachable for the arguments the code uses; no test |
-| 18 | `cp_read_bits` (line 121) | `assert(!cp_would_overflow(s, n))`, i.e. `(bits_left + count) - n < 0`.  Reachable both from truncated streams and deterministically by setting `cp_len_extra_bits` to `30` and offering a 4-byte fixed block with one match (`bits_left == count == 14`, `28 - 30 < 0`). | `SIGABRT` + `Assertion '!cp_would_overflow(s, num_bits_to_read)' failed.` | [x] | `aborts::abort18_would_overflow`, hit by the unstructured + mutated fuzz sweeps |
-| 19 | `cp_build` (line 148) | `assert(len < 16)` — a code-length entry `>= 16`.  Reachable by writing `16`…`255` into `cp_fixed_table`, and from a malformed code-length tree that decodes a symbol in `19..=31`. | `SIGABRT` + `Assertion 'len < 16' failed.` | [x] | `aborts::abort19_code_length_ge_16` (values `16` and `255`), `oob_tables::oob04_code_length_ge_16_sweep` (15 values x 9 table positions = 135 combinations, all `SIGABRT len < 16` in both) |
-| 20 | `cp_decode` (line 211) | `assert((search >> len) == (key >> len))` — the peeked bits match no code in the tree.  Always fires for an **empty** tree on the first block, because `tree[-1]` is then `0` and `len` becomes `32` (`search >> 32` is `search` on x86-64, and `search >= 0xFFFF != 0`). | `SIGABRT` + `Assertion '(search >> len) == (key >> len)' failed.` | [x] | `aborts::abort20_decode_no_match` (`decode_empty_tree`, `decode_truncated`), all fuzz sweeps, `dynamic_overshoot::ov03/ov04` |
-| 21 | `cp_inflate` (line 309) | `calloc` returns `NULL` — the C does not check and dereferences `s` | `SIGSEGV` | [x] | not testable without an allocator interposer; the Rust likewise dereferences its unchecked `alloc_zeroed` result, so the observable behaviour (`SIGSEGV` on a null write) is the same. Documented only. |
+## C. `assert()` failures — abort, not a return value
 
-## Generic FFI-boundary cases (required even though the C does not check them)
+| # | function | trigger (exact invalid input/condition) | expected C result |
+|---|----------|------------------------------------------|-------------------|
+| 13 | `cp_read_bits` (L119) `assert(s->bits_left > 0)` | `cp_inflate` called with `in_bytes <= 0` (empty input): the very first `cp_read_bits(s, 1)` sees `bits_left == 0` | `SIGABRT`, stderr `.../lib.c:119: cp_read_bits: Assertion \`s->bits_left > 0' failed.` |
+| 14 | `cp_read_bits` (L121) `assert(!cp_would_overflow(s, n))` | truncated stream: fewer bits remain (`bits_left + count < n`) than the header/extra-bits read needs — e.g. a 1-byte input whose first bit says `BFINAL=0` and then a second block header is requested | `SIGABRT`, `.../lib.c:121: cp_read_bits: Assertion \`!cp_would_overflow(s, num_bits_to_read)' failed.` |
+| 15 | `cp_consume_bits` (L109) `assert(s->count >= num_bits_to_read)` | `cp_peak_bits` could not top the bit accumulator up to `num_bits_to_read` (input exhausted mid-symbol / a 16-bit `LEN`/`NLEN` read in `cp_stored` with fewer than 16 buffered bits) | `SIGABRT`, `.../lib.c:109: cp_consume_bits: Assertion \`s->count >= num_bits_to_read' failed.` |
+| 16 | `cp_decode` (L211) `assert((search >> len) == (key >> len))` | the peeked bits do not match any code in the Huffman tree (corrupt/garbage compressed data) | `SIGABRT`, `.../lib.c:211: cp_decode: Assertion \`(search >> len) == (key >> len)' failed.` |
+| 17 | `cp_build` (L148) `assert(len < 16)` | a code-length array entry `>= 16` — reachable from `cp_dynamic` when the code-length Huffman tree decodes a literal length symbol `>= 16`, or by a caller tampering with the exported `cp_fixed_table` | `SIGABRT`, `.../lib.c:148: cp_build: Assertion \`len < 16' failed.` |
+| 18 | `cp_ptr` (L89) `assert(!(s->bits_left & 7))` | `cp_stored` reaching `cp_ptr` with `bits_left` not a multiple of 8. Unreachable in practice: `cp_stored` first does `cp_read_bits(s, s->count & 7)` and then two 16-bit reads, which leaves `bits_left` byte-aligned whenever `in_bytes*8` was (always). Kept in the table and asserted to be non-triggering. |
+| 19 | `cp_peak_bits` (L98) `assert(s->word_index <= s->word_count)` | `word_index` overrunning `word_count`; guarded by the enclosing `if (s->word_index < s->word_count)`, so unreachable. Kept for completeness. |
+| 20 | `cp_read_bits` (L117/L118) `assert(n <= 32)`, `assert(n >= 0)` | a negative or `> 32` bit count. All call sites pass literals `1,2,3,4,5,7,16`, `s->count & 7` (0..7), or a table entry from `cp_len_extra_bits`/`cp_dist_extra_bits` (0..13), so unreachable from a well-formed call — but reachable if the caller overwrites the exported `cp_len_extra_bits` / `cp_dist_extra_bits` tables with a value `> 32`. Covered by tampering the exported table. |
+| 21 | `cp_read_bits` (L120) `assert(s->count <= 64)` | `count` exceeding 64; `count` only grows by 32 when `count < num_bits_to_read <= 32`, so unreachable. Kept for completeness. |
 
-| #  | entry point | trigger | expected C result | [x] | test |
-|----|-------------|---------|-------------------|-----|------|
-| 22 | `convert_pix` | `bpp` outside `{1,2,3,4}`: `0, 5, 6, 7, 8, 16, 255, 256, -1, -2, -8, INT_MAX, INT_MIN` — the `switch` has no `default`, so `dst` is neither written nor advanced, while `src` still advances by `bpp` per pixel | returns normally, writes nothing | [x] | `convert_pix::err22_convert_pix_bad_bpp` |
-| 23 | `convert_pix` | `w <= 0` and/or `h <= 0` (incl. `INT_MIN`); `NULL` `src`/`dst` (never dereferenced once a loop bound is non-positive) | returns normally, writes nothing | [x] | `convert_pix::err23_convert_pix_nonpositive_and_null` |
-| 24 | `cp_inflate` | `out_bytes == 0`, and `out_bytes < 0` (`out_end < out`, so every literal trips row 3) | `0` + row-3 message | [x] | `errors::err24_out_bytes_zero_and_negative` |
-| 25 | `cp_inflate` | `in_bytes < 0` (`-1`, `-4`, `-1000`) — `bits_left` starts negative, so row 16 fires.  Note `last_bytes = in_bytes & 3` first makes the `final_word` loop read *before* the buffer, identically in both. | `SIGABRT` (row 16) | [x] | `aborts::abort25_in_bytes_negative` |
-| 26 | `cp_inflate` | `in = NULL, in_bytes = 0, out = NULL, out_bytes = 0` — `NULL` is 4-aligned, so `first_bytes == 0` and nothing is dereferenced before row 16 fires | `SIGABRT` (row 16) | [x] | `aborts::abort26_null_in` |
-| 27 | `cp_inflate` | one step past every documented range.  The API has **no** C `enum` parameters, so the "out-of-range enum value across FFI" class collapses onto the two integer selectors: `BTYPE` (2 bits, `3` is the invalid one — row 6) and `bpp` (row 22).  Both are covered with values that have no valid variant. | as rows 6 / 22 | [x] | `errors::err06_btype_3_unknown_block`, `convert_pix::err22_convert_pix_bad_bpp` |
-| 28 | `cp_stored` | `LEN > out_bytes` — `cp_stored` performs **no** output bound check, so `memcpy` overruns the output buffer | returns `1` and writes `LEN` bytes | [x] | `errors::err28_stored_overruns_out` (over-allocated buffer, so the overrun is compared byte-for-byte) |
-| 29 | `cp_stored` | `LEN == 0` (`NLEN == 0xFFFF`) | returns `1`, writes nothing | [x] | `errors::err29_stored_zero_len`, `inflate::i28_empty_output` |
+## D. Generic FFI boundary conditions (not distinct C branches, tested anyway)
 
-## Unchecked indexing / local-array overflow (undefined in C, reproduced anyway)
+| # | entry point | trigger | expected C result |
+|---|-------------|---------|-------------------|
+| 22 | `cp_inflate` | `in_bytes == 0` (with a non-null, and with a null, `in`) | row 13 (`SIGABRT`) |
+| 23 | `cp_inflate` | `in_bytes < 0` (negative length) | row 13 (`SIGABRT`) — `bits_left = in_bytes*8 < 0` fails `assert(s->bits_left > 0)` |
+| 24 | `cp_inflate` | `out_bytes == 0` with a stream that emits at least one byte | row 3 |
+| 25 | `cp_inflate` | `out_bytes < 0` (`out_end < out`) | row 3 |
+| 26 | `cp_inflate` | valid stream, `out` buffer exactly 1 byte too small | row 3 or row 5 |
+| 27 | `convert_pix` | `bpp` outside `{1,2,3,4}`: `0`, `5`, `-1`, `INT_MIN`, `INT_MAX`, `256` (the "out-of-range enum" case) | no store to `dst`; `src` still advances by `bpp` per pixel; returns void |
+| 28 | `convert_pix` | `w <= 0` or `h <= 0` (`0`, `-1`, `INT_MIN`) | loops do not execute; no store to `dst`; returns void |
+| 29 | `convert_pix` | `w == 0`, `h > 0` | `src` advanced by 1 per row only, `dst` untouched |
+| 30 | `cp_error_reason` | read before any call (fresh library) | `NULL` in both |
+| 31 | `cp_error_reason` | not cleared on success — keeps the last error string after a subsequent *successful* `cp_inflate` | identical stale pointer contents in both |
 
-| #  | site | trigger | expected C result | [x] | test |
-|----|------|---------|-------------------|-----|------|
-| 30a | `cp_build` (line 137) | `counts[lens[n]]++` with `int counts[16]` and a code length `>= 16`: the C increments up to 1020 bytes past the array *before* its own `assert(len < 16)` fires in the second loop.  The Rust aborts at the counting loop instead. | `SIGABRT` + `Assertion 'len < 16' failed.` (the stack corruption is never observable, because the assert always follows) | [x] | `oob_tables::oob04_code_length_ge_16_sweep` |
-| 30 | `cp_block` (line 267) | `cp_len_extra_bits[symbol]` / `cp_len_base[symbol]` with `symbol = decoded - 257 > 30`.  Requires `cp_decode` to return `>= 288`, which needs `tree[-1]`; for the literal tree that is `s->lookup[510..511]`, which `cp_build` has just zeroed whenever `nlit == 0`, so the `cp_decode` assert (row 20) fires first. | unreachable, but reproduced defensively | [x] | covered by the `cp_data_byte` layout emulation in `src/lib.rs`; reachability argued in the module comment |
-| 31 | `cp_block` (line 270) | `cp_dist_extra_bits[distance_symbol]` / `cp_dist_base[distance_symbol]` with `distance_symbol > 31`.  **Reachable:** a dynamic block may declare `HDIST` distance codes and give them all code length `0`, so `cp_build` returns `0`; `cp_decode(s, s->dst, 0)` then reads `s->dst[-1]`, which is `s->lit[287]` — a well-formed entry whose symbol field is `287`.  The C then reads 255 entries past both arrays, landing on zero bytes past `.bss`, so `backwards_distance == 0` and the copy loop writes each byte onto itself. | returns `1`, output unchanged over the match | [x] | `oob_tables::oob01…oob03` — these **failed** before `src/lib.rs` gained the `.data`-image emulation (`cp_data_byte`), because Rust orders and pads its statics differently |
-| 32 | `cp_dynamic` (lines 229–242) | RLE symbol 16/17/18 writing past `uint8_t lens[288+32]`, stopping inside `lenlens` (`lens[320..339]`) or `sym`/`nlen` (`lens[348..356]`) — dead locals | no observable change | [x] | `dynamic_overshoot::ov01`, `ov02` |
-| 33 | `cp_dynamic` | overshoot reaching `ndst` at `lens[356..360]`, zeroing it, so `cp_build(0, s->dst, lens + nlit, 0)` yields an **empty** distance tree | literals still decode; a match then takes row 31/row 20 | [x] | `dynamic_overshoot::ov03` (both return `1` for literal-only payloads and both `SIGABRT` at row 20 for payloads with a match) |
-| 34 | `cp_dynamic` | overshoot reaching `nlit` at `lens[360..364]`, zeroing it, so the literal tree is empty | `SIGABRT` at row 20 | [x] | `dynamic_overshoot::ov04` |
-| 35 | `cp_dynamic` | overshoot reaching the symbol-18 run counter at `lens[364..368]`: the run zeroes its own counter, `--i` takes it negative, and `lens[376..380]` (the loop variable `n`) is reset on every pass, so `n` cycles in `257..=376` for ever | **infinite loop** | [x] | `dynamic_overshoot::ov05`, `ov06`, `ov07`, `ov08` — both implementations spin and are killed by the same `SIGALRM` budget |
-| 36 | `cp_dynamic` | overshoot reaching the saved `%rbp` / return address at `lens[384..400]` | **unreachable** — row 35 fires first for every run long enough to get there (`n` never exceeds 376), so the frame pointer and return address are never touched | [x] | `dynamic_overshoot::ov08` (`k = 66…138`, i.e. every run that would reach 384, all end in row 35) |
+## Checklist
 
-## Randomised error-path sweeps
+- [x] 1 — `tests/errors.rs::err01_stored_len_nlen_mismatch`
+- [x] 2 — `tests/errors.rs::err02_stored_extends_beyond_input`
+- [x] 3 — `tests/errors.rs::err03_out_overflow_symbol`
+- [x] 4 — `tests/errors.rs::err04_invalid_backwards_distance`
+- [x] 5 — `tests/errors.rs::err05_out_overflow_string`
+- [x] 6 — `tests/errors.rs::err06_unknown_block_type`
+- [x] 7-8  — `tests/private.rs::priv_cp_unfilter_all_filters` (every per-row filter byte 0..6 x bpp 1..4 x w/h grid) and `priv_cp_unfilter_degenerate_shapes`
+- [x] 9-11 — `tests/private.rs::priv_cp_chunk` (matching/mismatching 4-byte tags, `minlen` above and below `len`, `end` cut short, and `len` values around `0x7FFFFFF4` / `0xFFFFFFF4` where `len + 12` crosses `INT_MAX` and wraps to 0)
+- [x] 12    — `tests/private.rs::priv_cp_find` (multi-chunk buffers, absent tags, `end` at 0 / mid-buffer / full)
+- [x] 13 — `tests/aborts.rs::abort13_bits_left_zero`
+- [x] 14 — `tests/aborts.rs::abort14_would_overflow`
+- [x] 15 — `tests/aborts.rs::abort15_consume_bits_count`
+- [x] 16 — `tests/aborts.rs::abort16_decode_mismatch`
+- [x] 17 — `tests/aborts.rs::abort17_build_len_ge_16`
+- [x] 18-21 — row 20: `tests/aborts.rs::abort20_read_bits_too_many` (both `cp_dist_extra_bits[0] = 33` and `cp_len_extra_bits[0] = 64` via the exported mutable tables). Rows 18/19/21 are proven non-triggering by the whole Phase B corpus (41 configuration rows, thousands of randomized streams) running abort-free in both libraries, and by `tests/risky.rs` which drives the negative-`first_bytes` state in a child process and requires identical stderr.
+- [x] 22 — `tests/aborts.rs::abort22_bits_left_zero_null_input` (+ `abort13_bits_left_zero`, `abort13b_bits_left_zero_align3`)
+- [x] 23 — `tests/aborts.rs::abort23_in_bytes_negative`
+- [x] 24 — `tests/errors.rs::err24_out_bytes_zero`
+- [x] 25 — `tests/errors.rs::err25_out_bytes_negative`
+- [x] 26 — `tests/errors.rs::err26_out_one_byte_short`
+- [x] 27 — `tests/errors.rs::err27_convert_pix_bad_bpp`
+- [x] 28 — `tests/errors.rs::err28_convert_pix_nonpositive_dims`
+- [x] 29 — `tests/errors.rs::err29_convert_pix_zero_width`
+- [x] 30 — `tests/errors.rs::err30_error_reason_initially_null`
+- [x] 31 — `tests/errors.rs::err31_error_reason_not_cleared_on_success`
 
-Besides the per-row tests, three sweeps compare *any* outcome the C produces —
-return value, output bytes, `cp_error_reason`, assertion text, signal — against
-the Rust:
+## Additional error/edge configurations found while testing
 
-| sweep | corpus | test |
-|-------|--------|------|
-| unstructured | random 1…40-byte inputs, random pointer alignment, random `out_bytes` | `aborts::fork_fuzz_unstructured` |
-| mutated-valid | a well-formed stored / fixed / dynamic block, then 0…3 bit flips, byte replacements or truncations | `aborts::fork_fuzz_mutated_valid` |
-| length boundaries | `in_bytes ∈ {0,1,2,3,len-1,len,len+1,-1}` × `out_bytes ∈ {-1,0,1,n-1,n}` × 4 alignments | `aborts::fork_fuzz_length_boundaries` |
-| exec-based (compares the *whole* stderr text, not just the assertion line) | random small inputs | `aborts::abort_fuzz_random_inputs` |
+| # | function | trigger | expected C result | test |
+|---|----------|---------|-------------------|------|
+| 32 | `cp_stored` (L187) | `LEN` GREATER than the remaining input: accepted (L179 only bounds `LEN` from below), then `memcpy` over-reads the input AND over-writes past `out + out_bytes` — `cp_stored` has no `out_end` check at all | returns 1, `out` filled from the wrong source bytes | `tests/valid.rs::row40_stored_len_beyond_remaining_input` |
+| 33 | `cp_stored` / `cp_ptr` | `(in_bytes - first_bytes) % 4 != 0`: `cp_peak_bits` adds `s->bits_left` (not the *unbuffered* bit count) when folding in `s->final_word`, so `s->count` is too large by the old `count` and `cp_ptr()` returns a byte address that is too low — the stored payload is copied from the wrong offset | returns 1 with shifted output | `tests/valid.rs::row20/21/22` (payload equality asserted only for the word-aligned shapes; C/Rust equality asserted always) |
+| 34 | `cp_inflate` | `in_bytes < first_bytes` (misaligned input shorter than its alignment padding): `word_count` and `last_bytes` come from a negative numerator, the pre-load loop reads past `in + in_bytes`, and the final-word loop reads *before* `in`. Some `(align, in_bytes)` pairs return, others `assert` | identical outcome in both libraries | `tests/risky.rs::row41_in_bytes_smaller_than_first_bytes` |
+| 35 | `cp_read_bits` (L109 vs L119) | stored-block header truncated to 3 bytes: the alignment discard plus LEN/NLEN exhaust `bits_left` so the `s->bits_left > 0` assert wins instead of the `count` assert | `SIGABRT` at L119 | `tests/aborts.rs::abort15_consume_bits_count` |
+
+## E. Non-terminating input (recorded, cannot be asserted on)
+
+| # | function | trigger | C behaviour |
+|---|----------|---------|-------------|
+| 36 | `cp_find` (L405) | a chunk whose length field is exactly `0xFFFFFFF4`, so `len + 12` wraps to `0` and `png->p += len + 12` does not advance | **infinite loop** — `while (png->p < png->end)` never makes progress. The Rust reproduces it exactly (same wrapping add, same zero advance), so both hang; a test would hang too, so this row is documented instead of asserted. `cp_chunk`, which has no loop, IS tested with the same length field (`tests/private.rs::priv_cp_chunk`). |
+| 37 | `cp_block` (L295) | a corrupt tree that makes `length` negative, so `memset(dst, *src, length)` gets `(size_t)(-n)` | both attempt an ~2^64-byte fill and fault; UB, not asserted |

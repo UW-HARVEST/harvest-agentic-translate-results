@@ -1,77 +1,74 @@
 # SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
 
-Derived mechanically from:
+Source of truth: `nm -D --defined-only` on the two shared libraries.
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-```
+- C:    `c_src/build/libdriver.so`      (built from `c_src/src/driver.c` only — CMakeLists builds a single SHARED lib, no executable target)
+- Rust: `translation/target/release/libdriver.so` (`crate-type = ["cdylib"]`)
 
-## C source inventory (`c_src/src/driver.c`, `c_src/include/driver.h`)
+## C source inventory (completeness check)
 
-| C function | linkage in C | must be exported? |
-|---|---|---|
-| `printLine`        | external (`void printLine(const char*)`) | YES |
-| `printHexCharLine` | external (`void printHexCharLine(char)`)  | YES |
-| `bad`              | external (`void bad(void)`)               | YES |
-| `goodG2B`          | **`static`** — file-local                | no (must NOT be exported) |
-| `goodB2G`          | **`static`** — file-local                | no (must NOT be exported) |
-| `good`             | external (`void good(void)`)              | YES |
-| `driver`           | external (`void driver(int)`), declared in `driver.h` | YES |
+`c_src` contains exactly one translation unit and one public header:
 
-There is exactly one translation unit (`src/driver.c`); no module was skipped.
-No macro-generated symbols exist in this library.
+| C file | translated? |
+|---|---|
+| `c_src/include/driver.h` | yes — declares only `void driver(int)` |
+| `c_src/src/driver.c` | yes — all 7 function definitions are present in `translation/src/lib.rs` |
 
-## Dynamic-symbol table comparison
+Function-by-function coverage of `driver.c`:
+
+| C function | C linkage | present in Rust? | Rust item |
+|---|---|---|---|
+| `printLine(const char *)` | external | yes | `printLine` (`#[no_mangle] extern "C"`) |
+| `printHexCharLine(char)` | external | yes | `printHexCharLine` (`#[no_mangle] extern "C"`) |
+| `bad(void)` | external | yes | `bad` (`#[no_mangle] extern "C"`) |
+| `goodG2B(void)` | **static** | yes | private `unsafe fn goodG2B` — correctly NOT exported |
+| `goodB2G(void)` | **static** | yes | private `unsafe fn goodB2G` — correctly NOT exported |
+| `good(void)` | external | yes | `good` (`#[no_mangle] extern "C"`) |
+| `driver(int)` | external | yes | `driver` (`#[no_mangle] extern "C"`) |
+
+No module/file was skipped; nothing is stubbed or `unimplemented!()`.
+
+## Dynamic symbol table — defined (exported)
 
 | # | symbol | C `.so` | Rust `.so` | status |
 |---|--------|---------|------------|--------|
-| 1 | `printLine`        | `T` | `T` | MATCH |
-| 2 | `printHexCharLine` | `T` | `T` | MATCH |
-| 3 | `bad`              | `T` | `T` | MATCH |
-| 4 | `good`             | `T` | `T` | MATCH |
-| 5 | `driver`           | `T` | `T` | MATCH |
+| 1 | `bad`              | T | T | match |
+| 2 | `driver`           | T | T | match |
+| 3 | `good`             | T | T | match |
+| 4 | `printHexCharLine` | T | T | match |
+| 5 | `printLine`        | T | T | match |
 
-`goodG2B` / `goodB2G` are absent from BOTH `.so` files — correct, they are
-`static` in C and private (`unsafe fn`, no `#[no_mangle]`) in Rust.
+`goodG2B` / `goodB2G` are absent from BOTH tables (they are `static` in C) — correct.
 
-**Symbol diff (C exported minus Rust exported): EMPTY.**
-**Extra non-libc symbols exported by Rust beyond the C set: NONE.**
+**Symbol diff (C-exported minus Rust-exported): EMPTY.**
 
-### ABI note on `printHexCharLine`
+Verification command (must print nothing):
 
-The symbol name matches, but the Rust wrapper deliberately declares its
-parameter as `c_int` and narrows to `c_char` itself. C's `char` parameter is
-narrowed by the *callee* (gcc emits `mov %edi,%eax; mov %al,-0x4(%rbp);
-movsbl -0x4(%rbp),%eax`), whereas rustc assumes an `i8` parameter was already
-narrowed by the caller and forwards the whole register (`mov %edi,%esi`). This
-was a real divergence found by the differential tests — see ERRORS.md row E10.
-Post-fix the Rust emits `movsbl %dil,%esi`, matching C's semantics. The change
-is ABI-compatible with any well-formed `char` caller.
+```sh
+diff <(nm -D --defined-only c_src/build/libdriver.so        | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+```
 
-## Undefined (imported) symbols
+## Undefined symbols in the Rust `.so`
 
-C `.so` imports: `printf`, `puts`, plus weak ITM/`__cxa_finalize`/`__gmon_start__`.
+0 missing/undefined **non-libc** symbols. Every `U`/`w` entry resolves to glibc
+(`printf`, `puts`, `memcpy`, `malloc`, `write`, …) or to the platform unwinder
+(`_Unwind_*`, `__gmon_start__`, `_ITM_*`), which the Rust runtime always
+references. The C `.so` references the same `printf`/`puts` pair.
 
-> Note: gcc rewrites `printf("%s\n", line)` into `puts(line)`, which is why the
-> C `.so` imports `puts`. The Rust translation calls `printf("%s\n", ...)`
-> directly. Byte stream on stdout is identical; this is a codegen detail, not a
-> behavioural difference. (Confirmed by the differential tests.)
-
-Rust `.so` imports: `printf`, `puts` (via `std`), and otherwise only libc /
-libgcc-unwind symbols (`malloc`, `memcpy`, `dl_iterate_phdr`, `_Unwind_*`, …)
-pulled in by the Rust standard library.
-
-**0 missing / undefined non-libc symbols in the Rust `.so`.**
+Note: gcc rewrites the C `printf("%s\n", line)` into `puts(line)`; the Rust side
+calls `printf` directly. Both emit the identical byte stream to `stdout` and use
+the same stdio buffer, so this is not an observable difference (asserted by the
+differential tests in `tests/`).
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, therefore the
-complete set of feature combinations is the single default (empty) combination.
-Verified mechanically — see `check_features.sh`, which parses the `[features]`
-table, builds the powerset, and runs `cargo check` + the full differential suite
-for each. Both `--default` and `--no-default-features` are exercised, and each
-against **both** cargo profiles (`debug`, which unwinds, and `release`, which is
-`panic = "abort"` and fully optimised) since the two produce different codegen.
+`translation/Cargo.toml` declares **no `[features]` section**, so the complete
+set of feature combinations is:
 
-Result: 4 build/test rounds, each 41/41 passing, each with an empty symbol diff.
+| # | combination | cargo invocation |
+|---|---|---|
+| 1 | default (empty) | `cargo test` |
+| 2 | `--no-default-features` (identical to #1) | `cargo test --no-default-features` |
+
+Both are exercised by `run_all_features.sh`.

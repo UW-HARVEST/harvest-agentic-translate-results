@@ -1,23 +1,28 @@
 # Configuration Surface
 
-The public dynamic entry points are `run` and `driver`. There are no runtime
-options, modes, flags, enums, lengths, byte-order choices, preprocessor feature
-branches, or Cargo features. `run` is the lowest-level entry point and has no
-conditional branch. `driver` has one valid/error branch around base-10
-`strtol`; valid conversion does not require consuming the full string.
+There are no Cargo features, C preprocessor feature switches, runtime options,
+mode enums, byte-order choices, or element-format flags. The mechanically
+visible axes are:
 
-| # | entry point(s) | configuration (options set + input shape) | covered |
-|---|----------------|--------------------------------------------|---------|
-| 1 | `run` | direct low-level call; randomized C-layout house fields and negative, zero, and positive `extra_bedrooms`, constrained so both signed additions are defined | [x] |
-| 2 | `run` | direct low-level call at defined integer boundaries (`floors <= INT_MAX-1`; bedroom plus extra remains in range), including `-0.0`, finite fractions, infinities, and NaNs for `bathrooms` | [x] |
-| 3 | `driver` -> `run` twice | randomized decimal lexical forms whose parsed value is exactly zero | [x] |
-| 4 | `driver` -> `run` twice | randomized positive decimal in the C `int` range | [x] |
-| 5 | `driver` -> `run` twice | randomized negative decimal in the C `int` range | [x] |
-| 6 | `driver` -> `run` twice | exact decimal boundary `INT_MIN` | [x] |
-| 7 | `driver` -> `run` twice | exact decimal boundary `INT_MAX` | [x] |
-| 8 | `driver` -> `run` twice | valid decimal with leading C-locale whitespace | [x] |
-| 9 | `driver` -> `run` twice | valid decimal with explicit `+` sign and/or leading zeroes | [x] |
-| 10 | `driver` -> `run` twice | valid decimal prefix followed by randomized nonnumeric suffix (trailing input is intentionally accepted) | [x] |
+- entry point: low-level exported `run` or public-header `driver`;
+- `run` state shapes: signed integer arithmetic, `double` addition, and
+  `printf("%.1f")` formatting;
+- `driver` input shapes accepted by `strtol(..., 10)`: canonical decimal,
+  leading space/sign, accepted trailing suffix, and exact `int` boundaries.
 
-Feature combination: the manifest has no `[features]` table, so the sole code
-configuration is equivalent under default and `--no-default-features`.
+Rows are pruned to combinations that lead to distinct arithmetic, parsing, or
+formatting behavior in the C implementation.
+
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| C1 | `run` | ordinary finite house fields; negative `extra_bedrooms`; no signed overflow | [x] |
+| C2 | `run` | ordinary finite house fields; zero `extra_bedrooms` | [x] |
+| C3 | `run` | ordinary finite house fields; positive `extra_bedrooms`; no signed overflow | [x] |
+| C4 | `run` | floor at/near signed-int boundaries, including the compiled C behavior of `INT_MAX + 1` | [x] |
+| C5 | `run` | bedroom and `extra_bedrooms` values at/near signed-int boundaries, including compiled signed wraparound cases | [x] |
+| C6 | `run` | finite fractional bathroom values, including rounding ties, signed zero, and values whose `+ 1.0` changes representability | [x] |
+| C7 | `run` | non-finite bathroom values: positive/negative infinity and NaNs with varied payloads | [x] |
+| C8 | `driver` | canonical in-range decimal strings spanning negative, zero, and positive values | [x] |
+| C9 | `driver` | accepted decimal strings with leading whitespace and/or explicit sign | [x] |
+| C10 | `driver` | accepted in-range decimal prefix followed by a trailing suffix (the C code does not require `*endp == '\0'`) | [x] |
+| C11 | `driver` | exact `INT_MIN` and `INT_MAX` decimal boundaries | [x] |

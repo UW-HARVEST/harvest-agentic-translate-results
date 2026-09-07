@@ -1,87 +1,75 @@
 # Configuration surface
 
-The CMake build defines no compile-time feature switches. Cargo also declares
-no features, so the feature matrix is the single empty/default feature set
-(also exercised with `--no-default-features`).
+There are no Cargo features and no C preprocessor feature switches. The build
+matrix is therefore the default build and the equivalent
+`--no-default-features` build.
 
-Rows below are derived from the exported entry points plus every runtime
-branching axis in `src/lib.c`: scalar/vector boundary shapes, overlap
-orientation, ray hit/miss location, capsule region, polygon count and clipping
-state, optional transform, dispatcher enum, and the fixed convenience wrapper.
-
-| # | entry point(s) | configuration (options set + input shape) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | status |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `c2V` | arbitrary finite `x,y` | [x] |
-| 2 | `c2Dot` | mixed-sign finite vectors | [x] |
-| 3 | `c2Len` | zero vector | [x] |
-| 4 | `c2Len` | nonzero finite vector | [x] |
-| 5 | `c2Add` | arbitrary finite vectors | [x] |
-| 6 | `c2Sub` | arbitrary finite vectors | [x] |
-| 7 | `c2Mulvs` | zero scalar | [x] |
-| 8 | `c2Mulvs` | positive/negative nonzero scalar | [x] |
-| 9 | `c2Div` | nonzero divisor | [x] |
-| 10 | `c2Div` | zero divisor (C floating-point infinities/NaNs) | [x] |
-| 11 | `c2Norm` | nonzero vector | [x] |
-| 12 | `c2Norm` | zero vector (C floating-point NaNs) | [x] |
-| 13 | `c2Minv` | A lower on both components | [x] |
-| 14 | `c2Minv` | mixed component ordering and equality | [x] |
-| 15 | `c2Maxv` | A higher on both components | [x] |
-| 16 | `c2Maxv` | mixed component ordering and equality | [x] |
-| 17 | `c2Skew` | arbitrary finite vector | [x] |
-| 18 | `c2Absv` | positive, negative, and signed-zero components | [x] |
-| 19 | `c2AABBtoAABB` | overlapping interiors | [x] |
-| 20 | `c2AABBtoAABB` | touching boundary (inclusive overlap) | [x] |
-| 21 | `c2AABBtoAABB` | B strictly left of A | [x] |
-| 22 | `c2AABBtoAABB` | B strictly right of A | [x] |
-| 23 | `c2AABBtoAABB` | B strictly below A | [x] |
-| 24 | `c2AABBtoAABB` | B strictly above A | [x] |
-| 25 | `c2AABBtoPoint` | point in interior | [x] |
-| 26 | `c2AABBtoPoint` | point on each boundary/corner (inclusive) | [x] |
-| 27 | `c2AABBtoPoint` | point below each of the four limits | [x] |
-| 28 | `c2CircleToPoint` | point strictly inside | [x] |
-| 29 | `c2CircleToPoint` | point exactly on radius (exclusive) | [x] |
-| 30 | `c2CircleToPoint` | point strictly outside | [x] |
-| 31 | `c2RaytoCircle` | forward hit inside `A.t` | [x] |
-| 32 | `c2RaytoCircle` | tangent hit (`disc == 0`) | [x] |
-| 33 | `c2RaytoCircle` | negative discriminant miss | [x] |
-| 34 | `c2RaytoCircle` | intersection behind origin (`t < 0`) | [x] |
-| 35 | `c2RaytoCircle` | intersection beyond segment (`t > A.t`) | [x] |
-| 36 | `c2RaytoAABB` | hit left face | [x] |
-| 37 | `c2RaytoAABB` | hit right face | [x] |
-| 38 | `c2RaytoAABB` | hit bottom face | [x] |
-| 39 | `c2RaytoAABB` | hit top face | [x] |
-| 40 | `c2RaytoAABB` | ray starts inside box | [x] |
-| 41 | `c2RaytoAABB` | segment bounding box rejects | [x] |
-| 42 | `c2RaytoAABB` | segment bounding boxes overlap but separating-axis `d > 0` | [x] |
-| 43 | `c2RaytoAABB` | plane-parameter set has no `t <= 1` | [x] |
-| 44 | `c2CCW90` | arbitrary finite vector | [x] |
-| 45 | `c2MulmvT` | arbitrary matrix/vector | [x] |
-| 46 | `c2RaytoCapsule` | start inside rectangular body | [x] |
-| 47 | `c2RaytoCapsule` | start inside A endcap only | [x] |
-| 48 | `c2RaytoCapsule` | start inside B endcap only | [x] |
-| 49 | `c2RaytoCapsule` | hit positive local-x side | [x] |
-| 50 | `c2RaytoCapsule` | hit negative local-x side | [x] |
-| 51 | `c2RaytoCapsule` | hit A circular end | [x] |
-| 52 | `c2RaytoCapsule` | hit B circular end | [x] |
-| 53 | `c2RaytoCapsule` | complete miss | [x] |
-| 54 | `c2RotIdentity` | no inputs; exact identity rotation | [x] |
-| 55 | `c2xIdentity` | no inputs; exact identity transform | [x] |
-| 56 | `c2Mulrv` | identity and nontrivial rotation values | [x] |
-| 57 | `c2MulrvT` | identity and nontrivial rotation values | [x] |
-| 58 | `c2MulxvT` | translation plus nontrivial rotation | [x] |
-| 59 | `c2RaytoPoly` | `bx_ptr == NULL` identity mode, count 4, entering hit | [x] |
-| 60 | `c2RaytoPoly` | non-null translated/rotated transform, entering hit | [x] |
-| 61 | `c2RaytoPoly` | count 0 and negative count | [x] |
-| 62 | `c2RaytoPoly` | counts 1 and 8 | [x] |
-| 63 | `c2RaytoPoly` | over-capacity count 9 with over-allocated backing storage | [x] |
-| 64 | `c2RaytoPoly` | parallel-outside rejection | [x] |
-| 65 | `c2RaytoPoly` | interval rejection (`hi < lo`) | [x] |
-| 66 | `c2RaytoPoly` | no entering plane (`index == ~0`) | [x] |
-| 67 | `c2CastRay` | `typeB == CIRCLE (0)` | [x] |
-| 68 | `c2CastRay` | `typeB == AABB (1)` | [x] |
-| 69 | `c2CastRay` | `typeB == CAPSULE (2)` | [x] |
-| 70 | `c2CastRay` | `typeB == POLY (3)`, null transform | [x] |
-| 71 | `c2CastRay` | `typeB == POLY (3)`, non-null transform | [x] |
-| 72 | `c2CastRay` | invalid enum values (`-1`, `4`, `INT_MIN`, `INT_MAX`) | [x] |
-| 73 | `poly_ray` | fixed two-ray composed operation | [x] |
-
+| 1 | `c2V` | arbitrary finite `x,y` constructor inputs | [x] |
+| 2 | `c2Dot` | arbitrary finite vector pair | [x] |
+| 3 | `c2Len` | nonzero finite vector | [x] |
+| 4 | `c2Len` | zero vector | [x] |
+| 5 | `c2Add` | arbitrary finite vector pair | [x] |
+| 6 | `c2Sub` | arbitrary finite vector pair | [x] |
+| 7 | `c2Mulvs` | arbitrary vector with positive, zero, and negative scalar | [x] |
+| 8 | `c2Div` | arbitrary vector with nonzero positive and negative divisor | [x] |
+| 9 | `c2Div` | zero divisor (IEEE infinity/NaN result, not rejected) | [x] |
+| 10 | `c2Norm` | nonzero finite vector | [x] |
+| 11 | `c2Norm` | zero vector (IEEE NaN components, not rejected) | [x] |
+| 12 | `c2Minv` | x from A, y from A | [x] |
+| 13 | `c2Minv` | x from A, y from B | [x] |
+| 14 | `c2Minv` | x from B, y from A | [x] |
+| 15 | `c2Minv` | x from B, y from B, including equal components | [x] |
+| 16 | `c2Maxv` | x from A, y from A | [x] |
+| 17 | `c2Maxv` | x from A, y from B | [x] |
+| 18 | `c2Maxv` | x from B, y from A | [x] |
+| 19 | `c2Maxv` | x from B, y from B, including equal components | [x] |
+| 20 | `c2Skew` | arbitrary finite vector | [x] |
+| 21 | `c2Absv` | positive x, positive y | [x] |
+| 22 | `c2Absv` | negative x, positive y | [x] |
+| 23 | `c2Absv` | positive x, negative y | [x] |
+| 24 | `c2Absv` | negative x, negative y, including signed zero boundaries | [x] |
+| 25 | `c2RaytoCircle` | secant hit with `0 < t < A.t` | [x] |
+| 26 | `c2RaytoCircle` | tangent hit (`disc == 0`) | [x] |
+| 27 | `c2RaytoCircle` | hit at lower boundary `t == 0` | [x] |
+| 28 | `c2RaytoCircle` | hit at upper boundary `t == A.t` | [x] |
+| 29 | `c2AABBtoAABB` | positive-area overlap | [x] |
+| 30 | `c2AABBtoAABB` | edge/corner contact (strict separation checks remain false) | [x] |
+| 31 | `c2RaytoAABB` | hit selected from min-x plane (`n=(-1,0)`) | [x] |
+| 32 | `c2RaytoAABB` | hit selected from max-x plane (`n=(1,0)`) | [x] |
+| 33 | `c2RaytoAABB` | hit selected from min-y plane (`n=(0,-1)`) | [x] |
+| 34 | `c2RaytoAABB` | hit selected from max-y plane (`n=(0,1)`) | [x] |
+| 35 | `c2RaytoAABB` | edge/corner contact and plane-time tie ordering | [x] |
+| 36 | `c2CCW90` | arbitrary finite vector | [x] |
+| 37 | `c2MulmvT` | arbitrary finite 2x2 matrix and vector | [x] |
+| 38 | `c2AABBtoPoint` | point strictly inside | [x] |
+| 39 | `c2AABBtoPoint` | point on min/max edge or corner | [x] |
+| 40 | `c2CircleToPoint` | point strictly inside | [x] |
+| 41 | `c2RaytoCapsule` | ray starts inside rectangular body | [x] |
+| 42 | `c2RaytoCapsule` | ray starts inside endpoint A circle | [x] |
+| 43 | `c2RaytoCapsule` | ray starts inside endpoint B circle | [x] |
+| 44 | `c2RaytoCapsule` | ray hits endpoint A from outside | [x] |
+| 45 | `c2RaytoCapsule` | ray hits endpoint B from outside | [x] |
+| 46 | `c2RaytoCapsule` | ray hits positive-radius side | [x] |
+| 47 | `c2RaytoCapsule` | ray hits negative-radius side | [x] |
+| 48 | `c2RotIdentity` | no inputs; identity rotation | [x] |
+| 49 | `c2xIdentity` | no inputs; identity transform | [x] |
+| 50 | `c2Mulrv` | arbitrary finite rotation coefficients/vector | [x] |
+| 51 | `c2MulrvT` | arbitrary finite rotation coefficients/vector | [x] |
+| 52 | `c2MulxvT` | arbitrary finite translation/rotation/vector | [x] |
+| 53 | `c2RaytoPoly` | `bx_ptr == NULL`, enter through edge 0 | [x] |
+| 54 | `c2RaytoPoly` | `bx_ptr == NULL`, enter through edge 1 | [x] |
+| 55 | `c2RaytoPoly` | `bx_ptr == NULL`, enter through edge 2 | [x] |
+| 56 | `c2RaytoPoly` | `bx_ptr == NULL`, enter through edge 3 | [x] |
+| 57 | `c2RaytoPoly` | non-null identity transform | [x] |
+| 58 | `c2RaytoPoly` | non-null translated transform | [x] |
+| 59 | `c2RaytoPoly` | non-null rotated transform | [x] |
+| 60 | `c2RaytoPoly` | maximum in-struct `count == 8` | [x] |
+| 61 | `c2CastRay` | `typeB=0` circle dispatch; `bx` ignored/null | [x] |
+| 62 | `c2CastRay` | `typeB=1` AABB dispatch; `bx` ignored/null | [x] |
+| 63 | `c2CastRay` | `typeB=2` capsule dispatch; `bx` ignored/null | [x] |
+| 64 | `c2CastRay` | `typeB=3` polygon dispatch with null transform | [x] |
+| 65 | `c2CastRay` | `typeB=3` polygon dispatch with non-null transform | [x] |
+| 66 | `poly_ray` | fixed two-ray composed operation and hit bitmask | [x] |
+| 67 | `c2RaytoPoly` | unchecked one-past-capacity `count == 9` with caller-provided padded backing storage | [x] |

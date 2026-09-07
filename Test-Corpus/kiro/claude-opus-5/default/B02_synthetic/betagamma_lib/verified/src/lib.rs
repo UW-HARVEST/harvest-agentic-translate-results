@@ -217,8 +217,8 @@ pub unsafe extern "C" fn betagamma(
         },
     ];
 
-    let num_blocks: c_int =
-        (core::mem::size_of_val(&blocks) / core::mem::size_of::<DataBlock>()) as c_int;
+    let num_blocks: c_int = (core::mem::size_of_val(&blocks)
+        / core::mem::size_of::<DataBlock>()) as c_int;
 
     let mut i: c_int = 0;
     while i < num_blocks {

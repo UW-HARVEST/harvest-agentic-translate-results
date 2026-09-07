@@ -1,16 +1,18 @@
 # Configuration Surface
 
-Mechanically derived from the sole public header entry point and every C
-control-flow branch in `smallestValue`: `if (head)`, `while (head->next)`, and
-`if (head->value < smallest)`. The API has no runtime options, modes, flags,
-feature gates, enums, lengths, element-type choices, formats, or byte-order
-settings. A valid input is a non-null, readable, null-terminated linked list of
-C `int` values.
+The public API has one entry point and no runtime options, modes, flags,
+element-type choices, format choices, byte-order choices, feature declarations,
+or higher-level wrappers. The mechanically visible valid-input axes are list
+length, the outcome sequence of `head->value < smallest`, duplicate values,
+and the full C `int` boundary values.
 
-| # | entry point(s) | configuration (options set + input shape) | |
-|---|----------------|-------------------------------------------|-|
-| 1 | `smallestValue` | singleton list; traversal loop is not entered | [x] |
-| 2 | `smallestValue` | multi-node list; every successor is greater than the running minimum, so the strict-less branch is never taken | [x] |
-| 3 | `smallestValue` | multi-node list; equal values exercise strict-less equality without updating the minimum | [x] |
-| 4 | `smallestValue` | multi-node list; one or more successors lower the running minimum, with randomized branch order and minimum position | [x] |
-| 5 | `smallestValue` | singleton and multi-node lists containing the full C `int` boundaries `INT_MIN` and `INT_MAX` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `smallestValue` | singleton list; randomized ordinary `int` value (loop executes zero times) | [x] |
+| 2 | `smallestValue` | singleton list; `INT_MIN` or `INT_MAX` | [x] |
+| 3 | `smallestValue` | two-node list; second value is greater than or equal to the head (comparison false) | [x] |
+| 4 | `smallestValue` | two-node list; second value is less than the head (comparison true) | [x] |
+| 5 | `smallestValue` | many-node nondecreasing/equal list; every comparison is false | [x] |
+| 6 | `smallestValue` | many-node strictly decreasing list; every comparison is true | [x] |
+| 7 | `smallestValue` | many-node mixed list; true and false comparison outcomes, including duplicate minima | [x] |
+| 8 | `smallestValue` | many-node list containing `INT_MIN`, `INT_MAX`, and randomized interior values | [x] |

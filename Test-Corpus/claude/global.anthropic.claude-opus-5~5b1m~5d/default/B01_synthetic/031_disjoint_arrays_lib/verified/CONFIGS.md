@@ -1,97 +1,115 @@
-# CONFIGS.md — Phase B configuration surface (valid inputs)
+# CONFIGS.md — Phase B configuration / valid-input surface table
 
-Mechanically derived from the branches the C source actually takes.
+## Axes derived from the C source
 
-## Axes the C code distinguishes
+The library has **no** runtime options, flags, modes, `#ifdef`s or global state.
+`grep -n 'if\|switch\|#if\|for' c_src/src/driver.c` yields only the branches
+already inventoried in `ERRORS.md`. The configuration surface is therefore
+purely **input shape**, across the **three** public entry points.
 
-**Profiles.** Although there are no cargo *features*, the dev and release
-profiles are genuinely different artifacts (release is `panic = "abort"`; dev
-enables `-C debug-assertions`, which changes how raw-pointer UB is trapped — this
-actually surfaced a real bug, see ERRORS.md note C). `scripts/check_features.sh`
-therefore runs the entire suite under `{release, dev} x {--no-default-features,
-default}`.
+### Entry points (full set, lowest level first)
 
-**Compile-time / feature axes** — none. `c_src/src/driver.c` contains no
-`#ifdef`/`#if` at all (only the `DRIVER_H_` include guard in the header), and
-`translation/Cargo.toml` declares no `[features]`. So there is exactly one build
-configuration. There are also no runtime option/mode/flag setters in the public
-API (no init struct, no context object, no globals): the *only* configuration a
-caller can express is the **arguments themselves**.
+| level | symbol | why it must be driven directly |
+|-------|--------|--------------------------------|
+| 0 (lowest) | `fma_array` | the actual kernel; `call_fma` only ever calls it with `mul1 = all-ones` and `add = all-zeros`, so the general `mul1*mul2+add` path is **unreachable** from the wrappers and would be untested by wrapper-only tests |
+| 1 | `call_fma`  | allocates the three VLAs and forwards to `fma_array`; only `len` and `data` vary |
+| 2 (convenience) | `driver` | the one-shot wrapper declared in `driver.h`: parse text → `call_fma` → `printf` |
 
-**Public entry points** (all three exported symbols; the low-level ones are
-driven directly, not just through the `driver()` one-shot wrapper):
+### Shape axes
 
-* `fma_array(out, mul1, mul2, add, len)` — lowest level, raw element kernel.
-* `call_fma(data, len)` — mid level; builds `ones`/`zeros` VLAs and calls
-  `fma_array`, returns `out[len-1]`.
-* `driver(in)` — top level; `sscanf` parse loop → `call_fma` → `printf`.
+* `len`: `0`, `1`, `2`, `3`, small (2..16), boundary-ish (99, 100, 101), larger (1000)
+* element values: zeros, ones, small positives, negatives, mixed sign,
+  `INT_MIN`, `INT_MAX`, values chosen to overflow `mul1*mul2`, values chosen to
+  overflow the `+add`, random full-range `i32`
+* `out` buffer state: pre-poisoned with a sentinel, to prove exactly `len`
+  elements are written and no more (tail must stay untouched)
+* `driver` text shapes: separator kind (space / tab / newline / `\r` / `\v` /
+  `\f` / mixed / run-of-many / none-needed-because-sign), sign prefix
+  (`+`/`-`/none), leading zeros, leading whitespace, trailing whitespace,
+  trailing garbage, count (0, 1, 2, 99, 100, 101, 150), token magnitude
+  (in-range / clamping), embedded NUL
 
-**Input-shape axes**
+## Rows (cross-product pruned to what the C actually distinguishes)
 
-| axis | values the C treats differently |
-|---|---|
-| A1 `len` (`fma_array`, `call_fma`) | `0` (loop/early-out rejected), `1` (single element == returned element), `2`, `3`, small odd/even, `100`, large (`1000`, `100000` → big VLAs) |
-| A2 element magnitude | zero, small (`-100..100`), full `i32` range, corners `{INT_MIN, INT_MAX, -1, 0, 1}` → drives the signed-overflow path of `mul*mul+add` |
-| A3 pointer aliasing (`fma_array` only — `out` is `restrict`, C built at `-O0`) | all four buffers distinct; `out == mul1`; `out == mul2`; `out == add`; `mul1 == mul2`; `mul1 == add`; all three inputs one buffer; all four one buffer; partial overlap `out = buf`, `mul1 = buf+1`; partial overlap `out = buf+1`, `mul1 = buf` |
-| A4 `driver` token count | `0`, `1`, `2`, `3`, `99`, `100` (cap boundary), `101`, `150` |
-| A5 `driver` whitespace separators | `" "`, `"  "` (multiple), `"\t"`, `"\n"`, `"\r"`, `"\v"`, `"\f"`, mixed runs, leading whitespace, trailing whitespace |
-| A6 `driver` sign / digit form | unsigned digits, `+` prefix, `-` prefix, leading zeros (`"007"`), `INT_MIN`/`INT_MAX` literals |
-| A7 `driver` terminator shape | end of string, non-whitespace separator (`","`, `";"`, `"."`, `"/"`), digits glued to letters (`"12abc"`), `"0x10"` form, trailing `-`/`+` |
-| A8 `driver` total input length | empty, 1 char, typical, oversized (~100 000 chars) |
+Every row is exercised with **many randomized inputs** (fixed seed
+`0x5EED_C0DE`, xorshift64* PRNG in `tests/common/mod.rs`) unless the row is a
+single fixed boundary shape. Both the C `.so` and the Rust `.so` are loaded with
+`libloading` and their outputs compared byte-for-byte.
 
-## Configuration table
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `fma_array` | `len == 1`, random `mul1`/`mul2`/`add` in a safe (non-overflowing) range; `out` poisoned, tail checked | [x] |
+| C2 | `fma_array` | `len == 2` and `len == 3` (smallest multi-element shapes), random small values | [x] |
+| C3 | `fma_array` | `len` random in 4..=64, random small values, `out` poisoned + tail checked | [x] |
+| C4 | `fma_array` | `len == 100` and `len == 1000` (large shape; exercises any vectorized/unrolled loop tail) | [x] |
+| C5 | `fma_array` | all elements zero; then all elements one; then `add` all-zero + `mul1` all-one (the exact shape `call_fma` uses) — isolates the identity path | [x] |
+| C6 | `fma_array` | mixed-sign and all-negative operands, random in `-1000..=1000` | [x] |
+| C7 | `fma_array` | **overflow shapes**: operands drawn from `{INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1, -1, 0, 1, 2, 65536, -65536, 46341, -46341}` so `mul1*mul2` and/or `+add` wrap; asserts wrapping codegen matches | [x] |
+| C8 | `fma_array` | fully random `i32` operands over the whole range (property-style, 4000 vectors) | [x] |
+| C9 | `fma_array` | `len` argument smaller than the buffers (partial write): asserts only the first `len` elements of `out` differ from the poison in both | [x] |
+| C10 | `call_fma` | `len == 1`, random `data[0]` over full `i32` range | [x] |
+| C11 | `call_fma` | `len` random in 2..=16, random `data` over full `i32` range (return must be `data[len-1]`) | [x] |
+| C12 | `call_fma` | `len == 99`, `100`, `101` (the shapes `driver` can produce, incl. its cap boundary) | [x] |
+| C13 | `call_fma` | `len == 1000` (VLA larger than the `driver` cap, still stack-safe) | [x] |
+| C14 | `call_fma` | `data` containing `INT_MIN`/`INT_MAX`/`0`/`-1` at the **last** index (the returned element) and at index 0 | [x] |
+| C15 | `call_fma` | `data` buffer longer than `len` — asserts the trailing elements are ignored | [x] |
+| C16 | `driver` | single integer, no whitespace: random value in `i32` range, rendered decimal | [x] |
+| C17 | `driver` | single integer with an explicit `+` sign; and with leading zeros (`"007"`, `"+000042"`) | [x] |
+| C18 | `driver` | two integers separated by one space; random values | [x] |
+| C19 | `driver` | `n` random integers (n in 2..=20) separated by a single space | [x] |
+| C20 | `driver` | `n` integers separated by **tabs**; by **newlines**; by `\r`; by `\v`; by `\f` — each of the whitespace classes `%d` skips | [x] |
+| C21 | `driver` | `n` integers separated by **runs** of mixed whitespace (e.g. `" \t\n  "`), random run lengths | [x] |
+| C22 | `driver` | leading whitespace before the first integer; trailing whitespace after the last | [x] |
+| C23 | `driver` | negative integers with **no** separator before the sign (`"5-3-2"`) — `%d` consumes `-3` as a new token, so the token count differs from the space-separated rendering | [x] |
+| C24 | `driver` | exactly **99** integers (one below the cap) | [x] |
+| C25 | `driver` | exactly **100** integers (at the cap) | [x] |
+| C26 | `driver` | exactly **101** integers (one past the cap — must print the 100th) | [x] |
+| C27 | `driver` | **150** and **300** integers (well past the cap) | [x] |
+| C28 | `driver` | all tokens `INT_MIN`/`INT_MAX` (`"-2147483648 2147483647"`) — in-range boundary values | [x] |
+| C29 | `driver` | tokens that overflow `int` and get **truncated to their low 32 bits** by glibc `%d` (`"2147483648"`→`-2147483648`, `"-2147483649"`→`2147483647`, `"99999999999999999999"`→`-1`), mixed with valid tokens | [x] |
+| C30 | `driver` | valid prefix + trailing garbage (`"1 2 3 abc 9"`, `"7 0x10"`, `"4 5 +"`) — early break | [x] |
+| C31 | `driver` | fully randomized text: random mix of integers, whitespace runs, and occasional garbage characters (200 cases) — end-to-end fuzz of the composed parse→`call_fma`→`printf` pipeline | [x] |
+| C32 | `driver` | repeated invocation (10x in a row) with different inputs in one process — proves no residual global state and that stdout ordering matches | [x] |
 
-Every row is driven with **many randomized inputs (fixed seed `0x5EED_1234_ABCD_9876`,
-SplitMix64)** through both `.so`s and compared byte-for-byte, except where the
-row is by construction a single fixed shape (still repeated over randomized
-*values*).
+## Binary executable
 
-| #  | entry point(s) | configuration (options set + input shape) | test | [x] |
-|----|----------------|--------------------------------------------|------|-----|
-| 1  | `fma_array` | A1=`0`, A3=distinct, canary-checked `out` (no stores expected) | `cfg01_fma_len0_distinct` | [x] |
-| 2  | `fma_array` | A1=`1`, A2=small random, A3=distinct | `cfg02_fma_len1_small` | [x] |
-| 3  | `fma_array` | A1=`2`, A2=small random, A3=distinct | `cfg03_fma_len2_small` | [x] |
-| 4  | `fma_array` | A1=`3`,`5`,`7`,`8`,`16` (odd+even), A2=small random, A3=distinct | `cfg04_fma_small_lens_small_vals` | [x] |
-| 5  | `fma_array` | A1=`64`, A2=full `i32` random (overflow reachable), A3=distinct | `cfg05_fma_len64_full_range` | [x] |
-| 6  | `fma_array` | A1=`100`, A2=corner set `{INT_MIN,INT_MAX,-1,0,1}` random mix, A3=distinct | `cfg06_fma_corners` | [x] |
-| 7  | `fma_array` | A1=`1000`, A2=full range, A3=distinct | `cfg07_fma_len1000_full_range` | [x] |
-| 8  | `fma_array` | A1 random `1..=32`, A3=`out == mul1` (in-place on first factor) | `cfg08_fma_alias_out_eq_mul1` | [x] |
-| 9  | `fma_array` | A1 random `1..=32`, A3=`out == mul2` (in-place on second factor) | `cfg09_fma_alias_out_eq_mul2` | [x] |
-| 10 | `fma_array` | A1 random `1..=32`, A3=`out == add` (in-place on addend) | `cfg10_fma_alias_out_eq_add` | [x] |
-| 11 | `fma_array` | A1 random `1..=32`, A3=`mul1 == mul2` (square), distinct `out` | `cfg11_fma_alias_mul1_eq_mul2` | [x] |
-| 12 | `fma_array` | A1 random `1..=32`, A3=`mul1 == mul2 == add` (one input buffer), distinct `out` | `cfg12_fma_alias_all_inputs_same` | [x] |
-| 13 | `fma_array` | A1 random `1..=32`, A3=`out == mul1 == mul2 == add` (one buffer for everything) | `cfg13_fma_alias_everything_same` | [x] |
-| 14 | `fma_array` | A1 random `1..=32`, A3=partial overlap `out = buf`, `mul1 = buf+1` (forward) | `cfg14_fma_partial_overlap_forward` | [x] |
-| 15 | `fma_array` | A1 random `1..=32`, A3=partial overlap `out = buf+1`, `mul1 = buf` (backward) | `cfg15_fma_partial_overlap_backward` | [x] |
-| 16 | `call_fma` | A1=`0` (early-out) with non-NULL data | `cfg16_call_fma_len0` | [x] |
-| 17 | `call_fma` | A1=`1`, A2=full-range random | `cfg17_call_fma_len1` | [x] |
-| 18 | `call_fma` | A1=`2`,`3`,`4`,`5` , A2=full-range random | `cfg18_call_fma_tiny_lens` | [x] |
-| 19 | `call_fma` | A1 random `1..=100`, A2=small random | `cfg19_call_fma_random_lens_small` | [x] |
-| 20 | `call_fma` | A1 random `1..=100`, A2=corner set `{INT_MIN,INT_MAX,-1,0,1}` | `cfg20_call_fma_corners` | [x] |
-| 21 | `call_fma` | A1=`100` exactly (the count `driver` caps at), A2=full range | `cfg21_call_fma_len100` | [x] |
-| 22 | `call_fma` | A1=`1000`, `4096`, `100 000`, `600 000`, `1 500 000` (large VLAs; run on a 256 MiB-stack thread because the C VLAs live on the *caller's* stack) | `cfg22_call_fma_large_lens` | [x] |
-| 23 | `driver` | A4=`1`, A6=unsigned digits, A5/A7=no separators, A8=short | `cfg23_driver_single_token` | [x] |
-| 24 | `driver` | A4=`2..=8` random, A5=single space | `cfg24_driver_space_separated` | [x] |
-| 25 | `driver` | A4 random `1..=20`, A5=random mix of `" "`,`"\t"`,`"\n"`,`"\r"`,`"\v"`,`"\f"` runs | `cfg25_driver_mixed_whitespace` | [x] |
-| 26 | `driver` | A4 random `1..=20`, A5=leading **and** trailing whitespace runs | `cfg26_driver_leading_trailing_ws` | [x] |
-| 27 | `driver` | A4 random `1..=20`, A6=random mix of `+`-prefixed / `-`-prefixed / bare / leading-zero-padded literals | `cfg27_driver_sign_and_leading_zeros` | [x] |
-| 28 | `driver` | A4 random `1..=20`, A2=full `i32` range values incl. `INT_MIN`/`INT_MAX` | `cfg28_driver_full_range_values` | [x] |
-| 29 | `driver` | A4=`99`, `100`, `101`, `150` (cap boundary sweep), A5=space | `cfg29_driver_count_cap_sweep` | [x] |
-| 30 | `driver` | A4 random `2..=12`, A7=non-whitespace separator (`","`,`";"`,`"."`,`"/"`,`":"`) at a random position → truncated parse | `cfg30_driver_nonws_separator` | [x] |
-| 31 | `driver` | A4 random `1..=12`, A7=trailing garbage suffix (`"abc"`, `"x10"`, `"e5"`, `"+"`, `"-"`, `"0x10"`) | `cfg31_driver_trailing_garbage` | [x] |
-| 32 | `driver` | A8=oversized (~100 000 chars, ≫100 tokens), A5=space | `cfg32_driver_oversized_input` | [x] |
-| 33 | `driver` | fully randomized fuzz: random count `0..=140`, random values, random whitespace, random optional garbage tail (2000 cases) | `cfg33_driver_fuzz` | [x] |
-| 34 | `driver`+`call_fma`+`fma_array` | end-to-end composed pipeline: parse with `driver`, then reproduce with `call_fma`/`fma_array` on the same data and cross-check all three exports agree between C and Rust *and* that the printed value equals `data[min(n,100)-1]` | `cfg34_pipeline_cross_check` | [x] |
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)` —
+there is **no** `add_executable`, and `driver.c` has no `main`. Likewise
+`translation/Cargo.toml` declares only `[lib] crate-type = ["cdylib"]` with no
+`[[bin]]`. **The project builds no binary**, so the "compare C and Rust stdout
+of the driver binary" gate is vacuous. `driver`'s `printf` output is instead
+compared byte-for-byte by capturing file descriptor 1 around each call
+(`tests/common/mod.rs::capture_stdout`), which covers the same ground.
 
-## How `driver`'s stdout is compared
+## Test adequacy — mutation check (22 mutants injected into `src/lib.rs`)
 
-`driver` prints with `printf`, so the differential harness cannot simply compare
-return values. `common::capture_stdout` runs the calls in a **forked child**
-whose fd 1 is redirected to a temporary file. Forking (rather than redirecting
-fd 1 in-process) is essential: `libtest` writes its own `"test foo ... ok"`
-progress lines to fd 1 from the main thread, and an in-process redirect spliced
-those into the captured bytes and produced bogus divergences. All of a test's
-inputs are driven inside **one** child per library, and the transcript is split
-back into one line per input (`driver` always prints exactly one `"%d\n"`), which
-keeps the cost at two `fork()`s per test while still attributing each output line
-to its input.
+To prove the differential suite can actually *fail*, each mutant was built and the
+whole suite re-run. `src/lib.rs` was restored and its md5 re-verified
+(`814bca90b2443d7609a6d39af97faf10`) after every trial.
+
+**17 / 22 killed.** All 5 survivors are provably semantically equivalent to the C:
+
+| mutant | outcome | why |
+|--------|---------|-----|
+| `out[n-1]` → `out[0]` | KILLED | |
+| `driver` cap `100` → `99` | KILLED | |
+| `driver` cap `100` → `101` | KILLED | |
+| `wrapping_mul` → `saturating_mul` | KILLED | |
+| `wrapping_add` → `saturating_add` | KILLED | |
+| `fma_array` loop `i < len` → `i <= len` | KILLED | |
+| `fma_array` loop `i < len` → `i < len-1` | KILLED | |
+| `matched != 1` → `matched == 0` | KILLED | |
+| `if len == 0 { return 0 }` → `return 1` | KILLED | |
+| `ones[i] = 1` → `2` | KILLED | |
+| `zeros[i] = 0` → `1` | KILLED | |
+| `cursor.add(nb)` → `cursor.add(nb+1)` | KILLED | |
+| `printf("%d\n")` → `printf("%d")` | KILLED | |
+| `sscanf("%d%zn")` → `"%i%zn"` | KILLED | |
+| `if len < 0 { return 0 }` → `return 7` | KILLED | |
+| `call_fma(.., i)` → `call_fma(.., i-1)` | KILLED | |
+| drop the `+ add[i]` term | KILLED | |
+| `matched != 1` → `matched < 1` | survived | **equivalent**: `%n`/`%zn` conversions are not counted, so `sscanf("%d%zn", ..)` returns only `-1`, `0` or `1` (verified empirically against glibc). `!= 1` and `< 1` therefore agree on the whole domain. |
+| `sscanf("%d%zn")` → `"%d%n"` | survived | **equivalent on this target**: `nb` is re-zeroed every iteration, so a 4-byte `%n` store into the low half of a little-endian `usize` leaves the value unchanged for any `nb < 2^31`. (The translation still uses `%zn` with a `size_t`, exactly matching the C.) |
+| `data` init `[0; 100]` → `[1; 100]` | survived | **equivalent**: the C leaves `int data[100]` *uninitialized*; only the first `i` elements — every one written by `sscanf` — are ever read. The initial value is unobservable, which is why the Rust may safely zero it. |
+| swap the `mul1`/`mul2` arguments | survived | **equivalent**: integer multiplication is commutative. |
+| `out[0] = 0;` → `out[0] = 9;` | survived | **equivalent**: `fma_array` unconditionally overwrites `out[0]` when `len >= 1` (and `len == 0` returns early). This mirrors the same dead store present in the C at driver.c:40. |

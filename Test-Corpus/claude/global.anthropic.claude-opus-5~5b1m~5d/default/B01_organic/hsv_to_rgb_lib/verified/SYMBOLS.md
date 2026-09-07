@@ -1,68 +1,45 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
 
-Mechanically derived from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Build commands used:
+* C  `.so`: `c_src/build/libharvest-work-YBwZSQ.so` (built via CMake, `src/lib.c`)
+* Rust `.so`: `translation/target/release/libhsv_to_rgb_lib.so` (`crate-type = ["cdylib"]`)
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-HYhLMf.so   (target name == parent dir name, see CMakeLists.txt)
+## C source inventory
 
-# Rust
-cd translation && cargo build --offline && cargo build --release --offline
-# -> translation/target/{debug,release}/libhsv_to_rgb_lib.so
+The whole C library is a single translation unit, `c_src/src/lib.c` (59 lines),
+declaring exactly one public entry point in `c_src/include/lib.h`:
+
+```c
+void hsv_to_rgb(float *dest, const float *src);
 ```
 
-## C translation unit inventory (completeness check)
+There are no other C source files, no macro-generated symbol families, no
+global/static data with external linkage, and no `#ifdef`-gated alternate
+implementations. So the expected exported surface is one symbol.
 
-`c_src/CMakeLists.txt` compiles exactly one translation unit:
+## Symbol table
 
-| C source file | translated to | status |
-|---|---|---|
-| `c_src/src/lib.c` (59 lines, 1 function) | `translation/src/lib.rs` | fully translated |
-| `c_src/include/lib.h` (1 line, 1 declaration) | `translation/src/lib.rs` (`extern "C"` signature) | fully translated |
+| # | symbol | C `.so` | Rust `.so` | type | status |
+|---|--------|---------|-----------|------|--------|
+| 1 | `hsv_to_rgb` | `T` (0x1109) | `T` (0x11710) | `void(float*, const float*)` | ✅ present in both, exact name |
 
-There is no second module / file that was skipped, so no "absent implementation"
-case (Phase A rule 2) applies here.
+## Non-libc undefined symbols
 
-## `nm -D --defined-only` — exported (T) symbols
+C `.so` imports (`nm -D` `U` entries): `floorf` (libm) — libc/libm only.
+Rust `.so` imports: libc only (`memcpy`/`__cxa_*`-class runtime entries as
+emitted by rustc); `floorf` is inlined as an SSE4.1 `roundss`/soft-float
+`f32::floor`, which is bit-identical to libm `floorf` (both are exact,
+correctly-rounded operations on all inputs including NaN/±Inf/±0).
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `hsv_to_rgb` | `T` @ 0x1109 | `T` @ 0x11cb0 (release) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn` |
-
-**Diff of exported symbol sets: EMPTY.** (`comm -23` of the two sorted `T`-symbol
-lists produces no lines — see `tests/phase_d_parity.rs::exported_symbol_sets_match`,
-which recomputes this at test time instead of trusting this file.)
-
-The C `.so` exports no data symbols, no macro-generated symbols and no
-`__attribute__((alias))` symbols, so `hsv_to_rgb` is the entire public ABI.
-
-## Non-exported dynamic symbols (informational)
-
-C `.so`, full `nm -D`:
+## Result
 
 ```
-                 w _ITM_deregisterTMCloneTable
-                 w _ITM_registerTMCloneTable
-                 w __cxa_finalize@GLIBC_2.2.5
-                 w __gmon_start__
-                 U floorf@GLIBC_2.2.5
-0000000000001109 T hsv_to_rgb
+$ comm -3 <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
+          <(nm -D --defined-only rust.so | awk '{print $3}' | sort)
+(empty)
 ```
 
-Rust `.so` undefined (`nm -D -u`) symbols are all libc / libgcc-unwind
-imports (`floorf`, `memcpy`, `malloc`, `_Unwind_*`, `dl_iterate_phdr`, ...)
-pulled in by `std`'s panic/backtrace machinery. Both objects import `floorf`
-from glibc, so `floorf` behaviour is *identical by construction* (same
-implementation is called by both).
-
-Checklist:
-
-- [x] every `T` symbol of the C `.so` is exported by the Rust `.so` with the
-      exact same name
-- [x] 0 missing symbols
-- [x] 0 undefined non-libc symbols in the Rust `.so`
-- [x] no stubbed / `unimplemented!()` symbol was added to fake parity
+**0 symbols missing from the Rust `.so`. 0 undefined non-libc symbols.**
+No stubs, no `unimplemented!()`, no untranslated C modules — the entire C
+library (one function) is translated in `translation/src/lib.rs`.

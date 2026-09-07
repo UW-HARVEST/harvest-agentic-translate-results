@@ -1,69 +1,81 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared libraries.
+Derived mechanically from `nm -D --defined-only` on both shared libraries.
 
-## Build commands
+## Build artifacts
+
+| side | path |
+|------|------|
+| C    | `c_src/build/libharvest-work-kwUWsC.so` |
+| Rust | `translation/target/release/libhalf2float_lib.so` |
+
+## C exported dynamic symbols (`nm -D --defined-only`)
+
+| addr | type | symbol |
+|------|------|--------|
+| `00000000000010f9` | `T` | `half2float` |
+
+Total: **1** exported symbol.
+
+## Rust exported dynamic symbols (`nm -D --defined-only`)
+
+| addr | type | symbol |
+|------|------|--------|
+| `0000000000013820` | `T` | `half2float` |
+
+Total: **1** exported symbol.
+
+## Diff
 
 ```
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-UrYD9e.so
-
-cd translation && cargo build --release
-# -> translation/target/release/libhalf2float_lib.so
+C symbols not exported by Rust:  (none)
+Rust-only extra symbols:         (none)
 ```
 
-## C `.so` exported (defined) dynamic symbols
+**Symbol diff is EMPTY.** ✅
 
-`nm -D --defined-only c_src/build/libharvest-work-UrYD9e.so`
+## Notes on non-exported C entities
 
-| # | symbol | type | present in Rust `.so`? |
-|---|--------|------|------------------------|
-| 1 | `half2float` | `T` (global text) | YES — `#[unsafe(no_mangle)] pub extern "C" fn half2float` |
+The C translation unit also defines three `static` (internal-linkage) tables.
+They are NOT dynamic symbols and correctly have no exported counterpart in
+Rust; they are `static` items in `translation/src/lib.rs`:
 
-That is the complete list. The C translation unit contains exactly one
-external definition; `m__mantissa`, `m__offset` and `m__exponent` are `static`
-(internal linkage) in C, so they are deliberately NOT exported and must NOT be
-exported by Rust either. The Rust translation keeps them as private
-(non-`#[no_mangle]`) `static` items, which matches.
+| C entity | linkage | Rust counterpart | table contents verified |
+|----------|---------|------------------|--------------------------|
+| `static uint32_t m__mantissa[2048]` | internal | `static m__mantissa: [u32; 2048]` | ✅ all 2048 entries identical |
+| `static uint16_t m__offset[64]`     | internal | `static m__offset: [u16; 64]`     | ✅ all 64 entries identical |
+| `static uint32_t m__exponent[64]`   | internal | `static m__exponent: [u32; 64]`   | ✅ all 64 entries identical |
 
-## Rust `.so` exported dynamic symbols
+Table equality was checked mechanically by parsing every `0x...` literal out of
+both `c_src/src/lib.c` and `translation/src/lib.rs` and comparing element-wise
+(lengths 2048/64/64 matched; zero differing elements).
 
-`nm -D --defined-only translation/target/release/libhalf2float_lib.so`,
-filtering out Rust-runtime/std internals (`_ZN…`, `rust_…`, `__rust…`):
+## Undefined (imported) symbols
 
-| # | symbol | type |
-|---|--------|------|
-| 1 | `half2float` | `T` (global text) |
+The Rust `.so` imports only libc/`std` runtime symbols. There are **0 missing
+or undefined non-libc symbols**. The whole C translation unit
+(`c_src/src/lib.c`, 376 lines) is fully translated — no module was skipped.
 
-## Symbol diff
+## Verified under both build profiles
 
-| direction | result |
-|-----------|--------|
-| C-exported symbols missing from Rust `.so` | **0 (empty)** |
-| Rust non-libc/non-std symbols undefined at load time | **0** |
+`run_all.sh` re-checks parity for each cdylib artifact:
 
-No symbol required translation work: the single C entry point already has a
-matching `extern "C"` export wrapper. No C module was skipped — `src/lib.c` is
-the only C source file listed in `c_src/CMakeLists.txt`, and all three of its
-static tables plus its one function are present in `translation/src/lib.rs`
-(table contents verified element-by-element, 2048 + 64 + 64 values, all equal).
-
-## Header surface
-
-`c_src/include/lib.h` in full:
-
-```c
-#include <stdint.h>
-
-float half2float(uint16_t h);
+```
+[release] C exports: 1, Rust exports: 1
+[release] symbol diff EMPTY ✅
+[release] 0 undefined non-libc symbols ✅
+[debug]   C exports: 1, Rust exports: 1
+[debug]   symbol diff EMPTY ✅
+[debug]   0 undefined non-libc symbols ✅
 ```
 
-One declaration, one definition, one export. Symbol parity is complete.
+All undefined symbols in the Rust `.so` are `@GLIBC`/`@GCC`-versioned libc and
+runtime imports, plus the standard weak `_ITM_*registerTMCloneTable` and
+`__gmon_start__` stubs — i.e. zero non-libc undefined symbols.
 
-## Feature combinations
+## Completeness
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only
-build configurations are the (empty) default feature set and
-`--no-default-features`, which are identical. Both are exercised; see
-`CONFIGS.md`.
+- [x] Every C-exported symbol is exported by Rust with the exact same name.
+- [x] `half2float` signature matches: `float half2float(uint16_t)` ⇔
+      `extern "C" fn half2float(h: u16) -> f32`.
+- [x] 0 missing/undefined non-libc symbols in the Rust `.so`.

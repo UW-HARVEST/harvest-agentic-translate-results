@@ -1,45 +1,38 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — Phase A: error-surface table
 
-Every distinct way `c_src/src/lib.c` rejects / errors on input, derived
-mechanically by grepping every `return`, every `NULL` check, every explicit
-range check and every min/max constant. There are no `assert`s in the source.
+Mechanically derived from every rejection / error-return site in
+`c_src/src/lib.c`. There are no `assert`s, no null-pointer parameters (the only
+public function takes four `int`s by value), and no allocation failures.
+Status constants: `STATUS_OK 0000=0`, `STATUS_WARNING 0001=1`,
+`STATUS_ERROR 0002=2`, `STATUS_CRITICAL 0377=255`.
 
-`STATUS_OK 0000`=0, `STATUS_WARNING 0001`=1, `STATUS_ERROR 0002`=2,
-`STATUS_CRITICAL 0377`=255.
+## Rejections reachable through the public `.so` boundary
 
-Recall from `SYMBOLS.md` that `initialize_test_data()` is never called, so in
-the shipped `.so` `node_count == 0` and `find_node_by_id()` *always* returns
-`NULL`. Rows 1–3 are therefore reachable for **every** `node_id`.
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
+|---|----------|---------------------------------------------|-------------------|------|---|
+| 1 | `jumpnode` (case `0001`, lib.c:124) | `operation_mode == 1` and `find_node_by_id(node_id) == NULL`. In the shipped `.so` `node_count` is permanently `0` (`initialize_test_data` is `static` and never called), so this fires for **every** `node_id`. | `STATUS_ERROR \| 0020` = `2\|16` = **18** | `err_row1_mode1_node_not_found` | [x] |
+| 2 | `jumpnode` (case `0002`, lib.c:145) | `operation_mode == 2` and `find_node_by_id(node_id) == NULL` — again every `node_id` in the shipped `.so`. | `STATUS_ERROR \| 0040` = `2\|32` = **34** | `err_row2_mode2_node_not_found` | [x] |
+| 3 | `jumpnode` (case `0004`, lib.c:174) | `operation_mode == 4` and `find_node_by_id(node_id) == NULL` — every `node_id` in the shipped `.so`. | `STATUS_ERROR \| 0100` = `2\|64` = **66** | `err_row3_mode4_node_not_found` | [x] |
+| 4 | `jumpnode` (`default:`, lib.c:202) | `operation_mode` is not one of `1,2,3,4` — i.e. any other `int`, including `0`, negatives, `5`, `INT_MIN`, `INT_MAX`, and out-of-range "enum" values passed across FFI. | `STATUS_ERROR \| 0200` = `2\|128` = **130** | `err_row4_default_mode`, `err_out_of_range_mode_exhaustive`, `err_mode_boundaries` | [x] |
+| 5 | `add_node` (lib.c:56) | `node_count >= MAX_NODES` (100) on entry. Note this is a **signed `int`** comparison. | returns `STATUS_ERROR` = **2**, node not stored, `node_count` unchanged | `err_row5_add_node_capacity`, `err_add_node_capacity_guard_is_a_signed_compare` (via the C harness; unreachable from the public `.so` because `add_node` is `static` and only ever called 7 times by dead code) | [x] |
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|---|----------|---------------------------------------------|-------------------|------|-----|
-| 1 | `jumpnode` (case `0001`, lib.c:124-126) | `find_node_by_id(node_id) == NULL` — i.e. any `node_id` in the default library | `return STATUS_ERROR \| 0020` = `2\|16` = **18** | `err_row1_mode1_node_not_found` | [x] |
-| 2 | `jumpnode` (case `0002`, lib.c:145-147) | `find_node_by_id(node_id) == NULL` — any `node_id` in the default library | `return STATUS_ERROR \| 0040` = `2\|32` = **34** | `err_row2_mode2_node_not_found` | [x] |
-| 3 | `jumpnode` (case `0004`, lib.c:174-176) | `find_node_by_id(node_id) == NULL` — any `node_id` in the default library | `return STATUS_ERROR \| 0100` = `2\|64` = **66** | `err_row3_mode4_node_not_found` | [x] |
-| 4 | `jumpnode` (`default:`, lib.c:201-203) | `operation_mode` matches no `case` — i.e. any value not in {1,2,3,4}. **Out-of-range "enum" values crossing FFI**: 0, 5, -1, `INT_MIN`, `INT_MAX`, 8, 0x100000001-truncated, … | `result = STATUS_ERROR \| 0200` = `2\|128` = **130** | `err_row4_default_unknown_mode`, `err_row4_exhaustive_mode_scan`, `err_row4_ffi_enum_edges` | [x] |
-| 5 | `find_node_by_id` (lib.c:52) | no element of `node_storage[0..node_count)` has `.id == id` (includes the `node_count == 0` case, which is always true in the default library) | `return NULL` → propagates to rows 1/2/3 | covered by rows 1–3; and `err_row5_unknown_id_with_data` under the init shim | [x] |
-| 6 | `add_node` (lib.c:56-58) | `node_count >= MAX_NODES` (100) — storage full | `return STATUS_ERROR` = **2**; node is NOT stored, `node_count` unchanged | `err_row6_add_node_capacity` (init shim; `initialize_test_data` adds 7 so the limit is not hit — verified indirectly by never exceeding 100 and by state-reset behaviour) | [x] |
-| 7 | `safe_double_to_int` (lib.c:101-103) | `value > 2147483647.0` — upper saturation | clamps to `2147483647.0`, returns **2147483647** | `err_row7_saturate_high` (via case `0004`/`0001` accumulations) | [x] |
-| 8 | `safe_double_to_int` (lib.c:104-106) | `value < -2147483648.0` — lower saturation | clamps to `-2147483648.0`, returns **-2147483648** | `err_row8_saturate_low` | [x] |
-| 9 | `process_backward` (lib.c:81) | `start_offset >= (int)size` (i.e. `depth >= 16` in case `0002`) — `ptr > start` is false immediately | loop body never runs, `return 0`; case `0002` result is `0 + 16*flags` | `err_row9_depth_at_or_past_end` | [x] |
-| 10 | `process_backward` (lib.c:78-84) | `start_offset < 0` (negative `depth` in case `0002`) — `start` is before the array, so the loop reads **out of bounds** of `temp_array` | **Undefined behaviour** in C (reads adjacent stack). Not a defined rejection; deliberately excluded from byte-equality assertions, see note below. | `err_row10_negative_depth_is_ub` (documents / does not assert equality) | [x] |
-| 11 | `jumpnode` case `0002` (lib.c:161) | `(int)array_size * flags` overflows `int` (`16 * flags`, i.e. \|flags\| > 134217727) | signed-overflow UB in C; gcc wraps in practice. Rust uses `wrapping_mul`. Compared over the non-overflowing range, and separately observed to agree on wrap. | `err_row11_flags_overflow` | [x] |
-| 12 | `jumpnode` case `0003` (lib.c:165) | extreme `node_id`/`depth` (`INT_MIN`, `INT_MAX`) make `sprintf` emit its longest output: `"Node_-2147483648_Depth_-2147483648"` = 34 chars + NUL = 35 bytes into `char buffer[50]` — no overflow, but the boundary of the buffer | metric `= 2*34 + 010` = **76**, plus `flags & 0177` | `err_row12_sprintf_widest` | [x] |
+## Implicit clamps / saturations (non-erroring rejections of out-of-range values)
 
-## Generic FFI boundaries also covered (not distinct C rows)
+| # | function | trigger | expected C result | test | ✔ |
+|---|----------|---------|-------------------|------|---|
+| 6 | `safe_double_to_int` (lib.c:101) | `value > 2147483647.0` | clamped to `2147483647` | `err_row6_clamp_high` (mode 4, huge `depth`, via harness) | [x] |
+| 7 | `safe_double_to_int` (lib.c:104) | `value < -2147483648.0` | clamped to `-2147483648` | `err_row7_clamp_low` (mode 4, very negative `depth`, via harness) | [x] |
+| 8 | `process_backward` (lib.c:81) | `start_offset >= size` (i.e. `depth >= 16` in case `0002`) ⇒ `ptr > start` false immediately | sum contribution **0** (no iterations); result is `16 * flags` only | `err_row8_depth_ge_size` (via harness) | [x] |
 
-| condition | note | test |
-|-----------|------|------|
-| out-of-range enum values for `operation_mode` | C `switch` on `int` accepts any `int`; every value outside {1,2,3,4} must give 130 | `err_row4_exhaustive_mode_scan`, `err_row4_ffi_enum_edges` |
-| `INT_MIN`/`INT_MAX` for each of the 4 parameters, and all 4 at once | full corner cross-product | `err_int_extremes_cross_product` |
-| zero for every parameter | `operation_mode == 0` is the `default:` branch | `err_zero_arguments` |
-| null pointers / lengths | **N/A** — `jumpnode` takes four `int`s by value and no pointers or lengths; the public header is `int jumpnode(int,int,int,int);` | — |
+## Documented C undefined behaviour — excluded from differential assertions
 
-## Note on rows 10 and 11 (undefined behaviour)
+Recorded for completeness; these are *not* rejections, they are UB, so
+byte-identical behaviour is not required and not asserted.
 
-Rows 10 and 11 are genuine *C* undefined behaviour rather than defined
-rejections, and row 10's result depends on unrelated stack bytes. They are
-listed for completeness and have tests, but those tests assert only what is
-architecturally guaranteed (row 11: two's-complement wrap agreement) or merely
-exercise the path without asserting bit-equality (row 10). Every other row is
-asserted byte-identical between the C and Rust `.so`s.
+| # | site | trigger | why excluded |
+|---|------|---------|--------------|
+| U1 | `process_backward` (lib.c:78-84) | `start_offset < 0` in case `0002` ⇒ `start` is before `array`, so the loop walks off the bottom of the 20-`int` stack array reading uninitialised/other stack memory | out-of-bounds read; value depends on the compiler's stack layout. Reachable only when a node exists, i.e. only through the test harness, and only for negative `depth`. |
+| U2 | `jumpnode` case `0002` (lib.c:161) | `(int)array_size * flags` overflows `int` | signed overflow UB; Rust uses `wrapping_mul`, which is what both compilers actually emit. Randomized tests keep `flags` small enough to avoid it, and a separate wrapping cross-check is done in Phase B. |
+| U3 | `safe_double_to_int` (lib.c:108) | `value` is NaN | `(int)NaN` is UB in C. **Measured**: C returns `-2147483648` (x86-64 `cvttsd2si` sentinel), Rust's `as` returns `0`. This is the *only* input on which the two disagree, and it is unreachable from the public API: `add_node` hardcodes `data[] = {0100,0200,0300,0400}` so `sqrt` never sees a negative argument, and case `0001` only ever sums finite stored `value`s, so no `inf - inf` can arise. Left as a faithful non-UB translation rather than hard-coding a platform-specific UB result. Asserted unreachable by `nan_divergence_is_unreachable_from_public_api`. |
+| U4 | `add_node` (lib.c:56-69) | `node_count < 0` on entry | C's guard is a **signed** compare, so a negative count does not trip it and the function stores into `node_storage[negative]`. In this link `node_storage[-1]` overlaps `node_count` *exactly* (`nm`: node_count @ 0x4040, node_storage @ 0x4060 — precisely `sizeof(Node)` = 32 apart), so `node_storage[node_count].id = id` overwrites `node_count` with `id`; every later field assignment re-reads that clobbered index and stores ~135 KB past the 3200-byte array, and the C **SIGSEGVs**. Not differentially testable — the C cannot survive the input. **A real translation bug was found and fixed here anyway**: the Rust had `NODE_COUNT as usize >= MAX_NODES`, whose unsigned cast rejects (returns `STATUS_ERROR`) inputs the C accepts (returns `STATUS_OK`); it is now the signed `NODE_COUNT >= MAX_NODES as c_int`. Unreachable from the public API, where `node_count` only ever starts at 0 and is incremented. |
+| U5 | `process_backward` (lib.c:78) | `size >= 2^61` via the test hook | `array + size` overflows the address computation. C silently wraps; Rust's `ptr::offset` precondition check aborts when built with `-C debug-assertions=on`. Both are UB, and `jumpnode` only ever passes the constant `0o20`, so this is a build-config artifact rather than a semantic difference. Tests cap `size` at `u16::MAX`. |

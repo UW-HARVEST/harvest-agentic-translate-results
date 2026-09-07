@@ -1,75 +1,56 @@
-# SYMBOLS.md — public symbol surface (Phase A)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Source of truth: `nm -D --defined-only c_src/build/libdriver.so`
+Compared against: `nm -D --defined-only translation/target/release/libdriver.so`
 
-```
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libdriver.so
+## Dynamic symbols DEFINED (exported) by the C `.so`
 
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libdriver.so
-```
+| # | symbol | type | C declaration | present in Rust `.so`? |
+|---|--------|------|---------------|------------------------|
+| 1 | `w_utf8_drop`   | `T` (global text) | `const char * w_utf8_drop(const char * string)` — non-`static`, defined in `src/lib.c:39`, not in `include/lib.h` (still externally linkable) | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn w_utf8_drop` |
+| 2 | `w_utf8_filter` | `T` (global text) | `char * w_utf8_filter(const char * string, bool replacement)` — declared in `include/lib.h:3`, defined in `src/lib.c:59` | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn w_utf8_filter` |
 
-## C source inventory (completeness check)
+There are no other non-`static` functions, no global variables, no macro-generated
+exports, and no additional translation units (`CMakeLists.txt` lists exactly one
+source file, `src/lib.c`). The `valid_1` .. `valid_4` and `REPLACEMENT_INC`
+identifiers are preprocessor macros and therefore produce no symbols.
 
-The whole C library is a single translation unit, so there is no possibility of
-a "skipped module":
+## Missing-symbol analysis
 
-| C file | translated in | status |
-|--------|---------------|--------|
-| `c_src/src/lib.c` (119 lines) | `translation/src/lib.rs` | translated in full |
-| `c_src/include/lib.h` (3 lines, declares `w_utf8_filter` only) | — (header) | n/a |
-
-`c_src/src/lib.c` defines exactly two functions with external linkage
-(`w_utf8_drop`, `w_utf8_filter`) plus four function-like macros
-(`valid_1` … `valid_4`, no symbols emitted) and one object macro
-(`REPLACEMENT_INC`, no symbol emitted). Nothing else in the file has external
-linkage, so the exported surface below is complete.
-
-## Defined dynamic symbols
-
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `w_utf8_drop`   | `T` | `T` | not declared in `lib.h`, but non-`static` in `lib.c`, therefore exported. `const char *(const char *)` |
-| 2 | `w_utf8_filter` | `T` | `T` | `char *(const char *, _Bool)`; Rust wrapper takes `c_uchar` — identical ABI (GCC emits `cmpb $0x0` on the incoming byte, so *any* non-zero byte is true) |
-
-**Symbol diff (C defined − Rust defined): EMPTY.**
-**Symbol diff (Rust defined − C defined): EMPTY.**
-
-No macro-generated symbols exist (`valid_1` … `valid_4` are preprocessor
-macros; `REPLACEMENT_INC` is an object-like macro).
-
-## Undefined (imported) symbols
-
-The C `.so` imports only these non-weak symbols; all are libc:
+**MISSING FROM RUST: none.** The symbol diff is empty in both directions:
 
 ```
-__assert_fail@GLIBC_2.2.5  malloc@GLIBC_2.2.5  memcpy@GLIBC_2.14
-realloc@GLIBC_2.2.5        strdup@GLIBC_2.2.5  strlen@GLIBC_2.2.5
+$ diff <(nm -D --defined-only c_src/build/libdriver.so    | awk '{print $2,$3}' | sort) \
+       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $2,$3}' | sort)
+(no output)
 ```
 
-The Rust `.so` imports the same six, plus the libc/`libgcc` symbols the Rust
-runtime itself needs (`_Unwind_*`, `abort`, `free`, `memmove`, `memset`,
-`mmap64`, `dl_iterate_phdr`, …). **0 undefined non-libc / non-unwinder
-symbols.**
+No module/file of the C source was skipped, so no additional translation work was
+required, and no stub/`unimplemented!()` was introduced.
 
-Verify with:
+## Dynamic symbols UNDEFINED (imported)
 
-```sh
-diff <(nm -D --defined-only c_src/build/libdriver.so    | awk '{print $NF}' | sort) \
-     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort)
-```
+The C `.so` imports: `__assert_fail`, `malloc`, `realloc`, `strdup`, `strlen`,
+`memcpy` (plus the toolchain's `__cxa_finalize`, `__gmon_start__`,
+`_ITM_*registerTMCloneTable` weak stubs).
 
-(`translation/check_symbols.sh` automates exactly this and must print
-`SYMBOL PARITY: OK`.)
+The Rust `.so` imports the same six libc functions (it calls the real `malloc` /
+`realloc` / `strdup` / `strlen` / `memcpy` / `__assert_fail` via `extern "C"`, so
+the returned buffer is `free()`-able by the caller exactly as with the C library),
+plus the Rust standard library's own libc/unwinder dependencies
+(`_Unwind_*`, `abort`, `free`, `memset`, `mmap64`, `pthread_key_*`, `write`, ...).
+
+**0 missing / 0 unresolvable non-libc undefined symbols in the Rust `.so`.**
+Every undefined symbol in the Rust `.so` is provided by `libc.so.6`,
+`libgcc_s.so.1` or is a weak toolchain stub, verified by the tests loading the
+Rust `.so` with `libloading` (`dlopen` succeeds, which requires full relocation
+of all non-lazy symbols).
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
-buildable configuration is the default one (`--no-default-features` is also
-valid and produces an identical crate — verified by
-`translation/check_all_features.sh`). The symbol parity check above is
-performed for every one of those configurations.
+`translation/Cargo.toml` declares **no `[features]` table** and no optional
+dependencies, so the only build configuration is the default one
+(`--no-default-features` is equivalent to the default). Phase D's
+"repeat for every feature combination" therefore collapses to the single
+default configuration, which is confirmed programmatically by
+`tests/check_features.sh`.

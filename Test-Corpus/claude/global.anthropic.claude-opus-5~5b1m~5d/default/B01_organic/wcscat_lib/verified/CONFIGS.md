@@ -1,95 +1,97 @@
-# CONFIGS.md — Phase A: configuration-surface table (valid inputs)
+# CONFIGS.md — Phase B configuration-surface table
 
-## Axes the C actually branches on
+## Axes derived from the C source
 
-There are no runtime options, no flags, no modes, no `#ifdef`s and no global
-state in `c_src/` — `grep -c '#if\|#ifdef\|static\|extern' c_src/src/lib.c` finds
-none of them. The single public entry point is also the lowest-level one:
+`c_src/src/lib.c` exposes exactly one public entry point, `wcscat`, and it is
+also the lowest-level entry point — there is no convenience wrapper layer, no
+internal helper with separate semantics, and no one-shot vs. streaming split. So
+the "full set of public entry points" is `{ wcscat }`.
 
-| entry point | signature | it *is* the low-level API (no wrappers exist) |
-|-------------|-----------|-----------------------------------------------|
-| `wcscat` | `int wcscat(wchar_t *dst, size_t numElem, const wchar_t *src)` | yes — `nm -D` exports exactly this one symbol |
+There are **no runtime options, modes or flags**: no global state, no
+`set_*`/`init` function, no `#ifdef` in `lib.c` or `lib.h`, and no Cargo
+features in `translation/Cargo.toml`. Consequently the configuration surface is
+driven entirely by **input shape**. The shapes the C code actually branches on:
 
-So the configuration surface is entirely **input shape**. The branches the C
-takes are (line numbers from `c_src/src/lib.c`):
+**Axis 1 — position `k` of the first NUL inside the `dst` window**
+(this is what the first `while` loop computes: `while (ptr < dst+numElem && *ptr != 0) ptr++`)
+- `k == 0` — destination is an empty string (pure copy)
+- `0 < k < numElem-1` — destination has a prefix (true append)
+- `k == numElem-1` — NUL sits on the last window element (zero room left for src)
+- no NUL in window — first loop saturates at `numElem` (error shape, see ERRORS.md E7)
 
-| axis | values the C distinguishes | where |
-|------|----------------------------|-------|
-| A. `dst` pointer | NULL / non-NULL | L7 |
-| B. `numElem` | `0` / `1` / `2` / small `n` / huge-but-safe / overflowing (`dst+numElem` wraps) | L7, L13, L15 |
-| C. `src` pointer | NULL / non-NULL | L9 |
-| D. `dst` window content | `dst[0]==0` (empty) / `0` at index `k` with `0<k<numElem` / no `0` in `[0,numElem)` (full) / `0` exactly at `numElem-1` | L13 |
-| E. `src` content | `src[0]==0` (empty) / length `L>=1` | L16 |
-| F. fit relation `k + L + 1` vs `numElem` | `<` (room to spare) / `==` (exact fit) / `== numElem+1` (off by one) / `>` (well over) | L15/L16/L19 |
-| G. `wchar_t` payload values | `0` only terminates; every other `i32` (incl. negatives, `i32::MIN/MAX`, surrogates, >U+10FFFF) is an ordinary char | L13, L16 (`!= 0` / `== 0` are the *only* value tests) |
-| H. tail of `dst` beyond the write | must be preserved bit-exactly (the C never touches it) | absence of any write past `ptr` |
-| I. `src`/`dst` aliasing | `src` disjoint / `src` points inside `dst` (forward element-by-element copy) | L16 |
+**Axis 2 — `strlen(src)` relative to the room left, `room = numElem - k`**
+(this is what the second `while` loop consumes)
+- `strlen(src) == 0` — empty source, copies only the terminator
+- `0 < strlen(src) < room - 1` — fits with slack
+- `strlen(src) == room - 1` — **exact fit**, terminator lands on the very last window element
+- `strlen(src) >= room` — overflow (error shape, ERRORS.md E9/E11)
 
-Rows below are the cross-product of A–I pruned to combinations the C treats
-differently. Rows that are *rejections* live in `ERRORS.md`; this table is the
-valid/accepted-input mirror, plus the shape combinations that reach a rejection
-through a *different code path* than the ones already tabulated there.
+**Axis 3 — `numElem` magnitude**
+- `1` (minimum accepted value; `0` is rejected, ERRORS.md E4)
+- small (2..8, where boundary arithmetic is dense)
+- typical (tens)
+- oversized relative to the string contents (`1 << 40`, ERRORS.md G3)
 
-Every row is driven with **many randomized inputs** (fixed-seed PRNG, seed
-`0x5EED_C0DE_1234_5678`), not a single hand-picked value: random `numElem`,
-random `k`, random `L`, random non-zero `wchar_t` fill (including negatives),
-random guard fill, and full-buffer bit-comparison including a guard region on
-both sides of the window.
+**Axis 4 — `numElem` versus the real allocation of `dst`**
+- `numElem == capacity` (the normal contract)
+- `numElem < capacity` (a short window inside a larger buffer — proves the C
+  never touches `dst[numElem..]`, and that a NUL beyond the window is invisible
+  to the first loop)
 
-## Row → test mapping
+**Axis 5 — element value domain (`wchar_t` is signed 4-byte `i32` here)**
+- plain ASCII (`1..=127`)
+- values above the BMP / `> 0xFFFF` (e.g. `0x10FFFF`) — would truncate under a
+  wrong 16-bit `wchar_t` mapping
+- high-bit-set / negative values (`i32::MIN`, `-1`, `0x8000_0000` as `i32`) —
+  would compare wrongly under an unsigned mapping
+- `i32::MAX`, and dense random draws over the whole `i32` domain excluding `0`
 
-Row `N` is covered by the test function `cfgNN_*` in
-`tests/phase_b_valid.rs` (e.g. row 9 → `cfg09_prefix_room_to_spare`). Each such
-test additionally cross-checks the observed buffer against an independent
-re-derivation of the C semantics (`fn model` in that file), so a row cannot pass
-by both implementations being wrong in the same way.
+**Axis 6 — residual bytes in `dst` beyond the NUL**
+- zero-filled tail vs. non-zero garbage tail. The C copies over the tail but
+  never zero-pads, so a garbage tail makes any spurious padding in the Rust
+  immediately visible.
 
-Rows 15/17/19 are additionally backed by hardware: `tests/phase_d_bounds.rs`
-places the buffers flush against `PROT_NONE` guard pages, so any access outside
-`[dst, dst+numElem)` — or past `src`'s terminator — faults instead of silently
-producing the right value.
+## Configuration table
 
-## Configuration-surface table
+Every row is exercised with **many randomized inputs** (fixed seed, a
+xorshift-based deterministic PRNG in the test file) rather than one hand-picked
+value, and asserts the return code **and the entire `dst` buffer including the
+bytes past `numElem`** match byte-for-byte between the C and Rust `.so`.
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `wcscat` | `numElem == 1`, `dst[0] == 0` (empty), `src` empty (`src[0]==0`) → exact fit in the smallest legal window | [x] |
-| 2 | `wcscat` | `numElem == 1`, `dst[0] == 0`, `src` non-empty → single-slot truncation path | [x] |
-| 3 | `wcscat` | `numElem == 2`, all four `dst`-empty/`dst`-full × `src`-empty/`src`-non-empty combinations | [x] |
-| 4 | `wcscat` | empty `dst` (`k==0`), random `L` with `L + 1 < numElem` → append into empty buffer, room to spare | [x] |
-| 5 | `wcscat` | empty `dst` (`k==0`), `L + 1 == numElem` → exact fit, last slot gets the NUL | [x] |
-| 6 | `wcscat` | empty `dst` (`k==0`), `L == numElem` → off-by-one, truncation | [x] |
-| 7 | `wcscat` | empty `dst` (`k==0`), `L >> numElem` (src far longer than the window) | [x] |
-| 8 | `wcscat` | non-empty `dst` prefix `0 < k < numElem-1`, `src` empty → writes a single NUL at `dst[k]`, prefix preserved | [x] |
-| 9 | `wcscat` | non-empty `dst` prefix `k`, random `L`, `k + L + 1 < numElem` → normal concatenation, room to spare | [x] |
-| 10 | `wcscat` | non-empty `dst` prefix `k`, `k + L + 1 == numElem` → exact fit | [x] |
-| 11 | `wcscat` | non-empty `dst` prefix `k`, `k + L == numElem` → off-by-one truncation (payload fits, terminator does not) | [x] |
-| 12 | `wcscat` | non-empty `dst` prefix `k`, `k + L > numElem` → truncation with partial copy, then `dst[0]=0` clobber | [x] |
-| 13 | `wcscat` | `dst` terminator exactly at `numElem-1` (`k == numElem-1`, one free slot), `src` empty → success, NUL written into the last slot | [x] |
-| 14 | `wcscat` | `dst` terminator exactly at `numElem-1`, `src` non-empty → truncation, one char written then `dst[0]=0` | [x] |
-| 15 | `wcscat` | `dst` completely full/unterminated in `[0,numElem)` → scan loop exhausts, `src` never read, `ret 34`, `dst[0]=0`, tail preserved | [x] |
-| 16 | `wcscat` | `dst` has its `0` *outside* the window (at index `>= numElem`) → still "full", same path as row 15 | [x] |
-| 17 | `wcscat` | `numElem` smaller than the real allocation, with a guard region after the window that must stay bit-identical (no over-write past `numElem`) | [x] |
-| 18 | `wcscat` | `numElem` huge but non-overflowing (`1<<40`, `1<<48`) with `dst` terminated early and `src` fitting inside the real allocation → success | [x] |
-| 19 | `wcscat` | `numElem` chosen so `dst + numElem` overflows (`SIZE_MAX`, `SIZE_MAX/4`, `SIZE_MAX/2`, `1<<62`) → both loops skipped, `ret 34`, `dst[0]=0` | [x] |
-| 20 | `wcscat` | extreme/negative `wchar_t` payloads in `src` and in the `dst` prefix (`i32::MIN`, `-1`, `i32::MAX`, `0xD800`, `0x110000`, `0x41424344`) — none may be mistaken for a terminator | [x] |
-| 21 | `wcscat` | `src` aliases `dst`: `src == dst.add(off)` for `off` inside the prefix (self-append), forward copy order | [x] |
-| 22 | `wcscat` | `src == dst` exactly (degenerate self-append) | [x] |
-| 23 | `wcscat` | `src` aliases the *tail* of `dst` beyond the window (`src == dst.add(numElem)`) → reads the region the window may not write | [x] |
-| 24 | `wcscat` | idempotence/sequencing: two `wcscat` calls in a row on the same buffer (append twice), the shape a real consumer produces | [x] |
-| 25 | `wcscat` | repeated append until the buffer saturates (loop until `ret != 0`), checking the whole state trajectory call-by-call | [x] |
-| 26 | `wcscat` | full randomized fuzz over the whole axis cross-product: random `dst` allocation size, random `numElem <= alloc`, random `k` (incl. "no terminator"), random `L`, random payloads, random guards — 200 000 cases | [x] |
-| 27 | `wcscat` | randomized fuzz with `numElem > alloc` restricted to cases where `dst` is terminated inside the allocation (so the C stays in bounds) | [x] |
-| 28 | `wcscat` | return-code domain closure: over the whole fuzz corpus, both implementations only ever return `{0, 22, 34}` and always return the *same* one | [x] |
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| C1 | `wcscat` | `k == 0` (empty dst), `strlen(src) == 0`, `numElem == 1`, `numElem == capacity` — minimal accepted call | [x] |
+| C2 | `wcscat` | `k == 0`, `strlen(src) == 0`, random `numElem` 1..64, zero-filled tail | [x] |
+| C3 | `wcscat` | `k == 0`, `strlen(src)` fits with slack, random `numElem` 2..64, ASCII src | [x] |
+| C4 | `wcscat` | `k == 0`, `strlen(src) == numElem - 1` — **exact fit**, random `numElem` | [x] |
+| C5 | `wcscat` | `0 < k < numElem-1` (true append), `strlen(src)` fits with slack, random `k`/`numElem`, ASCII | [x] |
+| C6 | `wcscat` | `0 < k < numElem-1`, `strlen(src) == numElem - k - 1` — **exact fit on append** | [x] |
+| C7 | `wcscat` | `k == numElem - 1` (NUL on last window element), `strlen(src) == 0` — the only src that still fits | [x] |
+| C8 | `wcscat` | `numElem == 1` crossed with `dst[0] ∈ {0, nonzero}` × `src` empty / non-empty (full 2×2 of the degenerate window) | [x] |
+| C9 | `wcscat` | `numElem` small (2..8), full cross-product of `k ∈ 0..numElem` × `strlen(src) ∈ 0..numElem+2` — dense exhaustive boundary sweep, no randomization gaps | [x] |
+| C10 | `wcscat` | `numElem < capacity` — short window inside a larger buffer, with **non-zero garbage** in `dst[numElem..capacity]`; asserts the tail is untouched | [x] |
+| C11 | `wcscat` | `numElem < capacity` where a NUL exists only *beyond* the window (so the first loop saturates) — proves the out-of-window NUL is invisible | [x] |
+| C12 | `wcscat` | valid append with `src` containing values `> 0xFFFF` (`0x10FFFF`, `0x1_0000`) — 16-bit-`wchar_t` regression guard | [x] |
+| C13 | `wcscat` | valid append with **negative / high-bit-set** `wchar_t` in `src` (`-1`, `i32::MIN`, `i32::MAX`) — signedness guard | [x] |
+| C14 | `wcscat` | valid append where `dst`'s prefix contains negative / high-bit-set values, so the first loop must skip them as non-NUL | [x] |
+| C15 | `wcscat` | valid append with a **non-zero garbage tail** after the NUL in `dst`, `src` fits with slack — proves no zero-padding is added past the copied terminator | [x] |
+| C16 | `wcscat` | oversized `numElem` (`1 << 40`) with `k == 0` in a small real buffer and a short `src` — nominal window vastly exceeds the allocation but the NUL stops the copy | [x] |
+| C17 | `wcscat` | fully randomized fuzz over all axes at once: random `capacity`, random `numElem <= capacity`, random NUL position (or none), random `strlen(src)` (fitting or overflowing), random `i32` element values over the whole domain | [x] |
 
-## Feature combinations
+## Final status
 
-`translation/Cargo.toml` declares no `[features]`, so the cross-product of
-features is a single point. Phases B and C are nevertheless re-run under
-`--no-default-features`, `--all-features` and the default, by script, to prove it.
+All 17 configuration rows (C1–C17, plus C17b) have a passing differential test
+in `tests/phase_b_configs.rs` (18 tests), each driven with many randomized
+inputs from a fixed-seed PRNG, plus one fully exhaustive sweep (C9 covers every
+`(numElem, k, strlen(src), value-domain, tail)` combination for `numElem` 1..8)
+and one 8000-iteration all-axis fuzz (C17).
 
-| combo | status |
-|-------|--------|
-| (default) | [x] |
-| `--no-default-features` | [x] |
-| `--all-features` | [x] |
+Phase B: **PASS** — 18/18 tests, 0 unchecked rows.
+
+### No binary target
+
+Neither project builds an executable driver: `c_src/CMakeLists.txt` contains
+only `add_library(... SHARED ...)` (no `add_executable`), and
+`translation/Cargo.toml` declares only `[lib] crate-type = ["cdylib"]` with no
+`[[bin]]` and no `src/main.rs`. The "compare C and Rust stdout" gate is therefore
+**N/A**.

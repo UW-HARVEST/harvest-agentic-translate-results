@@ -10,15 +10,6 @@
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
-// The float literals below are copied VERBATIM from the C source. Several carry
-// more decimal digits than `f32`/`f64` can represent; that is deliberate — the C
-// compiler rounds the same decimal text to the same nearest representable value,
-// so keeping the digits identical is what guarantees identical bytes. Shortening
-// them (as clippy suggests) would be a silent behaviour change.
-#![allow(clippy::excessive_precision)]
-// The explicit two-sided comparison in `c_float_to_uchar` is clearer than
-// `Range::contains` about the fact that NaN must fall through to the `else` arm.
-#![allow(clippy::manual_range_contains)]
 
 use std::ffi::c_uchar;
 

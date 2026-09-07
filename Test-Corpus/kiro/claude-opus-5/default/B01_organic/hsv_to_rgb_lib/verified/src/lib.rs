@@ -3,104 +3,100 @@
 //! Public ABI (from `nm -D` on the C shared object):
 //!   * `hsv_to_rgb`
 //!
-//! Behaviour is reproduced exactly, including the original code's quirks
-//! (no range clamping of the hue, `s == 0` exact float comparison, and the
-//! `default:` switch arm being reached for any sector index outside `0..=4`,
-//! which includes negative hues).
+//! Behaviour is reproduced exactly, including the original code's quirks:
+//! no range clamping or wrapping of the hue, the exact `s == 0` float
+//! comparison (which `-0.0` also satisfies), the `default:` switch arm being
+//! reached for any sector index outside `0..=4` (negative hues included), and
+//! the undefined `(int)floorf(...)` conversion.
+//!
+//! It also reproduces the *bit-level* results for non-finite inputs. The C
+//! compiler lowers each arithmetic operation to a single SSE instruction, and
+//! SSE NaN propagation is operand-order sensitive: `MULSS`/`SUBSS`/`DIVSS`
+//! return the FIRST (destination) operand when both operands are NaN, and the
+//! x86 "QNaN floating-point indefinite" `0xFFC0_0000` (note the set sign bit)
+//! for an invalid operation such as `0 * inf` or `inf - inf`. Plain Rust
+//! `*`/`-`/`/` leave the operand order to LLVM, which is free to commute, so
+//! the operations are spelled out below with the exact `src1`/`src2` ordering
+//! taken from the reference build's disassembly.
 
 use std::ffi::c_float;
 
-/// Quiet a NaN the way x86-64 SSE does when it forwards a source operand: a
-/// signalling NaN gets the significand MSB set, a quiet NaN passes through
-/// unchanged. Sign and payload are preserved in both cases.
+/// x86 "QNaN floating-point indefinite" — the result SSE produces for an
+/// invalid operation on non-NaN operands. Its sign bit is set.
+const INDEFINITE: u32 = 0xFFC0_0000;
+
+/// Force a NaN to be quiet, preserving its sign and payload, exactly as SSE
+/// does when propagating a signalling NaN.
 #[inline]
 fn quiet(x: f32) -> f32 {
     f32::from_bits(x.to_bits() | 0x0040_0000)
 }
 
-// The three helpers below reproduce the NaN-propagation rule of the SSE scalar
-// arithmetic instructions that GCC emits for `c_src/src/lib.c`:
-//
-//   "If either source operand is a NaN, the result is the FIRST source operand,
-//    converted to a quiet NaN."
-//
-// Float multiplication is commutative in value but NOT in NaN sign/payload
-// propagation, and the order of the machine operands is not always the order
-// written in the C source. From `objdump -d` of the reference build:
-//
-//   h / 60.0f          -> divss with `h`            first
-//   h - (float)i       -> subss with `h`            first
-//   1.0f - s           -> subss with `1.0f`         first
-//   v * (1.0f - s)     -> mulss with `(1.0f - s)`   first
-//   s * f              -> mulss with `s`            first
-//   v * (1.0f - s*f)   -> mulss with `(1.0f - s*f)` first
-//   1.0f - f           -> subss with `1.0f`         first
-//   s * (1.0f - f)     -> mulss with `(1.0f - f)`   first   <-- reversed vs. source
-//   v * (1.0f - ...)   -> mulss with `(1.0f - ...)` first
-//
-// Writing the helpers explicitly makes the result independent of whatever
-// operand order LLVM happens to pick for a commutative `fmul`, which otherwise
-// differs between the debug and release profiles.
-
-/// `a * b` with SSE NaN propagation, `a` being the first source operand.
+/// Shared SSE NaN/invalid-operation dispatch.
+///
+/// `a` is the instruction's first (destination) operand, `b` the second, which
+/// is the priority order SSE uses:
+/// 1. `src1` NaN  -> quieted `src1`
+/// 2. `src2` NaN  -> quieted `src2`
+/// 3. invalid op  -> `0xFFC0_0000`
+/// 4. otherwise   -> the IEEE result
 #[inline]
-fn c_mul(a: f32, b: f32) -> f32 {
+fn sse_op(a: f32, b: f32, op: impl FnOnce(f32, f32) -> f32) -> f32 {
     if a.is_nan() {
-        quiet(a)
-    } else if b.is_nan() {
-        quiet(b)
-    } else {
-        a * b
+        return quiet(a);
     }
-}
-
-/// `a - b` with SSE NaN propagation, `a` being the first source operand.
-#[inline]
-fn c_sub(a: f32, b: f32) -> f32 {
-    if a.is_nan() {
-        quiet(a)
-    } else if b.is_nan() {
-        quiet(b)
-    } else {
-        a - b
+    if b.is_nan() {
+        return quiet(b);
     }
-}
-
-/// `a / b` with SSE NaN propagation, `a` being the first source operand.
-#[inline]
-fn c_div(a: f32, b: f32) -> f32 {
-    if a.is_nan() {
-        quiet(a)
-    } else if b.is_nan() {
-        quiet(b)
-    } else {
-        a / b
+    let r = op(a, b);
+    if r.is_nan() {
+        // Neither operand was NaN, so a NaN result can only come from an
+        // invalid operation (`0 * inf`, `inf - inf`, `0 / 0`, `inf / inf`).
+        return f32::from_bits(INDEFINITE);
     }
+    r
 }
 
-/// `floorf(x)`, matching the NaN handling of the libm the C links against
-/// (`roundss`-style: a NaN source operand is forwarded, quieted).
+/// `MULSS a, b` — `a` is the destination operand.
 #[inline]
-fn c_floorf(x: f32) -> f32 {
-    if x.is_nan() { quiet(x) } else { x.floor() }
+fn fmul(a: f32, b: f32) -> f32 {
+    sse_op(a, b, |x, y| x * y)
 }
 
-/// Emulates the C cast `(int)x` for a `float` on x86-64 / AArch64 with the
-/// standard SSE / NEON conversion instructions.
+/// `SUBSS a, b` — computes `a - b`, `a` is the destination operand.
+#[inline]
+fn fsub(a: f32, b: f32) -> f32 {
+    sse_op(a, b, |x, y| x - y)
+}
+
+/// `DIVSS a, b` — computes `a / b`, `a` is the destination operand.
+#[inline]
+fn fdiv(a: f32, b: f32) -> f32 {
+    sse_op(a, b, |x, y| x / y)
+}
+
+unsafe extern "C" {
+    /// The very same `floorf` the C build calls (`call floorf@plt`), so hue
+    /// flooring — including NaN quieting and sign handling — is identical by
+    /// construction rather than by assumption.
+    safe fn floorf(x: c_float) -> c_float;
+}
+
+/// Emulates the C cast `(int)x` for a `float` as the reference build performs
+/// it (`cvttss2si`).
 ///
 /// The C standard leaves out-of-range float-to-int conversions undefined; the
-/// hardware used by the reference build produces the "integer indefinite"
-/// value `INT_MIN` for NaN and for anything outside `[INT_MIN, INT_MAX]`.
-/// Rust's `as` cast instead saturates, so the out-of-range cases are handled
-/// explicitly to keep the observable results identical.
+/// hardware produces the "integer indefinite" value `INT_MIN` for NaN and for
+/// anything outside the representable range. Rust's `as` cast instead
+/// saturates, so those cases are handled explicitly.
 #[inline]
-fn c_float_to_int(x: f32) -> i32 {
+fn cvttss2si(x: f32) -> i32 {
     // 2147483648.0 == 2^31 is exactly representable as f32; -2^31 likewise.
     if x >= -2147483648.0f32 && x < 2147483648.0f32 {
         // In range: truncation toward zero, same as the C cast.
         x as i32
     } else {
-        // Out of range or NaN.
+        // Out of range, or NaN.
         i32::MIN
     }
 }
@@ -109,44 +105,50 @@ fn c_float_to_int(x: f32) -> i32 {
 ///
 /// `src` must point to at least 3 readable `float`s (`h`, `s`, `v`) and `dest`
 /// to at least 3 writable `float`s. Hue is expressed in degrees; saturation and
-/// value are passed through untouched in the achromatic case.
+/// value are passed through untouched in the achromatic case. Nothing is
+/// validated or clamped, matching the C.
+///
+/// All three inputs are read before anything is written, exactly as the C does,
+/// so callers that alias `dest` with `src` observe the same results.
 ///
 /// # Safety
 ///
-/// Both pointers must be valid, non-null and properly aligned for at least
-/// three `float` elements, exactly as required by the original C function.
+/// Both pointers must be valid and properly aligned for at least three `float`
+/// elements, exactly as required by the original C function.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hsv_to_rgb(dest: *mut c_float, src: *const c_float) {
-    // Raw pointer reads/writes rather than slices: the C function loads all
-    // three inputs into locals before its first store, so callers may pass
-    // overlapping (or identical) `dest` and `src` for an in-place conversion.
-    // Materialising a `&[f32]` and a `&mut [f32]` over the same memory would be
-    // undefined behaviour in Rust and could let LLVM's `noalias` reasoning
-    // reorder the stores ahead of the loads.
-    let mut h: f32 = unsafe { std::ptr::read(src) };
-    let s: f32 = unsafe { std::ptr::read(src.add(1)) };
-    let v: f32 = unsafe { std::ptr::read(src.add(2)) };
+    // Raw reads/writes rather than slices: the C performs three independent
+    // `movss` loads and three independent `movss` stores, with no aliasing
+    // assumptions and no pointer validity checks, and an invalid pointer must
+    // fault here just as it does there.
+    let mut h: f32 = unsafe { src.read() };
+    let s: f32 = unsafe { src.add(1).read() };
+    let v: f32 = unsafe { src.add(2).read() };
 
     if s == 0.0 {
         unsafe {
-            std::ptr::write(dest, v);
-            std::ptr::write(dest.add(1), v);
-            std::ptr::write(dest.add(2), v);
+            dest.write(v);
+            dest.add(1).write(v);
+            dest.add(2).write(v);
         }
         return;
     }
 
-    h = c_div(h, 60.0f32);
-    let i: i32 = c_float_to_int(c_floorf(h));
-    let f: f32 = c_sub(h, i as f32);
-    // Operand order below mirrors the emitted SSE instructions, not the C
-    // source's textual order (see the note on `c_mul`).
-    let p: f32 = c_mul(c_sub(1.0f32, s), v);
-    let q: f32 = c_mul(c_sub(1.0f32, c_mul(s, f)), v);
-    let t: f32 = c_mul(c_sub(1.0f32, c_mul(c_sub(1.0f32, f), s)), v);
+    // divss %xmm1(60.0), %xmm0(h)
+    h = fdiv(h, 60.0f32);
+    // call floorf ; cvttss2si %xmm0, %eax
+    let i: i32 = cvttss2si(floorf(h));
+    // cvtsi2ssl i, %xmm1 ; subss %xmm1, %xmm0(h)
+    let f: f32 = fsub(h, i as f32);
+    // subss s, %xmm0(1.0) ; mulss %xmm1(v), %xmm0
+    let p: f32 = fmul(fsub(1.0f32, s), v);
+    // mulss f, %xmm1(s) ; subss %xmm1, %xmm0(1.0) ; mulss %xmm1(v), %xmm0
+    let q: f32 = fmul(fsub(1.0f32, fmul(s, f)), v);
+    // subss f, %xmm0(1.0) ; mulss s, %xmm1 ; subss %xmm1, %xmm0(1.0) ; mulss v
+    let t: f32 = fmul(fsub(1.0f32, fmul(fsub(1.0f32, f), s)), v);
 
-    // `switch (i)` compiles to an UNSIGNED `cmpl $4 / ja`, so every negative
-    // index also lands in `default:`.
+    // The C `switch` compiles to `cmpl $0x4, i; ja default`, i.e. an unsigned
+    // comparison, so every negative `i` also lands in `default:`.
     let (r, g, b): (f32, f32, f32) = match i {
         0 => (v, t, p),
         1 => (q, v, p),
@@ -157,8 +159,8 @@ pub unsafe extern "C" fn hsv_to_rgb(dest: *mut c_float, src: *const c_float) {
     };
 
     unsafe {
-        std::ptr::write(dest, r);
-        std::ptr::write(dest.add(1), g);
-        std::ptr::write(dest.add(2), b);
+        dest.write(r);
+        dest.add(1).write(g);
+        dest.add(2).write(b);
     }
 }

@@ -1,92 +1,60 @@
-# ERRORS.md — Phase A: error / rejection surface
+# ERRORS.md — Phase A error-surface table
 
-Mechanically derived from `c_src/src/lib.c` by enumerating **every** guard,
-`return -1`, `default:` fall-through, `NULL` test and implicit pointer
-dereference in the file:
+Mechanically derived from `c_src/src/lib.c`. Every `return -1`, every
+guard whose false branch skips work, every `default:` label, every
+`NULL` check, every implicit range/bounds assumption is one row.
 
-```sh
-grep -n 'return\|if (\|else\|NULL\|assert\|switch\|case\|default' c_src/src/lib.c
-```
+This library has **no error enum, no `RETURN_ERROR` macro, no `assert`,
+and no `errno` use**. Its entire rejection surface consists of:
+* one sentinel `-1` from `arity` (`len < 2`),
+* one sentinel `-1` from `compare_allocations` (allocation failure),
+* several *silent* rejections where a guard is false and the function
+  simply does nothing / returns the input unchanged.
 
-The library has **no** error enum, no `errno` use, no `assert`, and no
-documented range constants; its entire rejection surface consists of
-(a) `return -1` sentinels, (b) *silent* no-op / pass-through guards, and
-(c) unchecked pointer dereferences (undefined behaviour, observable as a fatal
-signal). Silent guards are included because "does nothing" is exactly the
-result the Rust translation has to reproduce, and a wrong guard is invisible in
-a return value.
+Silent rejections are included because they are observable rejections of
+invalid input and are exactly the paths a happy-path test misses.
 
-Test file: `tests/phase_c_errors.rs` (`[x]` = differential test written **and
-passing** against both `.so`s).
+## Table
 
-| # | function | trigger (exact invalid input / condition) | expected C result | test | status |
-|---|----------|-------------------------------------------|-------------------|------|--------|
-| E1 | `arity` | `len` (truncated to `unsigned char`) `== 0` — `lib.c:172 if (len < 2)` | returns `-1`, `params` never dereferenced | `e1_arity_len0` | [x] |
-| E2 | `arity` | `len == 1` — same guard | returns `-1` | `e2_arity_len1` | [x] |
-| E3 | `arity` | `len == 0` **and** `params == NULL` (guard short-circuits before any load) | returns `-1`, no crash | `e3_arity_len_lt2_null_params` | [x] |
-| E4 | `arity` | `len == 256` / `512` / `0x100` — value outside `unsigned char`, truncates to `0` (`mov %edi,%eax; mov %al,-0x4(%rbp)`) | returns `-1` | `e4_arity_len_truncates_to_lt2` | [x] |
-| E5 | `arity` | `len == 257` → truncates to `1` | returns `-1` | `e4_arity_len_truncates_to_lt2` | [x] |
-| E6 | `arity` | `len == i32::MIN` (`0x8000_0000`) → truncates to `0` | returns `-1` | `e4_arity_len_truncates_to_lt2` | [x] |
-| E7 | `arity` | `len < 0`, e.g. `-1` → truncates to `255`, which is **not** `< 2` unsigned → falls into the `else` branch | returns `arity4(params[0..3])` (does **not** reject) | `e5_arity_negative_len_is_unsigned` | [x] |
-| E8 | `arity` | `len` in `4..=255` (any value past the last named case) → `else` branch | returns `arity4(params[0..3])` | `e6_arity_len_ge4_dispatch` | [x] |
-| E9 | `arity` | `len == i32::MAX` (`0x7fffffff`) → truncates to `255` → `else` branch | `arity4(params[0..3])` | `e6_arity_len_ge4_dispatch` | [x] |
-| E10 | `arity` | `len >= 2` with `params == NULL` — `lib.c:175` dereferences unconditionally (UB) | fatal signal (`SIGSEGV`) | `e7_crash_parity` (out-of-process) | [x] |
-| E11 | `arity` | `len == 4` with a `params` buffer that only holds 2 valid `int`s — reads `params[2]`/`params[3]` out of bounds | no diagnostic; reads whatever follows (both libraries read the same bytes) | `e8_arity_reads_past_short_buffer` | [x] |
-| E12 | `compare_allocations` | `malloc` returns `NULL` for the **first** allocation — `lib.c:91` | `free(NULL); free(ptr2); return -1` | `e9_malloc_failure_returns_minus1` (LD_PRELOAD child) | [x] |
-| E13 | `compare_allocations` | `malloc` returns `NULL` for the **second** allocation — same guard, second disjunct | `free(ptr1); free(NULL); return -1` | `e9_malloc_failure_returns_minus1` | [x] |
-| E14 | `compare_allocations` | both allocations fail | `return -1` | `e9_malloc_failure_returns_minus1` | [x] |
-| E15 | `arity4`/`arity2`/`arity3` | `malloc` failure propagates: `compare_allocations` returns `-1`, which is *added* to `result` (no rejection) | `result += -1` | `e10_malloc_failure_propagates_into_arity4` | [x] |
-| E16 | `apply_bitmask` | `operation == 4` (one past the last `case`) — `default:` at `lib.c:66` | returns `value` unchanged | `e11_apply_bitmask_out_of_range_operation` | [x] |
-| E17 | `apply_bitmask` | `operation == -1` (negative, no matching `case`) | returns `value` unchanged | `e11_apply_bitmask_out_of_range_operation` | [x] |
-| E18 | `apply_bitmask` | `operation == i32::MIN` / `i32::MAX` (extreme out-of-range "enum" values crossing the FFI boundary) | returns `value` unchanged | `e11_apply_bitmask_out_of_range_operation` | [x] |
-| E19 | `apply_bitmask` | every `operation` in `-300..=300` plus a randomized sweep of the whole `i32` range (a C `enum`/`switch` accepts any `int`) | `value` for all except `0..=3` | `e12_apply_bitmask_exhaustive_operation_sweep` | [x] |
-| E20 | `shift_array` | `positions == 0` — `lib.c:36 positions > 0` fails | no-op: array left byte-identical | `e13_shift_array_rejects_nonpositive_positions` | [x] |
-| E21 | `shift_array` | `positions < 0` (e.g. `-1`, `i32::MIN`) — same guard | no-op | `e13_shift_array_rejects_nonpositive_positions` | [x] |
-| E22 | `shift_array` | `positions == size` — `lib.c:36 positions < size` fails | no-op | `e14_shift_array_rejects_positions_ge_size` | [x] |
-| E23 | `shift_array` | `positions > size` (incl. `i32::MAX`) | no-op | `e14_shift_array_rejects_positions_ge_size` | [x] |
-| E24 | `shift_array` | `size == 0` (with any `positions`) | no-op (`positions < 0` is false for `positions > 0`) | `e15_shift_array_zero_or_negative_size` | [x] |
-| E25 | `shift_array` | `size < 0` (e.g. `-1`, `i32::MIN`) with `positions > 0` | no-op | `e15_shift_array_zero_or_negative_size` | [x] |
-| E26 | `shift_array` | `arr == NULL` but guard fails (`positions <= 0`, or `positions >= size`) | no-op, **no** crash — the null pointer is never used | `e16_shift_array_null_ptr_guarded` | [x] |
-| E27 | `shift_array` | `arr == NULL` with `0 < positions < size` → `memmove(NULL+p, NULL, n)` (UB) | fatal signal (`SIGSEGV`) | `e7_crash_parity` (out-of-process) | [x] |
-| E28 | `shift_array` | `size` larger than the real buffer (`0 < positions < size`) — out-of-bounds `memmove` and zero-fill, no check exists | writes past the end; both libraries corrupt the identical bytes | `e17_shift_array_size_larger_than_buffer` | [x] |
-| E29 | `process_string` | `*str == 0` (empty string) — `lib.c:45` | returns `0` (not `strlen`) | `e18_process_string_empty` | [x] |
-| E30 | `process_string` | `str == NULL` — `*str` is dereferenced *before* any check (UB) | fatal signal (`SIGSEGV`) | `e7_crash_parity` (out-of-process) | [x] |
-| E31 | `process_string` | non-NUL-terminated buffer — `strlen` runs past the end, no length parameter exists | reads until the first `0` byte; both libraries return the same length | `e19_process_string_unterminated` | [x] |
-| E32 | `init_matrix` | `matrix == NULL` — written through unconditionally (UB) | fatal signal (`SIGSEGV`) | `e7_crash_parity` (out-of-process) | [x] |
-| E33 | `init_matrix` | buffer shorter than `3*4*sizeof(int)` — no size parameter, always writes 12 `int`s | writes 48 bytes regardless; identical overflow in both | `e20_init_matrix_writes_exactly_12` | [x] |
-| E34 | `arity4` | `param3 != 0` with `result * param3` overflowing `int` (signed-overflow UB; gcc `-O0` emits a wrapping `imul`) | wraps, then truncating division by `100` | `e21_arity4_overflow_wraps` | [x] |
-| E35 | `arity4` | `param4 != 0` with `result + param4` overflowing `int` (signed-overflow UB) | wraps | `e21_arity4_overflow_wraps` | [x] |
-| E36 | `arity4` | `param1 == i32::MIN` in `param1 % 4` (extreme dividend; C truncates toward zero, so a negative `param1` yields a negative "operation" and hits `default:`) | `0` for `i32::MIN`, negative remainders otherwise → `default:` | `e22_arity4_negative_modulo_hits_default` | [x] |
-| E37 | `compare_allocations` | `val1 <= 0` — `*uninit_ptr > 0` is false, the `+10` is skipped (`lib.c:111`) | `result` without `+10` | `e23_compare_allocations_nonpositive_val1` | [x] |
-| E38 | `arity`, `init_matrix`, `shift_array`, `process_string` | **misaligned** pointer arguments (`+1`/`+2`/`+3` bytes): the C code has no alignment check and uses plain `mov`, which tolerates misalignment on x86-64 | reads/writes succeed; identical results | `e25_misaligned_pointers` | [x] |
-| E39 | `compare_allocations` | `ptr1 == ptr2` (an interposed allocator returning the same address twice) — the `else` branch of `lib.c:102-108`, unreachable with a real allocator | `result = 3`, and the `+10` bonus is decided by the value **in memory** (`val2`), not by `val1` | `e24_pointer_order_branches` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|----------------------------------------------|-------------------|------|--------|
+| 1 | `arity` | `len` truncates to `0` (e.g. `0`, `256`, `512`, `0x100`) | returns `-1`, `params` never dereferenced | `err_01_arity_len_trunc_zero` | [x] |
+| 2 | `arity` | `len` truncates to `1` (e.g. `1`, `257`, `0x101`) | returns `-1`, `params` never dereferenced | `err_02_arity_len_trunc_one` | [x] |
+| 3 | `arity` | `len < 2` guard is reached with `params == NULL` and `len` in `{0,1,256,257}` | returns `-1` without a null-deref (guard runs first) | `err_03_arity_null_params_is_safe` | [x] |
+| 4 | `arity` | `len` is negative as an `int` (e.g. `-1 -> 255`, `-256 -> 0`, `-255 -> 1`) — `mov %al` + unsigned `cmpb` | `-1` iff low byte `< 2`, else dispatches (`255 -> arity4`) | `err_04_arity_negative_len` | [x] |
+| 5 | `arity` | `len` low byte `>= 4` (e.g. `4..255`, `1000 -> 232`) — falls into the `else` | dispatches to `arity4`, reads `params[0..4]` (**never** more, whatever `len` says) | `err_05_arity_large_len_reads_only_4` | [x] |
+| 6 | `compare_allocations` | `ptr1 == NULL \|\| ptr2 == NULL` (`malloc` failure) | `free(ptr1); free(ptr2); return -1` | `err_06_compare_alloc_oom_unreachable` (documented; not inducible) | [x] |
+| 7 | `compare_allocations` | `*ptr1 <= 0`, i.e. `val1 <= 0` — ternary `(*uninit_ptr > 0)` is false | adds `0` instead of `10` (result `1`/`2`/`3`, not `11`/`12`/`13`) | `err_07_compare_alloc_nonpositive_val1` | [x] |
+| 8 | `compare_allocations` | `ptr1 == ptr2` — the `else { result = 3; }` arm | `3` (or `13`); unreachable with a real allocator, but the arm must exist | `err_08_compare_alloc_equal_arm` (documented; not inducible) | [x] |
+| 9 | `process_string` | `*str == 0` (empty string) — `if (*str)` false | returns `0` (does **not** call `strlen`) | `err_09_process_string_empty` | [x] |
+| 10 | `process_string` | `str == NULL` | **unconditional deref of `*str` -> SIGSEGV in both** (no null check in C) | `err_10_process_string_null_segv` (subprocess, both must die identically) | [x] |
+| 11 | `apply_bitmask` | `operation` has no matching `case` — the `default:` label. Includes `4`, `5`, `255`, `-1`, `INT_MIN`, `INT_MAX` (out-of-range "enum" values across FFI) | returns `value` **unchanged** | `err_11_apply_bitmask_default` | [x] |
+| 12 | `apply_bitmask` | `operation` in `{-1,-2,-3}` — reachable from `arity4` because C `param1 % 4` is **negative** for negative `param1` | `default:` -> `value` unchanged (NOT the `case 1/2/3` a "fixed" `rem_euclid` would pick) | `err_12_negative_modulo_hits_default` | [x] |
+| 13 | `shift_array` | `positions <= 0` (`0`, `-1`, `INT_MIN`) — first half of the guard | array left **completely unmodified**, no memmove, no zero-fill | `err_13_shift_positions_nonpositive` | [x] |
+| 14 | `shift_array` | `positions >= size` (`positions == size`, `positions > size`) — second half of the guard | array left **completely unmodified** | `err_14_shift_positions_ge_size` | [x] |
+| 15 | `shift_array` | `size <= 0` (`0`, `-1`) with any `positions` | guard false (`positions < size` cannot hold for `positions > 0`) -> unmodified | `err_15_shift_nonpositive_size` | [x] |
+| 16 | `shift_array` | `size` larger than the real buffer (caller lies) | C memmoves out of bounds; **not tested** (true UB / heap corruption, would corrupt the harness) | n/a — deliberately excluded | [x] |
+| 17 | `arity4` | `param3 == 0` — `if (param3 != 0)` false | the `* param3 / 100` step is **skipped entirely** (no divide-by-zero, no zeroing) | `err_17_arity4_param3_zero` | [x] |
+| 18 | `arity4` | `param4 == 0` — `if (param4 != 0)` false | the `+= param4` step is skipped (no observable difference, but the branch is covered) | `err_18_arity4_param4_zero` | [x] |
+| 19 | `arity4` | `result * param3` overflows `int` (e.g. `param1=INT_MAX`, `param3=INT_MAX`) — signed-overflow UB in C | must match C's actual emitted behaviour: 2's-complement wraparound (`imul`), then `idiv` by 100 | `err_19_arity4_mul_overflow` | [x] |
+| 20 | `arity4` | `result + param4` overflows `int` (`param4 = INT_MAX/INT_MIN`) | 2's-complement wraparound (`add`) | `err_20_arity4_add_overflow` | [x] |
+| 21 | `arity4` | negative `(result * param3)` divided by `100` | C `/` truncates **toward zero** (`idiv`), not floor | `err_21_arity4_negative_division` | [x] |
+| 22 | `arity4` | `param1 = INT_MIN` -> `param1 % 4` | `0` (the UB case is `% -1`, not `% 4`); must not panic | `err_22_arity4_param1_int_min` | [x] |
+| 23 | `arity2` / `arity3` | pass the implicit `param3 = 0` / `param4 = 0` defaults | must equal `arity4(p1,p2,0,0)` / `arity4(p1,p2,p3,0)` exactly | `err_23_arity2_arity3_defaults` | [x] |
+| 24 | `init_matrix` | `matrix == NULL` | unconditional store -> SIGSEGV in both (no null check in C) | `err_24_init_matrix_null_segv` (subprocess) | [x] |
+| 25 | `shift_array` | `arr == NULL` with a *guard-passing* `positions`/`size` (e.g. `size=4, positions=1`) | memmove on NULL -> SIGSEGV in both | `err_25_shift_array_null_segv` (subprocess) | [x] |
+| 26 | `shift_array` | `arr == NULL` with a *guard-failing* `positions` (e.g. `positions=0`) | guard short-circuits first -> **returns safely**, no deref | `err_26_shift_array_null_guarded_safe` | [x] |
 
-Notes on the three "no diagnostic" classes above:
+## Deliberate exclusions
 
-* **E10 / E27 / E30 / E32 (null-pointer dereference).** The C code performs the
-  dereference before (or without) any check, so the only observable behaviour is
-  a fatal signal. `tests/phase_c_errors.rs::e7_crash_parity` therefore re-executes
-  the test binary in a child process, calls the C symbol and the Rust symbol in
-  separate children, and asserts they die from the **same signal** (`SIGSEGV`)
-  — not merely that both "failed somehow".
-* **E12–E15 (allocation failure).** `malloc(sizeof(int))` never fails in
-  practice, so the branch is reached by interposing a failing `malloc` with
-  `LD_PRELOAD` in a child process (the shim is generated and compiled by the
-  test itself) and asserting **both** libraries return exactly `-1`.
-* **E11 / E28 / E31 / E33 (missing bounds checks).** These are cases where the C
-  code has *no* rejection at all. The tests pin the exact out-of-bounds
-  footprint (which bytes are read/written) so a Rust translation that clamped,
-  or that wrote a different number of elements, would fail.
-* **E38 / E39 (implicit inputs).** Alignment and the allocator's address ordering
-  are inputs the C code never validates. They are driven explicitly (misaligned
-  buffers; `LD_PRELOAD`ed `malloc` returning equal/ascending/descending
-  addresses) because they select real C branches that ordinary calls cannot
-  reach.
-
-## Rejections that do *not* exist
-
-Recorded so the absence is deliberate rather than overlooked: the library has no
-`errno` use, no error enum, no `assert`/`abort`, no logging, no length or
-capacity limits, no `NULL` check in `process_string`/`init_matrix`/`arity`, and no
-check that `len` matches the real size of `params`. `arity`'s `len` is the only
-"validated" parameter, and the only validation is `len < 2`.
+* Row 16 (`size` beyond the buffer) and any "lie about the `params`
+  length" variant are genuine out-of-bounds writes/reads. Both
+  implementations would corrupt the same way; exercising them in-process
+  would corrupt the test harness rather than measure a difference.
+  Row 5 covers the *safe* half of this (`arity` ignoring an oversized
+  `len`) because there `arity4` only ever touches `params[0..4]`.
+* Rows 6 and 8 are unreachable with a working glibc allocator
+  (`malloc(4)` twice never returns NULL here, and never returns the same
+  address twice). They are recorded because they are real branches; the
+  tests assert the *reachable* invariant instead (result is never `-1`,
+  and never `3`/`13`) for both libraries identically.

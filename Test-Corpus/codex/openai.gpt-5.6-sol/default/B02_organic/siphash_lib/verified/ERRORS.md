@@ -1,40 +1,26 @@
-# Error Surface
+# Error surface
 
-The following mechanical searches were applied to `../c_src/include` and
-`../c_src/src`:
+Mechanical source scans covered `c_src/include/lib.h` and `c_src/src/lib.c`
+for error-return macros/statements, negative or null returns, assertions,
+explicit null/range checks, enums, and min/max constants.
 
-```text
-RETURN_ERROR
-return -1
-return NULL
-assert(...)
-if (...)
-NULL
-min / max
-error
-```
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
 
-The implementation contains no rejection branch, assertion, explicit range or
-null check, error enum, or error-return sentinel. Its only return statement
-returns the computed hash.
+There are no rejection branches in the C implementation. In particular,
+`stbds_hash_bytes` performs no pointer/length validation and `siphash` returns
+`void`. Invalid nonzero-length pointers therefore have C undefined behavior,
+not an error result or sentinel.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
-|---|----------|----------------------------------------------|-------------------|--------|
+Generic FFI boundary coverage, despite the empty rejection table:
 
-- [x] No explicit C rejection rows exist.
+| # | function | boundary | expected C result | verified |
+|---|----------|----------|-------------------|----------|
+| G1 | `stbds_hash_bytes` | null pointer with zero length | returns the zero-length hash | [x] |
+| G2 | `stbds_hash_bytes` | zero length with a non-null pointer | returns the zero-length hash | [x] |
+| G3 | `stbds_hash_bytes` | null pointer with nonzero length | process terminates from invalid memory access; compare subprocess outcomes | [x] |
+| G4 | `stbds_hash_bytes` | null pointer with `SIZE_MAX` length | process terminates from invalid memory access; compare subprocess outcomes | [x] |
 
-## Generic FFI boundaries
-
-These are not error rows because the C implementation does not reject them:
-
-| Boundary | C behavior | Coverage |
-|----------|------------|----------|
-| `stbds_hash_bytes(NULL, 0, seed)` | Valid: no pointer dereference; returns the empty-input hash. | [x] |
-| Zero length with a non-null pointer | Valid: returns the empty-input hash. | [x] |
-| Large length backed by an equally large allocation | Valid: no documented maximum; hashes all bytes. | [x] |
-| Null pointer with positive length | Undefined behavior from dereferencing `NULL`; no stable C result exists to compare. | N/A |
-| Length larger than the pointed-to allocation | Undefined behavior from an out-of-bounds read; no stable C result exists to compare. | N/A |
-| Out-of-range enum | Neither public entry point accepts an enum. | N/A |
-| One past documented range | No input range is documented or checked. | N/A |
-
-Undefined-behavior cases are intentionally not invoked by the test process.
+There are no enum parameters, documented bounded numeric ranges, or error
+codes in the public C API, so out-of-range enum and one-past-range checks are
+not applicable.

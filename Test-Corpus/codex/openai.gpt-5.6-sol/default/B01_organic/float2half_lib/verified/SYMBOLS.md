@@ -1,24 +1,17 @@
 # Dynamic Symbol Surface
 
-Derived from:
+Built libraries:
 
-```text
-nm -D ../c_src/build/libharvest-work-PGeIlH.so
-nm -D target/release/libfloat2half_lib.so
-```
+- C: `../c_src/build/libharvest-work-Rg2BZs.so`
+- Rust: `target/release/libfloat2half_lib.so`
 
-## C dynamic symbols
+The public surface below is derived from `nm -D --defined-only` on the C
+shared library. Runtime/toolchain symbols that are undefined imports are not
+part of the library API.
 
-| symbol | C kind | Rust `nm -D` status |
-|--------|--------|---------------------|
-| `_ITM_deregisterTMCloneTable` | weak undefined toolchain hook | present (weak undefined) |
-| `_ITM_registerTMCloneTable` | weak undefined toolchain hook | present (weak undefined) |
-| `__cxa_finalize@GLIBC_2.2.5` | weak undefined libc ABI | present (weak undefined) |
-| `__gmon_start__` | weak undefined toolchain hook | present (weak undefined) |
-| `float2half` | defined public function | present (defined public function) |
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `float2half` | `T` | `float2half` (`T`) | [x] exact match |
 
-## Public API parity
-
-The only defined public C symbol is `float2half`. The Rust shared library
-exports it with the exact same name. Missing public C symbols: **0**.
-
+Missing C symbols in Rust: **0**.
+Undefined non-libc C API symbols in Rust: **0**.

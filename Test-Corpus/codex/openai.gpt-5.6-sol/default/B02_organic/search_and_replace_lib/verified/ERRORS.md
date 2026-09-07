@@ -1,17 +1,26 @@
 # Error Surface
 
-Derived from every `return NULL` and its guarding condition in
-`../c_src/src/lib.c`. The API performs no explicit null-pointer, range, enum,
-or length validation and contains no assertions or error enums.
+Derived mechanically from every allocation result, explicit `NULL` return, and
+public-API boundary in `../c_src/src/lib.c`. The function has no enum or numeric
+length parameter, no documented numeric range, and no assertions.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | |
-|---|----------|----------------------------------------------|-------------------|-|
-| 1 | `searchAndReplace` | `inx_start > 0` and the initial `malloc(inx_start + 1)` returns `NULL` | `NULL` | [x] |
-| 2 | `searchAndReplace` | the replacement-copy `realloc(tmp, total_bytes_allocated + value_len)` returns `NULL` | `NULL` | [x] |
-| 3 | `searchAndReplace` | a later match has a nonempty gap and the gap-copy `realloc(tmp, total_bytes_allocated + gap)` returns `NULL` | `NULL` | [x] |
-| 4 | `searchAndReplace` | the last match has a nonempty suffix and the suffix-copy `realloc(tmp, total_bytes_allocated + orig_len - from)` returns `NULL` | `NULL` | [x] |
-| 5 | `searchAndReplace` | no match exists and `strdup(orig)` returns `NULL` | `NULL` returned directly from `strdup` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `searchAndReplace` | `strstr(orig, search) == NULL` and the internal `strdup(orig)` allocation fails | returns `NULL` (the unchecked `strdup` result) | [x] |
+| 2 | `searchAndReplace` | first match starts after byte zero (`inx_start > 0`) and the prefix `malloc(inx_start + 1)` fails | returns `NULL` | [x] |
+| 3 | `searchAndReplace` | the `realloc` used to append a replacement fails | returns `NULL` | [x] |
+| 4 | `searchAndReplace` | a later non-adjacent match exists (`inx_start2 > from`) and the `realloc` used to append the intervening gap fails | returns `NULL` | [x] |
+| 5 | `searchAndReplace` | bytes remain after the final match (`from < orig_len && from > 0`) and the final suffix `realloc` fails | returns `NULL` | [x] |
+| 6 | `searchAndReplace` | `orig == NULL` | process terminates with `SIGSEGV` while evaluating `strlen(orig)` | [x] |
+| 7 | `searchAndReplace` | `search == NULL` | process terminates with `SIGSEGV` while evaluating `strlen(search)` | [x] |
+| 8 | `searchAndReplace` | `value == NULL` | process terminates with `SIGSEGV` while evaluating `strlen(value)` | [x] |
+| 9 | `searchAndReplace` | `search` is the empty C string (zero search length) | does not return: `strstr(..., "")` repeatedly finds the same position and the loop never advances | [x] |
 
-Null `orig`, `search`, or `value` pointers reach `strlen` before any check and
-therefore have undefined behavior in C. There are no length parameters, enum
-parameters, numeric ranges, or documented min/max constants in the public API.
+Generic boundary accounting:
+
+- Zero original length is valid and is covered in `CONFIGS.md`.
+- Zero replacement length is valid and is covered in `CONFIGS.md`.
+- Zero search length is row 9 above.
+- There is no caller-supplied length, enum, or documented numeric range, so
+  oversized lengths, one-past-range values, and invalid enum discriminants do
+  not exist at this FFI boundary.

@@ -1,97 +1,76 @@
-# SYMBOLS.md — exported symbol parity (Phase A / Phase D)
+# SYMBOLS.md — exported-symbol parity
 
-Derived mechanically:
+Derived mechanically from:
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-kxbveQ.so | awk '{print $3}' | sort > /tmp/c_syms.txt
-nm -D --defined-only translation/target/release/libomni_manifold_lib.so | awk '{print $3}' | sort > /tmp/r_syms.txt
-comm -23 /tmp/c_syms.txt /tmp/r_syms.txt   # in C, missing from Rust
-comm -13 /tmp/c_syms.txt /tmp/r_syms.txt   # extra in Rust
+```
+nm -D --defined-only c_src/build/libharvest-work-iYDMnU.so   | awk '{print $3}' | sort
+nm -D --defined-only translation/target/release/libomni_manifold_lib.so | awk '{print $3}' | sort
 ```
 
-Result: **C exports 46, Rust exports 46, both diffs EMPTY.**
+C `.so` exports **46** symbols. Rust `.so` exports **46**. `diff` of the two
+sorted lists is **empty**.
 
-`static` C functions (`c2Clip`, `c2SidePlanes`, `c2SidePlanesFromPoly`,
-`c2KeepDeep`, `c2Incident`) have internal linkage and appear in neither `.so`;
-they are private `unsafe fn`s in Rust. Correct.
+| # | symbol | in C .so | in Rust .so | notes |
+|---|--------|----------|-------------|-------|
+| 1 | `c22` | yes | yes | simplex 2-vertex solver |
+| 2 | `c23` | yes | yes | simplex 3-vertex solver |
+| 3 | `c2AABBtoAABBManifold` | yes | yes | |
+| 4 | `c2AABBtoCapsuleManifold` | yes | yes | |
+| 5 | `c2Absv` | yes | yes | |
+| 6 | `c2Add` | yes | yes | |
+| 7 | `c2BBVerts` | yes | yes | writes 4 `c2v` |
+| 8 | `c2CCW90` | yes | yes | |
+| 9 | `c2CapsuletoCapsuleManifold` | yes | yes | |
+| 10 | `c2CapsuletoPolyManifold` | yes | yes | takes `const c2Poly*`, `const c2x*` |
+| 11 | `c2CircletoAABBManifold` | yes | yes | |
+| 12 | `c2CircletoCapsuleManifold` | yes | yes | |
+| 13 | `c2CircletoCircleManifold` | yes | yes | |
+| 14 | `c2Clampv` | yes | yes | |
+| 15 | `c2Collide` | yes | yes | type-dispatch entry point |
+| 16 | `c2D` | yes | yes | search-direction from simplex |
+| 17 | `c2Det2` | yes | yes | |
+| 18 | `c2Dist` | yes | yes | |
+| 19 | `c2Div` | yes | yes | |
+| 20 | `c2Dot` | yes | yes | |
+| 21 | `c2GJK` | yes | yes | 11-arg lowest-level distance query |
+| 22 | `c2GJKSimplexMetric` | yes | yes | |
+| 23 | `c2Intersect` | yes | yes | |
+| 24 | `c2L` | yes | yes | |
+| 25 | `c2Len` | yes | yes | |
+| 26 | `c2MakeProxy` | yes | yes | no POLY case in C — reproduced |
+| 27 | `c2Maxv` | yes | yes | |
+| 28 | `c2Minv` | yes | yes | |
+| 29 | `c2Mulrv` | yes | yes | |
+| 30 | `c2MulrvT` | yes | yes | |
+| 31 | `c2Mulvs` | yes | yes | |
+| 32 | `c2Mulxv` | yes | yes | |
+| 33 | `c2MulxvT` | yes | yes | |
+| 34 | `c2Neg` | yes | yes | |
+| 35 | `c2Norm` | yes | yes | divides by `c2Len` — no zero guard in C |
+| 36 | `c2Norms` | yes | yes | |
+| 37 | `c2PlaneAt` | yes | yes | unchecked index |
+| 38 | `c2RotIdentity` | yes | yes | |
+| 39 | `c2Skew` | yes | yes | |
+| 40 | `c2Sub` | yes | yes | |
+| 41 | `c2Support` | yes | yes | unchecked `verts[0]` read |
+| 42 | `c2V` | yes | yes | |
+| 43 | `c2Witness` | yes | yes | |
+| 44 | `c2xIdentity` | yes | yes | |
+| 45 | `omni_manifold` | yes | yes | the header's only declared entry point |
+| 46 | `ptr_from_parts` | yes | yes | falls off end for POLY in C |
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `c22` | T | T | OK |
-| 2 | `c23` | T | T | OK |
-| 3 | `c2AABBtoAABBManifold` | T | T | OK |
-| 4 | `c2AABBtoCapsuleManifold` | T | T | OK |
-| 5 | `c2Absv` | T | T | OK |
-| 6 | `c2Add` | T | T | OK |
-| 7 | `c2BBVerts` | T | T | OK |
-| 8 | `c2CCW90` | T | T | OK |
-| 9 | `c2CapsuletoCapsuleManifold` | T | T | OK |
-| 10 | `c2CapsuletoPolyManifold` | T | T | OK |
-| 11 | `c2CircletoAABBManifold` | T | T | OK |
-| 12 | `c2CircletoCapsuleManifold` | T | T | OK |
-| 13 | `c2CircletoCircleManifold` | T | T | OK |
-| 14 | `c2Clampv` | T | T | OK |
-| 15 | `c2Collide` | T | T | OK |
-| 16 | `c2D` | T | T | OK |
-| 17 | `c2Det2` | T | T | OK |
-| 18 | `c2Dist` | T | T | OK |
-| 19 | `c2Div` | T | T | OK |
-| 20 | `c2Dot` | T | T | OK |
-| 21 | `c2GJK` | T | T | OK |
-| 22 | `c2GJKSimplexMetric` | T | T | OK |
-| 23 | `c2Intersect` | T | T | OK |
-| 24 | `c2L` | T | T | OK |
-| 25 | `c2Len` | T | T | OK |
-| 26 | `c2MakeProxy` | T | T | OK |
-| 27 | `c2Maxv` | T | T | OK |
-| 28 | `c2Minv` | T | T | OK |
-| 29 | `c2Mulrv` | T | T | OK |
-| 30 | `c2MulrvT` | T | T | OK |
-| 31 | `c2Mulvs` | T | T | OK |
-| 32 | `c2Mulxv` | T | T | OK |
-| 33 | `c2MulxvT` | T | T | OK |
-| 34 | `c2Neg` | T | T | OK |
-| 35 | `c2Norm` | T | T | OK |
-| 36 | `c2Norms` | T | T | OK |
-| 37 | `c2PlaneAt` | T | T | OK |
-| 38 | `c2RotIdentity` | T | T | OK |
-| 39 | `c2Skew` | T | T | OK |
-| 40 | `c2Sub` | T | T | OK |
-| 41 | `c2Support` | T | T | OK |
-| 42 | `c2V` | T | T | OK |
-| 43 | `c2Witness` | T | T | OK |
-| 44 | `c2xIdentity` | T | T | OK |
-| 45 | `omni_manifold` | T | T | OK |
-| 46 | `ptr_from_parts` | T | T | OK |
+Static (file-local, not exported by either library, therefore not required to be
+exported by Rust): `c2Clip`, `c2SidePlanes`, `c2SidePlanesFromPoly`,
+`c2KeepDeep`, `c2Incident`. These are exercised indirectly through
+`c2CapsuletoPolyManifold` / `c2AABBtoCapsuleManifold`.
 
 ## Undefined (imported) symbols
 
-C imports only `malloc` and `sqrtf` (plus CRT glue). Rust imports `malloc`
-plus the Rust `std` runtime's libc surface (`memcpy`, `_Unwind_*`, ...). All
-Rust undefined symbols are libc / libgcc-unwind: **0 missing non-libc
-symbols**. `sqrtf` is inlined by rustc to the `sqrtss` instruction, which is
-the same IEEE-754 correctly-rounded operation glibc's `sqrtf` performs.
+C imports only `malloc`, `sqrtf` plus CRT glue. Rust imports `malloc` plus libc
+/ `_Unwind_*` / std-runtime glue. **0 missing or undefined non-libc symbols in
+the Rust `.so`.**
 
-## Feature combinations
+## Status
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only
-build configuration is the default one. Verified:
-
-```sh
-$ grep -c '\[features\]' translation/Cargo.toml
-0
-```
-
-Phase D's "repeat for every feature combination" therefore reduces to the
-single default configuration. `translation/verify.sh` still enumerates the
-power set mechanically (so the check keeps working if features are ever added)
-and runs the full suite for each combination in **both** the `release` and
-`debug` profiles — the profile matters because `panic = "abort"` and the
-optimiser only apply to `release`, and because unoptimized codegen chooses
-different registers. Latest run:
-
-```
-combinations to verify: 2      (--all-features, <default>)
-symbols: C=46 Rust=46          (all 4 combination x profile passes)
-ALL PHASE A-D CHECKS PASSED
-```
+- [x] `nm -D` symbol diff C → Rust is empty (46/46).
+- [x] `nm -D --undefined-only` on the Rust `.so` shows only libc/unwind imports.

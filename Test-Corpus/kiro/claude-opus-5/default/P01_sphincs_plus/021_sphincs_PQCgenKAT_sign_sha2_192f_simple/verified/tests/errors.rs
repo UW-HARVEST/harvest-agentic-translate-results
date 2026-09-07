@@ -1,1376 +1,1240 @@
-//! Phase C — error / rejection surface (`ERRORS.md` rows E1–E50).
+//! Phase C — error-path differential tests.
 //!
-//! Every test constructs the exact invalid input, calls BOTH libraries, and
-//! asserts the SAME error code / sentinel (not merely "both failed").
+//! One test per row of `ERRORS.md`. Each constructs the exact invalid input the
+//! C rejects, calls BOTH the C `.so` and the Rust `.so`, and asserts they return
+//! the SAME error code / sentinel *and* have the same observable side effects on
+//! the output buffers — not merely "both failed".
 
 mod common;
 use common::*;
 
-type SizeFn = unsafe extern "C" fn() -> u64;
-type Keypair = unsafe extern "C" fn(*mut u8, *mut u8) -> i32;
-type SeedKeypair = unsafe extern "C" fn(*mut u8, *mut u8, *const u8) -> i32;
-type Signature = unsafe extern "C" fn(*mut u8, *mut usize, *const u8, usize, *const u8) -> i32;
-type Verify = unsafe extern "C" fn(*const u8, usize, *const u8, usize, *const u8) -> i32;
-type Sign = unsafe extern "C" fn(*mut u8, *mut u64, *const u8, u64, *const u8) -> i32;
-type Open = unsafe extern "C" fn(*mut u8, *mut u64, *const u8, u64, *const u8) -> i32;
-type RandombytesInit = unsafe extern "C" fn(*mut u8, *mut u8);
-type Randombytes = unsafe extern "C" fn(*mut u8, u64) -> i32;
-type SeedexpanderInit = unsafe extern "C" fn(*mut AesXofStruct, *mut u8, *mut u8, u64) -> i32;
-type Seedexpander = unsafe extern "C" fn(*mut AesXofStruct, *mut u8, u64) -> i32;
-type DrbgUpdate = unsafe extern "C" fn(*mut u8, *mut u8, *mut u8);
-type SetU32 = unsafe extern "C" fn(*mut u32, u32);
-type SetU64 = unsafe extern "C" fn(*mut u32, u64);
-type UllToBytes = unsafe extern "C" fn(*mut u8, u32, u64);
-type BytesToUll = unsafe extern "C" fn(*const u8, u32) -> u64;
-type Thash = unsafe extern "C" fn(*mut u8, *const u8, u32, *const u8, *mut u32);
-type ComputeRoot =
-    unsafe extern "C" fn(*mut u8, *const u8, u32, u32, *const u8, u32, *const u8, *mut u32);
-type GenLeafFn = unsafe extern "C" fn(*mut u8, *const u8, u32, *const u32);
-type TreeHash =
-    unsafe extern "C" fn(*mut u8, *mut u8, *const u8, u32, u32, u32, GenLeafFn, *mut u32);
-type WotsPkFromSig = unsafe extern "C" fn(*mut u8, *const u8, *const u8, *const u8, *mut u32);
-type WotsGenLeafX1 = unsafe extern "C" fn(*mut u8, *const u8, u32, *mut LeafInfoX1);
+/* ------------------------------------------------------------------ */
+/* rng.h error constants                                               */
+/* ------------------------------------------------------------------ */
 
 const RNG_SUCCESS: i32 = 0;
 const RNG_BAD_MAXLEN: i32 = -1;
 const RNG_BAD_OUTBUF: i32 = -2;
 const RNG_BAD_REQ_LEN: i32 = -3;
 
-fn abytes(a: &[u32; 8]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(a.as_ptr() as *const u8, 32) }
-}
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
 
-fn kat_entropy() -> Vec<u8> {
-    (0..48u8).collect()
-}
-
-fn seed_both(l: &Libs) {
-    let (c, r) = l.pair::<RandombytesInit>("randombytes_init");
-    let mut ce = kat_entropy();
-    let mut re = kat_entropy();
+fn seed_both_drbgs(entropy: &[u8]) {
+    let p = libs();
+    let c: FnRandombytesInit = p.c.f("randombytes_init");
+    let r: FnRandombytesInit = p.r.f("randombytes_init");
+    let mut ec = entropy.to_vec();
+    let mut er = entropy.to_vec();
     unsafe {
-        c(ce.as_mut_ptr(), std::ptr::null_mut());
-        r(re.as_mut_ptr(), std::ptr::null_mut());
+        c(ec.as_mut_ptr(), core::ptr::null_mut());
+        r(er.as_mut_ptr(), core::ptr::null_mut());
     }
 }
 
-/// A signature/key set both libraries agree on, for the verify/open rows.
-struct Fixture {
-    pk: Vec<u8>,
-    m: Vec<u8>,
-    sig: Vec<u8>,
+struct Keys {
+    pk_c: Vec<u8>,
+    sk_c: Vec<u8>,
+    pk_r: Vec<u8>,
+    sk_r: Vec<u8>,
 }
 
-fn fixture(l: &Libs, mlen: usize) -> Fixture {
-    let (ckp, rkp) = l.pair::<SeedKeypair>("crypto_sign_seed_keypair");
-    let (csig, rsig) = l.pair::<Signature>("crypto_sign_signature");
-    let mut rng = Rng::new(SEED + 900 + mlen as u64);
-    let seed = rng.bytes(CRYPTO_SEEDBYTES);
-    let mut cpk = vec![0u8; SPX_PK_BYTES];
-    let mut rpk = vec![0u8; SPX_PK_BYTES];
-    let mut csk = vec![0u8; SPX_SK_BYTES];
-    let mut rsk = vec![0u8; SPX_SK_BYTES];
+fn keypair(seed: &[u8]) -> Keys {
+    let p = libs();
+    let c: FnSeedKeypair = p.c.f("crypto_sign_seed_keypair");
+    let r: FnSeedKeypair = p.r.f("crypto_sign_seed_keypair");
+    let mut pk_c = vec![0u8; SPX_PK_BYTES];
+    let mut sk_c = vec![0u8; SPX_SK_BYTES];
+    let mut pk_r = vec![0u8; SPX_PK_BYTES];
+    let mut sk_r = vec![0u8; SPX_SK_BYTES];
     unsafe {
-        ckp(cpk.as_mut_ptr(), csk.as_mut_ptr(), seed.as_ptr());
-        rkp(rpk.as_mut_ptr(), rsk.as_mut_ptr(), seed.as_ptr());
+        assert_eq!(c(pk_c.as_mut_ptr(), sk_c.as_mut_ptr(), seed.as_ptr()), 0);
+        assert_eq!(r(pk_r.as_mut_ptr(), sk_r.as_mut_ptr(), seed.as_ptr()), 0);
     }
-    eq_bytes("fixture pk", &cpk, &rpk);
-    eq_bytes("fixture sk", &csk, &rsk);
-    let m = rng.bytes(mlen.max(1));
-    // crypto_sign_signature draws optrand from the DRBG; seed it first so both
-    // sides produce the same signature.
-    seed_both(l);
-    let mut cs = vec![0u8; SPX_BYTES];
-    let mut rs = vec![0u8; SPX_BYTES];
-    let mut cl = 0usize;
-    let mut rl = 0usize;
+    assert_eq!(pk_c, pk_r, "keypair pk diverged (see Phase B)");
+    assert_eq!(sk_c, sk_r, "keypair sk diverged (see Phase B)");
+    Keys {
+        pk_c,
+        sk_c,
+        pk_r,
+        sk_r,
+    }
+}
+
+/// Produce one valid (sig_c, sig_r) pair for `m`.
+fn sign(keys: &Keys, m: &[u8], entropy: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let p = libs();
+    let c: FnSignature = p.c.f("crypto_sign_signature");
+    let r: FnSignature = p.r.f("crypto_sign_signature");
+    seed_both_drbgs(entropy);
+    let mut sc = vec![0u8; SPX_BYTES];
+    let mut sr = vec![0u8; SPX_BYTES];
+    let mut lc = 0usize;
+    let mut lr = 0usize;
     unsafe {
-        csig(cs.as_mut_ptr(), &mut cl, m.as_ptr(), mlen, csk.as_ptr());
-        rsig(rs.as_mut_ptr(), &mut rl, m.as_ptr(), mlen, rsk.as_ptr());
-    }
-    eq_bytes("fixture signature", &cs, &rs);
-    Fixture {
-        pk: cpk,
-        m,
-        sig: cs,
-    }
-}
-
-/// Calls `crypto_sign_verify` on both libraries and asserts identical returns.
-#[track_caller]
-fn verify_both(l: &Libs, sig: &[u8], siglen: usize, m: &[u8], mlen: usize, pk: &[u8]) -> i32 {
-    let (c, r) = l.pair::<Verify>("crypto_sign_verify");
-    let (cv, rv) = unsafe {
-        (
-            c(sig.as_ptr(), siglen, m.as_ptr(), mlen, pk.as_ptr()),
-            r(sig.as_ptr(), siglen, m.as_ptr(), mlen, pk.as_ptr()),
-        )
-    };
-    assert_eq!(cv, rv, "crypto_sign_verify return code differs");
-    cv
-}
-
-/// Calls `crypto_sign_open` on both libraries; asserts identical return code,
-/// identical `*mlen` and identical output buffer.
-#[track_caller]
-fn open_both(l: &Libs, sm: &[u8], smlen: u64, pk: &[u8], mbuf_len: usize) -> (i32, u64) {
-    let (c, r) = l.pair::<Open>("crypto_sign_open");
-    let mut cm = vec![0x5Au8; mbuf_len];
-    let mut rm = vec![0x5Au8; mbuf_len];
-    let mut cl = 0xDEAD_BEEF_DEAD_BEEFu64;
-    let mut rl = 0xDEAD_BEEF_DEAD_BEEFu64;
-    let (cv, rv) = unsafe {
-        (
-            c(cm.as_mut_ptr(), &mut cl, sm.as_ptr(), smlen, pk.as_ptr()),
-            r(rm.as_mut_ptr(), &mut rl, sm.as_ptr(), smlen, pk.as_ptr()),
-        )
-    };
-    assert_eq!(cv, rv, "crypto_sign_open return code differs");
-    assert_eq!(cl, rl, "crypto_sign_open *mlen differs");
-    eq_bytes("crypto_sign_open m buffer", &cm, &rm);
-    (cv, cl)
-}
-
-/* ============ E1–E4: crypto_sign_verify siglen ==================== */
-
-#[test]
-fn e01_verify_siglen_zero() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    assert_eq!(verify_both(l, &f.sig, 0, &f.m, 33, &f.pk), -1);
-}
-
-#[test]
-fn e02_verify_siglen_minus_one() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    assert_eq!(verify_both(l, &f.sig, SPX_BYTES - 1, &f.m, 33, &f.pk), -1);
-}
-
-#[test]
-fn e03_verify_siglen_plus_one() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    assert_eq!(verify_both(l, &f.sig, SPX_BYTES + 1, &f.m, 33, &f.pk), -1);
-}
-
-#[test]
-fn e04_verify_siglen_huge() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    // The length check runs before `sig` is touched, so this is safe.
-    for siglen in [usize::MAX, usize::MAX / 2, 1 << 40] {
-        assert_eq!(verify_both(l, &f.sig, siglen, &f.m, 33, &f.pk), -1);
-    }
-}
-
-/* ============ E5–E9: crypto_sign_verify rejection ================= */
-
-#[test]
-fn e05_verify_corrupt_sig_regions() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    // one representative offset in each structural region of the signature
-    let fors_end = SPX_N + SPX_FORS_BYTES;
-    let wots_end = fors_end + SPX_WOTS_BYTES;
-    let offsets = [
-        0usize,                       // R
-        SPX_N,                        // first FORS sk
-        SPX_N + SPX_N,                // first FORS auth node
-        fors_end - 1,                 // last FORS byte
-        fors_end,                     // first WOTS byte of layer 0
-        wots_end - 1,                 // last WOTS byte of layer 0
-        wots_end,                     // first auth-path byte of layer 0
-        SPX_BYTES - 1,                // last signature byte
-    ];
-    for off in offsets {
-        let mut bad = f.sig.clone();
-        bad[off] ^= 0x01;
         assert_eq!(
-            verify_both(l, &bad, SPX_BYTES, &f.m, 33, &f.pk),
+            c(sc.as_mut_ptr(), &mut lc, m.as_ptr(), m.len(), keys.sk_c.as_ptr()),
+            0
+        );
+        assert_eq!(
+            r(sr.as_mut_ptr(), &mut lr, m.as_ptr(), m.len(), keys.sk_r.as_ptr()),
+            0
+        );
+    }
+    assert_eq!(lc, SPX_BYTES);
+    assert_eq!(lr, SPX_BYTES);
+    (sc, sr)
+}
+
+fn verify_pair(keys: &Keys, sig_c: &[u8], sig_r: &[u8], siglen: usize, m: &[u8]) -> (i32, i32) {
+    let p = libs();
+    let vc: FnVerify = p.c.f("crypto_sign_verify");
+    let vr: FnVerify = p.r.f("crypto_sign_verify");
+    unsafe {
+        (
+            vc(sig_c.as_ptr(), siglen, m.as_ptr(), m.len(), keys.pk_c.as_ptr()),
+            vr(sig_r.as_ptr(), siglen, m.as_ptr(), m.len(), keys.pk_r.as_ptr()),
+        )
+    }
+}
+
+fn fixture() -> (Keys, Vec<u8>, Vec<u8>, Vec<u8>) {
+    let mut rng = Rng::for_row(1000);
+    let seed = rng.bytes(CRYPTO_SEEDBYTES);
+    let keys = keypair(&seed);
+    let m = rng.bytes(64);
+    let entropy = rng.bytes(48);
+    let (sc, sr) = sign(&keys, &m, &entropy);
+    (keys, m, sc, sr)
+}
+
+/* ================================================================== */
+/* Rows 1-8 — crypto_sign_verify                                      */
+/* ================================================================== */
+
+fn verify_bad_siglen(row: u64, siglen: usize, label: &str) {
+    let (keys, m, sc, sr) = fixture();
+    let (a, b) = verify_pair(&keys, &sc, &sr, siglen, &m);
+    eq(&format!("ERRORS row {row}: crypto_sign_verify({label})"), 0, a, b);
+    eq(
+        &format!("ERRORS row {row}: crypto_sign_verify({label}) == -1"),
+        0,
+        a,
+        -1,
+    );
+}
+
+#[test]
+fn err_01_verify_siglen_zero() {
+    verify_bad_siglen(1, 0, "siglen=0");
+}
+
+#[test]
+fn err_02_verify_siglen_minus_one() {
+    verify_bad_siglen(2, SPX_BYTES - 1, "siglen=SPX_BYTES-1");
+}
+
+#[test]
+fn err_03_verify_siglen_plus_one() {
+    verify_bad_siglen(3, SPX_BYTES + 1, "siglen=SPX_BYTES+1");
+}
+
+#[test]
+fn err_04_verify_siglen_huge() {
+    // The `siglen != SPX_BYTES` check runs before any read of `sig`, so an
+    // absurd length must be rejected without touching memory.
+    verify_bad_siglen(4, usize::MAX, "siglen=SIZE_MAX");
+}
+
+#[test]
+fn err_05_verify_corrupt_sig() {
+    let (keys, m, sc, sr) = fixture();
+    let mut rng = Rng::for_row(5);
+    // Flip one bit at many different offsets: R, the FORS part, each hypertree
+    // layer, and the very last byte.
+    let mut offsets: Vec<usize> = vec![
+        0,
+        SPX_N - 1,
+        SPX_N,
+        SPX_N + SPX_FORS_BYTES - 1,
+        SPX_N + SPX_FORS_BYTES,
+        SPX_BYTES - 1,
+    ];
+    for _ in 0..10 {
+        offsets.push((rng.next_u64() % SPX_BYTES as u64) as usize);
+    }
+    for (i, off) in offsets.into_iter().enumerate() {
+        let mut bc = sc.clone();
+        let mut br = sr.clone();
+        let bit = 1u8 << (rng.next_u32() % 8);
+        bc[off] ^= bit;
+        br[off] ^= bit;
+        let (a, b) = verify_pair(&keys, &bc, &br, SPX_BYTES, &m);
+        eq(
+            &format!("ERRORS row 5: verify(corrupt sig @{off})"),
+            i,
+            a,
+            b,
+        );
+        eq(
+            &format!("ERRORS row 5: verify(corrupt sig @{off}) == -1"),
+            i,
+            a,
             -1,
-            "flipping sig[{off}] must be rejected"
         );
     }
 }
 
-/// NOTE on rejection expectations for message mutations.
-///
-/// `hash_blake.c` calls `blakeX_update(&S, m, mlen)` with a length in BYTES,
-/// but `blake256_update`/`blake512_update` take a length in BITS (see
-/// `blake256()`, which passes `inlen*8`).  For short inputs the accumulated bit
-/// count never reaches a compression, so `blake*_final` returns the unchanged
-/// IV and `hash_message`'s seed does not depend on the message at all.  That is
-/// the C's behaviour and the Rust reproduces it byte-for-byte, so "flip any
-/// message byte ⇒ rejected" is NOT a property of this library.
-///
-/// The differential requirement — C and Rust return the same code — is asserted
-/// for every case by `verify_both` / `open_both`.  On top of that these tests
-/// require that at least one mutation in the set IS rejected, so they cannot
-/// pass vacuously.
 #[test]
-fn e06_verify_wrong_message() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let mlen = 1000usize;
-    let f = fixture(l, mlen);
+fn err_06_verify_wrong_message() {
+    let (keys, m, sc, sr) = fixture();
+    // IMPORTANT C quirk: the BLAKE backend's `hash_message` calls
+    // `blakeX_update(&S, m, mlen)`, but `blake256_update`/`blake512_update`
+    // take their length in BITS (the one-shot `blake256()` passes `inlen * 8`).
+    // So for BLAKE only `mlen / 8` bytes of the message are actually absorbed
+    // and mutating a byte past that prefix does NOT change the digest — the C
+    // accepts the modified message. That is ground truth and the Rust must
+    // behave identically. The requirement asserted here is therefore
+    // "C and Rust agree", plus "at least one mutation is rejected" so the test
+    // still has teeth.
     let mut rejected = 0usize;
-    let mut accepted = 0usize;
-    for i in 0..mlen {
-        let mut m = f.m.clone();
-        m[i] ^= 0x80;
-        // verify_both asserts C == Rust
-        match verify_both(l, &f.sig, SPX_BYTES, &m, mlen, &f.pk) {
-            -1 => rejected += 1,
-            0 => accepted += 1,
-            other => panic!("unexpected return {other}"),
+    for (i, off) in [0usize, 1, 2, 7, 31, 63].into_iter().enumerate() {
+        let mut m2 = m.clone();
+        m2[off] ^= 0x01;
+        let (a, b) = verify_pair(&keys, &sc, &sr, SPX_BYTES, &m2);
+        eq(&format!("ERRORS row 6: verify(mutated m @{off})"), i, a, b);
+        assert!(
+            a == 0 || a == -1,
+            "row 6: unexpected return value {a} from crypto_sign_verify"
+        );
+        if a == -1 {
+            rejected += 1;
+        }
+        if off == 0 {
+            eq(
+                "ERRORS row 6: verify(mutated m @0) == -1 (byte 0 is always absorbed)",
+                i,
+                a,
+                -1,
+            );
         }
     }
     assert!(
         rejected > 0,
-        "no single-byte message mutation was rejected — the test is vacuous"
+        "row 6: no message mutation was rejected — the test would be vacuous"
     );
-    eprintln!("e06: {rejected} rejected, {accepted} accepted (byte/bit length quirk)");
 }
 
 #[test]
-fn e07_verify_wrong_pk() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    let g = fixture(l, 34);
-    assert_eq!(verify_both(l, &f.sig, SPX_BYTES, &f.m, 33, &g.pk), -1);
-    for i in 0..SPX_PK_BYTES {
-        let mut pk = f.pk.clone();
-        pk[i] ^= 0x01;
-        assert_eq!(verify_both(l, &f.sig, SPX_BYTES, &f.m, 33, &pk), -1);
+fn err_07_verify_wrong_pk() {
+    let p = libs();
+    let vc: FnVerify = p.c.f("crypto_sign_verify");
+    let vr: FnVerify = p.r.f("crypto_sign_verify");
+    let (_keys, m, sc, sr) = fixture();
+    let mut rng = Rng::for_row(7);
+    for i in 0..4 {
+        let other = keypair(&rng.bytes(CRYPTO_SEEDBYTES));
+        let (a, b) = unsafe {
+            (
+                vc(
+                    sc.as_ptr(),
+                    SPX_BYTES,
+                    m.as_ptr(),
+                    m.len(),
+                    other.pk_c.as_ptr(),
+                ),
+                vr(
+                    sr.as_ptr(),
+                    SPX_BYTES,
+                    m.as_ptr(),
+                    m.len(),
+                    other.pk_r.as_ptr(),
+                ),
+            )
+        };
+        eq("ERRORS row 7: verify(wrong pk)", i, a, b);
+        eq("ERRORS row 7: verify(wrong pk) == -1", i, a, -1);
     }
 }
 
 #[test]
-fn e08_verify_wrong_mlen() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 1000);
-    let mut rejected = 0usize;
-    for mlen in [0usize, 1, 999, 1001, 1016, 1024] {
-        let mut m = f.m.clone();
-        m.resize(2048, 0);
-        if verify_both(l, &f.sig, SPX_BYTES, &m, mlen, &f.pk) == -1 {
-            rejected += 1;
-        }
-    }
-    assert!(rejected > 0, "no wrong mlen was rejected — the test is vacuous");
-}
-
-#[test]
-fn e09_verify_all_zero() {
-    let l = libs();
-    let sig = vec![0u8; SPX_BYTES];
-    let pk = vec![0u8; SPX_PK_BYTES];
-    let m = vec![0u8; 33];
-    assert_eq!(verify_both(l, &sig, SPX_BYTES, &m, 33, &pk), -1);
-    let sig = vec![0xffu8; SPX_BYTES];
-    let pk = vec![0xffu8; SPX_PK_BYTES];
-    let m = vec![0xffu8; 33];
-    assert_eq!(verify_both(l, &sig, SPX_BYTES, &m, 33, &pk), -1);
-}
-
-#[test]
-fn e10_verify_valid() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    for mlen in [0usize, 1, 33, 231] {
-        let f = fixture(l, mlen);
-        assert_eq!(
-            verify_both(l, &f.sig, SPX_BYTES, &f.m, mlen, &f.pk),
-            0,
-            "valid signature must verify (mlen={mlen})"
+fn err_08_verify_wrong_mlen() {
+    let p = libs();
+    let vc: FnVerify = p.c.f("crypto_sign_verify");
+    let vr: FnVerify = p.r.f("crypto_sign_verify");
+    let (keys, m, sc, sr) = fixture();
+    for (i, mlen) in [0usize, 1, 32, 63].into_iter().enumerate() {
+        let (a, b) = unsafe {
+            (
+                vc(sc.as_ptr(), SPX_BYTES, m.as_ptr(), mlen, keys.pk_c.as_ptr()),
+                vr(sr.as_ptr(), SPX_BYTES, m.as_ptr(), mlen, keys.pk_r.as_ptr()),
+            )
+        };
+        eq(&format!("ERRORS row 8: verify(truncated mlen={mlen})"), i, a, b);
+        eq(
+            &format!("ERRORS row 8: verify(truncated mlen={mlen}) == -1"),
+            i,
+            a,
+            -1,
         );
     }
 }
 
-/* ============ E11–E15: crypto_sign_open ========================== */
+/* ================================================================== */
+/* Rows 9-12 — crypto_sign_open                                       */
+/* ================================================================== */
 
-#[test]
-fn e11_open_smlen_zero() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    let sm = vec![0u8; SPX_BYTES + 33];
-    let (ret, mlen) = open_both(l, &sm, 0, &f.pk, 64);
-    assert_eq!(ret, -1);
-    assert_eq!(mlen, 0);
-}
-
-#[test]
-fn e12_open_smlen_minus_one() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let f = fixture(l, 33);
-    let mut sm = f.sig.clone();
-    sm.extend_from_slice(&f.m);
-    for smlen in [1u64, (SPX_BYTES - 1) as u64] {
-        // m must have room for the memset(m, 0, smlen) the C does.
-        let (ret, mlen) = open_both(l, &sm, smlen, &f.pk, SPX_BYTES + 64);
-        assert_eq!(ret, -1, "smlen={smlen}");
-        assert_eq!(mlen, 0, "smlen={smlen}");
-    }
-}
-
-#[test]
-fn e13_open_smlen_exactly_sigbytes() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    // Boundary: smlen == SPX_BYTES is ACCEPTED and means an empty message.
-    let f = fixture(l, 0);
-    let (ret, mlen) = open_both(l, &f.sig, SPX_BYTES as u64, &f.pk, SPX_BYTES + 64);
-    assert_eq!(ret, 0, "smlen == SPX_BYTES with a valid empty-message sig");
-    assert_eq!(mlen, 0);
-}
-
-#[test]
-fn e14_open_bad_signature() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let mlen = 1000usize;
-    let f = fixture(l, mlen);
-    let mut sm = f.sig.clone();
-    sm.extend_from_slice(&f.m);
-    // Offsets inside the signature are always rejected.  Offsets inside the
-    // appended message may or may not be, because of the blake byte/bit length
-    // quirk documented above -- but C and Rust must agree either way.
-    for off in [0usize, SPX_N, SPX_N + 1, SPX_BYTES / 2, SPX_BYTES - 1] {
-        let mut bad = sm.clone();
-        bad[off] ^= 0x01;
-        let (ret, mlen_out) =
-            open_both(l, &bad, (SPX_BYTES + mlen) as u64, &f.pk, SPX_BYTES + mlen + 64);
-        assert_eq!(ret, -1, "corrupting the signature at sm[{off}] must be rejected");
-        assert_eq!(mlen_out, 0, "*mlen must be zeroed on failure");
-    }
-    let mut rejected = 0usize;
-    for off in [SPX_BYTES, SPX_BYTES + 1, SPX_BYTES + 32, SPX_BYTES + mlen - 1] {
-        let mut bad = sm.clone();
-        bad[off] ^= 0x01;
-        let (ret, mlen_out) =
-            open_both(l, &bad, (SPX_BYTES + mlen) as u64, &f.pk, SPX_BYTES + mlen + 64);
-        if ret == -1 {
-            rejected += 1;
-            assert_eq!(mlen_out, 0);
-        } else {
-            assert_eq!(mlen_out as usize, mlen);
-        }
-    }
-    assert!(rejected > 0, "no message-region corruption was rejected");
-}
-
-#[test]
-fn e15_open_smlen_too_long() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let mlen = 1000usize;
-    let f = fixture(l, mlen);
-    let mut sm = f.sig.clone();
-    sm.extend_from_slice(&f.m);
-    sm.extend_from_slice(&[0xEEu8; 64]); // trailing junk
-    let (ret, mlen_out) = open_both(
-        l,
-        &sm,
-        (SPX_BYTES + mlen + 64) as u64,
-        &f.pk,
-        SPX_BYTES + mlen + 128,
-    );
-    assert_eq!(ret, -1, "a longer message than was signed must be rejected");
-    assert_eq!(mlen_out, 0);
-}
-
-/* ============ E16–E18: the always-succeed paths =================== */
-
-#[test]
-fn e16_seed_keypair_always_zero() {
-    let l = libs();
-    let (c, r) = l.pair::<SeedKeypair>("crypto_sign_seed_keypair");
-    for seed in [
-        vec![0u8; CRYPTO_SEEDBYTES],
-        vec![0xffu8; CRYPTO_SEEDBYTES],
-        (0..CRYPTO_SEEDBYTES).map(|i| i as u8).collect(),
-    ] {
-        let mut cpk = vec![0u8; SPX_PK_BYTES];
-        let mut rpk = vec![0u8; SPX_PK_BYTES];
-        let mut csk = vec![0u8; SPX_SK_BYTES];
-        let mut rsk = vec![0u8; SPX_SK_BYTES];
-        let (cv, rv) = unsafe {
-            (
-                c(cpk.as_mut_ptr(), csk.as_mut_ptr(), seed.as_ptr()),
-                r(rpk.as_mut_ptr(), rsk.as_mut_ptr(), seed.as_ptr()),
-            )
-        };
-        assert_eq!(cv, rv);
-        assert_eq!(cv, 0, "crypto_sign_seed_keypair has no error path");
-        eq_bytes("pk", &cpk, &rpk);
-        eq_bytes("sk", &csk, &rsk);
-    }
-}
-
-#[test]
-fn e17_signature_always_zero() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let (c, r) = l.pair::<Signature>("crypto_sign_signature");
-    for sk in [vec![0u8; SPX_SK_BYTES], vec![0xffu8; SPX_SK_BYTES]] {
-        seed_both(l);
-        let m = [0u8; 1];
-        let mut cs = vec![0u8; SPX_BYTES];
-        let mut rs = vec![0u8; SPX_BYTES];
-        let mut cl = usize::MAX;
-        let mut rl = usize::MAX;
-        let (cv, rv) = unsafe {
-            (
-                c(cs.as_mut_ptr(), &mut cl, m.as_ptr(), 0, sk.as_ptr()),
-                r(rs.as_mut_ptr(), &mut rl, m.as_ptr(), 0, sk.as_ptr()),
-            )
-        };
-        assert_eq!(cv, rv);
-        assert_eq!(cv, 0, "crypto_sign_signature has no error path");
-        assert_eq!(cl, rl);
-        assert_eq!(cl, SPX_BYTES);
-        eq_bytes("degenerate-sk signature", &cs, &rs);
-    }
-}
-
-#[test]
-fn e18_sign_mlen_zero() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let (ckp, rkp) = l.pair::<Keypair>("crypto_sign_keypair");
-    let (c, r) = l.pair::<Sign>("crypto_sign");
-    seed_both(l);
-    let mut cpk = vec![0u8; SPX_PK_BYTES];
-    let mut rpk = vec![0u8; SPX_PK_BYTES];
-    let mut csk = vec![0u8; SPX_SK_BYTES];
-    let mut rsk = vec![0u8; SPX_SK_BYTES];
-    unsafe {
-        ckp(cpk.as_mut_ptr(), csk.as_mut_ptr());
-        rkp(rpk.as_mut_ptr(), rsk.as_mut_ptr());
-    }
-    let m = [0u8; 1];
-    let mut csm = vec![0u8; SPX_BYTES];
-    let mut rsm = vec![0u8; SPX_BYTES];
-    let mut cl = u64::MAX;
-    let mut rl = u64::MAX;
-    let (cv, rv) = unsafe {
+/// Calls `crypto_sign_open` on both sides and compares the return value,
+/// `*mlen`, and the *entire* output buffer (the C zeroises `smlen` bytes of `m`
+/// on failure, which is a side effect the Rust must reproduce exactly).
+fn open_pair(keys: &Keys, sm_c: &[u8], sm_r: &[u8], smlen: u64, mbuf: usize) -> (i32, i32) {
+    let p = libs();
+    let oc: FnSignOpen = p.c.f("crypto_sign_open");
+    let or_: FnSignOpen = p.r.f("crypto_sign_open");
+    let mut mc = vec![0xA5u8; mbuf];
+    let mut mr = vec![0xA5u8; mbuf];
+    let mut nc = 0xDEAD_BEEFu64;
+    let mut nr = 0xDEAD_BEEFu64;
+    let (a, b) = unsafe {
         (
-            c(csm.as_mut_ptr(), &mut cl, m.as_ptr(), 0, csk.as_ptr()),
-            r(rsm.as_mut_ptr(), &mut rl, m.as_ptr(), 0, rsk.as_ptr()),
+            oc(mc.as_mut_ptr(), &mut nc, sm_c.as_ptr(), smlen, keys.pk_c.as_ptr()),
+            or_(mr.as_mut_ptr(), &mut nr, sm_r.as_ptr(), smlen, keys.pk_r.as_ptr()),
         )
     };
-    assert_eq!(cv, rv);
-    assert_eq!(cv, 0);
-    assert_eq!(cl, rl);
-    assert_eq!(cl as usize, SPX_BYTES);
-    eq_bytes("crypto_sign(mlen=0)", &csm, &rsm);
+    eq("crypto_sign_open/*mlen", 0, nc, nr);
+    eq_bytes("crypto_sign_open/output buffer", 0, &mc, &mr);
+    (a, b)
 }
 
-/* ============ E19–E29: seedexpander =============================== */
+#[test]
+fn err_09_open_smlen_zero() {
+    let (keys, _m, sc, sr) = fixture();
+    let (a, b) = open_pair(&keys, &sc, &sr, 0, 64);
+    eq("ERRORS row 9: crypto_sign_open(smlen=0)", 0, a, b);
+    eq("ERRORS row 9: crypto_sign_open(smlen=0) == -1", 0, a, -1);
+}
 
-fn xof_init_both(l: &Libs, maxlen: u64) -> (i32, AesXofStruct, AesXofStruct) {
-    let (c, r) = l.pair::<SeedexpanderInit>("seedexpander_init");
-    let mut rng = Rng::new(SEED + 19);
+#[test]
+fn err_10_open_smlen_minus_one() {
+    let (keys, _m, sc, sr) = fixture();
+    // `memset(m, 0, smlen)` writes SPX_BYTES-1 bytes, so the buffer must be
+    // that large on both sides.
+    let (a, b) = open_pair(&keys, &sc, &sr, (SPX_BYTES - 1) as u64, SPX_BYTES);
+    eq("ERRORS row 10: crypto_sign_open(smlen=SPX_BYTES-1)", 0, a, b);
+    eq(
+        "ERRORS row 10: crypto_sign_open(smlen=SPX_BYTES-1) == -1",
+        0,
+        a,
+        -1,
+    );
+}
+
+#[test]
+fn err_11_open_verify_fail_zeroizes() {
+    let p = libs();
+    let sc_: FnSign = p.c.f("crypto_sign");
+    let sr_: FnSign = p.r.f("crypto_sign");
+    let mut rng = Rng::for_row(11);
+    let keys = keypair(&rng.bytes(CRYPTO_SEEDBYTES));
+    let mlen = 40usize;
+    let m = rng.bytes(mlen);
+    let entropy = rng.bytes(48);
+    seed_both_drbgs(&entropy);
+    let mut smc = vec![0u8; SPX_BYTES + mlen];
+    let mut smr = vec![0u8; SPX_BYTES + mlen];
+    let mut lc = 0u64;
+    let mut lr = 0u64;
+    unsafe {
+        sc_(
+            smc.as_mut_ptr(),
+            &mut lc,
+            m.as_ptr(),
+            mlen as u64,
+            keys.sk_c.as_ptr(),
+        );
+        sr_(
+            smr.as_mut_ptr(),
+            &mut lr,
+            m.as_ptr(),
+            mlen as u64,
+            keys.sk_r.as_ptr(),
+        );
+    }
+    assert_eq!(smc, smr, "crypto_sign diverged (see Phase B)");
+    // Corrupt the signature so the inner verify fails, then check the
+    // "memset(m, 0, smlen)" side effect (note: smlen, not smlen - SPX_BYTES).
+    smc[10] ^= 0xFF;
+    smr[10] ^= 0xFF;
+    let (a, b) = open_pair(&keys, &smc, &smr, lc, SPX_BYTES + mlen);
+    eq("ERRORS row 11: crypto_sign_open(bad sig)", 0, a, b);
+    eq("ERRORS row 11: crypto_sign_open(bad sig) == -1", 0, a, -1);
+}
+
+#[test]
+fn err_12_open_exact_len_invalid() {
+    let mut rng = Rng::for_row(12);
+    let keys = keypair(&rng.bytes(CRYPTO_SEEDBYTES));
+    // smlen == SPX_BYTES exactly: passes the length check, empty tail message,
+    // random (invalid) signature body.
+    let sm = rng.bytes(SPX_BYTES);
+    let (a, b) = open_pair(&keys, &sm, &sm, SPX_BYTES as u64, SPX_BYTES);
+    eq("ERRORS row 12: crypto_sign_open(smlen==SPX_BYTES, invalid)", 0, a, b);
+    eq(
+        "ERRORS row 12: crypto_sign_open(smlen==SPX_BYTES, invalid) == -1",
+        0,
+        a,
+        -1,
+    );
+}
+
+/* ================================================================== */
+/* Rows 13-20 — seedexpander_init / seedexpander                      */
+/* ================================================================== */
+
+fn seedexpander_init_pair(
+    seed: &[u8],
+    div: &[u8],
+    maxlen: u64,
+) -> (i32, i32, AesXofStruct, AesXofStruct) {
+    let p = libs();
+    let ic: FnSeedexpanderInit = p.c.f("seedexpander_init");
+    let ir: FnSeedexpanderInit = p.r.f("seedexpander_init");
+    let mut sc = AesXofStruct::default();
+    let mut sr = AesXofStruct::default();
+    // Pre-fill with a recognisable pattern so "did not touch ctx" is testable.
+    sc.buffer = [0x5Au8; 16];
+    sc.buffer_pos = 0x1234;
+    sc.length_remaining = 0x5678;
+    sc.key = [0x5Au8; 32];
+    sc.ctr = [0x5Au8; 16];
+    sr = AesXofStruct {
+        buffer: sc.buffer,
+        buffer_pos: sc.buffer_pos,
+        length_remaining: sc.length_remaining,
+        key: sc.key,
+        ctr: sc.ctr,
+    };
+    let mut s = seed.to_vec();
+    let mut d = div.to_vec();
+    let (a, b) = unsafe {
+        (
+            ic(
+                &mut sc,
+                s.as_mut_ptr(),
+                d.as_mut_ptr(),
+                maxlen as core::ffi::c_ulong,
+            ),
+            ir(
+                &mut sr,
+                s.as_mut_ptr(),
+                d.as_mut_ptr(),
+                maxlen as core::ffi::c_ulong,
+            ),
+        )
+    };
+    (a, b, sc, sr)
+}
+
+fn seedexpander_init_bad(row: u64, maxlen: u64, label: &str) {
+    let mut rng = Rng::for_row(row);
     let seed = rng.bytes(32);
     let div = rng.bytes(8);
-    let mut cs = seed.clone();
-    let mut rs = seed.clone();
-    let mut cd = div.clone();
-    let mut rd = div.clone();
-    // Pre-fill with a recognisable pattern so "ctx untouched" is verifiable.
-    let mut cctx = AesXofStruct {
-        buffer: [0x11; 16],
-        buffer_pos: 0x2222_2222_2222_2222,
-        length_remaining: 0x3333_3333_3333_3333,
-        key: [0x44; 32],
-        ctr: [0x55; 16],
-    };
-    let mut rctx = cctx;
-    let (cv, rv) = unsafe {
-        (
-            c(&mut cctx, cs.as_mut_ptr(), cd.as_mut_ptr(), maxlen),
-            r(&mut rctx, rs.as_mut_ptr(), rd.as_mut_ptr(), maxlen),
-        )
-    };
-    assert_eq!(cv, rv, "seedexpander_init return (maxlen={maxlen})");
-    assert_eq!(cctx, rctx, "AES_XOF_struct (maxlen={maxlen})");
-    (cv, cctx, rctx)
-}
-
-#[test]
-fn e19_seedexpander_init_maxlen_2p32() {
-    let l = libs();
-    let (ret, cctx, _) = xof_init_both(l, 0x1_0000_0000);
-    assert_eq!(ret, RNG_BAD_MAXLEN);
-    // rejected before anything is written
-    assert_eq!(cctx.key, [0x44u8; 32], "ctx must be untouched on rejection");
-    assert_eq!(cctx.length_remaining, 0x3333_3333_3333_3333);
-}
-
-#[test]
-fn e20_seedexpander_init_maxlen_max() {
-    let l = libs();
-    for maxlen in [u64::MAX, 0x1_0000_0001, 0x8000_0000_0000_0000] {
-        let (ret, _, _) = xof_init_both(l, maxlen);
-        assert_eq!(ret, RNG_BAD_MAXLEN, "maxlen={maxlen}");
-    }
-}
-
-#[test]
-fn e21_seedexpander_init_maxlen_2p32_minus_1() {
-    let l = libs();
-    let (ret, cctx, _) = xof_init_both(l, 0xFFFF_FFFF);
-    assert_eq!(ret, RNG_SUCCESS, "0xFFFFFFFF is the largest accepted maxlen");
-    assert_eq!(cctx.length_remaining, 0xFFFF_FFFF);
-    assert_eq!(&cctx.ctr[8..12], &[0xFF, 0xFF, 0xFF, 0xFF]);
-    assert_eq!(&cctx.ctr[12..16], &[0, 0, 0, 0]);
-    assert_eq!(cctx.buffer_pos, 16);
-    assert_eq!(cctx.buffer, [0u8; 16]);
-}
-
-#[test]
-fn e22_seedexpander_init_maxlen_zero() {
-    let l = libs();
-    let (ret, cctx, _) = xof_init_both(l, 0);
-    assert_eq!(ret, RNG_SUCCESS);
-    assert_eq!(cctx.length_remaining, 0);
-}
-
-#[test]
-fn e23_seedexpander_null_out() {
-    let l = libs();
-    let (c, r) = l.pair::<Seedexpander>("seedexpander");
-    let (_, mut cctx, mut rctx) = xof_init_both(l, 1024);
-    let before = cctx;
-    let (cv, rv) = unsafe {
-        (
-            c(&mut cctx, std::ptr::null_mut(), 16),
-            r(&mut rctx, std::ptr::null_mut(), 16),
-        )
-    };
-    assert_eq!(cv, rv);
-    assert_eq!(cv, RNG_BAD_OUTBUF);
-    assert_eq!(cctx, before, "ctx must be untouched");
-    assert_eq!(cctx, rctx);
-}
-
-#[test]
-fn e24_seedexpander_null_out_precedence() {
-    let l = libs();
-    let (c, r) = l.pair::<Seedexpander>("seedexpander");
-    let (_, mut cctx, mut rctx) = xof_init_both(l, 16);
-    // xlen is ALSO out of range; the null check must win.
-    let (cv, rv) = unsafe {
-        (
-            c(&mut cctx, std::ptr::null_mut(), 1_000_000),
-            r(&mut rctx, std::ptr::null_mut(), 1_000_000),
-        )
-    };
-    assert_eq!(cv, rv);
-    assert_eq!(cv, RNG_BAD_OUTBUF, "the NULL check precedes the length check");
-    assert_eq!(cctx, rctx);
-}
-
-#[test]
-fn e25_seedexpander_xlen_equals_remaining() {
-    let l = libs();
-    let (c, r) = l.pair::<Seedexpander>("seedexpander");
-    for maxlen in [1u64, 16, 64, 1024] {
-        let (_, mut cctx, mut rctx) = xof_init_both(l, maxlen);
-        let before = cctx;
-        let mut cb = vec![0u8; maxlen as usize];
-        let mut rb = vec![0u8; maxlen as usize];
-        // `xlen >= length_remaining` -- so EQUAL is rejected (C off-by-one).
-        let (cv, rv) = unsafe {
-            (
-                c(&mut cctx, cb.as_mut_ptr(), maxlen),
-                r(&mut rctx, rb.as_mut_ptr(), maxlen),
-            )
-        };
-        assert_eq!(cv, rv);
-        assert_eq!(cv, RNG_BAD_REQ_LEN, "xlen == length_remaining (maxlen={maxlen})");
-        assert_eq!(cctx, before, "ctx must be untouched on rejection");
-        assert_eq!(cctx, rctx);
-    }
-}
-
-#[test]
-fn e26_seedexpander_xlen_gt_remaining() {
-    let l = libs();
-    let (c, r) = l.pair::<Seedexpander>("seedexpander");
-    let (_, mut cctx, mut rctx) = xof_init_both(l, 64);
-    for xlen in [65u64, 1000, u64::MAX] {
-        let mut cb = vec![0u8; 16];
-        let mut rb = vec![0u8; 16];
-        let (cv, rv) = unsafe {
-            (
-                c(&mut cctx, cb.as_mut_ptr(), xlen),
-                r(&mut rctx, rb.as_mut_ptr(), xlen),
-            )
-        };
-        assert_eq!(cv, rv);
-        assert_eq!(cv, RNG_BAD_REQ_LEN, "xlen={xlen}");
-        assert_eq!(cctx, rctx);
-    }
-}
-
-#[test]
-fn e27_seedexpander_xlen_max_ok() {
-    let l = libs();
-    let (c, r) = l.pair::<Seedexpander>("seedexpander");
-    for maxlen in [2u64, 17, 64, 1024] {
-        let (_, mut cctx, mut rctx) = xof_init_both(l, maxlen);
-        let xlen = maxlen - 1;
-        let mut cb = vec![0xAAu8; xlen as usize + 16];
-        let mut rb = vec![0xAAu8; xlen as usize + 16];
-        let (cv, rv) = unsafe {
-            (
-                c(&mut cctx, cb.as_mut_ptr(), xlen),
-                r(&mut rctx, rb.as_mut_ptr(), xlen),
-            )
-        };
-        assert_eq!(cv, rv);
-        assert_eq!(cv, RNG_SUCCESS, "xlen == length_remaining - 1 must be accepted");
-        eq_bytes(&format!("seedexpander(maxlen={maxlen})"), &cb, &rb);
-        assert_eq!(&cb[xlen as usize..], &[0xAAu8; 16], "overran xlen");
-        assert_eq!(cctx, rctx);
-    }
-}
-
-#[test]
-fn e28_seedexpander_xlen_zero() {
-    let l = libs();
-    let (c, r) = l.pair::<Seedexpander>("seedexpander");
-    let (_, mut cctx, mut rctx) = xof_init_both(l, 1024);
-    let before = cctx;
-    let mut cb = [0xAAu8; 16];
-    let mut rb = [0xAAu8; 16];
-    let (cv, rv) = unsafe {
-        (
-            c(&mut cctx, cb.as_mut_ptr(), 0),
-            r(&mut rctx, rb.as_mut_ptr(), 0),
-        )
-    };
-    assert_eq!(cv, rv);
-    assert_eq!(cv, RNG_SUCCESS);
-    assert_eq!(cb, [0xAAu8; 16], "nothing must be written for xlen == 0");
-    assert_eq!(cb, rb);
-    // length_remaining -= 0; the rest of the state is unchanged.
-    assert_eq!(cctx, before);
-    assert_eq!(cctx, rctx);
-}
-
-#[test]
-fn e29_seedexpander_zero_budget() {
-    let l = libs();
-    let (c, r) = l.pair::<Seedexpander>("seedexpander");
-    let (_, mut cctx, mut rctx) = xof_init_both(l, 0);
-    // length_remaining == 0, so even xlen == 0 satisfies `xlen >= remaining`.
-    for xlen in [0u64, 1, 16] {
-        let mut cb = [0u8; 16];
-        let mut rb = [0u8; 16];
-        let (cv, rv) = unsafe {
-            (
-                c(&mut cctx, cb.as_mut_ptr(), xlen),
-                r(&mut rctx, rb.as_mut_ptr(), xlen),
-            )
-        };
-        assert_eq!(cv, rv);
-        assert_eq!(cv, RNG_BAD_REQ_LEN, "zero budget rejects xlen={xlen}");
-        assert_eq!(cctx, rctx);
-    }
-}
-
-/* ============ E30–E33: randombytes / DRBG ======================== */
-
-#[test]
-fn e30_randombytes_xlen_zero() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let (c, r) = l.pair::<Randombytes>("randombytes");
-    let cg = l.c::<*mut Drbg>("DRBG_ctx");
-    let rg = l.rs::<*mut Drbg>("DRBG_ctx");
-    seed_both(l);
-    let before = unsafe { **cg };
-    let mut cb = [0xAAu8; 16];
-    let mut rb = [0xAAu8; 16];
-    let (cv, rv) = unsafe { (c(cb.as_mut_ptr(), 0), r(rb.as_mut_ptr(), 0)) };
-    assert_eq!(cv, rv);
-    assert_eq!(cv, RNG_SUCCESS);
-    assert_eq!(cb, [0xAAu8; 16], "nothing written for xlen == 0");
-    assert_eq!(cb, rb);
-    let after = unsafe { **cg };
-    assert_eq!(after, unsafe { **rg }, "DRBG_ctx after randombytes(_, 0)");
-    // The loop body is skipped, but the trailing Update + counter bump still run.
-    assert_eq!(after.reseed_counter, before.reseed_counter + 1);
-    assert_ne!(after.key, before.key, "the trailing DRBG Update still happens");
-}
-
-#[test]
-fn e31_randombytes_always_success() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let (c, r) = l.pair::<Randombytes>("randombytes");
-    seed_both(l);
-    for xlen in [0usize, 1, 15, 16, 17, 100, 4096] {
-        let mut cb = vec![0u8; xlen.max(1)];
-        let mut rb = vec![0u8; xlen.max(1)];
-        let (cv, rv) = unsafe {
-            (
-                c(cb.as_mut_ptr(), xlen as u64),
-                r(rb.as_mut_ptr(), xlen as u64),
-            )
-        };
-        assert_eq!(cv, rv);
-        assert_eq!(cv, RNG_SUCCESS, "randombytes has no failure path (xlen={xlen})");
-        eq_bytes(&format!("randombytes(xlen={xlen})"), &cb, &rb);
-    }
-}
-
-#[test]
-fn e32_randombytes_init_null_pers() {
-    let _drbg = drbg_lock();
-    let l = libs();
-    let (ci, ri) = l.pair::<RandombytesInit>("randombytes_init");
-    let cg = l.c::<*mut Drbg>("DRBG_ctx");
-    let rg = l.rs::<*mut Drbg>("DRBG_ctx");
-    let entropy = kat_entropy();
-
-    // NULL personalization: no XOR.
-    let mut ce = entropy.clone();
-    let mut re = entropy.clone();
-    unsafe {
-        ci(ce.as_mut_ptr(), std::ptr::null_mut());
-        ri(re.as_mut_ptr(), std::ptr::null_mut());
-    }
-    let null_state = unsafe { **cg };
-    assert_eq!(null_state, unsafe { **rg });
-
-    // An all-zero personalization string must be equivalent to NULL (XOR by 0).
-    let mut zero = vec![0u8; 48];
-    let mut zero2 = vec![0u8; 48];
-    let mut ce = entropy.clone();
-    let mut re = entropy.clone();
-    unsafe {
-        ci(ce.as_mut_ptr(), zero.as_mut_ptr());
-        ri(re.as_mut_ptr(), zero2.as_mut_ptr());
-    }
-    assert_eq!(unsafe { **cg }, unsafe { **rg });
-    assert_eq!(
-        unsafe { **cg },
-        null_state,
-        "an all-zero personalization must match the NULL path"
+    let (a, b, sc, sr) = seedexpander_init_pair(&seed, &div, maxlen);
+    eq(&format!("ERRORS row {row}: seedexpander_init({label})"), 0, a, b);
+    eq(
+        &format!("ERRORS row {row}: seedexpander_init({label}) == RNG_BAD_MAXLEN"),
+        0,
+        a,
+        RNG_BAD_MAXLEN,
     );
+    eq_bytes(
+        &format!("ERRORS row {row}: seedexpander_init({label}) leaves ctx untouched"),
+        0,
+        &sc.bytes(),
+        &sr.bytes(),
+    );
+    // The C returns before writing anything: the pattern must survive.
+    assert_eq!(sc.key, [0x5Au8; 32], "row {row}: C wrote to ctx->key");
+    assert_eq!(sr.key, [0x5Au8; 32], "row {row}: Rust wrote to ctx->key");
+}
 
-    // A non-zero one must differ from the NULL path, identically on both sides.
-    let mut pers: Vec<u8> = (0..48u8).map(|i| i ^ 0xA5).collect();
-    let mut pers2 = pers.clone();
-    let mut ce = entropy.clone();
-    let mut re = entropy.clone();
+#[test]
+fn err_13_seedexpander_init_maxlen_boundary() {
+    seedexpander_init_bad(13, 0x1_0000_0000, "maxlen=2^32");
+}
+
+#[test]
+fn err_14_seedexpander_init_maxlen_max() {
+    seedexpander_init_bad(14, u64::MAX, "maxlen=ULONG_MAX");
+}
+
+#[test]
+fn err_15_seedexpander_init_maxlen_ok() {
+    let mut rng = Rng::for_row(15);
+    let seed = rng.bytes(32);
+    let div = rng.bytes(8);
+    let (a, b, sc, sr) = seedexpander_init_pair(&seed, &div, 0xFFFF_FFFF);
+    eq("ERRORS row 15: seedexpander_init(maxlen=2^32-1)", 0, a, b);
+    eq(
+        "ERRORS row 15: seedexpander_init(maxlen=2^32-1) == RNG_SUCCESS",
+        0,
+        a,
+        RNG_SUCCESS,
+    );
+    eq_bytes(
+        "ERRORS row 15: seedexpander_init ctx",
+        0,
+        &sc.bytes(),
+        &sr.bytes(),
+    );
+}
+
+/// Build a valid, initialised expander state on both sides.
+fn seedexpander_ready(row: u64, maxlen: u64) -> (AesXofStruct, AesXofStruct) {
+    let mut rng = Rng::for_row(row);
+    let seed = rng.bytes(32);
+    let div = rng.bytes(8);
+    let p = libs();
+    let ic: FnSeedexpanderInit = p.c.f("seedexpander_init");
+    let ir: FnSeedexpanderInit = p.r.f("seedexpander_init");
+    let mut sc = AesXofStruct::default();
+    let mut sr = AesXofStruct::default();
+    let mut s = seed.clone();
+    let mut d = div.clone();
     unsafe {
-        ci(ce.as_mut_ptr(), pers.as_mut_ptr());
-        ri(re.as_mut_ptr(), pers2.as_mut_ptr());
-    }
-    assert_eq!(unsafe { **cg }, unsafe { **rg });
-    assert_ne!(unsafe { **cg }, null_state);
-}
-
-#[test]
-fn e33_drbg_update_null_data() {
-    let l = libs();
-    let (c, r) = l.pair::<DrbgUpdate>("AES256_CTR_DRBG_Update");
-    let mut rng = Rng::new(SEED + 33_00);
-    for i in 0..8 {
-        let key = rng.bytes(32);
-        let v = if i == 0 { vec![0xffu8; 16] } else { rng.bytes(16) };
-        // NULL provided_data -> no XOR
-        let mut ck = key.clone();
-        let mut rk = key.clone();
-        let mut cv = v.clone();
-        let mut rv = v.clone();
-        unsafe {
-            c(std::ptr::null_mut(), ck.as_mut_ptr(), cv.as_mut_ptr());
-            r(std::ptr::null_mut(), rk.as_mut_ptr(), rv.as_mut_ptr());
-        }
-        eq_bytes("DRBG_Update(NULL) Key", &ck, &rk);
-        eq_bytes("DRBG_Update(NULL) V", &cv, &rv);
-        // an all-zero provided_data must be equivalent
-        let mut zeros = vec![0u8; 48];
-        let mut zeros2 = vec![0u8; 48];
-        let mut ck2 = key.clone();
-        let mut rk2 = key.clone();
-        let mut cv2 = v.clone();
-        let mut rv2 = v.clone();
-        unsafe {
-            c(zeros.as_mut_ptr(), ck2.as_mut_ptr(), cv2.as_mut_ptr());
-            r(zeros2.as_mut_ptr(), rk2.as_mut_ptr(), rv2.as_mut_ptr());
-        }
-        eq_bytes("DRBG_Update(zeros) Key", &ck2, &rk2);
-        eq_bytes("zeros == NULL path", &ck2, &ck);
-        eq_bytes("zeros == NULL path (V)", &cv2, &cv);
-    }
-}
-
-/* ============ E34–E39: out-of-range ADRS setters ================== */
-
-/// C enum parameters accept any `int`; every one of these setters narrows with
-/// `(unsigned char)` or writes a fixed-width big-endian field, so no value is
-/// rejected.  The Rust must truncate identically.
-#[test]
-fn e34_set_type_out_of_range() {
-    let l = libs();
-    let (c, r) = l.pair::<SetU32>("SPX_set_type");
-    let mut rng = Rng::new(SEED + 34_00);
-    let vals = [
-        7u32,          // one past SPX_ADDR_TYPE_FORSPRF
-        8,
-        127,
-        128,
-        255,
-        256,           // truncates to 0x00
-        257,
-        0x0000_FF00,   // truncates to 0x00
-        0x1234_5678,
-        u32::MAX,      // truncates to 0xFF
-    ];
-    for v in vals {
-        for _ in 0..4 {
-            let base = rng.addr();
-            let mut ca = base;
-            let mut ra = base;
-            unsafe {
-                c(ca.as_mut_ptr(), v);
-                r(ra.as_mut_ptr(), v);
-            }
-            eq_bytes(&format!("set_type({v})"), abytes(&ca), abytes(&ra));
-            assert_eq!(abytes(&ca)[off::TYPE], v as u8, "must store the low byte");
-        }
-    }
-}
-
-#[test]
-fn e35_set_layer_out_of_range() {
-    let l = libs();
-    let (c, r) = l.pair::<SetU32>("SPX_set_layer_addr");
-    let mut rng = Rng::new(SEED + 35_00);
-    for v in [SPX_D, SPX_D + 1, 255, 256, 0x1_0000, u32::MAX] {
-        let base = rng.addr();
-        let mut ca = base;
-        let mut ra = base;
-        unsafe {
-            c(ca.as_mut_ptr(), v);
-            r(ra.as_mut_ptr(), v);
-        }
-        eq_bytes(&format!("set_layer_addr({v})"), abytes(&ca), abytes(&ra));
-        assert_eq!(abytes(&ca)[off::LAYER], v as u8);
-    }
-}
-
-#[test]
-fn e36_set_chain_hash_out_of_range() {
-    let l = libs();
-    let mut rng = Rng::new(SEED + 36_00);
-    for (name, offset) in [
-        ("SPX_set_chain_addr", off::CHAIN_ADDR),
-        ("SPX_set_hash_addr", off::HASH_ADDR),
-    ] {
-        let (c, r) = l.pair::<SetU32>(name);
-        for v in [
-            SPX_WOTS_W,
-            SPX_WOTS_LEN as u32,
-            SPX_WOTS_LEN as u32 + 1,
-            255,
-            256,
-            u32::MAX,
-        ] {
-            let base = rng.addr();
-            let mut ca = base;
-            let mut ra = base;
-            unsafe {
-                c(ca.as_mut_ptr(), v);
-                r(ra.as_mut_ptr(), v);
-            }
-            eq_bytes(&format!("{name}({v})"), abytes(&ca), abytes(&ra));
-            assert_eq!(abytes(&ca)[offset], v as u8);
-        }
-    }
-}
-
-#[test]
-fn e37_set_tree_height_out_of_range() {
-    let l = libs();
-    let (c, r) = l.pair::<SetU32>("SPX_set_tree_height");
-    let mut rng = Rng::new(SEED + 37_00);
-    for v in [
-        SPX_TREE_HEIGHT + 1,
-        SPX_FULL_HEIGHT,
-        SPX_FULL_HEIGHT + 1,
-        255,
-        256,
-        u32::MAX,
-    ] {
-        let base = rng.addr();
-        let mut ca = base;
-        let mut ra = base;
-        unsafe {
-            c(ca.as_mut_ptr(), v);
-            r(ra.as_mut_ptr(), v);
-        }
-        eq_bytes(&format!("set_tree_height({v})"), abytes(&ca), abytes(&ra));
-        assert_eq!(abytes(&ca)[off::TREE_HGT], v as u8);
-    }
-}
-
-#[test]
-fn e38_set_tree_addr_out_of_range() {
-    let l = libs();
-    let (c, r) = l.pair::<SetU64>("SPX_set_tree_addr");
-    let mut rng = Rng::new(SEED + 38_00);
-    let bits = SPX_TREE_HEIGHT * (SPX_D - 1);
-    let vals = [
-        u64::MAX,
-        1u64 << 63,
-        if bits < 64 { 1u64 << bits } else { u64::MAX },
-        0xDEAD_BEEF_CAFE_BABE,
-    ];
-    for v in vals {
-        let base = rng.addr();
-        let mut ca = base;
-        let mut ra = base;
-        unsafe {
-            c(ca.as_mut_ptr(), v);
-            r(ra.as_mut_ptr(), v);
-        }
-        eq_bytes(&format!("set_tree_addr({v:#x})"), abytes(&ca), abytes(&ra));
         assert_eq!(
-            &abytes(&ca)[off::TREE..off::TREE + 8],
-            &v.to_be_bytes(),
-            "must write 8 big-endian bytes, unmasked"
+            ic(
+                &mut sc,
+                s.as_mut_ptr(),
+                d.as_mut_ptr(),
+                maxlen as core::ffi::c_ulong
+            ),
+            0
+        );
+        assert_eq!(
+            ir(
+                &mut sr,
+                s.as_mut_ptr(),
+                d.as_mut_ptr(),
+                maxlen as core::ffi::c_ulong
+            ),
+            0
+        );
+    }
+    assert_eq!(sc.bytes(), sr.bytes(), "seedexpander_init diverged");
+    (sc, sr)
+}
+
+#[test]
+fn err_16_seedexpander_null_out() {
+    let p = libs();
+    let ec: FnSeedexpander = p.c.f("seedexpander");
+    let er: FnSeedexpander = p.r.f("seedexpander");
+    let (mut sc, mut sr) = seedexpander_ready(16, 1024);
+    let before = sc.bytes();
+    let (a, b) = unsafe {
+        (
+            ec(&mut sc, core::ptr::null_mut(), 8),
+            er(&mut sr, core::ptr::null_mut(), 8),
+        )
+    };
+    eq("ERRORS row 16: seedexpander(x=NULL)", 0, a, b);
+    eq(
+        "ERRORS row 16: seedexpander(x=NULL) == RNG_BAD_OUTBUF",
+        0,
+        a,
+        RNG_BAD_OUTBUF,
+    );
+    eq_bytes("ERRORS row 16: ctx", 0, &sc.bytes(), &sr.bytes());
+    eq_bytes("ERRORS row 16: ctx untouched", 0, &sc.bytes(), &before);
+}
+
+fn seedexpander_bad_len(row: u64, delta: i64, expected: i32, label: &str) {
+    let p = libs();
+    let ec: FnSeedexpander = p.c.f("seedexpander");
+    let er: FnSeedexpander = p.r.f("seedexpander");
+    let (mut sc, mut sr) = seedexpander_ready(row, 1024);
+    let xlen = (sc.length_remaining as i64 + delta) as u64;
+    let before = sc.bytes();
+    let mut oc = vec![0xA5u8; 2048];
+    let mut or = vec![0xA5u8; 2048];
+    let (a, b) = unsafe {
+        (
+            ec(&mut sc, oc.as_mut_ptr(), xlen as core::ffi::c_ulong),
+            er(&mut sr, or.as_mut_ptr(), xlen as core::ffi::c_ulong),
+        )
+    };
+    eq(&format!("ERRORS row {row}: seedexpander({label})"), 0, a, b);
+    eq(
+        &format!("ERRORS row {row}: seedexpander({label}) == {expected}"),
+        0,
+        a,
+        expected,
+    );
+    eq_bytes(&format!("ERRORS row {row}: ctx"), 0, &sc.bytes(), &sr.bytes());
+    eq_bytes(
+        &format!("ERRORS row {row}: ctx untouched"),
+        0,
+        &sc.bytes(),
+        &before,
+    );
+    eq_bytes(&format!("ERRORS row {row}: out untouched"), 0, &oc, &or);
+    assert!(
+        oc.iter().all(|&x| x == 0xA5),
+        "row {row}: C wrote to the output buffer on rejection"
+    );
+}
+
+#[test]
+fn err_17_seedexpander_xlen_eq_remaining() {
+    // The check is `xlen >= ctx->length_remaining`, so asking for exactly the
+    // remaining amount is REJECTED.
+    seedexpander_bad_len(17, 0, RNG_BAD_REQ_LEN, "xlen == length_remaining");
+}
+
+#[test]
+fn err_18_seedexpander_xlen_gt_remaining() {
+    seedexpander_bad_len(18, 1, RNG_BAD_REQ_LEN, "xlen > length_remaining");
+}
+
+#[test]
+fn err_19_seedexpander_null_beats_len() {
+    let p = libs();
+    let ec: FnSeedexpander = p.c.f("seedexpander");
+    let er: FnSeedexpander = p.r.f("seedexpander");
+    let (mut sc, mut sr) = seedexpander_ready(19, 1024);
+    let xlen = sc.length_remaining + 100;
+    let (a, b) = unsafe {
+        (
+            ec(&mut sc, core::ptr::null_mut(), xlen),
+            er(&mut sr, core::ptr::null_mut(), xlen),
+        )
+    };
+    eq("ERRORS row 19: seedexpander(NULL, oversized)", 0, a, b);
+    eq(
+        "ERRORS row 19: NULL check wins over the length check",
+        0,
+        a,
+        RNG_BAD_OUTBUF,
+    );
+}
+
+#[test]
+fn err_20_seedexpander_zero_len() {
+    let p = libs();
+    let ec: FnSeedexpander = p.c.f("seedexpander");
+    let er: FnSeedexpander = p.r.f("seedexpander");
+    let (mut sc, mut sr) = seedexpander_ready(20, 1024);
+    let before = sc.bytes();
+    let mut oc = vec![0xA5u8; 16];
+    let mut or = vec![0xA5u8; 16];
+    let (a, b) = unsafe {
+        (
+            ec(&mut sc, oc.as_mut_ptr(), 0),
+            er(&mut sr, or.as_mut_ptr(), 0),
+        )
+    };
+    eq("ERRORS row 20: seedexpander(xlen=0)", 0, a, b);
+    eq(
+        "ERRORS row 20: seedexpander(xlen=0) == RNG_SUCCESS",
+        0,
+        a,
+        RNG_SUCCESS,
+    );
+    eq_bytes("ERRORS row 20: out", 0, &oc, &or);
+    eq_bytes("ERRORS row 20: ctx", 0, &sc.bytes(), &sr.bytes());
+    // `while (xlen > 0)` is never entered, and length_remaining -= 0.
+    eq_bytes("ERRORS row 20: ctx unchanged", 0, &sc.bytes(), &before);
+}
+
+/* ================================================================== */
+/* Rows 21-26 — degenerate-but-accepted inputs                        */
+/* ================================================================== */
+
+#[test]
+fn err_21_randombytes_zero_len() {
+    let p = libs();
+    let c: FnRandombytes = p.c.f("randombytes");
+    let r: FnRandombytes = p.r.f("randombytes");
+    let mut rng = Rng::for_row(21);
+    let entropy = rng.bytes(48);
+    seed_both_drbgs(&entropy);
+    let before_c = unsafe { p.c.data("DRBG_ctx", DRBG_CTX_BYTES).to_vec() };
+    let mut oc = [0xA5u8; 8];
+    let mut or = [0xA5u8; 8];
+    let (a, b) = unsafe { (c(oc.as_mut_ptr(), 0), r(or.as_mut_ptr(), 0)) };
+    eq("ERRORS row 21: randombytes(xlen=0)", 0, a, b);
+    eq("ERRORS row 21: randombytes(xlen=0) == RNG_SUCCESS", 0, a, 0);
+    eq_bytes("ERRORS row 21: out untouched", 0, &oc, &or);
+    assert_eq!(oc, [0xA5u8; 8], "C wrote output for xlen=0");
+    let after_c = unsafe { p.c.data("DRBG_ctx", DRBG_CTX_BYTES).to_vec() };
+    let after_r = unsafe { p.r.data("DRBG_ctx", DRBG_CTX_BYTES).to_vec() };
+    eq_bytes("ERRORS row 21: DRBG_ctx after", 0, &after_c, &after_r);
+    // The C still runs the trailing DRBG update, so the state MUST have moved.
+    assert_ne!(
+        before_c, after_c,
+        "row 21: the C DRBG state should advance even for xlen=0"
+    );
+}
+
+#[test]
+fn err_22_randombytes_init_null_pers() {
+    let p = libs();
+    let c: FnRandombytesInit = p.c.f("randombytes_init");
+    let r: FnRandombytesInit = p.r.f("randombytes_init");
+    let mut rng = Rng::for_row(22);
+    for i in 0..4 {
+        let entropy = rng.bytes(48);
+        let mut ec = entropy.clone();
+        let mut er = entropy.clone();
+        unsafe {
+            c(ec.as_mut_ptr(), core::ptr::null_mut());
+            r(er.as_mut_ptr(), core::ptr::null_mut());
+        }
+        let sc = unsafe { p.c.data("DRBG_ctx", DRBG_CTX_BYTES).to_vec() };
+        let sr = unsafe { p.r.data("DRBG_ctx", DRBG_CTX_BYTES).to_vec() };
+        eq_bytes("ERRORS row 22: DRBG_ctx", i, &sc, &sr);
+        eq_bytes("ERRORS row 22: entropy untouched", i, &ec, &entropy);
+        eq_bytes("ERRORS row 22: entropy untouched (Rust)", i, &er, &entropy);
+    }
+}
+
+#[test]
+fn err_23_seed_keypair_always_zero() {
+    let p = libs();
+    let c: FnSeedKeypair = p.c.f("crypto_sign_seed_keypair");
+    let r: FnSeedKeypair = p.r.f("crypto_sign_seed_keypair");
+    let mut rng = Rng::for_row(23);
+    for (i, seed) in [
+        vec![0u8; CRYPTO_SEEDBYTES],
+        vec![0xFFu8; CRYPTO_SEEDBYTES],
+        rng.bytes(CRYPTO_SEEDBYTES),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut pc = vec![0u8; SPX_PK_BYTES];
+        let mut sk = vec![0u8; SPX_SK_BYTES];
+        let mut pr = vec![0u8; SPX_PK_BYTES];
+        let mut sr = vec![0u8; SPX_SK_BYTES];
+        let (a, b) = unsafe {
+            (
+                c(pc.as_mut_ptr(), sk.as_mut_ptr(), seed.as_ptr()),
+                r(pr.as_mut_ptr(), sr.as_mut_ptr(), seed.as_ptr()),
+            )
+        };
+        eq("ERRORS row 23: crypto_sign_seed_keypair retval", i, a, b);
+        eq("ERRORS row 23: crypto_sign_seed_keypair == 0", i, a, 0);
+    }
+}
+
+#[test]
+fn err_24_signature_always_zero() {
+    let p = libs();
+    let c: FnSignature = p.c.f("crypto_sign_signature");
+    let r: FnSignature = p.r.f("crypto_sign_signature");
+    let mut rng = Rng::for_row(24);
+    let keys = keypair(&rng.bytes(CRYPTO_SEEDBYTES));
+    for (i, mlen) in [0usize, 1].into_iter().enumerate() {
+        let m = rng.bytes(mlen.max(1));
+        let entropy = rng.bytes(48);
+        seed_both_drbgs(&entropy);
+        let mut sc = vec![0u8; SPX_BYTES];
+        let mut sr = vec![0u8; SPX_BYTES];
+        let mut lc = 0usize;
+        let mut lr = 0usize;
+        let (a, b) = unsafe {
+            (
+                c(
+                    sc.as_mut_ptr(),
+                    &mut lc,
+                    m.as_ptr(),
+                    mlen,
+                    keys.sk_c.as_ptr(),
+                ),
+                r(
+                    sr.as_mut_ptr(),
+                    &mut lr,
+                    m.as_ptr(),
+                    mlen,
+                    keys.sk_r.as_ptr(),
+                ),
+            )
+        };
+        eq("ERRORS row 24: crypto_sign_signature retval", i, a, b);
+        eq("ERRORS row 24: crypto_sign_signature == 0", i, a, 0);
+        eq("ERRORS row 24: *siglen", i, lc, lr);
+        eq("ERRORS row 24: *siglen == SPX_BYTES", i, lc, SPX_BYTES);
+    }
+}
+
+#[test]
+fn err_25_sign_always_zero() {
+    let p = libs();
+    let c: FnSign = p.c.f("crypto_sign");
+    let r: FnSign = p.r.f("crypto_sign");
+    let mut rng = Rng::for_row(25);
+    let keys = keypair(&rng.bytes(CRYPTO_SEEDBYTES));
+    for (i, mlen) in [0usize, 7].into_iter().enumerate() {
+        let m = rng.bytes(mlen.max(1));
+        let entropy = rng.bytes(48);
+        seed_both_drbgs(&entropy);
+        let mut sc = vec![0u8; SPX_BYTES + mlen];
+        let mut sr = vec![0u8; SPX_BYTES + mlen];
+        let mut lc = 0u64;
+        let mut lr = 0u64;
+        let (a, b) = unsafe {
+            (
+                c(
+                    sc.as_mut_ptr(),
+                    &mut lc,
+                    m.as_ptr(),
+                    mlen as u64,
+                    keys.sk_c.as_ptr(),
+                ),
+                r(
+                    sr.as_mut_ptr(),
+                    &mut lr,
+                    m.as_ptr(),
+                    mlen as u64,
+                    keys.sk_r.as_ptr(),
+                ),
+            )
+        };
+        eq("ERRORS row 25: crypto_sign retval", i, a, b);
+        eq("ERRORS row 25: crypto_sign == 0", i, a, 0);
+        eq("ERRORS row 25: *smlen", i, lc, lr);
+        eq(
+            "ERRORS row 25: *smlen == SPX_BYTES + mlen",
+            i,
+            lc as usize,
+            SPX_BYTES + mlen,
         );
     }
 }
 
 #[test]
-fn e39_set_kp_treeindex_out_of_range() {
-    let l = libs();
-    let mut rng = Rng::new(SEED + 39_00);
-    for (name, offset) in [
-        ("SPX_set_keypair_addr", off::KP_ADDR),
-        ("SPX_set_tree_index", off::TREE_INDEX),
-    ] {
-        let (c, r) = l.pair::<SetU32>(name);
-        for v in [
-            1u32 << SPX_TREE_HEIGHT,
-            (1u32 << SPX_TREE_HEIGHT) + 1,
-            u32::MAX,
-            0xDEAD_BEEF,
-        ] {
-            let base = rng.addr();
-            let mut ca = base;
-            let mut ra = base;
-            unsafe {
-                c(ca.as_mut_ptr(), v);
-                r(ra.as_mut_ptr(), v);
-            }
-            eq_bytes(&format!("{name}({v})"), abytes(&ca), abytes(&ra));
-            assert_eq!(&abytes(&ca)[offset..offset + 4], &v.to_be_bytes());
-        }
-    }
+fn err_26_keypair_always_zero() {
+    let p = libs();
+    let c: FnKeypair = p.c.f("crypto_sign_keypair");
+    let r: FnKeypair = p.r.f("crypto_sign_keypair");
+    let mut rng = Rng::for_row(26);
+    let entropy = rng.bytes(48);
+    seed_both_drbgs(&entropy);
+    let mut pc = vec![0u8; SPX_PK_BYTES];
+    let mut sk = vec![0u8; SPX_SK_BYTES];
+    let mut pr = vec![0u8; SPX_PK_BYTES];
+    let mut sr = vec![0u8; SPX_SK_BYTES];
+    let (a, b) = unsafe {
+        (
+            c(pc.as_mut_ptr(), sk.as_mut_ptr()),
+            r(pr.as_mut_ptr(), sr.as_mut_ptr()),
+        )
+    };
+    eq("ERRORS row 26: crypto_sign_keypair retval", 0, a, b);
+    eq("ERRORS row 26: crypto_sign_keypair == 0", 0, a, 0);
 }
 
-/* ============ E40–E43: utils.c boundaries ======================== */
+/* ================================================================== */
+/* Rows 27-33 — out-of-range values across the FFI boundary           */
+/* ================================================================== */
 
+const SLOTS: usize = 16;
+
+fn addrs(rng: &mut Rng) -> [u32; SLOTS] {
+    let mut a = [0u32; SLOTS];
+    for x in a.iter_mut() {
+        *x = rng.next_u32();
+    }
+    a
+}
+
+/// `set_type` with values that have no corresponding `SPX_ADDR_TYPE_*` variant.
+/// C enums / `uint32_t` parameters accept any int, and the C silently truncates
+/// to `unsigned char`.
 #[test]
-fn e40_ull_to_bytes_outlen_zero() {
-    let l = libs();
-    let (c, r) = l.pair::<UllToBytes>("SPX_ull_to_bytes");
-    for v in [0u64, 1, u64::MAX] {
-        let mut cb = [0xAAu8; 16];
-        let mut rb = [0xAAu8; 16];
+fn err_27_set_type_out_of_range() {
+    let p = libs();
+    let c: FnSetU32 = p.c.f("SPX_set_type");
+    let r: FnSetU32 = p.r.f("SPX_set_type");
+    let mut rng = Rng::for_row(27);
+    let bad = [
+        7u32,
+        8,
+        100,
+        255,
+        256,
+        257,
+        0x0000_FF00,
+        0x1234_5678,
+        u32::MAX,
+        u32::MAX - 1,
+    ];
+    for (i, &t) in bad.iter().enumerate() {
+        let base = addrs(&mut rng);
+        let mut ac = base;
+        let mut ar = base;
         unsafe {
-            c(cb.as_mut_ptr(), 0, v);
-            r(rb.as_mut_ptr(), 0, v);
+            c(ac.as_mut_ptr(), t);
+            r(ar.as_mut_ptr(), t);
         }
-        assert_eq!(cb, [0xAAu8; 16], "outlen == 0 must write nothing");
-        assert_eq!(cb, rb);
+        eq_u32s(&format!("ERRORS row 27: SPX_set_type({t})"), i, &ac, &ar);
+        // Document the actual C behaviour: byte-level truncation, no rejection.
+        let ab: &[u8] = unsafe {
+            core::slice::from_raw_parts(ac.as_ptr() as *const u8, SLOTS * 4)
+        };
+        eq(
+            &format!("ERRORS row 27: SPX_set_type({t}) truncates"),
+            i,
+            ab[SPX_OFFSET_TYPE],
+            (t & 0xFF) as u8,
+        );
+    }
+}
+
+fn set_byte_field_row(row: u64, sym: &str, offset: usize) {
+    let p = libs();
+    let c: FnSetU32 = p.c.f(sym);
+    let r: FnSetU32 = p.r.f(sym);
+    let mut rng = Rng::for_row(row);
+    let bad = [
+        256u32,
+        257,
+        0x0000_FF00,
+        0x0000_FFFF,
+        0x1234_5678,
+        u32::MAX,
+    ];
+    for (i, &v) in bad.iter().enumerate() {
+        let base = addrs(&mut rng);
+        let mut ac = base;
+        let mut ar = base;
+        unsafe {
+            c(ac.as_mut_ptr(), v);
+            r(ar.as_mut_ptr(), v);
+        }
+        eq_u32s(&format!("ERRORS row {row}: {sym}({v})"), i, &ac, &ar);
+        let ab: &[u8] =
+            unsafe { core::slice::from_raw_parts(ac.as_ptr() as *const u8, SLOTS * 4) };
+        eq(
+            &format!("ERRORS row {row}: {sym}({v}) truncates to a byte"),
+            i,
+            ab[offset],
+            (v & 0xFF) as u8,
+        );
     }
 }
 
 #[test]
-fn e41_ull_to_bytes_outlen_gt8() {
-    let l = libs();
-    let (c, r) = l.pair::<UllToBytes>("SPX_ull_to_bytes");
-    let mut rng = Rng::new(SEED + 41_00);
-    for outlen in [9u32, 10, 12, 16] {
-        for v in [0u64, 1, u64::MAX, rng.next_u64(), rng.next_u64()] {
-            let mut cb = [0xAAu8; 32];
-            let mut rb = [0xAAu8; 32];
+fn err_28_set_layer_truncates() {
+    set_byte_field_row(28, "SPX_set_layer_addr", SPX_OFFSET_LAYER);
+}
+
+#[test]
+fn err_29_set_chain_truncates() {
+    set_byte_field_row(29, "SPX_set_chain_addr", SPX_OFFSET_CHAIN_ADDR);
+}
+
+#[test]
+fn err_30_set_hash_truncates() {
+    set_byte_field_row(30, "SPX_set_hash_addr", SPX_OFFSET_HASH_ADDR);
+}
+
+#[test]
+fn err_31_set_tree_height_truncates() {
+    set_byte_field_row(31, "SPX_set_tree_height", SPX_OFFSET_TREE_HGT);
+}
+
+#[test]
+fn err_32_set_tree_addr_full_range() {
+    let p = libs();
+    let c: FnSetU64 = p.c.f("SPX_set_tree_addr");
+    let r: FnSetU64 = p.r.f("SPX_set_tree_addr");
+    let mut rng = Rng::for_row(32);
+    let bad = [
+        u64::MAX,
+        u64::MAX - 1,
+        1u64 << 63,
+        0xDEAD_BEEF_CAFE_BABE,
+        // Well past 2^SPX_TREE_BITS, which the C does NOT mask.
+        (1u64 << SPX_TREE_BITS.min(62)) << 1,
+    ];
+    for (i, &v) in bad.iter().enumerate() {
+        let base = addrs(&mut rng);
+        let mut ac = base;
+        let mut ar = base;
+        unsafe {
+            c(ac.as_mut_ptr(), v);
+            r(ar.as_mut_ptr(), v);
+        }
+        eq_u32s(&format!("ERRORS row 32: SPX_set_tree_addr({v:#x})"), i, &ac, &ar);
+        let ab: &[u8] =
+            unsafe { core::slice::from_raw_parts(ac.as_ptr() as *const u8, SLOTS * 4) };
+        eq_bytes(
+            &format!("ERRORS row 32: SPX_set_tree_addr({v:#x}) is 8-byte big-endian"),
+            i,
+            &ab[SPX_OFFSET_TREE..SPX_OFFSET_TREE + 8],
+            &v.to_be_bytes(),
+        );
+    }
+}
+
+#[test]
+fn err_33_set_u32_fields_full_range() {
+    let p = libs();
+    let mut rng = Rng::for_row(33);
+    for (sym, offset) in [
+        ("SPX_set_keypair_addr", SPX_OFFSET_KP_ADDR),
+        ("SPX_set_tree_index", SPX_OFFSET_TREE_INDEX),
+    ] {
+        let c: FnSetU32 = p.c.f(sym);
+        let r: FnSetU32 = p.r.f(sym);
+        for (i, &v) in [u32::MAX, u32::MAX - 1, 1u32 << 31, 0xDEAD_BEEF]
+            .iter()
+            .enumerate()
+        {
+            let base = addrs(&mut rng);
+            let mut ac = base;
+            let mut ar = base;
             unsafe {
-                c(cb.as_mut_ptr(), outlen, v);
-                r(rb.as_mut_ptr(), outlen, v);
+                c(ac.as_mut_ptr(), v);
+                r(ar.as_mut_ptr(), v);
             }
-            eq_bytes(&format!("ull_to_bytes(outlen={outlen},v={v:#x})"), &cb, &rb);
-            // the excess high bytes are zero, the low 8 are the big-endian value
-            let n = outlen as usize;
-            assert_eq!(&cb[n - 8..n], &v.to_be_bytes());
-            assert!(cb[..n - 8].iter().all(|&b| b == 0));
-            assert_eq!(&cb[n..], &[0xAAu8; 32][n..]);
-        }
-    }
-}
-
-#[test]
-fn e42_bytes_to_ull_inlen_zero() {
-    let l = libs();
-    let (c, r) = l.pair::<BytesToUll>("SPX_bytes_to_ull");
-    let b = [0xffu8; 16];
-    let (cv, rv) = unsafe { (c(b.as_ptr(), 0), r(b.as_ptr(), 0)) };
-    assert_eq!(cv, rv);
-    assert_eq!(cv, 0, "inlen == 0 must return 0");
-}
-
-#[test]
-fn e43_bytes_to_ull_inlen_gt8() {
-    let l = libs();
-    let (c, r) = l.pair::<BytesToUll>("SPX_bytes_to_ull");
-    let mut rng = Rng::new(SEED + 43_00);
-    // For inlen > 8 the shift count 8*(inlen-1-i) reaches >= 64.  That is UB in
-    // C and an over-shift in Rust; whatever the compiled C does, the Rust must
-    // do the same.
-    for inlen in 9u32..=16 {
-        for _ in 0..NUM_ITERS {
-            let b = rng.bytes(16);
-            let (cv, rv) = unsafe { (c(b.as_ptr(), inlen), r(b.as_ptr(), inlen)) };
-            assert_eq!(
-                cv, rv,
-                "bytes_to_ull(inlen={inlen}, {}) diverges",
-                hex(&b)
+            eq_u32s(&format!("ERRORS row 33: {sym}({v:#x})"), i, &ac, &ar);
+            let ab: &[u8] =
+                unsafe { core::slice::from_raw_parts(ac.as_ptr() as *const u8, SLOTS * 4) };
+            eq_bytes(
+                &format!("ERRORS row 33: {sym}({v:#x}) is 4-byte big-endian"),
+                i,
+                &ab[offset..offset + 4],
+                &v.to_be_bytes(),
             );
         }
-        for pat in [0x00u8, 0x01, 0x80, 0xff] {
-            let b = vec![pat; 16];
-            let (cv, rv) = unsafe { (c(b.as_ptr(), inlen), r(b.as_ptr(), inlen)) };
-            assert_eq!(cv, rv, "bytes_to_ull(inlen={inlen}, all {pat:#02x})");
-        }
     }
 }
 
-/* ============ E44–E46: thash inblocks ============================ */
+/* ================================================================== */
+/* Rows 34-37 — degenerate lengths in the byte utilities              */
+/* ================================================================== */
 
 #[test]
-fn e44_thash_inblocks_zero() {
-    let l = libs();
-    let (c, r) = l.pair::<Thash>("SPX_thash");
-    let mut rng = Rng::new(SEED + 44_00);
-    for _ in 0..8 {
-        let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-        let inp = rng.bytes(SPX_N); // not read for inblocks == 0
-        let base = rng.addr();
-        let mut ca = base;
-        let mut ra = base;
-        let mut co = vec![0xAAu8; SPX_N + 16];
-        let mut ro = vec![0xAAu8; SPX_N + 16];
+fn err_34_ull_to_bytes_outlen_zero() {
+    let p = libs();
+    let c: FnUllToBytes = p.c.f("SPX_ull_to_bytes");
+    let r: FnUllToBytes = p.r.f("SPX_ull_to_bytes");
+    let mut rng = Rng::for_row(34);
+    for i in 0..8 {
+        let v = rng.next_u64();
+        let mut bc = [0xA5u8; 16];
+        let mut br = [0xA5u8; 16];
         unsafe {
-            c(co.as_mut_ptr(), inp.as_ptr(), 0, cc.as_ptr(), ca.as_mut_ptr());
-            r(ro.as_mut_ptr(), inp.as_ptr(), 0, rc.as_ptr(), ra.as_mut_ptr());
+            c(bc.as_mut_ptr(), 0, v);
+            r(br.as_mut_ptr(), 0, v);
         }
-        eq_bytes("thash(inblocks=0)", &co, &ro);
-        eq_bytes("thash(inblocks=0) addr", abytes(&ca), abytes(&ra));
+        eq_bytes("ERRORS row 34: SPX_ull_to_bytes(outlen=0)", i, &bc, &br);
+        assert_eq!(bc, [0xA5u8; 16], "row 34: the C wrote with outlen=0");
     }
 }
 
 #[test]
-fn e45_thash_inblocks_boundary() {
-    let l = libs();
-    let (c, r) = l.pair::<Thash>("SPX_thash");
-    let mut rng = Rng::new(SEED + 45_00);
-    // 1 vs 2 is the branch boundary: haraka F-vs-H, and the `inblocks > 1`
-    // wide-hash switch for sha2/blake when SPX_*512 is set.
-    for _ in 0..8 {
-        let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-        let inp = rng.bytes(2 * SPX_N);
-        let base = rng.addr();
-        let mut outs = Vec::new();
-        for inblocks in [1u32, 2] {
-            let mut ca = base;
-            let mut ra = base;
-            let mut co = vec![0u8; SPX_N];
-            let mut ro = vec![0u8; SPX_N];
-            unsafe {
-                c(co.as_mut_ptr(), inp.as_ptr(), inblocks, cc.as_ptr(), ca.as_mut_ptr());
-                r(ro.as_mut_ptr(), inp.as_ptr(), inblocks, rc.as_ptr(), ra.as_mut_ptr());
-            }
-            eq_bytes(&format!("thash(inblocks={inblocks})"), &co, &ro);
-            outs.push(co);
-        }
-        assert_ne!(outs[0], outs[1], "inblocks 1 and 2 must not collide");
-    }
-}
-
-#[test]
-fn e46_thash_inblocks_large() {
-    let l = libs();
-    let (c, r) = l.pair::<Thash>("SPX_thash");
-    let mut rng = Rng::new(SEED + 46_00);
-    for inblocks in [SPX_FORS_TREES, SPX_WOTS_LEN as u32] {
-        let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-        let inp = rng.bytes(inblocks as usize * SPX_N);
-        let base = rng.addr();
-        let mut ca = base;
-        let mut ra = base;
-        let mut co = vec![0xAAu8; SPX_N + 16];
-        let mut ro = vec![0xAAu8; SPX_N + 16];
+fn err_35_ull_to_bytes_outlen_gt_8() {
+    let p = libs();
+    let c: FnUllToBytes = p.c.f("SPX_ull_to_bytes");
+    let r: FnUllToBytes = p.r.f("SPX_ull_to_bytes");
+    let mut rng = Rng::for_row(35);
+    for (i, &outlen) in [9u32, 12, 16, 24].iter().enumerate() {
+        let v = if i % 2 == 0 { u64::MAX } else { rng.next_u64() };
+        let mut bc = vec![0xA5u8; outlen as usize + 8];
+        let mut br = bc.clone();
         unsafe {
-            c(co.as_mut_ptr(), inp.as_ptr(), inblocks, cc.as_ptr(), ca.as_mut_ptr());
-            r(ro.as_mut_ptr(), inp.as_ptr(), inblocks, rc.as_ptr(), ra.as_mut_ptr());
+            c(bc.as_mut_ptr(), outlen, v);
+            r(br.as_mut_ptr(), outlen, v);
         }
-        eq_bytes(&format!("thash(inblocks={inblocks})"), &co, &ro);
-    }
-}
-
-/* ============ E47–E48: tree-height boundaries ==================== */
-
-#[test]
-fn e47_compute_root_height_one() {
-    let l = libs();
-    let (c, r) = l.pair::<ComputeRoot>("SPX_compute_root");
-    let mut rng = Rng::new(SEED + 47_00);
-    // tree_height == 1 is the minimum sane value: `tree_height - 1` == 0 so the
-    // loop body never runs.  tree_height == 0 underflows to 0xFFFFFFFF and would
-    // loop ~2^32 times reading past auth_path, so it is deliberately not called.
-    for leaf_idx in [0u32, 1, 2, 3, u32::MAX] {
-        for _ in 0..4 {
-            let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-            let leaf = rng.bytes(SPX_N);
-            let auth = rng.bytes(SPX_N);
-            let base = rng.addr();
-            let mut ca = base;
-            let mut ra = base;
-            let mut croot = vec![0u8; SPX_N];
-            let mut rroot = vec![0u8; SPX_N];
-            unsafe {
-                c(
-                    croot.as_mut_ptr(),
-                    leaf.as_ptr(),
-                    leaf_idx,
-                    0,
-                    auth.as_ptr(),
-                    1,
-                    cc.as_ptr(),
-                    ca.as_mut_ptr(),
-                );
-                r(
-                    rroot.as_mut_ptr(),
-                    leaf.as_ptr(),
-                    leaf_idx,
-                    0,
-                    auth.as_ptr(),
-                    1,
-                    rc.as_ptr(),
-                    ra.as_mut_ptr(),
-                );
-            }
-            eq_bytes(&format!("compute_root(h=1,leaf_idx={leaf_idx})"), &croot, &rroot);
-            eq_bytes("compute_root(h=1) addr", abytes(&ca), abytes(&ra));
-        }
-    }
-}
-
-unsafe extern "C" fn synth_leaf(
-    leaf: *mut u8,
-    _ctx: *const u8,
-    addr_idx: u32,
-    tree_addr: *const u32,
-) {
-    let ta = std::slice::from_raw_parts(tree_addr, 8);
-    let mut h = 0xABCD_EF01_2345_6789u64 ^ (addr_idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    for w in ta {
-        h ^= (*w as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        h = h.rotate_left(23).wrapping_add(0x94D0_49BB_1331_11EB);
-    }
-    let out = std::slice::from_raw_parts_mut(leaf, SPX_N);
-    for (i, b) in out.iter_mut().enumerate() {
-        h = (h ^ (h >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9).wrapping_add(i as u64);
-        *b = (h >> 32) as u8;
+        eq_bytes(
+            &format!("ERRORS row 35: SPX_ull_to_bytes(outlen={outlen})"),
+            i,
+            &bc,
+            &br,
+        );
+        // Documented C behaviour: the high outlen-8 bytes become 0.
+        assert!(
+            bc[..outlen as usize - 8].iter().all(|&x| x == 0),
+            "row 35: expected the C to zero-extend the high bytes"
+        );
     }
 }
 
 #[test]
-fn e48_treehash_height_zero() {
-    let l = libs();
-    let (c, r) = l.pair::<TreeHash>("SPX_treehash");
-    let mut rng = Rng::new(SEED + 48_00);
-    for leaf_idx in [0u32, 1, 2, u32::MAX] {
-        for idx_offset in [0u32, 1, 0x1000] {
-            let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-            let base = rng.addr();
-            let mut cta = base;
-            let mut rta = base;
-            let mut cauth = vec![0xCCu8; SPX_N];
-            let mut rauth = vec![0xCCu8; SPX_N];
-            let mut croot = vec![0u8; SPX_N];
-            let mut rroot = vec![0u8; SPX_N];
-            unsafe {
-                c(
-                    croot.as_mut_ptr(),
-                    cauth.as_mut_ptr(),
-                    cc.as_ptr(),
-                    leaf_idx,
-                    idx_offset,
-                    0,
-                    synth_leaf,
-                    cta.as_mut_ptr(),
-                );
-                r(
-                    rroot.as_mut_ptr(),
-                    rauth.as_mut_ptr(),
-                    rc.as_ptr(),
-                    leaf_idx,
-                    idx_offset,
-                    0,
-                    synth_leaf,
-                    rta.as_mut_ptr(),
-                );
-            }
-            let tag = format!("treehash(h=0,leaf_idx={leaf_idx},off={idx_offset})");
-            eq_bytes(&format!("{tag} root"), &croot, &rroot);
-            eq_bytes(&format!("{tag} auth_path"), &cauth, &rauth);
-            eq_bytes(&format!("{tag} tree_addr"), abytes(&cta), abytes(&rta));
-        }
+fn err_36_bytes_to_ull_inlen_zero() {
+    let p = libs();
+    let c: FnBytesToUll = p.c.f("SPX_bytes_to_ull");
+    let r: FnBytesToUll = p.r.f("SPX_bytes_to_ull");
+    let mut rng = Rng::for_row(36);
+    for i in 0..8 {
+        let buf = rng.bytes(16);
+        let (a, b) = unsafe { (c(buf.as_ptr(), 0), r(buf.as_ptr(), 0)) };
+        eq("ERRORS row 36: SPX_bytes_to_ull(inlen=0)", i, a, b);
+        eq("ERRORS row 36: SPX_bytes_to_ull(inlen=0) == 0", i, a, 0);
+        // Also with a NULL pointer: inlen=0 means the pointer is never read.
+        let (a, b) = unsafe { (c(core::ptr::null(), 0), r(core::ptr::null(), 0)) };
+        eq("ERRORS row 36: SPX_bytes_to_ull(NULL, 0)", i, a, b);
+        eq("ERRORS row 36: SPX_bytes_to_ull(NULL, 0) == 0", i, a, 0);
     }
 }
 
-/* ============ E49–E50 ============================================ */
+#[test]
+fn err_37_bytes_to_ull_inlen_8() {
+    let p = libs();
+    let c: FnBytesToUll = p.c.f("SPX_bytes_to_ull");
+    let r: FnBytesToUll = p.r.f("SPX_bytes_to_ull");
+    let mut rng = Rng::for_row(37);
+    let cases: Vec<Vec<u8>> = vec![
+        vec![0u8; 8],
+        vec![0xFFu8; 8],
+        vec![0x80, 0, 0, 0, 0, 0, 0, 0],
+        rng.bytes(8),
+        rng.bytes(8),
+    ];
+    for (i, buf) in cases.into_iter().enumerate() {
+        let (a, b) = unsafe { (c(buf.as_ptr(), 8), r(buf.as_ptr(), 8)) };
+        eq("ERRORS row 37: SPX_bytes_to_ull(inlen=8)", i, a, b);
+        eq(
+            "ERRORS row 37: SPX_bytes_to_ull(inlen=8) is big-endian",
+            i,
+            a,
+            u64::from_be_bytes(buf.clone().try_into().unwrap()),
+        );
+    }
+}
+
+/* ================================================================== */
+/* Rows 38-40 — degenerate arguments in the hash / WOTS layer          */
+/* ================================================================== */
 
 #[test]
-fn e49_wots_chain_clamp() {
-    let l = libs();
-    let (c, r) = l.pair::<WotsPkFromSig>("SPX_wots_pk_from_sig");
-    let mut rng = Rng::new(SEED + 49_00);
-    // all-0x00 msg  -> chain_lengths all 0  -> gen_chain(start=0, steps=w-1)
-    // all-0xff msg  -> chain_lengths all w-1 -> gen_chain(start=w-1, steps=0)
-    // Both hit the `i < SPX_WOTS_W` clamp in gen_chain from opposite ends.
-    for msg in [vec![0u8; SPX_N], vec![0xffu8; SPX_N]] {
-        let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-        let sig = rng.bytes(SPX_WOTS_BYTES);
-        let base = rng.addr();
-        let mut ca = base;
-        let mut ra = base;
-        let mut cpk = vec![0u8; SPX_WOTS_BYTES];
-        let mut rpk = vec![0u8; SPX_WOTS_BYTES];
+fn err_38_thash_inblocks_zero() {
+    let p = libs();
+    let ic: FnInitHash = p.c.f("SPX_initialize_hash_function");
+    let ir: FnInitHash = p.r.f("SPX_initialize_hash_function");
+    let c: FnThash = p.c.f("SPX_thash");
+    let r: FnThash = p.r.f("SPX_thash");
+    let mut rng = Rng::for_row(38);
+    for i in 0..8 {
+        let pub_seed = rng.bytes(SPX_N);
+        let sk_seed = rng.bytes(SPX_N);
+        let mut cc = Ctx::with_seeds(&pub_seed, &sk_seed);
+        let mut cr = Ctx::with_seeds(&pub_seed, &sk_seed);
         unsafe {
-            c(cpk.as_mut_ptr(), sig.as_ptr(), msg.as_ptr(), cc.as_ptr(), ca.as_mut_ptr());
-            r(rpk.as_mut_ptr(), sig.as_ptr(), msg.as_ptr(), rc.as_ptr(), ra.as_mut_ptr());
+            ic(cc.as_mut_ptr());
+            ir(cr.as_mut_ptr());
         }
-        eq_bytes(&format!("wots_pk_from_sig(msg={:#04x}..)", msg[0]), &cpk, &rpk);
-        eq_bytes("wots_pk_from_sig addr", abytes(&ca), abytes(&ra));
+        let input = rng.bytes(SPX_N);
+        let addr = addrs(&mut rng);
+        let mut ac = addr;
+        let mut ar = addr;
+        let mut oc = vec![0xA5u8; SPX_N + 8];
+        let mut or = oc.clone();
+        unsafe {
+            c(
+                oc.as_mut_ptr(),
+                input.as_ptr(),
+                0,
+                cc.as_ptr(),
+                ac.as_mut_ptr(),
+            );
+            r(
+                or.as_mut_ptr(),
+                input.as_ptr(),
+                0,
+                cr.as_ptr(),
+                ar.as_mut_ptr(),
+            );
+        }
+        eq_bytes("ERRORS row 38: SPX_thash(inblocks=0)", i, &oc, &or);
+        eq_u32s("ERRORS row 38: SPX_thash(inblocks=0)/addr", i, &ac, &ar);
     }
 }
 
 #[test]
-fn e50_wots_gen_leafx1_null_sig() {
-    let l = libs();
-    let (c, r) = l.pair::<WotsGenLeafX1>("SPX_wots_gen_leafx1");
-    let mut rng = Rng::new(SEED + 50_00);
-    for _ in 0..8 {
-        let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-        let leaf_idx = rng.next_u32();
-        // wots_sign_leaf != leaf_idx  =>  wots_k_mask = ~0  =>  `k == wots_k`
-        // can never hold, so wots_sig (NULL here) is never dereferenced.
-        let sign_leaf = leaf_idx.wrapping_add(1);
-        let mut steps: Vec<u32> = (0..SPX_WOTS_LEN).map(|_| rng.next_u32()).collect();
-        let mut steps2 = steps.clone();
-        let base_leaf = rng.addr();
-        let base_pk = rng.addr();
-        let mut cinfo = LeafInfoX1 {
-            wots_sig: std::ptr::null_mut(),
-            wots_sign_leaf: sign_leaf,
+fn err_39_chain_lengths_extremes() {
+    let p = libs();
+    let c: FnChainLengths = p.c.f("SPX_chain_lengths");
+    let r: FnChainLengths = p.r.f("SPX_chain_lengths");
+    let cases: Vec<Vec<u8>> = vec![
+        vec![0x00u8; SPX_N],
+        vec![0xFFu8; SPX_N],
+        vec![0x0Fu8; SPX_N],
+        vec![0xF0u8; SPX_N],
+        {
+            let mut v = vec![0x00u8; SPX_N];
+            v[0] = 0xFF;
+            v
+        },
+        {
+            let mut v = vec![0xFFu8; SPX_N];
+            v[SPX_N - 1] = 0x00;
+            v
+        },
+    ];
+    for (i, m) in cases.into_iter().enumerate() {
+        let mut lc = vec![0u32; SPX_WOTS_LEN + 4];
+        let mut lr = lc.clone();
+        unsafe {
+            c(lc.as_mut_ptr() as *mut core::ffi::c_uint, m.as_ptr());
+            r(lr.as_mut_ptr() as *mut core::ffi::c_uint, m.as_ptr());
+        }
+        eq_u32s("ERRORS row 39: SPX_chain_lengths(extreme)", i, &lc, &lr);
+    }
+}
+
+#[test]
+fn err_40_wots_gen_leafx1_null_sig() {
+    // `merkle_gen_root` calls this with wots_sign_leaf = ~0u and no signature
+    // buffer, so the NULL `wots_sig` must never be dereferenced.
+    let p = libs();
+    let ic: FnInitHash = p.c.f("SPX_initialize_hash_function");
+    let ir: FnInitHash = p.r.f("SPX_initialize_hash_function");
+    let cl: FnChainLengths = p.c.f("SPX_chain_lengths");
+    let c: FnWotsGenLeafX1 = p.c.f("SPX_wots_gen_leafx1");
+    let r: FnWotsGenLeafX1 = p.r.f("SPX_wots_gen_leafx1");
+    let mut rng = Rng::for_row(40);
+    for i in 0..4 {
+        let pub_seed = rng.bytes(SPX_N);
+        let sk_seed = rng.bytes(SPX_N);
+        let mut cc = Ctx::with_seeds(&pub_seed, &sk_seed);
+        let mut cr = Ctx::with_seeds(&pub_seed, &sk_seed);
+        unsafe {
+            ic(cc.as_mut_ptr());
+            ir(cr.as_mut_ptr());
+        }
+        let root = rng.bytes(SPX_N);
+        let mut steps = vec![0u32; SPX_WOTS_LEN];
+        unsafe { cl(steps.as_mut_ptr() as *mut core::ffi::c_uint, root.as_ptr()) };
+
+        let base = addrs(&mut rng);
+        let leaf_idx = rng.next_u32() & 0xFFFF;
+        let mut infoc = LeafInfoX1 {
+            wots_sig: core::ptr::null_mut(),
+            wots_sign_leaf: !0u32,
             wots_steps: steps.as_mut_ptr(),
-            leaf_addr: base_leaf,
-            pk_addr: base_pk,
+            leaf_addr: base[..8].try_into().unwrap(),
+            pk_addr: base[8..16].try_into().unwrap(),
         };
-        let mut rinfo = LeafInfoX1 {
-            wots_sig: std::ptr::null_mut(),
-            wots_sign_leaf: sign_leaf,
-            wots_steps: steps2.as_mut_ptr(),
-            leaf_addr: base_leaf,
-            pk_addr: base_pk,
-        };
-        let mut cd = vec![0u8; SPX_N];
-        let mut rd = vec![0u8; SPX_N];
+        let mut infor = infoc;
+        let mut dc = vec![0xA5u8; SPX_N + 8];
+        let mut dr = dc.clone();
         unsafe {
-            c(cd.as_mut_ptr(), cc.as_ptr(), leaf_idx, &mut cinfo);
-            r(rd.as_mut_ptr(), rc.as_ptr(), leaf_idx, &mut rinfo);
+            c(dc.as_mut_ptr(), cc.as_ptr(), leaf_idx, &mut infoc);
+            r(dr.as_mut_ptr(), cr.as_ptr(), leaf_idx, &mut infor);
         }
-        eq_bytes("wots_gen_leafx1(NULL sig) leaf", &cd, &rd);
-        eq_bytes("leaf_addr", abytes(&cinfo.leaf_addr), abytes(&rinfo.leaf_addr));
-        eq_bytes("pk_addr", abytes(&cinfo.pk_addr), abytes(&rinfo.pk_addr));
-    }
-}
-
-/* ============ generic FFI boundaries ============================= */
-
-/// Out-of-range enum values crossing the FFI boundary, applied through the
-/// *composed* API rather than a single setter: an ADRS carrying an invalid type
-/// byte is fed to prf_addr / thash / wots_pk_from_sig.
-#[test]
-fn e51_out_of_range_type_through_pipeline() {
-    let l = libs();
-    let (cset, rset) = l.pair::<SetU32>("SPX_set_type");
-    let (cprf, rprf) = l.pair::<unsafe extern "C" fn(*mut u8, *const u8, *const u32)>("SPX_prf_addr");
-    let (cth, rth) = l.pair::<Thash>("SPX_thash");
-    let mut rng = Rng::new(SEED + 51_00);
-    for ty in [7u32, 8, 42, 255, 256, 1000, u32::MAX] {
-        let (cc, rc) = init_ctx_pair(&rng.bytes(SPX_N), &rng.bytes(SPX_N));
-        let base = rng.addr();
-        let mut ca = base;
-        let mut ra = base;
-        unsafe {
-            cset(ca.as_mut_ptr(), ty);
-            rset(ra.as_mut_ptr(), ty);
-        }
-        let mut cp = vec![0u8; SPX_N];
-        let mut rp = vec![0u8; SPX_N];
-        unsafe {
-            cprf(cp.as_mut_ptr(), cc.as_ptr(), ca.as_ptr());
-            rprf(rp.as_mut_ptr(), rc.as_ptr(), ra.as_ptr());
-        }
-        eq_bytes(&format!("prf_addr with type={ty}"), &cp, &rp);
-        let inp = rng.bytes(SPX_N);
-        let mut co = vec![0u8; SPX_N];
-        let mut ro = vec![0u8; SPX_N];
-        unsafe {
-            cth(co.as_mut_ptr(), inp.as_ptr(), 1, cc.as_ptr(), ca.as_mut_ptr());
-            rth(ro.as_mut_ptr(), inp.as_ptr(), 1, rc.as_ptr(), ra.as_mut_ptr());
-        }
-        eq_bytes(&format!("thash with type={ty}"), &co, &ro);
-    }
-}
-
-/// The size accessors take no input and can never fail; assert the exact values
-/// so a wrong parameter set is caught as an error, not a silent difference.
-#[test]
-fn e52_size_accessors_exact() {
-    let l = libs();
-    for (name, expect) in [
-        ("crypto_sign_secretkeybytes", SPX_SK_BYTES as u64),
-        ("crypto_sign_publickeybytes", SPX_PK_BYTES as u64),
-        ("crypto_sign_bytes", SPX_BYTES as u64),
-        ("crypto_sign_seedbytes", CRYPTO_SEEDBYTES as u64),
-    ] {
-        let (c, r) = l.pair::<SizeFn>(name);
-        let (cv, rv) = unsafe { (c(), r()) };
-        assert_eq!(cv, rv, "{name}");
-        assert_eq!(cv, expect, "{name}");
+        eq_bytes("ERRORS row 40: SPX_wots_gen_leafx1(NULL wots_sig)", i, &dc, &dr);
+        eq_u32s(
+            "ERRORS row 40: leaf_addr",
+            i,
+            &infoc.leaf_addr,
+            &infor.leaf_addr,
+        );
+        eq_u32s("ERRORS row 40: pk_addr", i, &infoc.pk_addr, &infor.pk_addr);
     }
 }

@@ -1,101 +1,89 @@
 # CONFIGS.md — Phase B configuration surface table
 
-## How this table was derived
+## Axes derived from the C source
 
-The public API is the full contents of `c_src/include/driver.h`:
+The whole library is `c_src/src/driver.c` (46 lines). Enumerating what the code
+actually branches on:
 
-```c
-void driver(const int *data, int len);
-```
+**Runtime options / modes / flags:** *none*. There is no init function, no
+context struct, no global state, no setter, no mode enum, and no `#ifdef` in
+either `driver.c` or `driver.h`. The only "configuration" a caller can express
+is the arguments themselves. (`grep -c '#if' c_src/src/driver.c` → the only
+preprocessor conditional in the tree is the `DRIVER_H_` include guard.)
 
-plus the second externally-linked symbol found by `nm -D` on the C `.so`, which
-the header does not declare:
+**Public entry points (both, including the low-level one):**
 
-```c
-void fma_array(int *out, const int *mul1, const int *mul2, const int *add, int len);
-```
+* `fma_array(out, mul1, mul2, add, len)` — the low-level primitive. Exported
+  (non-`static`) even though it is absent from `driver.h`, so it is part of the
+  ABI and is driven **directly**, not only through `driver`.
+* `driver(data, len)` — the one-shot convenience wrapper: VLA copy →
+  `inner` → `fma_array` over four aliased pointers → `printf("%d\n")` per element.
+* `inner` is `static`; it is exercised transitively via `driver` (there is no way
+  for an external caller to reach it otherwise, and it is absent from both
+  `.so` symbol tables).
 
-`fma_array` is the **lowest-level entry point**; `driver` is the convenience
-one-shot wrapper (it allocates a VLA, `memcpy`s the caller's data into it, then
-calls the `static` `inner`, which calls `fma_array` with **all four pointers
-aliased to the same buffer** and then `printf`s each element). Both are tested
-directly through their `.so` exports.
+**Input shapes the code distinguishes:**
 
-### Axis 1 — runtime options / modes / flags
+* *length*: `len` drives both loop guards → shapes `0` / `1` / `2` / small (3–8)
+  / many (hundreds) / a page-crossing size. Non-positive lengths are in ERRORS.md.
+* *aliasing of the four `fma_array` pointers*: the C writes `out[i]` inside the
+  loop and reads `mul1[i]`,`mul2[i]`,`add[i]` in the same iteration, so aliasing
+  changes the result. Distinct configurations: all four disjoint; `out` disjoint
+  but `mul1==mul2`; `out==mul1` (write-then-read alias); `out==add`;
+  all four identical (`inner`'s call). Each is a genuinely different code path
+  through the same loop body.
+* *element value classes*: zeros; small positives; negatives; mixed sign;
+  `INT_MAX`/`INT_MIN` extremes; values at the `int` multiply-overflow boundary
+  (`46340`/`46341`, `65536`); full-range random `i32`. These change whether the
+  multiply and/or the add wrap.
+* *stdout shape for `driver`*: `%d` formatting of negative numbers, `INT_MIN`
+  (`-2147483648`, the value with no positive counterpart), and multi-line output
+  ordering / buffering.
 
-**None.** `grep -nE "if *\(|switch|#if" c_src/src/driver.c` matches nothing in
-the function bodies. There is no global state, no init call, no option struct,
-no mode/flag parameter and no compile-time `#ifdef` that changes behaviour.
-The only conditional in the entire translation unit is the loop guard `i < len`
-(lines 30 and 37). So this axis contributes exactly one value and the
-cross-product below is driven by the remaining axes.
+## Table — one row per combination the C treats differently
 
-### Axis 2 — entry point
+Every row is driven with **many randomized inputs** (`SplitMix64`, fixed seed
+`0x243F_6A88_85A3_08D3`), not a single hand-picked value, and asserted
+byte-for-byte between the C `.so` and the Rust `.so`.
 
-* `fma_array` (low-level, caller-supplied output buffer, 4 independent pointers)
-* `driver` (wrapper: internal buffer, full self-aliasing, stdout side effect)
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `fma_array` | 4 disjoint buffers, `len==1`, random full-range `i32` values | [x] |
+| 2 | `fma_array` | 4 disjoint buffers, `len==2`, random full-range `i32` | [x] |
+| 3 | `fma_array` | 4 disjoint buffers, `len` random in 3..=8, random full-range `i32` | [x] |
+| 4 | `fma_array` | 4 disjoint buffers, `len` random in 64..=512 ("many"), random full-range `i32` | [x] |
+| 5 | `fma_array` | 4 disjoint buffers, `len==1024` (page-crossing), random full-range `i32` | [x] |
+| 6 | `fma_array` | 4 disjoint buffers, all elements `0` | [x] |
+| 7 | `fma_array` | 4 disjoint buffers, small positive values only (no overflow possible) | [x] |
+| 8 | `fma_array` | 4 disjoint buffers, small negative values only | [x] |
+| 9 | `fma_array` | 4 disjoint buffers, values drawn from the extremes set `{INT_MIN, INT_MIN+1, -1, 0, 1, 46340, 46341, 65535, 65536, INT_MAX-1, INT_MAX}` (multiply/add overflow boundary) | [x] |
+| 10 | `fma_array` | `mul1 == mul2` (squaring), `out`/`add` disjoint, random values | [x] |
+| 11 | `fma_array` | `out == mul1` (in-place, write observed by nothing later but changes read order), others disjoint, random values | [x] |
+| 12 | `fma_array` | `out == add`, `mul1`/`mul2` disjoint, random values | [x] |
+| 13 | `fma_array` | `out == mul1 == mul2 == add` (all four aliased — exactly the call `inner` makes), random values, random `len` | [x] |
+| 14 | `fma_array` | `out == mul1 == mul2 == add`, extremes value set (aliased **and** overflowing) | [x] |
+| 15 | `driver` | `len==1`, random full-range `i32` → stdout compared byte-for-byte | [x] |
+| 16 | `driver` | `len==2`, random full-range `i32` → stdout | [x] |
+| 17 | `driver` | `len` random in 3..=8, random full-range `i32` → stdout | [x] |
+| 18 | `driver` | `len` random in 64..=512, random full-range `i32` → stdout | [x] |
+| 19 | `driver` | `len==1024`, random full-range `i32` → stdout | [x] |
+| 20 | `driver` | all elements `0` → stdout (`"0\n"` repeated) | [x] |
+| 21 | `driver` | small positive values only → stdout | [x] |
+| 22 | `driver` | negative values only → stdout (`%d` sign formatting) | [x] |
+| 23 | `driver` | extremes value set incl. `INT_MIN`/`INT_MAX` → stdout (wrapped `%d` output) | [x] |
+| 24 | `driver` + `fma_array` | **cross-check of the composed pipeline**: `driver`'s printed lines must equal the values `fma_array(buf,buf,buf,buf,len)` leaves in `buf`, for random `len`/values, in both libraries | [x] |
 
-### Axis 3 — `len` (input shape / count)
+## Binary executable
 
-`0`, `1`, `2`, `3` (odd tail), `8`, `17` (odd, non-power-of-two), `64`
-(vectorizable), `1000` (multi-block), and negative (`-1`, `INT_MIN`).
-`len` is the only size/count/width knob: element type is fixed `int`, there is
-no stride, no byte order and no format selector.
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)`
+and `translation/Cargo.toml` declares only `crate-type = ["cdylib"]` with no
+`[[bin]]` / `src/main.rs`. **Neither side builds a binary driver**, so the
+"compare the two executables' stdout" clause has no subject. `driver`'s stdout is
+nevertheless compared byte-for-byte in rows 15–24 by capturing fd 1 around each
+FFI call.
 
-### Axis 4 — pointer aliasing (only meaningful for `fma_array`)
+## Feature combinations
 
-The C signature marks `mul1`/`mul2`/`add` as `const int *` but `inner` passes
-the *same* buffer as all four arguments, so aliasing is a first-class input
-shape that the code genuinely distinguishes (each element is read and then
-written within the same iteration): all-distinct, `out == mul1`, `out == mul2`,
-`out == add`, `mul1 == mul2` (square), and full self-alias
-`out == mul1 == mul2 == add`. `driver` always exercises the full self-alias.
-
-### Axis 5 — value distribution (boundary values)
-
-* `small` — |v| ≤ 1000, so `m1*m2 + a` never overflows
-* `full` — uniform over the whole `i32` range, so overflow happens constantly
-* `boundary` — drawn from `{INT_MIN, INT_MIN+1, -2, -1, 0, 1, 2, INT_MAX-1, INT_MAX}`
-
-Every row is driven with **many randomized inputs** (a fixed-seed SplitMix64
-PRNG; see `ITER` in `tests/differential.rs`), not one hand-picked value, and
-compared byte-for-byte: the full output buffer for `fma_array`, and the exact
-captured stdout bytes for `driver`.
-
-## Table
-
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| 1 | `fma_array` | no options; `len=0`; distinct ptrs; `small` — asserts the output buffer is left untouched | `cfg_01` | [x] |
-| 2 | `fma_array` | no options; `len=1`; distinct ptrs; `small` | `cfg_02` | [x] |
-| 3 | `fma_array` | no options; `len=2`; distinct ptrs; `small` | `cfg_03` | [x] |
-| 4 | `fma_array` | no options; `len=3` (odd tail); distinct ptrs; `small` | `cfg_04` | [x] |
-| 5 | `fma_array` | no options; `len=8`; distinct ptrs; `small` | `cfg_05` | [x] |
-| 6 | `fma_array` | no options; `len=17` (odd, non-power-of-two); distinct ptrs; `small` | `cfg_06` | [x] |
-| 7 | `fma_array` | no options; `len=64` (vectorizable); distinct ptrs; `small` | `cfg_07` | [x] |
-| 8 | `fma_array` | no options; `len=1000` (multi-block); distinct ptrs; `small` | `cfg_08` | [x] |
-| 9 | `fma_array` | no options; `len=64`; distinct ptrs; `full` i32 range (products overflow) | `cfg_09` | [x] |
-| 10 | `fma_array` | no options; `len=1000`; distinct ptrs; `full` i32 range | `cfg_10` | [x] |
-| 11 | `fma_array` | no options; `len=64`; distinct ptrs; `boundary` values (`INT_MIN`/`INT_MAX`/0/±1/±2) | `cfg_11` | [x] |
-| 12 | `fma_array` | no options; `len=1`; distinct ptrs; `boundary` values | `cfg_12` | [x] |
-| 13 | `fma_array` | no options; `len=64`; **`out == mul1`** (in-place first multiplicand); `full` | `cfg_13` | [x] |
-| 14 | `fma_array` | no options; `len=64`; **`out == mul2`** (in-place second multiplicand); `full` | `cfg_14` | [x] |
-| 15 | `fma_array` | no options; `len=64`; **`out == add`** (in-place addend); `full` | `cfg_15` | [x] |
-| 16 | `fma_array` | no options; `len=64`; **`mul1 == mul2`** (square + add); `full` | `cfg_16` | [x] |
-| 17 | `fma_array` | no options; `len=64`; **full self-alias `out==mul1==mul2==add`** (the pattern `inner` uses); `small` | `cfg_17` | [x] |
-| 18 | `fma_array` | no options; `len=1000`; full self-alias; `full` i32 range | `cfg_18` | [x] |
-| 19 | `fma_array` | no options; `len=17`; full self-alias; `boundary` values | `cfg_19` | [x] |
-| 20 | `fma_array` | no options; `len=-1` and `len=INT_MIN`; distinct ptrs; asserts output untouched | `cfg_20` | [x] |
-| 21 | `driver` | no options; `len=0` — asserts empty stdout | `cfg_21` | [x] |
-| 22 | `driver` | no options; `len=1`; `small` | `cfg_22` | [x] |
-| 23 | `driver` | no options; `len=2`; `small` | `cfg_23` | [x] |
-| 24 | `driver` | no options; `len=3` (odd tail); `small` | `cfg_24` | [x] |
-| 25 | `driver` | no options; `len=8`; `small` | `cfg_25` | [x] |
-| 26 | `driver` | no options; `len=17` (odd, non-power-of-two); `small` | `cfg_26` | [x] |
-| 27 | `driver` | no options; `len=64`; `small` | `cfg_27` | [x] |
-| 28 | `driver` | no options; `len=1000` (large VLA); `small` | `cfg_28` | [x] |
-| 29 | `driver` | no options; `len=64`; `full` i32 range (`d*d+d` overflows, negative results printed) | `cfg_29` | [x] |
-| 30 | `driver` | no options; `len=1000`; `full` i32 range | `cfg_30` | [x] |
-| 31 | `driver` | no options; `len=64`; `boundary` values | `cfg_31` | [x] |
-| 32 | `driver` | no options; `len=1`; `boundary` values (incl. `INT_MIN`, `INT_MAX`) | `cfg_32` | [x] |
-| 33 | `fma_array` → `driver` | composed pipeline: `fma_array` result buffer fed as `driver`'s input, `len=64`, `full` — checks the low-level and wrapper paths agree when chained | `cfg_33` | [x] |
+`translation/Cargo.toml` has no `[features]` table → one combination only
+(default == `--no-default-features`). Rows 1–24 and all ERRORS.md rows are run
+under both spellings.

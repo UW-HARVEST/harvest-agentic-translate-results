@@ -1,73 +1,81 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Derived mechanically from `nm -D` on both shared libraries.
+## Source of truth
 
-Build commands used:
+C shared library built with:
 
-```sh
+```
 cd c_src && mkdir -p build && cd build \
   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-LqBoXw.so   (CMake derives the target name
-#    from the *parent* directory name, see CMakeLists.txt lines 2-4)
-
-cd translation && cargo build --release --offline
-# -> translation/target/release/libpremultiply_lib.so
 ```
 
-## C `.so` — defined dynamic symbols (`nm -D --defined-only`)
+Artifact: `c_src/build/libharvest-work-nUPNTl.so`
+(the CMakeLists derives the project/library name from the parent directory name).
 
-| # | symbol | type | present in Rust `.so`? |
-|---|--------|------|------------------------|
-| 1 | `premultiply` | `T` (global text) | **YES** — `T premultiply` |
+Rust artifact: `translation/target/release/libpremultiply_lib.so`
+(`crate-type = ["cdylib"]`, `[lib] name = "premultiply_lib"`).
 
-That is the complete list. `c_src` contains exactly one translation unit
-(`src/lib.c`, 20 lines) declaring exactly one non-static function, so the
-exported surface is a single symbol.
-
-## C `.so` — undefined symbols
-
-All weak/toolchain glue, none requiring a Rust counterpart:
-
-`_ITM_deregisterTMCloneTable` (w), `_ITM_registerTMCloneTable` (w),
-`__cxa_finalize@GLIBC_2.2.5` (w), `__gmon_start__` (w)
-
-## Rust `.so` — defined dynamic symbols, non-mangled
-
-| symbol | type |
-|--------|------|
-| `premultiply` | `T` |
-
-No other `#[no_mangle]` symbols are exported. Remaining defined symbols are
-`_ZN…` Rust-mangled std internals plus `rust_*` / `__rust_*` runtime hooks,
-which are private to the Rust runtime and have no C analogue.
-
-## Rust `.so` — undefined symbols
-
-Every entry resolves to libc (`libc.so.6`) or the unwinder
-(`libgcc_s.so.1`): `_Unwind_*`, `__errno_location`, `__tls_get_addr`,
-`abort`, `bcmp`, `calloc`, `close`, `dl_iterate_phdr`, `free`, `fstat64`,
-`getcwd`, `getenv`, `gettid`, `lseek64`, `malloc`, `memcpy`, `memmove`,
-`memset`, `mmap64`, `munmap`, `open64`, `posix_memalign`,
-`pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, `read`,
-`readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`, `syscall`,
-`write`, `writev`, plus the same weak toolchain glue as the C `.so`.
-
-`ldd` confirms only `linux-vdso.so.1`, `libgcc_s.so.1`, `libc.so.6` and
-`ld-linux-x86-64.so.2`.
-
-## Symbol diff
+## `nm -D --defined-only` on the C `.so` (non-libc, non-CRT symbols)
 
 ```
-symbols in C .so but NOT in Rust .so :  (none)
-non-libc undefined symbols in Rust .so:  (none)
+0000000000001139 T premultiply
 ```
 
-**Result: symbol parity is EMPTY-DIFF. 0 missing, 0 undefined non-libc.**
+Filtering note: `nm -D` on the C `.so` also lists the usual toolchain-supplied
+dynamic symbols that are not part of the library's own API surface
+(`_init`, `_fini`, `__bss_start`, `_edata`, `_end`, and the undefined libc
+imports). Those are emitted by the linker / crt objects, not by `src/lib.c`,
+and are deliberately excluded from the parity requirement below. The complete
+set of symbols originating from the C *source* is the single function above.
 
-No C source file was left untranslated: `c_src/src/lib.c` is the only
-`.c` file listed in `CMakeLists.txt` and its only function is
-`premultiply`, which `translation/src/lib.rs` implements and exports.
+## Parity table
 
-Automated check: `tests/symbols.rs::c_and_rust_export_identical_symbol_sets`
-re-derives both symbol lists with `nm -D` at test time and fails on any
-difference, so this table cannot silently rot.
+| # | C symbol | type | C `.so` | Rust `.so` | status |
+|---|----------|------|---------|------------|--------|
+| 1 | `premultiply` | `T` (global text) | yes | yes | **MATCH** |
+
+## Rust `.so` exported symbols originating from the crate
+
+```
+0000000000011760 T premultiply
+```
+
+`rust_eh_personality` is *not* present because `[profile.release] panic = "abort"`.
+No other crate-originated dynamic symbols are exported: `cp_pixel_t` and
+`cp_image_t` are types only (no runtime symbol in either language), and
+`PIXEL_SIZE` / `c_float_to_u8` are private crate items that produce no dynamic
+symbol.
+
+## Missing-symbol analysis
+
+Missing from Rust `.so`: **none**.
+
+Every symbol defined by `c_src/src/lib.c` is exported by the Rust `cdylib` under
+the exact same name, with the same binding (`GLOBAL`) and the same type
+(`FUNC` / text). No `#[no_mangle]` wrapper had to be added and no C module was
+found to be untranslated: `c_src/src/lib.c` contains exactly one function and
+`c_src/include/lib.h` declares exactly that one function.
+
+Verification command used for the diff (must print nothing):
+
+```
+diff <(nm -D --defined-only c_src/build/*.so \
+        | awk '{print $3}' | grep -vE '^(_init|_fini|__bss_start|_edata|_end)$' | sort) \
+     <(nm -D --defined-only translation/target/release/libpremultiply_lib.so \
+        | awk '{print $3}' | grep -vE '^(_init|_fini|__bss_start|_edata|_end|__rust_.*|rust_eh_personality)$' | sort)
+```
+
+## Undefined (imported) symbols
+
+The C `.so` imports nothing from libc for this translation unit other than what
+the CRT adds (`__gmon_start__`, `_ITM_*`, `__cxa_finalize` weak refs). The Rust
+`.so` has no non-libc undefined symbols. **0 missing / unresolved non-libc
+symbols in the Rust build.**
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
+buildable configuration is the default one (empty feature set).
+`cargo check --no-default-features` and `cargo check --all-features` resolve to
+the same unit, so symbol parity and the Phase B/C test suites need only be run
+once; this is recorded in the Phase D checklist.

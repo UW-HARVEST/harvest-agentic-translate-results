@@ -66,27 +66,21 @@ const PAKT_CHUNK_TYPE: ImaU32 = u32::from_le_bytes(*b"tkap");
 const DATA_CHUNK_TYPE: ImaU32 = u32::from_le_bytes(*b"atad");
 const IMA4_FORMAT_ID: ImaU32 = u32::from_le_bytes(*b"4ami");
 
-// Match GCC's x86-64 lowering of C's f64-to-unsigned conversion, including
-// CVTTSD2SI's indefinite result for values it cannot represent.
-fn gcc_f64_to_u64(value: f64) -> u64 {
-    const SIGN_BIT: u64 = 1 << 63;
+fn cvttsd2si(value: f64) -> i64 {
     const TWO_TO_63: f64 = 9_223_372_036_854_775_808.0;
-
-    fn cvttsd2si(value: f64) -> u64 {
-        const SIGN_BIT: u64 = 1 << 63;
-        const TWO_TO_63: f64 = 9_223_372_036_854_775_808.0;
-
-        if value.is_nan() || !(-TWO_TO_63..TWO_TO_63).contains(&value) {
-            SIGN_BIT
-        } else {
-            (value.trunc() as i64) as u64
-        }
-    }
-
-    if value >= TWO_TO_63 {
-        cvttsd2si(value - TWO_TO_63) ^ SIGN_BIT
+    if !value.is_finite() || value >= TWO_TO_63 || value < -TWO_TO_63 {
+        i64::MIN
     } else {
-        cvttsd2si(value)
+        value.trunc() as i64
+    }
+}
+
+fn c_f64_to_u64(value: f64) -> u64 {
+    const TWO_TO_63: f64 = 9_223_372_036_854_775_808.0;
+    if value >= TWO_TO_63 {
+        (cvttsd2si(value - TWO_TO_63) as u64) ^ (1u64 << 63)
+    } else {
+        cvttsd2si(value) as u64
     }
 }
 
@@ -144,7 +138,7 @@ pub unsafe extern "C" fn ima_parse(info: *mut ImaInfo, data: *const c_void) -> c
                 .read_unaligned()
                 .swap_bytes(),
         );
-        let converted_sample_rate = gcc_f64_to_u64(addr_of!((*desc).sample_rate).read_unaligned());
+        let converted_sample_rate = c_f64_to_u64(addr_of!((*desc).sample_rate).read_unaligned());
         addr_of_mut!((*info).sample_rate)
             .write_unaligned(ImaF64::from_bits(converted_sample_rate.swap_bytes()));
     }

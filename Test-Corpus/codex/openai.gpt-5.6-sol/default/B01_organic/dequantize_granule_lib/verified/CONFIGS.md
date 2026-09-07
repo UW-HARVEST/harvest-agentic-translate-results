@@ -1,41 +1,58 @@
 # Configuration Surface
 
-Source-derived axes:
+The public header exposes one entry point:
 
-- Public entry point: `dequantize_granule` (the complete public header surface).
-- `total_bands`: empty (`0`), one (`1`), many, and the array-boundary value
-  (`32`, because the loop reads `2 * total_bands` entries from `bitalloc[64]`).
-- `group_size`: zero, one, the conventional grouped size `3`, and a larger
-  value `4`; it controls both the inner sample loop and each outer-group base.
-- Allocation mode: zero (`ba == 0`), direct (`1..16`), and grouped (`17..21`).
-  Values above `21` can request shifts wider than the C `uint32_t` result and
-  are outside the C implementation's defined arithmetic domain.
-- Bit-reader shape: each starting bit offset (`bs.pos & 7 == 0..7`), reads
-  contained in one byte or crossing bytes, exact-limit reads, and padded reads.
-- Layout shape: one slot, paired channel slots, alternating `576`/`18` output
-  offsets, and mixed modes over all 64 allocation slots.
+```c
+int dequantize_granule(float *grbuf, bs_t *bs, L12_scale_info *sci,
+                       int group_size);
+```
 
-There are no Cargo features. The only feature configurations are the equivalent
-default and `--no-default-features` builds.
+Mechanically derived branch axes:
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+- `group_size`: zero, one, or many output samples per group.
+- `sci->total_bands`: zero, one, or many bands; the loop reads exactly
+  `2 * total_bands` entries from `bitalloc[64]`, so the maximum in-array value
+  is 32.
+- `sci->bitalloc[i]`: zero (skip), 1 (direct one-bit edge), 2..15 (direct),
+  16 (direct upper edge), or 17 and above (grouped-code branch).
+- Grouped-code formula subshapes: `ba=17` (`mod=3`, 5-bit code), `ba=18`
+  (`mod=5`, 7-bit code), `ba=19` (`mod=9`, 10-bit code), `ba=20`
+  (`mod=17`, 17-bit code), and `ba=21` (`mod=33`, 31-bit code).
+- Bit-reader position: byte-aligned or each unaligned offset 1..7.
+- Bit-reader width: contained in the current byte, crossing one byte boundary,
+  or crossing multiple byte boundaries.
+- Bitstream capacity: sufficient for every read, exactly exhausted, or
+  exceeded (the exceeded case is E01 in `ERRORS.md`).
+- Band composition: homogeneous allocation classes or mixed skipped/direct/
+  grouped entries, which also exercises the alternating `choff` destination
+  layout (`576`, then `-558` via `choff = 18 - choff`).
+- `scf`, `stereo_bands`, and `scfcod` are public state but are never read by
+  the C implementation; inert-value variation is included in mixed cases.
+
+There are no Cargo features and no C preprocessor feature branches.
+
+| # | entry point(s) | configuration (options set + input shape) | status |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `dequantize_granule` | `total_bands=0`; `group_size` in `0,1,3,4`; each starting bit offset | [x] |
-| 2 | `dequantize_granule` | `group_size=0`; one/many bands; allocations only zero or direct (`0..16`) | [x] |
-| 3 | `dequantize_granule` | `group_size=0`; one/many bands; grouped allocations (`17..21`) still consume one code per nonzero slot | [x] |
-| 4 | `dequantize_granule` | one/many/max bands; all `bitalloc=0`; `group_size=1,3,4`; destination remains unchanged | [x] |
-| 5 | `dequantize_granule` | direct boundary `bitalloc=1`; aligned and unaligned one-bit reads | [x] |
-| 6 | `dequantize_granule` | direct `bitalloc=2..7`; every starting bit offset, including byte crossings | [x] |
-| 7 | `dequantize_granule` | direct byte-width `bitalloc=8`; every starting bit offset | [x] |
-| 8 | `dequantize_granule` | direct `bitalloc=9..15`; every starting bit offset and multi-byte reads | [x] |
-| 9 | `dequantize_granule` | direct boundary `bitalloc=16`; every starting bit offset | [x] |
-| 10 | `dequantize_granule` | grouped boundary `bitalloc=17` (`mod=3`, five-bit code); every starting bit offset | [x] |
-| 11 | `dequantize_granule` | grouped `bitalloc=18` (`mod=5`, seven-bit code); every starting bit offset | [x] |
-| 12 | `dequantize_granule` | grouped `bitalloc=19` (`mod=9`, ten-bit code); every starting bit offset | [x] |
-| 13 | `dequantize_granule` | grouped `bitalloc=20` (`mod=17`, seventeen-bit code); every starting bit offset | [x] |
-| 14 | `dequantize_granule` | grouped arithmetic boundary `bitalloc=21` (`mod=33`, thirty-one-bit code); every starting bit offset | [x] |
-| 15 | `dequantize_granule` | paired channel slots with mixed zero/direct/grouped allocations; `group_size=1` | [x] |
-| 16 | `dequantize_granule` | many bands with alternating `576`/`18` layout and mixed allocations; `group_size=3` | [x] |
-| 17 | `dequantize_granule` | maximum `total_bands=32`, all 64 slots mixed, larger `group_size=4` | [x] |
-| 18 | `dequantize_granule` | sufficient input with final successful read exactly at `bs.limit` | [x] |
-| 19 | `dequantize_granule` | same valid shapes with `bs.limit` padded beyond the final read | [x] |
+| C01 | `dequantize_granule` | `total_bands=0`, `group_size=0`; empty operation | [x] |
+| C02 | `dequantize_granule` | `total_bands=0`, `group_size=1` and many; return-only operation | [x] |
+| C03 | `dequantize_granule` | one band pair, all `bitalloc=0`, `group_size=1` and many | [x] |
+| C04 | `dequantize_granule` | one band pair, direct `ba=1`, aligned, read contained in one byte | [x] |
+| C05 | `dequantize_granule` | one band pair, direct `ba=2..7`, aligned and contained reads | [x] |
+| C06 | `dequantize_granule` | one band pair, direct `ba=2..7`, unaligned offsets 1..7, including one-boundary crossings | [x] |
+| C07 | `dequantize_granule` | one band pair, direct `ba=8..15`, aligned and unaligned, one/multiple-boundary reads | [x] |
+| C08 | `dequantize_granule` | one band pair, direct upper edge `ba=16`, aligned and unaligned | [x] |
+| C09 | `dequantize_granule` | one band pair, grouped `ba=17` (`mod=3`, 5-bit code), all alignments | [x] |
+| C10 | `dequantize_granule` | one band pair, grouped `ba=18` (`mod=5`, 7-bit code), all alignments | [x] |
+| C11 | `dequantize_granule` | one band pair, grouped `ba=19` (`mod=9`, 10-bit code), all alignments | [x] |
+| C12 | `dequantize_granule` | one band pair, grouped `ba=20` (`mod=17`, 17-bit code), all alignments | [x] |
+| C13 | `dequantize_granule` | one band pair, grouped `ba=21` (`mod=33`, 31-bit code), all alignments | [x] |
+| C14 | `dequantize_granule` | multiple bands with homogeneous direct allocations; `group_size=1` | [x] |
+| C15 | `dequantize_granule` | multiple bands with homogeneous direct allocations; `group_size=3` and `12` | [x] |
+| C16 | `dequantize_granule` | multiple bands with homogeneous grouped allocations; `group_size=1`, `3`, and `12` | [x] |
+| C17 | `dequantize_granule` | multiple bands mixing skipped, direct, and grouped allocations; varied inert fields | [x] |
+| C18 | `dequantize_granule` | maximum in-array band count `total_bands=32`, mixed allocations, `group_size=1` | [x] |
+| C19 | `dequantize_granule` | maximum in-array band count `total_bands=32`, mixed allocations, `group_size=3` and `12` | [x] |
+| C20 | `dequantize_granule` | sufficient bitstream ending exactly at `limit` on the final read | [x] |
+| C21 | `dequantize_granule` | randomized aligned bitstreams across every allocation class and group shape | [x] |
+| C22 | `dequantize_granule` | randomized unaligned bitstreams across offsets 1..7, every allocation class, and group shape | [x] |
+| C23 | `dequantize_granule` | `group_size=0` with active direct versus grouped allocations; direct consumes no bits while grouped consumes one code per entry and group | [x] |

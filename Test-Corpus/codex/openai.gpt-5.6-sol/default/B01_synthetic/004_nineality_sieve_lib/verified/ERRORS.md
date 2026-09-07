@@ -1,17 +1,22 @@
 # Error Surface
 
-Mechanical scan inputs:
+Mechanically inspected `../c_src/include/sieve.h` and
+`../c_src/src/sieve.c` for error-return statements/macros, assertions, null
+checks, range checks, min/max constants, and error enums.
 
-```text
-rg -n 'RETURN_ERROR|return[[:space:]]+(-1|NULL)|assert[[:space:]]*\(|enum|if[[:space:]]*\(|switch[[:space:]]*\(|NULL|[Mm][Ii][Nn]|[Mm][Aa][Xx]|<[=]?|>[=]?|==' ../c_src/src ../c_src/include
-```
+| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
+|---|----------|----------------------------------------------|-------------------|-----|
 
-The only matched runtime condition is `val % 10 == 9`, which terminates a
-successful operation. The C API has no error return, sentinel, assertion,
-explicit range check, pointer, length, enum, or rejection branch.
+There are no rows: the sole API is `void sieve(int)`, and the C source has no
+rejection or error path. It accepts no pointers, lengths, enums, modes, or
+options, and documents no restricted integer subrange.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Verified |
-|---|----------|----------------------------------------------|-------------------|----------|
+Generic FFI-boundary audit:
 
-Distinct C rejection paths: **0**
+- Null pointers: not applicable; there are no pointer parameters.
+- Zero length: not applicable; there are no length parameters.
+- Oversized length: not applicable; there are no length parameters.
+- Out-of-range enum: not applicable; there are no enum parameters.
+- One past documented range: not applicable; no integer subrange is documented.
+- Integer zero is a valid configuration and is covered in `CONFIGS.md`.
 

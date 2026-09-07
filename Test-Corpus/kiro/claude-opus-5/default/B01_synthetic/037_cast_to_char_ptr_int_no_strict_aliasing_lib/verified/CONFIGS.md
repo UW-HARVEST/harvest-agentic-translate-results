@@ -1,108 +1,64 @@
-# CONFIGS.md — Phase A: configuration-surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-## Mechanical derivation of the axes
+## Axes, derived from what the C actually branches on
 
-Enumerated from the C source and the public header, not from assumptions.
+Enumerated from `c_src/src/driver.c` (14 non-comment lines) and
+`c_src/include/driver.h`, not from guesses:
 
-### Public entry points (the FULL set, lowest level included)
+* **Runtime options / modes / flags:** NONE. `driver(int)` takes no flag, no
+  mode, no context/handle, no format selector; there is no setter, no global,
+  no `#ifdef` (`grep -nE '#if|#ifdef|#ifndef' c_src/src/` → no matches), and no
+  `switch`. The library is stateless apart from libc's `stdout` buffer.
+* **Public entry points (FULL set, lowest level included):** exactly one —
+  `driver`. `print_hex` is `static` (internal linkage, see `SYMBOLS.md`) so it is
+  not a public entry point in either `.so`; it is reached only through `driver`,
+  always with `p = raw` (non-null) and `len = sizeof(int) = 4`. There is no
+  convenience-vs-low-level split to under-test here.
+* **Input shape:** one by-value `int`. `sizeof(int) == 4` and byte order is the
+  target's native (little-endian x86-64), fixed by `memcpy(raw, &x, sizeof(x))`.
+  What the code genuinely *distinguishes* is the **per-byte value class** driving
+  the `%02x` conversion, and the **positional arrangement** of those bytes:
+  * `0x00` — zero, both hex digits from padding;
+  * `0x01..0x0f` — one significant digit, so `%02x` must zero-pad;
+  * `0x10..0x7f` — two digits, no padding;
+  * `0x80..0xff` — high bit set; exercises the `(unsigned char *)` cast and the
+    default-argument promotion to `int` (a signed `char` here would print
+    `ffffff__`, 8 chars, instead of 2);
+  * position 0..3 — distinguishes byte ordering / endianness.
+* **Stream state (the only cross-call state):** number of calls in one captured
+  stdout window, and whether C and Rust write into the *same* `FILE *stdout`
+  buffer in one window.
+* **Loaded artifact:** the Rust `.so` in `debug` vs `release` (release sets
+  `panic = "abort"`), since that is a real difference in the shipped object.
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so   # -> "T driver"
-grep -n ';' c_src/include/driver.h              # -> "void driver(int x);"
-```
+Rows below are the pruned cross-product of those axes — the combinations the C
+treats differently. Every row is asserted byte-for-byte against the C `.so`
+through `libloading`, with many randomized inputs per row (fixed seed
+`0x2545F4914F6CDD1D`, SplitMix64) wherever the row is not a single exact value.
 
-| entry point | linkage | reachable from outside the `.so`? |
-|-------------|---------|-----------------------------------|
-| `driver(int x)` | external, declared in `include/driver.h` | yes — the only one |
-| `print_hex(unsigned char *p, int len)` | `static` (internal) | **no** — absent from `nm -D` on both `.so`s; sole call site is inside `driver`. Exercised only, but fully, via `driver`. |
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|------------------------------------------|------|-----|
+| 1 | `driver` | all bytes `0x00` — `x = 0`; pure zero-pad path | `cfg_row01_all_zero_bytes` | [x] |
+| 2 | `driver` | all bytes `0xff` — `x = -1`; high bit set in every position | `cfg_row02_all_high_bytes` | [x] |
+| 3 | `driver` | `x = INT_MAX` (`0x7fffffff`) — positive extreme | `cfg_row03_int_max` | [x] |
+| 4 | `driver` | `x = INT_MIN` (`0x80000000`) — negative extreme, sign byte only | `cfg_row04_int_min` | [x] |
+| 5 | `driver` | exactly one byte non-zero, that byte in `0x01..0x0f` (zero-pad class), swept across all 4 positions × all 15 values | `cfg_row05_single_low_nibble_byte_each_position` | [x] |
+| 6 | `driver` | exactly one byte non-zero, that byte in `0x10..0x7f` (two-digit class), swept across all 4 positions, randomized values | `cfg_row06_single_mid_byte_each_position` | [x] |
+| 7 | `driver` | exactly one byte non-zero, that byte in `0x80..0xff` (high-bit class), swept across all 4 positions, randomized values | `cfg_row07_single_high_byte_each_position` | [x] |
+| 8 | `driver` | all four byte classes present at once, in every one of the 24 position permutations (`0x00`, low-nibble, mid, high) — catches endianness / ordering | `cfg_row08_all_four_classes_every_permutation` | [x] |
+| 9 | `driver` | every byte drawn from `0x01..0x0f` (all four positions need padding simultaneously), randomized | `cfg_row09_all_bytes_low_nibble` | [x] |
+| 10 | `driver` | every byte drawn from `0x80..0xff` (high bit in all four positions), randomized | `cfg_row10_all_bytes_high` | [x] |
+| 11 | `driver` | byte-boundary sweep: every value in `0x00..0xff` placed in byte 0 (covers the `0x0f/0x10` and `0x7f/0x80` class edges exhaustively) | `cfg_row11_exhaustive_byte0` | [x] |
+| 12 | `driver` | single-bit values: `1 << k` for all `k` in `0..32` (`k = 31` is `INT_MIN`) | `cfg_row12_single_bit_set` | [x] |
+| 13 | `driver` | `(1 << k) - 1` and `!((1 << k) - 1)` masks for all `k` in `0..32` — run-length boundaries | `cfg_row13_bit_masks` | [x] |
+| 14 | `driver` | strictly negative `x`, uniformly randomized (2048 inputs) | `cfg_row14_random_negative` | [x] |
+| 15 | `driver` | strictly positive `x`, uniformly randomized (2048 inputs) | `cfg_row15_random_positive` | [x] |
+| 16 | `driver` | full 32-bit range, uniformly randomized over all bit patterns (8192 inputs) | `cfg_row16_random_full_range` | [x] |
+| 17 | `driver` | small-magnitude neighbourhood: every `x` in `-1024..=1024` (sign-transition dense sweep) | `cfg_row17_dense_small_magnitude` | [x] |
+| 18 | `driver` (→ static `print_hex`, `len = 4`) | output-shape invariant: for randomized `x`, output is exactly 9 bytes — 8 lowercase hex digits + one `\n` — and contains only `[0-9a-f\n]` | `cfg_row18_output_shape_invariant` | [x] |
+| 19 | `driver` | stream state: 256 randomized calls into ONE captured stdout window (accumulation and ordering across calls, libc buffer parity) | `cfg_row19_many_calls_one_stream` | [x] |
+| 20 | `driver` | stream state: C and Rust calls INTERLEAVED in one captured window (both must share the same `FILE *stdout` and flush identically) | `cfg_row20_interleaved_same_stream` | [x] |
+| 21 | `driver` | loaded artifact = Rust `target/debug/libdriver.so` vs C, over the row-16 randomized corpus | `cfg_row21_debug_profile_artifact` | [x] |
+| 22 | `driver` | loaded artifact = Rust `target/release/libdriver.so` (`panic = "abort"`) vs C, over the row-16 randomized corpus | `cfg_row22_release_profile_artifact` | [x] |
 
-There is no convenience-wrapper / low-level split to worry about: `driver` *is*
-the lowest level the `.so` exposes, and it is also the only level.
-
-### Runtime options / modes / flags
-
-```sh
-grep -nE 'if *\(|switch|#ifdef|#if |setenv|getenv|extern |global|static [^v]' c_src/src/driver.c
-```
-
-Zero. The library has **no** settable option, mode, flag, global, or state:
-no init function, no context/handle struct, no `getenv`, no `#ifdef`-selected
-behaviour, and no mutable global. `driver` is a pure function of its single
-argument (plus its stdout side effect). So the option axis has exactly one
-value — "the only configuration" — and cannot be crossed with anything.
-
-### Input shapes the code special-cases
-
-`driver`'s parameter is a single by-value `int`. There is no count, no length,
-no width selector, no element type, no format selector, and no byte-order
-selector: the byte order is fixed by the `memcpy` of the object
-representation, i.e. the target's native endianness (little-endian on this
-x86-64 target, verified below). So there is no "empty / one / many" axis
-either — the operation always processes exactly `sizeof(int)` = 4 bytes.
-
-What *does* vary meaningfully is the **value** of `x`, because the loop body
-formats each of its 4 bytes independently through `%02x`. The value-dependent
-distinctions the code actually makes are per-byte:
-
-| axis | distinct cases the C distinguishes |
-|------|-----------------------------------|
-| byte position within the `int` | 4 (positions 0..3, emitted in native/little-endian order) |
-| byte value class, per position | `0x00`; `0x01..0x0f` (needs the `0` pad flag); `0x10..0x7f`; `0x80..0xff` (high bit set — `signed char` vs `unsigned char` divergence point) |
-| aggregate sign of `x` | non-negative vs negative (determines the high byte's class) |
-
-Confirmed target facts (`sizeof(int)` = 4, `sizeof(char)` = 1,
-`CHAR_MIN` = -128 so plain `char` is **signed**, `INT_MIN` = -2147483648,
-`INT_MAX` = 2147483647) and native byte order = little-endian.
-
-## Configuration-surface table
-
-Every row is driven through the `driver` export of **both** `.so`s and the
-captured stdout bytes compared exactly. Rows C1–C4 are the single-value
-boundary rows; C5–C12 are the pruned cross-product of {byte position} ×
-{byte value class}; C13–C16 are randomized property-style sweeps (fixed seed
-`0x5EED_1234`, so reproducible) that cover value-dependent paths a hand-picked
-scalar cannot; C17–C19 cover call-sequence / ABI shape.
-
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `driver` | no options (none exist); `x = 0` — all bytes `0x00`, minimum magnitude | [x] |
-| C2 | `driver` | no options; `x = 1` — smallest positive; low byte `0x01`, rest `0x00` (little-endian ordering is observable here) | [x] |
-| C3 | `driver` | no options; `x = INT_MAX` — all value bits set, sign bit clear | [x] |
-| C4 | `driver` | no options; `x = INT_MIN` — only sign bit set | [x] |
-| C5 | `driver` | byte class `0x00` isolated in each of the 4 positions (`0x000000ff` … `0xff000000` complements) — zero byte at every offset | [x] |
-| C6 | `driver` | byte class `0x01..0x0f` (pad-flag class) in byte position 0: `0x00000001`..`0x0000000f` | [x] |
-| C7 | `driver` | byte class `0x01..0x0f` in byte position 1: `0x00000100`..`0x00000f00` | [x] |
-| C8 | `driver` | byte class `0x01..0x0f` in byte position 2: `0x00010000`..`0x000f0000` | [x] |
-| C9 | `driver` | byte class `0x01..0x0f` in byte position 3 (high byte): `0x01000000`..`0x0f000000` | [x] |
-| C10 | `driver` | byte class `0x10..0x7f` swept in each of the 4 positions | [x] |
-| C11 | `driver` | byte class `0x80..0xff` (high-bit-set) swept in each of the 4 positions — `signed char` sign-extension divergence point at every offset | [x] |
-| C12 | `driver` | full per-position sweep: for each byte position `p` in 0..3, all 256 byte values `0x00..0xff` placed at `p` with the other bytes zero (1024 calls) — exhaustive over the {position × value} cross-product | [x] |
-| C13 | `driver` | randomized: 20 000 uniform `i32` values from a seeded PRNG (seed `0x5EED_1234`) — property-style sweep over the whole 32-bit domain | [x] |
-| C14 | `driver` | randomized, biased toward the boundary classes: values assembled from bytes drawn only from `{0x00, 0x01, 0x0f, 0x10, 0x7f, 0x80, 0x81, 0xfe, 0xff}` (4 000 values) — dense coverage of the padding / high-bit classes in all 4 positions simultaneously | [x] |
-| C15 | `driver` | randomized negative-only and non-negative-only sweeps (2 000 each) — separates the aggregate-sign axis | [x] |
-| C16 | `driver` | exhaustive over all 65 536 values of the low 16 bits (`x = 0x0000_0000..0x0000_ffff`) and all 65 536 values of the high 16 bits (`x = 0x0000_0000..0xffff_0000` step `0x1_0000`) — full exhaustive coverage of two 16-bit windows | [x] |
-| C17 | `driver` | call-sequence shape: many consecutive calls to the *same* library in one process (statefulness / buffering check — a stray retained buffer or stale state would show as drift) | [x] |
-| C18 | `driver` | call-sequence shape: C and Rust calls **interleaved** in one process, both writing the same libc `stdout` `FILE` (catches a translation that used Rust's own stdout buffer) | [x] |
-| C19 | `driver` | ABI shape: the symbol invoked through a wider `extern "C" fn(i64)` signature so the argument register carries bits outside `int` range — both must observe only the low 32 bits | [x] |
-
-**19 of 19 rows pass across their randomized inputs. 0 rows unchecked.**
-
-## Feature combinations
-
-```sh
-grep -n -A20 '^\[features\]' Cargo.toml   # -> no match
-```
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the crate has
-exactly one configuration: default (= no features). There is no
-`--no-default-features` variant with different code, and no `#[cfg(feature …)]`
-in `src/lib.rs`:
-
-```sh
-grep -c 'cfg(feature' src/lib.rs   # -> 0
-```
-
-The single feature combination is therefore `--no-default-features` ≡ default,
-and the whole table above is verified under it. `tests/features.sh` enumerates
-the feature set mechanically from `Cargo.toml` and re-runs the suite for every
-combination it finds, so the check is automated rather than assumed.
+All 22 rows pass in `translation/tests/differential.rs` (module `phase_b`).

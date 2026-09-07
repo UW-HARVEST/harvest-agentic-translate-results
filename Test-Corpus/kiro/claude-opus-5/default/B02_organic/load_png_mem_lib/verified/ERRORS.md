@@ -1,172 +1,173 @@
 # ERRORS.md — error-surface table
 
-Derived mechanically from `c_src/src/lib.c`:
+Derived mechanically from `c_src/src/lib.c` by grepping every
+`cp_error_reason = ...`, every `return 0;` in a `static int` helper, every
+`return 0`/`return NULL` sentinel in a pointer-returning helper, every
+`assert(...)`, and every explicit range/magic-value check. Line numbers refer
+to `c_src/src/lib.c`.
 
-```
-grep -n 'cp_error_reason =' lib.c   -> 26 assignment sites (25 distinct messages)
-grep -n 'return 0;'         lib.c   -> 182, 297, 388, 400, 425, 459 (+ cp_chunk/cp_find `return 0` = NULL)
-grep -n 'assert('           lib.c   -> 10 assertion sites
-```
+Observable result for a rejection is the pair
+`(return value, cp_error_reason string)` — `cp_error_reason` is an exported
+symbol so the exact message is compared, not merely "both failed".
 
-Two error channels exist:
+`load_png_mem` rejections all return `cp_image_t { w, h, pix = NULL }`. Note
+the C sets `img.w`/`img.h` *before* several of the later checks, so the
+returned `w`/`h` are **not** zero on those paths; the tests compare all three
+fields.
 
-* **return value** — `cp_inflate` returns `0`; `load_png_mem` returns a
-  `cp_image_t` with `pix == NULL` (`w`/`h` keep whatever they were assigned
-  before the jump to `cp_err`, i.e. `0`/`0` before the IHDR is parsed and
-  `w-1`/`h` after).
-* **`cp_error_reason`** — a `const char *` global. When `cp_inflate` fails
-  *inside* `load_png_mem`, `load_png_mem` **overwrites** the inner message with
-  `"DEFLATE algorithm failed"` (rows 1–6 are only observable verbatim when
-  `cp_inflate` is called directly).
+## A. `cp_inflate` / DEFLATE layer
 
-Assertions are live (`c_src/CMakeLists.txt` sets no build type ⇒ `-O0`, no
-`NDEBUG`), so a failed assertion is `__assert_fail` ⇒ **SIGABRT (signal 6)**.
-The Rust `cp_assert!` macro calls `abort()` ⇒ also SIGABRT. Rows A1–A10 are
-tested by comparing the *termination signal* of a forked child.
+| # | function | trigger (exact invalid input/condition) | expected C result |
+|---|----------|------------------------------------------|-------------------|
+| A1 | `cp_stored` (L162) | stored block (btype=0) whose `LEN != (uint16_t)~NLEN` | `cp_stored`→0, `cp_inflate`→0, `cp_error_reason = "Failed to find LEN and NLEN as complements within stored (uncompressed) stream."` |
+| A2 | `cp_stored` (L171) | stored block where `s->bits_left / 8 > (int)LEN` (i.e. **more** input remains than LEN — note the check's unusual direction) | `cp_inflate`→0, `"Stored block extends beyond end of input stream."` |
+| A3 | `cp_block` (L235) | literal symbol decoded while `s->out + 1 > s->out_end` (out buffer full) | `cp_inflate`→0, `"Attempted to overwrite out buffer while outputting a symbol."` |
+| A4 | `cp_block` (L265) | length/distance pair with `s->out - backwards_distance < s->begin` | `cp_inflate`→0, `"Attempted to write before out buffer (invalid backwards distance)."` |
+| A5 | `cp_block` (L272) | length/distance pair with `s->out + length > s->out_end` | `cp_inflate`→0, `"Attempted to overwrite out buffer while outputting a string."` |
+| A6 | `cp_inflate` (L348) | `btype == 3` in a block header | `cp_inflate`→0, `"Detected unknown block type within input stream."` |
+| A7 | `cp_inflate` | `in_bytes == 0` → `bits_left == 0` → `assert(s->bits_left > 0)` in first `cp_read_bits` | SIGABRT (assertion failure) |
+| A8 | `cp_read_bits` (L110) | any read attempted once `bits_left <= 0` (stream exhausted mid-block) | SIGABRT |
+| A9 | `cp_read_bits` (L112) | `cp_would_overflow`: `bits_left + count - num_bits < 0` | SIGABRT |
+| A10 | `cp_consume_bits` (L100) | `s->count < num_bits_to_read` | SIGABRT |
+| A11 | `cp_peak_bits` (L89) | `word_index > word_count` | SIGABRT (unreachable in practice) |
+| A12 | `cp_ptr` (L80) | `cp_stored` reaching `cp_ptr` with `bits_left & 7 != 0` | SIGABRT |
+| A13 | `cp_build` (L139) | a code length `>= 16` in the table (only reachable with a corrupt dynamic header, `lens` values come from 3-bit reads so `<= 7`; reachable via run-length overflow) | SIGABRT |
+| A14 | `cp_decode` (L202) | binary search lands on a key whose prefix does not match (`lo == 0` → `tree[-1]`, or an incomplete Huffman tree) | SIGABRT |
+| A15 | `cp_inflate` | `out_bytes == 0` with any literal in the stream | → A3 |
+| A16 | `cp_inflate` | `in_bytes < 0` → `bits_left` negative → `assert(bits_left > 0)` | SIGABRT |
+| A17 | `cp_inflate` | `in = NULL` (with `in_bytes > 0`) | SIGSEGV on first word read |
 
-## Rejections that set `cp_error_reason` / return a failure value
-
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `cp_stored` (via `cp_inflate`) | `LEN != (uint16_t)~NLEN` in a `btype==0` block | `cp_inflate` → `0`; reason `"Failed to find LEN and NLEN as complements within stored (uncompressed) stream."` |
-| 2 | `cp_stored` (via `cp_inflate`) | `!(s->bits_left / 8 <= (int)LEN)` — remaining whole input bytes after the 5-byte header exceed `LEN` | `cp_inflate` → `0`; reason `"Stored block extends beyond end of input stream."` |
-| 3 | `cp_block` (via `cp_inflate`) | literal symbol `< 256` decoded when `s->out + 1 > s->out_end` (output buffer full) | `cp_inflate` → `0`; reason `"Attempted to overwrite out buffer while outputting a symbol."` |
-| 4 | `cp_block` (via `cp_inflate`) | length/distance pair whose `backwards_distance` puts `s->out - dist` before `s->begin` | `cp_inflate` → `0`; reason `"Attempted to write before out buffer (invalid backwards distance)."` |
-| 5 | `cp_block` (via `cp_inflate`) | length/distance pair with `s->out + length > s->out_end` | `cp_inflate` → `0`; reason `"Attempted to overwrite out buffer while outputting a string."` |
-| 6 | `cp_inflate` | `btype == 3` (the reserved DEFLATE block type) | `cp_inflate` → `0`; reason `"Detected unknown block type within input stream."` |
-| 7 | `load_png_mem` | first 8 bytes ≠ `"\211PNG\r\n\032\n"` | `img = {0,0,NULL}`; reason `"incorrect file signature (is this a png file?)"` |
-| 8 | `load_png_mem` | `cp_chunk(&png,"IHDR",13)` returns NULL — chunk type ≠ `IHDR`, or `len < 13`, or `png.p + len + 12 > png.end` | `img = {0,0,NULL}`; reason `"unable to find IHDR chunk"` |
-| 9 | `load_png_mem` | `ihdr[8] != 8` (any bit depth other than 8: 1, 2, 4, 16, 0, 255 …) | `img = {0,0,NULL}`; reason `"only bit-depth of 8 is supported"` |
-| 10 | `load_png_mem` | `ihdr[9] ∉ {0,2,3,4,6}` (`default:` of the colour-type `switch`; includes 1, 5, 7, 8, 255) | `img = {0,0,NULL}`; reason `"unknown color type"` |
-| 11 | `load_png_mem` | `w = cp_make32(ihdr)+1 < 1` as `int` — i.e. `ihdr[0..4] == 0xFFFFFFFF` (⇒ `w==0`) or `≥ 0x7FFFFFFF` (⇒ `w` negative) | `img = {0,0,NULL}`; reason `"invalid IHDR chunk found, image width was less than 1"` |
-| 12 | `load_png_mem` | `h = cp_make32(ihdr+4) < 1` as `int` — `ihdr[4..8] == 0` or `≥ 0x80000000` | `img = {0,0,NULL}`; reason `"invalid IHDR chunk found, image height was less than 1"` |
-| 13 | `load_png_mem` | `!((int64_t)w * h * sizeof(cp_pixel_t) < INT_MAX)` — note the `sizeof` makes the product **unsigned**, so `w*h*4 >= 0x7FFFFFFF` (e.g. `w=0x10000, h=0x10000`) | `img = {0,0,NULL}`; reason `"image too large"` |
-| 14 | `load_png_mem` | `malloc(pix_bytes)` returns NULL (`pix_bytes` is an `int` sign-extended to `size_t`; unreachable for the sizes row 13 lets through, kept for completeness) | `img = {w-1,h,NULL}`; reason `"unable to allocate raw image space"` |
-| 15 | `load_png_mem` | `ihdr[10] != 0` (compression method) | `img = {w-1,h,NULL}`; reason `"only standard compression DEFLATE is supported"` |
-| 16 | `load_png_mem` | `ihdr[11] != 0` (filter method) | `img = {w-1,h,NULL}`; reason `"only standard adaptive filtering is supported"` |
-| 17 | `load_png_mem` | `ihdr[12] != 0` (interlace method) | `img = {w-1,h,NULL}`; reason `"interlacing is not supported"` |
-| 18 | `load_png_mem` | `!(data && datalen >= 6)` — no IDAT at all (`datalen == 0`), or total IDAT payload `< 6`, or `malloc(datalen)` NULL because `datalen` went negative | `img = {w-1,h,NULL}`; reason `"corrupt zlib structure in DEFLATE stream"` |
-| 19 | `load_png_mem` | `(data[0] & 0x0f) != 0x08` — zlib CM field not 8 | `img = {w-1,h,NULL}`; reason `"only zlib compression method (RFC 1950) is supported"` |
-| 20 | `load_png_mem` | `(data[0] & 0xf0) > 0x70` — zlib CINFO > 7 | `img = {w-1,h,NULL}`; reason `"innapropriate window size detected"` |
-| 21 | `load_png_mem` | `data[1] & 0x20` — zlib FDICT set | `img = {w-1,h,NULL}`; reason `"preset dictionary is present and not supported"` |
-| 22 | `load_png_mem` | `cp_out_size(&img,4) = (img.w+1)*img.h*4 < 1` as `int` (signed overflow wrap, e.g. `w-1 = 0x1FFFFFFF, h = 1`) | `img = {w-1,h,NULL}`; reason `"invalid image size found"` |
-| 23 | `load_png_mem` | `cp_out_size(&img,bpp) < 1` while `cp_out_size(&img,4) >= 1` (only reachable for `bpp ∈ {2,3}` wrapping differently than `bpp == 4`) | `img = {w-1,h,NULL}`; reason `"invalid image size found"` |
-| 24 | `load_png_mem` | `cp_inflate(...)` returns 0 for any of rows 1–6 | `img = {w-1,h,NULL}`; reason `"DEFLATE algorithm failed"` (inner reason **overwritten**) |
-| 25 | `load_png_mem` | `cp_unfilter` returns 0 — a row filter byte `> 4` on the **first** row (`h > 0` branch, `default: return 0`) | `img = {w-1,h,NULL}`; reason `"invalid filter byte found"` |
-| 26 | `load_png_mem` | `cp_unfilter` returns 0 — a row filter byte `> 4` on any **subsequent** row (`y >= 1` loop, `default: return 0`) | `img = {w-1,h,NULL}`; reason `"invalid filter byte found"` |
-| 27 | `load_png_mem` | `color_type == 3` (indexed) but no `PLTE` chunk was found | `img = {w-1,h,NULL}`; reason `"color type of indexed requires a PLTE chunk"` |
-| 28 | `cp_chunk` | chunk type mismatch, `len < minlen`, or `png->p + (int)(len+12) > png->end` | returns `NULL` and leaves `png->p` unchanged (observable through rows 8/18: IDAT concatenation stops) |
-| 29 | `cp_find` | scans to `png->p >= png->end` without a matching chunk | returns `NULL`, `png->p` left past `end` (observable through rows 18/27) |
-
-## Assertion failures (SIGABRT in both implementations)
+## B. `cp_unfilter`
 
 | # | function | trigger | expected C result |
 |---|----------|---------|-------------------|
-| A1 | `cp_ptr` | `s->bits_left & 7` — stored block reached at a non-byte-aligned `bits_left` (`cp_inflate` called with `in_bytes*8` such that the 5-byte stored header leaves a bit remainder; reachable via a `btype==0` block that is not the first block) | SIGABRT |
-| A2 | `cp_peak_bits` | `s->word_index > s->word_count` (defensive; unreachable given the guarding `if`) | SIGABRT |
-| A3 | `cp_consume_bits` | `s->count < num_bits_to_read` — e.g. `cp_decode` needs `key & 0xF` bits that the exhausted stream cannot supply | SIGABRT |
-| A4 | `cp_read_bits` | `num_bits_to_read > 32` (unreachable from the fixed call sites) | SIGABRT |
-| A5 | `cp_read_bits` | `num_bits_to_read < 0` — reachable by writing a value `> 127` into the exported `cp_len_extra_bits` / `cp_dist_extra_bits` tables (`uint8_t` → `int` is non-negative, so actually only via `s->count & 7` with a negative `count`) | SIGABRT |
-| A6 | `cp_read_bits` | `s->bits_left <= 0` — input stream exhausted, e.g. `cp_inflate(in, 0, out, n)` (`bits_left == 0` immediately) | SIGABRT |
-| A7 | `cp_read_bits` | `s->count > 64` | SIGABRT |
-| A8 | `cp_read_bits` | `cp_would_overflow(s, n)` i.e. `(bits_left + count) - n < 0` — asking for more bits than remain | SIGABRT |
-| A9 | `cp_build` | `lens[i] >= 16` — reachable by writing `≥ 16` into the exported `cp_fixed_table` before a `btype==1` block | SIGABRT |
-| A10 | `cp_decode` | `(search >> (32 - (key & 0xF))) != (key >> (32 - (key & 0xF)))` — an incomplete/over-subscribed Huffman table, i.e. a bit pattern that matches no code | SIGABRT |
+| B1 | `cp_unfilter` (L425, row 0) | filter byte of scanline 0 is `> 4` | →0, caller sets `"invalid filter byte found"` |
+| B2 | `cp_unfilter` (L459, rows ≥1) | filter byte of any scanline `y >= 1` is `> 4` | →0, caller sets `"invalid filter byte found"` |
 
-## Generic FFI boundary cases (not in the C's own check list)
+## C. Chunk walkers (sentinel `0` / `NULL`)
 
-| # | entry point | trigger | expected C result |
-|---|-------------|---------|-------------------|
-| G1 | `load_png_mem` | `png_length == 0` with a valid 8-byte signature buffer | reads past the caller's length (the C never bounds-checks against `png_length` before `memcmp`/`cp_make32`); with a ≥8-byte allocation the signature check passes and `cp_chunk` then fails ⇒ row 8 |
-| G2 | `load_png_mem` | `png_length` negative | `png.end < png.p`, `cp_find` loop body never runs ⇒ row 8 or row 18 |
-| G3 | `load_png_mem` | truncated after IHDR (no IDAT) | row 18 |
-| G4 | `cp_inflate` | `out_bytes == 0` | `out_end == out`, first literal ⇒ row 3 |
-| G5 | `cp_inflate` | `out_bytes` negative | `out_end < out`, first literal ⇒ row 3 |
-| G6 | `cp_inflate` | `in_bytes == 0` | `bits_left == 0` ⇒ A6 (SIGABRT) |
-| G7 | `cp_inflate` | `in_bytes` negative | `bits_left` negative ⇒ A6 (SIGABRT) |
-| G8 | `cp_inflate` | `in` pointer at each of the 4 alignments × each `in_bytes % 4` | `first_bytes`/`last_bytes`/`final_word` paths; must agree |
-| G9 | `load_png_mem` | `ihdr[9]` (colour type) set to every value `0..=255` — a C `enum`-like field accepts any `int` | rows 10 / valid-`bpp` paths, must agree for all 256 |
-| G10 | `load_png_mem` | `ihdr[8]` (bit depth) set to every value `0..=255` | row 9 for all but `8` |
-| G11 | `cp_inflate` | `btype` for all 4 values `0..=3` (2-bit field, no invalid encoding possible) | rows 1–6 |
-| G12 | `load_png_mem` | filter byte set to every value `0..=255` on row 0 and on row 1 | rows 25/26 for `> 4`, valid filters otherwise |
-| G13 | `load_png_mem`/`cp_inflate` | NULL pointer for `png_data` / `in` / `out` | SIGSEGV in both (dereferenced without a null check) |
+| # | function | trigger | expected C result |
+|---|----------|---------|-------------------|
+| C1 | `cp_chunk` (L388) | 4 bytes at `p+4` != requested chunk name | `NULL` |
+| C2 | `cp_chunk` (L388) | `len < minlen` | `NULL` |
+| C3 | `cp_chunk` (L388) | `png->p + (int)(len + 12) > png->end` | `NULL` (and `png->p` unchanged) |
+| C4 | `cp_find` (L400) | no matching chunk before `png->end` | `NULL` (and `png->p` left `>= end`) |
+
+## D. `load_png_mem`
+
+| # | function | trigger | expected C result |
+|---|----------|---------|-------------------|
+| D1 | L529 | first 8 bytes != `"\211PNG\r\n\032\n"` | `pix = NULL`, `"incorrect file signature (is this a png file?)"` |
+| D2 | L539 | `cp_chunk(&png,"IHDR",13)` returns NULL: name at offset 12 isn't `IHDR`, **or** `len < 13`, **or** the chunk runs past `end` (i.e. truncated file) | `pix = NULL`, `"unable to find IHDR chunk"` |
+| D3 | L549 | `ihdr[8] != 8` (bit depth 1/2/4/16/0/anything) | `pix = NULL`, `"only bit-depth of 8 is supported"` |
+| D4 | L574 | `ihdr[9]` (color type) ∉ {0,2,3,4,6} — includes 1,5,7 and 8..255 | `pix = NULL`, `"unknown color type"` |
+| D5 | L585 | `w = make32(ihdr)+1 < 1`, i.e. raw width `== 0xFFFFFFFF` or `>= 0x80000000` | `pix = NULL`, `"invalid IHDR chunk found, image width was less than 1"` |
+| D6 | L593 | `h = make32(ihdr+4) < 1`, i.e. raw height `0` or `>= 0x80000000` | `pix = NULL`, `"invalid IHDR chunk found, image height was less than 1"` |
+| D7 | L602 | `!((int64_t)w*h*sizeof(cp_pixel_t) < INT_MAX)` — note `sizeof` makes the product **unsigned 64-bit**, so a negative `(int64_t)w*h` wraps to a huge value and also trips this | `pix = NULL`, `"image too large"` |
+| D8 | L614 | `malloc(pix_bytes)` returns NULL | `pix = NULL`, `"unable to allocate raw image space"` (practically unreachable; `pix_bytes < INT_MAX`) |
+| D9 | L625 | `ihdr[10] != 0` (compression method) | `pix = NULL`, `"only standard compression DEFLATE is supported"` |
+| D10 | L633 | `ihdr[11] != 0` (filter method) | `pix = NULL`, `"only standard adaptive filtering is supported"` |
+| D11 | L641 | `ihdr[12] != 0` (interlace) | `pix = NULL`, `"interlacing is not supported"` |
+| D12 | L675 | `!(data && datalen >= 6)`: no IDAT chunk at all, or total IDAT payload `< 6` bytes | `pix = NULL`, `"corrupt zlib structure in DEFLATE stream"` |
+| D13 | L683 | `(data[0] & 0x0f) != 0x08` (zlib CM field) | `pix = NULL`, `"only zlib compression method (RFC 1950) is supported"` |
+| D14 | L691 | `(data[0] & 0xf0) > 0x70` (CINFO > 7, window too large) | `pix = NULL`, `"innapropriate window size detected"` |
+| D15 | L699 | `data[1] & 0x20` (FDICT set) | `pix = NULL`, `"preset dictionary is present and not supported"` |
+| D16 | L707 | `cp_out_size(&img,4) = (w+1)*h*4 < 1` (integer overflow of the product) | `pix = NULL`, `"invalid image size found"` |
+| D17 | L715 | `cp_out_size(&img,bpp) = (w+1)*h*bpp < 1` | `pix = NULL`, `"invalid image size found"` |
+| D18 | L724 | `cp_inflate` returns 0 for any reason in A1..A6 | `pix = NULL`, `"DEFLATE algorithm failed"` (overwrites the inner reason) |
+| D19 | L732 | `cp_unfilter` returns 0 (B1/B2) | `pix = NULL`, `"invalid filter byte found"` |
+| D20 | L741 | `color_type == 3` but no `PLTE` chunk found | `pix = NULL`, `"color type of indexed requires a PLTE chunk"` |
+| D21 | L525 | `png_data == NULL` / `png_length == 0` — the signature `memcmp` reads 8 bytes with **no** length check first | out-of-bounds read; for a short-but-valid allocation it is a normal D1 rejection |
+
+## E. Generic FFI boundary cases (covered even though not table rows)
+
+| # | entry point | trigger | expected |
+|---|-------------|---------|----------|
+| E1 | `load_png_mem` | `png_length = 0` on a buffer that still holds ≥8 readable bytes of non-signature data | D1 |
+| E2 | `load_png_mem` | `png_length` negative | `png.end < png.p`; `cp_chunk` for IHDR fails → D2 |
+| E3 | `load_png_mem` | `png_length` huge (oversized, larger than the real buffer) | walks off the buffer — both must agree on whatever they read from the *same* backing allocation |
+| E4 | `load_png_mem` | valid 8-byte signature then nothing (`png_length = 8`) | D2 |
+| E5 | `load_png_mem` | colour type one past valid (`1`, `5`, `7`) and out-of-enum (`8`, `127`, `255`) — C enums/`switch` accept any `int` | D4 |
+| E6 | `load_png_mem` | bit depth one step past valid (`7`, `9`) and all of `0,1,2,4,16` | D3 |
+| E7 | `load_png_mem` | filter byte one past valid (`5`) and `255` | D19 |
+| E8 | `cp_inflate` | `out_bytes = 0`, `out_bytes` negative | A3 / A5 |
+| E9 | `cp_inflate` | `in_bytes` one past the real buffer length | reads past — both must agree |
+| E10 | `cp_inflate` | `out = NULL` with `out_bytes = 0` and an empty final stored block | both succeed identically |
 
 ---
 
-# Phase C results — every row has a passing differential test
+# Row status
 
-All tests live in `tests/phase_c_errors.rs`. Each one constructs the exact
-condition, calls **both** `.so`s through `dlsym` in forked children, and asserts
-the same return value / `pix == NULL`, the same `cp_error_reason` **text** (read
-through the exported pointer, not compared by address) and the same termination
-signal.
+All differential tests load **both** `.so`s with `libloading` and compare the
+return sentinel *and* the exact `cp_error_reason` string read from each
+library's own exported global. `[x]` = the row's test passes against both.
 
-| row | test | status | evidence |
-|-----|------|--------|----------|
-| 1  | `err01_stored_len_nlen_mismatch` | [x] | 50 randomized NLEN corruptions + the `load_png_mem` overwrite case |
-| 2  | `err02_stored_extends_beyond_input` | [x] | 7 trailing-byte sizes + `LEN=1` with 100 trailing bytes |
-| 3  | `err03_out_buffer_full_on_literal` | [x] | `out_bytes` 0 / n-1 / negative / `INT_MIN` |
-| 4  | `err04_backwards_distance_before_begin` | [x] | 6 distances with empty history + 40 randomized history/distance pairs |
-| 5  | `err05_string_overruns_out_buffer` | [x] | 40 randomized length/distance/out-size triples |
-| 6  | `err06_reserved_block_type` | [x] | `btype=3` with `bfinal` 0 and 1, 12 input lengths (also row G11: all 4 `btype`s) |
-| 7  | `err07_bad_signature` | [x] | each of the 8 signature bytes flipped + 40 random buffers |
-| 8  | `err08_missing_or_short_ihdr` | [x] | no chunks / wrong first chunk (4) / `len` 0..12 / declared length past end (4) / truncated `png_length` (7) |
-| 9  | `err09_bit_depth_full_sweep` | [x] | **all 256** values of `ihdr[8]` (row G10) |
-| 10 | `err10_color_type_full_sweep` | [x] | **all 256** values of `ihdr[9]` (row G9 — out-of-range enum across FFI) |
-| 11 | `err11_width_less_than_one` | [x] | `0xFFFFFFFF`, `0x7FFFFFFF`, `0x80000000`, `0xFFFFFFFE`, `0xC0000000`, plus `0` (the valid `w==1` boundary) |
-| 12 | `err12_height_less_than_one` | [x] | `0`, `0x80000000`, `0xFFFFFFFF`, `0x90000000` |
-| 13 | `err13_image_too_large` | [x] | four geometries straddling `w*h*4 >= 0x7FFFFFFF`, incl. the exact `2^31` boundary |
-| 14 | `err14_allocation_boundary` | [x] | the largest admissible size (`malloc(0x7FFFFFFC)`); the NULL branch is **forced** by capping the child's `RLIMIT_AS` to 1 GiB, which is the only way to reach it |
-| 15 | `err15_16_17_ihdr_method_sweeps` | [x] | **all 256** values of `ihdr[10]` |
-| 16 | `err15_16_17_ihdr_method_sweeps` | [x] | **all 256** values of `ihdr[11]` |
-| 17 | `err15_16_17_ihdr_method_sweeps` | [x] | **all 256** values of `ihdr[12]` |
-| 18 | `err18_corrupt_zlib_structure` | [x] | no IDAT; IDAT payloads of 0..5 bytes; five 1-byte IDATs |
-| 19 | `err19_zlib_compression_method` | [x] | **all 16** CM values |
-| 20 | `err20_zlib_window_size` | [x] | **all 16** CINFO values (0..7 must decode, 8..15 must be rejected) |
-| 21 | `err21_zlib_preset_dictionary` | [x] | **all 256** FLG values (asserts rejection iff bit 5 set) |
-| 22 | `err22_err23_out_size_guards_are_unreachable` | [x] | **proven unreachable**: `w >= 1`, `h >= 1` and row 13 force `w*h < 0x20000000`, so `(img.w+1)*img.h*4` is always in `1..0x7FFFFFFF`. The test drives the largest admissible geometries and asserts the reason is *not* "invalid image size found" |
-| 23 | `err22_err23_out_size_guards_are_unreachable` | [x] | same argument for `bpp ∈ {1,2,3}` (`cp_out_size(bpp) <= cp_out_size(4)`); tested for all four `bpp` |
-| 24 | `err24_deflate_algorithm_failed` | [x] | `btype=3` inside the IDAT, and an output overrun; confirms the inner reason is **overwritten** |
-| 25 | `err25_invalid_filter_first_row` | [x] | 7 invalid filter bytes × all 5 colour types |
-| 26 | `err26_invalid_filter_later_row` | [x] | 3 invalid filter bytes × rows 1/2/4 × all 5 colour types |
-| 27 | `err27_indexed_without_plte` | [x] | 3 geometries, plus a tRNS-without-PLTE case |
-| 28 | `err28_cp_chunk_rejections` | [x] | second IDAT declared past the end; a non-IDAT chunk between IDATs; declared lengths that sign-extend negative in `int offset` (3) |
-| 29 | `err29_cp_find_walks_off_the_end` | [x] | 5 declared lengths that push the cursor past `end` |
-| A1 | `errA1_stored_block_at_unaligned_bits_left` | [x] | 386-case targeted search; **3 cases confirmed to reach `cp_ptr`**, proved by capturing the C child's `stderr`: `lib.c:80: cp_ptr: Assertion '!(s->bits_left & 7)' failed` |
-| A2 | — | [x] | **unreachable**: guarded by the enclosing `if (s->word_index < s->word_count)`, so `word_index <= word_count` always holds at the assert |
-| A3 | `errA3_A8_truncated_streams` | [x] | 747 truncations; **477 reached `cp_consume_bits`** (stderr-confirmed) |
-| A4 | `errA4_extra_bits_table_out_of_range` | [x] | `cp_len_extra_bits` / `cp_dist_extra_bits` set to 33/64/100/255 ⇒ SIGABRT on both sides |
-| A5 | — | [x] | **unreachable**: the only argument that could be negative is `s->count & 7`, and `cp_consume_bits` asserts `count >= n` before subtracting, so `count` never goes negative; `uint8_t`→`int` from the tables is always ≥ 0 |
-| A6 | `errA6_input_exhausted_immediately` | [x] | `in_bytes` = 0 (× 4 alignments) and −1 / −7 / −1000 / `INT_MIN` |
-| A7 | — | [x] | **unreachable**: `count` only grows via `+= 32` (guarded by `count < n <= 16`) or `+= bits_left`, giving `count' = 2*count + 8*last_bytes <= 2*15 + 24 = 54` |
-| A8 | `errA3_A8_truncated_streams` | [x] | same corpus; **63 reached `cp_read_bits`** (stderr-confirmed) |
-| A9 | `errA9_fixed_table_code_length_too_long` | [x] | `cp_fixed_table[idx]` set to 16/17/31/100/255 at 6 offsets spanning both the lit/len and dist halves |
-| A10 | `errA10_incomplete_huffman_table` | [x] | hand-built under-subscribed lit/len code; **34/40 cases abort**, the other 6 decode a wrong symbol — identically on both sides |
-| G1 | `errG1_G2_G3_png_length_edge_cases` | [x] | `png_length` = 0 / 1 / 7 / 8 |
-| G2 | `errG1_G2_G3_png_length_edge_cases` | [x] | `png_length` = −1 / −8 / −1000 / `INT_MIN` |
-| G3 | `errG1_G2_G3_png_length_edge_cases` | [x] | truncated at every offset from 8 to `len` (both as a short buffer and as a short length) |
-| G4 | `errG4_G5_out_bytes_edge_cases` | [x] | `out_bytes` = 0 / 1 / 19 / 20 / 21 / `INT_MAX` |
-| G5 | `errG4_G5_out_bytes_edge_cases` | [x] | `out_bytes` = −1 / −20 / `INT_MIN` |
-| G6 | `errA6_input_exhausted_immediately` | [x] | `in_bytes == 0` |
-| G7 | `errA6_input_exhausted_immediately` | [x] | `in_bytes < 0` |
-| G8 | `phase_b_valid::row12_inflate_alignment_matrix` | [x] | 4 `in` alignments × 4 `in_bytes mod 4` × 20 randomized streams |
-| G9 | `err10_color_type_full_sweep` | [x] | all 256 colour-type bytes |
-| G10 | `err09_bit_depth_full_sweep` | [x] | all 256 bit-depth bytes |
-| G11 | `err06_reserved_block_type` | [x] | all 4 `btype` values |
-| G12 | `phase_b_valid::row48_filter_byte_full_sweep` | [x] | filter byte 0..=255 on row 0 and row 1 × 3 colour types |
-| G13 | `errG13_null_pointers` | [x] | `load_png_mem(NULL,·)`, `cp_inflate(NULL,·)`, `cp_inflate(·,NULL)` — **SIGSEGV on both sides** |
+## Reachable rows
 
-**Result: 35/35 tests pass**, under both the release and the debug Rust `.so`.
-Three rows (A2, A5, A7) and two rows (22, 23) are argued unreachable from the C's
-own guards rather than tested directly; each is accompanied by a boundary test
-that pins the reasoning.
+| row | test | [x] |
+|-----|------|-----|
+| A1 | `phase_c_errors::a1_stored_len_nlen_not_complements` | [x] |
+| A2 | `phase_c_errors::a2_stored_block_extends_beyond_input` (4 shapes) | [x] |
+| A3 | `phase_c_errors::a3_literal_overflows_out_buffer` (`out_bytes` 0/1/3/7) | [x] |
+| A4 | `phase_c_errors::a4_backwards_distance_before_out_buffer` (5 distances) | [x] |
+| A5 | `phase_c_errors::a5_string_overflows_out_buffer` (4 shapes) | [x] |
+| A6 | `phase_c_errors::a6_unknown_block_type`, `a6b_non_final_unknown_block_type` | [x] |
+| A7 | `isolated` "A7 in_bytes=0" — C aborts in `cp_read_bits`, verified via stderr | [x] |
+| A8 | `isolated` "A8 truncated by N" (5 truncations) | [x] |
+| A9 | `isolated` "A9/A10 stored header tail=N" (8 tails) | [x] |
+| A10 | same as A9 — the C's assertion text confirms `cp_consume_bits` | [x] |
+| A14 | `isolated` "A14 fuzz fixed body" (400) + "A13/A14 fuzz dynamic header" (600); `cp_decode`'s assertion is confirmed reached via the C's stderr | [x] |
+| A15 | `phase_c_errors::a3_...` with `out_bytes = 0` | [x] |
+| A16 | `isolated` "A16 in_bytes=N" for `-1, -4, -1000, i32::MIN` | [x] |
+| A17 | `isolated` "A17 in=NULL in_bytes=N" — both SIGSEGV | [x] |
+| B1 | `phase_c_errors::b1_row0_filter_byte_out_of_range` (5 bytes × 5 colour types) | [x] |
+| B2 | `phase_c_errors::b2_later_row_filter_byte_out_of_range` (4 bytes × 3 rows) | [x] |
+| C1 | `phase_c_errors::c1_chunk_name_mismatch` | [x] |
+| C2 | `phase_c_errors::c2_chunk_len_below_minlen` (declared 0/1/12) | [x] |
+| C3 | `phase_c_errors::c3_chunk_extends_past_end` (12 truncations + over-declared) | [x] |
+| C4 | `phase_c_errors::c4_find_finds_nothing` | [x] |
+| D1 | `phase_c_errors::d1_bad_signature` (+ every single-byte signature corruption) | [x] |
+| D2 | `phase_c_errors::d2_missing_ihdr` | [x] |
+| D3 | `phase_c_errors::d3_unsupported_bit_depth` (0,1,2,4,7,9,16,32,255) | [x] |
+| D4 | `phase_c_errors::d4_unknown_color_type` (1,5,7,8,9,16,100,127,128,200,254,255) | [x] |
+| D5 | `phase_c_errors::d5_width_less_than_one` (5 raw widths) | [x] |
+| D6 | `phase_c_errors::d6_height_less_than_one` (4 raw heights) | [x] |
+| D7 | `phase_c_errors::d7_image_too_large` (5 shapes) | [x] |
+| D9 | `phase_c_errors::d9_bad_compression_method` | [x] |
+| D10 | `phase_c_errors::d10_bad_filter_method` | [x] |
+| D11 | `phase_c_errors::d11_interlace_unsupported` | [x] |
+| D12 | `phase_c_errors::d12_corrupt_zlib_structure` (no IDAT, len 0..5, split) | [x] |
+| D13 | `phase_c_errors::d13_bad_zlib_compression_method` (all 15 wrong CM values) | [x] |
+| D14 | `phase_c_errors::d14_window_size_too_large` (CINFO 8..15) | [x] |
+| D15 | `phase_c_errors::d15_preset_dictionary` (5 FLG values) | [x] |
+| D18 | `phase_c_errors::d18_deflate_failure_is_reported` (4 distinct inner failures) | [x] |
+| D19 | B1 / B2 above | [x] |
+| D20 | `phase_c_errors::d20_indexed_without_plte` | [x] |
+| D21 | `phase_c_errors::d21_oversized_and_undersized_lengths`; `isolated` "D21b" (4 bit-flips × every byte, every truncation, 5 over-declared lengths) | [x] |
+| E1–E8 | `phase_c_errors::d1_...`, `d2_...`, `d4_...`, `e7_filter_byte_one_past_valid`, `a3_...` | [x] |
+| E9 | `isolated` "E9 in_bytes+N" | [x] |
+| E10 | `phase_c_errors::e10_null_out_with_empty_stored_block` | [x] |
 
-## A note on the watchdog
+## Rows that are unreachable, with the evidence
 
-Some malformed streams make the C loop forever: `cp_decode` can pick a `key` with
-`key & 0xF == 0`, `cp_consume_bits(s, 0)` then makes no progress, and the same
-symbol is decoded again indefinitely. The Rust does the same. The harness gives
-each child a 2 s alarm so this is bounded; if exactly **one** side times out the
-pair is re-run with a 300 s alarm, because the C is built at `-O0` and the Rust
-`.so` at `-O3` and a one-sided 2 s timeout says nothing about behaviour. 15 of
-800 mutated-stream cases livelock on both sides.
+These are **not** skipped: each is unreachable by construction, and the claim is
+backed by a test that probes the surrounding region and shows the neighbouring
+branch fires instead — in both implementations.
+
+| row | why unreachable | evidence |
+|-----|-----------------|----------|
+| A11 | `cp_peak_bits` only increments `word_index` inside `if (word_index < word_count)`, so `word_index <= word_count` is an invariant | assertion never fires across 3694 `isolated` cases; the C's stderr shows only `cp_read_bits`, `cp_consume_bits` and `cp_decode` ever assert |
+| A12 | `bits_left ≡ count (mod 8)` holds from entry (both start as multiples of 8) and `cp_consume_bits` changes them equally; `cp_stored` aligns via `cp_read_bits(s, s->count & 7)`, which therefore also aligns `bits_left` | `isolated` "A12 sweep" — 28 block-1 lengths × 4 input alignments × 14 stored lengths = 1568 systematic attempts to desynchronise the two counters; `cp_ptr`'s assertion never fires |
+| A13 | every `lens[]` value fed to `cp_build` is ≤ 15 by construction: `lenlens` comes from 3-bit reads (≤ 7), `cp_fixed_table` holds 5..9, and the `cp_dynamic` loop writes either a 3-bit-derived value, a copy of one, or 0 | `cp_build`'s assertion never fires across 3694 cases, including 600 fuzzed dynamic headers and 71 deliberate `lens[320]` overruns |
+| D8 | D7 guarantees `1 <= (int64)w*h*4 < INT_MAX`, so `malloc(pix_bytes)` asks for < 2 GiB and does not fail here | `phase_c_errors::d8_d16_d17_boundary_sweep` sweeps 7 heights × 5 offsets straddling the exact `INT_MAX/4` boundary and asserts the message is never "unable to allocate raw image space" |
+| D16, D17 | `cp_out_size(img,bpp) == w*h*bpp` with `bpp <= 4` is the same product D7 already bounded, and `w,h >= 1` makes it `>= 1` | same sweep asserts the message is never "invalid image size found" |
+
+## Note on build profile
+
+The artifact under verification is the **release** cdylib (`crate-type =
+["cdylib"]`, `[profile.release] panic = "abort"`). Under `RUST_SO` pointing at
+the *debug* cdylib, the three `A17` (`in == NULL`) cases diverge: the C
+segfaults while Rust aborts, because rustc's `debug_assertions` insert a
+"null pointer dereference occurred" check that fires before the faulting load.
+That is a property of the debug profile's instrumentation, not of the
+translation; every other case matches in both profiles.

@@ -34,24 +34,8 @@ use std::ffi::{c_char, c_int};
 // We call straight through to the platform C library so that number parsing,
 // formatting and stdout buffering behaviour is byte-for-byte identical to the
 // original C implementation.
-// glibc has two `sscanf` entry points that differ in their handling of a few
-// conversions (`%a`, positional `%n$`): the legacy `sscanf` and the C99 one,
-// `__isoc99_sscanf`.  A C compiler targeting glibc redirects `sscanf` to
-// `__isoc99_sscanf` (confirmed by `nm -D -u c_src/build/libdriver.so`), so bind
-// that exact symbol here in order to be byte-for-byte identical with the C
-// build.  Other platforms only have plain `sscanf`.
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-unsafe extern "C" {
-    #[link_name = "__isoc99_sscanf"]
-    fn sscanf(s: *const c_char, format: *const c_char, ...) -> c_int;
-}
-
-#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
 unsafe extern "C" {
     fn sscanf(s: *const c_char, format: *const c_char, ...) -> c_int;
-}
-
-unsafe extern "C" {
     fn printf(format: *const c_char, ...) -> c_int;
 }
 
@@ -71,31 +55,11 @@ pub unsafe extern "C" fn fma_array(
     while i < len {
         let idx = i as isize;
         unsafe {
-            // `wrapping_offset`, not `offset`: C's `mul1[i]` at -O0 is a plain
-            // address computation with no in-bounds requirement, whereas
-            // `<*const T>::offset` carries a safety precondition that a debug
-            // build checks with `assert_unsafe_precondition!`.  With `offset`,
-            // a caller passing a NULL or out-of-range pointer would make the
-            // debug build *panic* where the C build faults, i.e. the two would
-            // disagree on how they die (see ERRORS.md rows 19-20).
-            // `wrapping_offset` lowers to the same `lea`/`add` and keeps the
-            // observable behaviour identical to C in every cargo profile.
-            //
-            // Likewise `ptr::read`/`ptr::write` rather than `*p` / `*p = v`:
-            // with `-C debug-assertions=on` rustc inserts a null-pointer check
-            // around a raw-pointer *place* expression, which aborts (SIGABRT)
-            // instead of faulting (SIGSEGV) the way the C build does.
-            // `ptr::read`/`ptr::write` carry no such check, so `driver`'s and
-            // `call_fma`'s NULL-pointer UB dies identically to C under both the
-            // dev and the release profile.
-            let m1 = core::ptr::read(mul1.wrapping_offset(idx));
-            let m2 = core::ptr::read(mul2.wrapping_offset(idx));
-            let a = core::ptr::read(add.wrapping_offset(idx));
+            let m1 = *mul1.offset(idx);
+            let m2 = *mul2.offset(idx);
+            let a = *add.offset(idx);
             // Signed overflow is UB in C; gcc/clang emit wrapping arithmetic.
-            core::ptr::write(
-                out.wrapping_offset(idx),
-                m1.wrapping_mul(m2).wrapping_add(a),
-            );
+            *out.offset(idx) = m1.wrapping_mul(m2).wrapping_add(a);
         }
         i += 1;
     }
@@ -162,9 +126,7 @@ pub unsafe extern "C" fn driver(input: *const c_char) {
         if matched != 1 {
             break;
         }
-        // `in += nb` in C is plain pointer arithmetic; `wrapping_add` matches it
-        // without `add`'s debug-checked in-bounds precondition.
-        cursor = cursor.wrapping_add(nb);
+        cursor = unsafe { cursor.add(nb) };
         i += 1;
     }
 

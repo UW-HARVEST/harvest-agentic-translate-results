@@ -1,58 +1,55 @@
-# ERRORS.md — Error-surface table (Phase A → gate for Phase C)
+# ERRORS.md — Phase C error-surface table
 
-Mechanically derived from `c_src/src/goto.c`. Every rejection / early-exit /
-sentinel-return in the C source gets one row. There are no `assert`s, no error
-enums, no `RETURN_ERROR`-style macros and no numeric range checks in this
-library; the complete rejection surface is:
+Mechanically derived from every rejection / error-return site in
+`c_src/src/goto.c`. There are no `assert`s, no error enums, no min/max
+constants and no `RETURN_ERROR`-style macros in this library; the complete set
+of rejection sites is:
 
-* `goto error` in `forward_goto_example` (guarded by `x < 0`)
-* `goto cleanup` in `open_with_cleanup` — reached from **two** distinct
-  conditions (`!fp` and `ferror(fp)`)
-* `return -1` / `return -2` in `driver`
-* the sentinel returns `-1` (int) and `NULL` (`FILE*`)
+```
+goto.c:30-32   if (x < 0) { goto error; }              -> forward_goto_example
+goto.c:37-39   error: fprintf(stderr,...); return -1;  -> forward_goto_example
+goto.c:44-46   if (!fp) { goto cleanup; }              -> open_with_cleanup
+goto.c:53-55   if (ferror(fp)) { goto cleanup; }       -> open_with_cleanup
+goto.c:59-62   cleanup: fprintf(stderr,...); ...; return NULL;
+goto.c:67-68   if (res == -1) { return -1; }           -> driver
+goto.c:74-75   if (out == NULL) { return -2; }         -> driver
+```
 
-`open_with_cleanup` has no explicit null check on `filename`; it is forwarded
-straight to `fopen`, so glibc's `EFAULT` rejection is the actual behaviour and
-is covered as its own row.
+`open_with_cleanup` has exactly two `goto cleanup` branches, so the table has
+two rows for it (rows 4 and 5 split row-4's trigger by the two distinct
+`fopen`-failure causes that a caller can actually produce, plus row 6 for the
+`ferror` branch).
 
-| #  | function | trigger (exact invalid input / condition) | expected C result | test | [x] |
-|----|----------|-------------------------------------------|-------------------|------|-----|
-| 1  | `forward_goto_example` | `x < 0` (`goto error`), randomized negatives | stderr `"Error: negative input\n"` (emitted via `fwrite`), stdout empty, returns `-1` | `err_01_fge_negative` | [x] |
-| 2  | `forward_goto_example` | `x == INT_MIN` (boundary, most-negative) | same as #1, returns `-1` | `err_02_fge_int_min` | [x] |
-| 3  | `forward_goto_example` | `x == -1` (one step past the valid range `x >= 0`) | same as #1, returns `-1` | `err_03_fge_minus_one` | [x] |
-| 4  | `open_with_cleanup` | `fopen` fails, `ENOENT`: path does not exist | stderr `"Error: opening or processing file <p>\n"`, **no** `fclose` (`fp` is NULL), returns `NULL` | `err_04_owc_enoent` | [x] |
-| 5  | `open_with_cleanup` | `fopen` fails, `ENOENT`: `filename == ""` (zero-length string) | as #4 with empty `%s` | `err_05_owc_empty_name` | [x] |
-| 6  | `open_with_cleanup` | `fopen` fails, `EFAULT`: `filename == NULL` — `%s` formats it as `(null)` | as #4, stderr `"...file (null)\n"`, returns `NULL` | `err_06_owc_null_ptr` | [x] |
-| 7  | `open_with_cleanup` | `fopen` fails, `EACCES`: existing file with mode `000`, and mode `200` (write-only, so unreadable) | as #4, returns `NULL` (skipped when euid==0). Contrast with mode `444`, which must SUCCEED — that pair pins the mode string to `"r"` | `err_07_owc_eacces` | [x] |
-| 8  | `open_with_cleanup` | `fopen` fails, `ENAMETOOLONG`: 5000-byte basename (oversized length) | as #4, returns `NULL` | `err_08_owc_enametoolong` | [x] |
-| 9  | `open_with_cleanup` | `fopen` fails, `ENOTDIR`: regular file used as a path component | as #4, returns `NULL` | `err_09_owc_enotdir` | [x] |
-| 10 | `open_with_cleanup` | `fopen` fails, `ELOOP`: self-referential symlink | as #4, returns `NULL` | `err_10_owc_eloop` | [x] |
-| 11 | `open_with_cleanup` | `ferror(fp) != 0` after the `fgets` loop — `filename` is a **directory** (`fopen` succeeds, `fgets` fails `EISDIR`) | stderr `"Error: opening or processing file <d>\n"`, `fclose(fp)` **is** called, returns `NULL` | `err_11_owc_ferror_directory` | [x] |
-| 12 | `driver` | `res == -1`, i.e. `num < 0` → returns before touching the file | stderr `"Error: negative input\n"`, no stdout, no `fopen` at all, returns `-1` | `err_12_driver_negative_num` | [x] |
-| 13 | `driver` | `num < 0` **and** `filename` invalid (proves the file is never opened) | returns `-1`; stderr has only the negative-input line | `err_13_driver_negative_num_bad_file` | [x] |
-| 14 | `driver` | `out == NULL` via the `!fp` branch (nonexistent file, `num >= 0`) | stdout `"Processing: n\nGoto output: 2n\n"`, stderr open-failure line, returns `-2` | `err_14_driver_open_fail` | [x] |
-| 15 | `driver` | `out == NULL` via the `ferror` branch (`filename` is a directory) | as #14, returns `-2` | `err_15_driver_ferror_fail` | [x] |
-| 16 | `driver` | `filename == NULL` with `num >= 0` | stderr `"...file (null)\n"`, returns `-2` | `err_16_driver_null_filename` | [x] |
-| 17 | `driver` | `num == INT_MIN` (boundary) | returns `-1` | `err_17_driver_int_min` | [x] |
+## Table
 
-## Generic FFI boundary cases (required even though absent from the table)
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| 1 | `forward_goto_example` | `x < 0`, ordinary negative (e.g. `-1`, `-42`) — takes `goto error` | returns `-1`; writes exactly `Error: negative input\n` to stderr; writes **nothing** to stdout (no `Processing:` line) | [x] |
+| 2 | `forward_goto_example` | `x == INT_MIN` (extreme negative, one step past `-INT_MAX`) — still `x < 0` | returns `-1`; `Error: negative input\n` on stderr | [x] |
+| 3 | `forward_goto_example` | `x == -1` specifically: the *valid* return value collides with the error sentinel path used by `driver` | returns `-1` (sentinel indistinguishable from error — replicate, do not "fix") | [x] |
+| 4 | `open_with_cleanup` | `filename` names a nonexistent path (`fopen` → `NULL`, `ENOENT`) — first `goto cleanup`, `fp == NULL` so **no `fclose`** | returns `NULL`; stderr gets `Error: opening or processing file <path>\n` | [x] |
+| 5 | `open_with_cleanup` | `filename` is a NULL pointer. glibc's `fopen` passes it to `openat(2)` unread, so it returns `NULL`/`EFAULT` (verified, no crash); `fprintf("%s", NULL)` then prints glibc's `(null)` | returns `NULL`; stderr gets `Error: opening or processing file (null)\n` | [x] |
+| 6 | `open_with_cleanup` | `filename` is a **directory**: `fopen` *succeeds* on Linux, then `fgets` fails with `EISDIR` and sets `ferror` → second `goto cleanup` with `fp != NULL`, so `fclose(fp)` **is** called | returns `NULL`; stderr gets `Error: opening or processing file <dir>\n`; stdout unchanged | [x] |
+| 7 | `open_with_cleanup` | `filename` is an unreadable file (mode `0000`, `fopen` → `NULL`, `EACCES`) — first `goto cleanup` | returns `NULL`; stderr message | [x] |
+| 8 | `open_with_cleanup` | `filename` is the empty string `""` (`fopen("")` → `NULL`, `ENOENT`) | returns `NULL`; stderr `Error: opening or processing file \n` | [x] |
+| 9 | `driver` | `forward_goto_example(num)` returned `-1`, i.e. `num < 0` — early `return -1` **before** `open_with_cleanup` is ever called (so no file is touched and no stderr file message appears) | returns `-1`; stderr only `Error: negative input\n`; stdout empty | [x] |
+| 10 | `driver` | `num >= 0` but `open_with_cleanup(filename)` returned `NULL` (any of rows 4–8) — `return -2` | returns `-2`; stdout has `Processing: <num>\n` + `Goto output: <2*num>\n`; stderr has the file message | [x] |
+| 11 | `driver` | `num < 0` **and** `filename` invalid at the same time: the `num` check wins | returns `-1` (not `-2`); file never opened | [x] |
+| 12 | `driver` | `filename` is NULL pointer with `num >= 0` (null-pointer boundary across FFI) | returns `-2`; stderr `...file (null)\n` | [x] |
+| 13 | `driver` | `num == INT_MIN` (extreme / one-step-past boundary) | returns `-1` | [x] |
 
-| #  | case | expected | test | [x] |
-|----|------|----------|------|-----|
-| 18 | null pointer to `open_with_cleanup` / `driver` | see rows 6 / 16 — `NULL` / `-2`, no crash | `err_20_boundary_matrix`, `err_06_owc_null_ptr`, `err_16_driver_null_filename` | [x] |
-| 19 | zero length: empty filename (row 5) and 0-byte input file | `NULL` / `-2` for the name; success + no output for the 0-byte file | `err_20_boundary_matrix`, `err_05_owc_empty_name` | [x] |
-| 20 | oversized length: 5000-byte path (row 8), 1 MiB file, 64 KiB single line | `NULL` for the path; byte-identical streamed output for the big inputs | `err_20_boundary_matrix`, `err_08_owc_enametoolong` | [x] |
-| 21 | one step past the valid `x` range for `forward_goto_example` (`x = -1`) | `-1` (row 3) | `err_03_fge_minus_one`, `err_23_int_full_range_sweep` | [x] |
-| 22 | out-of-range **enum** value crossing the FFI boundary | **N/A** — the public API (`goto.h`) declares no `enum` and no `bool`; the only scalar is a plain `int` whose *entire* `INT_MIN..=INT_MAX` domain is valid input. Covered instead by full-range randomized `int` sweeps plus both extremes. | `err_23_int_full_range_sweep`, `cfg_22_driver_cross_product`, `err_02_fge_int_min`, `err_17_driver_int_min`, `cfg_04_overflow` | [x] |
-| 23 | `int` values where the *non-error* path produces a negative result: `x >= 2^30` makes `x * 2` wrap (gcc `-O0` emits `add %eax,%eax`, so it wraps two's-complement), e.g. `INT_MAX → -2`; `driver` still treats it as success because it only compares against `-1` | `forward_goto_example` returns the wrapped value; `driver` prints it and continues | `err_23_int_full_range_sweep`, `cfg_04_overflow` | [x] |
-| 24 | value that could alias the `-1` sentinel: no `x >= 0` can make `x * 2 == -1` (always even), so `driver`'s `res == -1` test is unambiguous — asserted explicitly | no false `-1` for any non-negative `x` | `err_23_int_full_range_sweep` | [x] |
+## Generic FFI boundary cases also covered by the tests
 
-All 24 rows have a passing differential test (see `cargo test` output), under
-every feature combination and for both the `release` and `debug` cdylib.
-
-Each error-path test asserts the SAME SPECIFIC rejection on both sides — the
-exact sentinel (`-1`, `-2`, `NULL`) *and* the exact diagnostic bytes on stderr —
-and additionally pins the absolute C behaviour (e.g. `err_11` asserts the
-directory case really does return `NULL` through the `ferror` branch, `err_06`
-asserts the stderr text is literally `...file (null)`). A test therefore cannot
-pass by both sides failing in some new, matching-but-wrong way.
+* Null pointers: rows 5 and 12 (`filename == NULL`).
+* Zero-length input: row 8 (`filename == ""`), plus a zero-byte **file** which is
+  a *valid* path (see `CONFIGS.md` row C2 — `fgets` returns `NULL` immediately,
+  `ferror` is 0, so the file handle is returned successfully).
+* Oversized length: a path longer than `PATH_MAX` (`ENAMETOOLONG`) — behaves as
+  row 4.
+* One step past a documented valid range: `INT_MIN` / `INT_MAX` for `num`
+  (rows 2, 13 and `CONFIGS.md` row A5, which exercises the `x * 2` signed
+  overflow).
+* Out-of-range enum values: **not applicable** — this API declares no `enum`
+  type and takes no enum-typed parameter. Both parameters are an unrestricted
+  `int` and a `const char*`, and the full `int` range is swept (including
+  `INT_MIN`/`INT_MAX`) by the randomized Phase B/C tests.

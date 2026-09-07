@@ -1,98 +1,83 @@
-# CONFIGS.md — configuration surface table (valid paths)
+# CONFIGS.md — configuration-surface table (valid inputs)
 
-Derived mechanically from the public header and every branch the C actually
-takes. The public API is a *single* entry point, so "lowest-level entry point"
-and "convenience wrapper" coincide — there is nothing above or below `hex2bin`:
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`. There are no
+`#ifdef`s, no build-time options and no global/runtime state — every axis is a
+**parameter** of the single entry point.
 
-```c
-/* c_src/include/lib.h — the complete public surface */
-int hex2bin(uint8_t *bin, size_t bin_maxlen, const char *hex,
-            size_t hex_len, const char *ignore, const char **hex_end_p);
-```
+## Axes the C actually branches on
 
-## Axes the C branches on
+| axis | values the C distinguishes | source |
+|------|----------------------------|--------|
+| A. `ignore` | `NULL` vs non-`NULL` | L23 `ignore != ((void *)0)` |
+| A′. `ignore` contents | empty `""`, whitespace set, set containing a *hex* digit char, set containing high bytes | L24 `strchr(ignore, c)` |
+| B. `hex_end_p` | `NULL` vs non-`NULL` — changes whether "scan stopped early" is an error | L50 / L52 |
+| C. `state` at the byte in question | `0x00` (high nibble) vs `0xFF` (low nibble) — gates both the ignore-skip (L23) and which of `c_acc=`/`bin[bin_pos++]=` runs (L35) | L23, L35, L43 |
+| D. `bin_maxlen` vs needed | `0`, exactly-enough, more than enough (`usize::MAX`), one byte short, far short | L31 |
+| E. `hex_len` | `0`, `1`, `2`, odd, even, "many" (≥ 512) | L16 |
+| F. byte class of `hex[i]` | `'0'..'9'` (`c_num0` path), `'A'..'F'`, `'a'..'f'` (`c_alpha0` path, mixed case via `c & ~32U`), non-hex-but-ignorable, non-hex-not-ignorable, `0x00`, high-bit `0x80..0xFF` | L18–L28 |
+| G. position of the non-hex byte | leading, interleaved at even nibble, interleaved at odd nibble, trailing, absent | interaction of C × F |
 
-| axis | values the C distinguishes | source of the distinction |
-|------|----------------------------|---------------------------|
-| A. `ignore` mode | `NULL` / `""` / single-char set / multi-char set / set containing hex digits / set containing bytes ≥ `0x80` | line 23 `ignore != NULL`, line 24 `strchr(ignore, c)` |
-| B. `hex_end_p` mode | `NULL` / non-`NULL` | line 50 vs. line 52 — changes the *return value* for partially consumed input |
-| C. `bin_maxlen` shape | `0` / `< hex_len/2` / exactly `hex_len/2` / `> hex_len/2` / `SIZE_MAX` | line 31 `bin_pos >= bin_maxlen` |
-| D. `hex_len` parity & size | `0` / `1` (odd) / `2` / odd `>1` / even `>2` / long (≥ 512) | loop bound + line 43 `state != 0U` |
-| E. digit character class | `'0'..'9'` / `'a'..'f'` / `'A'..'F'` / mixed case | `c_num0` branch vs. `c_alpha0` branch, line 29 `(c_num0 & c_num) | (c_alpha0 & c_alpha)` |
-| F. separator placement | none / leading / trailing / between bytes (even `state`) / mid-byte (odd `state`) / runs of separators / whole input separators | line 23 `state == 0U` conjunct |
-| G. non-hex byte class | ASCII punctuation / range-adjacent bytes (`/ : @ G \` g`) / `0x00` / `0x80..0xFF` | line 22 `(c_num0 \| c_alpha0) == 0U` |
-| H. `bin` pointer | non-`NULL` / `NULL` (only legal when never dereferenced) | no null check in C |
-| I. `hex` pointer | non-`NULL` / `NULL` with `hex_len == 0` | no null check in C |
+There is exactly **one public entry point** (`hex2bin`) and it *is* the
+lowest-level one — `include/lib.h` declares nothing else, and `nm -D` on the C
+`.so` exports nothing else. There are no convenience wrappers to skip past.
 
-`state` (`0x00` ⇄ `0xFF` via `state = ~state`) and `c_acc` are internal, but
-axes D and F exist precisely to drive both of `state`'s values through every
-branch.
+The project builds **no binary executable** (`CMakeLists.txt` only has
+`add_library(... SHARED ...)`; `Cargo.toml` only has `[lib] crate-type =
+["cdylib"]`), so the "compare binaries' stdout" clause does not apply.
 
-## Configuration rows
+## Rows (pruned cross-product; each is a differential test over randomized inputs)
 
-Cross-product of A×B×C×D×E×F×G, pruned to combinations the C treats
-differently. Every row is exercised with **many randomized inputs** (fixed seed
-`0x5EED_1234_ABCD_0001`, deterministic xorshift PRNG) in
-`tests/differential.rs`; a row is checked off only after the whole randomized
-sweep matches C byte-for-byte (return value, `bin` buffer *including* the
-untouched tail, and `*hex_end_p` offset).
-
-| #  | entry point | configuration (options set + input shape)                                                                                        | [x] |
-|----|-------------|----------------------------------------------------------------------------------------------------------------------------------|-----|
-| 1  | `hex2bin`   | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen == hex_len/2`, even `hex_len` 2..64, lowercase digits only                            | [x] |
-| 2  | `hex2bin`   | `ignore=NULL`, `hex_end_p=NULL`, exact `bin_maxlen`, even `hex_len`, uppercase digits only                                        | [x] |
-| 3  | `hex2bin`   | `ignore=NULL`, `hex_end_p=NULL`, exact `bin_maxlen`, even `hex_len`, decimal digits only                                          | [x] |
-| 4  | `hex2bin`   | `ignore=NULL`, `hex_end_p=NULL`, exact `bin_maxlen`, even `hex_len`, mixed-case digits (all of A/a/0 classes interleaved)          | [x] |
-| 5  | `hex2bin`   | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen > hex_len/2` (slack), even `hex_len`, mixed case — asserts tail of `bin` untouched     | [x] |
-| 6  | `hex2bin`   | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen == SIZE_MAX`, even `hex_len`, mixed case                                             | [x] |
-| 7  | `hex2bin`   | `ignore=NULL`, `hex_end_p=non-NULL`, exact `bin_maxlen`, even `hex_len`, mixed case — checks `*hex_end_p == &hex[hex_len]`          | [x] |
-| 8  | `hex2bin`   | `ignore=NULL`, `hex_end_p=non-NULL`, `hex_len == 0`, `bin_maxlen` random                                                          | [x] |
-| 9  | `hex2bin`   | `ignore=NULL`, `hex_end_p=non-NULL`, long even input (512..2048 nibbles), exact `bin_maxlen`, mixed case                           | [x] |
-| 10 | `hex2bin`   | `ignore=NULL`, `hex_end_p=non-NULL`, `bin_maxlen` random in `0..=hex_len` (straddles the buffer-full boundary), even `hex_len`      | [x] |
-| 11 | `hex2bin`   | `ignore=NULL`, `hex_end_p=non-NULL`, odd `hex_len` (1,3,5,…), all-hex input                                                       | [x] |
-| 12 | `hex2bin`   | `ignore=""`, `hex_end_p=non-NULL`, exact `bin_maxlen`, even `hex_len`, mixed case (empty ignore ≠ `NULL` ignore only for `0x00`)     | [x] |
-| 13 | `hex2bin`   | `ignore=":"`, `hex_end_p=non-NULL`, separators between complete bytes (even `state`), exact `bin_maxlen`                            | [x] |
-| 14 | `hex2bin`   | `ignore=": -"` (multi-char), `hex_end_p=non-NULL`, random separator runs between bytes, exact `bin_maxlen`                          | [x] |
-| 15 | `hex2bin`   | `ignore=": -"`, `hex_end_p=non-NULL`, **leading** separator run                                                                    | [x] |
-| 16 | `hex2bin`   | `ignore=": -"`, `hex_end_p=non-NULL`, **trailing** separator run (`hex_pos` must reach `hex_len`)                                   | [x] |
-| 17 | `hex2bin`   | `ignore=": -"`, `hex_end_p=non-NULL`, separator placed **mid-byte** (odd `state`) → parsing stops there                             | [x] |
-| 18 | `hex2bin`   | `ignore=": -"`, `hex_end_p=NULL`, separators between bytes — return value differs from the `hex_end_p != NULL` case                 | [x] |
-| 19 | `hex2bin`   | `ignore` = whole input's alphabet (input is *only* separators), `hex_end_p` both modes                                             | [x] |
-| 20 | `hex2bin`   | `ignore="abc0"` (contains valid hex digits — provably inert), `hex_end_p=non-NULL`, mixed-case even input                           | [x] |
-| 21 | `hex2bin`   | `ignore` containing bytes ≥ `0x80` (e.g. `"\x80\xFF\xA5"`), `hex` sprinkled with those same high bytes, `hex_end_p=non-NULL`         | [x] |
-| 22 | `hex2bin`   | `ignore` = all 255 non-NUL bytes, `hex` = fully random bytes, `hex_end_p=non-NULL`, random `bin_maxlen`                             | [x] |
-| 23 | `hex2bin`   | `ignore=NULL`, `hex` = fully random bytes (`0x00..=0xFF`), random `bin_maxlen`, random `hex_len`, both `hex_end_p` modes             | [x] |
-| 24 | `hex2bin`   | `ignore` = random 1..8-byte set, `hex` = random bytes drawn from hex-digits ∪ separators ∪ junk, random `bin_maxlen`, both `hex_end_p` modes | [x] |
-| 25 | `hex2bin`   | `bin=NULL` + `bin_maxlen=0`, `hex_len` 0 and >0, both `hex_end_p` modes, `ignore` both modes                                        | [x] |
-| 26 | `hex2bin`   | `hex=NULL` + `hex_len=0`, all four (`ignore`,`hex_end_p`) mode combinations                                                        | [x] |
-| 27 | `hex2bin`   | exhaustive single-byte sweep: `hex_len=1`, `hex[0]` over all `0x00..=0xFF`, × `ignore ∈ {NULL, "", byte itself, other}` × `hex_end_p ∈ {NULL, set}` × `bin_maxlen ∈ {0,1}` | [x] |
-| 28 | `hex2bin`   | exhaustive two-byte sweep: `hex_len=2`, both bytes over all `0x00..=0xFF` (65 536 pairs), `ignore=NULL`, `hex_end_p` set, `bin_maxlen=1` | [x] |
-| 29 | `hex2bin`   | `hex_len` shorter than the backing buffer (parser must not read past `hex_len`) — guard bytes after `hex_len` are non-hex vs. hex    | [x] |
-| 30 | `hex2bin`   | `bin_maxlen` random in `0..=2` with long inputs (early buffer-full on a long stream), both `hex_end_p` modes                        | [x] |
-| 31 | `hex2bin`   | **whole-surface fuzz**: axes A–I randomized *simultaneously* and independently (200 000 iterations) — the unconstrained cross-product where interaction bugs live | [x] |
-
-All 31 rows pass across their randomized sweeps — see `tests/differential.rs`
-(`configs_md_row_XX_*` and `fuzz_all_axes_simultaneously`).
-
-## Evidence
-
-Every row test records how many C-vs-Rust comparisons it actually performed and
-asserts a lower bound, so a loop that silently iterated zero times fails instead
-of passing (`assert_did_work` in `tests/common/mod.rs`). Measured totals:
-
-```
-$ cargo test --release -- --nocapture --test-threads=1
-tests reporting counts: 60
-total C-vs-Rust differential comparisons: 396435
-```
-
-Each comparison checks three observables byte-for-byte: the `int` return value,
-the **entire** `bin` buffer (pre-filled with `0xA5` so stray writes past the
-reported length are caught), and the `*hex_end_p` offset.
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` exact, `hex_len=0` (empty input) | [x] |
+| 2 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` exact, `hex_len=2` (single byte, all-lowercase digits) | [x] |
+| 3 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` exact, `hex_len` even, all `'0'..'9'` (pure `c_num0` path) | [x] |
+| 4 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` exact, `hex_len` even, all `'a'..'f'` (pure `c_alpha0` lowercase path) | [x] |
+| 5 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` exact, `hex_len` even, all `'A'..'F'` (pure `c_alpha0` uppercase path) | [x] |
+| 6 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` exact, `hex_len` even, randomized **mixed-case** hex (both paths interleaved, exercises `c & ~32U`) | [x] |
+| 7 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` exact, `hex_len` **large** (512–1024 digits) mixed case | [x] |
+| 8 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen` **larger than needed** (slack buffer), valid even hex | [x] |
+| 9 | `hex2bin` | `ignore=NULL`, `hex_end_p=NULL`, `bin_maxlen = usize::MAX` (oversized), valid even hex | [x] |
+| 10 | `hex2bin` | `ignore=NULL`, `hex_end_p=**non-NULL**`, `bin_maxlen` exact, valid even hex — assert returned `*hex_end_p` offset == `hex_len` | [x] |
+| 11 | `hex2bin` | `ignore=NULL`, `hex_end_p=non-NULL`, valid hex followed by **trailing non-hex garbage** — success + `*hex_end_p` at the first garbage byte | [x] |
+| 12 | `hex2bin` | `ignore=NULL`, `hex_end_p=non-NULL`, `hex_len=1` (single digit, odd) — the `hex_pos--` path, assert the *decremented* end pointer | [x] |
+| 13 | `hex2bin` | `ignore=non-NULL` (`" "`), `hex_end_p=NULL`, spaces at **even** nibble positions only (skippable), otherwise valid even hex | [x] |
+| 14 | `hex2bin` | `ignore=non-NULL` (`" \t\n\r:-"`), `hex_end_p=NULL`, multi-char ignore set, ignorables at even positions, runs of 1..3 consecutive ignorables | [x] |
+| 15 | `hex2bin` | `ignore=non-NULL`, `hex_end_p=NULL`, **leading** ignorables before the first digit | [x] |
+| 16 | `hex2bin` | `ignore=non-NULL`, `hex_end_p=non-NULL`, **trailing** ignorables after the last digit — they are consumed, so `*hex_end_p == &hex[hex_len]` and the call succeeds | [x] |
+| 17 | `hex2bin` | `ignore=non-NULL`, `hex_end_p=non-NULL`, ignorable byte at an **odd** nibble (breaks; row 6 of ERRORS.md from the success side — assert the end pointer position) | [x] |
+| 18 | `hex2bin` | `ignore=""` (empty non-NULL string), `hex_end_p=non-NULL`, valid even hex — behaves like a set that matches only `0x00` | [x] |
+| 19 | `hex2bin` | `ignore` **contains hex digit chars** (e.g. `"abc0"`), `hex_end_p=non-NULL` — the L22 `(c_num0\|c_alpha0)==0` test wins, so those chars are still *decoded*, never ignored | [x] |
+| 20 | `hex2bin` | `ignore` contains **high-bit bytes** (`"\x80\xC3\xFF"`), `hex` contains those bytes at even nibbles — skipped (`strchr` on `unsigned char`) | [x] |
+| 21 | `hex2bin` | `ignore=non-NULL`, `hex` contains an **embedded `0x00`** at an even nibble — skipped because `strchr` matches its own terminator (C quirk) | [x] |
+| 22 | `hex2bin` | `ignore=NULL`, `hex` contains an embedded `0x00` — breaks; with `hex_end_p=non-NULL` the call still "succeeds" up to that point | [x] |
+| 23 | `hex2bin` | `ignore=non-NULL`, `hex_end_p=non-NULL`, `bin_maxlen` **one byte short**, hex containing ignorables (buffer-full path composed with the ignore path) | [x] |
+| 24 | `hex2bin` | **All 256 byte values** as a single input byte, and as the 2nd byte after a valid digit, across `ignore ∈ {NULL, "", " \t"}` × `hex_end_p ∈ {NULL, non-NULL}` (byte-class exhaustive) | [x] |
+| 25 | `hex2bin` | Fully randomized fuzz: random `hex` over the full `0x00..0xFF` byte range, random `hex_len ∈ [0,64]`, random `bin_maxlen ∈ [0,40]`, random `ignore ∈ {NULL, "", " ", " \t\n:", "0aF", "\x80\xFF"}`, random `hex_end_p ∈ {NULL, non-NULL}` — 200 000 cases, fixed seed | [x] |
+| 26 | `hex2bin` | Nibble-boundary sweep: for `n` valid digits, `n ∈ [0,17]`, × `bin_maxlen ∈ [0, 10]` × `hex_end_p ∈ {NULL, non-NULL}` — exhausts the odd/even × buffer-fit cross-product | [x] |
+| 27 | `hex2bin` | `hex=NULL`/`bin=NULL` with `hex_len=0`, `bin_maxlen=0`, both `hex_end_p` variants — null pointers must not be dereferenced and `*hex_end_p` must come back `NULL` | [x] |
+| 28 | `hex2bin` | Output-buffer **witness** check: `bin` prefilled with a poison pattern, assert the full `bin_maxlen` window is byte-identical between C and Rust *including on the error paths* (the C does not roll back already-written bytes) | [x] |
 
 ## Feature combinations
 
-`translation/Cargo.toml` has no `[features]` section, so the feature
-cross-product is the single default configuration. `scripts/check_features.sh`
-enumerates the features from `Cargo.toml` and re-runs the full suite for each
-combination (default and `--no-default-features`), rather than assuming.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+configuration is the default (empty) feature set. Verified mechanically by
+`./check_features.sh`.
+
+## Where each row is tested
+
+`tests/configs.rs` — `rowNN_*` maps 1:1 onto the row numbers above. Every row
+calls both `.so`s and compares the return value, the whole output window and the
+`hex_end_p` pointer; all randomized rows use a fixed seed (2000 iterations per
+row, 200 000 for row 25).
+
+Additional suites that back these rows up:
+
+| file | purpose |
+|------|---------|
+| `tests/exhaustive.rs` | ALL inputs of length 0–4 over 7 byte classes and 0–6 over 4 byte classes, × `bin_maxlen` × `ignore` × `hex_end_p`; plus all 256 single-byte and all 65 536 two-byte inputs. Makes the cross-product complete rather than sampled. |
+| `tests/coverage_witness.rs` | Non-vacuity guard: classifies 200 000 fuzz cases by observable behaviour and fails if any of the 16 outcome classes stops being reached. |
+| `negative_control.sh` | Mutation testing: injects 12 known bugs into `src/lib.rs`; 11 must be caught, and M5 is asserted to be a *provably equivalent* mutant. Proves the suite is not vacuously green. |
+| `run_all.sh` | Phase D driver: builds the C `.so`, enumerates the cargo feature powerset, diffs `nm -D` per combination, runs the suite for each, repeats against the release `.so`, and re-runs everything against the C compiled at `-O0/-O1/-O2/-O3/-Os`. |
+
+Reproduce everything: `cd translation && ./run_all.sh` then `./negative_control.sh`.

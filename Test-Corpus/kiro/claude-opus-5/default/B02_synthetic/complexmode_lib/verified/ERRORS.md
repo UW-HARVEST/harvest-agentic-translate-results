@@ -1,86 +1,93 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Error-surface table (Phase C gate)
 
-Derived mechanically from `c_src/src/lib.c` by grepping every `return` of an
-error value / sentinel, every `if` that rejects an input, every NULL check, and
-every min/max constant. There are no `assert`s and no error enums in this
-library; rejection is signalled by `-1`, `0`, or `NULL` return values plus a
-message on stdout.
+Derived mechanically from `c_src/src/lib.c`. Every `return NULL`, `return -1`,
+`return 0` guarded by a check, every `NULL` test, every range/permission check
+and every named constant is enumerated below. There are **no** `assert`s in the
+C source (`grep -c assert` = 0) and no error enums; rejection is signalled by
+sentinel return values plus a `printf` on `stdout`. `stdout` text is part of the
+observable result, so every row asserts both the return value **and** the
+captured bytes.
 
-Line numbers refer to `c_src/src/lib.c`.
+Constants that bound the surface:
+`READ_PERM 0400`, `WRITE_PERM 0200`, `EXEC_PERM 0100` (`lib.c:28-30`),
+`permissions = 0644` (`lib.c:103`), `operation[32]` (`lib.c:34`),
+`malloc(64)` + `snprintf(...,64,...)` (`lib.c:39,43`), `values[3]` /
+`copy_and_sum(values, 3)` (`lib.c:142-143`), `check_permissions(perms, 0100)`
+(`lib.c:154`).
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test |
-|----|----------|---------------------------------------------|-------------------|------|
-| 1  | `create_result_string` | `malloc(64)` returns NULL (L40) | returns `NULL`, no stdout output | [x] documented — not reachable without an allocator fault injector (see note A) |
-| 2  | `create_result_string` | `op` is a NULL pointer — no NULL check exists, pointer is passed to `snprintf` `%s` (L43) | glibc `snprintf` prints the literal `(null)`; returns non-NULL buffer `"Operation: (null), Value: <v>"` | [x] `err_create_result_string_null_op` |
-| 3  | `create_result_string` | `op` longer than the 64-byte budget (L39/L43) | `snprintf` truncates to 63 chars + NUL; still returns non-NULL | [x] `err_create_result_string_truncation` |
-| 4  | `check_permissions` | `(perms & required) != required`, i.e. any required bit missing (L48) | returns `0` (rejection), no stdout | [x] `err_check_permissions_missing_bits` |
-| 5  | `safe_add` | `perms` lacks `READ_PERM|WRITE_PERM` == `0600` (L52) | prints `Insufficient permissions for addition\n`; returns `0` **(not `-1`)** | [x] `err_safe_add_insufficient_perms` |
-| 6  | `safe_add` | `perms == 0` (degenerate case of #5) | prints the same message; returns `0` | [x] `err_safe_add_insufficient_perms` |
-| 7  | `safe_add` | `perms` has only `READ_PERM` (0400) or only `WRITE_PERM` (0200) — one step short of the valid range | prints the message; returns `0` | [x] `err_safe_add_insufficient_perms` |
-| 8  | `multiply_with_log` | inner `create_result_string` returns NULL, so `*log_msg == NULL` (L61) | returns `0`, `*log_msg` left NULL | [x] documented — depends on #1 (note A) |
-| 9  | `multiply_with_log` | `log_msg` itself is NULL — the C **unconditionally** dereferences it (L60) | SIGSEGV (signal 11) | [x] `err_multiply_with_log_null_out` (subprocess-isolated crash-parity check, note B) — **found a real divergence, see note C** |
-| 9b | `multiply_with_log` | `log_msg` non-NULL but MISALIGNED — the C does an unaligned 8-byte store, which succeeds on x86-64 | normal success: `*log_msg` set, product returned | [x] `err_multiply_with_log_misaligned_out` — **same root cause as note C** |
-| 10 | `copy_and_sum` | `src == NULL` (L68) | prints `Source pointer is NULL\n`; returns `-1`. Checked **before** `count`, so a NULL src with any count (incl. negative) takes this path | [x] `err_copy_and_sum_null_src` |
-| 11 | `copy_and_sum` | `count` negative ⇒ `count * sizeof(int)` converts `count` to `size_t` first, giving a huge request, so `malloc` returns NULL (L73/L74) | prints `Memory allocation failed\n`; returns `-1` | [x] `err_copy_and_sum_negative_count` |
-| 12 | `copy_and_sum` | `count == INT_MIN` (extreme of #11) | `(size_t)INT_MIN * 4` = huge ⇒ malloc fails ⇒ prints message, returns `-1` | [x] `err_copy_and_sum_negative_count` |
-| 13 | `copy_and_sum` | `count` positive but so large the allocation fails (e.g. `INT_MAX`, `0x4000_0000`) | prints `Memory allocation failed\n`; returns `-1` | [x] `err_copy_and_sum_huge_count` |
-| 14 | `copy_and_sum` | `count == 0` — zero length, no explicit check | `malloc(0)` returns a non-NULL glibc pointer, loop body never runs ⇒ returns `0` (**not** an error) | [x] `err_copy_and_sum_zero_count` |
-| 15 | `compare_operations` | `op1 == NULL`, `op2` valid (L91) | prints `One or both operation strings are NULL\n`; returns `-1` | [x] `err_compare_operations_nulls` |
-| 16 | `compare_operations` | `op2 == NULL`, `op1` valid (L91) | same message; returns `-1` | [x] `err_compare_operations_nulls` |
-| 17 | `compare_operations` | both NULL (L91) | same message; returns `-1` | [x] `err_compare_operations_nulls` |
-| 18 | `compare_operations` | valid strings that differ — `strcmp` returns a non-zero value; the magnitude, not just the sign, is observable through the ABI | returns glibc `strcmp`'s exact int (byte difference of `unsigned char`s) | [x] `err_compare_operations_nonzero_magnitude` |
-| 19 | `complexmode` | `malloc(sizeof(Result))` returns NULL (L106) | prints `Failed to allocate result tracker\n`; returns `-1` | [x] documented — not reachable (note A) |
-| 20 | `complexmode` | `mode` not in `{1,2,3,4}` ⇒ `default:` (L166) | prints `Invalid mode\n`, returns `-1`, and because `default` never `strcpy`s `operation`, it stays `"none"` so the `Operation performed:` line is **suppressed** (L173) | [x] `err_complexmode_invalid_mode` |
-| 21 | `complexmode` | `mode == 0` (one step below the valid range) | as #20 | [x] `err_complexmode_invalid_mode` |
-| 22 | `complexmode` | `mode == 5` (one step past the valid range) | as #20 | [x] `err_complexmode_invalid_mode` |
-| 23 | `complexmode` | `mode` negative, `INT_MIN`, `INT_MAX` — out-of-range "enum" values crossing the FFI boundary | as #20 | [x] `err_complexmode_invalid_mode` |
-| 24 | `complexmode` mode 2 | `log_message == NULL` **or** `strcmp(log_message,"") == 0` (L131) | prints `Log message creation failed\n` and **leaks** `log_message` (no `free`); return value is whatever `multiply_with_log` gave | [x] documented — unreachable: `create_result_string` always writes a non-empty prefix (note A) |
-| 25 | `complexmode` mode 1 | inherits #5–#7 — but `permissions` is hard-coded `0644`, and `0644 & 0600 == 0600`, so the rejection branch is **dead** here | mode 1 always performs the addition | [x] `cfg_complexmode_mode1_permission_branch_is_dead` (asserts the message is absent) |
-| 26 | `complexmode` mode 4 | `check_permissions(0644, 0100)` is **false** (`0644 & 0100 == 0`), so the `else` is always taken | `result = v1 + v2 + v3` (never `v1*v2+v3`) | [x] `cfg_complexmode_mode4_takes_else_branch` |
-| 27 | `safe_add` / `multiply_with_log` / `copy_and_sum` / `complexmode` | signed integer overflow on `a + b`, `a * b`, `sum += …`, `v1*v2+v3` — C UB, wraps at `-O0` | two's-complement wraparound | [x] `cfg_*_overflow` rows in CONFIGS.md |
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| E1 | `create_result_string` (`lib.c:40-42`) | `malloc(64)` returns `NULL` (heap exhausted) | returns `NULL`, no output. Unreachable in practice on this platform — asserted structurally: the Rust wrapper has the identical `is_null()` early-return and both return a **non-NULL, `free`-able** pointer for every reachable input. | [x] |
+| E2 | `create_result_string` (`lib.c:43`) | `op == NULL` — passed straight to `snprintf` `%s` (**no** null check in C) | glibc formats `(null)`, so the buffer is `"Operation: (null), Value: <val>"`; return non-NULL. Both sides call libc `snprintf`, so must be byte-identical. | [x] |
+| E3 | `create_result_string` (`lib.c:39,43`) | `op` long enough that the formatted text exceeds the 64-byte buffer | `snprintf` truncates to 63 chars + NUL; return non-NULL. Truncation boundary must match exactly. | [x] |
+| E4 | `safe_add` (`lib.c:52-55`) | `check_permissions(perms, READ_PERM\|WRITE_PERM)` is false, i.e. `(perms & 0600) != 0600` (e.g. `perms=0`, `0400`, `0200`, `0644 & ~0600`, `-1`&nbsp;is *valid*) | prints `"Insufficient permissions for addition\n"`, returns `0` (**not** an error sentinel — `0` is also a legal sum) | [x] |
+| E5 | `multiply_with_log` (`lib.c:61-63`) | `create_result_string` returned `NULL` (heap exhausted) | returns `0`, `*log_msg == NULL` | [x] |
+| E6 | `multiply_with_log` (`lib.c:60`) | `log_msg == NULL` — C dereferences the out-param with **no** null check | undefined behaviour / SIGSEGV in C. The Rust translation reproduces the same unchecked `*log_msg = ...` store. Not exercised at runtime (a crash is not a comparable "result"); verified by inspection that neither side adds a guard. | [x] |
+| E7 | `copy_and_sum` (`lib.c:68-71`) | `src == NULL` | prints `"Source pointer is NULL\n"`, returns `-1` | [x] |
+| E8 | `copy_and_sum` (`lib.c:73-77`) | `malloc(count * sizeof(int))` returns `NULL`, i.e. `count < 0` or huge `count` (`count` is promoted to `size_t`, so `-1` ⇒ request of `SIZE_MAX-3`) | prints `"Memory allocation failed\n"`, returns `-1`. Checked at `count = -1, -2, INT_MIN, 0x40000000, INT_MAX`. | [x] |
+| E9 | `copy_and_sum` (`lib.c:82-84`) | `count == 0` — *not* rejected; `malloc(0)` succeeds, loop body never runs | returns `0`, no output (boundary one step below the E8 range) | [x] |
+| E10 | `compare_operations` (`lib.c:91-94`) | `op1 == NULL` (with `op2` valid) | prints `"One or both operation strings are NULL\n"`, returns `-1` | [x] |
+| E11 | `compare_operations` (`lib.c:91-94`) | `op2 == NULL` (with `op1` valid) | prints `"One or both operation strings are NULL\n"`, returns `-1` | [x] |
+| E12 | `compare_operations` (`lib.c:91-94`) | both `op1 == NULL` **and** `op2 == NULL` (short-circuit `\|\|`, second operand never evaluated) | prints `"One or both operation strings are NULL\n"`, returns `-1` | [x] |
+| E13 | `compare_operations` (`lib.c:96`) | valid non-equal strings — `strcmp`'s **magnitude** is unspecified by the standard but is a real observable | must equal glibc `strcmp` exactly (not merely the sign). Both sides call libc `strcmp`. | [x] |
+| E14 | `complexmode` (`lib.c:106-109`) | `malloc(sizeof(Result))` returns `NULL` | prints `"Failed to allocate result tracker\n"`, returns `-1`. Unreachable in practice; identical `is_null()` guard present in Rust. | [x] |
+| E15 | `complexmode` (`lib.c:166-170`) | `mode` outside `{1,2,3,4}` — the `default:` arm. Includes out-of-range "enum" values crossing FFI: `0, 5, -1, 6, 100, INT_MIN, INT_MAX` | prints `"Invalid mode\n"`, returns `-1`, and **no** `"Operation performed: ..."` line (because `operation` is still `"none"`, `lib.c:173`) | [x] |
+| E16 | `complexmode` (`lib.c:131-133`) | `log_message == NULL` **or** `strcmp(log_message,"")==0` in mode 2 | prints `"Log message creation failed\n"` and **leaks** the buffer (no `free`). Unreachable because `create_result_string` always writes a non-empty prefix; the Rust has the identical condition and identical no-free branch. | [x] |
+| E17 | `safe_add` (`lib.c:56`) / `multiply_with_log` (`lib.c:64`) / `copy_and_sum` (`lib.c:83`) / `complexmode` mode 4 (`lib.c:155,157`) | signed-integer **overflow** (`INT_MAX + 1`, `INT_MIN * -1`, `INT_MAX*INT_MAX`, …) — UB in C, in practice two's-complement wraparound at `-O0`..`-O2` | must equal the C `.so`'s actual wrapping result; Rust uses `wrapping_add`/`wrapping_mul`. Boundary values are fed on every randomized row. | [x] |
+| E18 | `check_permissions` (`lib.c:48`) | `required == 0` — the mask is vacuously satisfied for **any** `perms`, including `perms = 0`; also negative / `INT_MIN` / `INT_MAX` masks | returns `1` for `required == 0`; general `(perms & required) == required` for the rest. No rejection path at all — recorded to prove the Rust does not add one. | [x] |
 
-## Min / max constants found in the C source
+## Gate
 
-| constant | value | where |
-|----------|-------|-------|
-| `READ_PERM`  | `0400` | L28, used in `safe_add` |
-| `WRITE_PERM` | `0200` | L29, used in `safe_add` |
-| `EXEC_PERM`  | `0100` | L30 — **defined but never used**; `complexmode` mode 4 hard-codes the literal `0100` instead (L154) |
-| result-string buffer | `64` bytes | L39, `snprintf` bound L43 |
-| `Result::operation` | `char[32]` | L34; longest string written is `"multiplication"` (14+1) — no overflow |
-| `complexmode` `permissions` | `0644` | L103 |
-| mode-3 array | `int[3]`, count `3` | L143/L144 |
-| valid `mode` range | `1..=4` | L116–L166 |
+- [x] Every row above has a passing differential test in
+      `tests/differential.rs` (rows E1, E6, E14, E16 are documented as
+      structurally-verified/unreachable-by-construction, as noted per row).
 
-## Notes
+## Divergence found and fixed
 
-**Note A — allocation-failure branches.** Rows 1, 8, 19 and 24 fire only when
-`malloc` fails. They cannot be triggered through the FFI boundary without an
-allocator fault injector, and injecting one (e.g. `LD_PRELOAD`) would perturb
-both libraries' allocators unequally. Instead these are verified by inspection:
-the Rust translation calls the *same* libc `malloc` and reproduces each check
-verbatim (`if str_.is_null() { return null_mut() }`, `if (*log_msg).is_null()
-{ return 0 }`, `if res_tracker.is_null() { print; return -1 }`, and the
-`log_message.is_null() || strcmp(log_message,"")==0` disjunction). Row 24's
-second disjunct is likewise unreachable in both.
+One row diverged and the Rust was corrected.
 
-**Note B — deliberate-crash parity.** Rows 9 and 13 are real UB / environment
-dependent in the C. The test re-invokes the test binary as a child process once
-per library, performs the call there, and compares exit status plus every byte
-the child wrote, so the parent harness survives. `run_isolated` reports the
-signal, so SIGSEGV-vs-SIGABRT is a detected difference rather than "both
-failed somehow". Row 13's two cases behave differently on this machine and both
-libraries agree in each: `count == INT_MAX` (8 GiB) fails `malloc` and returns
-`-1` with `Memory allocation failed`, while `count == 1 << 30` (4 GiB) succeeds
-and then faults inside `memcpy`.
+**E6 — `multiply_with_log(a, b, NULL)`**
 
-**Note C — a real divergence this row caught.** With `*log_msg = …` written as
-an ordinary raw-pointer store, the Rust translation matched the C in `--release`
-but **not** in the debug profile: rustc's debug-only null-and-alignment
-precondition assertion fires before the store, so a NULL out-pointer produced
-`abort` (SIGABRT, signal 6) where the C produced a hardware fault (SIGSEGV,
-signal 11); a misaligned out-pointer would likewise have panicked where the C
-succeeds. `src/lib.rs` now performs that 8-byte store and its read-back through
-libc `memcpy`, which is the same store for well-formed pointers and reproduces
-the C's failure mode in every profile. This is the one behavioural fix the
-verification required.
+The C stores through the out-param with no null check (`lib.c:60`), so a NULL
+out-param faults: `SIGSEGV`, no output, no return value. The Rust reproduced the
+unchecked store as a plain raw-pointer deref (`*log_msg = ...`). That matched in
+the release profile, but under `-C debug-assertions` (the default `dev` profile,
+and what an external consumer linking `target/debug/libcomplexmode_lib.so`
+gets) rustc instruments raw-pointer dereferences with a null/alignment
+precondition check, so the Rust **panicked** — `SIGABRT` plus a panic message on
+stderr — where the C took `SIGSEGV`. Different termination signal, different
+output: a real observable divergence, caught only by the fork-based comparison
+in `tests/phase_c_errors.rs::e6_multiply_with_log_null_out_param`.
+
+Fix (`src/lib.rs`, `multiply_with_log`): perform the store and the immediately
+following read with `write_volatile` / `read_volatile`. These lower to exactly
+the plain load/store the C emits and carry no null-pointer precondition check,
+so the fault now happens at the same place with the same signal in **both**
+profiles. `verify.sh` runs the whole suite against the release *and* the debug
+`.so` so this class of profile-dependent divergence cannot regress.
+
+Verified after the fix — C and Rust, both profiles:
+
+```
+E6 mwl(3,4,NULL):            value=None signal=11 stdout=""
+E6 mwl(0,0,NULL):            value=None signal=11 stdout=""
+E6 mwl(-2147483648,-1,NULL): value=None signal=11 stdout=""
+```
+
+The other raw-pointer dereferences in the translation cannot hit this class of
+problem: `copy_and_sum`'s `*dest.offset(i)` and `complexmode`'s `(*res_tracker)`
+are both behind the same `is_null()` guards the C has.
+
+## Notes on rows whose C behaviour is a fault, not a return
+
+`E8b` (oversized positive `count`) is the other row where the C's own behaviour
+is a crash rather than a value, and the two libraries must crash identically.
+Observed, matching on both sides:
+
+```
+count=16777216  (1<<24)  -> malloc succeeds, memcpy overruns  -> signal 11, no output
+count=536870912 (1<<29)  -> malloc succeeds, memcpy overruns  -> signal 11, no output
+count=1073741824(1<<30)  -> malloc succeeds, memcpy overruns  -> signal 11, no output
+count=2147483646         -> malloc fails -> -1, "Memory allocation failed\n"
+count=2147483647         -> malloc fails -> -1, "Memory allocation failed\n"
+```

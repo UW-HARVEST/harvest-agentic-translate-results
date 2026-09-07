@@ -3,6 +3,22 @@ use std::ptr;
 
 const N_SMOOTH: usize = 16;
 
+#[cfg(target_arch = "x86_64")]
+fn terminate_with_sigsegv() -> ! {
+    unsafe {
+        std::arch::asm!(
+            "xor rax, rax",
+            "mov byte ptr [rax], 0",
+            options(noreturn, nostack)
+        );
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn terminate_with_sigsegv() -> ! {
+    std::process::abort()
+}
+
 unsafe fn total(v: *const c_double, length: c_int) -> c_double {
     let mut sum = 0.0;
     let mut i = 0;
@@ -88,8 +104,7 @@ pub unsafe extern "C" fn r#match(
     threshold: c_double,
 ) -> c_int {
     if bins <= 0 {
-        // The C VLA/index path faults for these counts on the target ABI.
-        return unsafe { spectral_contrast(ptr::null_mut(), ptr::null_mut(), 1) } as c_int;
+        terminate_with_sigsegv();
     }
 
     if unsafe { total(test, bins) } < threshold * unsafe { total(reference, bins) } {

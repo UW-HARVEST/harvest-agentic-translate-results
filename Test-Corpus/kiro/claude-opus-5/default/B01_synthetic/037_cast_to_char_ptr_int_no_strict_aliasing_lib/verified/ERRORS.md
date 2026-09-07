@@ -1,65 +1,45 @@
-# ERRORS.md — Phase A: error-surface table
+# ERRORS.md — Phase C error-surface table
 
-## Mechanical derivation
-
-Every error-signalling construct was grepped out of the complete C source
-(`c_src/src/driver.c`, 40 lines; `c_src/include/driver.h`, 29 lines):
-
-```sh
-grep -nE 'return|RETURN_ERROR|assert|NULL|errno|exit\(|abort|if *\(|switch|#ifdef|#if |enum' \
-    c_src/src/driver.c c_src/include/driver.h
-```
-
-Result, with license-comment lines removed, is a **single** line — and it is a
-loop guard, not an error path:
+Derived mechanically, not from assumptions. The whole library is 14 non-comment
+lines (`c_src/src/driver.c`) plus a 3-line header. The exhaustive grep for every
+rejection mechanism:
 
 ```
-c_src/src/driver.c:30:    for (int i = 0; i < len; i++) {
+grep -nE 'return|assert|NULL|errno|exit\(|abort|ERROR|<0|< 0|>=|<=|if *\(|switch|#if|goto' \
+     c_src/src/driver.c c_src/include/driver.h
 ```
 
-Therefore, mechanically:
+→ the **only** match in the entire C source tree is `include/driver.h:24:#ifndef DRIVER_H_`
+(a header include guard, not an error path).
 
-| construct searched for | occurrences in C source |
-|------------------------|-------------------------|
-| `return` (any value or bare) | 0 |
-| `RETURN_ERROR` / error macro | 0 |
-| `assert` | 0 |
-| `NULL` / null check | 0 |
-| error `enum` / status code type | 0 |
-| explicit range check (`if`, `switch`) | 0 |
-| `errno`, `exit()`, `abort()` | 0 |
-| min/max constant | 0 |
-| `#ifdef` / `#if` compile-time branch | 0 (other than the `DRIVER_H_` include guard) |
-| conditional of any kind | 1 — the `i < len` loop guard on line 30 |
+## Consequence
 
-`driver` returns `void`, takes one by-value `int`, dereferences no
-caller-supplied pointer, and allocates nothing. It has **no reject path and no
-error channel**: there is no input value of `int` for which it fails, and no
-sentinel or error code it can return. `print_hex` has internal linkage and its
-only call site passes `(&raw[0], 4)`, both always valid.
+`void driver(int x)` is a `void` function that takes a single by-value `int`. It
+performs **no** validation of any kind:
 
-Consequently the error-surface table below has no rows derived from C reject
-logic (there are none to derive). What it does contain is the set of generic
-ABI boundary conditions the prompt requires be covered anyway, each mapped to
-the concrete form it takes for *this* ABI. Each row's "expected C result" is
-established by observing the C `.so`, and the differential test asserts the
-Rust `.so` produces the identical observable result — same stdout bytes, same
-(void) return, same non-crash.
+* no error-return macro or `return <sentinel>` statement — it cannot return a value at all;
+* no `assert`;
+* no explicit range check, no min/max constant;
+* no null check — it accepts no pointer, so a null pointer is not a representable input;
+* no error enum, and no enum parameter — so there is no out-of-range-enum input either;
+* no `errno` use, no `exit`/`abort`;
+* the only conditional in the file is the loop guard `i < len` in `print_hex`,
+  and `len` is a compile-time `sizeof(x)` == 4, never attacker-controlled.
 
-## Error / boundary surface table
+Every one of the 2^32 values of `x` is therefore a **valid** input with defined
+output. The error surface is genuinely EMPTY, and the rows below record that
+fact together with the tests that *prove* the C accepts these inputs rather
+than rejecting them — i.e. each row asserts C and Rust agree that no rejection
+occurs, which is the C's actual behaviour.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|---------------------------------------------|-------------------|------|--------|
-| E1 | `driver` | `x = 0` — the zero/empty-value boundary; every byte is `0x00`, exercising `%02x` zero-padding on both nibbles | no error; prints `00000000\n`, returns `void` | `err_e1_zero` | [x] |
-| E2 | `driver` | `x = INT_MAX` (`2147483647`) — largest valid `int` | no error; prints `ffffff7f\n` | `err_e2_int_max` | [x] |
-| E3 | `driver` | `x = INT_MIN` (`-2147483648`) — smallest valid `int`; sign bit set, one step past `INT_MAX` in wrapping terms | no error; prints `00000080\n` | `err_e3_int_min` | [x] |
-| E4 | `driver` | `x = -1` — all four bytes `0xff`, i.e. every byte is negative *as `signed char`*. The C stores into `char raw[]` (signed on x86-64) but prints through an `unsigned char *`, so the values passed to `%02x` are 255, not sign-extended `-1`. A translation that sign-extends emits `ffffffff` per byte instead of `ff` | no error; prints `ffffffff\n` (8 hex digits, NOT 32) | `err_e4_all_high_bytes` | [x] |
-| E5 | `driver` | every `x` whose bytes are individually `>= 0x80` (high-bit-set byte in each of the 4 positions, e.g. `0x80808080`, `0xff000000`, `0x008000ff`) — the sign-extension class of E4, swept per byte position | no error; each byte printed as exactly 2 hex digits | `err_e5_high_bit_per_byte_position` | [x] |
-| E6 | `driver` | `x` whose bytes are individually `< 0x10` (e.g. `0x01020304`, `0x0f000000`) — omitted `0` flag / width would print 1 digit and desynchronise the whole string | no error; each byte printed as exactly 2 zero-padded hex digits | `err_e6_zero_padding_per_byte_position` | [x] |
-| E7 | `driver` | **out-of-range argument bit pattern across the FFI boundary.** This is the analog of "out-of-range enum value": `driver` takes an `int`, but C's ABI accepts whatever bits the caller places in the argument register. The symbol is called through a mis-declared `extern "C" fn(i64)` so the upper 32 bits of `rdi` are garbage that no valid `int` could produce (`0x7fff_ffff_dead_beef`, `-1i64`, `i64::MIN`, …). The callee must observe only the low 32 bits | no error; both libraries truncate to the low 32 bits and print those 4 bytes; C and Rust agree bit-for-bit | `err_e7_oversized_argument_truncation` | [x] |
-| E8 | `driver` | **`int` value with no "valid variant".** Restated for completeness: unlike a C `enum`, `int` has no invalid variant — the full `[INT_MIN, INT_MAX]` range is valid input and none of it is rejected. Verified by sweeping the boundary values and randomized values rather than assuming | no error for any of the 2^32 inputs; no rejection path exists | `err_e8_no_value_is_rejected` | [x] |
-| E9 | `driver` | **no pointer parameter exists**, so a null-pointer row is not constructible for the public API. The only pointer in the C is `print_hex`'s `p`, which has internal linkage and a single call site passing `&raw[0]`; it is unreachable with `NULL` from any external caller. Asserted structurally: `nm -D` shows `print_hex` is not exported by *either* `.so`, so neither library can be made to null-deref through its public surface | not constructible; `print_hex` absent from both dynamic symbol tables | `err_e9_no_null_pointer_surface` | [x] |
-| E10 | `driver` | **no length parameter exists**, so zero-length and oversized-length rows are not constructible for the public API. `print_hex`'s `len` is always the compile-time constant `sizeof(int)` (= 4, verified on this target). The `len <= 0` branch of the `i < len` guard — the source's only conditional — is therefore dead code in the C; both libraries must still emit the trailing `\n` unconditionally, which is what the 4-byte path already proves | not constructible; `len` is always 4; trailing newline always emitted | `err_e10_no_length_surface` | [x] |
-| E11 | `driver` | repeated / interleaved invocation — calling the C and Rust symbols alternately in one process, so both write into the *same* libc `stdout` `FILE`. A translation that used Rust's own buffered `std::io::stdout` instead of libc `printf` would interleave or lose bytes here even though each call looks correct in isolation | no error; output is strictly the concatenation of each call's 9 bytes, in call order, with no reordering or loss | `err_e11_interleaved_c_and_rust_calls` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
+|---|----------|---------------------------------------------|-------------------|------|-----|
+| 1 | `driver` | `x = INT_MIN` (`-2147483648`) — one step past the negative end of the value range | no rejection: prints `00000080\n`, returns normally | `err_row1_int_min` | [x] |
+| 2 | `driver` | `x = INT_MAX` (`2147483647`) — one step past the positive end of the value range | no rejection: prints `ffffff7f\n`, returns normally | `err_row2_int_max` | [x] |
+| 3 | `driver` | `x = 0` — the "zero length / empty" analogue for the sole scalar argument | no rejection: prints `00000000\n`, returns normally | `err_row3_zero` | [x] |
+| 4 | `driver` | `x = -1` — all-bits-set; every byte is `0xff`, the high-bit/sign-extension trap | no rejection: prints `ffffffff\n`, returns normally (NOT `ffffffffffffffff…`) | `err_row4_all_bits_set` | [x] |
+| 5 | `driver` | out-of-range "enum-like" value: an `unsigned`/64-bit value passed across FFI in the `int` slot (e.g. `0xFFFFFFFF`, `0x1_0000_0000u64` truncated) — a C enum accepts any `int`, so this models a variant with no valid name | no rejection: the low 32 bits are reinterpreted; `0xFFFFFFFF` → `ffffffff\n`, `0x1_0000_0000` truncates to `00000000\n` | `err_row5_out_of_range_enum_like` | [x] |
+| 6 | `print_hex` (static, unreachable) | `len <= 0`, or `p == NULL` with `len == 0` | unreachable from the public ABI: `print_hex` has internal linkage and its only call site passes `raw` (non-null) and `sizeof(raw)` == 4. Neither `.so` exports it, so no external caller can construct these conditions — asserted by `dlsym("print_hex")` failing on the C `.so` AND both Rust `.so`s. | `err_row6_print_hex_not_reachable` | [x] |
 
-**All 11 rows have a passing differential test. 0 rows unchecked.**
+All 6 rows are covered by passing differential tests in
+`translation/tests/differential.rs` (module `phase_c`).

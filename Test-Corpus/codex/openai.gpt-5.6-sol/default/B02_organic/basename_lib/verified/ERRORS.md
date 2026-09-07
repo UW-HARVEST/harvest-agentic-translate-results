@@ -1,21 +1,25 @@
-# Error Surface
+# Error surface
 
-Mechanical searches covered `RETURN_ERROR`, negative and null returns,
-assertions, explicit range/null checks, enums, and min/max constants in all C
-headers and sources.
+The mechanical scan covered `c_src/include/lib.h` and `c_src/src/lib.c` for
+error returns, `NULL`, assertions, enums, explicit range checks, and min/max
+constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
-|---|----------|---------------------------------------------|-------------------|-----|
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
 
-There are no defined rejection paths. `tool_basename` unconditionally passes
-`path` to `strrchr`, so `path == NULL` has undefined behavior rather than a C
-error result.
+There are no explicit rejection or error paths in the C source. In particular,
+`tool_basename` unconditionally passes its argument to `strrchr`; a null
+pointer is outside the function's accepted C-string contract and is not
+converted to an error code or sentinel.
 
-Generic FFI boundaries:
+Generic FFI boundary coverage is tracked separately in the differential tests:
 
-| Boundary | Applicability | [ ] |
-|----------|---------------|-----|
-| Null `path` | Unchecked C undefined behavior; compare isolated-process outcomes | [x] |
-| Zero/oversized lengths | Not applicable: no length parameter | [x] |
-| One past valid range | Not applicable: no numeric range | [x] |
-| Out-of-range enum | Not applicable: no enum parameter | [x] |
+- [x] zero-length C string: valid input, covered in `CONFIGS.md`;
+- [x] null pointer: C and Rust behavior compared in isolated child processes because
+  the C implementation dereferences it through libc rather than rejecting it;
+- [x] oversized lengths: not applicable (the API has no length parameter);
+- [x] enum values: not applicable (the API has no enum parameter);
+- [x] one-past-range values: not applicable (the API documents no numeric range).
+
+The applicable boundary tests pass under both the default build and
+`--no-default-features`.

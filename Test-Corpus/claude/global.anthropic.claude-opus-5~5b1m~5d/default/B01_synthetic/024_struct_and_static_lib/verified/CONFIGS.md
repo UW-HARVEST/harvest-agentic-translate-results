@@ -1,93 +1,91 @@
 # CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from `c_src/src/driver.c` + `c_src/include/driver.h`.
+Derived mechanically from `c_src/src/driver.c`.
 
 ## Axes the C code actually distinguishes
 
-The C has **no** runtime options, no flags, no modes, no `#ifdef`, and no
-branches. The surface is therefore defined by (a) which entry point is called,
-(b) the value of the single `int` argument, and (c) the accumulated state of
-the file-scope global `the_house`, which is the library's *only* hidden input.
+**A1 — public entry points** (from `nm -D`, not just the header):
+- `run(int extra_bedrooms)` — the LOW-LEVEL entry point (exported but absent
+  from `driver.h`); one pass over the house.
+- `driver(int x)` — the convenience wrapper; `run(x); run(x);`
 
-**Axis 1 — entry point** (both are dynamically exported; see `SYMBOLS.md`)
-* `run(int extra_bedrooms)` — the LOW-LEVEL entry point (4 prints, 1 floor, +1.0 bathroom, 1 bedroom add)
-* `driver(int x)` — the convenience wrapper: `run(x); run(x);` (8 prints, 2 floors, +2.0 bathrooms, value applied twice)
+There are no other exported functions. The four `static` helpers
+(`add_floor`, `add_bedrooms`, `add_floor_to_the_house`, `print_the_house`) are
+reachable only through `run`, so `run` *is* the lowest level available to a
+consumer and must be driven directly.
 
-**Axis 2 — `int` argument value class** (drives `bedrooms += extra_bedrooms` and the `%d` formatting)
-* `0` (identity), small positive, small negative, `+1`/`-1`,
-  `INT_MAX`, `INT_MIN`, `INT_MAX/2`, values chosen to land the accumulator
-  exactly on `INT_MAX` / `INT_MIN` / `0`, and uniformly-random full-range ints.
+**A2 — runtime options / modes / flags:** NONE. The C code contains zero `if`,
+`switch`, `#ifdef`, global setter, or environment lookup. The only input is the
+single `int` argument. Cargo.toml declares no `[features]`, so there is exactly
+one build configuration.
 
-**Axis 3 — accumulated global state** (no reset entry point exists)
-* pristine (`floors=2, bedrooms=5, bathrooms=2.5`) — only observable on the very first call in a process
-* after N calls: `floors = 2+N`, `bathrooms = 2.5+N`, `bedrooms` = running wrapped sum
-* `bedrooms` currently positive / currently negative / currently zero
-* `bedrooms` near `INT_MAX` / near `INT_MIN` (so the next add wraps)
+**A3 — input shape of `extra_bedrooms` (the only datum)**, per its sole use
+`the_house.bedrooms += extra_bedrooms` (signed `int` arithmetic):
+- zero
+- small positive / small negative
+- large positive / large negative
+- `INT_MAX`, `INT_MIN` (arithmetic wraps)
+- values engineered so `bedrooms + extra` lands exactly on / one past
+  `INT_MAX` / `INT_MIN`
 
-**Axis 4 — call-sequence shape** (state persistence is the pipeline under test)
-* single call; two calls; many calls (empty / one / many)
-* homogeneous `run`-only sequence; homogeneous `driver`-only sequence;
-  **interleaved** `run`/`driver` sequence (the composed pipeline — invisible to per-function tests)
+**A4 — persistent-global state shape.** `static house_t the_house` is file-scope
+mutable and is NOT reset between calls, so the *call sequence* is part of the
+input. State fields and the shapes they take:
+- `floors : int` — `++` once per `run`; shapes: initial `2`, small, large after
+  many calls.
+- `bedrooms : int` — `+= extra`; shapes: initial `5`, positive, negative,
+  wrapped.
+- `bathrooms : double` — `+= 1.0` once per `run`, printed with `%.1f`; shapes:
+  initial `2.5`, small `.5` values, large magnitudes where `double`
+  accumulation and `%.1f` rounding matter.
+- sequence length: 0 / 1 / 2 / many calls; and *interleavings* of `run` and
+  `driver`.
 
-**Axis 5 — printed-output shape** (what `%d` / `%.1f` must render identically)
-* 1-digit, multi-digit, and 10-digit `bedrooms`/`floors`; negative (leading `-`);
-  `bathrooms` magnitude growing (`2.5` → `12.5` → `102.5` → …), always `.5`-exact
+**A5 — output surface.** One `printf` format string,
+`"The house has %d floors, %d bedrooms, and %.1f bathrooms\n"`, invoked 4× per
+`run` (8× per `driver`). Compared byte-for-byte on captured `stdout`.
 
-## Configuration table
+## Configuration table (cross-product of A1 × A3 × A4, pruned to distinct paths)
 
-One row per meaningful combination the C treats differently. Every row is
-exercised with MANY randomized inputs (fixed seed, `SEED = 0x5EED_1234_ABCD_F00D`),
-not a single hand-picked value.
+Every row: load BOTH `.so`s via `libloading`, issue the identical call sequence
+to each, capture each one's `stdout`, assert byte-equality. Rows marked
+*randomized* use many property-style inputs from a fixed-seed PRNG.
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|-------------------------------------------|-----|
-| 1  | `run` | pristine global state, `extra_bedrooms = 0` — first-ever call in the process, identity add | [x] |
-| 2  | `run` | `extra_bedrooms = 0` repeated (state advances, bedrooms unchanged; isolates floors/bathrooms accumulation) | [x] |
-| 3  | `run` | small positive `extra_bedrooms` in `1..=100`, randomized, many iterations | [x] |
-| 4  | `run` | small negative `extra_bedrooms` in `-100..=-1`, randomized — drives `bedrooms` negative, `%d` prints `-` | [x] |
-| 5  | `run` | `extra_bedrooms = +1` / `-1` boundary steps, alternating | [x] |
-| 6  | `run` | uniformly-random full-range `i32` (all bit patterns), many iterations | [x] |
-| 7  | `run` | `extra_bedrooms = INT_MAX`, repeated (accumulator wraps every call) | [x] |
-| 8  | `run` | `extra_bedrooms = INT_MIN`, repeated (accumulator wraps every call) | [x] |
-| 9  | `run` | `extra_bedrooms = INT_MAX/2`, `INT_MIN/2`, `2^k` powers-of-two sweep for k=0..31 | [x] |
-| 10 | `run` | large positive values that push `bedrooms` past `INT_MAX` (positive→negative wrap) | [x] |
-| 11 | `run` | large negative values that push `bedrooms` below `INT_MIN` (negative→positive wrap) | [x] |
-| 12 | `driver` | pristine-ish state, `x = 0` — wrapper applies identity twice, 8 lines | [x] |
-| 13 | `driver` | small positive / small negative randomized `x`, many iterations | [x] |
-| 14 | `driver` | uniformly-random full-range `i32`, many iterations | [x] |
-| 15 | `driver` | `x = INT_MAX`, `INT_MIN` (value applied twice ⇒ double wrap in one call) | [x] |
-| 16 | `driver` | `x` = powers-of-two sweep k=0..31 | [x] |
-| 17 | `run` + `driver` interleaved | randomized interleaving of both entry points with randomized args — the composed pipeline over shared global state, many iterations | [x] |
-| 18 | `run` + `driver` interleaved | interleaving with adversarial args (`INT_MAX`/`INT_MIN`/`0`/`±1`) so wraps occur at arbitrary points in the sequence | [x] |
-| 19 | `run` | state driven so `bedrooms` lands exactly on `0`, then `INT_MAX`, then `INT_MIN` (exact boundary landings, computed from the tracked accumulator) | [x] |
-| 20 | `run`/`driver` | long endurance sequence (≥2000 mixed calls) — `floors`/`bathrooms` grow to multi-digit; verifies no drift in `%d` width or `%.1f` magnitude between C and Rust | [x] |
-| 21 | `run` | output-shape sweep: args chosen so `bedrooms` renders 1-, 2-, 5-, 10-digit and negative forms | [x] |
-| 22 | `driver` | called as the very first symbol resolved from the `.so` (fresh-process ordering: `driver` before `run` ever runs) — separate test binary so global state is pristine | [x] |
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|-------------------------------------------|------|-----|
+| 1 | `run` | pristine global state, first-ever call, `extra_bedrooms = 0` (identity add; isolates the `floors++` / `bathrooms += 1.0` effects) | `configs::c01_run_zero_pristine` | [x] |
+| 2 | `run` | pristine state, `extra_bedrooms = 1` (minimal positive) | `configs::c02_run_one_pristine` | [x] |
+| 3 | `run` | pristine state, `extra_bedrooms = -1` (minimal negative; drives `bedrooms` downward) | `configs::c03_run_neg_one_pristine` | [x] |
+| 4 | `run` | pristine state, small positive *randomized* (`1..=1000`, 200 seeded values, one per fresh process-equivalent sequence) | `configs::c04_run_small_positive_random` | [x] |
+| 5 | `run` | pristine state, small negative *randomized* (`-1000..=-1`) — makes `bedrooms` cross zero and go negative (`%d` sign path) | `configs::c05_run_small_negative_random` | [x] |
+| 6 | `run` | pristine state, full-range `int` *randomized* (any `i32`, 500 seeded values) | `configs::c06_run_full_range_random` | [x] |
+| 7 | `run` | `extra_bedrooms = INT_MAX` — signed overflow of `bedrooms` (5 + INT_MAX wraps) | `configs::c07_run_int_max` | [x] |
+| 8 | `run` | `extra_bedrooms = INT_MIN` — signed underflow of `bedrooms` | `configs::c08_run_int_min` | [x] |
+| 9 | `run` | `extra_bedrooms` chosen so `bedrooms` lands **exactly** on `INT_MAX`, then one past; same for `INT_MIN` | `configs::c09_run_boundary_landings` | [x] |
+| 10 | `driver` | pristine state, `x = 0` — wrapper shape: 8 lines, `floors` +2, `bathrooms` +2.0 | `configs::c10_driver_zero_pristine` | [x] |
+| 11 | `driver` | pristine state, `x` small positive *randomized* (`bedrooms` gets `2x` total) | `configs::c11_driver_small_positive_random` | [x] |
+| 12 | `driver` | pristine state, `x` full-range `int` *randomized* (500 seeded values) — double-wrap of `bedrooms` | `configs::c12_driver_full_range_random` | [x] |
+| 13 | `driver` | `x = INT_MAX` / `INT_MIN` — `bedrooms` wraps twice within one call | `configs::c13_driver_extremes` | [x] |
+| 14 | `run` ×N | **state accumulation:** repeated `run` with the *same* arg, N = 2, 3, 10 — verifies globals are not reset and `floors`/`bathrooms` track together | `configs::c14_run_repeated_same_arg` | [x] |
+| 15 | `run` ×N | repeated `run` with *different* randomized args (N = 50, seeded) | `configs::c15_run_repeated_random_args` | [x] |
+| 16 | `run` + `driver` interleaved | *randomized interleaving* of the two entry points with randomized args (300 ops, seeded) — the composed pipeline over shared global state | `configs::c16_interleaved_random` | [x] |
+| 17 | `driver` ×N | repeated `driver` — `floors` +2 and `bathrooms` +2.0 per call, N = 20 | `configs::c17_driver_repeated` | [x] |
+| 18 | `run` ×many | **`bathrooms` double-accumulation shape:** ~20 000 `run` calls with arg 0 so `bathrooms` reaches ≥ 20 000.5 and `floors` ≥ 20 000 — exercises `%.1f` on large magnitudes and wide `%d` | `configs::c18_long_accumulation` | [x] |
+| 19 | `run`/`driver` | **empty sequence:** zero calls — both `.so`s load and export the symbols, no output produced (baseline; guards against constructor-time printing) | `configs::c19_no_calls_no_output` | [x] |
+| 20 | `run` | fresh-state equivalence: the *same* arg replayed against a freshly `dlopen`-ed pair after `dlclose` — verifies the initial `{2, 5, 2.5}` initialiser (`.data` vs Rust `static mut`) matches, not just the deltas | `configs::c20_fresh_load_initial_state` | [x] |
 
-## Row → test mapping
+## Feature combinations
 
-Rows 2–21 live in `tests/configs.rs`, named `rowN_*`. Rows 1 and 22 require
-**pristine** global state (`the_house` has no reset entry point, so its static
-initialiser is observable only on the first call in a fresh process), so each
-gets its own test binary — and each contains exactly ONE `#[test]`, since a
-second test in the same binary could consume the pristine state first:
+`translation/Cargo.toml` declares **no `[features]` table**, and `driver.c` has
+no `#ifdef`. Therefore the complete set of feature combinations is the single
+default (empty) one: `cargo test` == `cargo test --no-default-features`. Both
+are run by `run_all.sh` for completeness.
 
-| row | test |
-|-----|------|
-| 1  | `tests/first_call_run.rs::row1_pristine_state_first_ever_call_to_run` |
-| 2–21 | `tests/configs.rs::row2_*` … `row21_*` |
-| 22 | `tests/first_call_driver.rs::row22_pristine_state_first_ever_call_to_driver` |
+## Binary executable
 
-## How each row is checked
-
-Every row drives BOTH `.so`s through `dlopen`/`dlsym` (never a direct Rust
-call — the crate is `cdylib`-only, so the tests *cannot* link it), captures
-each library's `printf` output by redirecting fd 1 with `dup2`, and asserts the
-two byte strings are equal. Randomized rows use SplitMix64 seeded from `SEED`.
-
-Because the library's only state is a global with no reset, the two libraries
-are driven in **lockstep**: each step calls C then Rust with the same argument
-under one process-wide lock, so both globals always observe the identical
-operation sequence. An independent Rust model of the C semantics is compared
-against the captured bytes on every step, which detects harness desync and
-capture contamination rather than letting them pass silently.
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED ...)` — no
+`add_executable`, and `translation/Cargo.toml` declares only `[lib]` with
+`crate-type = ["cdylib"]` (no `[[bin]]`, no `src/main.rs`). **The project builds
+no binary**, so the "compare C and Rust binary stdout" gate is not applicable;
+the equivalent coverage is provided by the captured-`stdout` comparison in every
+row above.

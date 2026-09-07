@@ -3,15 +3,22 @@
 Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-PdYL9r.so
+nm -D --defined-only ../c_src/build/libharvest-work-ACXBgi.so
+nm -D --defined-only target/release/libnormalize_lib.so
 ```
 
-Toolchain/runtime symbols that are undefined by the C shared object are not
-library API symbols. The C shared object defines exactly one public symbol.
+| C symbol | C type | Rust symbol | Rust type | Status |
+|----------|--------|-------------|-----------|--------|
+| `normalize` | `T` | `normalize` | `T` | [x] present |
 
-| C symbol | C declaration | Rust `.so` export | Status |
-|----------|---------------|-------------------|--------|
-| `normalize` | `void normalize(float *dest, const float *src, int size)` | `normalize` | [x] |
+The C library has one globally defined dynamic symbol. Its other dynamic
+entries are undefined runtime imports (`memset`, `sqrtf`) or weak toolchain
+symbols, not public symbols implemented by this library.
 
-Missing C API symbols in the Rust shared object: **0**
+Final Phase D checks:
 
+- [x] Missing C-defined symbols in Rust: **0** (empty `comm -23` diff).
+- [x] `ldd -r` reports no unresolved relocations for either shared library.
+- [x] No Cargo feature table exists; default and `--no-default-features`
+  verification both pass.
+- [x] Neither build defines a binary target, so no stdout comparison applies.

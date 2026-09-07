@@ -31,7 +31,6 @@
 #![allow(non_snake_case)]
 
 use core::ffi::{c_char, c_int, c_void};
-use core::ptr::{read_volatile, write_volatile};
 
 // ---------------------------------------------------------------------------
 // libc bindings.
@@ -48,50 +47,6 @@ unsafe extern "C" {
     fn free(ptr: *mut c_void);
     fn strlen(s: *const c_char) -> usize;
     fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-}
-
-// ---------------------------------------------------------------------------
-// Raw memory access
-//
-// Every load/store through a caller-supplied pointer goes through `load`/`store`
-// below instead of `*p` / `*p = v`. This is required for behavioural fidelity,
-// not style — the C library accesses memory with plain `mov` instructions that
-// check nothing, and the obvious Rust spellings all add a check that changes the
-// observable behaviour as soon as the crate is built with `-C debug-assertions`
-// (the default for the `dev` profile):
-//
-//   * `*p` / `*p = v`                    -> panics on a NULL pointer, so
-//                                           `process_string(NULL)` would abort
-//                                           (`SIGABRT`) where C faults
-//                                           (`SIGSEGV`).
-//   * `ptr::read_volatile`               -> no NULL check, but panics on a
-//                                           *misaligned* pointer, which C reads
-//                                           happily on x86-64.
-//   * `ptr::read_unaligned`              -> no alignment check, but panics on
-//                                           NULL.
-//
-// Doing the volatile access through an `align_of == 1` newtype satisfies both:
-// there is no NULL check and no alignment check, and it still compiles to the
-// single `mov (%rdi),%eax` that gcc emits. NULL therefore faults with `SIGSEGV`
-// exactly like the C library, and misaligned buffers are read/written exactly
-// like the C library, in every cargo profile.
-// ---------------------------------------------------------------------------
-
-/// A `T` with no alignment requirement.
-#[repr(C, packed)]
-#[derive(Clone, Copy)]
-struct Unaligned<T: Copy>(T);
-
-/// Load a `T`, checking nothing: the C equivalent of `mov (%p), %reg`.
-#[inline(always)]
-unsafe fn load<T: Copy>(p: *const T) -> T {
-    unsafe { read_volatile(p as *const Unaligned<T>).0 }
-}
-
-/// Store a `T`, checking nothing: the C equivalent of `mov %reg, (%p)`.
-#[inline(always)]
-unsafe fn store<T: Copy>(p: *mut T, v: T) {
-    unsafe { write_volatile(p as *mut Unaligned<T>, Unaligned(v)) }
 }
 
 /// ```c
@@ -126,7 +81,7 @@ pub unsafe extern "C" fn shift_array(arr: *mut c_int, size: c_int, positions: c_
         let mut i: c_int = 0;
         while i < positions {
             unsafe {
-                store(arr.offset(i as isize), 0);
+                *arr.offset(i as isize) = 0;
             }
             i += 1;
         }
@@ -138,9 +93,8 @@ pub unsafe extern "C" fn shift_array(arr: *mut c_int, size: c_int, positions: c_
 /// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_string(str: *const c_char) -> c_int {
-    // Dereferences `str` unconditionally, exactly like the C original (a NULL
-    // argument must fault here, before `strlen` is reached).
-    if unsafe { load(str) } != 0 {
+    // Dereferences `str` unconditionally, exactly like the C original.
+    if unsafe { *str } != 0 {
         return unsafe { strlen(str) } as c_int;
     }
     0
@@ -177,7 +131,7 @@ pub unsafe extern "C" fn init_matrix(matrix: *mut c_int) {
     for i in 0..3usize {
         for j in 0..4usize {
             unsafe {
-                store(matrix.add(i * 4 + j), temp[i][j]);
+                *matrix.add(i * 4 + j) = temp[i][j];
             }
         }
     }
@@ -189,26 +143,8 @@ pub unsafe extern "C" fn init_matrix(matrix: *mut c_int) {
 #[unsafe(no_mangle)]
 #[allow(unused_assignments)]
 pub extern "C" fn compare_allocations(val1: c_int, val2: c_int) -> c_int {
-    // The `store`/`load` accessors used below are what make this function
-    // faithful at `opt-level > 0`: with plain `*ptr1 = val1` / `*uninit_ptr`,
-    // LLVM knows the pointers come from `malloc` (hence `noalias`) and that the
-    // memory is `free`d again, so it deletes both stores *and* the later load and
-    // answers the `*uninit_ptr > 0` test from `val1` in a register. gcc at `-O0`
-    // really does store and reload, so the two implementations would then
-    // disagree whenever the two allocations alias: the C library reads back
-    // `val2` (the value written last) while an optimised Rust build would report
-    // `val1`. That case is reachable through the FFI boundary with an interposed
-    // allocator and is exercised by
-    // `tests/phase_c_errors.rs::e24_pointer_order_branches`.
-    //
-    // `black_box` additionally hides the provenance of the allocations, so the
-    // required memory traffic does not depend on LLVM honouring `volatile` for
-    // heap memory that it can prove is freed. It is defence in depth: the
-    // accessors alone are sufficient with the current toolchain.
-    let ptr1 =
-        core::hint::black_box(unsafe { malloc(core::mem::size_of::<c_int>()) } as *mut c_int);
-    let ptr2 =
-        core::hint::black_box(unsafe { malloc(core::mem::size_of::<c_int>()) } as *mut c_int);
+    let ptr1 = unsafe { malloc(core::mem::size_of::<c_int>()) } as *mut c_int;
+    let ptr2 = unsafe { malloc(core::mem::size_of::<c_int>()) } as *mut c_int;
 
     let uninit_ptr: *mut c_int;
 
@@ -221,8 +157,8 @@ pub extern "C" fn compare_allocations(val1: c_int, val2: c_int) -> c_int {
     }
 
     unsafe {
-        store(ptr1, val1);
-        store(ptr2, val2);
+        *ptr1 = val1;
+        *ptr2 = val2;
     }
 
     let mut result: c_int = 0;
@@ -238,11 +174,7 @@ pub extern "C" fn compare_allocations(val1: c_int, val2: c_int) -> c_int {
     }
 
     uninit_ptr = ptr1;
-    result = result.wrapping_add(if unsafe { load(uninit_ptr) } > 0 {
-        10
-    } else {
-        0
-    });
+    result = result.wrapping_add(if unsafe { *uninit_ptr } > 0 { 10 } else { 0 });
 
     unsafe {
         free(ptr1 as *mut c_void);
@@ -347,28 +279,21 @@ pub unsafe extern "C" fn arity(len: c_int, params: *const c_int) -> c_int {
     let len: u8 = (len as u32 & 0xff) as u8;
 
     if len < 2 {
-        // `params` is *not* touched on this path, so a NULL pointer is fine.
         -1
     } else if len == 2 {
-        // gcc emits the loads in this order: params[1] first, then params[0].
-        // Both are unconditional, so the order is unobservable, but keep the
-        // same set of accesses.
-        arity2(
-            unsafe { load(params.offset(0)) },
-            unsafe { load(params.offset(1)) },
-        )
+        arity2(unsafe { *params.offset(0) }, unsafe { *params.offset(1) })
     } else if len == 3 {
         arity3(
-            unsafe { load(params.offset(0)) },
-            unsafe { load(params.offset(1)) },
-            unsafe { load(params.offset(2)) },
+            unsafe { *params.offset(0) },
+            unsafe { *params.offset(1) },
+            unsafe { *params.offset(2) },
         )
     } else {
         arity4(
-            unsafe { load(params.offset(0)) },
-            unsafe { load(params.offset(1)) },
-            unsafe { load(params.offset(2)) },
-            unsafe { load(params.offset(3)) },
+            unsafe { *params.offset(0) },
+            unsafe { *params.offset(1) },
+            unsafe { *params.offset(2) },
+            unsafe { *params.offset(3) },
         )
     }
 }

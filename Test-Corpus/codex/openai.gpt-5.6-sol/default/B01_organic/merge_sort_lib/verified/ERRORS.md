@@ -1,40 +1,37 @@
-# Error Surface
+# Error surface
 
-Mechanical source scan covered `../c_src/include/lib.h` and
-`../c_src/src/lib.c` for error-return statements and macros, `assert`, null
-checks, range checks, error enums, and min/max constants.
+Mechanical scan inputs:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Tested |
-|---|----------|----------------------------------------------|-------------------|--------|
+```text
+../c_src/include/lib.h
+../c_src/src/lib.c
+```
 
-There are zero explicit rejection paths. `merge_sort` returns `void` and does
-not validate either pointer or `size`. In particular:
+The scan covered `RETURN_ERROR`, `return -1`, `return NULL`, `assert`,
+error enums, null/range checks, and min/max constants. The C source contains
+no explicit rejection or error-return path: `merge_sort` returns `void` and
+unconditionally calls `memcpy` before recursing.
 
-- A negative `size` is converted to `size_t` by the `memcpy` byte-count
-  expression; it is not rejected.
-- Null, overlapping, undersized, or otherwise invalid buffers are not checked.
-- There are no enum arguments, assertions, documented ranges, error codes, or
-  sentinel returns.
+## Source-level rejection table
 
-Invalid pointer/length combinations invoke C undefined behavior rather than a
-library-defined rejection and therefore have no expected C result to compare.
-The defined zero-length and boundary-size cases are tracked in `CONFIGS.md`.
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
 
-## Generic Boundary Probes
+Source-level rejection rows: **0**.
 
-These mandatory probes are kept separate from the zero-row source-derived
-error table because the invalid cases have undefined behavior, not C-defined
-error results. Faulting calls run in isolated subprocesses.
+## Mandatory generic FFI boundary coverage
 
-| Boundary | Differential result | Tested |
-|----------|---------------------|--------|
-| Both pointers null with `size == 0` | Both calls return | [x] |
-| Input pointer null with `size == 0` | Both calls return | [x] |
-| Scratch pointer null with `size == 0` | Both calls return | [x] |
-| Input pointer null with `size == 1` | Same abnormal process termination | [x] |
-| Scratch pointer null with `size == 1` | Same abnormal process termination | [x] |
-| One-element buffers with `size == INT_MAX` | Same abnormal process termination | [x] |
-| One-element buffers with `size == -1` | Same abnormal process termination | [x] |
+These are not C rejection branches. They record the compiled C library's
+observable process behavior so undefined invalid-pointer/length calls can be
+compared without crashing the test runner.
 
-There are no enum parameters or documented value ranges, so out-of-range enum
-and one-step-past-documented-range probes do not apply.
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| G1 [x] | `merge_sort` | `a = NULL`, `b = NULL`, `size = 0` | returns normally (child status 0) |
+| G2 [x] | `merge_sort` | `a = NULL`, valid `b`, `size = 1` | terminated by `SIGSEGV` (shell status 139) |
+| G3 [x] | `merge_sort` | valid `a`, `b = NULL`, `size = 1` | terminated by `SIGSEGV` (shell status 139) |
+| G4 [x] | `merge_sort` | `a = NULL`, `b = NULL`, `size = -1` | terminated by `SIGSEGV` (shell status 139) |
+| G5 [x] | `merge_sort` | `a = NULL`, `b = NULL`, `size = INT_MAX` | terminated by `SIGSEGV` (shell status 139) |
+
+There are no public enum parameters and no documented bounded value range, so
+out-of-range enum and one-past-documented-range cases are not applicable.

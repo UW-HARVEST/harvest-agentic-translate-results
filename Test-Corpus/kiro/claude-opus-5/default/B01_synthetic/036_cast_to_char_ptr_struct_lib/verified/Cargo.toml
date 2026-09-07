@@ -11,6 +11,15 @@ crate-type = ["cdylib"]
 [dev-dependencies]
 libloading = "0.8"
 
+# `harness = false`: the differential tests redirect the process-global fd 1 to
+# capture what the C/Rust `.so`s print. libtest's own progress lines are written
+# to fd 1 from its worker threads, which would land inside our captures, so we
+# run the rows ourselves, strictly sequentially.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
+harness = false
+
 [profile.release]
 panic = "abort"
 

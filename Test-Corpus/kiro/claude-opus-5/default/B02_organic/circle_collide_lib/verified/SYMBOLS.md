@@ -1,103 +1,84 @@
-# SYMBOLS.md — Symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from:
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-EB1pzP.so
+```
+nm -D --defined-only c_src/build/libharvest-work-yJX7LD.so
 nm -D --defined-only translation/target/release/libcircle_collide_lib.so
 ```
 
-C source surface: `c_src/src/lib.c` (144 lines) — the ONLY translation unit in
-`c_src/CMakeLists.txt`. Public header `c_src/include/lib.h` declares only
-`circle_collide`, but the C file defines every other function with external
-linkage too (no `static`), so all 12 land in the dynamic symbol table.
+`c_src/src/lib.c` is the ONLY C translation unit (see `c_src/CMakeLists.txt`),
+so the full C public surface is the 12 non-static functions it defines. No C
+module was skipped by the translation; there is no binary/driver target in
+either build.
 
-## Defined dynamic symbols
+## Symbol table
 
-| # | C symbol | C ABI signature (from `src/lib.c`) | in C `.so` | in Rust `.so` | status |
-|---|----------|------------------------------------|-----------|---------------|--------|
-| 1 | `c2V`              | `c2v (float, float)`                    | T | T | OK |
-| 2 | `c2Mulvs`          | `c2v (c2v, float)`                      | T | T | OK |
-| 3 | `c2Maxv`           | `c2v (c2v, c2v)`                        | T | T | OK |
-| 4 | `c2Minv`           | `c2v (c2v, c2v)`                        | T | T | OK |
-| 5 | `c2Clampv`         | `c2v (c2v, c2v, c2v)`                   | T | T | OK |
-| 6 | `c2Sub`            | `c2v (c2v, c2v)`                        | T | T | OK |
-| 7 | `c2Dot`            | `float (c2v, c2v)`                      | T | T | OK |
-| 8 | `c2CircletoCircle` | `int (c2Circle, c2Circle)`              | T | T | OK |
-| 9 | `c2CircletoAABB`   | `int (c2Circle, c2AABB)`                | T | T | OK |
-|10 | `c2CircletoCapsule`| `int (c2Circle, c2Capsule)`             | T | T | OK |
-|11 | `c2Collided`       | `int (const void*, const void*, C2_TYPE)` | T | T | OK |
-|12 | `circle_collide`   | `int (float, float, float)`             | T | T | OK |
+| # | symbol | C signature | in C `.so` | in Rust `.so` | notes |
+|---|--------|-------------|-----------|---------------|-------|
+| 1 | `c2V` | `c2v c2V(float,float)` | yes | yes | 8-byte struct return (1 SSE eightbyte) |
+| 2 | `c2Mulvs` | `c2v c2Mulvs(c2v,float)` | yes | yes | operand order `a.x * b` preserved |
+| 3 | `c2Maxv` | `c2v c2Maxv(c2v,c2v)` | yes | yes | bare `>` ternary, NOT `f32::max` |
+| 4 | `c2Minv` | `c2v c2Minv(c2v,c2v)` | yes | yes | bare `<` ternary, NOT `f32::min` |
+| 5 | `c2Clampv` | `c2v c2Clampv(c2v,c2v,c2v)` | yes | yes | `Maxv(lo, Minv(a,hi))` |
+| 6 | `c2Sub` | `c2v c2Sub(c2v,c2v)` | yes | yes | |
+| 7 | `c2Dot` | `float c2Dot(c2v,c2v)` | yes | yes | `x*x + y*y`, no FMA contraction |
+| 8 | `c2CircletoCircle` | `int c2CircletoCircle(c2Circle,c2Circle)` | yes | yes | 12-byte structs → 2 SSE eightbytes each |
+| 9 | `c2CircletoAABB` | `int c2CircletoAABB(c2Circle,c2AABB)` | yes | yes | 12 + 16 bytes, all in xmm |
+| 10 | `c2CircletoCapsule` | `int c2CircletoCapsule(c2Circle,c2Capsule)` | yes | yes | `c2Capsule` is 20 B > 16 B → MEMORY class (stack) |
+| 11 | `c2Collided` | `int c2Collided(const void*,const void*,C2_TYPE)` | yes | yes | enum arg passed as `int` |
+| 12 | `circle_collide` | `int circle_collide(float,float,float)` | yes | yes | the only symbol in `include/lib.h` |
 
-**Missing from Rust `.so`: 0.** No `#[no_mangle]` wrapper had to be added and
-no C module was left untranslated — `src/lib.c` is the whole library and every
-one of its 12 external-linkage functions has a real Rust implementation (no
-stubs, no `unimplemented!()`).
+## Diff result
 
-## Extra symbols exported by Rust but not C
+```
+comm -23 c_syms rs_syms   ->  (empty)
+```
 
-None. `nm -D --defined-only` on the Rust `.so` yields exactly the same 12 names.
+* Symbols exported by C but missing from Rust: **0**
+* Undefined non-libc symbols in the Rust `.so`: **0**
+  (all undefined entries are glibc / `_Unwind_*` / `_ITM_*` / `__gmon_start__`
+  runtime imports pulled in by `std`, none of them project code)
 
-## Undefined (imported) symbols
+## Types (must be layout-identical across the FFI boundary)
 
-* C `.so`: only the 4 weak CRT/ITM/gmon placeholders (`_ITM_*`,
-  `__cxa_finalize`, `__gmon_start__`). No libm — all math is inline SSE.
-* Rust `.so`: libc (`memcpy`, `malloc`, `abort`, …), the `_Unwind_*` personality
-  routines and the std panic-machinery imports. **All are libc / language-runtime
-  symbols; 0 undefined non-libc symbols**, i.e. nothing from the translated
-  library itself is left dangling.
-
-## Struct ABI classification (must match for by-value passing)
-
-| type | size | SysV class | passed as |
-|------|------|-----------|-----------|
-| `c2v`       |  8 | SSE            | 1 xmm register |
-| `c2Circle`  | 12 | SSE, SSE       | 2 xmm registers |
-| `c2AABB`    | 16 | SSE, SSE       | 2 xmm registers |
-| `c2Capsule` | 20 | MEMORY (>16 B) | on the stack |
-
-`#[repr(C)]` on all four Rust structs reproduces these, verified empirically by
-the differential tests in `tests/` (a mis-classified `c2Capsule` would corrupt
-`c2CircletoCapsule` immediately).
-
-## Verification gate
-
-- [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
-- [x] `nm -D` shows 0 undefined non-libc / non-runtime symbols in the Rust `.so`.
-- [x] Name-for-name diff of the two defined-symbol lists is empty.
+```c
+typedef enum { C2_TYPE_CIRCLE=0, C2_TYPE_AABB=1, C2_TYPE_CAPSULE=2 } C2_TYPE;
+struct c2v       { float x, y; };            /*  8 bytes, align 4 */
+struct c2Circle  { c2v p; float r; };        /* 12 bytes, align 4 */
+struct c2AABB    { c2v min, max; };          /* 16 bytes, align 4 */
+struct c2Capsule { c2v a, b; float r; };     /* 20 bytes, align 4 */
+```
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-build configuration is the default one (`cargo test`,
-`cargo test --no-default-features` and `cargo test --all-features` are all the
-same code path). `check_features.sh` derives the list from `Cargo.toml` rather
-than hard-coding it, and runs the whole suite for each combination under **both**
-cargo profiles (release and debug). Verified output:
+`translation/Cargo.toml` declares **no `[features]` section** — there is exactly
+one build configuration (default = no features). `--no-default-features` is
+therefore equivalent to the default build; Phase D's feature-combination sweep
+collapses to a single combination, and is still executed explicitly.
 
-```
-combinations to verify: 3
-  []
-  [--no-default-features]
-  [--all-features]
-RESULT: all 3 feature combination(s) x 2 profiles PASSED
-```
+## Caveat: the C's NaN payloads are optimisation-level dependent
 
-Running debug as well as release is not redundant: debug-assertions turn Rust's
-"misaligned pointer dereference" check on, which is how the `c2Collided`
-unaligned-load defect was caught (see `ERRORS.md`).
+x86 `mulss`/`addss dst, src` return `quiet(dst)` when `dst` is NaN and
+`quiet(src)` otherwise, so the *payload and sign* of a NaN result depend on
+which operand the C compiler put in the destination register. Verified by
+compiling `lib.c` at four levels:
 
-## Independent re-verification command
+| function | `-O0` (the documented build) | `-O1` / `-O2` | `-O3` |
+|----------|------------------------------|---------------|-------|
+| `c2Dot` x product | `dst = a.x` | `dst = a.x` | `dst = a.x` |
+| `c2Dot` y product | `dst = b.y` | `dst = a.y` | `dst = a.y` |
+| `c2Dot` sum | `dst = y term` | `dst = x term` | `dst = x term` |
+| `c2Mulvs` x | `dst = a.x` | `dst = a.x` | `mulps`, `dst = a` |
+| `c2Mulvs` y | `dst = a.y` | `dst = b` | `mulps`, `dst = a` |
 
-```sh
-diff <(nm -D --defined-only --format=posix c_src/build/*.so            | awk '{print $1}' | sort) \
-     <(nm -D --defined-only --format=posix translation/target/release/libcircle_collide_lib.so \
-                                                                       | awk '{print $1}' | sort)
-# -> no output: the symbol diff is empty
-```
+The C therefore **disagrees with itself** about NaN payloads across optimisation
+levels; no single translation can match all of them. `c_src/CMakeLists.txt` sets
+no `CMAKE_BUILD_TYPE`, so the documented build command produces an unoptimised
+library (confirmed: the built `.so`'s `c2Dot` has the `-O0` prologue and stack
+spills). The Rust pins its SSE operand order to that build with inline `asm!`,
+and the differential tests load exactly that `.so`, so the comparison is against
+the real ground truth rather than a guess.
 
-`tests/symbol_parity.rs` performs this same diff as an assertion, additionally
-requires the C table to contain exactly 12 entries (so a shrunken C build cannot
-make the diff pass vacuously), and *calls* all 12 symbols through `dlsym` with
-inputs whose answers differ, so a symbol that exists but is a constant stub
-fails.
+Every other result — all `int` predicates and all non-NaN float results — is
+optimisation-independent, so this caveat only concerns NaN payload bits.

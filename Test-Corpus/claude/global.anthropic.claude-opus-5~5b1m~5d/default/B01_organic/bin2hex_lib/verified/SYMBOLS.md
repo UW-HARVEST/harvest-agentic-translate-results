@@ -1,81 +1,74 @@
-# SYMBOLS.md — Phase A: public symbol surface
+# SYMBOLS.md — Phase A / Phase D symbol surface
 
-Derived mechanically from `nm -D` on the built C shared library:
+Mechanically derived from `nm -D` on both shared libraries.
 
-```
-c_src/build/libharvest-work-PzcuMI.so
-translation/target/release/libbin2hex_lib.so
-```
+Commands used:
 
-## C source inventory (completeness check)
+```sh
+# C
+cd c_src && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+nm -D --defined-only c_src/build/libharvest-work-isR6ra.so
 
-The whole C subtree is:
-
-```
-c_src/CMakeLists.txt
-c_src/include/lib.h      # 1 declaration
-c_src/src/lib.c          # 1 definition
+# Rust
+cd translation && cargo build --release
+nm -D --defined-only translation/target/release/libbin2hex_lib.so
 ```
 
-`CMakeLists.txt` compiles exactly one translation unit (`src/lib.c`) into
-`SHARED` library `${project_name}`. There are no other `.c` files, no
-`#ifdef`-guarded alternate implementations, no namespacing/renaming macros
-(e.g. no `#define bin2hex sodium_bin2hex`), and no macro-generated symbol
-families. Therefore the exported surface is exactly one function and **no C
-module was skipped by the translation**.
+## Defined (exported) dynamic symbols
 
-`grep -c 'return\|abort' c_src/src/lib.c` → the function has a single `return`
-and a single `abort()`; see `ERRORS.md`.
+| # | C symbol (`nm -D --defined-only`) | type | present in Rust `.so` | Rust item |
+|---|-----------------------------------|------|-----------------------|-----------|
+| 1 | `bin2hex`                         | `T`  | YES (`T bin2hex`)     | `#[no_mangle] pub unsafe extern "C" fn bin2hex` in `src/lib.rs` |
 
-## Defined (exported) symbols
+The C translation unit is a single file (`c_src/src/lib.c`, 27 lines) with a
+single public header (`c_src/include/lib.h`, 5 lines) declaring exactly one
+function. There are no namespace/renaming macros, no macro-generated symbol
+families, no `#ifdef`-gated extra modules, and no additional `.c` files in
+`c_src/CMakeLists.txt` (`add_library(... SHARED src/lib.c)`). Therefore the
+complete public surface is the single symbol above — no C source was left
+untranslated.
 
-`nm -D --defined-only` output, filtered of linker-synthesised entries
-(`_ITM_*`, `__cxa_finalize`, `__gmon_start__`, `__cxa_thread_atexit_impl`,
-`gettid`, `statx` — all weak/undefined placeholders, not API):
+## Symbol diff
 
-| # | C symbol (`nm -D`) | type | Rust `.so` exports it? | how |
-|---|--------------------|------|------------------------|-----|
-| 1 | `bin2hex`          | `T`  | YES — `T bin2hex`      | `#[unsafe(no_mangle)] pub unsafe extern "C" fn bin2hex` in `src/lib.rs` |
-
-**Missing from Rust `.so`: none.** No stubs, no `unimplemented!()`; the single
-symbol is a real translation of `c_src/src/lib.c`.
-
-## Signature
-
-```c
-char *bin2hex(char *hex, size_t hex_maxlen, const uint8_t *bin, size_t bin_len);
+```
+comm -23 <(nm -D --defined-only C.so   | awk '{print $NF}' | sort) \
+         <(nm -D --defined-only RUST.so | awk '{print $NF}' | sort)
+=> (empty)
 ```
 
-```rust
-pub unsafe extern "C" fn bin2hex(
-    hex: *mut c_char, hex_maxlen: usize, bin: *const u8, bin_len: usize,
-) -> *mut c_char
-```
-
-ABI check: `char*` ↔ `*mut c_char`, `size_t` ↔ `usize`, `const uint8_t*` ↔
-`*const u8`, return `char*` ↔ `*mut c_char`. All four arguments are register
-sized, no aggregates, so the SysV x86-64 ABI mapping is exact.
+**C-exported symbols missing from the Rust `.so`: 0.**
 
 ## Undefined (imported) symbols
 
-The C `.so` imports exactly one non-weak external: `abort@GLIBC_2.2.5`.
+The C `.so` imports only `abort@GLIBC` plus the standard weak
+`_ITM_*` / `__cxa_finalize` / `__gmon_start__` glibc/ELF boilerplate.
 
-The Rust `.so` imports `abort@GLIBC_2.2.5` too (it calls real libc `abort()`,
-not a Rust panic, so the process dies from `SIGABRT` identically). Its other
-undefined symbols (`malloc`, `memcpy`, `_Unwind_*`, `dl_iterate_phdr`, …) are
-libc / libgcc / Rust-std runtime imports, **not** unresolved library symbols.
+The Rust `.so` imports `abort@GLIBC` (the real libc `abort`, declared in
+`extern "C"` in `src/lib.rs`, so the abort path is observably identical:
+`SIGABRT`) plus libc/`_Unwind_*` symbols pulled in by the Rust standard
+library runtime (`malloc`, `memcpy`, `write`, `dl_iterate_phdr`, ...).
 
-`nm -D` non-libc undefined symbols in the Rust `.so`: **0**.
+**Undefined non-libc / non-runtime symbols in the Rust `.so`: 0.**
+All Rust `U` entries resolve against glibc or libgcc, which the loader
+provides; `libloading` loads the Rust `.so` successfully (see
+`tests/differential.rs`).
 
 ## Feature combinations
 
-`translation/Cargo.toml` has **no `[features]` section** and no optional
-dependencies, so the complete feature power set is a single element: the
-default (empty) feature set. `cargo tree -e features` and the automated sweep
-in `tests/feature_matrix.sh` confirm there is exactly one combination to
-verify, and Phases B–C are run under it.
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+build configuration is the default one. Verified mechanically:
 
-## Verdict
+```sh
+grep -n '^\[features\]' translation/Cargo.toml   # no match
+```
 
-- [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in the Rust `.so`.
+`cargo check --no-default-features` and `cargo check` are therefore the same
+build; both are run by `run_all.sh`.
+
+## Binary executable
+
+`c_src/CMakeLists.txt` builds only `add_library(... SHARED ...)` — there is no
+`add_executable`, and `translation/Cargo.toml` declares only `[lib]` with
+`crate-type = ["cdylib"]` and has no `src/main.rs` / `[[bin]]`. There is no
+driver binary, so the "compare binary stdout" gate is not applicable.

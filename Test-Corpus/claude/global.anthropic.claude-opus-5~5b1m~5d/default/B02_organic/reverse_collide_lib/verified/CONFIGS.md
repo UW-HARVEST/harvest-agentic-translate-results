@@ -1,125 +1,123 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — configuration surface table (valid inputs)
 
-Mirror of `ERRORS.md` for **valid** inputs. Axes derived mechanically from the
-branches `c_src/src/lib.c` actually takes.
+Axes the C code actually branches on, grepped from `c_src/src/lib.c`:
 
-## Axes enumerated from the source
+* **`C2_TYPE`** — `C2_TYPE_CIRCLE`(0) / `C2_TYPE_AABB`(1) / `C2_TYPE_CAPSULE`(2).
+  Branched on in `c2MakeProxy` (L114) and twice in `c2Collided` (L577, L579/591/603).
+  Determines the proxy shape: `count = 1 / 4 / 2`, `radius = c->r / 0 / c->r`.
+* **`c2GJK` runtime options** — `ax_ptr` NULL vs. supplied, `bx_ptr` NULL vs.
+  supplied, `use_radius` 0 vs. non-zero, `cache` NULL vs. supplied
+  (and, when supplied, `count == 0` vs. warm), `outA`/`outB`/`iterations`
+  NULL vs. supplied.
+* **Simplex `count`** — 1 / 2 / 3 selects the arm in `c22`(no-op for 1),
+  `c23`, `c2D`, `c2L`, `c2Witness`, `c2GJKSimplexMetric`.
+* **`c22` branch shape** — `v<=0` / `u<=0` / else (3 arms).
+* **`c23` branch shape** — 7 arms (3 vertex regions, 3 edge regions, 1 interior).
+* **`c2Support` vertex count** — 1 (circle) / 2 (capsule) / 4 (AABB), plus
+  the value-dependent `dot > dmax` tie path.
+* **Input shape** — separated / touching / overlapping / identical / contained;
+  zero radius; large radius; degenerate capsule (`a == b`); zero-extent AABB
+  (`min == max`); rotation identity vs. arbitrary angle; translation zero vs.
+  large; coordinates near 0 and at large magnitude.
 
-**A1 — shape type (`C2_TYPE`)**, the `switch` in `c2MakeProxy` / `c2Collided`:
-`C2_TYPE_CIRCLE` (proxy: radius = `r`, count = 1), `C2_TYPE_AABB` (radius = 0,
-count = 4 via `c2BBVerts`), `C2_TYPE_CAPSULE` (radius = `r`, count = 2).
-→ `c2GJK`/`c2Collided` cross-product = 3 × 3 = 9.
+Every row is exercised in `tests/valid_paths.rs` with **many randomized inputs**
+(fixed-seed xorshift PRNG, `SEED = 0x2545F4914F6CDD1D`) unless the row is
+inherently a single fixed configuration.
 
-**A2 — `use_radius`** (`c2GJK` arg 9): `0` (raw Minkowski distance) vs `!= 0`
-(radius shrink + the two sub-branches at lib.c:485 and lib.c:493).
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `c2V` | random finite / ±0 / ±inf / nan scalars | [x] |
+| 2 | `c2Mulvs` | random vector × random scalar, incl. 0, inf, nan | [x] |
+| 3 | `c2Maxv`, `c2Minv` | random pairs; equal components; nan operands (both argument orders) | [x] |
+| 4 | `c2Clampv` | inside / below / above box; inverted box (`lo > hi`); nan | [x] |
+| 5 | `c2Sub`, `c2Add` | random pairs, cancellation, large magnitudes | [x] |
+| 6 | `c2Dot` | random pairs; overflow to inf; nan | [x] |
+| 7 | `c2Det2` | random pairs; collinear (det 0); overflow | [x] |
+| 8 | `c2Len` | random vectors; zero vector; huge vector (dot overflows to inf) | [x] |
+| 9 | `c2Div` | random vector / random non-zero scalar | [x] |
+| 10 | `c2Norm` | random non-zero vectors; near-subnormal vectors | [x] |
+| 11 | `c2Neg`, `c2Skew`, `c2CCW90` | random vectors incl. ±0 (sign of zero) | [x] |
+| 12 | `c2RotIdentity`, `c2xIdentity` | no inputs (fixed) | [x] |
+| 13 | `c2Mulrv`, `c2MulrvT` | identity rotation; arbitrary `(cos θ, sin θ)`; un-normalised `c2r` | [x] |
+| 14 | `c2Mulxv` | identity transform; rotation-only; translation-only; both | [x] |
+| 15 | `c2BBVerts` | random AABB; inverted AABB; zero-extent AABB | [x] |
+| 16 | `c2MakeProxy` | `type = CIRCLE` → count 1, radius = r (incl. r = 0, r < 0) | [x] |
+| 17 | `c2MakeProxy` | `type = AABB` → count 4, radius 0, 4 verts from `c2BBVerts` | [x] |
+| 18 | `c2MakeProxy` | `type = CAPSULE` → count 2, radius = r, verts a/b (incl. a == b) | [x] |
+| 19 | `c2Support` | count 1 (circle proxy), random direction | [x] |
+| 20 | `c2Support` | count 2 (capsule proxy), random direction, incl. direction ⟂ to a-b | [x] |
+| 21 | `c2Support` | count 4 (AABB proxy), random direction, incl. axis-aligned ties | [x] |
+| 22 | `c2Support` | count 8 (full `c2Proxy::verts`), random verts + direction | [x] |
+| 23 | `c2GJKSimplexMetric` | `count = 1` → 0 | [x] |
+| 24 | `c2GJKSimplexMetric` | `count = 2` → `c2Len(b.p - a.p)`, random simplex | [x] |
+| 25 | `c2GJKSimplexMetric` | `count = 3` → `c2Det2(b-a, c-a)`, random simplex | [x] |
+| 26 | `c22` | random simplex hitting arm `v <= 0` (origin beyond a) | [x] |
+| 27 | `c22` | random simplex hitting arm `u <= 0` (origin beyond b, copies `b` into `a`) | [x] |
+| 28 | `c22` | random simplex hitting the interior arm (count stays 2) | [x] |
+| 29 | `c22` | fully random simplices (all arms mixed, incl. `a == b`) | [x] |
+| 30 | `c23` | random simplices, all 7 arms covered (coverage asserted by arm histogram) | [x] |
+| 31 | `c23` | degenerate simplices: two equal points, three equal points, collinear (`area == 0`) | [x] |
+| 32 | `c2D` | `count = 1`; `count = 2` with `det > 0` (skew) and `det <= 0` (ccw90); `count = 3` | [x] |
+| 33 | `c2L` | `count = 1`; `count = 2` with random `u`/`div` | [x] |
+| 34 | `c2Witness` | `count = 1` / `2` / `3`, random `sA`/`sB`/`u`/`div` | [x] |
+| 35 | `c2GJK` | CIRCLE×CIRCLE, `ax=bx=NULL`, `use_radius=1`, no cache — separated / touching / overlapping / concentric | [x] |
+| 36 | `c2GJK` | CIRCLE×AABB, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 37 | `c2GJK` | CIRCLE×CAPSULE, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 38 | `c2GJK` | AABB×CIRCLE, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 39 | `c2GJK` | AABB×AABB, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 40 | `c2GJK` | AABB×CAPSULE, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 41 | `c2GJK` | CAPSULE×CIRCLE, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 42 | `c2GJK` | CAPSULE×AABB, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 43 | `c2GJK` | CAPSULE×CAPSULE, NULL transforms, `use_radius=1`, no cache, randomized | [x] |
+| 44 | `c2GJK` | all 9 type pairs, `use_radius = 0` (radius not subtracted) | [x] |
+| 45 | `c2GJK` | all 9 type pairs, `ax_ptr` supplied (random rotation+translation), `bx_ptr` NULL | [x] |
+| 46 | `c2GJK` | all 9 type pairs, `ax_ptr` NULL, `bx_ptr` supplied (random transform) | [x] |
+| 47 | `c2GJK` | all 9 type pairs, **both** transforms supplied, random, `use_radius=1` | [x] |
+| 48 | `c2GJK` | all 9 type pairs, both transforms supplied, `use_radius=0` | [x] |
+| 49 | `c2GJK` | cold cache (`count = 0`) supplied → cache written back; verify metric/count/iA/iB/div byte-identical | [x] |
+| 50 | `c2GJK` | warm cache: call twice with the same cache object, shapes unchanged (cache hit path `cache_was_read = 1`) | [x] |
+| 51 | `c2GJK` | warm cache re-used after the shapes **moved** (cache indices stale but in range) | [x] |
+| 52 | `c2GJK` | cache + transforms + `use_radius=1`, 3 successive calls sweeping a shape past another (progressive warm cache) | [x] |
+| 53 | `c2GJK` | `outA`/`outB` NULL but `iterations` supplied, and vice versa (all 8 NULL combinations) | [x] |
+| 54 | `c2GJK` | overlapping shapes → `hit = 1` path (`a = b`, `dist = 0`) | [x] |
+| 55 | `c2GJK` | identical shapes (degenerate search direction guard) | [x] |
+| 56 | `c2GJK` | zero-radius circle vs. zero-extent AABB (proxy count 1 vs. 4, all verts equal) | [x] |
+| 57 | `c2GJK` | degenerate capsule (`a == b`, proxy count 2 with duplicate verts) vs. each type | [x] |
+| 58 | `c2GJK` | large-magnitude coordinates (1e6…1e18) for all 9 type pairs | [x] |
+| 59 | `c2AABBtoAABB` | separated on each of the 4 axes; touching exactly; overlapping; contained; randomized | [x] |
+| 60 | `c2AABBtoCapsule` | randomized; capsule endpoint inside box; capsule crossing box; far away; degenerate capsule | [x] |
+| 61 | `c2CapsuletoCapsule` | randomized; parallel; crossing; collinear-overlapping; both degenerate | [x] |
+| 62 | `c2CircletoCircle` | randomized; exactly touching (`d2 == r2` → false); concentric; r = 0 | [x] |
+| 63 | `c2CircletoAABB` | randomized; centre inside box; nearest point on face / on corner; r = 0 | [x] |
+| 64 | `c2CircletoCapsule` | randomized hitting all three arms (`da < 0`, `db < 0`, else); degenerate capsule | [x] |
+| 65 | `c2Collided` | all 9 valid `(typeA, typeB)` combinations, randomized shapes | [x] |
+| 66 | `c2Collided` | AABB×CIRCLE and CAPSULE×CIRCLE / CAPSULE×AABB — the argument-**swapping** arms | [x] |
+| 67 | `reverse_collide` | grid sweep over x,y ∈ [-160,160] step 2.5, r ∈ {0, 1, 5, 10, 20, 60} — exercises all 8 result bit patterns | [x] |
+| 68 | `reverse_collide` | randomized floats incl. large magnitudes, ±0, subnormals | [x] |
+| 69 | `reverse_collide` | boundary values that place the circle exactly tangent to each of the 3 fixed shapes | [x] |
 
-**A3 — `ax_ptr` / `bx_ptr`** (`c2x` transforms): `NULL` → `c2xIdentity()`, vs
-non-`NULL` with (a) identity, (b) pure translation, (c) pure rotation,
-(d) rotation + translation. Rotation feeds `c2Mulrv`/`c2MulrvT` and changes the
-support-point search direction; the `c2r` is **not** required to be normalised,
-so unnormalised rotors are a distinct shape.
+| 70 | `c2GJK` | **externally synthesised** warm cache: random `metric` straddling the `-1e8` guard, `count` 0–3, random in-range `iA`/`iB`, random `div` — crossed with all 9 type pairs, random transforms, both `use_radius` values | [x] |
+| 71 | `c2GJK`, `c2Collided` | 250,000-sample randomized cross-product of {type pair} × {tame, non-finite shapes} × {transform present/absent} × {`use_radius`} × {no / cold / synthetic warm cache} × {output-pointer NULL masks}, comparing distance, witness points, iterations and the written-back cache; the `iterations` histograms of C and Rust must be identical | [x] |
+| 72 | `c22` → `c23` → `c2D` / `c2L` / `c2GJKSimplexMetric` / `c2Witness` | the composed low-level pipeline: 200,000 randomized simplices (count −1…3, tame and non-finite) pushed through `c22`, then `c23`, then read out by every consumer — catches bugs that per-function tests miss | [x] |
 
-**A4 — `cache`**: `NULL`; non-`NULL` cold (`count == 0` → `cache_was_good`
-false); non-`NULL` warm (result of a previous `c2GJK` call, `count` ∈ {1,2,3}
-→ the `cache_was_read` seeding path at lib.c:386-407).
+Rows 70–72 live in `tests/stress.rs`; rows 1–69 in `tests/valid_paths.rs`.
 
-**A5 — output pointers**: `outA`/`outB`/`iterations` all `NULL` vs all
-non-`NULL` vs a mix (each has its own `if` at lib.c:510-515).
+No binary/driver target exists (`c_src/CMakeLists.txt` builds only
+`add_library(... SHARED src/lib.c)`; `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]`), so the "compare stdout of the two binaries" gate is
+not applicable.
 
-**A6 — proximity / input shape**: deep overlap (GJK `hit` path, `s.count == 3`),
-shallow overlap, exactly touching, near-touching within `FLT_EPSILON`, clearly
-disjoint, very distant (large coordinates), coincident shapes.
+## Feature combinations
 
-**A7 — degenerate but valid shapes**: zero-radius circle, zero-area AABB
-(`min == max`), zero-length capsule (`a == b`), axis-aligned vs oblique capsule,
-tiny (denormal-scale) and huge (`1e30`) magnitudes.
+`translation/Cargo.toml` declares **no `[features]` section**, therefore the only
+configuration is the default one (`--no-default-features` is equivalent).
+`./run_all.sh` enumerates the feature power set from `Cargo.toml` (empty here),
+runs the suite for the default set *and* `--no-default-features`, and does so
+against **two** builds of the C reference:
 
-**A8 — simplex vertex count** for the low-level `c22`, `c23`, `c2D`, `c2L`,
-`c2Witness`, `c2GJKSimplexMetric` entry points: `count` ∈ {1, 2, 3} × each of
-the 3 branches of `c22` and the 7 branches of `c23`.
+* the default CMake build (no `CMAKE_BUILD_TYPE`, i.e. `-O0`), and
+* `-DCMAKE_BUILD_TYPE=Release` (`-O2`, where GCC is free to reassociate and
+  contract floating point),
 
-**A9 — `c2Support` vertex count**: 1, 2, 4, 8 verts × direction sign/quadrant,
-incl. exact ties (`dot > dmax` is strict, so ties keep the *lower* index).
-
-**A10 — entry-point level**: pure math leaves (`c2V` … `c2MulrvT`), proxy
-builders (`c2BBVerts`, `c2MakeProxy`), simplex ops (`c22`, `c23`, `c2D`, `c2L`,
-`c2Witness`, `c2GJKSimplexMetric`, `c2Support`), the core solver (`c2GJK`), the
-boolean predicates (`c2*to*`), the dispatcher (`c2Collided`), and the one-shot
-wrapper (`reverse_collide`). All ten levels are driven directly.
-
-Every row is exercised with **many** randomized inputs from a fixed-seed
-xorshift PRNG (`rand_f32` in `tests/common/mod.rs`), and asserted **bitwise**
-(`to_bits()`), not with an epsilon.
-
-## Table
-
-| # | entry point(s) | configuration (options set + input shape) | test | ✔ |
-|---|----------------|--------------------------------------------|------|---|
-| 1 | `c2V`, `c2Neg`, `c2Skew`, `c2CCW90` | 1-arg vector leaves × random finite/subnormal/huge floats | `cfg_vec_unary` | [x] |
-| 2 | `c2Add`, `c2Sub`, `c2Dot`, `c2Det2` | 2-vector leaves × random pairs incl. cancellation (a≈b) | `cfg_vec_binary` | [x] |
-| 3 | `c2Mulvs`, `c2Div` | vector × scalar, scalar random incl. ±0, ±1, huge, tiny | `cfg_vec_scalar` | [x] |
-| 4 | `c2Maxv`, `c2Minv`, `c2Clampv` | random pairs/triples, incl. equal components and `lo > hi` (inverted clamp box) | `cfg_minmax_clamp` | [x] |
-| 5 | `c2Len`, `c2Norm` | random vectors: unit-scale, `1e-30` (underflow of `x*x`), `1e20` (overflow of `x*x`) | `cfg_len_norm` | [x] |
-| 6 | `c2RotIdentity`, `c2xIdentity` | no-arg constructors (constant fold check) | `cfg_identities` | [x] |
-| 7 | `c2Mulrv`, `c2MulrvT`, `c2Mulxv` | rotor × vector: identity, normalised angle, **unnormalised** rotor, `(0,0)` rotor; transform with/without translation | `cfg_rotations` | [x] |
-| 8 | `c2BBVerts` | valid AABB (min<max), zero-area (min==max), random bounds; all 4 output verts compared | `cfg_bbverts` | [x] |
-| 9 | `c2MakeProxy` | type=CIRCLE × random circle → radius/count/verts[0] | `cfg_makeproxy_circle` | [x] |
-| 10 | `c2MakeProxy` | type=AABB × random AABB → radius=0, count=4, 4 verts | `cfg_makeproxy_aabb` | [x] |
-| 11 | `c2MakeProxy` | type=CAPSULE × random capsule → radius, count=2, verts[0..1] | `cfg_makeproxy_capsule` | [x] |
-| 12 | `c2Support` | count=1 (single vert) × random directions | `cfg_support_count1` | [x] |
-| 13 | `c2Support` | count=2 (capsule proxy) × random directions incl. perpendicular ties | `cfg_support_count2` | [x] |
-| 14 | `c2Support` | count=4 (AABB proxy) × random directions, all 4 quadrants + axis-aligned ties | `cfg_support_count4` | [x] |
-| 15 | `c2Support` | count=8 (full proxy) × random verts and directions | `cfg_support_count8` | [x] |
-| 16 | `c2GJKSimplexMetric` | count=1 → 0 | `cfg_metric_count1` | [x] |
-| 17 | `c2GJKSimplexMetric` | count=2 → `c2Len(b.p-a.p)`, random points | `cfg_metric_count2` | [x] |
-| 18 | `c2GJKSimplexMetric` | count=3 → `c2Det2`, random points incl. collinear (area≈0) | `cfg_metric_count3` | [x] |
-| 19 | `c22` | branch `v <= 0` (origin beyond A) — whole simplex mutation compared | `cfg_c22_branches` | [x] |
-| 20 | `c22` | branch `u <= 0` (origin beyond B, `s->a = s->b` copy) | `cfg_c22_branches` | [x] |
-| 21 | `c22` | branch `else` (origin inside the segment, `div = u+v`, count=2) | `cfg_c22_branches` | [x] |
-| 22 | `c22` | fully random simplexes (all branches by chance) — 4 verts + div + count compared bitwise | `cfg_c22_random` | [x] |
-| 23 | `c23` | branch 1 `vAB<=0 && uCA<=0` (vertex A region) | `cfg_c23_random` | [x] |
-| 24 | `c23` | branch 2 `uAB<=0 && vBC<=0` (vertex B region, `a=b`) | `cfg_c23_random` | [x] |
-| 25 | `c23` | branch 3 `uBC<=0 && vCA<=0` (vertex C region, `a=c`) | `cfg_c23_random` | [x] |
-| 26 | `c23` | branch 4 edge AB (`wABC<=0`) | `cfg_c23_random` | [x] |
-| 27 | `c23` | branch 5 edge BC (`uABC<=0`, `a=b; b=c`) | `cfg_c23_random` | [x] |
-| 28 | `c23` | branch 6 edge CA (`vABC<=0`, `b=a; a=c`) | `cfg_c23_random` | [x] |
-| 29 | `c23` | branch 7 interior (count=3, `div = u+v+w`) | `cfg_c23_random` | [x] |
-| 30 | `c23` | negative-orientation (CW) triangles → `area < 0` flips every sign | `cfg_c23_random` | [x] |
-| 31 | `c2D` | count=1 → `-a.p`; count=2 both `c2Det2 > 0` (skew) and `<= 0` (ccw90) branches | `cfg_c2d` | [x] |
-| 32 | `c2L` | count=1 and count=2 × random `div` and `u` weights | `cfg_c2l` | [x] |
-| 33 | `c2Witness` | count=1 / 2 / 3 × random `sA`/`sB`/`u`/`div` | `cfg_witness` | [x] |
-| 34 | `c2GJK` | CIRCLE↔CIRCLE, `use_radius=0`, all ptrs NULL, random separated | `cfg_gjk_matrix` | [x] |
-| 35 | `c2GJK` | CIRCLE↔CIRCLE, `use_radius=1`, all ptrs NULL, random separated + overlapping | `cfg_gjk_matrix` | [x] |
-| 36 | `c2GJK` | CIRCLE↔AABB, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 37 | `c2GJK` | CIRCLE↔CAPSULE, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 38 | `c2GJK` | AABB↔CIRCLE, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 39 | `c2GJK` | AABB↔AABB, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 40 | `c2GJK` | AABB↔CAPSULE, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 41 | `c2GJK` | CAPSULE↔CIRCLE, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 42 | `c2GJK` | CAPSULE↔AABB, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 43 | `c2GJK` | CAPSULE↔CAPSULE, `use_radius` ∈ {0,1} | `cfg_gjk_matrix` | [x] |
-| 44 | `c2GJK` | all 9 type pairs × non-NULL **identity** transforms (must equal the NULL path) | `cfg_gjk_transform_identity` | [x] |
-| 45 | `c2GJK` | all 9 type pairs × non-NULL pure-**translation** transforms on A and B | `cfg_gjk_transform_translate` | [x] |
-| 46 | `c2GJK` | all 9 type pairs × non-NULL pure-**rotation** transforms (normalised rotor) | `cfg_gjk_transform_rotate` | [x] |
-| 47 | `c2GJK` | all 9 type pairs × **rotation + translation** on both A and B | `cfg_gjk_transform_full` | [x] |
-| 48 | `c2GJK` | all 9 type pairs × **unnormalised** rotor (scaling transform) | `cfg_gjk_transform_unnormalised` | [x] |
-| 49 | `c2GJK` | all 9 type pairs × cold cache (`count = 0`, zeroed struct); full cache struct compared after | `cfg_gjk_cache_cold` | [x] |
-| 50 | `c2GJK` | all 9 type pairs × **warm** cache: call twice with the same cache, shapes unchanged | `cfg_gjk_cache_warm_same` | [x] |
-| 51 | `c2GJK` | all 9 type pairs × warm cache reused after the shapes **moved** (metric mismatch path) | `cfg_gjk_cache_warm_moved` | [x] |
-| 52 | `c2GJK` | warm cache carried across a long random walk (10 sequential calls, cache threaded through) | `cfg_gjk_cache_sequence` | [x] |
-| 53 | `c2GJK` | `iterations` non-NULL: iteration count compared for all 9 type pairs | `cfg_gjk_iterations` | [x] |
-| 54 | `c2GJK` | mixed output pointers: `outA` non-NULL / `outB` NULL, and vice versa | `cfg_gjk_mixed_outputs` | [x] |
-| 55 | `c2GJK` | deep overlap → `hit` path (`s.count == 3`, returns `+0.0`) for every type pair | `cfg_gjk_deep_overlap` | [x] |
-| 56 | `c2GJK` | exactly touching shapes (distance == sum of radii) | `cfg_gjk_touching` | [x] |
-| 57 | `c2GJK` | coincident shapes (A == B) for every type pair | `cfg_gjk_coincident` | [x] |
-| 58 | `c2GJK` | degenerate-but-valid shapes: r=0 circle, min==max AABB, a==b capsule (all 9 pairs) | `cfg_gjk_degenerate_shapes` | [x] |
-| 59 | `c2GJK` | huge coordinates (`±1e18`) and tiny coordinates (`±1e-20`) | `cfg_gjk_extreme_scales` | [x] |
-| 60 | `c2AABBtoAABB` | random overlapping / disjoint / edge-touching / nested boxes | `cfg_aabb_to_aabb` | [x] |
-| 61 | `c2AABBtoCapsule` | random AABB × capsule: overlapping, disjoint, capsule crossing a corner, zero-length capsule | `cfg_aabb_to_capsule` | [x] |
-| 62 | `c2CapsuletoCapsule` | random pairs: crossing, parallel, collinear, zero-length | `cfg_capsule_to_capsule` | [x] |
-| 63 | `c2CircletoCircle` | random pairs incl. exact tangency and r=0 | `cfg_circle_to_circle` | [x] |
-| 64 | `c2CircletoAABB` | circle centre inside / outside / on each edge / at each corner of the box | `cfg_circle_to_aabb` | [x] |
-| 65 | `c2CircletoCapsule` | all three `da`/`db` branches: before A, between, past B; plus zero-length capsule | `cfg_circle_to_capsule` | [x] |
-| 66 | `c2Collided` | all 9 valid `typeA` × `typeB` combinations × random shapes (verifies the swapped-argument dispatch at lib.c:593/605/607) | `cfg_collided_matrix` | [x] |
-| 67 | `reverse_collide` | random `(x, y, r)` over the whole interesting box (`x,y ∈ [-160,160]`, `r ∈ [0,60]`) — hits all 8 bitmask values | `cfg_reverse_collide_random` | [x] |
-| 68 | `reverse_collide` | grid sweep of the three fixed shapes' boundaries (circle at (-70,0) r20, AABB [-40,-40]..[-15,-15], capsule (-40,40)-(-20,100) r10) incl. exact-tangency values | `cfg_reverse_collide_grid` | [x] |
+to prove the bit-exact agreement is a property of the translation and not of one
+particular C optimisation level.

@@ -1,37 +1,34 @@
-# Configuration Surface
+# Configuration-Surface Table
 
-Mechanically derived from all externally visible C entry points and each
-option, mode, state, range, pointer, size, target, and allocation branch in
-`../c_src/src/lib.c`.
+Mechanically derived from all externally visible functions in
+`c_src/src/lib.c`, the `switch (mode)` in `charinbuf`, and each data-shape
+branch (`NULL` shapes are tracked in `ERRORS.md`).
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `reset_counter` | arbitrary `int` value, including `INT_MIN`, zero, and `INT_MAX` | [x] |
-| 2 | `increment_counter` | arbitrary counter/value pair whose mathematical sum is representable as `int` | [x] |
-| 3 | `decrement_counter` | arbitrary counter/value pair whose mathematical difference is representable as `int` | [x] |
-| 4 | `multiply_counter` | arbitrary counter/value pair whose mathematical product is representable as `int` | [x] |
-| 5 | counter entry points | mixed reset/increment/decrement/multiply stateful sequences with representable intermediate results | [x] |
-| 6 | `is_string_empty` | valid pointer whose first byte is NUL (empty string) | [x] |
-| 7 | `is_string_empty` | valid pointer whose first byte is non-NUL | [x] |
-| 8 | `find_char_in_buffer` | valid non-null buffer with `size == 0` | [x] |
-| 9 | `find_char_in_buffer` | target occurs within searched bytes; first occurrence at start, middle, or end | [x] |
-| 10 | `find_char_in_buffer` | target absent from searched bytes, including an occurrence just beyond `size` | [x] |
-| 11 | `find_char_in_buffer` | arbitrary byte targets, including NUL and values with the high bit set | [x] |
-| 12 | `create_buffer` | valid empty NUL-terminated string | [x] |
-| 13 | `create_buffer` | valid non-empty NUL-terminated string of varied lengths | [x] |
-| 14 | `validate_uint16_range` | lower boundary `value == 0` | [x] |
-| 15 | `validate_uint16_range` | interior `0 < value < UINT16_MAX` | [x] |
-| 16 | `validate_uint16_range` | upper boundary `value == UINT16_MAX` | [x] |
-| 17 | `apply_operation` | non-null external callback and arbitrary `int` argument | [x] |
-| 18 | `charinbuf` | mode 0 with `value == 0`; `opt1`/`opt2` ignored | [x] |
-| 19 | `charinbuf` | mode 0 with `0 < value < UINT16_MAX`; `opt1`/`opt2` ignored | [x] |
-| 20 | `charinbuf` | mode 0 with `value == UINT16_MAX`; `opt1`/`opt2` ignored | [x] |
-| 21 | `charinbuf` | mode 1; all remaining arguments ignored; fixed empty/non-empty checks | [x] |
-| 22 | `charinbuf` | mode 2 with successful fixed-string allocation; remaining arguments ignored | [x] |
-| 23 | `charinbuf` | mode 3 with reset/increment/multiply/decrement pipeline and representable intermediates | [x] |
-| 24 | `charinbuf` | mode 4 with successful allocation and target present in fixed buffer | [x] |
-| 25 | `charinbuf` | mode 4 with fixed-string allocation failure; initialized result remains `0` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `reset_counter` | arbitrary negative, zero, positive, and `int` boundary value | [x] |
+| 2 | `increment_counter` | counter initialized by `reset_counter`; arbitrary signed base and delta, including machine-boundary/wrapping cases | [x] |
+| 3 | `decrement_counter` | counter initialized by `reset_counter`; arbitrary signed base and delta, including machine-boundary/wrapping cases | [x] |
+| 4 | `multiply_counter` | counter initialized by `reset_counter`; arbitrary signed base and multiplier, including machine-boundary/wrapping cases | [x] |
+| 5 | `apply_operation` + `reset_counter` | non-null operation pointer selects reset; arbitrary signed value | [x] |
+| 6 | `apply_operation` + `increment_counter` | non-null operation pointer selects increment after initialized state | [x] |
+| 7 | `apply_operation` + `decrement_counter` | non-null operation pointer selects decrement after initialized state | [x] |
+| 8 | `apply_operation` + `multiply_counter` | non-null operation pointer selects multiply after initialized state | [x] |
+| 9 | `is_string_empty` | valid pointer to an empty C string (`*str == '\0'`) | [x] |
+| 10 | `is_string_empty` | valid pointer to a non-empty C string (`*str != '\0'`) | [x] |
+| 11 | `find_char_in_buffer` | valid buffer with `size == 0` | [x] |
+| 12 | `find_char_in_buffer` | target occurs inside scanned prefix (start, middle, and final scanned byte; arbitrary byte including NUL/high-bit bytes) | [x] |
+| 13 | `find_char_in_buffer` | target occurs only after the scanned prefix | [x] |
+| 14 | `find_char_in_buffer` | target absent from the scanned prefix | [x] |
+| 15 | `create_buffer` | valid empty C string | [x] |
+| 16 | `create_buffer` | valid non-empty C string of varied lengths/content | [x] |
+| 17 | `validate_uint16_range` | `0 <= value <= UINT16_MAX`, including `0` and `65535` | [x] |
+| 18 | `charinbuf` | mode `0`, valid uint16 value; all `opt1`/`opt2` values are ignored | [x] |
+| 19 | `charinbuf` | mode `1`; fixed empty and non-empty strings; other arguments ignored | [x] |
+| 20 | `charinbuf` | mode `2`; allocation succeeds; other arguments ignored | [x] |
+| 21 | `charinbuf` | mode `3`; reset → increment → multiply → decrement pipeline with arbitrary signed operands, including machine-boundary/wrapping cases | [x] |
+| 22 | `charinbuf` | mode `4`; fixed buffer contains `X` inside `strlen` bytes; other arguments ignored | [x] |
 
-Cargo declares no features, so the complete feature matrix consists of the
-single no-feature configuration (default and `--no-default-features` are
-equivalent).
+Build-time configuration surface: `Cargo.toml` declares no features, and the C
+build has no feature options or conditional-compilation branches. Verification
+is still run once with Cargo defaults and once with `--no-default-features`.

@@ -1,47 +1,26 @@
-# Configuration Surface
+# Configuration surface
 
-The public header declares `driver`; `nm -D` additionally exposes the
-lower-level `print_foo` called by `driver`. There are no runtime options,
-formats, element types, byte-order modes, counts, preprocessor configurations,
-or Cargo features.
+The public header exposes `driver`; `nm -D` additionally exposes the
+lower-level `print_foo`. There are no runtime options, modes, feature flags,
+preprocessor feature branches, variable-length inputs, or alternate formats.
 
-The source mechanically exposes these data-shape axes:
-
-- `foo_t.x` is a 2-bit unsigned field: source values `0..=3` are retained and
-  values `4..=UINT_MAX` are truncated modulo 4.
-- `foo_t.y` is a 3-bit unsigned field: source values `0..=7` are retained and
-  values `8..=UINT_MAX` are truncated modulo 8.
-- `foo_t.b` is a 1-bit C `bool`: `false` and `true`.
-- `foo_t.z` is printed as signed `int`: negative, zero, and positive values,
-  including `INT_MIN` and `INT_MAX`.
-
-Every row exercises both `driver` and `print_foo` directly through each shared
-library. For `print_foo`, the test constructs the ABI layout produced by the C
-compiler, including randomized ignored padding bits.
+For `driver`, C assignment to the 2-bit and 3-bit fields distinguishes values
+that fit from values that are truncated. Those two axes are crossed with both
+Boolean states below. Every row samples `z` across its complete `int32_t`
+domain, including `INT_MIN`, negative values, zero, positive values, and
+`INT_MAX`.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `driver`, `print_foo` | x retained; y retained; b false; z negative | [x] |
-| 2 | `driver`, `print_foo` | x retained; y retained; b false; z zero | [x] |
-| 3 | `driver`, `print_foo` | x retained; y retained; b false; z positive | [x] |
-| 4 | `driver`, `print_foo` | x retained; y retained; b true; z negative | [x] |
-| 5 | `driver`, `print_foo` | x retained; y retained; b true; z zero | [x] |
-| 6 | `driver`, `print_foo` | x retained; y retained; b true; z positive | [x] |
-| 7 | `driver`, `print_foo` | x retained; y truncated; b false; z negative | [x] |
-| 8 | `driver`, `print_foo` | x retained; y truncated; b false; z zero | [x] |
-| 9 | `driver`, `print_foo` | x retained; y truncated; b false; z positive | [x] |
-| 10 | `driver`, `print_foo` | x retained; y truncated; b true; z negative | [x] |
-| 11 | `driver`, `print_foo` | x retained; y truncated; b true; z zero | [x] |
-| 12 | `driver`, `print_foo` | x retained; y truncated; b true; z positive | [x] |
-| 13 | `driver`, `print_foo` | x truncated; y retained; b false; z negative | [x] |
-| 14 | `driver`, `print_foo` | x truncated; y retained; b false; z zero | [x] |
-| 15 | `driver`, `print_foo` | x truncated; y retained; b false; z positive | [x] |
-| 16 | `driver`, `print_foo` | x truncated; y retained; b true; z negative | [x] |
-| 17 | `driver`, `print_foo` | x truncated; y retained; b true; z zero | [x] |
-| 18 | `driver`, `print_foo` | x truncated; y retained; b true; z positive | [x] |
-| 19 | `driver`, `print_foo` | x truncated; y truncated; b false; z negative | [x] |
-| 20 | `driver`, `print_foo` | x truncated; y truncated; b false; z zero | [x] |
-| 21 | `driver`, `print_foo` | x truncated; y truncated; b false; z positive | [x] |
-| 22 | `driver`, `print_foo` | x truncated; y truncated; b true; z negative | [x] |
-| 23 | `driver`, `print_foo` | x truncated; y truncated; b true; z zero | [x] |
-| 24 | `driver`, `print_foo` | x truncated; y truncated; b true; z positive | [x] |
+| 1 | `driver` | `x` fits 2 bits (`0..=3`); `y` fits 3 bits (`0..=7`); `b=false`; randomized full-domain `z` | [x] |
+| 2 | `driver` | `x` fits 2 bits (`0..=3`); `y` fits 3 bits (`0..=7`); `b=true`; randomized full-domain `z` | [x] |
+| 3 | `driver` | `x` fits 2 bits (`0..=3`); `y` truncates (`8..=UINT_MAX`); `b=false`; randomized full-domain `z` | [x] |
+| 4 | `driver` | `x` fits 2 bits (`0..=3`); `y` truncates (`8..=UINT_MAX`); `b=true`; randomized full-domain `z` | [x] |
+| 5 | `driver` | `x` truncates (`4..=UINT_MAX`); `y` fits 3 bits (`0..=7`); `b=false`; randomized full-domain `z` | [x] |
+| 6 | `driver` | `x` truncates (`4..=UINT_MAX`); `y` fits 3 bits (`0..=7`); `b=true`; randomized full-domain `z` | [x] |
+| 7 | `driver` | `x` truncates (`4..=UINT_MAX`); `y` truncates (`8..=UINT_MAX`); `b=false`; randomized full-domain `z` | [x] |
+| 8 | `driver` | `x` truncates (`4..=UINT_MAX`); `y` truncates (`8..=UINT_MAX`); `b=true`; randomized full-domain `z` | [x] |
+| 9 | `print_foo` | direct low-level call; all 2-bit `x`, 3-bit `y`, and 1-bit `b` values; randomized unused storage bits and full-domain `z` | [x] |
+
+The crate declares no Cargo features, so the only feature combination is the
+default/no-feature build.

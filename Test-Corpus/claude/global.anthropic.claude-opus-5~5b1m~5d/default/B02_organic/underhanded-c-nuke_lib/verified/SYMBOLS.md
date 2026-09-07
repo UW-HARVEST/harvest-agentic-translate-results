@@ -1,107 +1,126 @@
-# SYMBOLS.md — exported-surface parity
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Reference C shared object, built exactly as the task prescribes:
+## Source inventory (mechanical)
 
-```
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-SppITj.so   (project name == parent dir name)
-```
-
-Rust shared object:
+`c_src/CMakeLists.txt` builds ONE shared library from exactly two translation
+units:
 
 ```
-cd translation && cargo build --release
-# -> translation/target/release/libunderhanded_c_nuke_lib.so
+add_library(${project_name} SHARED src/match.c src/spectral_contrast.c)
+target_link_libraries(${project_name} m)
 ```
 
-> Note: `translation/Cargo.toml` originally declared `[lib] name =
-> "underhanded-c-nuke_lib"`, which Cargo rejects (`library target names cannot
-> contain hyphens`) — the crate did not even parse. Renamed to
-> `underhanded_c_nuke_lib` (Cargo's own hyphen→underscore normalisation) so the
-> crate builds. That was the only `cargo check` error.
+`c_src/include/match.h` (the only public header, 5 lines) declares:
 
-## `nm -D --defined-only` — C
+```c
+#define N_SMOOTH 16              /* not a symbol — a macro */
+typedef double float_t;          /* not a symbol — a typedef */
+
+int    match(float_t *test, float_t *reference, int bins, double threshold);
+double spectral_contrast(float_t *a, float_t *b, int length);
+```
+
+Every other function in the two `.c` files is declared `static`, so it is a
+local symbol (`t`, lowercase) and is NOT part of the exported ABI:
+
+| C function | file | linkage | exported? |
+|---|---|---|---|
+| `total` | `src/match.c` | `static` | no (local `t`) |
+| `smoothen` | `src/match.c` | `static` | no (local `t`) |
+| `differentiate` | `src/match.c` | `static` | no (local `t`) |
+| `preprocess` | `src/match.c` | `static` | no (local `t`) |
+| `match` | `src/match.c` | external | **YES** |
+| `dot_product` | `src/spectral_contrast.c` | `static` | no (local `t`) |
+| `normalize` | `src/spectral_contrast.c` | `static` | no (local `t`) |
+| `spectral_contrast` | `src/spectral_contrast.c` | external | **YES** |
+
+No macro-generated symbols exist (no symbol-generating macros anywhere in the
+sources). There is no binary/driver target in `CMakeLists.txt` — library only,
+so there is no stdout comparison to make.
+
+## `nm -D` on the C `.so`
+
+`c_src/build/libharvest-work-cvRa1v.so`, defined non-weak symbols:
 
 ```
 0000000000001322 T match
 00000000000015cd T spectral_contrast
 ```
 
-## `nm -D --defined-only` — Rust
+Undefined (imported from libc/libm), expected and irrelevant to parity:
 
 ```
-0000000000012e70 T match
-0000000000013080 T spectral_contrast
+U memcpy@GLIBC_2.14
+U sqrt@GLIBC_2.2.5
+w _ITM_deregisterTMCloneTable
+w _ITM_registerTMCloneTable
+w __cxa_finalize@GLIBC_2.2.5
+w __gmon_start__
 ```
+
+## `nm -D` on the Rust `.so`
+
+`translation/target/release/libunderhanded_c_nuke_lib.so`, defined non-weak:
+
+```
+00000000000129b0 T match
+0000000000012bc0 T spectral_contrast
+```
+
+Undefined (imported) in the Rust `.so`, all of them platform-runtime plumbing
+rather than API surface, exactly analogous to the C `.so`'s `memcpy@GLIBC_2.14`
+and `sqrt@GLIBC_2.2.5`:
+
+* `@GLIBC_*` — libc (`memcpy`, `malloc`, `write`, …)
+* `@GCC_*` — libgcc's unwinder (`_Unwind_Resume`, `_Unwind_GetIP`, …), pulled in
+  by the Rust standard library
+* weak: `__cxa_finalize`, `__cxa_thread_atexit_impl`, `__gmon_start__`,
+  `gettid`, `statx`, `_ITM_registerTMCloneTable`,
+  `_ITM_deregisterTMCloneTable`
+
+After filtering those, the Rust `.so` has **0 unresolved non-libc symbols**.
+`run_all.sh` step 4 performs this check mechanically for every feature
+combination.
 
 ## Parity table
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `match`             | `T` | `T` | `int match(float_t *test, float_t *reference, int bins, double threshold)`. Exported from Rust as `#[unsafe(no_mangle)] pub unsafe extern "C" fn r#match(*mut f64, *mut f64, c_int, f64) -> c_int`. |
-| 2 | `spectral_contrast` | `T` | `T` | `double spectral_contrast(float_t *a, float_t *b, int length)`. **`float_t` here is `float`, not `double`** — see below. Exported from Rust as `#[unsafe(no_mangle)] pub unsafe extern "C" fn spectral_contrast(*mut f32, *mut f32, c_int) -> f64`. |
+| C symbol | type | present in Rust `.so` | Rust item | notes |
+|---|---|---|---|---|
+| `match` | `T` | **yes** | `#[unsafe(no_mangle)] pub unsafe extern "C" fn r#match` | `match` is a Rust keyword, so `r#match` is used; `no_mangle` still emits the plain name `match` |
+| `spectral_contrast` | `T` | **yes** | `#[unsafe(no_mangle)] pub unsafe extern "C" fn spectral_contrast` | |
 
-Symbol diff (C-exported minus Rust-exported): **empty**. Nothing is missing, and
-the Rust `.so` exports no extra `T` symbols of its own.
-
-## Undefined (imported) symbols
-
-| symbol | C | Rust | ok? |
-|--------|---|------|-----|
-| `memcpy@GLIBC_2.14`     | `U` | inlined (`ptr::copy_nonoverlapping`) | yes — libc |
-| `sqrt@GLIBC_2.2.5`      | `U` | `sqrtsd` inlined by LLVM              | yes — libc/intrinsic |
-| `__cxa_finalize`, `__gmon_start__`, `_ITM_*registerTMCloneTable` | `w` | crt/runtime provided | yes — toolchain glue, not API |
-
-`nm -D -u` on the Rust `.so` lists only libc/`libgcc`/runtime symbols; there are
-**0 missing or undefined non-libc symbols**.
-
-## Local (non-exported) symbols — intentionally NOT in `nm -D`
-
-All of these are `static` in the C and therefore appear as lowercase `t` in
-`nm` (not in `nm -D`). They are translated as private Rust `fn`s and must NOT
-be exported:
-
-| C symbol | file | Rust counterpart |
-|----------|------|------------------|
-| `total`         | `src/match.c`             | `unsafe fn total` |
-| `smoothen`      | `src/match.c`             | `unsafe fn smoothen` |
-| `differentiate` | `src/match.c`             | `unsafe fn differentiate` |
-| `preprocess`    | `src/match.c`             | `unsafe fn preprocess` |
-| `dot_product`   | `src/spectral_contrast.c` | `unsafe fn dot_product` |
-| `normalize`     | `src/spectral_contrast.c` | `unsafe fn normalize` |
-
-Every C source file in `c_src/src` (`match.c`, `spectral_contrast.c`) and every
-function in them is translated; no module was skipped, and no symbol is stubbed.
-
-## The `float_t` split — why the two entry points disagree on element size
-
-`c_src/include/match.h`:
-
-```c
-#define N_SMOOTH 16
-typedef double float_t;
-int match(float_t *test, float_t *reference, int bins, double threshold);
-double spectral_contrast(float_t *a, float_t *b, int length);
-```
-
-* `match.c` includes `"match.h"` → `float_t` == `double` (stride 8).
-* `spectral_contrast.c` includes **only** `<math.h>` and never `match.h`.
-  glibc's `<math.h>` defines its own `float_t`; on x86-64
-  `__FLT_EVAL_METHOD__ == 0`, so `float_t` == `float` (stride 4).
-
-Confirmed from the disassembly of the built `.so`:
+## Diff
 
 ```
-dot_product:  lea 0x0(,%rax,4),%rdx    ; 4-byte stride
-              movss (%rax),%xmm1       ; f32 load
-              mulss %xmm1,%xmm0        ; f32 multiply
-              cvtss2sd %xmm0,%xmm0     ; widen to f64
-total:        lea 0x0(,%rax,8),%rdx    ; 8-byte stride
-              movsd (%rax),%xmm0       ; f64 load
+$ comm -23 <(c_defined_T) <(rust_defined_T)      # in C, missing from Rust
+<empty>
 ```
 
-So the true ABI of the exported `spectral_contrast` is
-`double spectral_contrast(float *, float *, int)`, and `match` — which passes
-its `double` VLAs to it — makes it reinterpret the low half of those buffers as
-`float`s. Both facts are reproduced verbatim by the Rust.
+**0 missing symbols. 0 undefined non-libc symbols in the Rust `.so`.**
+No translation gaps: both `.c` files are fully translated (`src/lib.rs`
+contains Rust bodies for all 8 C functions, including the 6 `static` helpers,
+which are kept private exactly as in C).
+
+## Cargo build note
+
+`translation/Cargo.toml` originally declared `name = "underhanded-c-nuke_lib"`
+for the `[lib]` target, which Cargo rejects (`library target names cannot
+contain hyphens`) — the crate did not even parse. Renamed to
+`underhanded_c_nuke_lib`; the produced object is
+`libunderhanded_c_nuke_lib.so`. `libloading = "0.8"` added to
+`[dev-dependencies]`.
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` table**, and `src/lib.rs`
+contains **no `#[cfg(feature = ...)]`** attributes:
+
+```
+$ grep -c 'cfg(feature' src/lib.rs   -> 0
+$ grep -c '^\[features\]' Cargo.toml -> 0
+```
+
+The C likewise has no `#ifdef`-selected code (`grep -c '#if' c_src/src/*.c
+c_src/include/*.h` -> 0). Therefore the only feature combination is the
+default one, and `--no-default-features` is equivalent to it. Both are still
+exercised (see `run_all.sh`) to satisfy the Phase D gate.

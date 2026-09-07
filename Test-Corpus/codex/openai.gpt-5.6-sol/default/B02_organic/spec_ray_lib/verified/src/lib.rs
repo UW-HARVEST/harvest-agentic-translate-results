@@ -355,7 +355,7 @@ pub unsafe extern "C" fn c2RaytoCapsule(a: C2Ray, b: C2Capsule, out: *mut C2Rayc
     0
 }
 
-unsafe extern "C" fn c2_cast_ray_valid(
+unsafe extern "C" fn c2_cast_ray_impl(
     a: C2Ray,
     b: *const c_void,
     type_b: c_int,
@@ -374,7 +374,7 @@ unsafe extern "C" fn c2_cast_ray_valid(
             // SAFETY: The pointer contract and layout are identical to the C function.
             unsafe { c2RaytoCapsule(a, *(b.cast::<C2Capsule>()), out) }
         }
-        _ => unreachable!(),
+        _ => 0,
     }
 }
 
@@ -387,15 +387,13 @@ pub unsafe extern "C" fn c2CastRay(
     _type_b: c_int,
     _out: *mut C2Raycast,
 ) -> c_int {
-    // The C function has no default switch arm. Its x86-64 object returns the
-    // incoming EAX value for an invalid tag, so preserve that register exactly.
     core::arch::naked_asm!(
         "cmp esi, 2",
         "ja 2f",
-        "jmp {valid}",
+        "jmp {implementation}",
         "2:",
         "ret",
-        valid = sym c2_cast_ray_valid,
+        implementation = sym c2_cast_ray_impl,
     );
 }
 
@@ -407,12 +405,7 @@ pub unsafe extern "C" fn c2CastRay(
     type_b: c_int,
     out: *mut C2Raycast,
 ) -> c_int {
-    if (C2_TYPE_CIRCLE..=C2_TYPE_CAPSULE).contains(&type_b) {
-        // SAFETY: The valid discriminator determines the pointed-to shape.
-        unsafe { c2_cast_ray_valid(a, b, type_b, out) }
-    } else {
-        0
-    }
+    unsafe { c2_cast_ray_impl(a, b, type_b, out) }
 }
 
 #[unsafe(no_mangle)]

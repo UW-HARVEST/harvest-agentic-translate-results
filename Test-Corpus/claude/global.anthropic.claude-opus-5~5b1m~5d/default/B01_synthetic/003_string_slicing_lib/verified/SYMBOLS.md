@@ -1,71 +1,66 @@
-# SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A: public symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Source of truth: `nm -D --defined-only` on the C shared library built from
+`c_src/` (`libString_Slice.so`), compared against the Rust `cdylib`
+(`translation/target/release/libString_Slice.so`).
+
+## C `.so` translation units
+
+The whole library is a single translation unit:
+
+| C source file | translated to | status |
+|---|---|---|
+| `c_src/src/slicing.c` | `translation/src/lib.rs` | fully translated |
+
+There are no untranslated C source files, so no module is missing and no
+symbol needed to be newly translated for this phase.
+
+## Exported (defined, dynamic) symbols
+
+Commands used:
 
 ```
-C   : c_src/build/libString_Slice.so          (cmake, -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
-Rust: translation/target/release/libString_Slice.so   (cargo build --release, crate-type = cdylib)
+nm -D --defined-only c_src/build/libString_Slice.so
+nm -D --defined-only translation/target/release/libString_Slice.so
 ```
 
-## C source inventory (completeness check)
+| # | symbol | declared in | C `.so` | Rust `.so` | notes |
+|---|--------|-------------|---------|-----------|-------|
+| 1 | `slice` | `c_src/include/slicing.h` | `T slice` | `T slice` | `int slice(char *mystr, int *start_ptr, int *stop_ptr)`; exported from Rust via `#[unsafe(no_mangle)] pub unsafe extern "C" fn slice` |
 
-The whole library is two files; every function defined in them is accounted for:
+### Symbol diff
 
-| C file | functions defined | translated in Rust? |
-|--------|-------------------|---------------------|
-| `c_src/src/slicing.c` | `slice` | yes — `translation/src/lib.rs::slice` |
-| `c_src/include/slicing.h` | (declaration only: `slice`) | n/a |
-
-No C module is missing from the translation; there is nothing to stub and
-nothing left to translate.
-
-## Defined dynamic symbols (`nm -D --defined-only`)
-
-| symbol | C `.so` | Rust `.so` | status |
-|--------|---------|------------|--------|
-| `slice` | `T` | `T` | present in both — OK |
-
-Symbol diff (`comm -3` of the two sorted defined-symbol lists): **empty**.
-
-## Undefined dynamic symbols (`nm -D -u`)
-
-C `.so`:
-
-| symbol | kind |
-|--------|------|
-| `_ITM_deregisterTMCloneTable` | weak, toolchain |
-| `_ITM_registerTMCloneTable` | weak, toolchain |
-| `__cxa_finalize@GLIBC_2.2.5` | weak, libc |
-| `__gmon_start__` | weak, toolchain |
-| `printf@GLIBC_2.2.5` | libc |
-| `puts@GLIBC_2.2.5` | libc (GCC rewrites `printf("literal\n")` → `puts("literal")`) |
-| `strlen@GLIBC_2.2.5` | libc |
-
-Rust `.so` adds only libc / libgcc-unwinder / Rust-runtime imports
-(`_Unwind_*`, `malloc`, `free`, `memcpy`, `abort`, `write`, `dl_iterate_phdr`,
-`pthread_key_*`, `stat64`, …). It imports the same three functional libc
-symbols the C object needs (`printf`, `strlen`, and `puts` via the Rust
-runtime), plus standard-library support symbols.
-
-**0 missing symbols, 0 undefined non-libc/non-runtime symbols in the Rust
-`.so`.**
-
-## Reproduce
-
-```sh
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-diff <(nm -D --defined-only ../c_src/build/libString_Slice.so | awk '{print $NF}' | sort) \
-     <(nm -D --defined-only target/release/libString_Slice.so | awk '{print $NF}' | sort)
+```
+$ diff <(nm -D --defined-only c_src/build/libString_Slice.so   | awk '{print $NF}' | sort) \
+       <(nm -D --defined-only translation/.../libString_Slice.so | awk '{print $NF}' | sort)
+(empty)
 ```
 
-`tests/symbol_parity.rs` performs this diff automatically as part of the test
-suite (Phase D).
+**Result: 0 missing symbols.** Every symbol the C `.so` exports is exported by
+the Rust `.so` under the exact same name.
+
+Note: `char *end;` in `slice()` is a declared-but-unused local in the C source
+and produces no symbol; the Rust translation correctly omits it.
+
+## Undefined (imported) symbols
+
+The Rust `.so` must not depend on any non-libc symbol that the C `.so` does not.
+
+| symbol | C `.so` | Rust `.so` | libc? |
+|--------|---------|-----------|-------|
+| `printf` | yes | yes | yes (`libc.so.6`) |
+| `strlen` | yes | yes | yes (`libc.so.6`) |
+| `__stack_chk_fail` / `_ITM_*` / `__gmon_start__` / `__cxa_*` | toolchain glue | toolchain glue | yes |
+
+**Result: 0 undefined non-libc symbols in the Rust `.so`.**
+
+The Rust translation deliberately calls the platform `printf` (rather than
+Rust's `std::io::stdout`) so that stdout buffering and the exact emitted bytes
+are identical to the C library's.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-build configurations are the default (empty) feature set and
-`--no-default-features`, which are identical. Both are exercised by
-`./run_all.sh`.
+`translation/Cargo.toml` declares **no `[features]` table**, so there is exactly
+one build configuration (the default). `--no-default-features` and any
+`--features <combo>` therefore resolve to the same code, and the symbol table
+above is the complete surface for every configuration.

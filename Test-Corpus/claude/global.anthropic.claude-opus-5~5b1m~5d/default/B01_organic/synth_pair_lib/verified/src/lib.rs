@@ -26,25 +26,18 @@ pub type mp3d_sample_t = i16;
 /// }
 /// ```
 ///
-/// Notes on faithfulness (all confirmed against the GCC output for
-/// `c_src/src/lib.c`, see `SYMBOLS.md`):
+/// Notes on faithfulness:
 /// * The literals `32766.5` / `-32767.5` are `double` in C, so `sample` is
 ///   promoted to `double` for the comparisons. Both constants are exactly
-///   representable in `f32` too (GCC in fact folds both comparisons to `comiss`
-///   against `f32` constants), so the outcome is identical; the `as f64` here
-///   mirrors the abstract C promotion.
-/// * Both comparisons are false for NaN (`comiss` sets CF when unordered, and
-///   `jb` is taken), so a NaN `sample` reaches the conversion below. C calls
-///   that undefined; the emitted `cvttss2si` yields `0x80000000`, whose low 16
-///   bits are `0`. Rust's saturating `as i32` maps NaN to `0`, which narrows to
-///   the same `0`.
-/// * `sample + .5f` is a single-precision addition (`FLT_EVAL_METHOD == 0`),
-///   then converted to `int16_t` by truncation toward zero. The two guards bound
-///   the sum inside `(-32767.0, 32767.0)`, so the narrowing always fits; the
-///   intermediate `as i32` mirrors GCC's `cvttss2si %xmm0,%eax; mov %ax,...`.
-/// * `s -= (s < 0);` subtracts exactly 1 when `s` is negative (C `bool` -> `int`)
-///   and is evaluated in `int` before being truncated back to 16 bits, i.e. it
-///   wraps rather than trapping.
+///   representable in `f32` as well, so the comparison outcome is identical,
+///   but we perform it in `f64` to mirror the C promotion exactly.
+/// * `sample + .5f` is a single-precision addition (FLT_EVAL_METHOD == 0 on the
+///   target ABI), then converted to `int16_t` by truncation toward zero. The two
+///   guards above bound the sum strictly inside (-32767.0, 32767.0), so the
+///   truncation always fits in `int16_t` and no undefined/out-of-range
+///   conversion can occur; the intermediate `as i32` mirrors the C compiler's
+///   float -> int -> narrow sequence.
+/// * `s -= (s < 0);` subtracts exactly 1 when `s` is negative (C `bool` -> `int`).
 #[inline]
 fn mp3d_scale_pcm(sample: f32) -> i16 {
     if sample as f64 >= 32766.5 {
@@ -53,10 +46,9 @@ fn mp3d_scale_pcm(sample: f32) -> i16 {
     if sample as f64 <= -32767.5 {
         return -32768i16;
     }
-    let s: i16 = (sample + 0.5f32) as i32 as i16;
-    // The guards make `s == i16::MIN` unreachable, but use wrapping arithmetic
-    // so a debug-mode overflow panic can never diverge from C.
-    s.wrapping_sub((s < 0) as i16)
+    let mut s: i16 = (sample + 0.5f32) as i32 as i16;
+    s -= (s < 0) as i16;
+    s
 }
 
 /// Translation of the C `void synth_pair(mp3d_sample_t *pcm, int nch, const float *z)`.
@@ -67,9 +59,8 @@ fn mp3d_scale_pcm(sample: f32) -> i16 {
 /// # Safety
 ///
 /// Mirrors the C contract verbatim: `pcm` must be writable at indices `0` and
-/// `16 * nch`, and `z` must be readable at `z[k * 64]` for `k in 0..=14` and at
-/// `z[2 + k * 64]` for even `k in 0..=14` (i.e. `z[0 ..= 898]`, 899 floats).
-/// No validation is performed, exactly as in the C.
+/// `16 * nch`, and `z` must be readable at indices `k * 64` and `2 + k * 64`
+/// for `k` in `0..=14`. No validation is performed, exactly as in the C.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synth_pair(pcm: *mut mp3d_sample_t, nch: c_int, z: *const f32) {
     // Read helper mirroring C's `z[i]` (pointer arithmetic in units of float).
@@ -123,13 +114,7 @@ pub unsafe extern "C" fn synth_pair(pcm: *mut mp3d_sample_t, nch: c_int, z: *con
     a += unsafe { g(z, 0 * 64) } * -5f32;
 
     // pcm[16 * nch] = mp3d_scale_pcm(a);
-    //
-    // `16 * nch` is an `int` multiplication in C, and only the 32-bit result is
-    // sign-extended to a pointer offset (GCC emits `shl $0x4,%eax; cltq`).
-    // Reproduce the wrap-around explicitly so the index matches for every `int`
-    // value of `nch`.
-    let idx = 16i32.wrapping_mul(nch) as isize;
     unsafe {
-        *pcm.wrapping_offset(idx) = mp3d_scale_pcm(a);
+        *pcm.offset(16isize * nch as isize) = mp3d_scale_pcm(a);
     }
 }

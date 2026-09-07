@@ -1,111 +1,124 @@
-# CONFIGS.md — Phase A: configuration-surface table
+# CONFIGS.md — Phase B configuration-surface table
+
+Derived **mechanically** from the axes the C code actually branches on.
 
 ## Mechanical derivation of the axes
 
-### Public entry points (complete set)
+Public API surface (`c_src/include/driver.h`), complete:
 
-`c_src/include/driver.h` declares exactly one entity, and `nm -D` on the C
-`.so` confirms exactly one exported symbol:
-
-| entry point | signature | level |
-|---|---|---|
-| `driver` | `void driver(int x)` | this *is* the lowest level; there is no
-convenience wrapper and nothing beneath it. The whole public API is one
-function. |
-
-There are no `_init`/`_create`/`_destroy` functions, no context/handle struct,
-no setters and no one-shot wrapper over a streaming API — so "exercise the
-low-level entry points, not just the wrappers" collapses to "call `driver`".
-
-### Runtime options / modes / flags
-
-```sh
-grep -nE 'if *\(|switch|#if|#ifdef|extern|static|global|flag|mode|option' \
-    c_src/src/driver.c c_src/include/driver.h
+```c
+void driver(int x);
 ```
 
-Non-comment hits: the `for` loop guard, and the `#ifndef DRIVER_H_` include
-guard. Therefore:
+There is exactly **one** public entry point and it is simultaneously the
+lowest-level one — there is no convenience wrapper layered over a lower API, so
+"exercise the low-level entry points, not just the wrappers" is satisfied by
+calling `driver` itself.
 
-* runtime options / flags / modes: **0**
-* `#ifdef` compile-time configuration: **0** (only the header include guard)
-* mutable global / `static` state: **0**
-* byte-order, element-type or width selectors: **0**
+Runtime options / modes / flags: **none**. Grep found no global/static state, no
+setters, no option struct, no `#ifdef`-gated behaviour, no environment reads.
+The only compile-time preprocessor directives are the `#include` and the header
+include guard.
 
-The library has **exactly one axis: the value of the single `int` parameter
-`x`**, plus one derived axis the code branches on implicitly — the state of the
-internal `j` accumulator, which is `2*i` and is the only value that can leave
-`int` range.
+Body, complete:
 
-### Input shapes the code actually distinguishes
+```c
+for (int i = 0, j = 0; i < x; i++, j += 2) {
+    printf("%d %d\n", i, j);
+}
+```
 
-From `for (int i = 0, j = 0; i < x; i++, j += 2)` and
-`printf("%d %d\n", i, j)`, the distinct shapes are:
+Axes the code actually distinguishes:
 
-1. **iteration count**: zero (`x <= 0`, see `ERRORS.md`), exactly one, few,
-   many — the loop body count is the only structural variation;
-2. **decimal width of `i`**: `printf("%d")` emits a different number of bytes
-   at each power-of-ten boundary (1, 2, 3, … digits), so field width is a real
-   output-shape axis;
-3. **decimal width of `j = 2*i`**: crosses its power-of-ten boundaries at
-   *different* `i` than `i` does (e.g. `i=5 → j=10`), so the two widths are
-   independent axes and their combinations must be crossed;
-4. **`j` overflow**: `j` exceeds `INT_MAX` once `i >= 2^30 = 1073741824`. This
-   requires `x > 2^30`, i.e. >1e9 `printf` calls and ~21.9 GB of output. It is
-   nonetheless **reachable in ~92 s per library**, so row C11 is executed for
-   real (streamed and hashed rather than buffered) instead of being assumed;
-5. **stdout stream state**: the C writes through the C runtime's `stdout`
-   `FILE*`, so buffering / flush interleaving is observable and is part of the
-   contract. Both `.so`s import the same `printf@GLIBC_2.2.5`, and the tests
-   assert on the flushed byte stream.
+| axis | why it is an axis | values that matter |
+|------|-------------------|--------------------|
+| sign of `x` | `i < x` with `i` starting at 0 decides zero vs. non-zero iterations | negative, zero, positive |
+| magnitude of `x` | number of `printf` calls; also determines the **decimal width** of `i` and `j` in `%d`, which is the only formatting variation the code can produce | 1, 2..9, 10..99, ... up to 7+ digits |
+| digit-width skew between `i` and `j` | `j == 2*i`, so `j` gains a decimal digit before `i` does; crossing `j`'s power-of-ten boundaries is a distinct output shape | `x` near 5, 50, 500, 5000, ... |
+| `stdout` buffer boundary | `printf` to a fully-buffered stream flushes on 4096-byte boundaries; output must be identical regardless of where lines straddle the boundary | `x` chosen so total bytes straddle 4 KiB / 64 KiB |
+| signed overflow of `j` | `j += 2` overflows `int` at `i == 2^30` (UB in C) | `x > 2^30` |
+| call sequencing / residual state | the function has no statics, so repeated and interleaved C/Rust calls must be independent | repeat, alternate C→Rust→C |
+
+There are no other axes: no input buffers, no element types, no widths, no byte
+order, no counts, no formats. The cross-product below is the full set of
+combinations the C treats differently, pruned to those distinctions.
 
 ## Configuration-surface table
 
-Each row is a meaningful combination of the axes above. Every row is exercised
-against **both** `.so` exports with many randomized inputs drawn from a
-fixed-seed SplitMix64 PRNG (seed `0x5DEE_CE66_D0C0_FFEE`, reproducible), not a
-single hand-picked value.
+Every row is exercised with **many randomized inputs** drawn from a fixed-seed
+xorshift PRNG (seed `0x5EED_1234_ABCD_F00D`), not a single hand-picked value.
+"C-vs-Rust byte-identical stdout" is the assertion in every row.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|-------------------------------------------|------|-----|
-| C1 | `driver` | `x == 1` — exactly one iteration; single-digit `i` and `j` (`0 0`) | `differential::cfg_c1_single` | [x] |
-| C2 | `driver` | `x == 2` — smallest "many"; boundary where `j` first becomes non-zero | `differential::cfg_c2_two` | [x] |
-| C3 | `driver` | every `x` in `1..=16` exhaustively — single-digit `i`, `j` crossing 1→2 digits at `i=5` | `differential::cfg_c3_small_exhaustive` | [x] |
-| C4 | `driver` | `x` randomized in `1..=1000`, 200 draws — `i` 1–4 digits, `j` 1–4 digits, widths desynchronized | `differential::cfg_c4_random_small` | [x] |
-| C5 | `driver` | `x` randomized in `1..=100_000`, 25 draws — `i` up to 5 digits, `j` up to 6 | `differential::cfg_c5_random_medium` | [x] |
-| C6 | `driver` | `x` at every decimal-width boundary of `i`: `1, 9, 10, 11, 99, 100, 101, 999, 1000, 1001, 9999, 10000, 10001, 99999, 100000, 100001` | `differential::cfg_c6_i_width_boundaries` | [x] |
-| C7 | `driver` | `x` at every decimal-width boundary of `j = 2*i`: `5, 6, 7, 50, 51, 52, 500, 501, 502, 5000, 5001, 50000, 50001` | `differential::cfg_c7_j_width_boundaries` | [x] |
-| C8 | `driver` | large single call, `x == 1_000_000` — repeated stdout buffer refills in the shared `FILE*`; line count asserted | `differential::cfg_c8_large_one_million` | [x] |
-| C9 | `driver` | 40 randomized sequences of 8 calls each, valid counts interleaved with rejecting ones — statelessness plus stream concatenation | `differential::cfg_c9_interleaved_sequence` | [x] |
-| C10 | `driver` | `x == INT_MAX` — the maximum valid count (~46 GB if run to completion). Started in a forked child per library, compared over an identical 64 MiB prefix, then both killed at the same offset | `heavy::cfg_c10_int_max_prefix` (+ `cfg_c10_prefix_machinery_selfcheck`) | [x] |
-| C11 | `driver` | `j` signed-overflow regime: `x == 2^30 + 4096`, so the last 4096 lines have `j < 0` starting at `j == -2147483648`. 21.9 GB streamed and FNV-hashed per library; byte count additionally asserted against a closed-form two's-complement-wrapping model *and* shown to differ from the non-wrapping model, proving the boundary was really crossed | `heavy::cfg_c11_j_signed_overflow` | [x] |
-| C12 | `driver` | output to a pipe vs. a regular file — libc picks different default buffering. Fixed values, 40 randomized values, and a 40 000-iteration payload that overruns the 64 KiB pipe capacity so the writer blocks and resumes mid-stream | `differential::cfg_c12_pipe_and_file_buffering` | [x] |
+| #   | entry point(s) | configuration (options set + input shape) | [x] |
+|-----|----------------|--------------------------------------------|-----|
+| C1  | `driver` | `x` = every value in `-8..=64` exhaustively (empty / one / few / many, plus the whole sign transition) | [x] |
+| C2  | `driver` | `x` randomized in `1..=9` — single-digit `i`, `j` crosses from 1 to 2 digits at `i>=5` | [x] |
+| C3  | `driver` | `x` randomized in `10..=99` — 2-digit `i`, `j` reaches 3 digits | [x] |
+| C4  | `driver` | `x` randomized in `100..=999` — 3-digit `i`, `j` reaches 4 digits | [x] |
+| C5  | `driver` | `x` randomized in `1_000..=9_999` — 4-digit `i`, `j` reaches 5 digits | [x] |
+| C6  | `driver` | `x` randomized in `10_000..=99_999` — 5-digit `i`, `j` reaches 6 digits | [x] |
+| C7  | `driver` | `x` randomized in `100_000..=999_999` — 6-digit `i`, `j` reaches 7 digits | [x] |
+| C8  | `driver` | `x` randomized in `1_000_000..=4_000_000` — 7-digit `i`, `j` reaches 7 digits; output > 40 MiB, many buffer flushes | [x] |
+| C9  | `driver` | `x = 5_000_000` — digest pipeline cross-checked against an independently computed model digest (guards the C9/C13 method itself) | [x] |
+| C9b | `driver` | `x = 2^30` (`1073741824`) — `j` reaches `2147483646`, the largest value that still fits, **without** overflowing. 21,955,653,463 bytes streamed per side; digests equal (`0x9f861b5ee8f98b2d`) | [x] |
+| C9c | `driver` | `x = 2^30 + 5` — the **signed-overflow** region: `j` wraps `2147483646 → -2147483648` and the emitted lines gain a `-`. 21,955,653,578 bytes per side; digests equal (`0xa6371096caa70656`); final line `1073741828 -2147483640` on both | [x] |
+| C10 | `driver` | `x` at each power-of-ten boundary and boundary±1 (`9,10,11,99,100,101,...,1_000_001`) — decimal-width transitions for `i` | [x] |
+| C11 | `driver` | `x` at each `j`-digit boundary and ±1 (`x = 5, 6, 50, 51, 500, 501, ...`) — decimal-width transitions for `j` only | [x] |
+| C12 | `driver` | `x` chosen so total output straddles the 4 KiB / 8 KiB / 64 KiB / 128 KiB `stdout` buffer boundary exactly, and ±1, ±2 either side | [x] |
+| C13 | `driver` | `x = i32::MAX` (`2147483647`) — the **full** run, 2,147,483,647 iterations, `j` wrapping past the halfway point. 46,096,159,855 bytes streamed per side; digests equal (`0x285c20ffc2afca05`) | [x] |
+| C14 | `driver` | repeated invocation: same `x` called 50× in a row on the same loaded handle — asserts no residual state accumulates in either library | [x] |
+| C15 | `driver` | interleaved invocation: `C(x1) → Rust(x1) → C(x2) → Rust(x2) → …` over 200 randomized `x`, all sharing the one process-wide libc `stdout` — asserts the shared `FILE*` is left in the same state by both | [x] |
+| C16 | `driver` | `stdout` in **line-buffered** mode (fd 1 = a tty-like pipe with `setvbuf(_IOLBF)`) vs **fully-buffered** (regular file) vs **unbuffered** (`_IONBF`) — the only stream-mode axis reachable from outside; identical bytes required in all three | [x] |
+| C17 | `driver` | randomized `x` over the full negative range `i32::MIN..=-1` (no output; pairs with ERRORS E3) | [x] |
+| C18 | `driver` | randomized `x` over `1..=2000` interleaved with negative `x` in the same process, to catch any `i`/`j` state leaking across calls | [x] |
 
-### Measured result for C11
+## Binary executable
 
-```
-x = 1073745920 (2^30 + 4096)
-C    : 21955747671 bytes, FNV-1a = 0x317129e0b55bbaca
-Rust : 21955747671 bytes, FNV-1a = 0x317129e0b55bbaca   -> identical
-wrapping model     = 21955747671  (matches)
-non-wrapping model = 21955743575  (excluded)
-```
-
-The C's `j += 2` is signed overflow, which is UB in C; gcc's actual codegen
-wraps two's-complement, and the Rust `wrapping_add(2)` reproduces exactly that.
-The byte-count model confirms the wrap is observable in the output rather than
-merely assumed.
-
-## Gate
-
-- [x] Every row passes across its randomized inputs.
-- [x] No row is skipped or replaced by a static argument.
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)`
+and installs headers/lib. There is **no** `add_executable`, and
+`translation/Cargo.toml` declares only `crate-type = ["cdylib"]` with no
+`[[bin]]`. The "compare C and Rust binary stdout" requirement is therefore
+**not applicable** — there is no driver binary in either tree.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the crate has
-exactly one configuration: the default. `cargo metadata` confirms the feature
-set is empty; `--no-default-features` and the default build are the same build.
-The feature-combination sweep therefore has a single member, and it is the one
-all tests above run under. Verified by script rather than assumption
-(`scripts/check_features.sh`).
+`translation/Cargo.toml` has **no** `[features]` section and no optional
+dependencies, so the complete set of feature combinations is the single default
+one. Verified mechanically by `run_all.sh`, which parses `[features]` out of
+`Cargo.toml`, builds the power set, and loops `cargo check` + the full test
+suite over every combination it finds. Reported output:
+
+```
+declared non-default features: 0  [none]
+combinations to verify: 1
+```
+
+## How the rows were run
+
+* Rows C1–C8, C10–C12, C14–C18 plus a 400-input sweep over the whole `i32`
+  domain: `tests/valid_paths.rs`, full byte-for-byte comparison of the captured
+  fd-1 output. 17 tests, all passing (~255 s).
+* Rows C9/C9b/C9c/C13: `tests/overflow.rs`, `#[ignore]`d because each takes
+  1–6 minutes. Output is streamed through a pipe and compared as
+  (FNV-1a 64 digest, byte count, line count, first 128 bytes, last 128 bytes)
+  because 22–46 GiB per side cannot be held in memory. C9 validates that
+  pipeline against an independently computed model digest first.
+* Every row additionally cross-checks the **C** output against an independent
+  Rust model of the loop, so a harness that silently captured nothing on both
+  sides cannot pass.
+
+## Non-vacuity check
+
+The suite was validated by deliberate sabotage and then reverted:
+
+* changing `j.wrapping_add(2)` → `wrapping_add(3)` in `src/lib.rs` made
+  Phase B/C tests fail with `divergence for driver(...) ... first differing
+  byte at 6`;
+* renaming the exported symbol to `driver_renamed` made `tests/symbols.rs`
+  fail with `symbols exported by the C .so but missing from the Rust .so:
+  ["driver"]`.
+
+## Gate
+
+- [x] Every row above passes across its randomized inputs
+      (`translation/tests/valid_paths.rs`, plus `tests/overflow.rs` for C9/C13).

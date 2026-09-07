@@ -11,19 +11,18 @@ crate-type = ["cdylib"]
 [dev-dependencies]
 libloading = "0.8"
 
-[profile.dev]
-# The C dereferences caller-supplied pointers with no null check
-# (`strncpy(dst, name, 49)` at lib.c:56 and `if (*str)` at lib.c:102), so
-# `add_node(.., NULL, ..)` / `process_string(NULL)` die with SIGSEGV. Rust's
-# debug assertions insert a "null pointer dereference" UB check that turns those
-# same calls into a panic -> abort (SIGABRT), i.e. a *different* observable
-# failure mode than the C. Turning them off keeps the dev-profile cdylib
-# behaviourally identical to the release one and to the C. Nothing else in this
-# crate relies on debug assertions: every arithmetic operation uses an explicit
-# `wrapping_*` method, so overflow checks are a no-op here as well.
-debug-assertions = false
-
 [profile.release]
 panic = "abort"
+
+# The C library is compiled with no runtime UB instrumentation, so neither may
+# the Rust translation be: with `debug-assertions` on, rustc's `CheckNull` MIR
+# pass turns the NULL dereferences in `add_node`/`process_string` (ERRORS.md
+# rows 5 and 13) into a Rust panic -> SIGABRT, where the C library raises
+# SIGSEGV. `overflow-checks` would likewise panic instead of wrapping. Keeping
+# both off makes the debug build behave identically to the release build and to C.
+[profile.dev]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
 
 [workspace]

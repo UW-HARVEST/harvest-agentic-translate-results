@@ -1,99 +1,72 @@
-# ERRORS.md — error / rejection surface table (Phase C)
+# ERRORS.md — Phase C error / rejection surface table
 
 ## Mechanical derivation
 
-Every construct that could reject input was grepped for in the entire C source
+Every rejection-shaped construct was grepped out of the whole C tree
 (`c_src/src/long.c`, `c_src/include/long.h`):
 
-```sh
-grep -n -E 'RETURN_ERROR|return[[:space:]]+[^;]|assert|NULL|errno|exit\(|abort|
-            enum|malloc|calloc|free|if[[:space:]]*\(|switch|#ifdef|#if ' \
-     c_src/src/long.c c_src/include/long.h
+```
+grep -n "return"                                       -> src/long.c:66:    return;   (bare, void)
+grep -nE "assert|NULL|errno|exit\(|abort|RETURN_ERROR|error"  -> (no matches)
+grep -ncE "\bif\b|\bswitch\b|\?"                       -> src/long.c:0  include/long.h:0
+grep -nE "#define"  -> ARRAY_SIZE (256*1024), ITERATIONS 2000   (no #ifdef feature gates)
 ```
 
-Result, after discarding comment/licence lines: the only matches are the three
-`for` loop headers and the arithmetic in the kernel body. Concretely:
+Result: **the C library contains no error returns, no error enums, no sentinel
+values, no `assert`, no null checks, and no range checks.** Both public
+functions return `void`; the only `return` is a bare `return;` on the last line
+of `long_exec`. There are literally zero conditional branches in the library.
 
-* `RETURN_ERROR` / error macros: **0**
-* `return <value>` statements: **0** (the only `return;` is the bare one at the
-  end of `long_exec`; both public functions are `void`)
-* `assert` / `abort` / `exit`: **0**
-* `NULL` checks, pointer parameters: **0** (no function takes a pointer)
-* error `enum`s or status codes: **0**
-* `if` / `switch` / `#ifdef` branches: **0**
-* heap allocation that could fail: **0** (`array` is a `.bss` global)
-* explicit range / min / max checks or constants: **0**
+Therefore the "rejection" surface is *the absence of rejection*: every input is
+accepted, and the contract the Rust must match is that it likewise **never**
+rejects, never panics, never aborts, and produces the same output for inputs
+that would look invalid to a defensive implementation. A Rust translation that
+added a bounds check, an overflow panic, or a `debug_assert` would diverge —
+that is the real failure mode here, and each row below tests for it.
 
-**The C library has no error surface.** Both entry points return `void`, the
-only scalar parameter is `unsigned int seed`, and *every* one of its 2^32 values
-is a valid, accepted input. There is no invalid input that the C code rejects,
-so there is no error code or sentinel to match.
-
-Because "no rejection" is itself a behaviour that the Rust must reproduce
-exactly, the table below enumerates one row per *distinct boundary or
-would-be-invalid condition that a C API of this shape can be handed*, together
-with the behaviour the C actually exhibits. Each row is a differential test:
-both `.so`s are driven with that exact condition and must agree byte-for-byte
-(stdout bytes, all 0x100000 bytes of `array`, and process survival — no
-panic/abort/UB-trap on the Rust side where C completes).
-
-Rows 1–8 are the parameter-domain boundaries; rows 9–16 are the arithmetic
-edge values that reach the kernel's overflow / negative-division /
-implementation-defined corners (the only places in this library where a naive
-Rust translation can diverge or panic); rows 17–21 are the generic C-API
-boundaries the brief calls out (out-of-range enum-like values, oversized
-lengths, null/zero, state misuse).
+Rows are derived from what the C *actually does* with extreme input: the two
+`#define` constants, the domain of the one parameter (`unsigned int seed`), the
+full `int` domain of the one mutable global (`array`), the signed-overflow /
+shift / division operations in the arithmetic kernel, and the FFI-visible
+boundaries of the exported ABI.
 
 ## Table
 
-| # | function | trigger (exact invalid input / condition) | expected C result |
-|---|----------|-------------------------------------------|-------------------|
-| 1 | `long_exec` | `seed = 0` — glibc `srand(0)` internally substitutes seed 1, so this is a genuine special case | no error; completes and prints one `%d\n` line; deterministic value identical to the value produced for the substituted seed |
-| 2 | `long_exec` | `seed = 1` | no error; prints the same line as row 1 (glibc `srand(0)` ≡ `srand(1)`) |
-| 3 | `long_exec` | `seed = UINT_MAX` (`4294967295`, one past the largest "signed-looking" seed) | no error; completes, prints a value |
-| 4 | `long_exec` | `seed = 2147483648` (`2^31`, first value with the sign bit set — would be negative if the parameter were mis-declared `int` in Rust) | no error; completes, prints a value; must not be confused with `-2147483648` |
-| 5 | `long_exec` | `seed = 2147483647` (`INT_MAX`, one step below row 4) | no error; distinct deterministic value |
-| 6 | `long_exec` | `seed` passed as a *negative* `int` from the caller (`-1`), i.e. an out-of-range value for the declared `unsigned int` | C reinterprets the bit pattern as `4294967295`; identical result to row 3 (no rejection) |
-| 7 | `long_exec` | called twice in a row with the same seed | no error; second call reseeds and prints the *identical* line (no hidden accumulated state) |
-| 8 | `long_exec` | called twice with different seeds | no error; two different deterministic lines; the second is unaffected by the first |
-| 9 | `perform_expensive_operations` | `array[i] = INT_MIN` — `x * 3 + 7`, `x << 1` and the `-x` idiom all overflow (signed overflow is UB in C; the compiled `.so` is the ground truth and wraps) | no error/trap; element rewritten with the wrapped result |
-| 10 | `perform_expensive_operations` | `array[i] = INT_MAX` — `x * 3 + 7` overflows immediately | no error/trap; wrapped result |
-| 11 | `perform_expensive_operations` | `array[i] = -1` — negative operand of `>> 3` (implementation-defined: arithmetic shift) | no error; result of arithmetic-shift semantics |
-| 12 | `perform_expensive_operations` | `array[i] = 0` — `x % 7 == 0`, `x / 2 == 0` degenerate case; also the entire zero-initialised `.bss` state before any other call | no error; deterministic non-zero orbit |
-| 13 | `perform_expensive_operations` | `array[i]` negative and odd, e.g. `-3`, `-7`, `-2147483647` — `x / 2` must truncate *toward zero* and `x % 7` must keep the sign of the dividend (C99 semantics, not floor semantics) | no error; truncating-division result (e.g. `-3 / 2 == -1`, `-3 % 7 == -3`) |
-| 14 | `perform_expensive_operations` | `array[i] = -2147483648` reached *mid-kernel* so that `x / 2` is applied to `INT_MIN` (the classic `INT_MIN / -1` neighbour; `/2` is safe but is the boundary of the division range) | no error; `INT_MIN / 2 == -1073741824` |
-| 15 | `perform_expensive_operations` | every element `= INT_MIN` (whole 1 MiB array at the extreme) — 262144 × 100 overflowing operations, no per-element variation | no error; uniform wrapped result across the array |
-| 16 | `perform_expensive_operations` | `array` left at its initial all-zero `.bss` value and the function called before `long_exec` ever runs (state-order misuse) | no error; operates on zeros; array becomes the 100-step orbit of 0 |
-| 17 | `perform_expensive_operations` | called with a *non-zero* argument through a mismatched FFI prototype (`void f()` in C accepts any argument list; an out-of-range "enum-like" `int` such as `0x7fffffff` or `-999` is a real value a caller can pass) | argument ignored entirely; identical result to the zero-argument call |
-| 18 | `long_exec` | called through a mismatched prototype with *extra* arguments / a 64-bit value whose high half is garbage (`0xDEADBEEF_00000007`) | only the low 32 bits are the `unsigned int` seed; identical result to `seed = 7` |
-| 19 | `array` | caller writes *past* the logical element count is impossible to do safely, but the boundary elements `array[0]` and `array[262143]` (last valid index; `262144` is one past the end) must both be processed | both boundary elements transformed; the object is exactly 0x100000 bytes in both `.so`s, so a caller indexing `[0]` and `[262143]` sees identical bytes |
-| 20 | `perform_expensive_operations` | called repeatedly (0, 1, 2, 3, … times) with no intervening `long_exec` — "zero length" and "many" composition counts | no error; k-fold composition of the 100-step kernel; `k = 0` leaves the array untouched |
-| 21 | `long_exec` | `array` pre-poisoned by the caller with hostile values (`INT_MIN`/`INT_MAX`/random) before the call — the seeded fill must overwrite *all* 262144 elements, so the poison must have **no** effect | no error; printed line identical to the call made from a clean array (proves no element is skipped) |
+| #  | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
+|----|----------|----------------------------------------------|-------------------|-----|
+| 1  | `long_exec` | `seed = 0` (glibc `srand(0)` is specified to behave as `srand(1)`) | no error; prints the *same* value as `seed = 1`; return type `void`, nothing to report | [x] |
+| 2  | `long_exec` | `seed = 1` (glibc `rand()` default state) | no error; prints an `int` + `\n` | [x] |
+| 3  | `long_exec` | `seed = UINT_MAX = 4294967295` (max of the parameter domain) | no error; accepted, prints a value | [x] |
+| 4  | `long_exec` | `seed = 2147483648 = 2^31` (bit 31 set; a value that is *negative* if reinterpreted as `int`, i.e. an out-of-`int`-range value crossing the FFI boundary into an `unsigned int` parameter) | no error; accepted verbatim, no sign-extension, no clamping | [x] |
+| 5  | `long_exec` | `seed = 2147483647 = INT_MAX`, `seed = 2147483649 = INT_MIN as unsigned` (one step either side of the signed boundary) | no error; three distinct results, no aliasing of `2^31-1`/`2^31`/`2^31+1` | [x] |
+| 6  | `long_exec` | called twice in a row with the same seed (`srand` re-seed must fully reset PRNG state; `array` still holds the previous run's output) | second call prints byte-identical output to the first | [x] |
+| 7  | `long_exec` | called with seed A then seed B (residual `array` state from run A must not leak into run B, because the fill loop overwrites all 262144 slots) | run B prints exactly what a fresh process with seed B prints | [x] |
+| 8  | `perform_expensive_operations` | called before any `long_exec`, i.e. on the *untouched* `.bss` array (all 262144 elements `= 0`) | no error; `0` is mapped to `f^100(0)`; no division-by-zero, no special case | [x] |
+| 9  | `perform_expensive_operations` | every element `= INT_MIN = -2147483648`; the kernel's `x * 3 + 7`, `x << 1` and `x / 2` all hit the signed-overflow / `INT_MIN` corner (`x*3` overflows, `INT_MIN << 1 == 0`, `INT_MIN / 2` is exact) | no trap; wraps two's-complement; `x - (x<<1)` yields `INT_MIN` again rather than the un-representable `-INT_MIN` | [x] |
+| 10 | `perform_expensive_operations` | every element `= INT_MAX = 2147483647` (`x*3+7` overflows on the very first statement) | no trap; wraps | [x] |
+| 11 | `perform_expensive_operations` | element `= -1` and other small negatives; `x >> 3` is an *arithmetic* shift on a negative value (implementation-defined in C, sign-propagating on gcc/x86-64) | sign bits propagate; `-1 >> 3 == -1` | [x] |
+| 12 | `perform_expensive_operations` | elements chosen so the intermediate before `x / 2 + x % 7` is negative | C truncates division toward zero and `%` takes the sign of the dividend (e.g. `-11/2 == -5`, `-11%7 == -4`), *not* floor division | [x] |
+| 13 | `perform_expensive_operations` | elements that are multiples of 7 / of 2, and `x` such that `x % 7 == 0` | no error; `x % 7 == 0` is not special-cased; never a divide-by-zero (both divisors are non-zero literals) | [x] |
+| 14 | `perform_expensive_operations` | called on element values that are *fixed points or cycle members* of the kernel (worst case for any iteration-accelerating translation) | plain `f` applied 100×, identical to any other value | [x] |
+| 15 | `perform_expensive_operations` | called repeatedly (1, 2, 3, … times) — the C composes it with no guard against repetition, and `long_exec` relies on that composition 2000 times | k-th call output `== f^(100k)` element-wise; no drift, no saturation, no "already done" short-circuit | [x] |
+| 16 | `array` (exported object) | caller writes *arbitrary* `int` patterns, including all 2^32 boundary values, directly through the `dlsym`'d pointer before calling `perform_expensive_operations` | no validation whatsoever; every bit pattern is a legal element | [x] |
+| 17 | `array` (exported object) | caller reads/writes the last slot, index 262143, and relies on the object being exactly `0x100000` bytes (an off-by-one in the exported object's size is an out-of-range-index bug an external caller *will* hit) | symbol size is `0x100000`; slot 262143 is live and is included in the XOR reduction | [x] |
+| 18 | `long_exec` | the XOR reduction accumulates into a **signed** `int` starting at `0` and the result is printed with `"%d"` — so a result with bit 31 set must print as a *negative* decimal, not as a large unsigned one | `printf("%d\n", xor_result)` semantics, sign preserved | [x] |
+| 19 | `long_exec` | output stream: value is written with `printf` to `stdout` (C stdio buffer), and nothing else is ever printed — no prefix, no trailing space, exactly one `\n`, no `stderr` output | stdout is exactly `<decimal>\n` | [x] |
+| 20 | `perform_expensive_operations` | `long_exec`'s loop counter is `int i` and its array indices are `size_t i`; `ITERATIONS = 2000` and `ARRAY_SIZE = 262144` both fit, so neither loop can wrap or terminate early | exactly 2000 calls, exactly 262144 elements touched per call — no element skipped, none processed twice | [x] |
 
-## Status
+There is **no** out-of-range *enum* to test: the C declares no enum, and the sole
+parameter (`unsigned int seed`) has no invalid value — every one of the 2^32 bit
+patterns is accepted, which rows 1–5 sample at the extremes.
 
-| # | test | default features | `debug-stats` |
-|---|------|------------------|---------------|
-| 1 | `err_row01_02_seed_zero_equals_one` | [x] | [x] |
-| 2 | `err_row01_02_seed_zero_equals_one` | [x] | [x] |
-| 3 | `err_row03_seed_uint_max` | [x] | [x] |
-| 4 | `err_row04_05_sign_bit_seeds` | [x] | [x] |
-| 5 | `err_row04_05_sign_bit_seeds` | [x] | [x] |
-| 6 | `err_row06_negative_seed_reinterpreted` | [x] | [x] |
-| 7 | `err_row07_repeat_same_seed` | [x] | [x] |
-| 8 | `err_row08_repeat_different_seed` | [x] | [x] |
-| 9 | `err_row09_10_extreme_scalars` | [x] | [x] |
-| 10 | `err_row09_10_extreme_scalars` | [x] | [x] |
-| 11 | `err_row11_negative_shift_operand` | [x] | [x] |
-| 12 | `err_row12_zero_element` | [x] | [x] |
-| 13 | `err_row13_truncating_division_signs` | [x] | [x] |
-| 14 | `err_row14_int_min_division` | [x] | [x] |
-| 15 | `err_row15_whole_array_int_min` | [x] | [x] |
-| 16 | `err_row16_bss_initial_state` | [x] | [x] |
-| 17 | `err_row17_extra_arg_ignored` | [x] | [x] |
-| 18 | `err_row18_high_half_garbage_seed` | [x] | [x] |
-| 19 | `err_row19_boundary_indices` | [x] | [x] |
-| 20 | `err_row20_composition_counts` | [x] | [x] |
-| 21 | `err_row21_poisoned_array_overwritten` | [x] | [x] |
+All 20 rows are covered by `tests/errors.rs` (rows 1–7, 15, 18–20 also by
+`tests/long_exec_diff.rs` for the full 2000-iteration pipeline).  Every row
+passed under all four cargo feature combinations.
 
-All 21 rows pass under both feature combinations. See `tests/errors.rs`.
+Independent cross-check of rows 6/7 (residual state) against the C `.so`:
+calling its exported `long_exec` three times in one process with seeds
+`7, 255, 7` prints `72337063`, `155851384`, `72337063` — i.e. the third run
+reproduces the first exactly, and each matches the fresh-process recording.  The
+Rust `.so` does the same (`tests/long_exec_diff.rs::rows31_32_…` and the live
+`row_live_ordering_and_idempotence`, which drove both libraries through that
+sequence in one process and compared every call's stdout).

@@ -9,9 +9,7 @@
 //!     `f32::min`/`f32::max`/`f32::abs` for NaN and `-0.0` inputs;
 //!   * `c2Div` performing a reciprocal followed by a multiply;
 //!   * `c2Norm` of a zero vector producing NaN/inf rather than being guarded;
-//!   * `c2CastRay`'s `switch` having no `default` arm, so an out-of-range
-//!     `C2_TYPE` returns the caller's leftover `%eax` (reproduced with a naked
-//!     dispatch shim — see `c2CastRay`).
+//!   * `c2CastRay`'s `switch` having no `default` arm.
 //!
 //! # Why the inline assembly
 //!
@@ -488,10 +486,12 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
     0
 }
 
-/// The real dispatch body. Private (no dynamic symbol) — the exported
-/// `c2CastRay` is the naked shim below, which tail-jumps here for the three
-/// valid `C2_TYPE` values.
-unsafe extern "C" fn c2CastRay_impl(
+/// The dispatch body of `c2CastRay`.
+///
+/// Only ever entered with `typeB` in `{0, 1, 2}` — the `#[naked]` shim below
+/// filters every other value out before jumping here, exactly as GCC's
+/// `cmpl $0x2 / ja` does.
+unsafe extern "C" fn c2CastRay_body(
     A: c2Ray,
     B: *const c_void,
     typeB: c_int,
@@ -501,45 +501,33 @@ unsafe extern "C" fn c2CastRay_impl(
         C2_TYPE_CIRCLE => c2RaytoCircle(A, *(B as *const c2Circle), out),
         C2_TYPE_AABB => c2RaytoAABB(A, *(B as *const c2AABB), out),
         C2_TYPE_CAPSULE => c2RaytoCapsule(A, *(B as *const c2Capsule), out),
-        // Unreachable: the shim only jumps here for 0, 1 and 2.
+        // Unreachable: filtered by the shim.
         _ => 0,
     }
 }
 
 /// `int c2CastRay(c2Ray A, const void *B, C2_TYPE typeB, c2Raycast *out)`
 ///
-/// # Why this is a naked function
-///
-/// The C `switch` has **no `default` arm** and `c2CastRay` has **no final
-/// `return`**, so for any `typeB` outside `{0, 1, 2}` control falls off the end
-/// of the function. GCC (`-O0`) compiles that path to a bare `leave; ret` which
-/// leaves `%eax` exactly as the caller left it, so the "return value" is the
-/// caller's leftover `%eax` — verified in `objdump -d` on the C `.so`:
+/// The C `switch` has **no `default` arm** and the function is not `void`, so
+/// for any `typeB` outside `{0, 1, 2}` the C falls off the end of the function.
+/// GCC compiles that to a bare `leave; ret` that never writes `%eax`, i.e. the
+/// caller observes whatever it last left in the return register. That is what
+/// the C `.so` actually does:
 ///
 /// ```text
-///   264f: cmpl $0x2,-0xc(%rbp)   ; typeB == 2 ?
-///   2653: je   2701              ; -> capsule
-///   2659: cmpl $0x2,-0xc(%rbp)
-///   265d: ja   274b              ; unsigned > 2 -> fall through
+///   cmpl $0x2, typeB
+///   ja   .Lout        ; typeB > 2 (unsigned, so negatives too)
 ///   ...
-///   274b: leave                  ; %eax never written
-///   274c: ret
+/// .Lout:
+///   leave
+///   ret               ; %eax untouched
 /// ```
 ///
-/// A C enum parameter is passed as a plain `int`, so an out-of-range value is a
-/// real input an external caller can supply. Returning a fixed `0` here would be
-/// a visible behavioural difference from the C at the ABI boundary, so the shim
-/// reproduces the C exactly: dispatch for `0..=2`, otherwise `ret` without
-/// touching `%eax`.
-///
-/// The comparison is *unsigned* (`ja`), matching the C's `cmpl $0x2` / `ja`
-/// pair, so negative `typeB` values also take the fall-through path.
-///
-/// System V AMD64 argument placement (confirmed against the disassembly above):
-/// `A` is 20 bytes and therefore MEMORY class, passed on the stack at
-/// `0x10(%rbp)`; `B` is in `rdi`, `typeB` in `esi`, `out` in `rdx`. The `jmp`
-/// is a tail call that leaves every register and the incoming stack argument
-/// area untouched.
+/// A plain `match ... => 0` would *invent* a return value the C never produces,
+/// so the range check and the value-preserving `ret` are reproduced literally
+/// with a naked tail-call shim: valid types tail-jump to the real body (same
+/// stack frame, so the by-value `c2Ray` argument is still where the callee
+/// expects it), and invalid types `ret` immediately without touching `rax`.
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
@@ -550,18 +538,15 @@ pub unsafe extern "C" fn c2CastRay(
     out: *mut c2Raycast,
 ) -> c_int {
     core::arch::naked_asm!(
-        "cmp esi, 2",
-        "ja 2f",
-        "jmp {imp}",
+        "cmp esi, 2", // typeB is the 3rd integer argument -> esi
+        "ja 2f",      // unsigned: catches 3.. and every negative value
+        "jmp {body}", // tail call: rsp untouched, stack args stay valid
         "2:",
-        "ret",
-        imp = sym c2CastRay_impl,
+        "ret", // fall off the end: rax is left exactly as the caller had it
+        body = sym c2CastRay_body,
     )
 }
 
-/// Non-x86_64 fallback: there is no portable way to "return whatever the caller
-/// left in the return register", so the benign `0` stand-in is used. The C's
-/// behaviour on this path is undefined and target specific.
 #[cfg(not(target_arch = "x86_64"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2CastRay(
@@ -570,7 +555,7 @@ pub unsafe extern "C" fn c2CastRay(
     typeB: c_int,
     out: *mut c2Raycast,
 ) -> c_int {
-    c2CastRay_impl(A, B, typeB, out)
+    c2CastRay_body(A, B, typeB, out)
 }
 
 // ---------------------------------------------------------------------------

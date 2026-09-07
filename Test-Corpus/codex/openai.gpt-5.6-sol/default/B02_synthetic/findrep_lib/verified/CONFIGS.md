@@ -1,56 +1,58 @@
-# Configuration surface
+# Configuration-surface table
 
-Rows are branch-equivalence configurations derived from every exported
-function and every `if` in `../c_src/src/lib.c`. Integer cases avoid C signed
-overflow and division overflow, which are undefined behavior rather than valid
-C configurations. “Fresh” means a newly loaded copy of the shared library,
-whose state is `accumulator = 0`, `multiplier = 1`, and
-`operation_count = 0`.
+Mechanical branch axes from `c_src/src/lib.c`:
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `add_to_accumulator` | fresh state; both inputs zero | [x] |
-| 2 | `add_to_accumulator` | fresh/stateful sequence; positive, negative, and mixed-sign inputs | [x] |
-| 3 | `multiply_with_multiplier` | fresh state; one or both inputs zero, making multiplier zero | [x] |
-| 4 | `multiply_with_multiplier` | fresh/stateful sequence; positive, negative, and mixed-sign nonzero inputs | [x] |
-| 5 | `subtract_from_accumulator` | fresh state; equal inputs (zero delta) | [x] |
-| 6 | `subtract_from_accumulator` | fresh/stateful sequence; positive and negative deltas | [x] |
-| 7 | `divide_multiplier` | `b == 0`; division skipped but count incremented | [x] |
-| 8 | `divide_multiplier` | `b != 0`; positive and negative divisors, including non-exact truncating division | [x] |
-| 9 | `process_octal_string` | `octal_val == 0` | [x] |
-| 10 | `process_octal_string` | positive values, including `1`, octal boundaries, and `INT_MAX` | [x] |
-| 11 | `process_octal_string` | negative values, including `-1` and `INT_MIN` (`%o` observes unsigned representation) | [x] |
-| 12 | `find_and_replace_char` | empty NUL-terminated string | [x] |
-| 13 | `find_and_replace_char` | nonempty string; searched byte absent | [x] |
-| 14 | `find_and_replace_char` | searched byte present once | [x] |
-| 15 | `find_and_replace_char` | searched byte present multiple times; only first occurrence replaced | [x] |
-| 16 | `find_and_replace_char` | search value outside unsigned-byte range; `memchr` conversion finds/does not find its low byte | [x] |
-| 17 | `find_and_replace_char` | search value is NUL; terminator excluded by `strlen`, so no replacement | [x] |
-| 18 | `find_and_replace_char` | long valid NUL-terminated string | [x] |
-| 19 | `validate_and_normalize` | value negative, including `INT_MIN`; returned unchanged | [x] |
-| 20 | `validate_and_normalize` | value zero; returned unchanged | [x] |
-| 21 | `validate_and_normalize` | positive value `1..63`; clamped to octal `0100` (64) | [x] |
-| 22 | `validate_and_normalize` | value exactly octal `0100` (64) | [x] |
-| 23 | `validate_and_normalize` | value `65..510`; returned unchanged | [x] |
-| 24 | `validate_and_normalize` | value exactly octal `0777` (511) | [x] |
-| 25 | `validate_and_normalize` | value `512..INT_MAX`; clamped to octal `0777` (511) | [x] |
-| 26 | `findrep` | fresh state; zero active parameters, no add/multiply call, accumulator inactive | [x] |
-| 27 | `findrep` | fresh state; one active parameter in position 1 or 2, add runs and accumulator becomes active | [x] |
-| 28 | `findrep` | fresh state; one active parameter only in position 3 or 4, add runs with two zero operands and accumulator stays inactive | [x] |
-| 29 | `findrep` | fresh state; at least two active parameters, multiply runs; `p3 * p4 == 0` | [x] |
-| 30 | `findrep` | fresh state; at least two active parameters, nonzero multiplier `<=` octal `0100`; divide branch not taken | [x] |
-| 31 | `findrep` | fresh state; at least two active parameters, multiplier `>` octal `0100`; post-result divide branch taken | [x] |
-| 32 | `findrep` | normalized `p1 + p2 >` octal `0150`; subtract branch taken | [x] |
-| 33 | `findrep` | accumulator nonzero and multiplier nonzero; both-active contribution taken | [x] |
-| 34 | `findrep` | accumulator zero or multiplier zero; both-active contribution skipped | [x] |
-| 35 | `findrep` | each parameter position traverses negative, zero, low-positive clamp, in-range, and high-positive clamp classes | [x] |
-| 36 | low-level mutators then `findrep` | preloaded positive/negative/zero accumulator and multiplier plus nonzero operation count exercise all state-dependent branches | [x] |
-| 37 | all stateful integer entry points | randomized multi-call sequences verify independent persistent state and operation-count interactions | [x] |
+- state: `accumulator`, `multiplier`, and `operation_count`;
+- normalization shape: negative, zero, positive below `0100`, inclusive
+  `0100..0777`, and above `0777`;
+- `divide_multiplier`: zero versus nonzero divisor;
+- string search: empty/nonempty and first matching byte present/absent
+  (`memchr` scans only `strlen(str)` bytes);
+- `findrep`: active parameter count `0`, `1`, or `>=2`; accumulator
+  `<= 0150` versus `> 0150`; multiplier zero/nonzero and `<= 0100` versus
+  `> 0100`; final result zero versus nonzero.
 
-Cargo feature axes: none. `Cargo.toml` declares no `[features]` table, so the
-only build configuration is the default/no-feature build.
+The table contains the branch-distinct cross-product combinations exercised by
+the C implementation. Rows sharing a test still use many fixed-seed randomized
+inputs within that configuration.
 
-Validation modes completed:
-
-- default Cargo mode: **passed**
-- `--no-default-features`: **passed**
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| 1 | `validate_and_normalize` | negative values, including `INT_MIN` | [x] |
+| 2 | `validate_and_normalize` | zero | [x] |
+| 3 | `validate_and_normalize` | positive `1..077` (1..63), below lower bound | [x] |
+| 4 | `validate_and_normalize` | inclusive normal range `0100..0777` (64..511), including both boundaries | [x] |
+| 5 | `validate_and_normalize` | above upper bound `>0777` (511), including `INT_MAX` | [x] |
+| 6 | `add_to_accumulator` | fresh state; positive, zero, and negative operands | [x] |
+| 7 | `add_to_accumulator` | repeated calls accumulating prior state | [x] |
+| 8 | `subtract_from_accumulator` | fresh state; `a-b` positive, zero, and negative | [x] |
+| 9 | `subtract_from_accumulator` | repeated/interleaved calls using prior accumulator state | [x] |
+| 10 | `multiply_with_multiplier` | fresh multiplier; positive operands | [x] |
+| 11 | `multiply_with_multiplier` | zero in either operand makes multiplier zero | [x] |
+| 12 | `multiply_with_multiplier` | negative operand parity and repeated multiplication | [x] |
+| 13 | `divide_multiplier` | nonzero positive divisor; truncating integer division | [x] |
+| 14 | `divide_multiplier` | nonzero negative divisor; truncation toward zero/sign change | [x] |
+| 15 | `process_octal_string` | zero `octal_val` | [x] |
+| 16 | `process_octal_string` | positive values, including octal digit boundaries | [x] |
+| 17 | `process_octal_string` | negative values | [x] |
+| 18 | `find_and_replace_char` | empty string | [x] |
+| 19 | `find_and_replace_char` | nonempty string with search byte absent | [x] |
+| 20 | `find_and_replace_char` | match at first byte | [x] |
+| 21 | `find_and_replace_char` | match in middle/end; only first match replaced | [x] |
+| 22 | `find_and_replace_char` | `search_char` outside unsigned-byte range (C `memchr` conversion) | [x] |
+| 23 | `find_and_replace_char` | search byte is NUL; terminator excluded by `strlen` length | [x] |
+| 24 | `findrep` | fresh state, all four parameters zero (`active_params == 0`) | [x] |
+| 25 | `findrep` | fresh state, exactly one active parameter; each of four positions | [x] |
+| 26 | `findrep` | fresh state, two active parameters (`active_params >= 2`) | [x] |
+| 27 | `findrep` | fresh state, three or four active parameters | [x] |
+| 28 | `findrep` | parameters spanning negative/zero/below-bound/in-range/above-bound normalization shapes | [x] |
+| 29 | `findrep` | preloaded accumulator `<= 0150` (104), so subtract branch is not taken | [x] |
+| 30 | `findrep` | preloaded or newly raised accumulator `> 0150`, so subtract branch is taken | [x] |
+| 31 | `findrep` | multiplier becomes zero, so `both_active` is false and divide branch is not taken | [x] |
+| 32 | `findrep` | multiplier nonzero and `<= 0100` (64): `both_active` true, divide branch false | [x] |
+| 33 | `findrep` | multiplier `> 0100`: `both_active` true and post-result divide branch taken | [x] |
+| 34 | `findrep` | repeated calls preserve all three static state variables | [x] |
+| 35 | `findrep` + all low-level stateful exports | interleaved public calls alter state consumed by the composed pipeline | [x] |
+| 36 | `findrep` | state/input combination producing final `result == 0`, replaced by `0777` | [x] |
+| 37 | `add_to_accumulator`, `subtract_from_accumulator`, `multiply_with_multiplier` | signed arithmetic at `INT_MIN`/`INT_MAX` boundaries, matching the compiled C machine behavior | [x] |
+| 38 | all scalar entry points and `findrep` | fixed-seed randomized values across the full 32-bit input domain | [x] |

@@ -1,73 +1,49 @@
-# ERRORS.md — error / rejection surface table (Phase A, gates Phase C)
+# ERRORS.md — error-surface table (Phase A, gate for Phase C)
 
-Mechanically derived by reading every control-flow exit and every comparison in
-`c_src/src/lib.c` plus every constant in `c_src/include/lib.h`. There are no
-`assert`s, no error enums and no pointer-returning functions in this library —
-the only failure channel is the `cJSON_bool` return value (`0` = false).
+Derived mechanically from `c_src/src/lib.c`. Every `return false`, every
+NULL check, every range check and every min/max constant in the file is listed.
+There are **no `assert`s** in the C source (`grep -n assert c_src/src/lib.c`
+→ no matches) and **no error enums** — the only failure signal is the
+`cJSON_bool` return value `false` (`(cJSON_bool)0`).
 
-Grep basis:
+Grep evidence for the rejection sites:
 
 ```
-$ grep -n 'return\|assert\|NULL\|INT_MIN\|INT_MAX\|goto\|<\|>' c_src/src/lib.c
+23:    if ((input_buffer == NULL) || (input_buffer->content == NULL))
+25:        return false;
+64:    if (number_c_string == NULL)
+66:        return false; /* allocation failure */
+85:    if (number_c_string == after_end)
+89:        return false; /* parse_error */
 ```
 
-Exit points found: `return false` ×3 sites, `return true` ×1 site.
-Comparisons found: `can_access_at_index` bound, `has_decimal_point`,
-`number_c_string == after_end`, `number >= INT_MAX`, `number <= (double)INT_MIN`.
+`can_access_at_index` (line 8) additionally contains a `buffer != NULL` test
+and the range test `offset + index < length`; `buffer_at_offset` (line 10) has
+no test at all. Lines 95/99 are the `INT_MAX` / `INT_MIN` saturation clamps.
 
-## Table
+## Rejection rows
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
-|---|----------|---------------------------------------------|-------------------|------|---|
-| E1 | `parse_number` | `input_buffer == NULL` (first clause of the guard); `item` may be anything, incl. a valid pointer | returns `false` (0); `item` left completely untouched | `e1_null_input_buffer` | [x] |
-| E2 | `parse_number` | `input_buffer != NULL` but `input_buffer->content == NULL` (second clause of the guard), any `length`/`offset`/`depth` | returns `false` (0); `item` untouched, `input_buffer` untouched | `e2_null_content` | [x] |
-| E3 | `parse_number` | `malloc(number_string_length + 1)` returns `NULL` (allocation failure) | returns `false` (0); `item` untouched, `offset` untouched | `e3_allocation_failure` (documented-unreachable; `number_string_length+1` is ≤ `length+1` and always tiny, and no allocator-injection hook exists in the C `.so`. Rust mirrors it with `try_reserve_exact` returning `Err`, same `false`.) | [x] |
-| E4 | `parse_number` | `number_c_string == after_end`, i.e. `strtod` consumed **zero** bytes of the collected string. Reached whenever the accepted-char run is empty **or** begins with a byte `strtod` cannot start a number with. Sub-triggers, each exercised: `offset >= length` (empty run), `length == 0`, first byte is outside `[0-9+\-eE.]` (`default: goto loop_end`), run is exactly `"."`, `"+"`, `"-"`, `"e"`, `"E"`, `"+."`, `"-."`, `"e5"`, `".e1"`, `"++1"`, `"--1"`, `"-e"`, `".+"` … | returns `false` (0); `item` untouched (`valuedouble`/`valueint`/`type` NOT written); `input_buffer->offset` NOT advanced | `e4_strtod_consumed_nothing`, `e4_empty_accepted_run`, `e4_random_unparsable_runs` | [x] |
-| E5 | `parse_number` | bound check `can_access_at_index`: `(buffer->offset + index) < buffer->length` is false at `index == 0` → zero-length scan. Includes `offset == length`, `offset > length`, and `length == 0`. Note the C adds `offset + index` in wrapping `size_t` arithmetic — no overflow check. | scan collects 0 bytes → falls into E4 → `false` | `e5_offset_at_or_past_length`, `e5_size_t_wraparound_offset` | [x] |
-| E6 | `parse_number` | scan terminator `default: goto loop_end` — the first byte not in `[0-9] ∪ {+,-,e,E,.}` stops collection. The rejected byte and everything after it must NOT be fed to `strtod` (in particular bytes past `length` must never be read). | only the prefix is parsed; `offset` advances by at most the prefix length; result derived from the prefix alone | `e6_terminator_byte_all_256`, `b*` rows | [x] |
-| E7 | `parse_number` | numeric overflow at the top of `int` range: `number >= INT_MAX` (`2147483647`), incl. `+inf` produced by `strtod` on e.g. `"1e999"` (which also sets `errno=ERANGE`, ignored by the C) | `item->valueint = INT_MAX`; `item->valuedouble = number` (may be `inf`); returns `true` | `e7_saturate_int_max` | [x] |
-| E8 | `parse_number` | numeric overflow at the bottom of `int` range: `number <= (double)INT_MIN` (`-2147483648.0`), incl. `-inf` from `"-1e999"`. Note `<=` (not `<`), so exactly `-2147483648.0` takes this branch. | `item->valueint = INT_MIN`; `item->valuedouble = number`; returns `true` | `e8_saturate_int_min` | [x] |
-| E9 | `parse_number` | `(int)number` cast in the `else` branch with a value C's cast cannot represent — unreachable because E7/E8 fence it, and `NaN`/`inf` spellings (`nan`, `inf`) are unreachable through the `[0-9+\-eE.]` scan alphabet. Asserted unreachable rather than assumed. | n/a — branch only ever sees finite values in `(INT_MIN, INT_MAX)` | `e9_int_cast_branch_is_fenced` | [x] |
-| E10 | `parse_number` | `item == NULL` — the C performs **no** null check on `item` and dereferences it after a successful `strtod`. This is a real input a caller can pass. | on the success path: dereferencing `NULL` → `SIGSEGV`. On the E1/E2/E4 failure paths `item` is never touched, so `item == NULL` is harmless and `false` is returned. | `e10_null_item_harmless_on_failure_paths`, `e10_null_item_segfaults_on_success_path` (forked child, compares signal) | [x] |
-| E11 | `parse_number` | out-of-range "enum" values across the FFI boundary. This library declares no C `enum`; the enum-shaped values are `cJSON_bool` (any `int` is accepted; only `0`/non-`0` semantics) and `cJSON.type` (`int`, arbitrary on input). Passing arbitrary `int` bit patterns in `item->type`, `item->valueint`, arbitrary bits in `item->valuedouble` (incl. signalling NaN / trap representations), and arbitrary `depth` must not change behaviour, and the return value must be exactly `1` or `0` (not merely truthy/falsy). | pre-existing `item->type` is overwritten with `cJSON_Number` (8) on success and untouched on failure; `depth` never read or written; return value is exactly `1` or `0` | `e11_garbage_in_out_params`, `e11_return_value_is_exactly_0_or_1` | [x] |
-| E12 | `parse_number` | zero and oversized lengths: `length == 0`; `length == SIZE_MAX` with a short real buffer (C will happily scan past the real allocation — undefined but must match as long as a terminator byte is inside the real allocation); `length` huge with `offset` huge | governed by E4/E5/E6; with an in-allocation terminator both must stop at it | `e12_zero_and_oversized_lengths` | [x] |
+|---|----------|----------------------------------------------|-------------------|------|---|
+| 1 | `parse_number` | `input_buffer == NULL` (line 23, first disjunct) | returns `false` (0); `*item` left completely untouched; no deref of `input_buffer` | `err_row01_null_input_buffer` | [x] |
+| 2 | `parse_number` | `input_buffer != NULL` but `input_buffer->content == NULL` (line 23, second disjunct) | returns `false` (0); `*item` untouched; `input_buffer->offset` untouched | `err_row02_null_content` | [x] |
+| 3 | `parse_number` | `malloc(number_string_length + 1) == NULL` (line 64) — allocation failure for the temporary buffer | returns `false` (0); `*item` untouched, `offset` untouched | `err_row03_allocation_failure_documented` (not directly inducible without an allocator interposer; both sides take the same shape — documented, and the size argument `number_string_length + 1` is verified never to overflow) | [x] |
+| 4 | `parse_number` | `strtod` consumes zero characters, i.e. `after_end == number_c_string` (line 85). Reached whenever the scanned prefix is not a valid `strtod` prefix. Sub-triggers, each tested: | returns `false` (0); `*item` untouched (`valuedouble` is written *after* this check); `offset` untouched; temporary buffer freed | | |
+| 4a | `parse_number` | `number_string_length == 0` because the byte at `offset` is not in `[0-9+\-eE.]` (e.g. `"x1"`, `"null"`, `" 1"`, `"\0"`) → temp string is `""` | `false` | `err_row04a_zero_length_non_numeric_lead` | [x] |
+| 4b | `parse_number` | `number_string_length == 0` because `offset >= length` (empty range: `length == 0`, or `offset == length`, or `offset > length`) → temp string is `""` | `false` | `err_row04b_zero_length_empty_range` | [x] |
+| 4c | `parse_number` | scanned prefix is non-empty but has no valid `strtod` prefix: `"+"`, `"-"`, `"."`, `"e"`, `"E"`, `"+."`, `"-."`, `"e5"`, `"E5"`, `".e5"`, `"++1"`, `"--1"`, `"-e"`, `"..1"` | `false` | `err_row04c_nonempty_but_unparsable` | [x] |
+| 5 | `parse_number` | *(boundary, not an error)* `number >= (double)INT_MAX` — line 95 — incl. `+inf` from `strtod` overflow (`"1e999"`) and exactly `2147483647` | `true`; `valueint == INT_MAX == 2147483647` | `err_row05_saturate_high` | [x] |
+| 6 | `parse_number` | *(boundary, not an error)* `number <= (double)INT_MIN` — line 99 — incl. `-inf` (`"-1e999"`) and exactly `-2147483648` | `true`; `valueint == INT_MIN == -2147483648` | `err_row06_saturate_low` | [x] |
 
-## Notes on constants (`c_src/include/lib.h`)
+## Generic C-API boundaries also covered (beyond the table)
 
-| constant | value | where it gates behaviour |
-|----------|-------|--------------------------|
-| `INT_MAX` | `2147483647` | E7 |
-| `INT_MIN` | `-2147483648` | E8 |
-| `cJSON_Number` | `1 << 3` = `8` | value written to `item->type` on success |
-| `true` / `false` | `(cJSON_bool)1` / `(cJSON_bool)0` | exact return values (E11) |
-
-## Notes on unreachable / equivalent branches
-
-* **`offset + index` never overflows.** `can_access_at_index` adds in wrapping
-  `size_t` arithmetic with no overflow check, but the sum cannot overflow while
-  the scan loop is running: reaching iteration `i` requires
-  `offset + (i-1) < length <= SIZE_MAX`, hence `offset + i <= SIZE_MAX`; at
-  `i == 0` the sum is just `offset`. So the wrapping is never exercised, and
-  `wrapping_add` / `saturating_add` / `checked_add` coincide here. `wrapping_add`
-  is kept because it is the literal translation of C's defined `size_t`
-  semantics. Verified by `e5_size_t_wraparound_offset` and by the fact that the
-  `saturating_add` mutant is provably equivalent.
-* **E7/E8 use `>=` / `<=`, but `>` / `<` would be equivalent.** At exactly
-  `INT_MAX`/`INT_MIN` the `else` branch's `(int)` cast yields the same value the
-  saturating branch writes. The `>=`/`<=` spelling is kept because that is what
-  the C says.
-* **The `'.' → decimal_point` rewrite loop is a no-op.** `decimal_point` is the
-  local constant `'.'`, so the loop writes `'.'` over `'.'`. The loop is
-  preserved for fidelity, not because it changes anything. (This is the C quirk
-  behind the "replace with the decimal point of the current locale" comment: the
-  code was never wired to `localeconv()`.) Confirmed across seven `LC_NUMERIC`
-  locales by `h5_locale_dependent_strtod`.
-* **NaN can never reach `(int)number`.** The scan alphabet is
-  `[0-9] ∪ {+,-,e,E,.}`, so `strtod` can never be handed `nan`/`inf` spellings;
-  `±inf` is only producible via overflow, and E7/E8 intercept it. Asserted by
-  `e9_int_cast_branch_is_fenced`.
-
-## Result
-
-All 12 rows have a passing differential test. No divergence between the C and
-Rust `.so`s was found on any error path, and the Rust source required no changes.
+| # | boundary | test | ✔ |
+|---|----------|------|---|
+| G1 | NULL `input_buffer` (row 1) — note `item` is dereferenced **without** a NULL check by the C at line 92, so passing `item == NULL` is a segfault in *both* implementations and is deliberately **not** exercised. | `err_row01_null_input_buffer` | [x] |
+| G2 | zero length: `length == 0` with non-NULL `content` | `err_row04b_zero_length_empty_range` | [x] |
+| G3 | oversized / bogus length: `length == SIZE_MAX`, `length` far beyond the real allocation but with the numeric run terminated by a non-numeric byte inside the real allocation (so no OOB read actually happens) | `err_boundary_oversized_length` | [x] |
+| G4 | `offset` one step past the valid range (`offset == length`) and far past it (`offset > length`), plus `offset == SIZE_MAX` (exercises the wrapping `offset + index` in `can_access_at_index`) | `err_boundary_offset_past_end` | [x] |
+| G5 | one step past the documented numeric range: `"2147483647"` / `"2147483648"` and `"-2147483648"` / `"-2147483649"`; also `INT_MAX`/`INT_MIN` ±1 ULP as doubles | `err_boundary_int_range_edges` | [x] |
+| G6 | out-of-range "enum" values across the FFI boundary. `lib.h` declares **no `enum`** — the only enum-like values are the `int` type tag `cJSON_Number` and the `cJSON_bool` typedef. Both are plain `int`, so any `int` is a representable input. Covered by pre-filling `item->type` with values that are *not* `cJSON_Number` (0, `INT_MIN`, `INT_MAX`, `0x7f7f7f7f`, `-1`) and `item->valueint`/`valuedouble` with sentinels, then asserting the C and Rust post-state byte images are identical — including on the failure paths where the tag must be left as the caller's out-of-range value. | `err_row06b_out_of_range_type_tag_preserved` | [x] |
+| G7 | `depth` field is never read or written by the C; assert both leave it byte-identical for arbitrary (incl. `SIZE_MAX`) input values | asserted in every differential call via `assert_same` | [x] |
+| G8 | non-NUL-terminated `content` (the C explicitly copies exactly `number_string_length` bytes and appends its own `'\0'`, so a buffer with no NUL and trailing garbage must behave identically) | `err_boundary_unterminated_content` | [x] |

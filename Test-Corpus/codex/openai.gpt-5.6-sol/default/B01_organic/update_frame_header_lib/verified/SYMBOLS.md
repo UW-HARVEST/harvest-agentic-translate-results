@@ -1,27 +1,27 @@
 # Dynamic symbol surface
 
-Source library:
-`../c_src/build/libharvest-work-7NfxTl.so`
+Generated from:
 
-Rust library:
-`target/release/libupdate_frame_header_lib.so`
-
-The public API inventory is the set emitted by:
-
-```sh
-nm -D --defined-only ../c_src/build/libharvest-work-7NfxTl.so
+```text
+nm -D ../c_src/build/libharvest-work-Gc1ILW.so
+nm -D target/release/libupdate_frame_header_lib.so
 ```
 
-| Symbol | C type | Rust type | Status |
-|---|---:|---:|---|
-| `update_frame_header` | `T` | `T` | Present |
+## Complete C `nm -D` surface
 
-The unfiltered C `nm -D` output also contains the following undefined weak
-toolchain imports. They are not library exports or API symbols:
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
-`__cxa_finalize@GLIBC_2.2.5`, and `__gmon_start__`.
+| C nm type | symbol | Rust nm status | classification |
+|---|---|---|---|
+| `w` | `_ITM_deregisterTMCloneTable` | present as undefined weak | toolchain runtime import |
+| `w` | `_ITM_registerTMCloneTable` | present as undefined weak | toolchain runtime import |
+| `w` | `__cxa_finalize@GLIBC_2.2.5` | present as undefined weak | libc runtime import |
+| `w` | `__gmon_start__` | present as undefined weak | toolchain runtime import |
+| `T` | `update_frame_header` | present as defined global (`T`) | public library export |
 
-Missing defined C symbols in Rust: **0**
+## Required defined public exports
 
-- [x] Final release-build symbol diff is empty.
-- [x] Rust has no undefined non-system library symbols.
+| symbol | C | Rust | status |
+|---|---|---|---|
+| `update_frame_header` | defined global | defined global | [x] |
+
+Missing C-defined public symbols in Rust: **0**.
+

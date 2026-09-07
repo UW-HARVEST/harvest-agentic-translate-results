@@ -1,110 +1,63 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Configuration-surface table (valid inputs)
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
+Derived mechanically from the branches `c_src/src/lib.c` actually takes.
 
-## Axis enumeration (what the C actually branches on)
+## Axes the C code branches on
 
-**Runtime options / modes / flags:** there are **none**. The library exposes no
-setter, no global, no context struct, no bitmask and no `#ifdef` (`grep -c
-'#if\|#ifdef\|#ifndef' c_src/src/lib.c` → 0; the only preprocessor directives are
-three `#include`s and the `STRINGIZE`/`TO_STRING` macro pair). So the only
-configuration axes are **input shape** and **entry point**.
+There is **no** runtime option, mode, flag, global, or `#ifdef` in the
+library: `grep -n '#ifdef\|#if\|extern\|static\|struct'` on `src/lib.c` and
+`include/lib.h` yields nothing. The only `#define`s are the two stringize
+macros (`STRINGIZE`, `TO_STRING`), which are compile-time constant and expand
+`TO_STRING(numbers)` to the literal text `"numbers"` — **not** the array
+contents. So the entire configuration surface is *input shape*.
 
-**Full set of public entry points (lowest-level included, not just the header):**
+| axis | values the C distinguishes | where |
+|------|---------------------------|-------|
+| A. `switch (numbers[i])` case class | `10` (falls through to `20` ⇒ `+30`), `20` (`+20`), `30` (falls through to `40` ⇒ `+70`), `40` (`+40`), `default` (`+= numbers[i]`) | lines 48–62 |
+| B. argument position `i` | `0..3` — the loop visits each of `a,b,c,d`; the case class is chosen independently per position | line 47 |
+| C. `default`-value magnitude | negative / zero / positive / `INT_MIN` / `INT_MAX` / values adjacent to case labels | line 60 |
+| D. accumulated `result` overflow | `int` `+=` wrapping at the 32-bit boundary | lines 50–60 |
+| E. `print_result` label shape | empty / ASCII / format metacharacters / long / NULL | line 80 |
+| F. `print_result` result value | `0`, negative, `INT_MIN`, `INT_MAX` | line 80 |
+| G. `cleanup_resources` pointer | NULL / non-NULL heap pointer | line 84 |
 
-| entry point | declared in | level |
-|---|---|---|
-| `cleanup(int,int,int,int)` | `include/lib.h` **and** `lib.c:31` | composed operation (validate → accumulate → allocate → format → release) |
-| `print_result(const char*,int)` | `lib.c:32` only (not in the public header, but exported `T`) | low-level output primitive |
-| `cleanup_resources(char*)` | `lib.c:33` only (not in the public header, but exported `T`) | low-level release primitive |
+## Public entry points
 
-`cleanup` is the convenience/one-shot wrapper; `print_result` and
-`cleanup_resources` are the low-level entry points and are driven **directly**
-below, not only through `cleanup`.
+All three exported functions are tested **directly** through the `.so`
+exports. `cleanup` is the composed pipeline (validate → accumulate →
+allocate → format → print → release); `print_result` and `cleanup_resources`
+are the lower-level entry points and are driven standalone as well as
+implicitly via `cleanup`. Every row asserts the return value **and** the
+byte-exact stdout captured by redirecting fd 1 around the call.
 
-**Input shapes the code special-cases:**
+## Rows
 
-* `cleanup`, per argument: the `switch` at `lib.c:48` distinguishes 5 classes —
-  `10` (falls through into `20`, net `+30`), `20` (`+20`), `30` (falls through
-  into `40`, net `+70`), `40` (`+40`), and `default` (`+value`). The loop
-  `for (i = 0; i < 4; i++)` applies this to all four positions independently, so
-  the true shape space is the **cross product `5^4 = 625`**, and *position*
-  matters for reproducing the accumulation order.
-* `default`-class sub-shapes that matter for value-dependent behaviour: `0`,
-  small positive, small negative, off-by-one neighbours of the labels,
-  `INT_MAX`, `INT_MIN`, and combinations that wrap the accumulator.
-* `print_result`: label byte-shape (empty / short ASCII / long / high-byte /
-  contains `%` / null pointer) × `result` magnitude & sign.
-* `cleanup_resources`: pointer shape (null / live `malloc` result).
-* Observable channels per call: the **return value** *and* the **bytes written to
-  stdout** (`printf`/`snprintf` at `lib.c:43,67,71,72,80`). Both are compared.
+| # | entry point(s) | configuration (options set + input shape) | randomized? (seed 0x5EED_C0DE) | [x] |
+|---|----------------|--------------------------------------------|-------------------------------|-----|
+| C1 | `cleanup` | axis A exhaustive × axis B: full cross-product of `{10,20,30,40,default}` over all 4 positions = **625** combinations; `default` slot filled with a fresh pseudo-random non-case `int` each time | 625 rows × 16 random default fillings | [x] |
+| C2 | `cleanup` | all four arguments the same case label: `(10,10,10,10)`, `(20,…)`, `(30,…)`, `(40,…)` — pure fall-through accumulation | fixed | [x] |
+| C3 | `cleanup` | exactly one case label, other three `default`, for each label × each of the 4 positions (16 combos) — proves the case class is position-independent | 64 random default fillings | [x] |
+| C4 | `cleanup` | all four `default`, small magnitudes: uniform random in `-1000..=1000` | 4096 quadruples | [x] |
+| C5 | `cleanup` | all four `default`, full `int` range: uniform random over `i32::MIN..=i32::MAX` (exercises axis D wrapping) | 8192 quadruples | [x] |
+| C6 | `cleanup` | all four `default`, boundary values adjacent to the case labels: `{9,11,19,21,29,31,39,41}` cross-product | 4096 = 8⁴ exhaustive | [x] |
+| C7 | `cleanup` | all four `default`, extreme values: `{i32::MIN, i32::MIN+1, -1, 0, 1, i32::MAX-1, i32::MAX}` cross-product (axis D overflow) | 2401 = 7⁴ exhaustive | [x] |
+| C8 | `cleanup` | mixed: case labels interleaved with extreme `default` values (`INT_MAX,10,INT_MIN,30`, …) — overflow *and* fall-through together | 4096 random mixes over `{10,20,30,40} ∪ extremes` | [x] |
+| C9 | `print_result` | label ∈ {empty, short ASCII, 4096-byte, format metachars, embedded NUL-free UTF-8} × result ∈ {0, ±random, INT_MIN, INT_MAX} | 2048 random (label-shape, result) pairs | [x] |
+| C10 | `cleanup_resources` | non-NULL pointer from libc `malloc` (sizes 1, 50, 4096) — pointer must be released without crash | 3 sizes × 64 iterations | [x] |
+| C11 | `cleanup` then `print_result` | end-to-end consumer sequence: run `cleanup` on a random quadruple, feed its return value into `print_result` with a random label, comparing the *combined* stdout of the pair | 2048 sequences | [x] |
+| C12 | `cleanup` | repeated invocation (statefulness check): the same quadruple called 32× in a row must give an identical return value and identical stdout every time (no leaked accumulator/heap state) | 256 quadruples × 32 reps | [x] |
 
-There is no size/width/element-type/count/format/byte-order axis: every parameter
-is a fixed-width `int` or `char*`, and the buffer size is the hard-coded `50`.
+## Feature combinations
 
-## Table
+`translation/Cargo.toml` declares **no** `[features]` table, so the only
+build configuration is the default (empty) feature set. Verified with
+`cargo metadata` — the feature map for the package is empty. `--no-default-features`
+and the default build are therefore the same code path; both are exercised.
 
-All rows call **both** `.so` files through `libloading` and compare the return
-value **and** the captured stdout bytes. Rows marked *randomised* use a fixed
-seed (`0x5EED_C0DE_1234_5678`, SplitMix64) so failures reproduce.
+## Binary executable
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `cleanup` | all four args in `default` class, randomised in `[-1000, 1000]` (2 000 cases) | [x] |
-| 2 | `cleanup` | **exhaustive cross product** of the 5 switch classes over all 4 positions (`5^4 = 625` rows), `default` slots filled with randomised values | [x] |
-| 3 | `cleanup` | exactly one arg `= 10` (fall-through `10→20`), each of the 4 positions, others `default` | [x] |
-| 4 | `cleanup` | exactly one arg `= 20`, each of the 4 positions | [x] |
-| 5 | `cleanup` | exactly one arg `= 30` (fall-through `30→40`), each of the 4 positions | [x] |
-| 6 | `cleanup` | exactly one arg `= 40`, each of the 4 positions | [x] |
-| 7 | `cleanup` | all four args `= 10` (maximum fall-through, `4 × 30`) | [x] |
-| 8 | `cleanup` | all four args `= 30` (`4 × 70`); also all `20`, all `40` | [x] |
-| 9 | `cleanup` | `INT_MAX` in each position (accumulator overflow / wrap) | [x] |
-| 10 | `cleanup` | `INT_MIN` in each position (accumulator underflow / wrap) | [x] |
-| 11 | `cleanup` | all args `= 0` (the "empty" shape) | [x] |
-| 12 | `cleanup` | all-negative args, randomised in `[INT_MIN, -1]` | [x] |
-| 13 | `cleanup` | off-by-one neighbours of every label: `{9,11,19,21,29,31,39,41}` in all 4 positions (`8^4 = 4096`) | [x] |
-| 14 | `cleanup` | *randomised* over the **full** `i32` range, 20 000 cases (hits `default` with wrapping sums; also the out-of-range-"variant" class G4) | [x] |
-| 15 | `cleanup` | *randomised* biased sampler: each arg drawn from `{10,20,30,40} ∪ full-range i32` with 50 % label probability, 20 000 cases (mixes fall-through and `default` in one call) | [x] |
-| 16 | `cleanup` | stdout side-effect equality for a representative spread (the `Processed numbers: numbers` line produced by `TO_STRING(numbers)`, plus absence of both diagnostics) | [x] |
-| 17 | `print_result` (low-level, direct) | short ASCII label × `result ∈ {0, 1, -1, 42, INT_MAX, INT_MIN}` and randomised `result` (2 000 cases) | [x] |
-| 18 | `print_result` | empty label (`""`) × randomised `result` | [x] |
-| 19 | `print_result` | 64 KiB label (oversized) × randomised `result` | [x] |
-| 20 | `print_result` | label containing `%d %s %n %%` (label is an argument, not the format) | [x] |
-| 21 | `print_result` | label of non-UTF-8 high bytes `0x80..0xFF` | [x] |
-| 22 | `print_result` | `NULL` label (glibc prints `(null)`) | [x] |
-| 23 | `cleanup_resources` (low-level, direct) | `NULL` pointer — null-guard no-op | [x] |
-| 24 | `cleanup_resources` | live `malloc(n)` pointer, randomised `n ∈ [1, 4096]`, 2 000 cases — pointer is freed | [x] |
-| 25 | `cleanup_resources` | `malloc(50)` pointer, i.e. exactly the size `cleanup` itself allocates, filled with the same `snprintf` payload | [x] |
-| 26 | composed pipeline (all three entry points) | `cleanup(...)` → feed its return into `print_result(label, r)` → `cleanup_resources(malloc(...))`, randomised, 2 000 iterations; compares the *concatenated* stdout of the whole sequence so ordering/buffering differences surface | [x] |
-| 27 | repeated invocation | `cleanup` called 1 000 times in a row on one library handle (state leakage / allocator reuse across calls) | [x] |
-| 28 | interleaved libraries | alternate C-call / Rust-call within one captured stdout region (both libraries share one process `stdout` FILE; proves no divergent buffering) | [x] |
-
-Feature combinations: `Cargo.toml` declares no `[features]`, so the default
-(empty) set is the only combination. `scripts/check_features.sh` re-derives this
-from `Cargo.toml` and runs the whole suite for each combination it finds.
-
-## Result
-
-Every row above is checked off. Tests live in `tests/phase_b_valid.rs`, named
-`rowNN_*` to match the row numbers one-to-one:
-`phase_b_valid` → **28 passed, 0 failed**, under the release profile, the debug
-profile (overflow checks on), and every feature combination.
-
-Total differential call pairs exercised by Phase B: roughly 1.1 × 10^5 — each
-one a C call and a Rust call compared on both return value and stdout bytes.
-
-Randomisation is seeded from `SEED = 0x5EED_C0DE_1234_5678` (SplitMix64) with a
-per-row salt (`SEED ^ row`), so any failure reproduces exactly.
-
-## Note on running the suite
-
-`crate-type = ["cdylib"]` is **not** rebuilt by `cargo test`, and the suite
-`dlopen`s the `.so` from disk. Always build first:
-
-```sh
-cd translation && cargo build --release && cargo test --release -- --test-threads=1
-```
-
-`tests/common/mod.rs::assert_so_is_fresh` fails the run with `STALE ARTIFACT` if
-this is skipped. `--test-threads=1` is required because stdout capture swaps
-process-global fd 1.
+`c_src/CMakeLists.txt` contains a single `add_library(... SHARED src/lib.c)`
+and no `add_executable`. The Rust crate declares `crate-type = ["cdylib"]`
+and has no `src/main.rs` / `[[bin]]`. **No driver binary exists**, so the
+stdout-of-binary comparison gate is not applicable; stdout is instead
+compared per-call at the FFI boundary in every row above.

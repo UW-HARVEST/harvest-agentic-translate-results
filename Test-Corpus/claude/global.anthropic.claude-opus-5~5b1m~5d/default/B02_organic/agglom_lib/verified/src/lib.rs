@@ -228,15 +228,19 @@ pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
     c2Sub_impl(a, b)
 }
 
+/// `float c2Dot(c2v a, c2v b) { return a.x * b.x + a.y * b.y; }`
+///
+/// Operand roles taken verbatim from the compiled C (`objdump` of `c2Dot`):
+/// ```text
+///   movss a.x,%xmm1 ; movss b.x,%xmm0 ; mulss %xmm0,%xmm1  -> mulss(a.x, b.x)
+///   movss a.y,%xmm2 ; movss b.y,%xmm0 ; mulss %xmm2,%xmm0  -> mulss(b.y, a.y)
+///   addss %xmm1,%xmm0                                      -> addss(b.y*a.y, a.x*b.x)
+/// ```
+/// The `addss` destination is therefore the *second* product, which decides
+/// which NaN payload survives when both products are NaN.
 #[inline]
 fn c2Dot_impl(a: c2v, b: c2v) -> f32 {
-    // GCC -O0 emits, for `a.x * b.x + a.y * b.y`:
-    //     movss a.x,%xmm1 ; movss b.x,%xmm0 ; mulss %xmm0,%xmm1   -> dst = a.x
-    //     movss a.y,%xmm2 ; movss b.y,%xmm0 ; mulss %xmm2,%xmm0   -> dst = b.y
-    //     addss %xmm1,%xmm0                                       -> dst = y-term
-    let xterm = mulss(a.x, b.x);
-    let yterm = mulss(b.y, a.y);
-    addss(yterm, xterm)
+    addss(mulss(b.y, a.y), mulss(a.x, b.x))
 }
 
 #[unsafe(no_mangle)]
@@ -248,7 +252,7 @@ pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
 fn c2CircletoCircle_impl(A: c2Circle, B: c2Circle) -> c_int {
     let c = c2Sub_impl(B.p, A.p);
     let d2 = c2Dot_impl(c, c);
-    // `movss A.r,%xmm1 ; movss B.r,%xmm0 ; addss %xmm1,%xmm0` -> dst = B.r
+    // `movss A.r,%xmm1 ; movss B.r,%xmm0 ; addss %xmm1,%xmm0` -> dst is B.r.
     let mut r2 = addss(B.r, A.r);
     r2 = mulss(r2, r2);
     cbool(d2 < r2)
@@ -511,14 +515,13 @@ fn lm_sub2(a: lm_vec2, b: lm_vec2) -> lm_vec2 {
     lm_v2(subss(a.x, b.x), subss(a.y, b.y))
 }
 
-/// `static float lm_dot2(lm_vec2 a, lm_vec2 b)` — same codegen as `c2Dot`:
-/// x-term has `a.x` as `mulss` destination, y-term has `b.y`, and the final
-/// `addss` destination is the y-term.
+/// `static float lm_dot2(lm_vec2 a, lm_vec2 b) { return a.x*b.x + a.y*b.y; }`
+///
+/// Identical codegen to `c2Dot` (see the `objdump` of `lm_dot2`): the `addss`
+/// destination is `b.y * a.y`, the source is `a.x * b.x`.
 #[inline]
 fn lm_dot2(a: lm_vec2, b: lm_vec2) -> f32 {
-    let xterm = mulss(a.x, b.x);
-    let yterm = mulss(b.y, a.y);
-    addss(yterm, xterm)
+    addss(mulss(b.y, a.y), mulss(a.x, b.x))
 }
 
 #[inline]
@@ -531,12 +534,13 @@ fn f9_impl(p1: lm_vec2, p2: lm_vec2, p3: lm_vec2, p: lm_vec2) -> lm_vec2 {
     let dot02 = lm_dot2(v0, v2);
     let dot11 = lm_dot2(v1, v1);
     let dot12 = lm_dot2(v1, v2);
-    // `dot00 * dot11 - dot01 * dot01`: dst of the first mulss is dot00, dst of
-    // the subss is that product.
+    // Operand roles from the compiled C (`objdump` of `f9`):
+    //   mulss(dot00, dot11) ; mulss(dot01, dot01) ; subss(prod1, prod2)
+    //   divss(1.0f, denom)
     let inv_denom = divss(1.0f32, subss(mulss(dot00, dot11), mulss(dot01, dot01)));
-    // `(dot11 * dot02 - dot01 * dot12) * invDenom`
+    //   mulss(dot11, dot02) ; mulss(dot01, dot12) ; subss ; mulss(diff, invDenom)
     let u = mulss(subss(mulss(dot11, dot02), mulss(dot01, dot12)), inv_denom);
-    // `(dot00 * dot12 - dot01 * dot02) * invDenom`
+    //   mulss(dot00, dot12) ; mulss(dot01, dot02) ; subss ; mulss(diff, invDenom)
     let v = mulss(subss(mulss(dot00, dot12), mulss(dot01, dot02)), inv_denom);
     lm_v2(u, v)
 }
@@ -583,9 +587,12 @@ fn f11_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     }
     // c = (1.0f - fabsf(2.0f * l - 1.0f)) * s
     c = mulss(subss(1.0f32, fabsf(subss(addss(l, l), 1.0f32))), s);
-    // m = 1.0f * (l - 0.5f * c) — GCC folds the `1.0f *` away entirely, so the
-    // emitted code is `movss c,%xmm1 ; mulss 0.5f,%xmm1 ; movss l,%xmm0 ;
-    // subss %xmm1,%xmm0`.
+    // m = 1.0f * (l - 0.5f * c)
+    //
+    // GCC folds the `1.0f *` away entirely (there is no second `mulss` in the
+    // compiled `f11`), so no extra NaN quieting happens here. `0.5f * c` is
+    // emitted as `movss c,%xmm1 ; movss 0.5,%xmm0 ; mulss %xmm0,%xmm1`, i.e.
+    // destination `c`.
     m = subss(l, mulss(c, 0.5f32));
     // x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2) - 1.0f))
     x = mulss(
@@ -747,10 +754,10 @@ fn f13_impl(dest: &mut [f32; 3], src: &[f32; 3]) {
     } else {
         h = addss(4.0f32, divss(subss(r, g), delta));
     }
-    // `movss h,%xmm1 ; movss 60.0f,%xmm0 ; mulss %xmm1,%xmm0` -> dst = 60.0f
+    // `movss h,%xmm1 ; movss 60.0,%xmm0 ; mulss %xmm1,%xmm0` -> dst is 60.0f.
     h = mulss(60.0f32, h);
     if h < 0.0 {
-        // `movss h,%xmm1 ; movss 360.0f,%xmm0 ; addss %xmm1,%xmm0` -> dst = 360.0f
+        // `movss h,%xmm1 ; movss 360.0,%xmm0 ; addss %xmm1,%xmm0` -> dst is 360.0f.
         h = addss(360.0f32, h);
     }
     dest[0] = h;

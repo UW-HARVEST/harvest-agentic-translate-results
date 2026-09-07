@@ -1,118 +1,118 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Configuration-surface table (valid inputs)
 
-Mechanically derived from the branches the C source actually takes.
+Mechanically derived from `c_src/include/driver.h` + `c_src/src/driver.c`.
 
-## The axes the C code distinguishes
+## Axes the C code actually branches on / varies over
 
-**Axis 1 — entry point.** The `.so` exports exactly two functions
-(see `SYMBOLS.md`):
+**A. Public entry points** (everything with external linkage — both the
+convenience wrapper *and* the low-level one):
 
-* `run(int extra_bedrooms)` — the **low-level** entry point. Not in
-  `driver.h`, but externally linked and therefore part of the public ABI. It
-  must be driven directly, not only through `driver`.
-* `driver(const char *in)` — the convenience one-shot wrapper. It parses,
-  then calls `run` **twice**.
+| entry point | signature | in public header? | notes |
+|---|---|---|---|
+| `driver` | `void driver(const char *in)` | yes | one-shot wrapper: parse a string, then `run(x); run(x);` |
+| `run`    | `void run(int extra_bedrooms)` | **no** (but non-`static`) | the low-level entry point; must be driven directly, not only through `driver` |
 
-**Axis 2 — runtime options / modes.** `driver.c` declares **no** flags, no
-option struct, no setter, no `#ifdef`, and no `switch`. The complete set of
-`if` statements in the file is:
+There are **no** runtime option/mode/flag setters, no `#ifdef`s, no
+`switch`es, and no Cargo features (`translation/Cargo.toml` declares none).
+The single configuration axis the library *does* carry is **persistent
+file-scope mutable state**:
 
-```
-70:  if (endp != str && errno == 0 && tmp >= INT_MIN && tmp <= INT_MAX)   (parse_val)
-80:  if (parse_val(in, &x))                                              (driver)
-```
+**B. Hidden state — `static house_t the_house = {2, 5, 2.5}`.** Every call
+mutates it and is never reset, so output is a function of the *whole call
+history*, not of one argument. One `run()` performs:
+`print → floors++ → print → bathrooms += 1.0 → print → bedrooms += extra → print`
+(4 output lines). One successful `driver()` performs two `run()`s (8 lines).
+A rejected `driver()` prints 1 line and mutates nothing.
 
-So the only "mode" the library has is **implicit, persistent global state**.
+**C. Input shape for `driver`'s `const char *in`** (what `strtol(…, 10)` distinguishes):
+bare digits; leading whitespace (`" \t\n\v\f\r"`); explicit `+`; explicit `-`;
+leading zeros; trailing garbage; value magnitude class
+(`0`, small, `INT_MAX`, `INT_MIN`, `INT_MAX±1`, `LONG_MAX/MIN`, > `LONG_MAX`);
+non-converting forms.
 
-**Axis 3 — persistent global state (the real hidden configuration).**
-`static house_t the_house = {2, 5, 2.5};` lives for the lifetime of the
-process and *every* call mutates it:
+**D. Argument value class for `run`'s `int`**: `0`; small positive; small
+negative; `INT_MAX`; `INT_MIN`; values chosen so `bedrooms + extra` overflows
+`int` (signed-overflow wrap) or lands exactly on `INT_MAX`/`INT_MIN`.
 
-| per `run()` call | effect |
-|---|---|
-| `floors`    | `+1` (via `add_floor_to_the_house` → `add_floor`) |
-| `bathrooms` | `+1.0` |
-| `bedrooms`  | `+= extra_bedrooms` |
+**E. Formatting shape** — `printf("… %d floors, %d bedrooms, and %.1f bathrooms\n")`:
+`%d` must render negative and extreme values; `%.1f` must render `bathrooms`
+after *k* increments (`2.5, 3.5, 4.5, …`) including values large enough to lose
+`.5` exactness and the `%.1f` round-half-to-even path.
 
-⇒ the output of call *n* depends on all *n−1* preceding calls. "Fresh state",
-"state after a few calls" and "state after many calls" are genuinely different
-configurations, as are the *interleavings* of `run` and `driver`.
+## Table — one row per meaningful combination
 
-**Axis 4 — input shape of `extra_bedrooms` (`int`).** zero / small positive /
-small negative / `INT_MAX` / `INT_MIN` / arbitrary 32-bit patterns (drives the
-wraparound in `add_bedrooms` and the `%d` sign in `printf`).
+Every row is exercised with **many randomized inputs** (fixed seed, xorshift64\*)
+in addition to its named boundary values, calling both `.so`s through
+`libloading` and comparing captured stdout byte-for-byte. Both libraries are
+driven in **lockstep** (same ops, same order), so the persistent `the_house`
+state is directly part of what is compared — see "How the rows are executed".
 
-**Axis 5 — input shape of the `driver` string.** Every form `strtol(str, &e, 10)`
-treats differently: plain digits, leading whitespace (space/`\t\n\v\f\r`),
-explicit `+`/`-` sign, leading zeros, `-0`, trailing non-numeric garbage,
-boundary values `INT_MAX`/`INT_MIN`, `long`-range-but-not-`int` values,
-`ERANGE`-triggering huge values, empty, and non-numeric. (Rejecting shapes are
-in `ERRORS.md`; the accepting shapes are the rows below.)
+| #  | entry point(s) | configuration (options set + input shape) | test | ✔ |
+|----|----------------|-------------------------------------------|------|---|
+| C1  | `run` | single call, `extra_bedrooms == 0` (identity on `bedrooms`) | `cfg_c1_run_zero` | [x] |
+| C2  | `run` | single call, small positive `extra` (1..=1000, randomized) | `cfg_c2_run_small_positive` | [x] |
+| C3  | `run` | single call, small negative `extra` (-1000..=-1, randomized) → negative `%d` rendering | `cfg_c3_run_small_negative` | [x] |
+| C4  | `run` | single call, `extra == INT_MAX` → `5 + INT_MAX` signed overflow wrap | `cfg_c4_run_int_max` | [x] |
+| C5  | `run` | single call, `extra == INT_MIN` → `5 + INT_MIN` underflow | `cfg_c5_run_int_min` | [x] |
+| C6  | `run` | single call, `extra` uniformly random over the **full** `i32` range (256 values) | `cfg_c6_run_full_i32_range` | [x] |
+| C7  | `run` | single call, `extra` chosen so `bedrooms` lands exactly on `INT_MAX` (`INT_MAX-5`) / `INT_MIN` (`INT_MIN-5` wrapped) / `-1` / `0` | `cfg_c7_run_boundary_landings` | [x] |
+| C8  | `run` × N | **state accumulation**: `run` called 1,2,3,5,10,64 times in a row with mixed random `extra` → `floors` and `bathrooms` monotonically advance, `bedrooms` accumulates with wrap | `cfg_c8_run_repeated_accumulation` | [x] |
+| C9  | `run` × 300 | long run so `bathrooms` reaches 302.5 → `%.1f` on larger magnitudes | `cfg_c9_run_long_sequence_float_fmt` | [x] |
+| C10 | `driver` | valid bare digits, small magnitude (randomized 0..=9999) → 8 output lines | `cfg_c10_driver_small_digits` | [x] |
+| C11 | `driver` | valid, explicit `+` sign (`"+7"`, randomized `+N`) | `cfg_c11_driver_plus_sign` | [x] |
+| C12 | `driver` | valid, explicit `-` sign (`"-7"`, randomized `-N`) | `cfg_c12_driver_minus_sign` | [x] |
+| C13 | `driver` | valid, **leading whitespace** — each of `" "`, `"\t"`, `"\n"`, `"\v"`, `"\f"`, `"\r"` and mixtures, before an optional sign and digits | `cfg_c13_driver_leading_whitespace` | [x] |
+| C14 | `driver` | valid, **leading zeros** (`"007"`, `"0000000000000000042"`, `"-00012"`) and plain `"0"`, `"-0"`, `"+0"` | `cfg_c14_driver_leading_zeros` | [x] |
+| C15 | `driver` | valid, **trailing garbage** (`"12abc"`, `"3 "`, `"5\n"`, `"1,000"`, `"0x1A"` → parses `0`) | `cfg_c15_driver_trailing_garbage` | [x] |
+| C16 | `driver` | valid **boundaries**: `"2147483647"` (`INT_MAX`) and `"-2147483648"` (`INT_MIN`) → `bedrooms` wraps twice (two `run`s) | `cfg_c16_driver_int_boundaries` | [x] |
+| C17 | `driver` | valid, `extra` uniformly random over the **full** `i32` range, formatted as decimal text (256 values) | `cfg_c17_driver_full_i32_range` | [x] |
+| C18 | `driver` × N | **state accumulation across `driver` calls** (1,2,3,8 calls, random values) → 8 lines each, state carried | `cfg_c18_driver_repeated_accumulation` | [x] |
+| C19 | `driver` + `run` **interleaved** | mixed random sequences of both entry points (e.g. `run, driver, run, run, driver`) → verifies the two exports share the *same* `the_house` instance in both libraries | `cfg_c19_interleaved_run_and_driver` | [x] |
+| C20 | `driver` (rejecting) + `run` | a **rejected** `driver` call in the middle of a sequence must print 1 line and leave state untouched, so subsequent `run` output is unaffected | `cfg_c20_rejected_driver_preserves_state` | [x] |
+| C21 | `driver` | randomized **fuzz over arbitrary byte strings** (printable + whitespace + digit alphabet, lengths 0..24, 4000 cases) — accept/reject decision *and* bytes must match | `cfg_c21_driver_fuzz_arbitrary_strings` | [x] |
+| C22 | `driver`/`run` | randomized **long mixed sequences** (200 ops of `run`/valid `driver`/invalid `driver`, 40 sequences) — full composed pipeline | `cfg_c22_long_mixed_random_sequences` | [x] |
+| C23 | `run` | `%.1f` **round-half-to-even** probe: state advanced so `bathrooms` hits values where the 1-decimal rounding of a binary double is not exact (very large `bathrooms` via many `run`s is covered in C9; here `bathrooms` is only ever `2.5+k`, so the exact set `{2.5,3.5,…}` is enumerated and compared) | `cfg_c9_run_long_sequence_float_fmt` | [x] |
 
-**Axis 6 — output-formatting shape.** `printf("… %d … %d … %.1f …")`:
-`%d` with positive / negative / wrapped values, and `%.1f` of a `double` that
-is always `k + 0.5` (exactly representable, so no banker's-rounding ambiguity)
-and grows without bound as state accumulates.
+## How the rows are executed
 
-## Configuration table
+`tests/harness/mod.rs` loads each `.so` **once per test process** and replays
+every operation sequence against **both** libraries while holding one global
+lock, so the two instances always observe the same ops in the same order and
+their hidden `the_house` state stays in perfect lockstep. Any divergence in the
+accumulated state therefore surfaces as a byte difference. (Re-`dlopen`ing a
+fresh file copy per call was tried first and is *not* reliable: after `dlclose`
+glibc may still have the object mapped and will alias a reused inode back to the
+stale one.) `stdout` is captured by `dup2`-ing fd 1 onto a temp file while
+holding Rust's `StdoutLock`, which keeps libtest's own progress output from
+contaminating the capture under the default multi-threaded runner; every captured
+line is additionally validated to be either a house report or the error sentinel.
 
-Every row is exercised with **many randomized inputs** (fixed seed
-`0x243F6A8885A308D3`, splitmix64 PRNG) unless the row is a fixed boundary.
-Both `.so`s are driven in lock-step through their exported symbols and stdout
-is captured per call and compared byte-for-byte.
+Absolute pristine-state expectations live in their own test binary,
+`tests/phase_b_initial_state.rs` (row C1), which pins the exact C bytes for
+`{floors = 2, bedrooms = 5, bathrooms = 2.5}`. All other rows assert
+state-independent properties (line counts, `bedrooms` deltas via
+`bedrooms_delta`, sentinel identity) on top of the byte-for-byte comparison.
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|--------------------------------------------|-----|
-| 1  | `run` | fresh global state, `extra_bedrooms == 0` (identity add; isolates the `floors`/`bathrooms` mutation) | [x] |
-| 2  | `run` | small positive `extra_bedrooms` (1..=1000), randomized | [x] |
-| 3  | `run` | small negative `extra_bedrooms` (-1000..=-1), randomized — drives `%d` with a negative `bedrooms` | [x] |
-| 4  | `run` | full-range random `int` (uniform over all 2^32 patterns), randomized — drives `add_bedrooms` wraparound at random | [x] |
-| 5  | `run` | boundary `extra_bedrooms`: `INT_MAX`, `INT_MIN`, `INT_MAX-1`, `INT_MIN+1`, `-1`, `1`, `0` | [x] |
-| 6  | `run` | **state accumulation**: 300 consecutive `run` calls with randomized args, so `floors`/`bathrooms` climb and `bedrooms` random-walks/wraps; every one of the 4 lines of every call compared | [x] |
-| 7  | `run` | **deep state + `%.1f` growth**: 500 further calls so `bathrooms` reaches ≥ 800.5, checking the `%.1f` formatting of a large half-integer `double` | [x] |
-| 8  | `run` | repeated `INT_MAX` additions (10×) forcing `bedrooms` to wrap around several times in a row | [x] |
-| 9  | `driver` | plain decimal digits, randomized `int` values rendered with `to_string()` | [x] |
-| 10 | `driver` | randomized value **+ leading whitespace** (random mix of `' '`, `\t`, `\n`, `\v`, `\f`, `\r`) | [x] |
-| 11 | `driver` | randomized non-negative value **+ explicit `+` sign** | [x] |
-| 12 | `driver` | randomized value **+ leading zeros** (1..=8 zeros after the optional sign) | [x] |
-| 13 | `driver` | randomized value **+ trailing garbage** (`abc`, ` 43`, `.5`, `e3`, `,000`, `x1A`, `%`, `\n`) — `strtol` stops early, `endp != str`, so accepted | [x] |
-| 14 | `driver` | **all decorations combined**: whitespace + sign + leading zeros + trailing garbage (cross-product, randomized) | [x] |
-| 15 | `driver` | boundary strings that must be **accepted**: `"2147483647"`, `"-2147483648"`, `"0"`, `"-0"`, `"+0"`, `"1"`, `"-1"` | [x] |
-| 16 | `driver` | `"0x1A"`, `"0b11"`, `"0o17"`, `"08"`, `"09"` — base is hard-coded to 10, so only the leading `0`/digits convert | [x] |
-| 17 | `driver` | very long but valid input: value padded with 4096 leading zeros, and 1 MiB of trailing garbage | [x] |
-| 18 | `driver` | rejected input **followed by** a valid input — confirms the rejected call left `the_house` untouched in *both* implementations (state-divergence detector) | [x] |
-| 19 | `run` + `driver` | **randomized interleaving** of 200 `run` / `driver` / rejecting-`driver` calls against the same accumulating global state — the composed pipeline, invisible to per-function tests | [x] |
-| 20 | `driver` | pre-existing non-zero `errno` in the caller (set via a failed syscall) before each call, across accepting *and* rejecting inputs — line 67 must neutralise it | [x] |
-| 21 | `run` | called with the *same* argument twice in a row, mirroring `driver`'s `run(x); run(x);` pattern, but entered at the low level so the state offset differs from row 19 | [x] |
-| 22 | `driver` | `driver` vs. two manual `run` calls: assert `driver(s)` output == `run(x); run(x)` output for the same parsed `x`, in **both** libraries (call-hierarchy equivalence) | [x] |
-| 23 | `run` | **state deeper than `f32` can represent**: 8 388 608+ calls so `bathrooms` passes 2^23 (and then 2^24), stepping across the limit one call at a time. Below 2^23 every value `k + 0.5` is exact in `f32`, so a narrowed `bathrooms` vararg is invisible; above it, it is not. | [x] |
-| 24 | `run` + `driver` | deep state reached with `extra_bedrooms = INT_MAX/3` (200 000 calls) so `bedrooms` wraps thousands of times, then accepting *and* rejecting `driver` calls at that depth | [x] |
-| 25 | `run` + `driver` | **`LC_NUMERIC` with a comma decimal separator** (`de_DE.utf8`): `%.1f` must render `,5`. Catches formatting reimplemented in Rust rather than delegated to libc `printf`. | [x] |
-| 26 | `run` | locale round-trip `C` / `C.utf8` / `POSIX` / `en_US.utf8` and back | [x] |
-| 27 | `run` | **called from a second (and a chain of eight further) OS threads**: `the_house` is one object per *process*, so a `thread_local!` translation must be detected | [x] |
-| 28 | `driver` | input string placed in an `mprotect(PROT_READ)` page, plus a byte-for-byte snapshot comparison of the buffer afterwards — `parse_val` casts the `const` away and must never write through it | [x] |
+## Result
 
-## Row → test mapping
+All 23 rows pass. Volume actually executed, asserted by in-harness counters:
+row C21 performs 4,000 comparisons (with >400 accepting and >400 rejecting
+cases), row C22 issues 8,000 library calls per library; the whole suite performs
+~5,300 C-vs-Rust byte comparisons per run.
 
-| rows | test |
-|------|------|
-| 1–22 | `tests/phase_b_configs.rs` (`row01_*` … `row22_*`) |
-| 23 | `tests/phase_b_deep_state.rs::deep_state_bathrooms_past_f32_precision` |
-| 24 | `tests/phase_b_deep_state.rs::deep_state_via_driver_and_wrapping_bedrooms` |
-| 25 | `tests/phase_b_env_axes.rs::locale_lc_numeric_comma_decimal_separator` |
-| 26 | `tests/phase_b_env_axes.rs::locale_round_trip_c_and_back` |
-| 27 | `tests/phase_b_env_axes.rs::global_state_is_process_global_not_thread_local` |
-| 28 | `tests/phase_b_env_axes.rs::input_is_readonly_and_unmodified` |
+## Feature combinations
 
-Rows 23, 25, 27 and 28 were added *because* mutation testing
-(`mutation_check.py`) proved rows 1–22 could not distinguish an
-`f32`-narrowed `bathrooms`, a Rust-side reimplementation of `printf`,
-`thread_local!` global state, or a write through the `const` input.
+`translation/Cargo.toml` declares **no** `[features]` (`cargo metadata` reports
+`{}`), so the complete set of feature combinations is `{default}` = `{}`. The
+suite is nevertheless run under both `--features` spellings and both profiles by
+`./run_all_checks.sh`:
 
-## Deliberately excluded
+| profile | features | result |
+|---|---|---|
+| dev | default | 43 tests pass |
+| dev | `--no-default-features` | 43 tests pass |
+| release | default | 43 tests pass |
+| release | `--no-default-features` | 43 tests pass |
 
-* **Concurrency.** `the_house` is a plain non-atomic global; concurrent calls
-  are a data race in the C with no defined output ordering, so no
-  byte-for-byte differential assertion exists. Tests therefore serialise all
-  calls under a mutex (see `tests/common/mod.rs`).
-* **`floors` overflow.** Requires 2^31 `run` calls.
+`[profile.release] panic = "abort"` makes the release configuration a genuinely
+different build of the code under test, which is why both profiles are run.

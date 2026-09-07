@@ -383,4 +383,104 @@ mod tests {
             }
         }
     }
+
+    /// The exact `n` the C nested loop performs (`ITERATIONS * INNER`), over a
+    /// wide randomized sample of the *full* `i32` domain, checked against plain
+    /// iteration.  This is the property `long_exec` relies on.
+    #[test]
+    fn fast_matches_naive_at_the_real_n() {
+        const N: u32 = 2000 * 100;
+        let mut st = 0xFEED_FACE_C0DE_1234u64;
+        let mut vals: Vec<c_int> = (0..1500).map(|_| lcg(&mut st)).collect();
+        // Plus the whole boundary neighbourhood and the rand() sub-domain.
+        vals.extend([
+            0,
+            1,
+            -1,
+            2,
+            -2,
+            7,
+            -7,
+            6,
+            -6,
+            i32::MIN,
+            i32::MIN + 1,
+            i32::MAX,
+            i32::MAX - 1,
+        ]);
+        let mut st2 = 0x1234_5678_9ABC_DEF0u64;
+        vals.extend((0..500).map(|_| (lcg(&mut st2) as u32 & 0x7FFF_FFFF) as c_int));
+
+        let mut a = vals.clone();
+        apply_iterations(&mut a, N);
+        for (i, &v) in vals.iter().enumerate() {
+            assert_eq!(a[i], kernel_iterate(v, N), "n={N} v={v}");
+        }
+    }
+
+    /// Degenerate shapes: every element identical, so a single orbit is shared by
+    /// the whole slice, and shapes made entirely of cycle members.
+    #[test]
+    fn fast_matches_naive_degenerate_shapes() {
+        for v in [0i32, 1, -1, 7, -7, i32::MIN, i32::MAX, 6, -6, 42] {
+            for &n in &[8192u32, 8193, 20000, 200000] {
+                let mut a = vec![v; 97];
+                apply_iterations(&mut a, n);
+                let want = kernel_iterate(v, n);
+                for (i, &got) in a.iter().enumerate() {
+                    assert_eq!(got, want, "v={v} n={n} idx={i}");
+                }
+            }
+        }
+        // Values already on a cycle: iterate far, then re-iterate.
+        let deep: Vec<c_int> = (0..64)
+            .map(|i| kernel_iterate(i as c_int * 7919, 50_000))
+            .collect();
+        for &n in &[1u32, 8192, 12345, 200000] {
+            let mut a = deep.clone();
+            apply_iterations(&mut a, n);
+            for (i, &v) in deep.iter().enumerate() {
+                assert_eq!(a[i], kernel_iterate(v, n), "cycle-member v={v} n={n}");
+            }
+        }
+    }
+
+    /// `apply_iterations` must be exactly composable, because the C reaches
+    /// `n = 200000` as 2000 separate 100-step passes.
+    #[test]
+    fn fast_is_composable_like_the_c_loop() {
+        let mut st = 0xA5A5_5A5A_A5A5_5A5Au64;
+        let vals: Vec<c_int> = (0..300).map(|_| lcg(&mut st)).collect();
+
+        // 2000 x 100 (what the C does) vs one 200000 (what long_exec does).
+        let mut stepwise = vals.clone();
+        for _ in 0..2000 {
+            apply_iterations(&mut stepwise, 100);
+        }
+        let mut bulk = vals.clone();
+        apply_iterations(&mut bulk, 200_000);
+        assert_eq!(stepwise, bulk, "2000x100 must equal 1x200000");
+
+        // Arbitrary splits must agree too.
+        for &(p, q) in &[(1u32, 199_999u32), (8191, 191_809), (8192, 191_808), (100_000, 100_000)] {
+            let mut split = vals.clone();
+            apply_iterations(&mut split, p);
+            apply_iterations(&mut split, q);
+            assert_eq!(split, bulk, "split {p}+{q} must equal 200000");
+        }
+    }
+
+    /// `n = 0` is the identity (a zero-iteration configuration).
+    #[test]
+    fn fast_n_zero_is_identity() {
+        let mut st = 5u64;
+        let vals: Vec<c_int> = (0..64).map(|_| lcg(&mut st)).collect();
+        let mut a = vals.clone();
+        apply_iterations(&mut a, 0);
+        assert_eq!(a, vals);
+        // Empty slice must not panic either.
+        let mut empty: Vec<c_int> = Vec::new();
+        apply_iterations(&mut empty, 200_000);
+        assert!(empty.is_empty());
+    }
 }

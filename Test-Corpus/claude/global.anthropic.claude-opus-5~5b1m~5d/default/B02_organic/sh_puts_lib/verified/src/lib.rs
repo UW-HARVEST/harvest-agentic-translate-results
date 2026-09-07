@@ -16,7 +16,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(static_mut_refs)]
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::mem::size_of;
 use std::ptr;
 
@@ -29,6 +29,13 @@ unsafe extern "C" {
     fn realloc(p: *mut c_void, size: usize) -> *mut c_void;
     fn free(p: *mut c_void);
     fn printf(fmt: *const c_char, ...) -> c_int;
+    /// glibc's assertion backend, used by `assert()` in the C build.
+    fn __assert_fail(
+        assertion: *const c_char,
+        file: *const c_char,
+        line: c_uint,
+        function: *const c_char,
+    ) -> !;
 }
 
 /// `#define STBDS_REALLOC(c,p,s) realloc(p,s)`
@@ -43,11 +50,31 @@ unsafe fn stbds_free(p: *mut c_void) {
     unsafe { free(p) }
 }
 
-// `STBDS_ASSERT` -> `assert`.  Reproduced as a no-op (an NDEBUG build); every
-// assertion in this library holds for all well-formed uses.
+// `#define STBDS_ASSERT assert`
+//
+// The C library is compiled by `c_src/CMakeLists.txt` WITHOUT `-DNDEBUG` (its
+// `.so` imports `__assert_fail`), so every `STBDS_ASSERT` is LIVE: on failure the
+// C prints glibc's assertion message to stderr and raises `SIGABRT`.  Some of
+// those assertions ARE reachable from the public API -- e.g. `hmdel_key` with a
+// `mode` outside {0,1} trips `assert(slot >= 0)` at lib.c:846 -- so a no-op here
+// would silently corrupt memory where the C aborts.  We therefore call the very
+// same `__assert_fail` with the same assertion text, line and function name.
 macro_rules! stbds_assert {
-    ($cond:expr) => {
-        let _ = &$cond;
+    ($cond:expr, $text:literal, $line:literal, $func:literal) => {
+        #[allow(unused_comparisons, unused_unsafe)]
+        {
+            if !($cond) {
+                #[allow(unused_unsafe)]
+                unsafe {
+                    __assert_fail(
+                        concat!($text, "\0").as_ptr() as *const c_char,
+                        c"src/lib.c".as_ptr(),
+                        $line,
+                        concat!($func, "\0").as_ptr() as *const c_char,
+                    );
+                }
+            }
+        }
     };
 }
 
@@ -424,8 +451,12 @@ unsafe fn stbds_make_hash_index(
         if slot_count <= STBDS_BUCKET_LENGTH {
             (*t).used_count_shrink_threshold = 0;
         }
+        // lib.c:401
         stbds_assert!(
-            (*t).used_count_threshold + (*t).tombstone_count_threshold < (*t).slot_count
+            (*t).used_count_threshold + (*t).tombstone_count_threshold < (*t).slot_count,
+            "t->used_count_threshold + t->tombstone_count_threshold < t->slot_count",
+            401u32,
+            "stbds_make_hash_index"
         );
 
         if !ot.is_null() {
@@ -1023,7 +1054,13 @@ pub unsafe extern "C" fn stbds_hmput_key(
                 raw_a = stbds_arr_to_hash(a, elemsize);
                 let _ = raw_a;
 
-                stbds_assert!((i as usize) + 1 <= stbds_arrcap(a));
+                // lib.c:778
+                stbds_assert!(
+                    (i as usize) + 1 <= stbds_arrcap(a),
+                    "(size_t) i+1 <= stbds_arrcap(a)",
+                    778u32,
+                    "stbds_hmput_key"
+                );
                 (*stbds_header(a)).length = (i + 1) as usize;
                 bucket = (*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
                 (*bucket).hash[pos & STBDS_BUCKET_MASK] = hash;
@@ -1103,7 +1140,21 @@ pub unsafe extern "C" fn stbds_hmdel_key(
             let mut i: c_int = (slot & STBDS_BUCKET_MASK as isize) as c_int;
             let old_index = (*b).index[i as usize];
             let final_index: isize = stbds_arrlen(raw_a) - 1 - 1;
-            stbds_assert!(slot < (*table).slot_count as isize);
+            // lib.c:828
+            stbds_assert!(
+                slot < (*table).slot_count as isize,
+                "slot < (ptrdiff_t) table->slot_count",
+                828u32,
+                "stbds_hmdel_key"
+            );
+            // lib.c:832 -- `table->used_count` is a size_t, so this is vacuous in
+            // the C too (gcc folds it away).  Kept for structural parity.
+            stbds_assert!(
+                (*table).used_count >= 0,
+                "table->used_count >= 0",
+                832u32,
+                "stbds_hmdel_key"
+            );
             (*table).used_count -= 1;
             (*table).tombstone_count += 1;
             stbds_set_temp(raw_a, 1);
@@ -1148,10 +1199,17 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                     );
                     slot = stbds_hm_find_slot(a, elemsize, kp as *mut c_void, keysize, keyoffset, mode);
                 }
-                stbds_assert!(slot >= 0);
+                // lib.c:846
+                stbds_assert!(slot >= 0, "slot >= 0", 846u32, "stbds_hmdel_key");
                 b = (*table).storage.offset(slot >> STBDS_BUCKET_SHIFT);
                 i = (slot & STBDS_BUCKET_MASK as isize) as c_int;
-                stbds_assert!((*b).index[i as usize] == final_index);
+                // lib.c:849
+                stbds_assert!(
+                    (*b).index[i as usize] == final_index,
+                    "b->index[i] == final_index",
+                    849u32,
+                    "stbds_hmdel_key"
+                );
                 (*b).index[i as usize] = old_index;
             }
             (*stbds_header(raw_a)).length -= 1;
@@ -1233,7 +1291,13 @@ pub unsafe extern "C" fn stbds_stralloc(
             }
         }
 
-        stbds_assert!(len <= (*a).remaining);
+        // lib.c:913
+        stbds_assert!(
+            len <= (*a).remaining,
+            "len <= a->remaining",
+            913u32,
+            "stbds_stralloc"
+        );
         p = ((&raw mut (*(*a).storage).storage) as *mut c_char)
             .wrapping_add((*a).remaining as isize as usize)
             .wrapping_sub(len);
@@ -1364,9 +1428,25 @@ pub unsafe extern "C" fn sh_puts(num: c_int) {
             let t2 = stbds_temp(raw);
             (*strmap.offset(t2)).key = stbds_temp_key(raw);
 
-            stbds_assert!(*(*strmap.offset(0)).key == b'a' as c_char);
-            stbds_assert!((*strmap.offset(0)).key != s.key);
-            stbds_assert!((*strmap.offset(0)).value == s.value);
+            // lib.c:959-961
+            stbds_assert!(
+                *(*strmap.offset(0)).key == b'a' as c_char,
+                "*strmap[0].key == 'a'",
+                959u32,
+                "sh_puts"
+            );
+            stbds_assert!(
+                (*strmap.offset(0)).key != s.key,
+                "strmap[0].key != s.key",
+                960u32,
+                "sh_puts"
+            );
+            stbds_assert!(
+                (*strmap.offset(0)).value == s.value,
+                "strmap[0].value == s.value",
+                961u32,
+                "sh_puts"
+            );
 
             // for (int z=0; z < shlen(strmap); ++z)
             //     printf("%s %d\n", strmap[z], strmap[z].value);

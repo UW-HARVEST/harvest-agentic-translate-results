@@ -1,115 +1,85 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically:
+Source of truth: `nm -D --defined-only` (text symbols, `T`) on the C shared
+object `c_src/build/libharvest-work-D30ByW.so`, compared against the Rust
+cdylib `translation/target/release/libgjk_cache_lib.so`.
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-XWA1IC.so | awk '{print $3}' | sort > c_syms.txt
-nm -D --defined-only translation/target/release/libgjk_cache_lib.so | awk '{print $3}' | sort > rust_syms.txt
-comm -23 c_syms.txt rust_syms.txt   # missing from Rust  -> MUST be empty
-comm -13 c_syms.txt rust_syms.txt   # extra in Rust      -> informational
-```
-
-The C `.so` (`libharvest-work-XWA1IC.so`, built from the single TU
-`c_src/src/lib.c` at `-O0 -fPIC`) exports **31** global symbols. There are no
-macro-generated symbols and no other translation units — `src/lib.c` is the
-whole library, so there is no "missing module" to translate.
-
-Result of the diff: **0 missing, 0 extra.** Both lists are byte-identical.
-
-| # | C symbol | C signature (from `c_src/src/lib.c`) | Rust `#[no_mangle]` item | present in Rust `.so` |
-|---|----------|--------------------------------------|--------------------------|-----------------------|
-| 1 | `c2V` | `c2v c2V(float, float)` | `c2V` | yes |
-| 2 | `c2Mulvs` | `c2v c2Mulvs(c2v, float)` | `c2Mulvs` | yes |
-| 3 | `c2Maxv` | `c2v c2Maxv(c2v, c2v)` | `c2Maxv` | yes |
-| 4 | `c2Minv` | `c2v c2Minv(c2v, c2v)` | `c2Minv` | yes |
-| 5 | `c2Clampv` | `c2v c2Clampv(c2v, c2v, c2v)` | `c2Clampv` | yes |
-| 6 | `c2Sub` | `c2v c2Sub(c2v, c2v)` | `c2Sub` | yes |
-| 7 | `c2Dot` | `float c2Dot(c2v, c2v)` | `c2Dot` | yes |
-| 8 | `c2RotIdentity` | `c2r c2RotIdentity(void)` | `c2RotIdentity` | yes |
-| 9 | `c2xIdentity` | `c2x c2xIdentity(void)` | `c2xIdentity` | yes |
-| 10 | `c2BBVerts` | `void c2BBVerts(c2v*, c2AABB*)` | `c2BBVerts` | yes |
-| 11 | `c2MakeProxy` | `void c2MakeProxy(const void*, C2_TYPE, c2Proxy*)` | `c2MakeProxy` | yes |
-| 12 | `c2Len` | `float c2Len(c2v)` | `c2Len` | yes |
-| 13 | `c2Det2` | `float c2Det2(c2v, c2v)` | `c2Det2` | yes |
-| 14 | `c2GJKSimplexMetric` | `float c2GJKSimplexMetric(c2Simplex*)` | `c2GJKSimplexMetric` | yes |
-| 15 | `c2Mulrv` | `c2v c2Mulrv(c2r, c2v)` | `c2Mulrv` | yes |
-| 16 | `c2Add` | `c2v c2Add(c2v, c2v)` | `c2Add` | yes |
-| 17 | `c2Mulxv` | `c2v c2Mulxv(c2x, c2v)` | `c2Mulxv` | yes |
-| 18 | `c22` | `void c22(c2Simplex*)` | `c22` | yes |
-| 19 | `c23` | `void c23(c2Simplex*)` | `c23` | yes |
-| 20 | `c2Neg` | `c2v c2Neg(c2v)` | `c2Neg` | yes |
-| 21 | `c2Skew` | `c2v c2Skew(c2v)` | `c2Skew` | yes |
-| 22 | `c2CCW90` | `c2v c2CCW90(c2v)` | `c2CCW90` | yes |
-| 23 | `c2D` | `c2v c2D(c2Simplex*)` | `c2D` | yes |
-| 24 | `c2Support` | `int c2Support(const c2v*, int, c2v)` | `c2Support` | yes |
-| 25 | `c2Witness` | `void c2Witness(c2Simplex*, c2v*, c2v*)` | `c2Witness` | yes |
-| 26 | `c2Div` | `c2v c2Div(c2v, float)` | `c2Div` | yes |
-| 27 | `c2Norm` | `c2v c2Norm(c2v)` | `c2Norm` | yes |
-| 28 | `c2L` | `c2v c2L(c2Simplex*)` | `c2L` | yes |
-| 29 | `c2MulrvT` | `c2v c2MulrvT(c2r, c2v)` | `c2MulrvT` | yes |
-| 30 | `c2GJK` | `float c2GJK(const void*, C2_TYPE, const c2x*, const void*, C2_TYPE, const c2x*, c2v*, c2v*, int, int*, c2GJKCache*)` | `c2GJK` | yes |
-| 31 | `gjk_cache` | `void gjk_cache(char, c2v*, c2v*, float×9)` | `gjk_cache` | yes |
-
-## Undefined (imported) symbols
-
-| library | non-libc undefined symbols |
-|---------|----------------------------|
-| C `.so` | none (`sqrtf@GLIBC`, `__cxa_finalize@GLIBC`, `_ITM_*`, `__gmon_start__` are all libc / toolchain weak stubs) |
-| Rust `.so` | none (all imports are glibc: `memcpy`, `malloc`, `_Unwind_*` from the std panic runtime, etc.) |
-
-`sqrtf` is the C `.so`'s only libm import.  The Rust side does not import it:
-`fp::sqrt` emits a single `sqrtss` instruction via inline asm.  `sqrtss` is
-correctly rounded per IEEE-754 and quiets NaNs the same way glibc's `sqrtf`
-does, so the results are bit-identical — verified over the full NaN/±inf/±0/
-denormal matrix in `tests/nan_payloads.rs::nan_scalar_vector_ops` and
-`tests/leaf_helpers.rs::c06_c2len`.  (`c2Dot(a, a)` is a sum of squares, so it
-is never negative and glibc's `errno`-setting negative branch is unreachable
-through `c2Len`.)
-
-## Struct-layout parity (verified by compiling an equivalent C TU with gcc 11.5, x86-64 SysV)
-
-| type | C size | C offsets | Rust repr(C) equivalent |
-|------|--------|-----------|-------------------------|
-| `c2v` | 8 (align 4) | x@0 y@4 | `c2v` — same |
-| `c2r` | 8 | c@0 s@4 | `c2r` — same |
-| `c2x` | 16 | p@0 r@8 | `c2x` — same |
-| `c2Circle` | 12 | p@0 r@8 | `c2Circle` — same |
-| `c2AABB` | 16 | min@0 max@8 | `c2AABB` — same |
-| `c2Capsule` | 20 | a@0 b@8 r@16 | `c2Capsule` — same |
-| `c2GJKCache` | 36 | metric@0 count@4 iA@8 iB@20 div@32 | `c2GJKCache` — same |
-| `c2Proxy` | 72 | radius@0 count@4 verts@8 | `c2Proxy` — same |
-| `c2sv` | 36 | sA@0 sB@8 p@16 u@24 iA@28 iB@32 | `c2sv` — same |
-| `c2Simplex` | 152 | a@0 b@36 c@72 d@108 div@144 count@148 | `c2Simplex { verts: [c2sv;4], div, count }` — same |
-
-`C2_TYPE` is an unpromoted C enum with values 0..2, so gcc gives it type
-`unsigned int` — the Rust side takes `c_uint`, which lets out-of-range enum
-values (e.g. `3`, `0xFFFF_FFFF`) cross the FFI boundary exactly as C would
-accept them.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so there is exactly
-one feature configuration; the *profile* is nonetheless a real axis (see the
-`[profile.dev]` comment in `Cargo.toml`).  `./verify.sh` re-checks the symbol
-diff and re-runs the whole differential suite for all four combinations and
-would automatically pick up any features added later:
-
-| profile | features | symbols C / Rust | missing | tests |
-|---------|----------|------------------|---------|-------|
-| release | default | 31 / 31 | 0 | 113 passed |
-| release | `--no-default-features` | 31 / 31 | 0 | 113 passed |
-| dev | default | 31 / 31 | 0 | 113 passed |
-| dev | `--no-default-features` | 31 / 31 | 0 | 113 passed |
-
-## Completeness of the translation
-
-`c_src` contains exactly one translation unit (`src/lib.c`, 557 lines) and one
-header (`include/lib.h`, 7 lines).  Every non-`static` function in that file is
-exported by the C `.so` and every one of them is implemented — not stubbed — in
-`translation/src/lib.rs`; there is no `unimplemented!()`, `todo!()`, `panic!()`
-or placeholder anywhere in the crate:
+Reproduce with:
 
 ```sh
-$ grep -c 'unimplemented!\|todo!\|panic!\|unreachable!' translation/src/lib.rs
-0
+nm -D --defined-only c_src/build/libharvest-work-D30ByW.so       | awk '$2=="T"{print $3}' | sort > c.txt
+nm -D --defined-only translation/target/release/libgjk_cache_lib.so | awk '$2=="T"{print $3}' | sort > r.txt
+comm -23 c.txt r.txt   # missing in Rust  -> MUST be empty
+comm -13 c.txt r.txt   # extra   in Rust  -> informational
 ```
+
+## Symbol table (31 symbols)
+
+| # | symbol | C signature (from `c_src/src/lib.c`) | in C .so | in Rust .so |
+|---|--------|--------------------------------------|----------|-------------|
+| 1  | `c2V`                | `c2v c2V(float x, float y)` | yes | yes |
+| 2  | `c2Mulvs`            | `c2v c2Mulvs(c2v a, float b)` | yes | yes |
+| 3  | `c2Maxv`             | `c2v c2Maxv(c2v a, c2v b)` | yes | yes |
+| 4  | `c2Minv`             | `c2v c2Minv(c2v a, c2v b)` | yes | yes |
+| 5  | `c2Clampv`           | `c2v c2Clampv(c2v a, c2v lo, c2v hi)` | yes | yes |
+| 6  | `c2Sub`              | `c2v c2Sub(c2v a, c2v b)` | yes | yes |
+| 7  | `c2Dot`              | `float c2Dot(c2v a, c2v b)` | yes | yes |
+| 8  | `c2RotIdentity`      | `c2r c2RotIdentity(void)` | yes | yes |
+| 9  | `c2xIdentity`        | `c2x c2xIdentity(void)` | yes | yes |
+| 10 | `c2BBVerts`          | `void c2BBVerts(c2v *out, c2AABB *bb)` | yes | yes |
+| 11 | `c2MakeProxy`        | `void c2MakeProxy(const void *shape, C2_TYPE type, c2Proxy *p)` | yes | yes |
+| 12 | `c2Len`              | `float c2Len(c2v a)` | yes | yes |
+| 13 | `c2Det2`             | `float c2Det2(c2v a, c2v b)` | yes | yes |
+| 14 | `c2GJKSimplexMetric` | `float c2GJKSimplexMetric(c2Simplex *s)` | yes | yes |
+| 15 | `c2Mulrv`            | `c2v c2Mulrv(c2r a, c2v b)` | yes | yes |
+| 16 | `c2Add`              | `c2v c2Add(c2v a, c2v b)` | yes | yes |
+| 17 | `c2Mulxv`            | `c2v c2Mulxv(c2x a, c2v b)` | yes | yes |
+| 18 | `c22`                | `void c22(c2Simplex *s)` | yes | yes |
+| 19 | `c23`                | `void c23(c2Simplex *s)` | yes | yes |
+| 20 | `c2Neg`              | `c2v c2Neg(c2v a)` | yes | yes |
+| 21 | `c2Skew`             | `c2v c2Skew(c2v a)` | yes | yes |
+| 22 | `c2CCW90`            | `c2v c2CCW90(c2v a)` | yes | yes |
+| 23 | `c2D`                | `c2v c2D(c2Simplex *s)` | yes | yes |
+| 24 | `c2Support`          | `int c2Support(const c2v *verts, int count, c2v d)` | yes | yes |
+| 25 | `c2Witness`          | `void c2Witness(c2Simplex *s, c2v *a, c2v *b)` | yes | yes |
+| 26 | `c2Div`              | `c2v c2Div(c2v a, float b)` | yes | yes |
+| 27 | `c2Norm`             | `c2v c2Norm(c2v a)` | yes | yes |
+| 28 | `c2L`                | `c2v c2L(c2Simplex *s)` | yes | yes |
+| 29 | `c2MulrvT`           | `c2v c2MulrvT(c2r a, c2v b)` | yes | yes |
+| 30 | `c2GJK`              | `float c2GJK(const void*, C2_TYPE, const c2x*, const void*, C2_TYPE, const c2x*, c2v*, c2v*, int, int*, c2GJKCache*)` | yes | yes |
+| 31 | `gjk_cache`          | `void gjk_cache(char, c2v*, c2v*, float×9)` | yes | yes |
+
+## Result
+
+- Missing in Rust (`comm -23`): **EMPTY** ✅
+- Extra in Rust (`comm -13`): **EMPTY** ✅
+- Undefined symbols in the Rust `.so`: only libc / libgcc-unwind
+  (`memcpy`, `malloc`, `_Unwind_*`, `abort`, …) — **0 missing non-libc
+  symbols** ✅
+- No C source file was left untranslated: `c_src/src/lib.c` is the only
+  translation unit and every non-static function in it is present.
+
+## Verification status
+
+Verified by `./run_all.sh` from a clean tree (C `build/` and `target/` removed):
+
+| profile | symbol parity | undefined non-libc | differential tests |
+|---------|---------------|--------------------|--------------------|
+| `debug`   | 31 / 31, 0 missing, 0 extra | none | 88 passed, 0 failed |
+| `release` | 31 / 31, 0 missing, 0 extra | none | 88 passed, 0 failed |
+
+`tests/phase_c_errors.rs::harness_loads_two_distinct_libraries` proves the
+suite is not comparing one library against itself: it asserts the two `.so`
+paths differ and that all 31 resolved function pointers are at different
+addresses in the two objects. The test harness selects the Rust `.so` matching
+its own build profile (derived from `current_exe()`), so a `--release` run
+always exercises the release cdylib.
+
+## Build / feature configurations
+
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+feature combination is the default (empty) one. `--no-default-features`
+is therefore equivalent to the default build; both are exercised by the
+`run_all.sh` driver. The C project builds **no binary executable**
+(`add_library(... SHARED ...)` only), so there is no stdout comparison to
+make; the FFI differential tests are the complete surface.

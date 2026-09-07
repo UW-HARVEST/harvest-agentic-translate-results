@@ -1,33 +1,22 @@
 # Dynamic Symbol Surface
 
-Source library:
-`../c_src/build/libharvest-work-jskHrr.so`
+Generated from the built shared libraries with:
 
-Inventory command:
-
-```sh
-nm -D ../c_src/build/libharvest-work-jskHrr.so
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-QXNeUh.so
+nm -D --defined-only target/release/libsynth_pair_lib.so
 ```
 
-## C-defined public symbols
+| C symbol | C type | Rust symbol present | Notes |
+|----------|--------|---------------------|-------|
+| `synth_pair` | `T` | yes | Exported as `extern "C"` with an unmangled name. |
 
-| symbol | C `nm -D` type | Rust export | status |
-|--------|----------------|-------------|--------|
-| `synth_pair` | `T` | `T` | [x] |
+Missing C symbols in Rust: **0**
 
-## Toolchain weak imports
+The C library has no other defined dynamic symbols.
 
-These are undefined weak runtime references, not symbols defined by the C
-library. They are listed because they appear in the unfiltered `nm -D` output.
+Final verification:
 
-| symbol | C `nm -D` type | present in Rust `nm -D` |
-|--------|----------------|--------------------------|
-| `_ITM_deregisterTMCloneTable` | `w` | yes |
-| `_ITM_registerTMCloneTable` | `w` | yes |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | yes |
-| `__gmon_start__` | `w` | yes |
-
-## Completion
-
-- [x] C-defined symbols missing from the Rust shared library: 0
-- [x] C-defined symbols left undefined by the Rust shared library: 0
+- [x] Exact `nm -D --defined-only` symbol diff is empty.
+- [x] `ldd -r` reports no unresolved symbols in either shared library.
+- [x] The result holds after both default and `--no-default-features` builds.

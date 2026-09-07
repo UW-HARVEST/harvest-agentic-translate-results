@@ -171,12 +171,11 @@ pub extern "C" fn c2Dist(h: c2h, p: c2v) -> c_float {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2PlaneAt(p: *const c2Poly, i: c_int) -> c2h {
-    let p = &*p;
-    let i = i as usize;
-    c2h {
-        n: p.norms[i],
-        d: c2Dot(p.norms[i], p.verts[i]),
-    }
+    let verts = std::ptr::addr_of!((*p).verts).cast::<c2v>();
+    let norms = std::ptr::addr_of!((*p).norms).cast::<c2v>();
+    let v = *verts.offset(i as isize);
+    let n = *norms.offset(i as isize);
+    c2h { n, d: c2Dot(n, v) }
 }
 
 #[unsafe(no_mangle)]
@@ -202,11 +201,7 @@ pub unsafe extern "C" fn c2BBVerts(out: *mut c2v, bb: *mut c2AABB) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2MakeProxy(
-    shape: *const c_void,
-    typ: C2_TYPE,
-    p: *mut c2Proxy,
-) {
+pub unsafe extern "C" fn c2MakeProxy(shape: *const c_void, typ: C2_TYPE, p: *mut c2Proxy) {
     match typ {
         C2_TYPE_CIRCLE => {
             let c = &*(shape as *const c2Circle);
@@ -471,11 +466,7 @@ pub unsafe extern "C" fn c2D(s: *mut c2Simplex) -> c2v {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2Support(
-    verts: *const c2v,
-    count: c_int,
-    d: c2v,
-) -> c_int {
+pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c_int {
     let mut imax = 0;
     let mut dmax = c2Dot(*verts, d);
     for i in 1..count {
@@ -648,11 +639,7 @@ pub unsafe extern "C" fn c2GJK(
         if c2Dot(d, d) < c_float::EPSILON * c_float::EPSILON {
             break;
         }
-        let iA = c2Support(
-            pA.verts.as_ptr(),
-            pA.count,
-            c2MulrvT(ax.r, c2Neg(d)),
-        );
+        let iA = c2Support(pA.verts.as_ptr(), pA.count, c2MulrvT(ax.r, c2Neg(d)));
         let sA = c2Mulxv(ax, pA.verts[iA as usize]);
         let iB = c2Support(pB.verts.as_ptr(), pB.count, c2MulrvT(bx.r, d));
         let sB = c2Mulxv(bx, pB.verts[iB as usize]);
@@ -731,11 +718,7 @@ pub extern "C" fn c2Absv(a: c2v) -> c2v {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2CircletoCircleManifold(
-    A: c2Circle,
-    B: c2Circle,
-    m: *mut c2Manifold,
-) {
+pub unsafe extern "C" fn c2CircletoCircleManifold(A: c2Circle, B: c2Circle, m: *mut c2Manifold) {
     (*m).count = 0;
     let d = c2Sub(B.p, A.p);
     let d2 = c2Dot(d, d);
@@ -755,11 +738,7 @@ pub unsafe extern "C" fn c2CircletoCircleManifold(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2CircletoAABBManifold(
-    A: c2Circle,
-    B: c2AABB,
-    m: *mut c2Manifold,
-) {
+pub unsafe extern "C" fn c2CircletoAABBManifold(A: c2Circle, B: c2AABB, m: *mut c2Manifold) {
     (*m).count = 0;
     let L = c2Clampv(A.p, B.min, B.max);
     let ab = c2Sub(L, A.p);
@@ -796,11 +775,7 @@ pub unsafe extern "C" fn c2CircletoAABBManifold(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2CircletoCapsuleManifold(
-    A: c2Circle,
-    B: c2Capsule,
-    m: *mut c2Manifold,
-) {
+pub unsafe extern "C" fn c2CircletoCapsuleManifold(A: c2Circle, B: c2Capsule, m: *mut c2Manifold) {
     (*m).count = 0;
     let mut a = c2v::default();
     let mut b = c2v::default();
@@ -832,11 +807,7 @@ pub unsafe extern "C" fn c2CircletoCapsuleManifold(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2AABBtoAABBManifold(
-    A: c2AABB,
-    B: c2AABB,
-    m: *mut c2Manifold,
-) {
+pub unsafe extern "C" fn c2AABBtoAABBManifold(A: c2AABB, B: c2AABB, m: *mut c2Manifold) {
     (*m).count = 0;
     let mid_a = c2Mulvs(c2Add(A.min, A.max), 0.5);
     let mid_b = c2Mulvs(c2Add(B.min, B.max), 0.5);
@@ -853,30 +824,14 @@ pub unsafe extern "C" fn c2AABBtoAABBManifold(
     }
     let (n, depth, p) = if dx < dy {
         if d.x < 0.0 {
-            (
-                c2V(-1.0, 0.0),
-                dx,
-                c2Sub(mid_a, c2V(eA.x, 0.0)),
-            )
+            (c2V(-1.0, 0.0), dx, c2Sub(mid_a, c2V(eA.x, 0.0)))
         } else {
-            (
-                c2V(1.0, 0.0),
-                dx,
-                c2Add(mid_a, c2V(eA.x, 0.0)),
-            )
+            (c2V(1.0, 0.0), dx, c2Add(mid_a, c2V(eA.x, 0.0)))
         }
     } else if d.y < 0.0 {
-        (
-            c2V(0.0, -1.0),
-            dy,
-            c2Sub(mid_a, c2V(0.0, eA.y)),
-        )
+        (c2V(0.0, -1.0), dy, c2Sub(mid_a, c2V(0.0, eA.y)))
     } else {
-        (
-            c2V(0.0, 1.0),
-            dy,
-            c2Add(mid_a, c2V(0.0, eA.y)),
-        )
+        (c2V(0.0, 1.0), dy, c2Add(mid_a, c2V(0.0, eA.y)))
     };
     (*m).count = 1;
     (*m).contact_points[0] = p;
@@ -899,12 +854,7 @@ unsafe fn c2KeepDeep(seg: *mut c2v, h: c2h, m: *mut c2Manifold) {
     (*m).n = h.n;
 }
 
-unsafe fn c2Incident(
-    incident: *mut c2v,
-    ip: *const c2Poly,
-    ix: c2x,
-    rn_in_incident_space: c2v,
-) {
+unsafe fn c2Incident(incident: *mut c2v, ip: *const c2Poly, ix: c2x, rn_in_incident_space: c2v) {
     let ip = &*ip;
     let mut index: c_int = !0;
     let mut min_dot = c_float::MAX;
@@ -916,11 +866,7 @@ unsafe fn c2Incident(
         }
     }
     *incident.add(0) = c2Mulxv(ix, ip.verts[index as usize]);
-    let next = if index + 1 == ip.count {
-        0
-    } else {
-        index + 1
-    };
+    let next = if index + 1 == ip.count { 0 } else { index + 1 };
     *incident.add(1) = c2Mulxv(ix, ip.verts[next as usize]);
 }
 
@@ -963,21 +909,13 @@ pub unsafe extern "C" fn c2CapsuletoPolyManifold(
             n: c2CCW90(ab),
             d: c2Dot(A_in_B.a, c2CCW90(ab)),
         };
-        let v0 = c2Support(
-            (*B).verts.as_ptr(),
-            (*B).count,
-            c2Neg(ab_h0.n),
-        );
+        let v0 = c2Support((*B).verts.as_ptr(), (*B).count, c2Neg(ab_h0.n));
         let s0 = c2Dist(ab_h0, (*B).verts[v0 as usize]);
         let ab_h1 = c2h {
             n: c2Skew(ab),
             d: c2Dot(A_in_B.a, c2Skew(ab)),
         };
-        let v1 = c2Support(
-            (*B).verts.as_ptr(),
-            (*B).count,
-            c2Neg(ab_h1.n),
-        );
+        let v1 = c2Support((*B).verts.as_ptr(), (*B).count, c2Neg(ab_h1.n));
         let s1 = c2Dist(ab_h1, (*B).verts[v1 as usize]);
         let mut index: c_int = !0;
         let mut sep = -c_float::MAX;
@@ -1019,13 +957,7 @@ pub unsafe extern "C" fn c2CapsuletoPolyManifold(
                 let mut incident = [c2v::default(); 2];
                 c2Incident(incident.as_mut_ptr(), B, bx, ab_h0.n);
                 let mut h = c2h::default();
-                if c2SidePlanes(
-                    incident.as_mut_ptr(),
-                    A_in_B.b,
-                    A_in_B.a,
-                    &mut h,
-                ) == 0
-                {
+                if c2SidePlanes(incident.as_mut_ptr(), A_in_B.b, A_in_B.a, &mut h) == 0 {
                     return;
                 }
                 c2KeepDeep(incident.as_mut_ptr(), h, m);
@@ -1034,13 +966,7 @@ pub unsafe extern "C" fn c2CapsuletoPolyManifold(
                 let mut incident = [c2v::default(); 2];
                 c2Incident(incident.as_mut_ptr(), B, bx, ab_h1.n);
                 let mut h = c2h::default();
-                if c2SidePlanes(
-                    incident.as_mut_ptr(),
-                    A_in_B.a,
-                    A_in_B.b,
-                    &mut h,
-                ) == 0
-                {
+                if c2SidePlanes(incident.as_mut_ptr(), A_in_B.a, A_in_B.b, &mut h) == 0 {
                     return;
                 }
                 c2KeepDeep(incident.as_mut_ptr(), h, m);
@@ -1068,11 +994,7 @@ pub unsafe extern "C" fn c2Norms(verts: *mut c2v, norms: *mut c2v, count: c_int)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2AABBtoCapsuleManifold(
-    A: c2AABB,
-    B: c2Capsule,
-    m: *mut c2Manifold,
-) {
+pub unsafe extern "C" fn c2AABBtoCapsuleManifold(A: c2AABB, B: c2Capsule, m: *mut c2Manifold) {
     (*m).count = 0;
     let mut p = c2Poly::default();
     c2BBVerts(p.verts.as_mut_ptr(), &A as *const _ as *mut c2AABB);
@@ -1135,11 +1057,9 @@ pub unsafe extern "C" fn c2Collide(
             C2_TYPE_AABB => {
                 c2CircletoAABBManifold(*(A as *const c2Circle), *(B as *const c2AABB), m)
             }
-            C2_TYPE_CAPSULE => c2CircletoCapsuleManifold(
-                *(A as *const c2Circle),
-                *(B as *const c2Capsule),
-                m,
-            ),
+            C2_TYPE_CAPSULE => {
+                c2CircletoCapsuleManifold(*(A as *const c2Circle), *(B as *const c2Capsule), m)
+            }
             _ => {}
         },
         C2_TYPE_AABB => match typeB {
@@ -1147,38 +1067,24 @@ pub unsafe extern "C" fn c2Collide(
                 c2CircletoAABBManifold(*(B as *const c2Circle), *(A as *const c2AABB), m);
                 (*m).n = c2Neg((*m).n);
             }
-            C2_TYPE_AABB => {
-                c2AABBtoAABBManifold(*(A as *const c2AABB), *(B as *const c2AABB), m)
+            C2_TYPE_AABB => c2AABBtoAABBManifold(*(A as *const c2AABB), *(B as *const c2AABB), m),
+            C2_TYPE_CAPSULE => {
+                c2AABBtoCapsuleManifold(*(A as *const c2AABB), *(B as *const c2Capsule), m)
             }
-            C2_TYPE_CAPSULE => c2AABBtoCapsuleManifold(
-                *(A as *const c2AABB),
-                *(B as *const c2Capsule),
-                m,
-            ),
             _ => {}
         },
         C2_TYPE_CAPSULE => match typeB {
             C2_TYPE_CIRCLE => {
-                c2CircletoCapsuleManifold(
-                    *(B as *const c2Circle),
-                    *(A as *const c2Capsule),
-                    m,
-                );
+                c2CircletoCapsuleManifold(*(B as *const c2Circle), *(A as *const c2Capsule), m);
                 (*m).n = c2Neg((*m).n);
             }
             C2_TYPE_AABB => {
-                c2AABBtoCapsuleManifold(
-                    *(B as *const c2AABB),
-                    *(A as *const c2Capsule),
-                    m,
-                );
+                c2AABBtoCapsuleManifold(*(B as *const c2AABB), *(A as *const c2Capsule), m);
                 (*m).n = c2Neg((*m).n);
             }
-            C2_TYPE_CAPSULE => c2CapsuletoCapsuleManifold(
-                *(A as *const c2Capsule),
-                *(B as *const c2Capsule),
-                m,
-            ),
+            C2_TYPE_CAPSULE => {
+                c2CapsuletoCapsuleManifold(*(A as *const c2Capsule), *(B as *const c2Capsule), m)
+            }
             _ => {}
         },
         _ => {}

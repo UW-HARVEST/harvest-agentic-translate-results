@@ -1,26 +1,21 @@
 # Error Surface
 
-The C source has one explicit rejection. It has no error enums, error-return
-macros, `assert` calls, range checks, or null checks.
+Mechanical source scan:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `FIO_createFilename_fromOutDir` | `calloc(1, strlen(outDirName) + 1 + strlen(filenameStart) + suffixLen + 1)` returns `NULL` | writes `zstd: FIO_createFilename_fromOutDir: ` followed by `strerror(errno)` to `stderr`, then exits with status 30 | [x] |
+```text
+rg -n 'RETURN_ERROR|return\s+-1|return\s+NULL|assert\s*\(|if\s*\(|NULL|MIN|MAX|exit\s*\(|calloc' c_src/include c_src/src
+```
 
-## Generic FFI Boundaries
+There are no error-return macros, `-1`/`NULL` error returns, assertions, enum
+validation branches, explicit argument-null checks, or min/max range checks.
+The sole explicit rejection branch is allocation failure:
 
-These are not explicit C rejections. They exercise the mandatory generic
-boundaries in isolated subprocesses because the C implementation dereferences
-the pointers and therefore terminates by signal for null inputs.
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 [x] | `FIO_createFilename_fromOutDir` | `calloc(1, strlen(outDirName) + 1 + strlen(filenameStart) + suffixLen + 1)` returns `NULL` | Write `zstd: FIO_createFilename_fromOutDir: ` followed by `strerror(errno)` to `stderr` (no newline), then terminate via `exit(30)` |
 
-| # | function | boundary | expected C result | tested |
-|---|----------|----------|-------------------|--------|
-| G1 | `extractFilename` | `path == NULL` | process terminates by signal while `strrchr` reads `path` | [x] |
-| G2 | `FIO_createFilename_fromOutDir` | `path == NULL` | process terminates by signal while extracting the filename | [x] |
-| G3 | `FIO_createFilename_fromOutDir` | `outDirName == NULL` | process terminates by signal while evaluating `strlen(outDirName)` | [x] |
-| G4 | `FIO_createFilename_fromOutDir` | empty `outDirName` placed at a guard-page boundary | process terminates by signal on `outDirName[strlen(outDirName)-1]` | [x] |
-| G5 | `FIO_createFilename_fromOutDir` | `suffixLen == 0` | valid result; covered by every zero-suffix configuration row | [x] |
-| G6 | `FIO_createFilename_fromOutDir` | oversized `suffixLen` whose allocation cannot be represented by the allocator | same explicit allocation-failure result as row 1 | [x] |
+Mandatory generic FFI boundary cases, although they are not explicit C
+rejection branches, are also tested: null `path`, null `outDirName`, zero
+`suffixLen`, and an oversized `suffixLen`. There are no enum parameters or
+documented numeric ranges in this API.
 
-There are no enum parameters or documented numeric ranges, so out-of-range
-enum and one-past-range cases do not apply.

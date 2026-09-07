@@ -1,24 +1,28 @@
-# Configuration Surface
+# Configuration surface
 
-The only public entry point is `decode_base64`. It has no runtime options,
-compile-time features, explicit length, element type, format, or byte-order
-setting. Rows below come from the branches in `decode`, `is_base64`, and
-`decode_base64`; together they cover each filtered-length shape, decode class,
-filtering path, padding branch, and one/many-chunk shape.
+The public API has one entry point and no runtime options, modes, flags,
+element-type choices, byte-order choices, compile-time feature branches, or
+public state. The rows below enumerate the combinations distinguished by the
+actual filtering, quartet-width, character-decoding, and padding branches in
+`c_src/src/lib.c`. Null and empty inputs are rejection cases in `ERRORS.md`.
 
-| # | entry point(s) | configuration (options set + input shape) | Covered |
-|---|----------------|--------------------------------------------|---------|
-| 1 | `decode_base64` | One quartet; uppercase alphabet characters (`A`-`Z`); filtered length `0 mod 4`; neither padding branch taken | [x] |
-| 2 | `decode_base64` | One quartet mixing lowercase (`a`-`z`), digits (`0`-`9`), `+`, and `/`; all decode classes exercised | [x] |
-| 3 | `decode_base64` | Exactly one retained character (`1 mod 4`); `c2`, `c3`, and `c4` default to `A` | [x] |
-| 4 | `decode_base64` | Exactly two retained characters (`2 mod 4`); `c3` and `c4` default to `A` | [x] |
-| 5 | `decode_base64` | Exactly three retained characters (`3 mod 4`); `c4` defaults to `A` | [x] |
-| 6 | `decode_base64` | `=` in position 3 and non-`=` in position 4; second output byte suppressed, third emitted | [x] |
-| 7 | `decode_base64` | Non-`=` in position 3 and `=` in position 4; second output byte emitted, third suppressed | [x] |
-| 8 | `decode_base64` | `=` in positions 3 and 4; both conditional output bytes suppressed | [x] |
-| 9 | `decode_base64` | `=` in position 1 or 2; retained and decoded through the default value `63`, without suppressing bytes | [x] |
-| 10 | `decode_base64` | Invalid bytes mixed before, between, and after valid bytes; invalid bytes ignored | [x] |
-| 11 | `decode_base64` | Nonempty source containing no retained Base64 characters; successful empty decoded result | [x] |
-| 12 | `decode_base64` | Multiple quartets, including padding or an incomplete final quartet; loop executes many times | [x] |
-| 13 | `decode_base64` | Valid input whose decoded bytes contain embedded NUL bytes; compare produced bytes rather than C-string length | [x] |
-| 14 | `decode_base64` | Long NUL-terminated input, exercising the API's only oversized-input boundary | [x] |
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| 1 | `decode_base64` | nonempty source; filtering leaves zero base64 characters (all bytes ignored) | [x] |
+| 2 | `decode_base64` | filtered length is `1 mod 4`; missing `c2`, `c3`, and `c4` default to `A` | [x] |
+| 3 | `decode_base64` | filtered length is `2 mod 4`; missing `c3` and `c4` default to `A` | [x] |
+| 4 | `decode_base64` | filtered length is `3 mod 4`; missing `c4` defaults to `A` | [x] |
+| 5 | `decode_base64` | one complete quartet with no `=` padding | [x] |
+| 6 | `decode_base64` | complete quartet with `c3 == '='` and `c4 == '='`; both conditional output branches are suppressed | [x] |
+| 7 | `decode_base64` | complete quartet with data in `c3` and `c4 == '='`; only the third output byte is suppressed | [x] |
+| 8 | `decode_base64` | complete quartet with `c3 == '='` and data in `c4`; second output byte is suppressed but third is emitted | [x] |
+| 9 | `decode_base64` | `=` occurs in `c1`; `decode('=')` takes the default value `63` | [x] |
+| 10 | `decode_base64` | `=` occurs in `c2`; `decode('=')` takes the default value `63` | [x] |
+| 11 | `decode_base64` | multiple quartets, including independently padded/unpadded quartets | [x] |
+| 12 | `decode_base64` | ignored non-base64 ASCII bytes occur before, between, and after accepted bytes | [x] |
+| 13 | `decode_base64` | accepted bytes exercise every decode class and its boundaries: `A-Z`, `a-z`, `0-9`, `+`, `/`, and `=` | [x] |
+| 14 | `decode_base64` | non-ASCII bytes (`0x80-0xff`) are present and ignored by `is_base64` | [x] |
+| 15 | `decode_base64` | long nonempty source with many quartets and ignored bytes (oversized generic boundary/stress shape; no C maximum exists) | [x] |
+
+Cargo declares no features, so the only feature configuration is the default
+empty feature set (equivalent to `--no-default-features`).

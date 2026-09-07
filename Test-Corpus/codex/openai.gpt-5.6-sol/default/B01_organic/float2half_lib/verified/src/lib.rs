@@ -60,3 +60,30 @@ pub extern "C" fn float2half(flt: f32) -> u16 {
 
     BASE[index] + (((bits & 0x007f_ffff) >> SHIFT[index]) as u16)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::float2half;
+
+    #[test]
+    fn representative_encodings_match_the_reference() {
+        let cases = [
+            (0x0000_0000, 0x0000),
+            (0x8000_0000, 0x8000),
+            (0x3380_0000, 0x0001),
+            (0x387f_e000, 0x03ff),
+            (0x3880_0000, 0x0400),
+            (0x3f80_0000, 0x3c00),
+            (0x477f_e000, 0x7bff),
+            (0x4780_0000, 0x7c00),
+            (0x7f80_0000, 0x7c00),
+            (0x7fc0_0000, 0x7e00),
+            (0xff80_0000, 0xfc00),
+            (0xffff_ffff, 0xffff),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(float2half(f32::from_bits(input)), expected);
+        }
+    }
+}

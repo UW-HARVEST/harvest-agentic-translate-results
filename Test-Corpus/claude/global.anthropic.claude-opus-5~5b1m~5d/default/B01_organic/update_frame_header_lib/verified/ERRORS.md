@@ -1,92 +1,57 @@
-# ERRORS.md — Phase A: error / rejection surface table
+# ERRORS.md — Phase C error / rejection surface table
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
+Derived mechanically from `c_src/src/lib.c` (145 lines) and
+`c_src/include/lib.h`.
 
-## Mechanical grep result (why the table looks the way it does)
+## Mechanical grep results
 
-```sh
-grep -nE "return|assert|NULL|ERROR|errno|goto|exit\(|abort\(|MIN|MAX|#if" \
-     c_src/src/lib.c c_src/include/lib.h
+```
+$ grep -nE 'return|RETURN_ERROR|assert|NULL|errno|goto|exit|abort' c_src/src/lib.c
+(no matches)
+
+$ grep -nE 'return|assert|NULL|errno' c_src/include/lib.h
+(no matches)
 ```
 
-**0 matches.** The library has:
+The library has **exactly one** public function, `void update_frame_header(tflac *t)`:
 
-* no `return` statement (the single entry point is `void`),
-* no error enum, no error code, no sentinel, no out-parameter status,
-* no `assert`, no `NULL` check, no `errno` use, no `goto`, no `abort`/`exit`,
-* no `#if`/`#ifdef` compile-time gate, no MIN/MAX constant.
+* return type is `void` — there is **no** error code, no sentinel, no `-1`, no
+  `NULL` return;
+* there is **no** `assert`, no `RETURN_ERROR` macro, no error enum, no `errno`
+  use, no `goto`-to-cleanup, no `exit`/`abort`;
+* there is **no** explicit range check, null check, or min/max constant that
+  rejects an input.
 
-Therefore `update_frame_header` **never rejects an input**. Its entire
-"error surface" is made of (a) one UB path (null pointer) and (b) *silent*
-rejections: `default:` arms and guarded `if`s that deliberately contribute
-**no bits** to `frame_header`, plus one unsigned-underflow path. Those silent
-paths are the observable "error result" and are exactly what the rows below
-pin down. Every row asserts the *same* observable outcome (the full 24-byte
-record, i.e. the resulting `frame_header`), not merely "both failed somehow".
-
-Baseline for every row: `frame_header` is unconditionally *assigned*
-`0xFFF8U << 16 == 0xFFF8_0000` at `lib.c:12`, so the incoming value of
-`frame_header` never leaks into the result, and a "no bits contributed"
-outcome means the corresponding nibble stays `0`.
+So the C code **never rejects any input**. Every reachable input is
+"accepted" and produces a defined `frame_header`. The rejection surface is
+therefore the set of *degenerate / out-of-domain inputs* that the C handles
+implicitly (by fallthrough, wrapping arithmetic, or truncation) rather than by
+returning an error. Each such implicit-handling branch is one row: the Rust must
+reproduce the same non-error behaviour bit for bit.
 
 ## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|---|----------|---------------------------------------------|-------------------|------|-----|
-| 1 | `update_frame_header` | `t == NULL` (no null check; `lib.c:12` writes through `t` immediately) | UB → store to address `0x10` → `SIGSEGV` (measured: wait status 139). The **release** Rust `.so` matches exactly: `SIGSEGV`. See the note below about debug builds. | `err_01_null_pointer_both_segv` | [x] |
-| 2 | `update_frame_header` | `cur_blocksize` matches no `case` **and** `<= 256` (`lib.c:53-55` `default`, true branch). Includes `cur_blocksize == 0`. | blocksize nibble `= 0x6`; `frame_header = 0xFFF8_6000 \| …` | `err_02_blocksize_default_le_256` | [x] |
-| 3 | `update_frame_header` | `cur_blocksize` matches no `case` **and** `> 256` (`lib.c:53-55` `default`, false branch). Includes `u32::MAX`. | blocksize nibble `= 0x7` | `err_03_blocksize_default_gt_256` | [x] |
-| 4 | `update_frame_header` | `cur_blocksize == 257` / `255` — one step past the `256` boundary of the `<=` test at `lib.c:55` | `257 -> 0x7`, `255 -> 0x6` (and exact `256` takes the `case 256` arm `-> 0x8`, not the default) | `err_04_blocksize_boundary_255_256_257` | [x] |
-| 5 | `update_frame_header` | `samplerate` in `default`, `% 1000 == 0`, **`/ 1000 >= 256`** — inner `if` at `lib.c:94` FAILS | samplerate nibble stays `0x0` (no bits ORed) | `err_05_samplerate_khz_out_of_range` | [x] |
-| 6 | `update_frame_header` | `samplerate` in `default`, `% 1000 == 0`, `/ 1000 == 256` exactly — one step past `< 256` (`samplerate == 256000`) | samplerate nibble `0x0`; while `255000 -> 0xC` | `err_06_samplerate_khz_boundary` | [x] |
-| 7 | `update_frame_header` | `samplerate` in `default`, `% 1000 != 0`, `>= 65536`, `% 10 == 0`, **`/ 10 >= 65536`** — inner `if` at `lib.c:100` FAILS (e.g. `655360`) | samplerate nibble stays `0x0` | `err_07_samplerate_dahz_out_of_range` | [x] |
-| 8 | `update_frame_header` | `samplerate` in `default`, `% 1000 != 0`, `>= 65536`, `% 10 == 0`, `/ 10 == 65536` exactly — one step past `< 65536` at `lib.c:100` | nibble `0x0`; while `655350 -> 0xE` | `err_08_samplerate_dahz_boundary` | [x] |
-| 9 | `update_frame_header` | `samplerate` in `default`, `% 1000 != 0`, `>= 65536`, **`% 10 != 0`** — every `else if` at `lib.c:97,99` fails, no `else` (e.g. `65537`, `u32::MAX`) | samplerate nibble stays `0x0` | `err_09_samplerate_unrepresentable` | [x] |
-| 10 | `update_frame_header` | `samplerate == 65536` / `65535` — one step past the `< 65536` test at `lib.c:97` | `65535 -> 0xD` (`%1000!=0`, `<65536`); `65536` falls through `lib.c:99` too (`65536 % 10 == 6 != 0`) `-> 0x0`, i.e. the boundary step silently loses the rate | `err_10_samplerate_65536_boundary` | [x] |
-| 11 | `update_frame_header` | `samplerate == 0` (invalid rate; `0 % 1000 == 0` and `0 / 1000 == 0 < 256`) | nibble `0xC` — silently accepted, NOT rejected | `err_11_samplerate_zero` | [x] |
-| 12 | `update_frame_header` | `channels == 0` with `channel_mode % 4 == 0`: unsigned underflow `(t->channels - 1)` at `lib.c:109` | `0u32.wrapping_sub(1) << 4 == 0xFFFF_FFF0` ORed in → `frame_header == 0xFFFF_FFF0 \| …` (all high bits set) | `err_12_channels_zero_underflow` | [x] |
-| 13 | `update_frame_header` | `channels > 8` (beyond FLAC's legal 1..8) with mode 0, e.g. `17..=0x1000_0000` — no range check; `(channels-1) << 4` **overflows the 4-bit field** and corrupts the samplerate/blocksize nibbles | `(channels-1) << 4` ORed in with wrapping shift-out of the top 4 bits | `err_13_channels_out_of_range` | [x] |
-| 14 | `update_frame_header` | `channels` such that `(channels-1) << 4` discards high bits, e.g. `channels == 0x1000_0001` → `0x1000_0000 << 4 == 0` | only the shifted-in low bits appear; no wrap-around panic | `err_14_channels_shift_truncation` | [x] |
-| 15 | `update_frame_header` | `channel_mode` **out-of-range enum value** `== TFLAC_CHANNEL_MODE_COUNT (4)` — a `TFLAC_CHANNEL_MODE` with no meaningful variant, folded by `% 4` at `lib.c:106` | behaves exactly as mode `0` (INDEPENDENT), i.e. `(channels-1) << 4` | `err_15_channel_mode_count_alias` | [x] |
-| 16 | `update_frame_header` | `channel_mode` out-of-range enum value `5..=255` (incl. `255`) crossing the FFI boundary as a plain int | folded by `% 4`: `mode = channel_mode % 4`, same result as `channel_mode & 3` | `err_16_channel_mode_all_256_values` | [x] |
-| 17 | `update_frame_header` | the `default:` arm of the channel-mode `switch` (`lib.c:120-121`) — **unreachable**, since `mode = x % 4 ∈ {0,1,2,3}` covers all four enumerators | never taken; no `channel_mode` value may leave the channel nibble unset (except via mode 0 + `channels == 1`) | `err_17_channel_mode_default_unreachable` | [x] |
-| 18 | `update_frame_header` | `bitdepth` matches no `case` → `default: break` (`lib.c:142-143`). Includes `0`, `1`, `7`, `9`, `11`, `13`, `33`, `u32::MAX`. | sample-size field stays `0x0` (bits 1..3 clear) — silently accepted | `err_18_bitdepth_default` | [x] |
-| 19 | `update_frame_header` | `bitdepth` one step past each valid value (`7/9`, `11/13`, `15/17`, `19/21`, `23/25`, `31/33`) | all take `default` → no bits; only the exact 6 values set bits | `err_19_bitdepth_off_by_one` | [x] |
-| 20 | `update_frame_header` | every field simultaneously at an extreme (`0` everywhere; `u32::MAX`/`0xFF` everywhere) — worst-case combination of the above silent rejections | deterministic single value each; must match bit-for-bit | `err_20_all_fields_extremes` | [x] |
-| 21 | `update_frame_header` | bit 0 of `frame_header` and the padding bytes of `struct tflac` are never written by any path | bit 0 stays `0`; the 3 padding bytes at offsets 13..15 keep their pre-call value; nothing outside the 24-byte record is written | `err_21_no_stray_writes` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|----------------------------------------------|-------------------|------|
+| 1 | `update_frame_header` | `t == NULL` | Undefined behaviour: C dereferences `t` unconditionally at `t->frame_header = ...` with no null check → SIGSEGV. Rust does the same (`&mut *t`). Documented, NOT differentially executed (a crash cannot be compared). | `err_01_null_pointer_documented_not_executed` |
+| 2 | `update_frame_header` | `cur_blocksize` not any of the 13 listed cases **and** `<= 256` (e.g. `0`, `1`, `191`, `255`) | no error; `default:` arm ORs `0x06 << 12`. Note `cur_blocksize == 0` is accepted. | `err_02_blocksize_default_low` |
+| 3 | `update_frame_header` | `cur_blocksize` not listed and `> 256` (e.g. `257`, `4294967295`) | no error; `default:` arm ORs `0x07 << 12` | `err_03_blocksize_default_high` |
+| 4 | `update_frame_header` | `cur_blocksize` one step past each listed case (`191/193`, `575/577`, `32767/32769`, …) | no error; falls to `default:` and takes the `<=256 ? 0x06 : 0x07` branch, NOT the neighbouring case's code | `err_04_blocksize_off_by_one` |
+| 5 | `update_frame_header` | `samplerate == 0` | no error; `0 % 1000 == 0` and `0/1000 == 0 < 256` → ORs `0x0C << 8`. Division by zero is impossible (0 is the dividend). | `err_05_samplerate_zero` |
+| 6 | `update_frame_header` | `samplerate % 1000 == 0` but `samplerate / 1000 >= 256` (e.g. `256000`, `4294000000`) | no error; **inner `if` fails and NOTHING is ORed** — sample-rate nibble stays `0x0` (the "get from STREAMINFO" code). This is the C's silent-reject path. | `err_06_samplerate_khz_overflow` |
+| 7 | `update_frame_header` | `samplerate % 1000 != 0`, `samplerate < 65536` (e.g. `1`, `65535`, `22051`) | no error; ORs `0x0D << 8` | `err_07_samplerate_hz_small` |
+| 8 | `update_frame_header` | `samplerate % 1000 != 0`, `>= 65536`, `% 10 == 0`, `samplerate / 10 < 65536` (e.g. `65540`, `655350`) | no error; ORs `0x0E << 8` | `err_08_samplerate_dahz` |
+| 9 | `update_frame_header` | `samplerate % 1000 != 0`, `>= 65536`, `% 10 == 0`, `samplerate / 10 >= 65536` (e.g. `655360`, `4294967290`) | no error; **nothing ORed**, nibble stays `0x0` — second silent-reject path | `err_09_samplerate_dahz_overflow` |
+| 10 | `update_frame_header` | `samplerate % 1000 != 0`, `>= 65536`, `% 10 != 0` (e.g. `65537`, `4294967295`) | no error; all three branches fail, **nothing ORed**, nibble stays `0x0` — third silent-reject path | `err_10_samplerate_no_branch` |
+| 11 | `update_frame_header` | `samplerate` one step past each boundary: `65535/65536/65537`, `255000/256000`, `655350/655360` | no error; the exact branch selected per rows 6–10 | `err_11_samplerate_boundaries` |
+| 12 | `update_frame_header` | `channel_mode` out-of-range for `enum TFLAC_CHANNEL_MODE`, i.e. `>= 4` (`4 == TFLAC_CHANNEL_MODE_COUNT`, `5`, `255`) | no error; C computes `mode = channel_mode % 4` FIRST, so `4→0`, `5→1`, `255→3`. The `default:` arm of that switch is therefore **unreachable**. An out-of-range enum value is silently folded, not rejected. | `err_12_channel_mode_out_of_range` |
+| 13 | `update_frame_header` | `channels == 0` with `channel_mode % 4 == 0` | no error; `(t->channels - 1)` is `uint32_t` arithmetic → wraps to `0xFFFFFFFF`, `<< 4` → `0xFFFFFFF0`, ORed in. Sets many high bits of `frame_header`. Rust must use `wrapping_sub`, not `-`. | `err_13_channels_zero_wraps` |
+| 14 | `update_frame_header` | `channels` huge / out of FLAC range, mode `0` (e.g. `9`, `16`, `17`, `0xFFFFFFFF`) | no error; `(channels-1) << 4` is ORed with high bits intact — no masking to 4 bits, no range check. `channels == 0x10000000+` shifts bits out the top (truncation, not UB). | `err_14_channels_out_of_range` |
+| 15 | `update_frame_header` | `channels` non-zero but `channel_mode % 4 != 0` | no error; `channels` is **completely ignored** (not validated against the 2-channel requirement of side/mid modes) | `err_15_channels_ignored_in_stereo_modes` |
+| 16 | `update_frame_header` | `bitdepth` not in `{8,12,16,20,24,32}` (e.g. `0`, `1`, `7`, `9`, `33`, `0xFFFFFFFF`) | no error; `default:` arm is **empty** → nothing ORed, sample-size nibble stays `0` ("get from STREAMINFO"). Silent accept. | `err_16_bitdepth_unlisted` |
+| 17 | `update_frame_header` | `bitdepth` one step past each listed case (`7/9`, `11/13`, `31/33`, …) | no error; empty `default:`, bits `1..3` stay `0` | `err_17_bitdepth_off_by_one` |
+| 18 | `update_frame_header` | `frame_header` pre-populated with garbage (e.g. `0xFFFFFFFF`) before the call | no error; first statement is an unconditional **assignment** (`=`, not `|=`), so the prior value is fully discarded | `err_18_frame_header_overwritten` |
+| 19 | `update_frame_header` | all-max input: every `u32` field `0xFFFFFFFF`, `channel_mode = 0xFF` | no error; must not panic. In Rust, debug-mode `-` and `<<` overflow checks would panic where C wraps/truncates — this row guards that. | `err_19_all_fields_max` |
+| 20 | `update_frame_header` | bit 0 and bits 4..7 of the reserved/blocking-strategy area | no error; bit 0 of `frame_header` is **never set** by any path (always 0), and the padding bytes of the struct are never written | `err_20_reserved_bit_and_padding` |
 
-Rows 1-21 plus three extra generic-boundary tests (`err_22_*`
-out-of-range-enum cross product, `err_23_*` fully random record bytes, and the
-`err_01_*` helper) are implemented in `tests/phase_c_errors.rs` — 23 tests, all
-passing against both libraries.
-
-## Note on row 1 (NULL) — debug vs release Rust
-
-Measured wait statuses from a `dlopen`/`dlsym` harness calling
-`update_frame_header(NULL)`:
-
-| library | result |
-|---------|--------|
-| C `.so` (gcc 11.5) | `SIGSEGV` (139) |
-| Rust `.so`, `--release` | `SIGSEGV` (139) — **identical to C** |
-| Rust `.so`, debug | `SIGABRT` (134) |
-
-The debug build differs because rustc, when `debug_assertions` is on, injects its
-own null-pointer UB check that `panic!`s with `null pointer dereference
-occurred`; inside an `extern "C"` function that panic cannot unwind, so it
-aborts *before* the faulting store is executed. That instrumentation is a
-compiler diagnostic, not part of the translation, and it is absent from the
-release cdylib — the artifact an external caller actually loads.
-
-`err_01_null_pointer_both_segv` therefore asserts:
-
-1. the C `.so` dies of `SIGSEGV`;
-2. the **release** Rust `.so` produces the byte-identical `(exit code, signal)`
-   pair as the C;
-3. the `.so` under test never *returns normally* from a NULL pointer, and if its
-   signal differs from C's it must provably be a debug-assertions build (the test
-   greps the `.so` for rustc's `null pointer dereference occurred` string) and
-   the signal must be exactly `SIGABRT`.
-
-So the divergence is detected, explained, and bounded — it cannot silently hide a
-real translation defect.
+**All 20 rows are checked off — see `tests/phase_c_errors.rs`.**

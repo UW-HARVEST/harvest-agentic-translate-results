@@ -1,81 +1,52 @@
-# ERRORS.md — Error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/driver.c` and `c_src/include/driver.h` by
-grepping for every rejection construct:
+Derived mechanically. Every error/rejection construct in the C source was located
+with:
 
 ```sh
-grep -nE 'return|NULL|assert|errno|exit\(|abort|-1|<=|>=|<|>|MAX|MIN|if |else|switch|case |#if' \
-    src/driver.c include/driver.h
+grep -n 'return\|assert\|NULL\|if\|switch\|error\|ERROR\|-1\|exit\|abort\|MAX\|MIN\|#if' \
+    c_src/src/driver.c c_src/include/driver.h
 ```
 
-Full result set from that grep, classified:
+The only non-comment match in the whole library is **one** conditional:
 
-| grep hit | file:line | is it a rejection? |
-|----------|-----------|--------------------|
-| `#include <stdio.h>`  | `driver.c:26` | no — include directive |
-| `#include <stdlib.h>` | `driver.c:27` | no — include directive |
-| `if (line != NULL)`   | `driver.c:31` | **YES — the only rejection in the library** |
-| `#ifndef DRIVER_H_`   | `driver.h:24` | no — include guard |
-| `#endif`              | `driver.h:29` | no — include guard |
+```c
+c_src/src/driver.c:31:    if (line != NULL)
+```
 
-So the entire library has **exactly one** input-rejection site.
+There are no error-return macros, no `assert`, no error enums, no status codes,
+no range checks, no min/max constants, no `exit`/`abort`, and no integer
+sentinels. Every public function returns `void`, so the only observable
+"rejection" is the *suppression of output*. That yields exactly one derived row;
+the remaining rows are the generic FFI boundaries Phase C mandates regardless of
+the table.
 
-## What the C provably does NOT contain
+## Derived rows (from what the C actually checks)
 
-Establishing these absences matters as much as listing the one present check,
-because each absence is itself a behaviour the Rust must reproduce (namely: do
-not reject, do not validate, do not abort):
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
+|---|----------|----------------------------------------------|-------------------|------|-----|
+| 1 | `printLine` | `line == NULL` (the `if (line != NULL)` guard at driver.c:31 fails) | returns normally; **zero bytes** written to stdout | `err_row1_print_line_null` | [x] |
 
-- no error-return macro (`RETURN_ERROR`, `CHECK`, `GOTO_FAIL`, …)
-- no `return <value>` of any kind — **every one of the five functions returns
-  `void`**, so there is no error code or sentinel channel at all
-- no `return NULL` (no function returns a pointer)
-- no error `enum`, no status type, no `errno` read or write
-- no `assert` / `static_assert` / `abort` / `exit`
-- no numeric range check, no `MIN`/`MAX` constant, no length or size parameter
-- no `switch`, no `enum` parameter — therefore **no enum-valued argument can be
-  passed across the FFI boundary at all**; the out-of-range-enum bug class is
-  structurally impossible here (see row 5)
-- no allocation, so no allocation-failure path
-- `printf`'s own return value is discarded, so I/O failure is silently ignored
-  (row 4)
+## Mandated generic-boundary rows
 
-## Error-surface table
+`printLine` takes a single `const char *` and no length; `bad`, `good`, `driver`
+take no arguments at all. There is therefore no length parameter to zero or
+oversize, and no enum to push out of range. The reachable boundaries are:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `printLine` | `line == NULL` (literal null pointer) | `if (line != NULL)` is false → `printf` is **not** called → function returns normally, **zero bytes** written to stdout. No crash, no diagnostic, no status. |
-| 2 | `printLine` | `line` points to a zero-length string (`""`, i.e. first byte is `\0`) — passes the null check but carries no payload | Accepted, **not** rejected. `printf("%s\n", "")` → exactly one byte, `"\n"`. Confirms the guard tests the *pointer*, not emptiness. |
-| 3 | `printLine` | `line` contains `printf` conversion specifiers (`%s`, `%n`, `%d`, `%%`) | Accepted, **not** rejected and **not** interpreted. `line` is the *argument*, never the format string — the format is the fixed literal `"%s\n"`. Bytes are emitted verbatim. (A translation that used `printf(line)` or a Rust `format!`-style path would diverge here; this row exists to catch that.) |
-| 4 | `printLine` | stdout is closed / unwritable (e.g. fd 1 closed, or a full device) | `printf` fails and returns negative; the C **discards the return value**, so `printLine` still returns normally. Failure is silently swallowed. Rust must also not panic, abort, or report. |
-| 5 | *(none)* | out-of-range `enum` value across the FFI boundary | **Not applicable — vacuously satisfied.** No function in this library takes an `enum`, an `int`, or in fact any parameter other than `printLine`'s single `const char *`. `bad`, `good`, and `driver` are all `void(void)`. There is no integer input whose value could fall outside a valid variant set. |
-| 6 | `bad`, `good`, `driver` | any attempt to supply an invalid argument | **Structurally impossible.** All three take no parameters, so they have no input to reject and no rejection path. Each unconditionally executes its fixed sequence of `printLine` calls. Correct behaviour = never fail. |
+| # | function | trigger | expected C result | test | [x] |
+|---|----------|---------|-------------------|------|-----|
+| 2 | `printLine` | `line` = `(char*)0` re-passed many times in a row (repeated rejection is not sticky) | zero bytes each time, no state change | `err_row2_print_line_null_repeated` | [x] |
+| 3 | `printLine` | `line` = pointer to a lone `'\0'` (zero-length string — the boundary one step inside the valid range) | writes exactly `"\n"` (1 byte) | `err_row3_print_line_empty` | [x] |
+| 4 | `printLine` | `line` interleaved: `NULL`, then valid, then `NULL` — a rejection between two accepted calls must not swallow or reorder the accepted output | writes only the valid string + `"\n"` | `err_row4_null_interleaved_with_valid` | [x] |
+| 5 | `printLine` | `line` containing `printf` conversion specifiers (`%s %d %n %%`) — data must be treated as data, never as a format string | the specifiers are written **literally** + `"\n"` | `err_row5_format_specifiers_not_interpreted` | [x] |
+| 6 | `printLine` | `line` containing an embedded `'\0'` before the end of the buffer | output truncates at the `'\0'`, then `"\n"` | `err_row6_embedded_nul_truncates` | [x] |
+| 7 | `printLine` | `line` = every single non-NUL byte value `0x01..=0xFF`, including bytes that are invalid UTF-8 | each byte written verbatim + `"\n"`; no UTF-8 validation, no replacement char, no panic | `err_row7_all_single_byte_values` | [x] |
+| 8 | `printLine` | oversized input: a 1 MiB string (far past stdio's buffer, forcing internal flushes) | full 1 MiB written verbatim + `"\n"` | `err_row8_oversized_input` | [x] |
+| 9 | `helperBad` / `helperGood` | symbol looked up across the FFI boundary although the C declares it `static` | `dlsym` fails on **both** libraries | `err_row9_static_helpers_not_resolvable` | [x] |
+| 10 | `bad`, `good`, `driver` | called with no arguments but through a mismatched-arity C ABI call (extra register garbage), i.e. the void-parameter boundary | ignored; identical output to the plain call | `err_row10_void_functions_ignore_extra_args` | [x] |
+| 11 | `printLine` | only the exact value `0` is the rejection sentinel: a non-NULL *interior* pointer, high and unaligned, deep inside a 1 MiB allocation | accepted; the bytes from that offset to the `'\0'` are printed + `"\n"` | `err_extra_only_exact_null_is_the_sentinel` | [x] |
 
-### Rows 1–4 vs. the "generic boundaries" checklist
-
-The task asks to additionally cover null pointers, zero and oversized lengths,
-and values one past a valid range, even when absent from the table:
-
-- **null pointer** → row 1 (the library's only real error path).
-- **zero length** → row 2.
-- **oversized length** → no length parameter exists; the analogue is an
-  extremely long NUL-terminated buffer, covered as a *valid* input in
-  `CONFIGS.md` rows 7–9 (including the 4 KiB / `BUFSIZ` stdio-buffer boundary,
-  where a divergence in buffering would surface).
-- **one past a valid range** → no range exists (no numeric parameter). The
-  nearest boundary is the NUL terminator position itself; row 2 plus
-  `CONFIGS.md` rows 4–6 pin that down, and the tests deliberately place a
-  guard byte *after* the terminator to prove neither implementation reads past
-  it.
-- **out-of-range enum** → row 5, vacuous, justified above.
-
-## Status
-
-| row | test | result |
-|-----|------|--------|
-| 1 | `test_err_01_null_pointer` | PASS |
-| 2 | `test_err_02_empty_string` | PASS |
-| 3 | `test_err_03_format_specifiers_not_interpreted` | PASS |
-| 4 | `test_err_04_stdout_closed_is_silently_ignored` | PASS |
-| 5 | `test_err_05_no_enum_or_integer_input_exists` (documents vacuity; asserts the `void(void)` signatures are callable with no args) | PASS |
-| 6 | `test_err_06_argless_functions_have_no_rejection_path` | PASS |
+Notes on inputs deliberately *excluded* as C-level undefined behaviour rather
+than "inputs the C handles": a non-NULL pointer to unmapped memory, and a
+non-NULL pointer to a byte sequence with no terminating `'\0'`. The C would
+fault or read out of bounds; there is no defined result to match.

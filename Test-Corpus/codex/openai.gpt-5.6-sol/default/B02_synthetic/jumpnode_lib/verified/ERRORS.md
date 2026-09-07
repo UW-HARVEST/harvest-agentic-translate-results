@@ -1,29 +1,33 @@
-# Error Surface
+# Error-Surface Table
 
-The public header exposes only `jumpnode(int, int, int, int)`. Static storage
-starts empty, and no public function calls `initialize_test_data` or `add_node`,
-so the three node-dependent modes always reject through their missing-node
-branches.
+Scope: externally reachable rejection behavior through every symbol declared in
+`include/lib.h` and exported by the C shared library. The only such entry point
+is `jumpnode(int, int, int, int)`.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
-|---|----------|---------------------------------------------|-------------------|----------|
-| 1 | `jumpnode` | `operation_mode == 0001` and `find_node_by_id(node_id) == NULL` (always true through the public API because `node_count == 0`) | `STATUS_ERROR \| 0020` = 18 | [x] |
-| 2 | `jumpnode` | `operation_mode == 0002` and `find_node_by_id(node_id) == NULL` (always true through the public API because `node_count == 0`) | `STATUS_ERROR \| 0040` = 34 | [x] |
-| 3 | `jumpnode` | `operation_mode == 0004` and `find_node_by_id(node_id) == NULL` (always true through the public API because `node_count == 0`) | `STATUS_ERROR \| 0100` = 66 | [x] |
-| 4 | `jumpnode` | `operation_mode` is any integer other than `0001`, `0002`, `0003`, or `0004` | `STATUS_ERROR \| 0200` = 130 | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| E1 | `jumpnode` | `operation_mode == 0001`; `find_node_by_id(node_id) == NULL` because file-static `node_count` is zero and no public initializer exists | `STATUS_ERROR \| 0020` = `0022` (18) | [x] |
+| E2 | `jumpnode` | `operation_mode == 0002`; `find_node_by_id(node_id) == NULL` because file-static `node_count` is zero and no public initializer exists | `STATUS_ERROR \| 0040` = `0042` (34) | [x] |
+| E3 | `jumpnode` | `operation_mode == 0004`; `find_node_by_id(node_id) == NULL` because file-static `node_count` is zero and no public initializer exists | `STATUS_ERROR \| 0100` = `0102` (66) | [x] |
+| E4 | `jumpnode` | `operation_mode` is any integer other than `0001`, `0002`, `0003`, or `0004`, including zero, one-past-range `0005`, negative values, and `INT_MIN`/`INT_MAX` | `STATUS_ERROR \| 0200` = `0202` (130) | [x] |
 
-## Internal Check Audit
+## Mechanical audit of non-public conditions
 
-These source checks are not additional public-input rejection paths:
+These source conditions were found by the same grep audit but are not rows in
+the ABI error table because no exported C symbol can construct or invoke them:
 
-| function | source condition | behavior | public reachability |
-|----------|------------------|----------|---------------------|
-| `find_node_by_id` | scan reaches `node_count` without an ID match | returns `NULL`; represented by rows 1-3 where public code rejects it | reachable |
-| `add_node` | `node_count >= MAX_NODES` (`MAX_NODES == 100`) | returns `STATUS_ERROR` = 2 | unreachable: function is static and has no public caller |
-| `safe_double_to_int` | `value > 2147483647.0` | clamps to 2147483647 before conversion; not an error | unreachable: node-dependent callers reject first |
-| `safe_double_to_int` | `value < -2147483648.0` | clamps to -2147483648 before conversion; not an error | unreachable: node-dependent callers reject first |
-| mode `0001` parent lookup | `find_node_by_id(current_node->parent_id) == NULL` | stops traversal and returns the accumulated value; not an error | unreachable: initial node lookup rejects first |
+- `find_node_by_id` returns `NULL` after scanning `node_count`; its externally
+  reachable consequences are E1, E2, and E3.
+- `add_node` returns `STATUS_ERROR` when `node_count >= MAX_NODES` (100).
+  `add_node` and its sole caller `initialize_test_data` are both file-static,
+  and `initialize_test_data` is never called.
+- A missing parent in mode `0001` breaks traversal rather than rejecting the
+  call. It is unreachable in the shipped library because storage stays empty.
+- `safe_double_to_int` clamps above `2147483647.0` and below
+  `-2147483648.0`; clamping is not rejection, and all paths to it require a
+  node that the public ABI cannot add.
 
-There are no pointer, length, or enum parameters in the public ABI. Generic
-FFI boundaries therefore reduce to all four `int` arguments: zero, signed
-extrema, and operation selectors immediately outside the valid range.
+Pointer/length generic boundaries do not apply: the public ABI has four
+by-value `int` parameters and no pointer, enum-typed, or length parameters.
+
+All rows pass under the default build and `--no-default-features`.

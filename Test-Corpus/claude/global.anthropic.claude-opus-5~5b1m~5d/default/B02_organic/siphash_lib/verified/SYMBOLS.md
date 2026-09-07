@@ -1,64 +1,59 @@
 # SYMBOLS.md — Public symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+C shared object: `c_src/build/libharvest-work-ZXAbRc.so`
+Rust shared object: `translation/target/release/libsiphash_lib.so`
 
-* C  `.so`: `c_src/build/libharvest-work-XEIFF4.so`
-* Rust `.so`: `translation/target/{debug,release}/libsiphash_lib.so`
+Command used: `nm -D --defined-only <so>`
 
-Regenerate with:
+## C exported symbols (source of truth)
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-XEIFF4.so
-nm -D --defined-only translation/target/release/libsiphash_lib.so
-```
+| # | symbol | type | C signature | exported by Rust `.so`? |
+|---|--------|------|-------------|-------------------------|
+| 1 | `siphash`          | T (global text) | `void siphash(int init)`                              | YES |
+| 2 | `stbds_hash_bytes` | T (global text) | `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)` | YES |
 
-## C `.so` — defined dynamic symbols (`nm -D --defined-only`)
-
-```
-0000000000001547 T siphash
-000000000000151a T stbds_hash_bytes
-```
-
-That is the complete list. `c_src/src/lib.c` contains exactly one more
-function, `stbds_siphash_bytes`, which is `static` and therefore **not** part
-of the dynamic surface (it is inlined/called internally only). It must NOT be
-exported by the Rust `.so` either.
-
-## Symbol parity table
-
-| # | symbol | C type | signature (from `c_src/src/lib.c` / `include/lib.h`) | in C `.so` | in Rust `.so` | status |
-|---|--------|--------|------------------------------------------------------|-----------|---------------|--------|
-| 1 | `siphash`          | `T` (global text) | `void siphash(int init)`                              | yes | yes | OK |
-| 2 | `stbds_hash_bytes` | `T` (global text) | `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)` | yes | yes | OK |
-
-### Deliberately-not-exported (internal linkage in C)
+## Not exported (and must NOT be)
 
 | symbol | reason |
 |--------|--------|
-| `stbds_siphash_bytes` | `static` in `c_src/src/lib.c`; not in C `nm -D`. Rust keeps it as a private `fn`. |
+| `stbds_siphash_bytes` | `static` in `c_src/src/lib.c` → internal linkage, absent from `nm -D`. Kept private (non-`pub`, no `#[no_mangle]`) in Rust. |
 
-## Diff result
+## Undefined / imported symbols
 
+The Rust `.so` imports only libc symbols (`printf`, plus the standard
+`memcpy`/unwind/`__cxa`-style runtime symbols the Rust toolchain always emits).
+The C `.so` imports `printf` from libc.
+
+Verified: `nm -D --defined-only` output of both objects is identical after
+sorting by name.
+
+## Test-only artifacts (not part of the library ABI)
+
+`src/bin/siphash_driver.rs` builds a small `siphash_driver` executable used only
+by the tests: it `dlopen`s a given `.so`, calls its `siphash`, and writes nothing
+else to stdout, so the C and Rust stdout can be compared byte-for-byte in a
+clean child process.  It has no dependencies and does not link into the cdylib.
+
+## Reproducing
+
+```sh
+# C
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# Rust  (NOTE: `cargo test` does NOT build a cdylib -- build it explicitly,
+#        or tests silently load a stale .so; tests/phase_a_freshness.rs guards this)
+cd translation && cargo build --release && cargo test --release
+# diff
+diff <(nm -D --defined-only ../c_src/build/lib*.so      | awk '{print $3}' | sort) \
+     <(nm -D --defined-only target/release/libsiphash_lib.so | awk '{print $3}' | sort)
 ```
-$ comm -23 <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
-           <(nm -D --defined-only RUST.so | awk '{print $3}' | sort)
-<empty>
-```
 
-**0 symbols missing from the Rust `.so`.** No `#[no_mangle]` wrappers had to be
-added and no C module was left untranslated — `c_src` consists of a single
-translation unit (`src/lib.c`, 126 lines) and all three of its functions are
-present in `translation/src/lib.rs`.
+Result of the above `diff`: **empty**.
 
-## Undefined symbols in the Rust `.so`
+## Result
 
-`nm -D --undefined-only` on the Rust `.so` lists only libc / libgcc-unwind
-imports (`printf`, `puts`, `memcpy`, `malloc`, `_Unwind_*`, …), i.e. the same
-class of imports the C `.so` has (`printf`, `puts`, `__cxa_finalize`, …).
+- Missing symbols in Rust: **0**
+- Extra non-libc symbols in Rust: **0**
+- Undefined non-libc symbols in Rust: **0**
 
-**0 missing/undefined non-libc symbols.**
-
-Note: the C `.so` imports `puts` in addition to `printf` because GCC rewrites
-the constant-format call `printf(" },\n")` into `puts(" },")`. This is a pure
-codegen detail — the bytes written to `stdout` are identical, which the
-`siphash_*` stdout-differential tests verify directly.
+STATUS: **PASS**

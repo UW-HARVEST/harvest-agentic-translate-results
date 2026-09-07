@@ -1,14 +1,11 @@
 # Dynamic symbol surface
 
-Mechanically captured from:
+Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-lWqf1W.so
+nm -D --defined-only ../c_src/build/libharvest-work-U9Mauy.so
 nm -D --defined-only target/release/libpoly_ray_lib.so
 ```
-
-The C shared object has 28 defined public dynamic symbols. Rust exports all 28
-with exact names.
 
 | # | C symbol | Rust export |
 |---|----------|-------------|
@@ -41,7 +38,6 @@ with exact names.
 | 27 | `c2xIdentity` | present |
 | 28 | `poly_ray` | present |
 
-Completion gate: [x] Missing C-defined symbols in Rust: **0**.
+Missing C symbols in Rust: **0**.
 
-The C object has one strong external function dependency, `sqrtf`; it is a
-libm/libc runtime dependency rather than a symbol defined by this library.
+Extra Rust symbols: **0**.

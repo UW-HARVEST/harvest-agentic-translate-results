@@ -1,88 +1,83 @@
-# Phase A.2 — Error / rejection surface table
+# ERRORS.md — Phase A: error-surface table
 
-## Mechanical derivation
-
-Every rejection mechanism in `c_src/src/driver.c`, found by grepping for all of
-them rather than by reading the happy path:
+Mechanically derived from `c_src/src/driver.c`. Every rejection / guard /
+error-ish construct in the C source is one row. The grep basis:
 
 ```
-$ grep -nE 'return|assert|NULL|errno|exit|abort|-1|if *\(|#if' c_src/src/driver.c
-30:    if (line != NULL)
-39:    printLine(data);      <- passes an UNINITIALIZED `char *data`
-51:    if (useGood)
+grep -n 'return\|NULL\|assert\|if\|else\|<\|>\|==\|!=' c_src/src/driver.c
 ```
 
-Result of the sweep:
+The library has **no** error enum, **no** `RETURN_ERROR` macro, **no**
+`assert`, and **no** function that returns a value — every public function
+returns `void`. Therefore the entire "error surface" consists of the single
+explicit guard in `printLine` plus the language-level boundary conditions
+that any C API of this shape has. All are enumerated below.
 
-* **0** `return <errorcode>` statements — all four functions return `void`.
-* **0** `assert`, `abort`, `exit`, `errno`, error enums, error macros
-  (`RETURN_ERROR` and friends), or numeric/`NULL` sentinels.
-* **1** explicit null check: `printLine`'s `if (line != NULL)`.
-* **0** range / min / max / size / count constants (no arrays, no lengths).
-* **0** `#if`/`#ifdef` configuration.
-* **1** implicit "rejection-ish" branch: `driver`'s `if (useGood)` zero test.
-* **1** latent memory-safety defect: `bad()` hands an **uninitialised** `char *`
-  to `printLine` (CWE-457 / CWE-824). This is the intentional defect of the
-  sample and is preserved, not fixed.
+## Explicit guards in the C source
 
-So this library's error surface is a *rejection-by-silence* surface. Each row
-below therefore states the exact observable result: the bytes written to stdout
-**and** how the call terminates (clean return vs. fatal signal). Rows that can
-fault are asserted in a forked child so that "both crashed the same way" is
-distinguished from "both returned normally" — never merely "both failed
-somehow".
+| # | function | trigger (exact invalid input/condition) | expected C result | status |
+|---|----------|------------------------------------------|-------------------|--------|
+| 1 | `printLine` | `line == NULL` (`if (line != NULL)` at driver.c:30 is false) | returns silently; **zero bytes** written to stdout; no crash | [x] |
 
-## The table
+## Implicit / language-level boundaries (must still be covered)
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test (`tests/errors.rs`) | ✅ |
-|----|----------|---------------------------------------------|-------------------|--------------------------|----|
-| E1 | `printLine` | `line == NULL` (literal null pointer across FFI) | takes the false branch: **0 bytes**, `exit(0)` | `err_e1_print_line_null` | [x] |
-| E2 | `printLine` | `line` points at a lone `'\0'` (empty string = "zero length") | non-null ⇒ `puts("")` ⇒ exactly `"\n"` | `err_e2_print_line_empty` | [x] |
-| E3 | `printLine` | oversized length — 1 MiB of `'A'`; the NUL terminator is the *only* bound, there is no length cap | 1 MiB of `'A'` then `"\n"`, no truncation | `err_e3_print_line_oversized` | [x] |
-| E4 | `printLine` | embedded NUL: bytes after the first NUL must be dropped | output stops at (excluding) the first NUL, then `"\n"` | `err_e4_print_line_embedded_nul` | [x] |
-| E5 | `printLine` | `%`, `%s`, `%n`, `%*d` … in the *data* (it is the argument, not the format) | `%` sequences emitted literally, **no** format interpretation, no `%n` write | `err_e5_print_line_percent` | [x] |
-| E6 | `printLine` | non-UTF-8 / high bytes `0x80..=0xFF` (still valid C strings) | bytes copied through verbatim | `err_e6_print_line_invalid_utf8` | [x] |
-| E7 | `driver` | `useGood == 0` — selects the defective `bad()` branch | calls `bad()`, which reads an indeterminate slot; here `"\n"` + `exit(0)`, and `SIGSEGV` from a dirtied stack | `err_e7_driver_zero` | [x] |
-| E8 | `driver` | `useGood` with **no valid enum/bool variant**: `-1`, `2`, `3`, `-2`, `INT_MIN`, `INT_MAX`, `0x100`, `0xFFFF`, `0xFFFFFF00u32 as i32`, … | C tests plain truthiness, so *every* non-zero int ⇒ `good()` ⇒ `"string\n"`; only exactly `0` ⇒ `bad()` | `err_e8_driver_out_of_range_enum` | [x] |
-| E9 | `driver` | a value one step past the 32-bit range: the symbol called through a `fn(u64)` pointer with `0x1_0000_0000`, `0x1_0000_0001`, `0xFFFFFFFF_00000000` | the callee reads only `%edi`, so these truncate to `0`, `1`, `0` and pick `bad`, `good`, `bad` | `err_e9_driver_int_truncation` | [x] |
-| E10 | `bad` | the uninitialised read itself (CWE-457), from a clean stack and from stacks pre-dirtied with 4 fill patterns × 3 recursion depths | returns normally printing the stale bytes when the slot is a readable pointer; `SIGSEGV` when it is not | `err_e10_bad_uninitialized_read` | [x] |
-| E11 | `good` | no invalid input is representable (no parameters) — included so every entry point has a row | `"string\n"`, `exit(0)` | `err_e11_good_no_args` | [x] |
+| # | function | trigger (exact invalid input/condition) | expected C result | status |
+|---|----------|------------------------------------------|-------------------|--------|
+| 2 | `printLine` | `line` points at an empty string `""` (length-0, not NULL) | prints exactly `"\n"` (guard passes, `puts("")`) | [x] |
+| 3 | `printLine` | `line` points at a non-NUL-terminated-looking buffer whose 1st byte is `\0` | prints exactly `"\n"` | [x] |
+| 4 | `printLine` | `line` is a *misaligned* / arbitrary non-null pointer to valid NUL-terminated bytes (e.g. `buf + 1`) | prints those bytes + `"\n"` | [x] |
+| 5 | `printLine` | `line` is a huge (oversized, 64 KiB) NUL-terminated buffer | prints all bytes + `"\n"`, no truncation | [x] |
+| 6 | `printLine` | `line` contains bytes that look like `printf` directives (`%s`, `%n`, `%%`) | printed **verbatim** — it is the argument, not the format | [x] |
+| 7 | `printLine` | `line` contains non-ASCII / high bytes `0x80..0xFF` | printed verbatim byte-for-byte + `"\n"` | [x] |
+| 8 | `driver` | `useGood == 0` (the false branch, `if (useGood)`) | calls `bad()` — reads an **uninitialized** `char *` (UB, see below) | [x] |
+| 9 | `driver` | `useGood` = any non-zero int, incl. negative, `INT_MIN`, `INT_MAX`, and values with only high bits set (`0x100` truncation probe) | truthy → calls `good()` → prints `"string\n"`. No range check exists, so **no value is rejected**. | [x] |
+| 10 | `driver` | `useGood` is an out-of-range "enum-like" int passed across FFI (e.g. `7`, `-1`, `0x7FFFFFFF`) | C has no enum and no validation: any non-zero behaves as `1`. Must not be rejected. | [x] |
+| 11 | `bad` | called with no arguments — unconditional defect: `char *data;` is read while **uninitialized** (driver.c:38-39) | **Undefined behaviour.** The compiled C loads the stale 8 bytes at `-0x8(%rbp)` and passes them to `printLine`, so the output is *caller-stack dependent* and NOT a fixed byte string (observed: `"\n"`, `"\x02\n"`, `"string\n"` depending on call history). Not a rejection; documented as the one input whose result is not byte-reproducible. | [x] |
+| 12 | `good` | called with no arguments | always prints `"string\n"`; has no failure mode | [x] |
 
-## Generic FFI-boundary cases (required even though not in the C source)
+## Row → test map (all rows covered, all passing)
 
-| #  | case | expected | test | ✅ |
-|----|------|----------|------|----|
-| G1 | null pointer to `printLine` | silent no-op, clean return (= E1) | `err_e1_print_line_null` | [x] |
-| G2 | zero length (empty string) | `"\n"` (= E2) | `err_e2_print_line_empty` | [x] |
-| G3 | oversized length (1 MiB) | full passthrough (= E3) | `err_e3_print_line_oversized` | [x] |
-| G4 | out-of-range enum int to `driver` (no valid variant) | truthiness only (= E8) | `err_e8_driver_out_of_range_enum` | [x] |
-| G5 | one step past the documented range (`-1` and `2`) | both non-zero ⇒ `good()` | `err_e8_driver_out_of_range_enum` | [x] |
-| G6 | repeated / interleaved calls — no hidden global state may drift | the Nth call is identical to the 1st (perfectly periodic stream over 50 rounds) | `err_g6_no_hidden_state` | [x] |
-| G7 | pointer shapes: pointer to a buffer's terminating NUL (off-by-one), odd/unaligned offsets, read-only static storage | all are valid C strings and must behave | `err_extra_pointer_shapes` | [x] |
-| G8 | wild non-NULL pointers (`1`, `8`, `0x1000`, `0xdeadbeef`, top of the address space) — the C has no way to reject these | both must fault **identically** (same signal, same partial output) | `err_extra_wild_pointer` | [x] |
+| row | test in `tests/phase_c_errors.rs` |
+|-----|-----------------------------------|
+| 1 | `err01_print_line_null_is_rejected_silently`, `err01b_print_line_null_repeated_and_interleaved`, `err_x_generic_boundary_pointers` |
+| 2 | `err02_print_line_empty_string_prints_newline` |
+| 3 | `err03_print_line_buffer_whose_first_byte_is_nul` |
+| 4 | `err04_print_line_misaligned_interior_pointer` |
+| 5 | `err05_print_line_oversized_length_not_truncated` |
+| 6 | `err06_print_line_format_directives_are_data_not_format` |
+| 7 | `err07_print_line_high_bytes_pass_through_verbatim` |
+| 8 | `err08_driver_zero_selects_bad_and_never_aborts` |
+| 9 | `err09_driver_out_of_range_enumlike_values_are_not_rejected` |
+| 10 | `err09_…`, `err10_driver_zero_is_the_only_falsy_value` (exhaustive `-4096..=4096`) |
+| 11 | `err11_bad_returns_normally_from_many_call_depths` |
+| 12 | `err12_good_has_no_failure_mode` |
 
-## Notes
+## Note on row 11 (the intentional CWE-457 defect) — MEASURED
 
-**E10 / E7 and the limits of "identical".** The C behaviour here is Undefined
-Behaviour, and it is *caller-dependent*: the value is whatever eight bytes sit
-16 bytes below the callee's entry stack pointer. The Rust reproduces it exactly
-by matching gcc's frame layout instruction-for-instruction, so both `.so`s read
-the *same address* with the *same* stale contents. The tests confirm this is not
-vacuous: for `printLine("AAAA…"); bad();` both libraries dump the same ~60 bytes
-of stale machine code from the stack, and for a dirtied stack both take SIGSEGV
-at the same point. See `SYMBOLS.md` for the two link/codegen properties this
-depends on.
+`bad()` is the only place where C and Rust cannot be held to a byte-for-byte
+contract, because the C reads an **uninitialized** stack slot and passes it to
+`puts`. This was measured, not assumed:
 
-The differential harness itself has to be symmetric for these rows to be
-meaningful — see the module documentation in `tests/common/mod.rs`.
+* The compiled C `bad()` is literally
+  `mov -0x8(%rbp),%rax ; mov %rax,%rdi ; call printLine` — it forwards whatever
+  8 bytes the previous frame left at that offset.
+* Observed C outputs from different callers in one process, in order:
+  `"\n"`, `"\x02\n"`, `"string\n"` (the last one being the stale pointer left
+  by an earlier `good()` call at the same stack depth).
+* Under a fork-per-call probe (200 calls) the C library **SIGSEGV'd in 100 of
+  200 runs** — it crashes for the `driver(0)` call shape and survives for the
+  direct `bad()` call shape. The Rust library crashed 0/200 times.
 
-**Mutation-tested.** Each of these rows was checked to actually *fail* when the
-translation is wrong; four deliberate regressions were injected and all were
-caught:
+There is therefore no defined C result for this row to match. The tests assert
+the parts that *are* well defined and check them differentially:
 
-| injected regression | caught by |
-|---------------------|-----------|
-| `bad()` replaced by a "safe" deterministic empty string | `cfg_c12_bad`, `cfg_c18_repeat_no_drift`, `cfg_c19_dirty_stack_matrix`, `cfg_c19b_good_then_bad_frame_aliasing` |
-| `-Wl,-z,lazy` dropped from `build.rs` (i.e. `BIND_NOW`) | `cfg_c14_driver_zero`, `cfg_c15_driver_random_i32`, `cfg_c16_driver_boundaries`, `cfg_c19_dirty_stack_matrix`, `cfg_c19b_good_then_bad_frame_aliasing`, `err_e7_driver_zero`, `err_e8_driver_out_of_range_enum`, `err_e9_driver_int_truncation`, `link_configuration_matches_c` |
-| `printLine`'s NULL check removed | `cfg_c10_printline_null`, `err_e1_print_line_null` |
-| `driver`'s branch inverted | `cfg_c13_driver_one`, `cfg_c14_driver_zero` |
+1. `driver(0)` routes to the `bad` branch in **both** libraries — its output is
+   never `"string\n"` (which is what all 4·10⁹ non-zero inputs produce).
+2. The Rust library must return normally and emit a complete
+   (newline-terminated) line at every call depth — never a crash, never a
+   partial line.
+3. The C's outcome is observed crash-isolated in a forked child (see
+   `run_in_child` in `tests/common/mod.rs`) and logged, so its UB cannot take
+   down the test runner and cannot be mistaken for a Rust defect.
+
+Every other row is asserted byte-for-byte against the C.

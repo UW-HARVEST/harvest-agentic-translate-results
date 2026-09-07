@@ -7,30 +7,25 @@
 //!
 //! # Why the arithmetic looks the way it does
 //!
-//! `c_src/CMakeLists.txt` sets no `CMAKE_BUILD_TYPE`, so the reference library
-//! is compiled with `C_FLAGS = -fPIC` and **no optimisation at all** (`-O0`).
-//! It is built as a shared object without `-fvisibility=hidden` and with no
-//! `static` functions, so every helper is interposable; at `-O0` GCC inlines
-//! nothing anyway and the disassembly shows every single call (`c2V`, `c2Dot`,
-//! `c2Sub`, `c2Add`, …) going through the PLT. That means the library's entire
-//! floating-point behaviour is determined by a small, enumerable set of SSE
-//! scalar/packed instructions inside the leaf functions.
+//! The C library is built as a `-fPIC` shared object **without**
+//! `-fvisibility=hidden` and with no `static` functions, so every helper is
+//! interposable and GCC cannot inline any of them — the disassembly shows that
+//! every single call (`c2V`, `c2Dot`, `c2Sub`, `c2Add`, …) goes through the
+//! PLT. That means the library's entire floating-point behaviour is determined
+//! by a small, enumerable set of SSE scalar/packed instructions inside the
+//! leaf functions.
 //!
 //! For every *finite* input, IEEE-754 makes those results uniquely determined,
 //! so a straightforward translation is already bit-exact. The one place where
 //! "obvious" Rust diverges is **which NaN survives** an operation: `addss`,
 //! `mulss`, `subss` and `divss` return the *destination* operand's NaN in
-//! preference to the source operand's, and GCC's `-O0` register allocator
-//! frequently ends up with the *right* C operand in the destination register
-//! (it loads the two operands in source order into scratch registers and then
-//! picks whichever it happens to hold). Because a NaN's sign bit and payload
-//! are then observable in the output, this module routes all arithmetic through
+//! preference to the source operand's, and GCC's register allocator sometimes
+//! commutes `addss`/`mulss` relative to the C source order (LLVM does too, but
+//! makes different choices). Because a NaN's sign bit and payload are then
+//! observable in the output, this module routes all arithmetic through
 //! `add_l`/`add_r`/`mul_l`/`mul_r`/`sub_l`/`div_l` helpers that pin the
-//! destination operand to exactly what GCC emitted at each site.
-//!
-//! Every choice below is annotated with the actual `-O0` instruction from
-//! `objdump -d` of the reference `.so` (GCC 11.5.0, x86-64). Do not "simplify"
-//! them back to source order — several sites are deliberately `_r`.
+//! destination operand to exactly what GCC emitted at each site. The choices
+//! are documented per call site against the disassembly.
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -326,17 +321,15 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
 
 /// `c2v c2Mulvs(c2v a, float b)`
 ///
-/// ```text
-/// 1314  movss -0x8(%rbp),%xmm0    ; a.x
-/// 1319  mulss -0xc(%rbp),%xmm0    ; dst = a.x, src = b (memory)
-/// 1323  movss -0x4(%rbp),%xmm0    ; a.y
-/// 1328  mulss -0xc(%rbp),%xmm0    ; dst = a.y, src = b (memory)
-/// ```
-///
-/// A memory operand can only ever be the *source* of `mulss`, so at `-O0` both
-/// destinations are the vector component: `a`'s NaN wins over `b`'s.
+/// GCC broadcasts the scalar (`movsldup`) into the destination register and
+/// multiplies by `a`: `mulps %xmm2(a), %xmm0(b,b)`. The destination is
+/// therefore `b`, so `b`'s NaN wins over `a`'s.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
+    // 1314: movss -0x8(%rbp),%xmm0   ; xmm0 = a.x
+    // 1319: mulss -0xc(%rbp),%xmm0   ; dst = a.x  -> mul_l(a.x, b)
+    // 1323: movss -0x4(%rbp),%xmm0   ; xmm0 = a.y
+    // 1328: mulss -0xc(%rbp),%xmm0   ; dst = a.y  -> mul_l(a.y, b)
     let mut a = a;
     a.x = mul_l(a.x, b);
     a.y = mul_l(a.y, b);
@@ -345,10 +338,10 @@ pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
 
 /// `c2v c2Maxv(c2v a, c2v b)`
 ///
-/// At `-O0` GCC emits an explicit `comiss` + `jbe` pair (`133d`..`1384`), i.e.
-/// literally `a > b ? a : b`, and an unordered compare takes the `jbe` and so
-/// yields `b`. Rust's `>` is also false for NaN, so the direct translation is
-/// exact. Do **not** use `f32::max` here — it returns the non-NaN operand.
+/// GCC emits `maxss %xmm(b), %xmm(a)`, whose NaN behaviour ("if either
+/// operand is NaN, return the source operand") is exactly the C ternary
+/// `a > b ? a : b`. Do **not** use `f32::max` here — it returns the
+/// non-NaN operand instead.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
     c2V(
@@ -357,12 +350,7 @@ pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
     )
 }
 
-/// `c2v c2Minv(c2v a, c2v b)`
-///
-/// `-O0` reverses the compare into `b > a ? a : b` (`13b5 comiss %xmm1,%xmm0`
-/// with `xmm0 = b`, `jbe` -> `b`). For ordered operands that is identical to
-/// `a < b ? a : b`, and for unordered operands both spellings yield `b`, so
-/// this mirrors `c2Maxv` exactly.
+/// `c2v c2Minv(c2v a, c2v b)` — `minss`, mirroring `c2Maxv`.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Minv(a: c2v, b: c2v) -> c2v {
     c2V(
@@ -377,16 +365,7 @@ pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
     c2Maxv(lo, c2Minv(a, hi))
 }
 
-/// `c2v c2Sub(c2v a, c2v b)`
-///
-/// ```text
-/// 1455  movss -0x8(%rbp),%xmm0    ; a.x
-/// 145a  movss -0x10(%rbp),%xmm1   ; b.x
-/// 145f  subss %xmm1,%xmm0         ; dst = a.x
-/// 1468  movss -0x4(%rbp),%xmm0    ; a.y
-/// 146d  movss -0xc(%rbp),%xmm1    ; b.y
-/// 1472  subss %xmm1,%xmm0         ; dst = a.y
-/// ```
+/// `c2v c2Sub(c2v a, c2v b)` — `subps %xmm1(b), %xmm0(a)`, destination `a`.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
     let mut a = a;
@@ -397,17 +376,16 @@ pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
 
 /// `c2v c2Add(c2v a, c2v b)`
 ///
-/// ```text
-/// 1852  movss -0x8(%rbp),%xmm1    ; a.x
-/// 1857  movss -0x10(%rbp),%xmm0   ; b.x
-/// 185c  addss %xmm1,%xmm0         ; dst = b.x  <- NOT a.x
-/// 1865  movss -0x4(%rbp),%xmm1    ; a.y
-/// 186a  movss -0xc(%rbp),%xmm0    ; b.y
-/// 186f  addss %xmm1,%xmm0         ; dst = b.y  <- NOT a.y
-/// ```
+/// GCC commuted both `addss`es, so the destination is `b`:
 ///
-/// Unlike `c2Sub` (where `subss` cannot be commuted) GCC loaded `b` into the
-/// accumulator, so `b`'s NaN wins over `a`'s in `c2Add`.
+/// ```text
+/// 1852: movss -0x8(%rbp),%xmm1   ; xmm1 = a.x
+/// 1857: movss -0x10(%rbp),%xmm0  ; xmm0 = b.x
+/// 185c: addss %xmm1,%xmm0        ; dst = b.x  -> add_r(a.x, b.x)
+/// 1865: movss -0x4(%rbp),%xmm1   ; xmm1 = a.y
+/// 186a: movss -0xc(%rbp),%xmm0   ; xmm0 = b.y
+/// 186f: addss %xmm1,%xmm0        ; dst = b.y  -> add_r(a.y, b.y)
+/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(a: c2v, b: c2v) -> c2v {
     let mut a = a;
@@ -419,13 +397,13 @@ pub extern "C" fn c2Add(a: c2v, b: c2v) -> c2v {
 /// `float c2Dot(c2v a, c2v b)` -> `a.x * b.x + a.y * b.y`
 ///
 /// ```text
-/// 1494  movss -0x8(%rbp),%xmm1    ; a.x
-/// 1499  movss -0x10(%rbp),%xmm0   ; b.x
-/// 149e  mulss %xmm0,%xmm1         ; dst = a.x   -> mul_l
-/// 14a2  movss -0x4(%rbp),%xmm2    ; a.y
-/// 14a7  movss -0xc(%rbp),%xmm0    ; b.y
-/// 14ac  mulss %xmm2,%xmm0         ; dst = b.y   -> mul_r
-/// 14b0  addss %xmm1,%xmm0         ; dst = the y term -> add_r
+/// 1494: movss -0x8(%rbp),%xmm1   ; xmm1 = a.x
+/// 1499: movss -0x10(%rbp),%xmm0  ; xmm0 = b.x
+/// 149e: mulss %xmm0,%xmm1        ; dst = a.x   -> tx = mul_l(a.x, b.x)
+/// 14a2: movss -0x4(%rbp),%xmm2   ; xmm2 = a.y
+/// 14a7: movss -0xc(%rbp),%xmm0   ; xmm0 = b.y
+/// 14ac: mulss %xmm2,%xmm0        ; dst = b.y   -> ty = mul_r(a.y, b.y)
+/// 14b0: addss %xmm1,%xmm0        ; dst = ty    -> add_r(tx, ty)
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
@@ -435,13 +413,13 @@ pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
 /// `float c2Det2(c2v a, c2v b)` -> `a.x * b.y - a.y * b.x`
 ///
 /// ```text
-/// 16ec  movss -0x8(%rbp),%xmm1    ; a.x
-/// 16f1  movss -0xc(%rbp),%xmm0    ; b.y
-/// 16f6  mulss %xmm1,%xmm0         ; dst = b.y   -> mul_r
-/// 16fa  movss -0x4(%rbp),%xmm2    ; a.y
-/// 16ff  movss -0x10(%rbp),%xmm1   ; b.x
-/// 1704  mulss %xmm2,%xmm1         ; dst = b.x   -> mul_r
-/// 1708  subss %xmm1,%xmm0         ; dst = the x*y term -> sub_l
+/// 16ec: movss -0x8(%rbp),%xmm1   ; xmm1 = a.x
+/// 16f1: movss -0xc(%rbp),%xmm0   ; xmm0 = b.y
+/// 16f6: mulss %xmm1,%xmm0        ; dst = b.y   -> t1 = mul_r(a.x, b.y)
+/// 16fa: movss -0x4(%rbp),%xmm2   ; xmm2 = a.y
+/// 16ff: movss -0x10(%rbp),%xmm1  ; xmm1 = b.x
+/// 1704: mulss %xmm2,%xmm1        ; dst = b.x   -> t2 = mul_r(a.y, b.x)
+/// 1708: subss %xmm1,%xmm0        ; dst = t1    -> sub_l(t1, t2)
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Det2(a: c2v, b: c2v) -> f32 {
@@ -472,24 +450,26 @@ pub extern "C" fn c2xIdentity() -> c2x {
 /// `c2v c2Mulrv(c2r a, c2v b)`
 /// -> `c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)`
 ///
-/// `-O0` evaluates the `y` component first, then the `x` component:
+/// GCC commuted the `y` term's `addss`, making `a.c * b.y` the destination:
 ///
 /// ```text
-/// 17e5  movss -0x4(%rbp),%xmm1    ; a.s
-/// 17ea  movss -0x10(%rbp),%xmm0   ; b.x
-/// 17ef  mulss %xmm0,%xmm1         ; dst = a.s      -> mul_l(a.s, b.x)
-/// 17f3  movss -0x8(%rbp),%xmm2    ; a.c
-/// 17f8  movss -0xc(%rbp),%xmm0    ; b.y
-/// 17fd  mulss %xmm2,%xmm0         ; dst = b.y      -> mul_r(a.c, b.y)
-/// 1801  movaps %xmm1,%xmm3
-/// 1804  addss %xmm0,%xmm3         ; dst = a.s*b.x  -> add_l   (y)
-/// 1808  movss -0x8(%rbp),%xmm1    ; a.c
-/// 180d  movss -0x10(%rbp),%xmm0   ; b.x
-/// 1812  mulss %xmm1,%xmm0         ; dst = b.x      -> mul_r(a.c, b.x)
-/// 1816  movss -0x4(%rbp),%xmm2    ; a.s
-/// 181b  movss -0xc(%rbp),%xmm1    ; b.y
-/// 1820  mulss %xmm2,%xmm1         ; dst = b.y      -> mul_r(a.s, b.y)
-/// 1824  subss %xmm1,%xmm0         ; dst = a.c*b.x  -> sub_l   (x)
+/// ; y component, computed first
+/// 17e5: movss -0x4(%rbp),%xmm1   ; xmm1 = a.s
+/// 17ea: movss -0x10(%rbp),%xmm0  ; xmm0 = b.x
+/// 17ef: mulss %xmm0,%xmm1        ; dst = a.s  -> y1 = mul_l(a.s, b.x)
+/// 17f3: movss -0x8(%rbp),%xmm2   ; xmm2 = a.c
+/// 17f8: movss -0xc(%rbp),%xmm0   ; xmm0 = b.y
+/// 17fd: mulss %xmm2,%xmm0        ; dst = b.y  -> y2 = mul_r(a.c, b.y)
+/// 1801: movaps %xmm1,%xmm3
+/// 1804: addss  %xmm0,%xmm3       ; dst = y1   -> y = add_l(y1, y2)
+/// ; x component
+/// 1808: movss -0x8(%rbp),%xmm1   ; xmm1 = a.c
+/// 180d: movss -0x10(%rbp),%xmm0  ; xmm0 = b.x
+/// 1812: mulss %xmm1,%xmm0        ; dst = b.x  -> x1 = mul_r(a.c, b.x)
+/// 1816: movss -0x4(%rbp),%xmm2   ; xmm2 = a.s
+/// 181b: movss -0xc(%rbp),%xmm1   ; xmm1 = b.y
+/// 1820: mulss %xmm2,%xmm1        ; dst = b.y  -> x2 = mul_r(a.s, b.y)
+/// 1824: subss %xmm1,%xmm0        ; dst = x1   -> x = sub_l(x1, x2)
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
@@ -502,28 +482,29 @@ pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
 /// `c2v c2MulrvT(c2r a, c2v b)`
 /// -> `c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)`
 ///
-/// `-O0` does **not** fold `-x + y` into a `subss`; it materialises `-a.s` with
-/// an `xorps` sign flip and then performs a real `addss` whose destination is
-/// the *first* term. The `y` component is evaluated before the `x` component:
+/// GCC materialises `-a.s` with a plain `xorps` sign flip (which never quiets
+/// a NaN) and then keeps the source-order `addss`:
 ///
 /// ```text
-/// 26d1  movss -0x4(%rbp),%xmm0    ; a.s
-/// 26d6  movss 0x1932(%rip),%xmm1  ; 0x80000000
-/// 26de  xorps %xmm0,%xmm1         ; xmm1 = -a.s   (bitwise; never quiets)
-/// 26e1  movss -0x10(%rbp),%xmm0   ; b.x
-/// 26e6  mulss %xmm0,%xmm1         ; dst = -a.s    -> mul_l(-a.s, b.x)
-/// 26ea  movss -0x8(%rbp),%xmm2    ; a.c
-/// 26ef  movss -0xc(%rbp),%xmm0    ; b.y
-/// 26f4  mulss %xmm2,%xmm0         ; dst = b.y     -> mul_r(a.c, b.y)
-/// 26f8  movaps %xmm1,%xmm3
-/// 26fb  addss %xmm0,%xmm3         ; dst = -a.s*b.x -> add_l  (y)
-/// 26ff  movss -0x8(%rbp),%xmm1    ; a.c
-/// 2704  movss -0x10(%rbp),%xmm0   ; b.x
-/// 2709  mulss %xmm0,%xmm1         ; dst = a.c     -> mul_l(a.c, b.x)
-/// 270d  movss -0x4(%rbp),%xmm2    ; a.s
-/// 2712  movss -0xc(%rbp),%xmm0    ; b.y
-/// 2717  mulss %xmm2,%xmm0         ; dst = b.y     -> mul_r(a.s, b.y)
-/// 271b  addss %xmm0,%xmm1         ; dst = a.c*b.x -> add_l  (x)
+/// ; y component, computed first
+/// 26d1: movss -0x4(%rbp),%xmm0   ; xmm0 = a.s
+/// 26d6: movss 0x4010(%rip),%xmm1 ; xmm1 = 0x80000000
+/// 26de: xorps %xmm0,%xmm1        ; xmm1 = -a.s   (fneg, no quieting)
+/// 26e1: movss -0x10(%rbp),%xmm0  ; xmm0 = b.x
+/// 26e6: mulss %xmm0,%xmm1        ; dst = -a.s  -> y1 = mul_l(fneg(a.s), b.x)
+/// 26ea: movss -0x8(%rbp),%xmm2   ; xmm2 = a.c
+/// 26ef: movss -0xc(%rbp),%xmm0   ; xmm0 = b.y
+/// 26f4: mulss %xmm2,%xmm0        ; dst = b.y   -> y2 = mul_r(a.c, b.y)
+/// 26f8: movaps %xmm1,%xmm3
+/// 26fb: addss  %xmm0,%xmm3       ; dst = y1    -> y = add_l(y1, y2)
+/// ; x component
+/// 26ff: movss -0x8(%rbp),%xmm1   ; xmm1 = a.c
+/// 2704: movss -0x10(%rbp),%xmm0  ; xmm0 = b.x
+/// 2709: mulss %xmm0,%xmm1        ; dst = a.c   -> x1 = mul_l(a.c, b.x)
+/// 270d: movss -0x4(%rbp),%xmm2   ; xmm2 = a.s
+/// 2712: movss -0xc(%rbp),%xmm0   ; xmm0 = b.y
+/// 2717: mulss %xmm2,%xmm0        ; dst = b.y   -> x2 = mul_r(a.s, b.y)
+/// 271b: addss %xmm0,%xmm1        ; dst = x1    -> x = add_l(x1, x2)
 /// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
@@ -563,12 +544,7 @@ pub extern "C" fn c2CCW90(a: c2v) -> c2v {
     b
 }
 
-/// `c2v c2Div(c2v a, float b)`
-///
-/// ```text
-/// 2585  movss 0x1a73(%rip),%xmm0 ; 1.0f
-/// 258d  divss -0xc(%rbp),%xmm0   ; dst = 1.0f -> div_l(1.0, b)
-/// ```
+/// `c2v c2Div(c2v a, float b)` — `divss %xmm1(b), %xmm2(1.0f)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
     c2Mulvs(a, div_l(1.0f32, b))
@@ -582,12 +558,11 @@ pub extern "C" fn c2Norm(a: c2v) -> c2v {
 
 /// `float c2Len(c2v a)` -> `sqrtf(c2Dot(a, a))`
 ///
-/// At `-O0` GCC does not expand the builtin at all — `16d7 call sqrtf@plt` goes
-/// straight to libm. `f32::sqrt` lowers to `sqrtss`, and glibc's `sqrtf` is
-/// `sqrtss` too, so the two agree bit-for-bit. They could only differ on a
-/// *negative* argument (where glibc's compat wrapper may set `errno`), but the
-/// argument is `c2Dot(a, a) = a.x*a.x + a.y*a.y`, a sum of squares, which is
-/// never negative — it is `>= 0` or NaN.
+/// GCC guards the inline `sqrtss` with `ucomiss`/`ja` and falls back to
+/// `sqrtf@plt` only when the argument is *strictly negative* (NaN leaves the
+/// branch untaken, because `ja` is false when unordered). The argument here is
+/// always a sum of squares, so it is never negative and the inline `sqrtss` —
+/// i.e. `f32::sqrt` — is always what runs.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Len(a: c2v) -> f32 {
     c2Dot(a, a).sqrt()
@@ -663,14 +638,7 @@ pub unsafe extern "C" fn c2GJKSimplexMetric(s: *mut c2Simplex) -> f32 {
 
 /// `void c22(c2Simplex *s)`
 ///
-/// ```text
-/// 1a3c  movss -0x14(%rbp),%xmm0  ; u
-/// 1a41  addss -0x18(%rbp),%xmm0  ; dst = u -> add_l(u, v)
-/// ```
-///
-/// Both `v <= 0` and `u <= 0` are compiled as `pxor`/`comiss`/`jb`, i.e. as
-/// `!(0 < x)`; an unordered compare takes the `jb` and so falls through to the
-/// next arm, exactly like Rust's `x <= 0.0` being `false` for NaN.
+/// `s->div = u + v` is emitted as `addss %xmm0(v), %xmm2(u)`, destination `u`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c22(s: *mut c2Simplex) {
     unsafe {
@@ -702,27 +670,29 @@ pub unsafe extern "C" fn c22(s: *mut c2Simplex) {
 
 /// `void c23(c2Simplex *s)`
 ///
-/// At `-O0` every local lives in a stack slot, so each `addss`/`mulss` has the
-/// memory operand as its *source* and the destination is always the operand
-/// that GCC loaded into `xmm0` — which is uniformly the **left** operand of the
-/// C expression:
+/// GCC's destination-operand choices for the `div` sums (see disassembly at
+/// `0x1710`):
+///
+/// Every `div` sum keeps the source operand order, so the *left* addend is the
+/// `addss` destination at all five sites. Slot offsets: `-0x14`=uAB,
+/// `-0x18`=vAB, `-0x1c`=uBC, `-0x20`=vBC, `-0x24`=uCA, `-0x28`=vCA,
+/// `-0x2c`=area, `-0x30`=uABC, `-0x34`=vABC, `-0x38`=wABC.
 ///
 /// ```text
-/// 1c41  movss -0x2c(%rbp),%xmm1  ; area
-/// 1c46  mulss %xmm1,%xmm0        ; dst = c2Det2(b,c)  -> mul_l(det, area)
-/// 1e19  movss -0x14(%rbp),%xmm0  ; uAB
-/// 1e1e  addss -0x18(%rbp),%xmm0  ; dst = uAB          -> add_l(uAB, vAB)
-/// 1eeb  movss -0x1c(%rbp),%xmm0  ; uBC
-/// 1ef0  addss -0x20(%rbp),%xmm0  ; dst = uBC          -> add_l(uBC, vBC)
-/// 1fbc  movss -0x24(%rbp),%xmm0  ; uCA
-/// 1fc1  addss -0x28(%rbp),%xmm0  ; dst = uCA          -> add_l(uCA, vCA)
-/// 200c  movss -0x30(%rbp),%xmm0  ; uABC
-/// 2011  addss -0x34(%rbp),%xmm0  ; dst = uABC         -> add_l(uABC, vABC)
-/// 2016  addss -0x38(%rbp),%xmm0  ; dst = running sum  -> add_l(sum, wABC)
+/// 1e1e: addss -0x18(%rbp),%xmm0   ; xmm0 = uAB  -> add_l(uAB, vAB)
+/// 1ef0: addss -0x20(%rbp),%xmm0   ; xmm0 = uBC  -> add_l(uBC, vBC)
+/// 1fc1: addss -0x28(%rbp),%xmm0   ; xmm0 = uCA  -> add_l(uCA, vCA)
+/// 2011: addss -0x34(%rbp),%xmm0   ; xmm0 = uABC -> add_l(uABC, vABC)
+/// 2016: addss -0x38(%rbp),%xmm0   ; xmm0 = sum  -> add_l(sum,  wABC)
 /// ```
 ///
-/// Stack slots: `uAB=-0x14 vAB=-0x18 uBC=-0x1c vBC=-0x20 uCA=-0x24 vCA=-0x28
-/// area=-0x2c uABC=-0x30 vABC=-0x34 wABC=-0x38`.
+/// The three `*ABC` products keep `c2Det2`'s return value (in `xmm0`) as the
+/// destination and multiply by the spilled `area`:
+///
+/// ```text
+/// 1c41: movss -0x2c(%rbp),%xmm1   ; xmm1 = area
+/// 1c46: mulss %xmm1,%xmm0         ; dst = det2 -> mul_l(c2Det2(..), area)
+/// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
     unsafe {
@@ -828,20 +798,8 @@ pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c
 
 /// `void c2Witness(c2Simplex *s, c2v *a, c2v *b)`
 ///
-/// `den` lives in the stack slot `-0x14(%rbp)`, and every `den * u` product
-/// loads `u` from the simplex into `xmm0` and uses `den` as the *memory source*:
-///
-/// ```text
-/// 2291  movss 0x90(%rax),%xmm1   ; s->div
-/// 2299  movss 0x1d5f(%rip),%xmm0 ; 1.0f
-/// 22a1  divss %xmm1,%xmm0        ; dst = 1.0f       -> div_l(1.0, s->div)
-/// 22fb  movss 0x3c(%rax),%xmm0   ; s->b.u
-/// 2300  mulss -0x14(%rbp),%xmm0  ; dst = s->b.u     -> mul_r(den, u)
-/// 2323  movss 0x18(%rax),%xmm0   ; s->a.u
-/// 2328  mulss -0x14(%rbp),%xmm0  ; dst = s->a.u     -> mul_r(den, u)
-/// ```
-///
-/// So the destination is the vertex weight, **not** `den`: `u`'s NaN wins.
+/// Every `den * u` product is emitted as `mulss <mem>(u), %xmm1(den)`, so the
+/// destination is always `den` — matching the C source order.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) {
     unsafe {
@@ -891,19 +849,15 @@ pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) 
 
 /// `c2v c2L(c2Simplex *s)`
 ///
-/// Identical shape to `c2Witness`: `den` is the stack slot `-0x14(%rbp)` and is
-/// therefore always the `mulss` *source*, so both products have the vertex
-/// weight as destination.
+/// Both `den * u` products load `u` into the destination register and multiply
+/// by the spilled `den`, so `u` is the `mulss` destination at every site (this
+/// holds in `c2Witness` too):
 ///
 /// ```text
-/// 25fd  movss 0x90(%rax),%xmm1   ; s->div
-/// 2605  movss 0x19f3(%rip),%xmm0 ; 1.0f
-/// 260d  divss %xmm1,%xmm0        ; dst = 1.0f     -> div_l(1.0, s->div)
-/// 263a  movss 0x3c(%rax),%xmm0   ; s->b.u
-/// 263f  mulss -0x14(%rbp),%xmm0  ; dst = s->b.u   -> mul_r(den, b.u)
-/// 2662  movss 0x18(%rax),%xmm0   ; s->a.u
-/// 2667  mulss -0x14(%rbp),%xmm0  ; dst = s->a.u   -> mul_r(den, a.u)
-/// 2690  call c2Add               ; c2Add(a term, b term)
+/// 263a: movss 0x3c(%rax),%xmm0   ; xmm0 = b.u
+/// 263f: mulss -0x14(%rbp),%xmm0  ; dst = b.u  -> mul_r(den, b.u)
+/// 2662: movss 0x18(%rax),%xmm0   ; xmm0 = a.u
+/// 2667: mulss -0x14(%rbp),%xmm0  ; dst = a.u  -> mul_r(den, a.u)
 /// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2L(s: *mut c2Simplex) -> c2v {

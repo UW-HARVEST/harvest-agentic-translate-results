@@ -1,104 +1,127 @@
-# CONFIGS.md — Phase A configuration-surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-Mirror of `ERRORS.md` for **valid** inputs. Derived mechanically from the
-branches `c_src/src/lib.c` actually takes.
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`: every
+runtime branch, every mask constant, every value whose *shape* the code
+special-cases. There are no `#ifdef`s, no global mode flags and no setup/option
+API in this library — the "options" are the argument values themselves, so the
+axes below are the argument shapes each entry point branches on.
 
-## Axes the C code branches on
+## Axes the C code actually branches on
 
-There are no runtime option structs, no mode flags, no `#ifdef`s and no
-byte-order handling in this library. The axes are therefore the *data shapes*
-and *values* the code special-cases:
+| axis | where | distinct values the C distinguishes |
+|------|-------|--------------------------------------|
+| **A** `count` shape | `allocate_block` | `0` (empty, `calloc(0,4)` non-NULL, loop skipped); `1` (single); small `2..14` (the range `betagamma` itself uses); large (`1000`, `65536`, many); huge (fails → `ERRORS.md` 2–4) |
+| **B** `init_value` shape | `allocate_block` `mb->data[i] = init_value + i` | `0`; positive; negative; `INT_MAX` (the `int→size_t→int` round trip wraps mid-array); `INT_MIN`; values within `count` of `INT_MAX` so only *part* of the array wraps |
+| **C** `data`/`mb` state | `free_block` | `NULL`; non-NULL with `data != NULL`; non-NULL with `data == NULL` |
+| **D** data-pointer order | `compute_hash` `mb1->data` vs `mb2->data` | `<` (+100), `>` (+200), `==` (+0) |
+| **E** struct-pointer order | `compute_hash` `mb1` vs `mb2` | `<` (+10), `>` (+20), `==` (+0) |
+| **F** `flags` mask coverage | `create_block` (free) / `betagamma` (fixed at `0xAA`,`0xCC`,`0xF0`) | which of `0b00001111`, `0b11110000`, `0b10101010`, `0b01010101` are hit: none (`0x00`), low-only, high-only, odd-only, even-only, all (`0xFF`), plus every one of the 256 values |
+| **G** `name` length | `create_block` / `strcpy` | `0` (empty); `1`; `11` (`"Block_Alpha"`, the length `betagamma` uses); `31` (exactly fills `char[32]`); `>31` = UB (`ERRORS.md` 17) |
+| **H** heap-address relation | `betagamma` → `compute_hash`, and `mem1->data != mem2->data`, and `mem1->data > NULL` | **not** an argument — an emergent property of the allocator. `betagamma`'s return value is a function of allocator state, so C-vs-Rust equality is only well-defined when both run from the *same* heap state. Verified by running identical call sequences in **separate fresh processes** and diffing stdout byte-for-byte (see `tests/driver.rs`); in-process interleaving is provably invalid here. |
+| **I** `param1 % 10` residue | `betagamma` `block_size = (param1 % 10) + 5` | all 10 non-negative residues (`block_size` 5..14); residue `-5` → `block_size 0`; residues `-1..-4` → `block_size 1..4`; residues `-6..-9` → huge → `-1` |
+| **J** `param2..param4` shape | `betagamma` `flag_contribution` accumulation, `sum2`, `(sum1-sum2)/10` | zero; positive; negative; mixed sign; `INT_MAX`/`INT_MIN` (signed wrap in `result +=` and `flag_contribution *`); values making `sum1-sum2` negative so `/10` truncates **toward zero** |
+| **K** entry-point level | public surface | lowest level (`create_block`, `allocate_block`, `free_block`, `compute_hash`) called directly; and the composed top-level `betagamma` which drives all of them |
 
-| axis | values the C distinguishes | source |
-|------|----------------------------|--------|
-| `A1` entry point | `create_block`, `allocate_block`, `free_block`, `compute_hash`, `betagamma` | all 5 exported symbols; `betagamma` is the only one in `include/lib.h`, the other four are the **low-level** entry points and are driven directly |
-| `A2` `create_block` name length | `0`, `1`, mid, `31` (max non-overflowing) | `strcpy` into `char[32]`, line 42 |
-| `A3` `create_block` flags | all 256 `uint8_t` values | field is copied verbatim, line 44 |
-| `A4` `create_block` id | `0`, `±1`, `INT_MIN`, `INT_MAX`, random | field copied verbatim, line 41 |
-| `A5` `allocate_block` count | `0`, `1`, `2`, small (5–14, the range `betagamma` uses), large (`1<<16`) | `calloc` + the `for` loop, lines 52–62 |
-| `A6` `allocate_block` init_value | `0`, negative, `INT_MIN`, `INT_MAX` (wraps), random | `init_value + i` computed in `size_t`, truncated to `int`, line 61 |
-| `A7` `compute_hash` `data` ordering | `d1 < d2`, `d1 > d2`, `d1 == d2` | 3-way branch, lines 79–83 |
-| `A8` `compute_hash` struct-pointer ordering | `p1 < p2`, `p1 > p2`, `p1 == p2` | 3-way branch, lines 85–89 → 9 combos, all reachable with stack-built structs |
-| `A9` `betagamma` `param1 % 10` | all 10 non-negative residues (block_size 5–14) and all 10 negative residues (block_size 5 down to −4) | `(param1 % 10) + 5`, line 126 |
-| `A10` `betagamma` param2/3/4 | `0`, extremes, random full-`i32` (drives `flag_contribution` overflow + `(sum1-sum2)/10` sign) | lines 106–121, 143–150 |
-| `A11` `betagamma` fixed block table | flags `0xAA`, `0xCC`, `0xF0` — the four mask tests `0x0F/0xF0/0xAA/0x55` select a **different subset of params per block**: block 1 (`0xAA`) adds `param1+param2+param3`; block 2 (`0xCC`) and block 3 (`0xF0`) add all four, since `0xCC & 0x55 == 0x44` and `0xF0 & 0x55 == 0x50` are both non-zero. So `flag_contribution` is weighted `1·(p1+p2+p3) + 2·(p1+p2+p3+p4) + 3·(p2+p3+p4)` (block 3 fails the `0x0F` test). This asymmetry is fixed by the source, not an input axis, but every row below exercises it. | lines 94–123 |
+## Configuration rows
 
-## Rows (pruned cross-product of the axes the C actually distinguishes)
+Every row is exercised through both `.so`s via `libloading` with many
+randomized inputs from a fixed-seed PRNG (`SEED = 0x5DEECE66D`), not a single
+hand-picked value.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|------------------------------------------|------|-----|
-| C1 | `create_block` | name length 0 (`""`), flags swept 0–255, random ids incl. `INT_MIN`/`INT_MAX` | `cfg_c1_create_block_empty_name` | [x] |
-| C2 | `create_block` | name length 1, all 256 flags, random ids | `cfg_c2_create_block_len1_name` | [x] |
-| C3 | `create_block` | random name lengths 2–30, random bytes (incl. high-bit / non-ASCII), random flags + ids | `cfg_c3_create_block_random_names` | [x] |
-| C4 | `create_block` | name length 31 = boundary that exactly fills `char[32]` with its NUL | `cfg_c4_create_block_len31_name` | [x] |
-| C5 | `allocate_block` + `free_block` | `count = 0`; `init_value` random incl. extremes | `cfg_c5_allocate_zero_count` | [x] |
-| C6 | `allocate_block` + `free_block` | `count = 1`; `init_value` random incl. `INT_MAX`/`INT_MIN` (wrap on `+i`) | `cfg_c6_allocate_count_one` | [x] |
-| C7 | `allocate_block` + `free_block` | `count = 2..14` (the whole range `betagamma` can request); random `init_value` | `cfg_c7_allocate_small_counts` | [x] |
-| C8 | `allocate_block` + `free_block` | `count = 65536` (many, forces mmap'd/large bin); `init_value = INT_MAX-3` so the buffer wraps mid-array | `cfg_c8_allocate_large_count_wrapping` | [x] |
-| C9 | `compute_hash` | `d1 < d2` × each of `p1 < p2`, `p1 > p2`, `p1 == p2` (stack-built `MemoryBlock`s with synthesised `data` values) | `cfg_c9_compute_hash_data_less` | [x] |
-| C10 | `compute_hash` | `d1 > d2` × each of the 3 struct-pointer orderings | `cfg_c10_compute_hash_data_greater` | [x] |
-| C11 | `compute_hash` | `d1 == d2` × each of the 3 struct-pointer orderings (incl. `data == NULL` on both, which is read but not dereferenced) | `cfg_c11_compute_hash_data_equal` | [x] |
-| C12 | `compute_hash` | randomized full-`usize` `data` addresses (0, 1, `usize::MAX`, random) — checks the comparison is **unsigned**, as C pointer relationals are | `cfg_c12_compute_hash_random_addresses` | [x] |
-| C13 | `compute_hash` | real `allocate_block` output (the composed pipeline `betagamma` uses), both argument orders | `cfg_c13_compute_hash_real_allocations` | [x] |
-| C14 | `betagamma` | `param1 % 10 == 0..9`, `param1 >= 0` → block_size 5..14; params 2–4 random | `cfg_c14_betagamma_positive_residues` | [x] |
-| C15 | `betagamma` | `param1 < 0` with `|param1| % 10 ∈ {0..5}` → block_size 5,4,3,2,1,0 (all valid); params 2–4 random | `cfg_c15_betagamma_negative_valid_residues` | [x] |
-| C16 | `betagamma` | all four params at every combination of `{INT_MIN, -1, 0, 1, INT_MAX}` (5^4 = 625) — drives `flag_contribution` overflow, `sum1-sum2` overflow, and `/10` truncation toward zero for negative dividends | `cfg_c16_betagamma_extreme_grid` | [x] |
-| C17 | `betagamma` | fully randomized full-range `i32` quadruples (seeded), 20 000 cases | `cfg_c17_betagamma_random_fullrange` | [x] |
-| C18 | `betagamma` | `param2` chosen so `sum1 - sum2` is exactly divisible by 10 vs. off by ±1..9, at each block_size — pins the truncating division | `cfg_c18_betagamma_division_boundaries` | [x] |
-| C19 | composed pipeline | `allocate_block` → `compute_hash` → sum loops → `free_block` driven manually through the `.so` exports in the same order `betagamma` does, and cross-checked against `betagamma`'s own return | `cfg_c19_manual_pipeline_matches_betagamma` | [x] |
-| C20 | all 5 entry points | interleaved call sequence (allocate/free churn between `betagamma` calls) so the two libraries see comparable heap evolution; verifies the address-dependent `compute_hash` contribution is stable | `cfg_c20_interleaved_heap_churn` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `create_block` | G=0 (empty name), F=`0x00` (no mask hit), id `0` | [x] |
+| 2 | `create_block` | G=1, F=`0xFF` (all four masks), id negative | [x] |
+| 3 | `create_block` | G=11 (`betagamma`'s own name length), F=`0xAA`/`0xCC`/`0xF0` (the three literal block flags) | [x] |
+| 4 | `create_block` | G=31 (name exactly fills `char[32]`), F random | [x] |
+| 5 | `create_block` | G random 0..31 × F all 256 values × id ∈ {0, ±random, INT_MAX, INT_MIN} — full cross-product sweep | [x] |
+| 6 | `allocate_block`+`free_block` | A=0 (empty) × B=0 — `calloc(0,4)` non-NULL, `size==0`, no element writes | [x] |
+| 7 | `allocate_block`+`free_block` | A=1 (single) × B ∈ {0, +, −} | [x] |
+| 8 | `allocate_block`+`free_block` | A=5..14 (exactly the sizes `betagamma` requests) × B random signed | [x] |
+| 9 | `allocate_block`+`free_block` | A=large (`1000`, `65536`) × B random signed — checks the whole `init_value + i` ramp | [x] |
+| 10 | `allocate_block`+`free_block` | A=large × B=`INT_MAX` — `init_value + i` wraps *mid-array* (`int→size_t→int` truncation) | [x] |
+| 11 | `allocate_block`+`free_block` | A=large × B=`INT_MIN` | [x] |
+| 12 | `allocate_block`+`free_block` | A random × B ∈ `[INT_MAX-count, INT_MAX]` so only the tail of the array wraps | [x] |
+| 13 | `free_block` | C=non-NULL with `data` manually set to `NULL` (heap struct built by the test, `data` cleared) | [x] |
+| 14 | `compute_hash` | D=`<` × E=`<` → 110 | [x] |
+| 15 | `compute_hash` | D=`<` × E=`>` → 120 | [x] |
+| 16 | `compute_hash` | D=`<` × E=`==` → 100 — **unreachable by construction**: `E ==` means `mb1 == mb2`, which forces `mb1->data == mb2->data`, i.e. `D ==`. Asserted unreachable rather than exercised. | [x] |
+| 17 | `compute_hash` | D=`>` × E=`<` → 210 | [x] |
+| 18 | `compute_hash` | D=`>` × E=`>` → 220 | [x] |
+| 19 | `compute_hash` | D=`>` × E=`==` → 200 — **unreachable by construction**, same aliasing argument as row 16 | [x] |
+| 20 | `compute_hash` | D=`==` × E=`<` → 10 | [x] |
+| 21 | `compute_hash` | D=`==` × E=`>` → 20 | [x] |
+| 22 | `compute_hash` | D=`==` × E=`==` → 0 | [x] |
+| 23 | `compute_hash` | D driven by randomized *synthetic* `data` pointer values incl. `0`, `usize::MAX` and values `> 2^63` (so a signed-vs-unsigned comparison bug shows up). `compute_hash` never dereferences `data`, so arbitrary values are legal inputs here. The **struct** pointers `mb1`/`mb2` *are* dereferenced, so they must be real addresses; on x86-64 Linux every dereferenceable address has the sign bit clear, which makes axis E's comparison signed-vs-unsigned indistinguishable by construction (verified as an equivalent mutant, see below) | [x] |
+| 24 | `compute_hash` | inputs produced by real `allocate_block` calls (both orders of the two blocks passed to `compute_hash`) | [x] |
+| 25 | `betagamma` | I=residues 0..9 (`block_size` 5..14) × J=all params small positive | [x] |
+| 26 | `betagamma` | I=residue `-5` (`block_size == 0`) — `param1 ∈ {-5,-15,-25,-35}` | [x] |
+| 27 | `betagamma` | I=residues `-1..-4` (`block_size` 1..4) | [x] |
+| 28 | `betagamma` | J: all four params `0` | [x] |
+| 29 | `betagamma` | J: all four params negative, so `sum1-sum2 < 0` and `/10` truncates toward zero | [x] |
+| 30 | `betagamma` | J: mixed signs, randomized over the full `int` range | [x] |
+| 31 | `betagamma` | J: `param2 = INT_MAX`, `param3 = INT_MIN` etc. — signed overflow in `flag_contribution`, `* id` and `result +=` | [x] |
+| 32 | `betagamma` | J: `param1` fixed per residue × `param2..4` swept so `(sum1-sum2)` straddles `0` and multiples of `10` | [x] |
+| 33 | `betagamma` | I=erroring residues `-6..-9` and `INT_MIN` → `-1` (also `ERRORS.md` 8–9) | [x] |
+| 34 | `betagamma` (composed, H) | identical randomized call *sequence* (600 calls, fixed seed) replayed in two fresh processes, one per `.so`; full stdout compared byte-for-byte — the only sound way to compare the address-dependent result | [x] |
+| 35 | all five entry points (composed, H) | full mixed-workload sequence: `create_block`/`allocate_block`/`compute_hash`/`free_block`/`betagamma` interleaved in a randomized order, replayed per-`.so` in fresh processes, stdout diffed byte-for-byte | [x] |
+| 36 | `betagamma` | repeated identical call, 8 iterations — verifies the C and Rust allocator-state *cycle* (period 2/4) matches, not just one sample | [x] |
 
-## Harness notes (why the tests are shaped this way)
+## Why `betagamma` cannot be compared in-process (axis H, established empirically)
 
-**Heap-address dependence.** `compute_hash` branches on the raw values of
-`mb1`, `mb2`, `mb1->data` and `mb2->data`, so `betagamma`'s return value is a
-function of *(inputs, global heap state)* — not of inputs alone. Calling C and
-then Rust in one process compares them under two *different* heap states: the
-first call perturbs the allocator for the second. Observed directly at the start
-of verification — `betagamma(0,0,0,0)` gave C=464 / Rust=474, a delta of exactly
-10, i.e. the `mb1 < mb2` vs `mb1 > mb2` term — while the same inputs in two
-*fresh* processes both gave 464.
+`betagamma` returns `... + compute_hash(mem1, mem2) + ...`, and `compute_hash`
+compares raw heap addresses. So `betagamma` is a function of its arguments *and
+of glibc's allocator state*, and each call mutates that state (the four
+allocations are freed in an order that reshuffles the tcache bins). Measured on
+the C library alone, repeating the *same* call cycles through several values:
 
-The fix is `fork()`: two children forked from the same instruction inherit
-byte-identical heaps. One child runs the whole C batch, the other the whole Rust
-batch, and because both implementations issue the same `malloc`/`calloc`/`free`
-sequence with the same sizes, their heaps stay in lockstep for the entire batch.
-This makes "the Rust performs an identical allocation sequence" part of what is
-verified — mutation M20 (changing `calloc`'s element size from 4 to 8) and M17
-(skipping the inner `free`) are both caught this way, purely through their
-effect on subsequent addresses.
+```
+p1=0 -> 497 597 607 507 497 597 607 507 ...      (period 4)
+p1=3 -> 517 607 517 607 ...                      (period 2)
+```
 
-**Uninitialized bytes.** C's `create_block` declares `DataBlock block;` and
-writes only three fields, so the 3 trailing padding bytes *and* every `name[]`
-byte past the copied NUL hold stack garbage. Comparisons use `defined()`, which
-compares `id`, `flags`, and `name` only up to and including the NUL. Comparing
-the full 40 bytes would compare uninitialized memory and fail nondeterministically.
+Calling the C `.so` and then the Rust `.so` in one process therefore compares
+two *different* heap states and reports spurious differences: 48 of 60 inputs
+"mismatched", every single one by exactly one of {±10, ±90, ±100, ±110} — i.e.
+purely a `compute_hash` term, never an arithmetic difference. Both libraries
+produce the *same cycle* of values, just at a different phase.
 
-**Stale-`.so` guard.** `cargo test` does **not** rebuild a
-`crate-type = ["cdylib"]` artifact, because integration tests `dlopen` the `.so`
-rather than linking it. An early mutation run was silently vacuous for this
-reason — all 7 injected bugs "passed" against a 13-minute-old library.
-`tests/common/mod.rs` now refuses to run if the `.so` is older than any file
-under `src/`, and `scripts/verify_all.sh` always builds before testing.
+Hence the split used here:
 
-## Validation of the tests themselves
+* the address-**independent** arithmetic is compared in-process
+  (`tests/valid_paths.rs`), asserting that any residual difference is one of the
+  four legal `compute_hash` deltas — so a real arithmetic divergence still fails;
+* the **exact** value, `compute_hash` term included, is compared by replaying an
+  identical call sequence in two fresh processes, one per `.so`, and diffing
+  stdout byte-for-byte (`tests/driver.rs`, rows 34–36). ~307 KB of stdout across
+  five scenarios matches exactly, in both the debug and release profiles.
 
-`scripts/mutation_test.sh` injects 20 deliberate bugs into `src/lib.rs`
-(signed-vs-unsigned pointer comparison, floor-vs-truncating division, sign-
-extended `flags`, dropped mask branches, saturating instead of wrapping
-`init_value + i`, a null guard the C does not have, `NULL` for `count == 0`,
-zero- instead of sign-extended `block_size`, altered hash constants, a skipped
-`strcpy`, a skipped inner `free`, an inverted pointer-equality guard, a wrong
-`calloc` element size, …) and confirms the suite catches each one.
+## Negative controls (does the suite actually have teeth?)
 
-**Result: 20/20 non-equivalent mutations caught.** Three further mutations are
-*provably semantically equivalent* to the original and survive by necessity —
-no test can distinguish them:
+Every row above passing on the first attempt is only meaningful if the suite can
+detect a wrong translation. 22 mutations were injected into `src/lib.rs` one at a
+time, rebuilt, and run against the full suite. **18 were caught**; the 4 that
+were not are provably unobservable through the public ABI:
 
-* mask `0x0F` → `0x0E`: no fixed flag byte (`0xAA`, `0xCC`, `0xF0`) has bit 0 set.
-* block 2 flags `0xCC` → `0xCD`: both test non-zero against all four masks.
-* `mem1->size` → `mem2->size` as a sum-loop bound: both blocks are allocated
-  with the same `block_size`, so the two sizes are always equal.
-
-Each is paired with a non-equivalent variant of the same expression
-(`M12b`, `M13b`, `M19b`) that *is* caught, confirming the code path is covered.
+| mutation | result | caught by |
+|----------|--------|-----------|
+| `compute_hash`: `+100` → `+200` | caught | driver stdout diff |
+| `compute_hash`: `+10` → `+11` | caught | driver stdout diff |
+| `compute_hash`: `data` compared as `isize` | caught | row 23 |
+| `(sum1-sum2)/10` → `div_euclid` (floor) | caught | driver stdout diff |
+| `block_size`: `%` → `rem_euclid` | caught | driver stdout diff |
+| `block_size`: `+5` → `+6` | caught | driver stdout diff |
+| block literal `id: 3` → `4` | caught | driver stdout diff |
+| `special.id` `99` → `98` | caught | driver stdout diff |
+| `+= special.flags` → `+= 254` | caught | driver stdout diff |
+| `mem1->data != mem2->data` → `==` | caught | driver stdout diff |
+| `allocate_block`: `size = count` → `count+1` | caught | driver stdout diff |
+| `allocate_block`: drop the `calloc` null check | caught | driver status mismatch |
+| `betagamma`: drop the `!mem1 \|\| !mem2` check | caught | driver status mismatch |
+| `free_block`: drop the outer `if (mb)` guard | caught | driver status mismatch |
+| `create_block`: `flags` → `flags ^ 1` | caught | driver stdout diff (`mixed`) |
+| `create_block`: bounded copy instead of `strcpy` | caught | `rust_so_uses_the_platform_allocator` |
+| `compute_hash`: `mb1`/`mb2` compared as `isize` | **not caught — equivalent** | on x86-64 Linux every dereferenceable address has bit 63 clear, and `compute_hash` *dereferences* `mb1`/`mb2`, so no legal input can distinguish the two comparisons |
+| `free_block`: drop the inner `if (mb->data)` guard | **not caught — equivalent** | `free(NULL)` is a defined no-op in C, so the C guard is redundant |
+| `init_value + i` computed in `i32` instead of `size_t` | **not caught — equivalent** | the two agree mod 2^32 for every `i < 2^31`; distinguishing them needs an ≥8 GB allocation |
+| flag mask `0b10101010` → `0b10101011` | **not caught — equivalent** | bit 0 is clear in all three literal `flags` (`0xAA`, `0xCC`, `0xF0`) and no public entry point feeds other values into these masks |

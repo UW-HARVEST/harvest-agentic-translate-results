@@ -1,27 +1,25 @@
 # Dynamic Symbol Surface
 
-Generated from:
+Source library:
+`../c_src/build/libharvest-work-qjBfdv.so`
+
+Rust library:
+`target/release/libdiv_euclid_lib.so`
+
+The exported API was derived with:
 
 ```text
-nm -D ../c_src/build/libharvest-work-C1uliL.so
-nm -D target/release/libdiv_euclid_lib.so
+nm -D --defined-only ../c_src/build/libharvest-work-qjBfdv.so
 ```
 
-## Complete C `nm -D` inventory
+| C symbol | C type | Rust symbol | Status |
+|----------|--------|-------------|--------|
+| `div_euclid` | `T` (global function) | `div_euclid` | present |
 
-| C type | symbol | C status | Rust dynamic-table status |
-|--------|--------|----------|---------------------------|
-| `w` | `_ITM_deregisterTMCloneTable` | weak undefined toolchain hook | present, weak undefined |
-| `w` | `_ITM_registerTMCloneTable` | weak undefined toolchain hook | present, weak undefined |
-| `w` | `__cxa_finalize@GLIBC_2.2.5` | weak undefined libc hook | present, weak undefined |
-| `w` | `__gmon_start__` | weak undefined toolchain hook | present, weak undefined |
-| `T` | `div_euclid` | defined public API | present, defined public API |
+The unfiltered C `nm -D` output also contains only the usual undefined weak
+runtime references (`_ITM_deregisterTMCloneTable`,
+`_ITM_registerTMCloneTable`, `__cxa_finalize@GLIBC_2.2.5`, and
+`__gmon_start__`). They are not definitions exported by this library.
 
-## Required defined exports
-
-| symbol | C | Rust | status |
-|--------|---|------|--------|
-| `div_euclid` | `T` | `T` | [x] |
-
-Missing defined C exports in Rust: **0**
+Missing defined C symbols in Rust: **0**.
 

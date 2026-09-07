@@ -1,79 +1,62 @@
-# SYMBOLS.md — dynamic-symbol parity between the C `.so` and the Rust `.so`
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Generated mechanically. Reproduce with:
+## Build commands
 
-```sh
+```
 # C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libharvest-work-QUHmNR.so | sort
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libharvest-work-skTiBN.so   (name derives from the parent dir)
+
 # Rust
 cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libcolourblind_lib.so | sort
+# -> translation/target/release/libcolourblind_lib.so
 ```
 
-`scripts/symbol_parity.sh` in the crate root automates the whole diff and exits
-non-zero if anything the C exports is missing from the Rust.
-
-## Translation-unit inventory (completeness check)
-
-The C library is a single translation unit. Every function in it is accounted
-for below, so no module was skipped by the translation.
-
-| C source file | function | C linkage | translated as | exported? |
-|---|---|---|---|---|
-| `c_src/src/lib.c:3`  | `Protanopia`   | `static` (internal) | `protanopia` (private `unsafe fn`)   | no — `static` in C, not in `nm -D` |
-| `c_src/src/lib.c:10` | `Deuteranopia` | `static` (internal) | `deuteranopia` (private `unsafe fn`) | no — `static` in C, not in `nm -D` |
-| `c_src/src/lib.c:17` | `Tritanopia`   | `static` (internal) | `tritanopia` (private `unsafe fn`)   | no — `static` in C, not in `nm -D` |
-| `c_src/src/lib.c:24` | `colourblind`  | external            | `#[no_mangle] pub unsafe extern "C" fn colourblind` | **yes** |
-
-`c_src/include/lib.h` declares one type (`enum cb_impairment`, a compile-time
-construct with no symbol) and one function (`colourblind`). There are no
-macro-generated symbols, no global/`extern` variables, no constructors
-(`__attribute__((constructor))`), and no `#ifdef`-gated alternates in the C, so
-the exported surface cannot vary by build configuration.
-
-## `nm -D --defined-only` — C `.so`
+## `nm -D` on the C `.so`
 
 ```
-00000000000013d2 T colourblind
+             w _ITM_deregisterTMCloneTable
+             w _ITM_registerTMCloneTable
+             w __cxa_finalize@GLIBC_2.2.5
+             w __gmon_start__
+000000000000 T colourblind
 ```
 
-Count: **1** defined dynamic symbol.
+Only ONE defined, non-weak, non-libc symbol: `colourblind`.
+The three transform helpers (`Protanopia`, `Deuteranopia`, `Tritanopia`) are
+`static` in `c_src/src/lib.c`, so they have **no** dynamic symbol and must NOT
+be exported by Rust either.
 
-## `nm -D --defined-only` — Rust `.so`
+## Parity table
 
-```
-0000000000011c70 T colourblind
-```
+| # | C symbol | kind | present in Rust `.so`? | notes |
+|---|----------|------|------------------------|-------|
+| 1 | `colourblind` | `T` (defined, global) | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn colourblind` | exact name match |
+| 2 | `_ITM_deregisterTMCloneTable` | `w` (weak undefined) | yes (weak undef, same as C) | toolchain-generated, not API |
+| 3 | `_ITM_registerTMCloneTable` | `w` (weak undefined) | yes | toolchain-generated |
+| 4 | `__cxa_finalize@GLIBC_2.2.5` | `w` | yes | libc |
+| 5 | `__gmon_start__` | `w` | yes | toolchain-generated |
 
-Count: **1** defined dynamic symbol.
+## C static (non-exported) functions — must stay unexported in Rust
 
-## Diff
+| C static fn | Rust counterpart | exported? |
+|---|---|---|
+| `Protanopia`   | `protanopia`   | no (correct) |
+| `Deuteranopia` | `deuteranopia` | no (correct) |
+| `Tritanopia`   | `tritanopia`   | no (correct) |
 
-| symbol | in C `.so` | in Rust `.so` | verdict |
-|---|---|---|---|
-| `colourblind` | T | T | ✅ present in both, exact name match |
+## Result
 
-**Symbols exported by C but missing from Rust: 0.**
-**Symbols exported by Rust but not by C: 0** (no accidental surface widening —
-the crate is a `cdylib`, and the three helpers are private, mirroring `static`).
+`nm -D --defined-only` diff between the two `.so` files is **EMPTY**.
+Rust's remaining `U` entries are all libc / `_Unwind_*` (Rust std + panic
+machinery) — no missing project symbols. **0 missing symbols.**
 
-## Undefined / imported symbols
+## Cargo features
 
-Neither `.so` imports a non-libc symbol.
+`translation/Cargo.toml` declares **no `[features]` table** and no
+`default` feature, so there is exactly ONE feature combination
+(the empty/default one). `--no-default-features` is equivalent.
 
-C `.so` undefined entries (all weak or libc, all expected CRT glue):
-
-```
-w _ITM_deregisterTMCloneTable
-w _ITM_registerTMCloneTable
-w __cxa_finalize@GLIBC_2.2.5
-w __gmon_start__
-```
-
-The Rust `.so` needs no libc symbol at all for `colourblind`: the translation is
-pure arithmetic with no allocation, no I/O and no panic machinery on the hot
-path (`panic = "abort"` is set for `release`).
-
-**0 missing / undefined non-libc symbols in the Rust `.so`.** ✅
+No `[[bin]]` target and no `main.rs`: the project builds **no binary
+executable**, so the "compare C and Rust binary stdout" gate is N/A.

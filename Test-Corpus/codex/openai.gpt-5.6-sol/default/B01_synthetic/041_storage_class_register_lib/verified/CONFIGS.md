@@ -1,15 +1,16 @@
 # Configuration Surface
 
-Mechanical search covered the public header and all C implementation branches.
-There are no runtime options, modes, flags, conditional branches, compile-time
-feature branches, pointer/array shapes, formats, byte-order choices, or
-multiple entry points.
+Mechanically derived from the complete public header and every runtime branch,
+switch, conditional-compilation branch, option, mode, flag, and special input
+shape in the C source.
+
+The library has one public entry point, no runtime options, no runtime branches,
+no feature flags, and one scalar `int` input. The C implementation applies the
+same operation to the full `int` domain.
 
 | # | entry point(s) | configuration (options set + input shape) | status |
 |---|----------------|--------------------------------------------|--------|
-| 1 | `driver` | No options; one by-value C `int`. Exercise zero, positive, negative, arithmetic wraparound-producing values, `INT_MIN`, `INT_MAX`, and fixed-seed randomized values across the full 32-bit domain. | [x] |
+| 1 | `driver(int)` | No options; every representable C `int`, including `0`, positive/negative values, `INT_MIN`, `INT_MAX`, and values whose `2*x + 300` machine arithmetic crosses the signed boundary | [x] |
 
-## Feature Matrix
-
-`Cargo.toml` declares no features, so the only feature combination is the
-default/no-feature build.
+Verified with 20 targeted boundary inputs and 8,192 fixed-seed randomized
+inputs under both the default build and `--no-default-features`.

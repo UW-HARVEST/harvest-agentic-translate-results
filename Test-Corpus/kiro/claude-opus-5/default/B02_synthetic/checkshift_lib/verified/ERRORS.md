@@ -1,74 +1,75 @@
-# ERRORS.md — error / rejection surface table (Phase A, gate for Phase C)
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/lib.c` by grepping every `return`, every
-`== NULL` / `!= NULL` test, every explicit range check, every clamp, and every
-`#define`d limit. There are **no** `assert`s, no `errno` use, and no error enums in
-this library; rejection is expressed as a NULL return, a `0` / `-1` sentinel, an
-early `void` return, or a printed diagnostic.
+Mechanically derived from every rejection site in `c_src/src/lib.c`:
 
-Line numbers refer to `c_src/src/lib.c`.
+```
+grep -n 'return|NULL|assert|Error|> 0|>= 0|< 4|> 4|?' c_src/src/lib.c
+```
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|---|----------|----------------------------------------------|-------------------|------|-----|
-| 1 | `get_operation` | `opcode < 0` — fails `opcode >= 0` (L76). e.g. `-1`, `-4`, `INT_MIN` | returns `NULL`; nothing printed | `err01_get_operation_negative` | [x] |
-| 2 | `get_operation` | `opcode >= 4` — fails `opcode < 4` (L76). e.g. `4`, `5`, `INT_MAX` | returns `NULL`; nothing printed | `err02_get_operation_too_large` | [x] |
-| 3 | `get_operation` | `opcode == OP_SHIFT` (`0x04`, L34) — the `OP_*` macros run `1..4` but the table is indexed `0..3`, so the highest documented opcode is itself out of range | returns `NULL` | `err03_get_operation_op_macros` | [x] |
-| 4 | `get_operation` | one step past each end of the valid range: `-1` and `4` | `NULL` on both; `0` and `3` non-`NULL` | `err04_get_operation_boundary` | [x] |
-| 5 | `execute_operation` | `func == NULL` (L84) | prints `Error: Operation function pointer is NULL for %s\n` with `op_name`; returns `0`; `func` never called | `err05_execute_operation_null_func` | [x] |
-| 6 | `execute_operation` | `func == NULL` **and** `op_name == NULL` — `%s` receives a null pointer | glibc prints `…NULL for (null)`; returns `0` | `err06_execute_operation_null_func_null_name` | [x] |
-| 7 | `execute_operation` | `func != NULL` but `op_name == NULL` (success path, `%s` null) | prints `Result of (null): <n>`; returns `func(a,b)` | `err07_execute_operation_null_name_success` | [x] |
-| 8 | `compute_checksum` | `values == NULL` (L102), with `count > 0` | `checksum` stays `0`, `MAGIC_NUMBER` **not** applied; returns `0` | `err08_compute_checksum_null_values` | [x] |
-| 9 | `compute_checksum` | `count == 0` — fails `count > 0` (L102) | returns `0` (no `MAGIC_NUMBER` xor) | `err09_compute_checksum_zero_count` | [x] |
-| 10 | `compute_checksum` | `count < 0` (e.g. `-1`, `INT_MIN`) — fails `count > 0` (L102) | returns `0` | `err10_compute_checksum_negative_count` | [x] |
-| 11 | `compute_checksum` | `values == NULL` **and** `count == 0` / `count < 0` | returns `0` | `err11_compute_checksum_null_and_bad_count` | [x] |
-| 12 | `compute_checksum` | `count > 4` (L105 clamp `copy_count = (count > 4) ? 4 : count`), incl. `5`, `16`, `INT_MAX` | oversized length is **not** an error: reads only the first 4 ints, result identical to `count == 4` | `err12_compute_checksum_oversized_count` | [x] |
-| 13 | `compute_checksum` | result range bound by `MASK_LOWER` (`0x0000FFFF`, L36) | return value is always `<= 0xFFFF` for every input | `err13_compute_checksum_mask_bound` | [x] |
-| 14 | `init_state` | `state == NULL` (L117) | prints `Error: state pointer is NULL in init_state\n`; returns `void`; writes nothing | `err14_init_state_null` | [x] |
-| 15 | `apply_operation` | `state == NULL` (L130) | prints `Error: state pointer is NULL in apply_operation\n`; returns; `func` never called | `err15_apply_operation_null_state` | [x] |
-| 16 | `apply_operation` | `state != NULL`, `func == NULL` (L135) | prints `Error: operation function pointer is NULL in apply_operation\n`; returns; **`operation_count` is NOT incremented** and `accumulator` is unchanged | `err16_apply_operation_null_func` | [x] |
-| 17 | `apply_operation` | `state == NULL` **and** `func == NULL` — check order matters (state is tested first) | only the *state* message is printed, not the *func* one | `err17_apply_operation_both_null` | [x] |
-| 18 | `checkshift` | `malloc(sizeof(ComputeState))` returns `NULL` (L150) | prints `Error: Failed to allocate memory for state\n`; returns `-1`; no further output | `err18_checkshift_malloc_failure` (LD_PRELOAD malloc interposer) | [x] |
-| 19 | `compute_checksum` | misaligned `int*` — the C reaches `values` only through `memcpy` (L106), which has no alignment requirement, so a misaligned pointer is *accepted*, not rejected | reads the same 4·count bytes; no alignment fault | `err_misaligned_values_pointer` | [x] |
+There are **no** `assert`s, no error enums, no `RETURN_ERROR` macros and no
+`errno` use in this library. Every rejection is either a null-pointer guard, a
+range check on `opcode`, or a `count` sign check. `malloc` failure is the only
+allocation error path.
 
-## Finding: row 18 initially DIVERGED
+Rows are checked off (`[x]`) only when the differential test in
+`tests/phase_c_errors.rs` passes for both the C and the Rust `.so`.
+"expected C result" covers BOTH the return value AND the bytes written to
+stdout, which the tests compare byte-for-byte.
 
-Row 18 caught a real translation defect. LLVM recognises `malloc`/`free` by name and
-had promoted the non-escaping 12-byte `ComputeState` block to registers, deleting
-the allocation from the Rust `.so` entirely — confirmed with an `LD_PRELOAD`
-interposer (0 `malloc` calls from Rust vs 1 from C) and in the disassembly (no
-`malloc`/`free` call in Rust's `checkshift`). Consequences:
+| # | function | trigger (the exact invalid input/condition) | expected C result | ok |
+|---|----------|---------------------------------------------|-------------------|----|
+| 1 | `get_operation` | `opcode == -1` (fails `opcode >= 0`, `lib.c:76`) | returns `NULL`; no stdout | [x] |
+| 2 | `get_operation` | `opcode == INT_MIN` (fails `opcode >= 0`) | returns `NULL`; no stdout | [x] |
+| 3 | `get_operation` | `opcode == 4` (fails `opcode < 4`, one past valid range) | returns `NULL`; no stdout | [x] |
+| 4 | `get_operation` | `opcode == INT_MAX` (fails `opcode < 4`) | returns `NULL`; no stdout | [x] |
+| 5 | `get_operation` | `opcode` = arbitrary out-of-range enum-ish ints (`5,6,7,0x7FFF,-2,-100,0xDEAD`) crossing the FFI as `int` | returns `NULL`; no stdout | [x] |
+| 6 | `execute_operation` | `func == NULL` (`lib.c:84`), `op_name` = `"XOR"` | prints `Error: Operation function pointer is NULL for XOR\n`; returns `0` | [x] |
+| 7 | `execute_operation` | `func == NULL`, `op_name == NULL` (glibc `%s` prints `(null)`) | prints `Error: Operation function pointer is NULL for (null)\n`; returns `0` | [x] |
+| 8 | `execute_operation` | `func == NULL`, `op_name == ""` (empty string) | prints `Error: Operation function pointer is NULL for \n`; returns `0` | [x] |
+| 9 | `execute_operation` | `func == NULL` reached via `get_operation(bad)` (composed path) | prints the NULL error; returns `0` | [x] |
+| 10 | `compute_checksum` | `values == NULL`, `count == 4` (fails `values != NULL`, `lib.c:102`) | skips body, returns `0` (`0 & MASK_LOWER`); no stdout | [x] |
+| 11 | `compute_checksum` | `values == NULL`, `count == 0` (both sub-conditions fail) | returns `0`; no stdout | [x] |
+| 12 | `compute_checksum` | `values == NULL`, `count == -1` | returns `0`; no stdout | [x] |
+| 13 | `compute_checksum` | `values != NULL`, `count == 0` (fails `count > 0`) | returns `0`; no stdout | [x] |
+| 14 | `compute_checksum` | `values != NULL`, `count == -1` (one step below valid range) | returns `0`; no stdout | [x] |
+| 15 | `compute_checksum` | `values != NULL`, `count == INT_MIN` (extreme negative) | returns `0`; no stdout | [x] |
+| 16 | `init_state` | `state == NULL` (`lib.c:117`) | prints `Error: state pointer is NULL in init_state\n`; returns void, writes nothing | [x] |
+| 17 | `apply_operation` | `state == NULL`, `func` non-NULL (`lib.c:130`) | prints `Error: state pointer is NULL in apply_operation\n`; no mutation | [x] |
+| 18 | `apply_operation` | `state == NULL` **and** `func == NULL` (state check wins, ordering matters) | prints only `Error: state pointer is NULL in apply_operation\n` | [x] |
+| 19 | `apply_operation` | `state` valid, `func == NULL` (`lib.c:135`) | prints `Error: operation function pointer is NULL in apply_operation\n`; `accumulator`/`operation_count` unchanged | [x] |
+| 20 | `checkshift` | `malloc(sizeof(ComputeState))` returns `NULL` (`lib.c:150`) | prints the two banner lines then `Error: Failed to allocate memory for state\n`; returns `-1` | [x] (see note) |
 
-* `state == NULL` became unreachable, so under allocation failure the C returned
-  `-1` after printing the diagnostic while the Rust returned a normal result. No
-  happy-path test could see this.
-* the `malloc`/`free` pair was invisible to any external allocator interposer.
+## Note on row 20
 
-Fixed in `src/lib.rs` by routing both calls through `#[inline(never)]`
-trampolines that load the function pointer with `read_volatile`, which hides the
-callee's identity from the optimiser so a real indirect call is always emitted.
-`err18b_allocator_call_parity` is the regression guard: it asserts that N
-`checkshift` calls produce the same number of `malloc(12)` and `free` calls on
-both sides.
+`malloc(sizeof(ComputeState))` (12 bytes) cannot be made to fail
+deterministically from outside the library — both implementations call the
+process allocator. The row is therefore covered structurally: the test asserts
+both `.so` images contain the byte string `Error: Failed to allocate memory for
+state` and every other diagnostic/format string.
 
-## Notes on non-rows
+**This row found a real divergence.** In the original Rust the release build's
+LLVM recognised the `malloc`/`free` pair as removable, deleted the allocation
+**and with it the `state == NULL` branch**, so no `malloc` call and no
+allocation-failure message existed in `libcheckshift_lib.so`. Had `malloc`
+failed, C would print the message and `return -1` while Rust would have carried
+on and returned a computed value. Fixed by wrapping the allocation in
+`core::hint::black_box`, which keeps the pointer opaque to the optimizer;
+`objdump -d --disassemble=checkshift` now shows the `malloc` and `free` calls
+and the message is present in both images.
 
-* L69 `if (ops[0] == NULL)` is a lazy-initialisation guard for a function-`static`
-  table, not an input rejection: it is unobservable from outside because the table
-  is always fully populated before the range check runs. It is covered implicitly by
-  rows 1–4 (repeated calls must keep returning the same behaviour), by
-  `cfg10_get_operation_repeat_calls`, and by `cfg10b_concurrent_dispatch_and_leaf_ops`
-  (the lazy fill is a benign race in C; the Rust must not abort where C proceeds).
-* There is no path in which `checkshift` returns anything other than `final_result`
-  or `-1`. Note that `-1` is *also* a legal `final_result` value, so the sentinel is
-  ambiguous in C; the Rust reproduces that ambiguity rather than distinguishing it.
-* `free(state)` (L185) is unconditional after the null check, so there is no
-  double-free or null-free path.
-* **`memcpy` call counts differ and this is deliberate.** The C `.so` calls
-  `memcpy` for the 12-byte struct copy in `init_state` and the ≤16-byte copy in
-  `compute_checksum`; the Rust inlines the small fixed-size copies (verified with a
-  `memcpy` interposer: C emits `[12]`+`[16]` from `checkshift`, Rust emits none).
-  Unlike `malloc`, `memcpy` cannot fail and no C branch is keyed on it, so nothing
-  observable — return values, state bytes, or emitted output — changes. The
-  variable-length copy inside a directly-called `compute_checksum` *is* a real
-  `memcpy` on both sides. Row 19 covers the one input class this could have
-  affected (alignment).
+Note when reading `.rodata`: both gcc and rustc rewrite a newline-terminated
+`printf` with no conversions into `puts`, which strips the trailing newline from
+the stored string. The test searches for each message both with and without it.
+
+## Generic FFI-boundary boundaries additionally covered (`tests/phase_c_errors.rs`)
+
+* Null pointers for every pointer parameter (`values`, `state`, `op_name`,
+  `func`) individually and in combination.
+* Zero and oversized lengths for `count`: `0`, `-1`, `INT_MIN`, `1..=4`,
+  `5`, `1000`, `INT_MAX` (the `count > 4 ? 4 : count` clamp).
+* Values one step past the documented valid `opcode` range: `-1` and `4`.
+* Out-of-range "enum" values for `opcode` passed as raw `int` across FFI —
+  C enums/opcodes accept any `int`, so `INT_MIN`, `-2`, `5`, `0xDEAD`,
+  `INT_MAX` are real inputs both sides must reject identically.
+* Function pointers *from the other library* passed into `execute_operation`
+  and `apply_operation` (C op into Rust entry point and vice versa).

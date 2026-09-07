@@ -25,28 +25,26 @@
 //!    between them instead of inlining them; keeping the same call structure
 //!    keeps every call site using one single code path, exactly as in C.
 //!  * `c2CastRay`'s `switch` has no `default` label: for a shape type other
-//!    than 0/1/2 the C function falls off the end without returning a value.
-//!    The compiled fall-through path jumps straight to `leave; ret` without
-//!    ever writing `eax`, so the C "returns" whatever the caller left there --
-//!    measured as five *different* values in five separate processes (it tracks
-//!    ASLR).  There is no behaviour to reproduce, so a deterministic 0 is
-//!    returned; what the C *does* define (no `*out` write, no crash) is
-//!    reproduced exactly.  See `ERRORS.md` row 24.
+//!    than 0/1/2 the C function falls off the end without returning a value
+//!    (undefined behaviour -- the compiled code returns whatever happens to be
+//!    in `eax`).  There is nothing meaningful to reproduce there, so 0 is
+//!    returned.  The one *observable* property -- that `*out` is left
+//!    untouched -- is reproduced exactly.
+//!  * NaN payloads are reproduced bit-exactly.  Each scalar `+`/`-`/`*`/`/`
+//!    goes through `fadd`/`fsub`/`fmul`/`fdiv` below, which implement the
+//!    asymmetric NaN-operand priority of the `addss`/`subss`/`mulss`/`divss`
+//!    instruction the C compiler emits (the *destination* operand's payload
+//!    wins).  Which C operand ends up in the destination register is *not*
+//!    always the left-hand one, so every call site names the (dst, src) order
+//!    read off the C `.so`'s disassembly.
 //!
-//! Verified against the C build by the differential test suite in `tests/`
-//! (`./verify.sh` runs the whole matrix: both cargo feature combinations x the
-//! dev and release cdylib x the `-O0` and `-O2` C builds).  The final pass
-//! compared **62,929,792** values through the FFI boundary -- every exported
-//! symbol, every branch of every function, +-0.0, denormals, +-inf, NaN and raw
-//! random bit patterns -- with **0** mismatches.
-//!
-//! The one tolerated difference is the *payload* of a NaN produced from two NaN
-//! operands: which one a `mulss`/`addss` propagates is unspecified by IEEE-754
-//! and depends purely on which operand the compiler made the destination
-//! register, so the C library does not even agree with itself there.  On an
-//! identical corpus, the C `-O0` and `-O2` builds differ on 2210 payloads while
-//! this translation differs from the `-O0` reference on 1676; see
-//! `tests/nan_payload_policy.rs` and the table in `ERRORS.md`.
+//! Verified against the C `.so` by a `libloading`-based differential test
+//! suite (`tests/`) that loads both shared libraries and compares every
+//! exported symbol bit-for-bit: 114 test functions covering all 68 rows of
+//! `CONFIGS.md` and all 51 rows of `ERRORS.md`, ~60M randomized calls at
+//! `DIFF_SCALE=120` (including +-0.0, denormals, +-inf, signalling NaNs, raw
+//! random bit patterns and out-of-range `C2_TYPE` enum values), with zero
+//! divergences under every feature combination and both build profiles.
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -156,6 +154,84 @@ fn c_abs(a: f32) -> f32 {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                 exact SSE scalar arithmetic (NaN payloads)                 */
+/* -------------------------------------------------------------------------- */
+//
+// The C library is compiled to x86-64 SSE scalar instructions
+// (`mulss` / `addss` / `subss` / `divss`).  Those instructions are *not*
+// symmetric in how they propagate NaN operands:
+//
+//     mulss %src, %dst      # dst = dst OP src
+//
+// If the **destination** operand is a NaN, the result is that NaN, quieted.
+// Only if the destination is *not* a NaN and the source *is* does the source's
+// NaN payload survive.  Which C operand ends up in the destination register is
+// a property of the emitted code, and GCC's choice is *not* always the
+// left-hand operand of the C expression -- e.g. for `a.x += b.x` in `c2Add` it
+// emits `addss %xmm1(a.x), %xmm0(b.x)`, so `b.x`'s payload wins.
+//
+// `fmul`/`fadd`/`fsub`/`fdiv` below reproduce `<op>ss dst, src` exactly, in
+// software, so the payload result does not depend on what LLVM decides to do
+// with a commutative `f32` multiply.  Every call site passes the operands in
+// the (dst, src) order read off the C `.so`'s disassembly; that order is
+// documented at each site.
+
+/// Quiet a NaN the way an SSE arithmetic instruction does (set the MSB of the
+/// significand, leave the sign bit and the rest of the payload alone).
+#[inline(always)]
+fn quiet_nan(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() | 0x0040_0000)
+}
+
+/// `mulss src, dst` → `dst * src`, with SSE NaN-operand priority.
+#[inline(always)]
+fn fmul(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet_nan(dst)
+    } else if src.is_nan() {
+        quiet_nan(src)
+    } else {
+        dst * src
+    }
+}
+
+/// `addss src, dst` → `dst + src`, with SSE NaN-operand priority.
+#[inline(always)]
+fn fadd(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet_nan(dst)
+    } else if src.is_nan() {
+        quiet_nan(src)
+    } else {
+        dst + src
+    }
+}
+
+/// `subss src, dst` → `dst - src`, with SSE NaN-operand priority.
+#[inline(always)]
+fn fsub(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet_nan(dst)
+    } else if src.is_nan() {
+        quiet_nan(src)
+    } else {
+        dst - src
+    }
+}
+
+/// `divss src, dst` → `dst / src`, with SSE NaN-operand priority.
+#[inline(always)]
+fn fdiv(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet_nan(dst)
+    } else if src.is_nan() {
+        quiet_nan(src)
+    } else {
+        dst / src
+    }
+}
+
+/* -------------------------------------------------------------------------- */
 /*                              vector helpers                                */
 /* -------------------------------------------------------------------------- */
 
@@ -171,7 +247,13 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    a.x * b.x + a.y * b.y
+    /* C: return a.x * b.x + a.y * b.y;
+     *   movss a.x,%xmm1 ; movss b.x,%xmm0 ; mulss %xmm0,%xmm1   -> dst = a.x
+     *   movss a.y,%xmm2 ; movss b.y,%xmm0 ; mulss %xmm2,%xmm0   -> dst = b.y
+     *   addss %xmm1,%xmm0                                       -> dst = p2   */
+    let p1 = fmul(a.x, b.x);
+    let p2 = fmul(b.y, a.y);
+    fadd(p2, p1)
 }
 
 #[inline(never)]
@@ -183,31 +265,38 @@ pub extern "C" fn c2Len(a: c2v) -> f32 {
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(mut a: c2v, b: c2v) -> c2v {
-    a.x += b.x;
-    a.y += b.y;
+    /* C: a.x += b.x; a.y += b.y;
+     *   movss a.x,%xmm1 ; movss b.x,%xmm0 ; addss %xmm1,%xmm0  -> dst = b.x
+     *   movss a.y,%xmm1 ; movss b.y,%xmm0 ; addss %xmm1,%xmm0  -> dst = b.y  */
+    a.x = fadd(b.x, a.x);
+    a.y = fadd(b.y, a.y);
     a
 }
 
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
-    a.x -= b.x;
-    a.y -= b.y;
+    /* C: a.x -= b.x; a.y -= b.y;   `subss %xmm1,%xmm0` with dst = a.{x,y} */
+    a.x = fsub(a.x, b.x);
+    a.y = fsub(a.y, b.y);
     a
 }
 
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
-    a.x *= b;
-    a.y *= b;
+    /* C: a.x *= b; a.y *= b;   `mulss -0xc(%rbp),%xmm0` with dst = a.{x,y} */
+    a.x = fmul(a.x, b);
+    a.y = fmul(a.y, b);
     a
 }
 
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
-    c2Mulvs(a, 1.0f32 / b)
+    /* C: return c2Mulvs(a, 1.0f / b);
+     *   movss 1.0f,%xmm0 ; divss -0xc(%rbp),%xmm0  -> dst = 1.0f, src = b   */
+    c2Mulvs(a, fdiv(1.0f32, b))
 }
 
 #[inline(never)]
@@ -256,8 +345,17 @@ pub extern "C" fn c2CCW90(a: c2v) -> c2v {
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulmvT(a: c2m, b: c2v) -> c2v {
     let mut c = c2v { x: 0.0, y: 0.0 };
-    c.x = a.x.x * b.x + a.x.y * b.y;
-    c.y = a.y.x * b.x + a.y.y * b.y;
+    /* C: c.x = a.x.x * b.x + a.x.y * b.y;
+     *   mulss %xmm0(b.x),%xmm1(a.x.x)  -> dst = a.x.x
+     *   mulss %xmm2(a.x.y),%xmm0(b.y)  -> dst = b.y
+     *   addss %xmm1,%xmm0              -> dst = second product              */
+    let p1 = fmul(a.x.x, b.x);
+    let p2 = fmul(b.y, a.x.y);
+    c.x = fadd(p2, p1);
+    /* same instruction shape for c.y */
+    let q1 = fmul(a.y.x, b.x);
+    let q2 = fmul(b.y, a.y.y);
+    c.y = fadd(q2, q1);
     c
 }
 
@@ -270,13 +368,19 @@ pub extern "C" fn c2MulmvT(a: c2m, b: c2v) -> c2v {
 pub unsafe extern "C" fn c2RaytoCircle(A: c2Ray, B: c2Circle, out: *mut c2Raycast) -> c_int {
     let p: c2v = B.p;
     let m: c2v = c2Sub(A.p, p);
-    let c: f32 = c2Dot(m, m) - B.r * B.r;
+    /* C: float c = c2Dot(m, m) - B.r * B.r;
+     *   mulss %xmm0(B.r),%xmm1(B.r) ; subss %xmm1,%xmm0(dot) -> dst = dot   */
+    let c: f32 = fsub(c2Dot(m, m), fmul(B.r, B.r));
     let b: f32 = c2Dot(m, A.d);
-    let disc: f32 = b * b - c;
+    /* C: float disc = b * b - c;
+     *   mulss %xmm0,%xmm0 ; subss -0x14(%rbp),%xmm0          -> dst = b*b   */
+    let disc: f32 = fsub(fmul(b, b), c);
     if disc < 0.0 {
         return 0;
     }
-    let t: f32 = -b - sqrtf(disc);
+    /* C: float t = -b - sqrtf(disc);
+     *   xorps sign-flip of b, then `subss %xmm1(sqrt),%xmm0(-b)` -> dst = -b */
+    let t: f32 = fsub(-b, sqrtf(disc));
     if t >= 0.0 && t <= A.t {
         unsafe {
             (*out).t = t;
@@ -304,20 +408,24 @@ pub extern "C" fn c2AABBtoAABB(A: c2AABB, B: c2AABB) -> c_int {
 /// `static inline float c2SignedDistPointToPlane_OneDimensional(float, float, float)`
 #[inline(always)]
 fn c2SignedDistPointToPlane_OneDimensional(p: f32, n: f32, d: f32) -> f32 {
-    p * n - d * n
+    /* C: return p * n - d * n;
+     *   mulss n,%xmm0(p) ; mulss n,%xmm1(d) ; subss %xmm1,%xmm0
+     *   -> dst = p, dst = d, dst = p*n (all left-hand operands)             */
+    fsub(fmul(p, n), fmul(d, n))
 }
 
 /// `static inline float c2RayToPlane_OneDimensional(float, float)`
 #[inline(always)]
 fn c2RayToPlane_OneDimensional(da: f32, db: f32) -> f32 {
+    /* every `<op>ss` in this function has the left-hand C operand as dst */
     if da < 0.0 {
         0.0
-    } else if da * db > 0.0 {
+    } else if fmul(da, db) > 0.0 {
         1.0f32
     } else {
-        let d: f32 = da - db;
+        let d: f32 = fsub(da, db);
         if d != 0.0 {
-            da / d
+            fdiv(da, d)
         } else {
             0.0
         }
@@ -343,7 +451,12 @@ pub unsafe extern "C" fn c2RaytoAABB(A: c2Ray, B: c2AABB, out: *mut c2Raycast) -
     let abs_n: c2v = c2Absv(n);
     let half_extents: c2v = c2Mulvs(c2Sub(B.max, B.min), 0.5f32);
     let center_of_b_box: c2v = c2Mulvs(c2Add(B.min, B.max), 0.5f32);
-    let d: f32 = c_abs(c2Dot(n, c2Sub(p0, center_of_b_box))) - c2Dot(abs_n, half_extents);
+    /* C: float d = |c2Dot(n, p0 - centre)| - c2Dot(abs_n, half_extents);
+     *   subss %xmm1(second dot),%xmm0(abs)  -> dst = the abs value          */
+    let d: f32 = fsub(
+        c_abs(c2Dot(n, c2Sub(p0, center_of_b_box))),
+        c2Dot(abs_n, half_extents),
+    );
     if d > 0.0 {
         return 0;
     }
@@ -365,28 +478,34 @@ pub unsafe extern "C" fn c2RaytoAABB(A: c2Ray, B: c2AABB, out: *mut c2Raycast) -
     let hit3: c_int = (t3 <= 1.0f32) as c_int;
     let hit: c_int = hit0 | hit1 | hit2 | hit3;
     if hit != 0 {
-        t0 = (hit0 as f32) * t0;
-        t1 = (hit1 as f32) * t1;
-        t2 = (hit2 as f32) * t2;
-        t3 = (hit3 as f32) * t3;
+        /* C: tN = (float)hitN * tN;
+         *   cvtsi2ssl hitN,%xmm0 ; movss tN,%xmm1 ; mulss %xmm1,%xmm0
+         *   -> dst = (float)hitN (never a NaN, so only tN's payload can win) */
+        t0 = fmul(hit0 as f32, t0);
+        t1 = fmul(hit1 as f32, t1);
+        t2 = fmul(hit2 as f32, t2);
+        t3 = fmul(hit3 as f32, t3);
+        /* C: out->t = tN * A.t;
+         *   movss 0x20(%rbp)(A.t),%xmm0 ; mulss tN,%xmm0
+         *   -> dst = A.t, i.e. the *right-hand* C operand wins a NaN tie     */
         if t0 >= t1 && t0 >= t2 && t0 >= t3 {
             unsafe {
-                (*out).t = t0 * A.t;
+                (*out).t = fmul(A.t, t0);
                 (*out).n = c2V(-1.0, 0.0);
             }
         } else if t1 >= t0 && t1 >= t2 && t1 >= t3 {
             unsafe {
-                (*out).t = t1 * A.t;
+                (*out).t = fmul(A.t, t1);
                 (*out).n = c2V(1.0, 0.0);
             }
         } else if t2 >= t0 && t2 >= t1 && t2 >= t3 {
             unsafe {
-                (*out).t = t2 * A.t;
+                (*out).t = fmul(A.t, t2);
                 (*out).n = c2V(0.0, -1.0);
             }
         } else {
             unsafe {
-                (*out).t = t3 * A.t;
+                (*out).t = fmul(A.t, t3);
                 (*out).n = c2V(0.0, 1.0);
             }
         }
@@ -412,7 +531,8 @@ pub extern "C" fn c2AABBtoPoint(A: c2AABB, B: c2v) -> c_int {
 pub extern "C" fn c2CircleToPoint(A: c2Circle, B: c2v) -> c_int {
     let n: c2v = c2Sub(A.p, B);
     let d2: f32 = c2Dot(n, n);
-    (d2 < A.r * A.r) as c_int
+    /* C: return d2 < A.r * A.r;  (both mulss operands are A.r) */
+    (d2 < fmul(A.r, A.r)) as c_int
 }
 
 #[inline(never)]
@@ -460,7 +580,9 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
             return 1;
         }
     }
-    if yAe.x * yAp.x < 0.0 || c_min(c_abs(yAe.x), c_abs(yAp.x)) < B.r {
+    /* C: if (yAe.x * yAp.x < 0 || min(|yAe.x|, |yAp.x|) < B.r)
+     *   mulss %xmm0(yAp.x),%xmm1(yAe.x)  -> dst = yAe.x                     */
+    if fmul(yAe.x, yAp.x) < 0.0 || c_min(c_abs(yAe.x), c_abs(yAp.x)) < B.r {
         let mut Ca = c2Circle {
             p: c2v { x: 0.0, y: 0.0 },
             r: 0.0,
@@ -481,9 +603,17 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
             }
         } else {
             let c: f32 = if yAp.x > 0.0 { B.r } else { -B.r };
-            let d: f32 = yAe.x - yAp.x;
-            let t: f32 = (c - yAp.x) / d;
-            let y: f32 = yAp.y + (yAe.y - yAp.y) * t;
+            /* C: float d = (yAe.x - yAp.x);        subss -> dst = yAe.x
+             *    float t = (c - yAp.x) / d;        subss -> dst = c
+             *                                      divss -> dst = (c-yAp.x)
+             *    float y = yAp.y + (yAe.y - yAp.y) * t;
+             *      subss %xmm2(yAp.y),%xmm0(yAe.y) -> dst = yAe.y
+             *      mulss -0x1c(%rbp)(t),%xmm0      -> dst = the difference
+             *      addss %xmm1(yAp.y),%xmm0        -> dst = the *product*,
+             *        i.e. the right-hand C operand wins a NaN tie            */
+            let d: f32 = fsub(yAe.x, yAp.x);
+            let t: f32 = fdiv(fsub(c, yAp.x), d);
+            let y: f32 = fadd(fmul(fsub(yAe.y, yAp.y), t), yAp.y);
             if y <= 0.0 {
                 return unsafe { c2RaytoCircle(A, Ca, out) };
             }
@@ -492,7 +622,10 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
             } else {
                 unsafe {
                     (*out).n = if c > 0.0 { M.x } else { c2Skew(M.y) };
-                    (*out).t = t * A.t;
+                    /* C: out->t = t * A.t;
+                     *   movss 0x20(%rbp)(A.t),%xmm0 ; mulss -0x1c(t),%xmm0
+                     *   -> dst = A.t (the right-hand C operand)             */
+                    (*out).t = fmul(A.t, t);
                 }
                 return 1;
             }
@@ -551,7 +684,9 @@ pub unsafe extern "C" fn spec_ray(
     };
     ray.p = c2V(r_p_x, r_p_y);
     ray.d = c2Norm(c2Sub(mp, ray.p));
-    ray.t = c2Dot(mp, ray.d) - c2Dot(ray.p, ray.d);
+    /* C: ray.t = c2Dot(mp, ray.d) - c2Dot(ray.p, ray.d);
+     *   subss %xmm1(second dot),%xmm0(first dot) -> dst = the first dot     */
+    ray.t = fsub(c2Dot(mp, ray.d), c2Dot(ray.p, ray.d));
 
     let hit: c_int = unsafe {
         c2CastRay(

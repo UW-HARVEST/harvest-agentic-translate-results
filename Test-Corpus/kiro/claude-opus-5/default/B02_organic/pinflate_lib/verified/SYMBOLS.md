@@ -1,110 +1,74 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically:
+Derived mechanically from `nm -D` on both shared objects.
 
-```sh
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D c_src/build/libharvest-work-wGYayD.so | grep -v ' U \| w ' | awk '{print $3}' | sort > /tmp/c.txt
+* C  : `c_src/build/libharvest-work-FtZjFD.so`
+* Rust: `translation/target/release/libpinflate_lib.so`
 
-cd translation && cargo build --release
-nm -D translation/target/release/libpinflate_lib.so | grep -v ' U \| w ' | awk '{print $3}' | sort > /tmp/r.txt
+## Defined (exported) symbols in the C `.so`
 
-diff /tmp/c.txt /tmp/r.txt      # MUST be empty
+| # | symbol | C type / kind | size | present in Rust `.so`? | notes |
+|---|--------|---------------|------|------------------------|-------|
+| 1 | `pinflate`            | `T` function | — | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn pinflate` |
+| 2 | `cp_fixed_table`      | `D` `uint8_t[320]`  | 320 | YES | `pub static mut cp_fixed_table: [u8; 320]` |
+| 3 | `cp_permutation_order`| `D` `uint8_t[19]`   | 19  | YES | `pub static mut cp_permutation_order: [u8; 19]` |
+| 4 | `cp_len_extra_bits`   | `D` `uint8_t[31]`   | 31  | YES | `pub static mut cp_len_extra_bits: [u8; 31]` |
+| 5 | `cp_len_base`         | `D` `uint32_t[31]`  | 124 | YES | `pub static mut cp_len_base: [u32; 31]` |
+| 6 | `cp_dist_extra_bits`  | `D` `uint8_t[32]`   | 32  | YES | `pub static mut cp_dist_extra_bits: [u8; 32]` |
+| 7 | `cp_dist_base`        | `D` `uint32_t[32]`  | 128 | YES | `pub static mut cp_dist_base: [u32; 32]` |
+| 8 | `cp_error_reason`     | `B` `const char *`  | 8   | YES | `pub static mut cp_error_reason: *const c_char` |
+
+`static` C functions (`cp_make_pixel_a`, `cp_make_pixel`, `cp_would_overflow`,
+`cp_ptr`, `cp_peak_bits`, `cp_consume_bits`, `cp_read_bits`, `cp_rev16`,
+`cp_build`, `cp_stored`, `cp_fixed`, `cp_decode`, `cp_dynamic`, `cp_block`)
+have internal linkage and export no dynamic symbols; they are translated as
+private Rust `fn`s. No export wrapper is required or permitted for them.
+
+## Undefined symbols
+
+C `.so` imports only libc (`__assert_fail`, `calloc`, `free`, `memcpy`,
+`memset`) plus the four standard weak glibc/ITM stubs.
+
+Rust `.so` imports only libc / `libgcc_s` unwinder symbols. No non-libc
+undefined symbols in either object.
+
+## Diff result
+
+```
+$ nm -D --defined-only <c.so>    | awk '{print $3}' | sort > /tmp/c.syms
+$ nm -D --defined-only <rust.so> | awk '{print $3}' | sort > /tmp/r.syms
+$ comm -23 /tmp/c.syms /tmp/r.syms      # in C, missing from Rust
+(empty)
 ```
 
-`tests/symbol_parity.rs` performs exactly this diff as a test.
+**Status: 0 missing symbols. 0 undefined non-libc symbols in Rust.** ✅
 
-## C source → exported symbols
+## Cargo feature combinations
 
-`c_src/src/lib.c` is a single translation unit. Everything declared `static`
-is internal and contributes no dynamic symbol. The non-`static` file-scope
-objects and the one non-`static` function are the entire exported surface.
+`translation/Cargo.toml` declares **no `[features]` section**, so the only build
+configurations are the default one and `--no-default-features` (identical here).
+This is established mechanically, not by inspection:
+`scripts/feature_matrix.sh` extracts the feature list from `Cargo.toml`, forms
+the powerset, and for each combination runs `cargo check`, `cargo build`,
+`scripts/symbol_parity.sh` and the full differential suite. Result:
 
-| # | symbol | kind (`nm`) | C declaration | in Rust `.so`? | Rust item |
-|---|--------|-------------|---------------|----------------|-----------|
-| 1 | `pinflate`            | `T` text   | `int pinflate(void *in, int in_bytes, void *out, int out_bytes)` | yes | `#[unsafe(no_mangle)] pub unsafe extern "C" fn pinflate` |
-| 2 | `cp_error_reason`     | `B` bss    | `const char *cp_error_reason;`        | yes | `pub static mut cp_error_reason: *const c_char` |
-| 3 | `cp_fixed_table`      | `D` data   | `uint8_t cp_fixed_table[288 + 32]`    | yes | `pub static mut cp_fixed_table: [u8; 320]` |
-| 4 | `cp_permutation_order`| `D` data   | `uint8_t cp_permutation_order[19]`    | yes | `pub static mut cp_permutation_order: [u8; 19]` |
-| 5 | `cp_len_extra_bits`   | `D` data   | `uint8_t cp_len_extra_bits[29 + 2]`   | yes | `pub static mut cp_len_extra_bits: [u8; 31]` |
-| 6 | `cp_len_base`         | `D` data   | `uint32_t cp_len_base[29 + 2]`        | yes | `pub static mut cp_len_base: [u32; 31]` |
-| 7 | `cp_dist_extra_bits`  | `D` data   | `uint8_t cp_dist_extra_bits[30 + 2]`  | yes | `pub static mut cp_dist_extra_bits: [u8; 32]` |
-| 8 | `cp_dist_base`        | `D` data   | `uint32_t cp_dist_base[30 + 2]`       | yes | `pub static mut cp_dist_base: [u32; 32]` |
+```
+features declared in Cargo.toml: 0 ()
+combinations to verify: 2          # DEFAULT and NONE
+FEATURE MATRIX: OK
+```
 
-**Missing from Rust `.so`: none.** No C module/file was skipped —
-`c_src/CMakeLists.txt` compiles exactly one source file (`src/lib.c`) and every
-non-`static` object in it is exported by the Rust `cdylib` under the identical
-name. No stubs / `unimplemented!()` were introduced.
+If a `[features]` section is ever added, the script picks it up automatically.
 
-## Internal (`static`) C functions — translated, intentionally not exported
+## Phase D result
 
-These have no dynamic symbol in the C `.so` either, so exporting them would be
-a *parity violation*. All are present as private Rust `fn`s and are exercised
-transitively through `pinflate`.
+| gate | status |
+|---|---|
+| `nm -D`: 0 symbols missing from the Rust `.so` | ✅ `scripts/symbol_parity.sh` |
+| `nm -D`: 0 undefined non-libc symbols in either `.so` | ✅ |
+| every `CONFIGS.md` row passes over randomised inputs | ✅ 49 tests |
+| every `ERRORS.md` row tested or proven unreachable | ✅ 22 tests |
+| binary/driver stdout comparison | n/a — neither project builds an executable (`add_library(... SHARED)` / `crate-type = ["cdylib"]`) |
+| all of the above under every feature combination | ✅ 2 of 2 |
+| all of the above in both `debug` and `release` profiles | ✅ (the release profile exposed two real divergences, see `src/lib.rs`'s notes on `cp_decode`) |
 
-| C `static` function | Rust counterpart |
-|---------------------|------------------|
-| `cp_make_pixel_a`   | `fn cp_make_pixel_a` (dead in C too) |
-| `cp_make_pixel`     | `fn cp_make_pixel` (dead in C too) |
-| `cp_would_overflow` | `fn cp_would_overflow` |
-| `cp_ptr`            | `unsafe fn cp_ptr` |
-| `cp_peak_bits`      | `unsafe fn cp_peak_bits` |
-| `cp_consume_bits`   | `fn cp_consume_bits` |
-| `cp_read_bits`      | `unsafe fn cp_read_bits` |
-| `cp_rev16`          | `fn cp_rev16` |
-| `cp_build`          | `unsafe fn cp_build` |
-| `cp_stored`         | `unsafe fn cp_stored` |
-| `cp_fixed`          | `unsafe fn cp_fixed` |
-| `cp_decode`         | `unsafe fn cp_decode` |
-| `cp_dynamic`        | `unsafe fn cp_dynamic` |
-| `cp_block`          | `unsafe fn cp_block` |
-
-Types `struct cp_pixel_t`, `struct cp_image_t`, `struct cp_state_t` are
-translated as `#[repr(C)]` structs with the original field order, because
-`cp_decode` performs an out-of-bounds `tree[lo - 1]` read that lands on the
-*neighbouring field* of `cp_state_t` (e.g. `lookup[510..512]` when
-`tree == s->lit`); identical layout is required to reproduce it.
-
-## Data-layout parity (not just symbol-name parity)
-
-Exporting the right *names* is not sufficient — the reference `.so` is also
-indexed **out of bounds** through them, so their relative addresses are part of
-the observable behaviour. Measured with `dlsym` on both libraries:
-
-| symbol | offset in C `.so` | offset in Rust `.so` (as first written) |
-|--------|------------------:|----------------------------------------:|
-| `cp_fixed_table`       |   0 |    0 |
-| `cp_permutation_order` | 320 |  351 |
-| `cp_len_extra_bits`    | 352 |  320 |
-| `cp_len_base`          | 384 |  500 |
-| `cp_dist_extra_bits`   | 512 |  -32 |
-| `cp_dist_base`         | 544 |  372 |
-
-Because `cp_block` evaluates `cp_len_extra_bits[symbol]`, `cp_len_base[symbol]`,
-`cp_dist_extra_bits[sym]` and `cp_dist_base[sym]` with values that come out of
-`cp_decode` (and a corrupted Huffman tree can make those reach 4095), the C
-reads its `.data` *neighbours*, and the scrambled Rust order produced different
-bytes. This was a real divergence found by `tests/fuzz.rs`. It is fixed by
-routing every table read through `CP_SHADOW`, an internal `#[repr(C)]` struct
-whose field offsets reproduce the C's layout exactly (including the 13/1/4/8
-byte alignment gaps and the `cp_error_reason` slot at +680), refreshed from the
-writable exports on each entry to `pinflate`. The offsets are asserted at
-compile time in `src/lib.rs`.
-
-## Undefined (imported) symbols
-
-The C `.so` imports `calloc`, `free`, `memcpy`, `memset`, `__assert_fail` from
-libc plus the usual weak ELF/glibc hooks. The Rust `.so` imports only libc /
-`libgcc_s` runtime symbols. `nm -D --undefined-only` on the Rust `.so` shows **0
-non-libc undefined symbols** — verified by `tests/symbol_parity.rs`.
-
-## Build-configuration note (drives Phase C)
-
-`c_src/CMakeLists.txt` sets **no** `CMAKE_BUILD_TYPE` and no `-DNDEBUG`, so the
-16 `assert()`s in `lib.c` are **live** in the reference `.so`
-(`nm -D` shows `U __assert_fail@GLIBC_2.2.5`). Malformed input therefore makes
-the C library `abort()` (`SIGABRT`) rather than return. The Rust translation
-reproduces every one of those assertions via `cp_assert_fail() -> !` which calls
-`std::process::abort()`, so both libraries die with the same signal on the same
-inputs. See `ERRORS.md` rows A1–A9.

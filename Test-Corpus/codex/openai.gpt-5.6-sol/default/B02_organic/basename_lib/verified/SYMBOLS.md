@@ -1,20 +1,29 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Generated from:
+Source command:
 
 ```text
-nm -D --defined-only --extern-only ../c_src/build/libdriver.so
+nm -D ../c_src/build/libdriver.so
 ```
 
-| C symbol | Type | Rust export | Status |
-|----------|------|-------------|--------|
-| `tool_basename` | `T` | `tool_basename` | Present |
+Complete C dynamic-symbol output, classified mechanically:
 
-The C library has no other defined dynamic symbols. Its only non-weak undefined
-symbol is the libc function `strrchr`.
+| symbol | nm type | classification | Rust parity |
+|--------|---------|----------------|-------------|
+| `_ITM_deregisterTMCloneTable` | `w` | undefined weak toolchain hook | present |
+| `_ITM_registerTMCloneTable` | `w` | undefined weak toolchain hook | present |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | undefined weak libc/toolchain hook | present |
+| `__gmon_start__` | `w` | undefined weak toolchain hook | present |
+| `strrchr@GLIBC_2.2.5` | `U` | undefined libc dependency | present |
+| `tool_basename` | `T` | defined public API export | present |
 
-Completion:
+## Required defined-export parity
 
-- [x] Every defined C dynamic symbol is exported by the Rust shared library.
-- [x] Missing symbols: 0.
-- [x] Undefined non-libc symbols in Rust: 0.
+| C symbol | Rust symbol | status |
+|----------|-------------|--------|
+| `tool_basename` | `tool_basename` | [x] |
+
+No C-defined public symbol is currently missing from the Rust shared library.
+
+Verified with an empty diff between `nm -D --defined-only` outputs under both
+the default build and `--no-default-features`.

@@ -1,40 +1,43 @@
-# Error Surface
+# Error surface
 
-The C API has no error enum or `RETURN_ERROR` macro. Its explicit rejection
-surface consists of not-found sentinels, null-map handling, and assertions.
-Rows include internal assertions because they are mechanically present in the
-C source; tests reach them through the exported operation that owns the state.
+The C implementation has no error enum and no ordinary `-1`/`NULL` failure
+return other than lookup misses and the explicit null-map deletion sentinel.
+Lookup misses are valid map operations and are covered in `CONFIGS.md`.
+The rows below include every explicit C assertion plus the generic invalid FFI
+boundaries required by the verification protocol. “Process fault” records the
+C implementation's actual unchecked-pointer behavior; it is not normalized
+into a Rust error.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | |
-|---|----------|----------------------------------------------|-------------------|---|
-| 1 | `stbds_hmfree_func` | `a == NULL` (line 573) | Return immediately; no effect | [x] |
-| 2 | `stbds_hmget_key_ts` | `a == NULL` (line 634) | Allocate a zero default element and set `*temp = -1` | [x] |
-| 3 | `stbds_hmget_key_ts` | map exists but `hash_table == NULL` (line 644) | Return the map and set `*temp = -1` | [x] |
-| 4 | `stbds_hm_find_slot` via get/delete | an empty hash is reached in the initial bucket suffix (lines 609-610) | Return `-1`; public get exposes `temp == -1`, delete reports no deletion | [x] |
-| 5 | `stbds_hm_find_slot` via get/delete | an empty hash is reached in the wrapped bucket prefix (lines 620-621) | Return `-1`; public get exposes `temp == -1`, delete reports no deletion | [x] |
-| 6 | `stbds_hmdel_key` | `a == NULL` (lines 809-810) | Return `NULL` | [x] |
-| 7 | `stbds_hmdel_key` | map exists but `hash_table == NULL` (lines 816-817) | Return the map unchanged with header `temp == 0` | [x] |
-| 8 | `stbds_hmdel_key` | key is absent, so `slot < 0` (lines 820-822) | Return the map unchanged with header `temp == 0` | [x] |
-| 9 | `stbds_make_hash_index` via map creation/growth | `used_count_threshold + tombstone_count_threshold >= slot_count` (line 401) | `assert` failure (`SIGABRT`) | [x] |
-| 10 | `stbds_hmput_key` | growth returns capacity smaller than `i + 1` (line 778) | `assert` failure (`SIGABRT`) | [x] |
-| 11 | `stbds_hmdel_key` | found `slot >= table->slot_count` (line 828) | `assert` failure (`SIGABRT`) | [x] |
-| 12 | `stbds_hmdel_key` | decrement leaves `table->used_count < 0` (line 832; impossible for unsigned `size_t`) | `assert` expression is always true; no rejection is observable | [x] |
-| 13 | `stbds_hmdel_key` | moved final element cannot be found (`slot < 0`, line 846) | `assert` failure (`SIGABRT`) | [x] |
-| 14 | `stbds_hmdel_key` | moved element's bucket index is not `final_index` (line 849) | `assert` failure (`SIGABRT`) | [x] |
-| 15 | `stbds_stralloc` | after block selection, `len > a->remaining` (line 913) | `assert` failure (`SIGABRT`) | [x] |
-| 16 | `sh_puts` | copied arena key's first byte is not `'a'` (line 959) | `assert` failure (`SIGABRT`) | [x] |
-| 17 | `sh_puts` | arena key pointer equals source literal pointer (line 960) | `assert` failure (`SIGABRT`) | [x] |
-| 18 | `sh_puts` | copied value differs from input `num` (line 961) | `assert` failure (`SIGABRT`) | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `stbds_arrfreef` | `a == NULL` | unchecked header subtraction/free; process faults | [x] |
+| 2 | `stbds_hash_string` | `str == NULL` | unchecked dereference; process faults | [x] |
+| 3 | `stbds_hash_bytes` | `p == NULL && len > 0` | unchecked byte read; process faults | [x] |
+| 4 | `stbds_hmfree_func` | `a == NULL` | explicit no-op return | [x] |
+| 5 | `stbds_hmget_key_ts` | `temp == NULL` | unchecked result write; process faults | [x] |
+| 6 | `stbds_hmget_key` / `stbds_hmget_key_ts` | binary mode, populated table, `key == NULL && keysize > 0` | unchecked hash/key read; process faults | [x] |
+| 7 | `stbds_hmget_key` / `stbds_hmget_key_ts` | string mode, populated table, `key == NULL` | unchecked string read; process faults | [x] |
+| 8 | `stbds_hmput_key` | binary mode, `key == NULL && keysize > 0` | unchecked hash/key read; process faults | [x] |
+| 9 | `stbds_hmput_key` | string mode, `key == NULL` | unchecked string read; process faults | [x] |
+| 10 | `stbds_hmdel_key` | `a == NULL` | explicit `NULL` return | [x] |
+| 11 | `stbds_hmdel_key` | binary mode, populated table, `key == NULL && keysize > 0` | unchecked hash/key read; process faults | [x] |
+| 12 | `stbds_hmdel_key` | string mode, populated table, `key == NULL` | unchecked string read; process faults | [x] |
+| 13 | `stbds_stralloc` | `a == NULL` | unchecked arena dereference; process faults | [x] |
+| 14 | `stbds_stralloc` | `str == NULL` | unchecked `strlen`; process faults | [x] |
+| 15 | `stbds_strreset` | `a == NULL` | unchecked arena dereference; process faults | [x] |
+| 16 | `stbds_make_hash_index` (via map growth) | `used_count_threshold + tombstone_count_threshold >= slot_count` | `STBDS_ASSERT` aborts | [x] |
+| 17 | `stbds_hmput_key` | post-growth invariant `(size_t)i + 1 > arrcap(a)` | `STBDS_ASSERT` aborts | [x] |
+| 18 | `stbds_hmdel_key` | located `slot >= table->slot_count` | `STBDS_ASSERT` aborts | [x] |
+| 19 | `stbds_hmdel_key` | deletion makes unsigned `table->used_count < 0` | assertion condition `used_count >= 0` is tautologically true for `size_t`; no rejection | [x] |
+| 20 | `stbds_hmdel_key` | moved final element cannot be found in the hash index (`slot < 0`) | `STBDS_ASSERT` aborts | [x] |
+| 21 | `stbds_hmdel_key` | moved element's bucket index is not `final_index` | `STBDS_ASSERT` aborts | [x] |
+| 22 | `stbds_stralloc` | allocation branch leaves `len > a->remaining` | `STBDS_ASSERT` aborts | [x] |
+| 23 | `sh_puts` | inserted arena key does not begin with byte `'a'` | `STBDS_ASSERT` aborts | [x] |
+| 24 | `sh_puts` | arena-stored key aliases the source literal | `STBDS_ASSERT` aborts | [x] |
+| 25 | `sh_puts` | stored value differs from input `num` | `STBDS_ASSERT` aborts | [x] |
 
-Generic FFI boundaries not explicitly guarded by C are tested separately:
-null data/key/string/arena/temp pointers, zero element/key/byte lengths,
-oversized lengths, and mode values outside the named `0`/`1` and `0..3`
-constants. For unchecked invalid pointers or impossible allocation sizes, the
-C process signal/exit status is the expected result.
-
-Rows 13 and 14 are triggered exactly by corrupting an otherwise valid map in
-an isolated child process; C and Rust both terminate with `SIGABRT`. Rows 9-12
-and 15-18 are allocator/arithmetic or postcondition invariants that cannot be
-made false through the exported API without prior undefined behavior or fault
-injection. Their owning operations are exercised repeatedly, and the Rust
-translation now contains matching abort checks at each non-tautological site.
+The assertions in rows 17–25 are postconditions/internal consistency checks.
+Their invalid states cannot be supplied as ordinary typed API arguments; the
+differential suite exercises the corresponding operations and, where an
+internal state can be corrupted through the exposed allocation layout, tests
+the abort path in isolated child processes.

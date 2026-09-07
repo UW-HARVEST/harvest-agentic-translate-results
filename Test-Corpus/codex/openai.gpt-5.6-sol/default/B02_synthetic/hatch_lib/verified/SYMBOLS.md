@@ -1,33 +1,31 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Generated from:
+Mechanically extracted with:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-I5OVhX.so
+nm -D --defined-only ../c_src/build/libharvest-work-kivdGu.so
 nm -D --defined-only target/release/libhatch_lib.so
 ```
 
-The C shared object has 12 globally defined dynamic symbols. The Rust shared
-object exports every one with the exact same name.
+Only globally defined dynamic symbols (`T`) are part of the C library's public
+surface. The C library's undefined symbols are the libc functions `difftime`,
+`free`, `malloc`, `memmove`, `memset`, `snprintf`, and `time`, plus standard
+toolchain weak symbols; they are not library exports.
 
-| # | C symbol | C type | Rust export |
-|---|----------|--------|-------------|
-| 1 | `increment_counter` | `T` | [x] |
-| 2 | `update_accumulator` | `T` | [x] |
-| 3 | `apply_operation` | `T` | [x] |
-| 4 | `add_three` | `T` | [x] |
-| 5 | `multiply_add` | `T` | [x] |
-| 6 | `complex_calc` | `T` | [x] |
-| 7 | `shift_array_data` | `T` | [x] |
-| 8 | `process_pointer_data` | `T` | [x] |
-| 9 | `compute_with_dynamic_memory` | `T` | [x] |
-| 10 | `get_time_based_value` | `T` | [x] |
-| 11 | `manipulate_records` | `T` | [x] |
-| 12 | `hatch` | `T` | [x] |
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `add_three` | `T` | `add_three` | [x] |
+| `apply_operation` | `T` | `apply_operation` | [x] |
+| `complex_calc` | `T` | `complex_calc` | [x] |
+| `compute_with_dynamic_memory` | `T` | `compute_with_dynamic_memory` | [x] |
+| `get_time_based_value` | `T` | `get_time_based_value` | [x] |
+| `hatch` | `T` | `hatch` | [x] |
+| `increment_counter` | `T` | `increment_counter` | [x] |
+| `manipulate_records` | `T` | `manipulate_records` | [x] |
+| `multiply_add` | `T` | `multiply_add` | [x] |
+| `process_pointer_data` | `T` | `process_pointer_data` | [x] |
+| `shift_array_data` | `T` | `shift_array_data` | [x] |
+| `update_accumulator` | `T` | `update_accumulator` | [x] |
 
-Missing C exports in Rust: **0**
+Missing C exports in Rust: **0**.
 
-The C object's undefined dynamic symbols are libc/toolchain imports:
-`difftime`, `free`, `malloc`, `memmove`, `memset`, `snprintf`, `time`,
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-and `__gmon_start__`. They are not library exports.

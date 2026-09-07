@@ -26,7 +26,6 @@
 #![allow(non_camel_case_types)]
 
 use core::ffi::{c_char, c_double, c_int};
-use core::mem::{MaybeUninit, size_of};
 use core::ptr;
 
 /// `#define MAX_NODES 100`
@@ -103,65 +102,46 @@ pub unsafe extern "C" fn add_node(
 ) -> c_int {
     let count = node_count();
 
-    // C: `if (node_count >= MAX_NODES) return -1;`
-    // The comparison is `int` vs `int` in C (MAX_NODES is an integer constant),
-    // so it is reproduced as a signed comparison rather than casting the
-    // counter to `usize`.
-    if count >= MAX_NODES as c_int {
+    if count as usize >= MAX_NODES {
         return -1;
     }
 
     // Node new_node = { .id = id, .parent_id = parent_id,
     //                   .value = value, .active = 1 };
-    //
-    // A partially-bracketed aggregate initializer zero-fills everything that is
-    // not named -- `name` *and* the six bytes of padding between `name` and
-    // `value` (gcc emits a zero-fill of the whole 80-byte object first). Since
-    // `find_node_by_id` hands the caller a `Node *` into the storage array, a
-    // consumer can observe those padding bytes, so they are zeroed here too
-    // instead of being left as Rust's "uninitialised padding".
-    let mut staging: MaybeUninit<Node> = MaybeUninit::zeroed();
-    let new_node: *mut Node = staging.as_mut_ptr();
-    unsafe {
-        (*new_node).id = id;
-        (*new_node).parent_id = parent_id;
-        (*new_node).value = value;
-        (*new_node).active = 1;
-    }
+    // (designated initializer => `name` is zero filled)
+    let mut new_node = Node {
+        id,
+        parent_id,
+        name: [0; MAX_NAME_LEN],
+        value,
+        active: 1,
+    };
 
     // strncpy(new_node.name, name, MAX_NAME_LEN - 1);
     // Copies at most 49 bytes, stopping after the source NUL, and
     // zero-pads the remainder of those 49 bytes.
     unsafe {
-        let dst_name = (&raw mut (*new_node).name) as *mut c_char;
         let mut i = 0usize;
         while i < MAX_NAME_LEN - 1 {
             let ch = *name.add(i);
             if ch == 0 {
                 break;
             }
-            *dst_name.add(i) = ch;
+            new_node.name[i] = ch;
             i += 1;
         }
         while i < MAX_NAME_LEN - 1 {
-            *dst_name.add(i) = 0;
+            new_node.name[i] = 0;
             i += 1;
         }
-
-        // new_node.name[MAX_NAME_LEN - 1] = '\0';
-        *dst_name.add(MAX_NAME_LEN - 1) = 0;
     }
 
+    // new_node.name[MAX_NAME_LEN - 1] = '\0';
+    new_node.name[MAX_NAME_LEN - 1] = 0;
+
     // node_storage[node_count++] = new_node;
-    //
-    // Copied as a whole object (all `sizeof(Node)` bytes, padding included),
-    // exactly like the C struct assignment. Note that the copy happens *after*
-    // the name has been read, so passing a `name` that aliases the destination
-    // slot behaves as it does in C.
-    // (`offset`, like C's indexing, is signed -- see the note above.)
     unsafe {
-        let dst = storage_ptr().offset(count as isize);
-        ptr::copy_nonoverlapping(new_node as *const u8, dst as *mut u8, size_of::<Node>());
+        *storage_ptr().add(count as usize) = new_node;
     }
     let count = count.wrapping_add(1);
     set_node_count(count);
@@ -215,36 +195,6 @@ pub unsafe extern "C" fn get_children_count(parent_id: c_int) -> c_int {
     count
 }
 
-/// `a + b` with `a` pinned as the first (destination) SSE operand.
-///
-/// Floating point addition is commutative for every input *except* the choice
-/// of NaN payload propagated when both operands are NaN: `ADDSD dst, src`
-/// returns `dst` in that case. LLVM treats `fadd` as commutative and is free to
-/// swap the operands, which would change the observable NaN bits, so on x86-64
-/// the operand order is nailed down with inline assembly to match the order gcc
-/// emits for the C source. Elsewhere the plain (already correctly ordered)
-/// expression is used.
-#[inline(always)]
-fn add_c_order(a: c_double, b: c_double) -> c_double {
-    #[cfg(target_arch = "x86_64")]
-    {
-        let mut dst = a;
-        unsafe {
-            core::arch::asm!(
-                "addsd {dst}, {src}",
-                dst = inout(xmm_reg) dst,
-                src = in(xmm_reg) b,
-                options(pure, nomem, nostack, preserves_flags),
-            );
-        }
-        dst
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        a + b
-    }
-}
-
 /// ```c
 /// double calculate_subtree_sum(int node_id);
 /// ```
@@ -265,19 +215,7 @@ pub unsafe extern "C" fn calculate_subtree_sum(node_id: c_int) -> c_double {
         unsafe {
             let n = base.add(i as usize);
             if (*n).parent_id == node_id && (*n).active != 0 {
-                // C: `sum += calculate_subtree_sum(node_storage[i].id);`
-                //
-                // gcc keeps the *callee's* result in the destination operand of
-                // the addition:
-                //     call calculate_subtree_sum   ; xmm0 = child sum
-                //     movsd sum, %xmm1
-                //     addsd %xmm1, %xmm0           ; xmm0 = child + sum
-                // On SSE, when both addends are NaN the result is the FIRST
-                // (destination) operand, so the child's NaN payload/sign is the
-                // one that survives. Writing the addition in that same operand
-                // order reproduces the C bit pattern exactly; the reversed
-                // order (`sum += child`) would return the accumulator's NaN.
-                sum = add_c_order(calculate_subtree_sum((*n).id), sum);
+                sum += calculate_subtree_sum((*n).id);
             }
         }
         i = i.wrapping_add(1);

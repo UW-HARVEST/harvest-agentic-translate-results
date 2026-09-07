@@ -107,12 +107,54 @@ pub extern "C" fn subtract_operation(a: c_int, b: c_int, _unused_param: c_int) -
     a.wrapping_sub(b)
 }
 
+/// Faithful reproduction of what the C compiler emits for `a / b` and `a % b`
+/// on signed `int`s: a single x86-64 `cdq; idiv` pair.
+///
+/// This matters for exactly one input pair. `INT_MIN / -1` (and `INT_MIN % -1`)
+/// is undefined behaviour in C, and on x86-64 the `idiv` instruction raises
+/// `#DE`, which the kernel delivers as `SIGFPE`. The original library therefore
+/// *dies* on that input, and it is reachable from the public `mathop` entry
+/// point (`param1 = INT_MIN`, `param2 = -1`, `param3` selecting divide/modulo).
+///
+/// Rust's `wrapping_div`/`wrapping_rem` would instead quietly return `INT_MIN`
+/// and `0`, and Rust's plain `/`/`%` would panic (i.e. `SIGABRT` under
+/// `panic = "abort"`). Neither matches. Emitting `idiv` directly reproduces the
+/// C behaviour bit-for-bit, including the `SIGFPE`.
+///
+/// `b == 0` is never passed in: both callers guard against it first, exactly as
+/// the C does.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn c_signed_divrem(a: c_int, b: c_int) -> (c_int, c_int) {
+    let quotient: c_int;
+    let remainder: c_int;
+    unsafe {
+        core::arch::asm!(
+            "cdq",
+            "idiv {divisor:e}",
+            divisor = in(reg) b,
+            inout("eax") a => quotient,
+            out("edx") remainder,
+            options(nomem, nostack),
+        );
+    }
+    (quotient, remainder)
+}
+
+/// Portable fallback for non-x86-64 targets, where the C would emit whatever
+/// that architecture's signed division does.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline]
+fn c_signed_divrem(a: c_int, b: c_int) -> (c_int, c_int) {
+    (a.wrapping_div(b), a.wrapping_rem(b))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn divide_operation(a: c_int, b: c_int, _unused_param: c_int) -> c_int {
     if b == 0 {
         return 0;
     }
-    a.wrapping_div(b)
+    c_signed_divrem(a, b).0
 }
 
 #[unsafe(no_mangle)]
@@ -120,7 +162,7 @@ pub extern "C" fn modulo_operation(a: c_int, b: c_int, _unused_param: c_int) -> 
     if b == 0 {
         return 0;
     }
-    a.wrapping_rem(b)
+    c_signed_divrem(a, b).1
 }
 
 // ---------------------------------------------------------------------------
@@ -180,20 +222,109 @@ pub unsafe extern "C" fn perform_computation_with_history(
 
     let result = math_func(a, b, 0);
 
-    if (*history).is_null() {
-        *history = allocate_results(10);
-        *history_count = 0;
+    // See the `raw` module below for why these are asm loads/stores rather
+    // than `*history` / `*history_count`.
+    if raw::load_ptr(history).is_null() {
+        raw::store_ptr(history, allocate_results(10));
+        raw::store_i32(history_count, 0);
     }
 
-    if *history_count < 10 {
-        let slot = (*history).offset(*history_count as isize);
-        (*slot).value = result;
-        (*slot).timestamp = get_computation_timestamp();
-        (*slot).status = STATUS_SUCCESS;
-        *history_count = (*history_count).wrapping_add(1);
+    if raw::load_i32(history_count) < 10 {
+        let base = raw::load_ptr(history);
+        let count = raw::load_i32(history_count);
+        let slot = base.offset(count as isize);
+        // Field addresses are *computed*, never dereferenced through a
+        // reference, so a NULL `base` faults on the store just as in C.
+        raw::store_i32(&raw mut (*slot).value, result);
+        raw::store_time(&raw mut (*slot).timestamp, get_computation_timestamp());
+        raw::store_i32(&raw mut (*slot).status, STATUS_SUCCESS);
+        raw::store_i32(history_count, count.wrapping_add(1));
     }
 
     result
+}
+
+/// Unchecked machine loads/stores, matching what a C compiler emits for `*p`.
+///
+/// WHY THIS EXISTS. The C dereferences `history` and `history_count`
+/// unconditionally, with no null check — a plain `mov`. When a caller passes
+/// `NULL`, the C therefore dies with `SIGSEGV` (11), and the translation must
+/// die the same way.
+///
+/// Neither Rust spelling reproduces that under the `dev` profile:
+/// with `debug-assertions = on`, both `*p` **and** `ptr::read_volatile` /
+/// `ptr::write_volatile` carry an `assert_unsafe_precondition!` null check that
+/// turns the fault into `panicked: null pointer dereference`. Because the panic
+/// crosses an `extern "C"` boundary it becomes a non-unwinding abort, i.e.
+/// `SIGABRT` (6) instead of `SIGSEGV` (11) — a divergence that the release
+/// profile happens to hide. Emitting the `mov` directly has no check under any
+/// profile. See ERRORS.md row 21.
+#[cfg(target_arch = "x86_64")]
+mod raw {
+    use super::{time_t, ComputationResult};
+    use core::ffi::c_int;
+
+    #[inline]
+    pub unsafe fn load_ptr(p: *mut *mut ComputationResult) -> *mut ComputationResult {
+        let out: *mut ComputationResult;
+        core::arch::asm!("mov {o}, qword ptr [{p}]", o = out(reg) out, p = in(reg) p,
+                         options(nostack));
+        out
+    }
+
+    #[inline]
+    pub unsafe fn store_ptr(p: *mut *mut ComputationResult, v: *mut ComputationResult) {
+        core::arch::asm!("mov qword ptr [{p}], {v}", p = in(reg) p, v = in(reg) v,
+                         options(nostack));
+    }
+
+    #[inline]
+    pub unsafe fn load_i32(p: *mut c_int) -> c_int {
+        let out: c_int;
+        core::arch::asm!("mov {o:e}, dword ptr [{p}]", o = out(reg) out, p = in(reg) p,
+                         options(nostack));
+        out
+    }
+
+    #[inline]
+    pub unsafe fn store_i32(p: *mut c_int, v: c_int) {
+        core::arch::asm!("mov dword ptr [{p}], {v:e}", p = in(reg) p, v = in(reg) v,
+                         options(nostack));
+    }
+
+    #[inline]
+    pub unsafe fn store_time(p: *mut time_t, v: time_t) {
+        core::arch::asm!("mov qword ptr [{p}], {v}", p = in(reg) p, v = in(reg) v,
+                         options(nostack));
+    }
+}
+
+/// Portable fallback: `write_volatile` is the closest available primitive.
+#[cfg(not(target_arch = "x86_64"))]
+mod raw {
+    use super::{time_t, ComputationResult};
+    use core::ffi::c_int;
+
+    #[inline]
+    pub unsafe fn load_ptr(p: *mut *mut ComputationResult) -> *mut ComputationResult {
+        p.read_volatile()
+    }
+    #[inline]
+    pub unsafe fn store_ptr(p: *mut *mut ComputationResult, v: *mut ComputationResult) {
+        p.write_volatile(v)
+    }
+    #[inline]
+    pub unsafe fn load_i32(p: *mut c_int) -> c_int {
+        p.read_volatile()
+    }
+    #[inline]
+    pub unsafe fn store_i32(p: *mut c_int, v: c_int) {
+        p.write_volatile(v)
+    }
+    #[inline]
+    pub unsafe fn store_time(p: *mut time_t, v: time_t) {
+        p.write_volatile(v)
+    }
 }
 
 // ---------------------------------------------------------------------------

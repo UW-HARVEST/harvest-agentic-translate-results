@@ -1,22 +1,20 @@
-# Error Surface
+# Error surface
 
-Rows 1-8 are the distinct C rejection, sentinel, null-check, and default-enum
-branches found mechanically in `src/lib.c`. Rows 9-10 are the additional
-generic FFI boundaries required by Phase C. The C API has no length argument.
+Rows 1–8 are mechanically derived from explicit checks/default rejection
+behavior in `../c_src/src/lib.c`. Row 9 records the required generic null
+pointer boundary for the only unchecked pointer parameter.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | |
-|---|----------|---------------------------------------------|-------------------|-|
-| 1 | `divide_op` | `b == 0` | `0` | [x] |
-| 2 | `modulo_op` | `b == 0` | `0` | [x] |
-| 3 | `find_node_by_id` | no `node_table[i].id == id` for `0 <= i < node_count` (including an empty table) | `NULL` | [x] |
-| 4 | `add_tree_node` | `node_count >= MAX_NODES` (`MAX_NODES == 50`) | `-1`; table and count unchanged | [x] |
-| 5 | `add_tree_node` | `parent_id != -1` and `find_node_by_id(parent_id) == NULL` (the defensive `parent->id != parent_id` alternative is unreachable without concurrent mutation) | `-1`; candidate slot is written but `node_count` is unchanged | [x] |
-| 6 | `calculate_tree_sum` | `find_node_by_id(node_id) == NULL` (the defensive `node->id != node_id` alternative is unreachable without concurrent mutation) | `0` | [x] |
-| 7 | `parse_operation` | `op_str == NULL` | `OP_ADD` (`1`) | [x] |
-| 8 | `get_operation_func` | `(int)op` is outside `1..=5`, including one-past values and arbitrary FFI integers | pointer to `add_op`; invoking it returns wrapping C `int` addition for defined inputs | [x] |
-| 9 | `add_tree_node` | `label == NULL` | no C rejection; unchecked `strncpy` access terminates the child process with a memory fault | [x] |
-| 10 | all integer APIs | zero, `INT_MIN`, `INT_MAX`, and one-step operation boundaries where C arithmetic remains defined | exact same integer or sentinel as C | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `divide_op` | `b == 0` | returns `0` | [x] |
+| 2 | `modulo_op` | `b == 0` | returns `0` | [x] |
+| 3 | `find_node_by_id` | no index `i` in `[0, node_count)` has `node_table[i].id == id` (including `node_count == 0`) | returns `NULL` | [x] |
+| 4 | `add_tree_node` | `node_count >= MAX_NODES` (`MAX_NODES == 50`) | returns `-1`; table/count unchanged | [x] |
+| 5 | `add_tree_node` | `parent_id != -1` and `find_node_by_id(parent_id) == NULL` or the returned node's `id != parent_id` | returns `-1`; staged slot is written but `node_count` is not incremented | [x] |
+| 6 | `calculate_tree_sum` | `find_node_by_id(node_id) == NULL` or the returned node's `id != node_id` | returns `0` | [x] |
+| 7 | `parse_operation` | `op_str == NULL` | returns `OP_ADD` (`1`) | [x] |
+| 8 | `get_operation_func` | integer `op` is outside `1..=5` (an out-of-range C enum value) | returns the `add_op` function pointer | [x] |
+| 9 | `add_tree_node` | `label == NULL` while `node_count < 50` | process receives the same fatal memory-access rejection when `strncpy` reads the null pointer | [x] |
 
-Signed overflow, `INT_MIN / -1`, cyclic trees, invalid global `node_count`
-values, and negative `inreftree` sums invoke undefined behavior in the C source.
-They have no stable C result to compare and are not valid differential rows.
+There are no length parameters, assertions, error enums, or additional
+explicit min/max range checks in the C source.

@@ -1,74 +1,47 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — error-surface table
 
-Derived mechanically from `c_src/src/lib.c`. The file contains **11 `return -1`
-statements**, **0 `assert`**, **0 `NULL` checks**, **0 error enums**, and one
-implicit trap (unchecked pointer dereference). Every one gets a row.
+Mechanically derived from every rejection site in `c_src/src/lib.c`. The file
+contains exactly 11 `return -1;` statements plus the implicit UB of a null
+`tflac *`; there are no `assert`s, no error enums, and no `return NULL`.
 
-Constants that bound the input space (all literal in the C):
-`blocksize ∈ [16, 65535]`, `samplerate ∈ [1, 655350]`, `channels ∈ [1, 8]`,
-`bitdepth ∈ [1, 32]`, `max_rice_value ∈ {0} ∪ [1, 30]`,
-`max_partition_order ∈ [0, 15]`, `min_partition_order ≤ max_partition_order`.
+`tflac_size_memory` contains **no** rejection path at all — it is pure wrapping
+`u32` arithmetic and every one of the 2^32 inputs is "valid" (covered by
+`CONFIGS.md` rows 1–3 instead).
 
-`tflac_size_memory` has **no** rejection path: no checks, no asserts, no error
-return. Its only "edge" behaviour is unsigned 32-bit wraparound (covered in
-`CONFIGS.md` rows S6–S9), so it contributes only row 13 below (a no-error
-assertion) rather than an error row.
+| #  | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|----|----------|----------------------------------------------|-------------------|------|--------|
+| 1  | `flac_validate` | `t->blocksize < 16` (e.g. 0, 1, 15) | `-1`, struct unmodified | `err_01_blocksize_too_small` | [x] |
+| 2  | `flac_validate` | `t->blocksize > 65535` (e.g. 65536, 0xFFFFFFFF) | `-1`, struct unmodified | `err_02_blocksize_too_large` | [x] |
+| 3  | `flac_validate` | `t->samplerate == 0` | `-1`, struct unmodified | `err_03_samplerate_zero` | [x] |
+| 4  | `flac_validate` | `t->samplerate > 655350` (e.g. 655351, 0xFFFFFFFF) | `-1`, struct unmodified | `err_04_samplerate_too_large` | [x] |
+| 5  | `flac_validate` | `t->channels == 0` | `-1`, struct unmodified | `err_05_channels_zero` | [x] |
+| 6  | `flac_validate` | `t->channels > 8` (e.g. 9, 0xFFFFFFFF) | `-1`, struct unmodified | `err_06_channels_too_large` | [x] |
+| 7  | `flac_validate` | `t->bitdepth == 0` | `-1`, struct unmodified | `err_07_bitdepth_zero` | [x] |
+| 8  | `flac_validate` | `t->bitdepth > 32` (e.g. 33, 0xFFFFFFFF) | `-1`, struct unmodified | `err_08_bitdepth_too_large` | [x] |
+| 9  | `flac_validate` | `t->max_rice_value != 0 && t->max_rice_value > 30` (31..=255) | `-1`, **but `channel_mode` may already have been rewritten to 0** | `err_09_max_rice_value_too_large` | [x] |
+| 10 | `flac_validate` | `t->max_partition_order > 15` (16..=255) | `-1`, **but `channel_mode` and `max_rice_value` may already have been mutated** | `err_10_max_partition_order_too_large` | [x] |
+| 11 | `flac_validate` | `t->min_partition_order > t->max_partition_order` | `-1`, **but `channel_mode` and `max_rice_value` may already have been mutated** | `err_11_min_gt_max_partition_order` | [x] |
+| 12 | `flac_validate` | `t == NULL` — C dereferences it unconditionally (`t->blocksize`), so this is UB that faults | both processes die on `SIGSEGV` (signal 11) | `err_12_null_pointer_same_signal` (subprocess) | [x] |
 
-Side-effect note: rows 9, 10 and 11 return `-1` *after* the function has
-already mutated `channel_mode` and/or `max_rice_value`. Every error-path test
-therefore compares the **full 28 struct bytes** after the call, not just the
-return value — "same error code" alone would hide a divergent partial mutation.
+## Notes on partial mutation (rows 9–11)
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
-|---|----------|----------------------------------------------|-------------------|-----|
-| 1 | `flac_validate` | `blocksize < 16` (line 16) — e.g. 0, 1, 15 | returns `-1`, struct **unmodified** | [x] |
-| 2 | `flac_validate` | `blocksize > 65535` (line 18) — e.g. 65536, 0xFFFFFFFF | returns `-1`, struct unmodified | [x] |
-| 3 | `flac_validate` | `samplerate == 0` (line 20) | returns `-1`, struct unmodified | [x] |
-| 4 | `flac_validate` | `samplerate > 655350` (line 22) — e.g. 655351, 0xFFFFFFFF | returns `-1`, struct unmodified | [x] |
-| 5 | `flac_validate` | `channels == 0` (line 24) | returns `-1`, struct unmodified | [x] |
-| 6 | `flac_validate` | `channels > 8` (line 26) — e.g. 9, 0xFFFFFFFF | returns `-1`, struct unmodified | [x] |
-| 7 | `flac_validate` | `bitdepth == 0` (line 28) | returns `-1`, struct unmodified | [x] |
-| 8 | `flac_validate` | `bitdepth > 32` (line 30) — e.g. 33, 0xFFFFFFFF | returns `-1`, struct unmodified | [x] |
-| 9 | `flac_validate` | `max_rice_value != 0 && max_rice_value > 30` (line 43/44) — e.g. 31, 255 | returns `-1`; `channel_mode` may already have been forced to 0; `max_rice_value` untouched | [x] |
-| 10 | `flac_validate` | `max_partition_order > 15` (line 46/47) — e.g. 16, 255 | returns `-1`; `channel_mode` and auto-filled `max_rice_value` (14 or 30) already written | [x] |
-| 11 | `flac_validate` | `min_partition_order > max_partition_order` (line 49/50) — e.g. min=5,max=4; min=255,max=15 | returns `-1`; `channel_mode` / auto `max_rice_value` already written; `partition_order`, `cur_blocksize` **not** written | [x] |
-| 12 | `flac_validate` | `t == NULL` — no null check exists, first statement dereferences `t` | undefined behaviour: SIGSEGV in **both** C and Rust (Rust `&mut *t` on null). Verified in a forked child so the harness survives; asserted that both die the same way. | [x] |
-| 13 | `tflac_size_memory` | *(no rejection path exists)* — any `u32`, incl. 0 and `u32::MAX` | never fails; result is the wrapping `u32` expression. Asserted equal for exhaustive-boundary + randomized `u32` inputs. | [x] |
+Ordering in the C source matters: the `channel_mode` normalisation and the
+`max_rice_value` defaulting happen **before** the `max_partition_order` /
+`min_partition_order` checks. So a call that ultimately returns `-1` can still
+have written to `t->channel_mode` and `t->max_rice_value`. The error-path tests
+therefore compare **all 28 struct bytes**, not just the return code.
 
-## Check-ordering rows (the checks are sequential, so precedence is observable)
+Rows 9–11 are each exercised with the mutating prefix active
+(`channel_mode != 0` with `channels != 2`, and `max_rice_value == 0`) so the
+partial-mutation behaviour is actually observed and not accidentally masked.
 
-The C evaluates rows 1→11 strictly in source order. A struct that violates
-*several* rules must be rejected by the **earliest** one, and the later
-mutations must **not** have happened. These are distinct observable behaviours,
-so they are tested as well:
+## Generic FFI boundary cases (also covered)
 
-| # | function | trigger | expected C result | [x] |
-|---|----------|---------|-------------------|-----|
-| 14 | `flac_validate` | all-invalid struct (`blocksize=0`, `samplerate=0`, `channels=0`, `bitdepth=0`, `max_rice_value=255`, `max_partition_order=255`, `min_partition_order=255`, `channel_mode=255`) | returns `-1` via row 1; **no** field mutated (in particular `channel_mode` stays 255 and `max_rice_value` stays 255) | [x] |
-| 15 | `flac_validate` | valid sizes but `max_rice_value=255` **and** `max_partition_order=255` | rejected by row 9 (rice first), so `max_partition_order` unchanged | [x] |
-| 16 | `flac_validate` | valid sizes, `max_rice_value=0`, `max_partition_order=255` | rejected by row 10, but `max_rice_value` was already auto-filled to 14/30 by bitdepth | [x] |
-| 17 | `flac_validate` | out-of-range `channel_mode` enum value (5..=255 — no valid `TFLAC_CHANNEL_MODE` variant, incl. `TFLAC_CHANNEL_MODE_COUNT`=4) crossing the FFI boundary | C compares `!= TFLAC_CHANNEL_INDEPENDENT` only, so any nonzero value is *kept* when `channels==2 && bitdepth!=32`, and forced to 0 otherwise. **Not** an error. | [x] |
-
-All 17 rows are covered by `tests/phase_c_errors.rs` (rows 1–11, 14–17) and
-`tests/phase_c_null.rs` (row 12) / `tests/phase_b_configs.rs` (row 13).
-
-## Divergence found and fixed
-
-**Row 12 (`flac_validate(NULL)`) diverged.** The original translation opened
-with `let t = unsafe { &mut *t };`. Under `-C debug-assertions` rustc inserts a
-null/alignment assertion when a reference is formed from a raw pointer; the
-resulting panic cannot unwind out of an `extern "C"` function, so the process
-aborted:
-
-```
-C   : signal=SIGSEGV (11)
-Rust: signal=SIGABRT (6)   <-- "null pointer dereference occurred"
-```
-
-Rewriting field access as `(*t).field` was *not* sufficient — rustc emits the
-same assertion for raw place reads. The fix uses `core::ptr::addr_of!` /
-`addr_of_mut!` with `ptr::read` / `ptr::write`, which lower to a bare load/store
-and trap identically to the C. Both sides now die with SIGSEGV in the debug and
-release builds alike.
-
-No divergence was found on any other row.
+| case | covered by |
+|------|------------|
+| null `tflac *` | row 12 |
+| zero-valued fields (`samplerate`, `channels`, `bitdepth`, `blocksize`) | rows 1, 3, 5, 7 |
+| oversized / `u32::MAX` fields | rows 2, 4, 6, 8 |
+| one step past a valid range (16→15, 65535→65536, 655350→655351, 8→9, 32→33, 30→31, 15→16) | rows 1, 2, 4, 6, 8, 9, 10 |
+| out-of-range enum value for `channel_mode` (`TFLAC_CHANNEL_MODE_COUNT` == 4 and every value up to 255) | `CONFIGS.md` rows 8–10 + `enum_channel_mode_exhaustive` |
+| `partition_order` / `cur_blocksize` pre-seeded with garbage (are they overwritten identically?) | all rows — full-struct byte compare with randomised initial bytes |

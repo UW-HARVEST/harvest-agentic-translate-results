@@ -1,95 +1,91 @@
-# Error Surface
+# Error-surface table
 
-Rows are derived from explicit rejection branches, null/range checks, and the
-two public limits in `cJSON.c`/`cJSON.h`. Allocation-failure rows are exercised
-with `cJSON_InitHooks`.
+Mechanically derived from public-entry rejection checks and the internal
+`return false`, `return NULL`, `goto fail`, range, depth, and null checks they
+reach in `cJSON.c`. Allocation-failure rows are driven through
+`cJSON_InitHooks`.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|----------------------------------------------|-------------------|--------|
-| 1 | `cJSON_GetStringValue` | `item == NULL` or low-byte type is not `cJSON_String` | `NULL` | [x] |
-| 2 | `cJSON_GetNumberValue` | `item == NULL` or low-byte type is not `cJSON_Number` | `NaN` | [x] |
-| 3 | `cJSON_SetValuestring` | `object == NULL` | `NULL` | [x] |
-| 4 | `cJSON_SetValuestring` | object lacks `cJSON_String` bit | `NULL` | [x] |
-| 5 | `cJSON_SetValuestring` | object has `cJSON_IsReference` bit | `NULL` | [x] |
-| 6 | `cJSON_SetValuestring` | existing `object->valuestring == NULL` | `NULL` | [x] |
-| 7 | `cJSON_SetValuestring` | new `valuestring == NULL` | `NULL` | [x] |
-| 8 | `cJSON_SetValuestring` | source overlaps destination in in-place branch | `NULL` | [x] |
-| 9 | `cJSON_SetValuestring` | duplication allocation fails | `NULL`, old value retained | [x] |
-| 10 | parse number | parse buffer/content is null | reject (`false`) | [x] |
-| 11 | parse number | temporary number allocation fails | parse returns `NULL` | [x] |
-| 12 | parse number | `strtod` consumes no byte, e.g. `"-"` | parse returns `NULL` | [x] |
-| 13 | parse string | opening byte is not `"` when string parser is entered | reject (`false`) | [x] |
-| 14 | parse string | backslash is final accessible byte | parse returns `NULL` | [x] |
-| 15 | parse string | closing quote is absent | parse returns `NULL` | [x] |
-| 16 | parse string | output allocation fails | parse returns `NULL` | [x] |
-| 17 | parse string | escape is not one of `"\\/bfnrtu` | parse returns `NULL` | [x] |
-| 18 | UTF-16 escape | fewer than six bytes remain for `\\uXXXX` | parse returns `NULL` | [x] |
-| 19 | UTF-16 escape | first code unit is an unpaired low surrogate | parse returns `NULL` | [x] |
-| 20 | UTF-16 escape | high surrogate has no complete second escape | parse returns `NULL` | [x] |
-| 21 | UTF-16 escape | high surrogate is not followed by `\\u` | parse returns `NULL` | [x] |
-| 22 | UTF-16 escape | second code unit is not a low surrogate | parse returns `NULL` | [x] |
-| 23 | `cJSON_ParseWithOpts` | `value == NULL` | `NULL` | [x] |
-| 24 | `cJSON_ParseWithLengthOpts` | `value == NULL` | `NULL`; parse end unchanged | [x] |
-| 25 | `cJSON_ParseWithLengthOpts` | `buffer_length == 0` | `NULL`; error at input | [x] |
-| 26 | `cJSON_ParseWithLengthOpts` | root item allocation fails | `NULL` | [x] |
-| 27 | parse value | first token is not null/false/true/string/number/array/object | `NULL` | [x] |
-| 28 | parse array | depth is `CJSON_NESTING_LIMIT` (1000) | `NULL` | [x] |
-| 29 | parse array | input ends after `[`/whitespace | `NULL` | [x] |
-| 30 | parse array | child allocation fails | `NULL` | [x] |
-| 31 | parse array | an element fails to parse | `NULL` | [x] |
-| 32 | parse array | closing `]` is missing/wrong | `NULL` | [x] |
-| 33 | parse object | depth is `CJSON_NESTING_LIMIT` (1000) | `NULL` | [x] |
-| 34 | parse object | input ends after `{`/whitespace | `NULL` | [x] |
-| 35 | parse object | member allocation fails | `NULL` | [x] |
-| 36 | parse object | key is missing or malformed | `NULL` | [x] |
-| 37 | parse object | colon after key is missing | `NULL` | [x] |
-| 38 | parse object | member value fails to parse | `NULL` | [x] |
-| 39 | parse object | closing `}` is missing/wrong | `NULL` | [x] |
-| 40 | `cJSON_ParseWithLengthOpts` | `require_null_terminated != 0` and parsed value is not followed by NUL after whitespace | `NULL` | [x] |
-| 41 | print core | `item == NULL` | `NULL`/`false` | [x] |
-| 42 | print core | low-byte item type is unsupported/out-of-range | `NULL`/`false` | [x] |
-| 43 | print raw | raw item has `valuestring == NULL` | `NULL`/`false` | [x] |
-| 44 | print allocation | initial output allocation fails | `NULL` | [x] |
-| 45 | print allocation | growth/reallocation fails | `NULL` and old buffer freed | [x] |
-| 46 | `cJSON_PrintBuffered` | `prebuffer < 0` | `NULL` | [x] |
-| 47 | `cJSON_PrintBuffered` | zero prebuffer and allocator returns `NULL` for size zero | `NULL` | [x] |
-| 48 | `cJSON_PrintPreallocated` | `length < 0` | `false` | [x] |
-| 49 | `cJSON_PrintPreallocated` | `buffer == NULL` | `false` | [x] |
-| 50 | `cJSON_PrintPreallocated` | supplied buffer is too short (`noalloc` growth request) | `false` | [x] |
-| 51 | `cJSON_GetArrayItem` | `array == NULL` | `NULL` | [x] |
-| 52 | `cJSON_GetArrayItem` | `index < 0` | `NULL` | [x] |
-| 53 | `cJSON_GetArrayItem` | index is at/past item count | `NULL` | [x] |
-| 54 | object lookup family | object or key pointer is `NULL` | `NULL`/`false` | [x] |
-| 55 | object lookup family | no key matches or encountered item has null key | `NULL`/`false` | [x] |
-| 56 | `cJSON_AddItemToArray` | array/item null, or `array == item` | `false` | [x] |
-| 57 | object add family | object/key/item null, or `object == item` | `false`/`NULL` | [x] |
-| 58 | object add family | copied-key allocation fails | `false`/`NULL` | [x] |
-| 59 | reference add family | referenced item is `NULL` or reference allocation fails | `false` | [x] |
-| 60 | `cJSON_DetachItemViaPointer` | parent/item null, or non-head item has `prev == NULL` | `NULL` | [x] |
-| 61 | array detach/delete family | `which < 0` or index is absent | `NULL`/no-op | [x] |
-| 62 | object detach/delete family | key null/absent | `NULL`/no-op | [x] |
-| 63 | `cJSON_InsertItemInArray` | `which < 0` or `newitem == NULL` | `false` | [x] |
-| 64 | `cJSON_InsertItemInArray` | located non-head item has `prev == NULL` | `false` | [x] |
-| 65 | `cJSON_ReplaceItemViaPointer` | parent null, parent child null, item null, or replacement null | `false` | [x] |
-| 66 | `cJSON_ReplaceItemInArray` | `which < 0` or index absent | `false` | [x] |
-| 67 | object replace family | replacement or key is null | `false` | [x] |
-| 68 | object replace family | replacement key duplication fails | `false` | [x] |
-| 69 | scalar/string/raw constructors | item allocation fails | `NULL` | [x] |
-| 70 | `cJSON_CreateString` | source string is `NULL` | `NULL` | [x] |
-| 71 | `cJSON_CreateRaw` | source raw string is `NULL` | `NULL` | [x] |
-| 72 | numeric array constructors | `count < 0` | `NULL` | [x] |
-| 73 | numeric array constructors | numbers pointer is `NULL`, including count zero | `NULL` | [x] |
-| 74 | `cJSON_CreateStringArray` | `count < 0` | `NULL` | [x] |
-| 75 | `cJSON_CreateStringArray` | strings pointer is `NULL`, including count zero | `NULL` | [x] |
-| 76 | array constructors | child allocation fails | `NULL`, partial array deleted | [x] |
-| 77 | `cJSON_Duplicate` | input item is `NULL` | `NULL` | [x] |
-| 78 | `cJSON_Duplicate` | item/string/key allocation fails | `NULL`, partial duplicate deleted | [x] |
-| 79 | `cJSON_Duplicate` | recursive chain reaches `CJSON_CIRCULAR_LIMIT` (10000) | `NULL` | [x] |
-| 80 | type predicates | item is `NULL` | `false` | [x] |
-| 81 | `cJSON_Compare` | either item null or low-byte types differ | `false` | [x] |
-| 82 | `cJSON_Compare` | either low-byte type is invalid/out-of-range | `false` | [x] |
-| 83 | `cJSON_Compare` | numbers differ beyond epsilon rule | `false` | [x] |
-| 84 | `cJSON_Compare` | string/raw value pointer null or bytes differ | `false` | [x] |
-| 85 | `cJSON_Compare` | arrays differ by element or length | `false` | [x] |
-| 86 | `cJSON_Compare` | objects differ by key set or member value | `false` | [x] |
-| 87 | `cJSON_Minify` | input pointer is `NULL` | no-op | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---:|---|---|---|:---:|
+| 1 | `cJSON_GetStringValue` | item is NULL or low-byte type is not `cJSON_String` | NULL | [x] |
+| 2 | `cJSON_GetNumberValue` | item is NULL or low-byte type is not `cJSON_Number` | NaN | [x] |
+| 3 | `cJSON_SetValuestring` | object is NULL | NULL | [x] |
+| 4 | `cJSON_SetValuestring` | object lacks the `cJSON_String` bit | NULL | [x] |
+| 5 | `cJSON_SetValuestring` | object has `cJSON_IsReference` | NULL | [x] |
+| 6 | `cJSON_SetValuestring` | current `object->valuestring` is NULL | NULL | [x] |
+| 7 | `cJSON_SetValuestring` | replacement `valuestring` is NULL | NULL | [x] |
+| 8 | `cJSON_SetValuestring` | shorter/equal replacement overlaps current storage | NULL | [x] |
+| 9 | `cJSON_SetValuestring` | longer replacement duplication allocation fails | NULL, original retained | [x] |
+| 10 | `cJSON_ParseWithOpts` | `value == NULL` | NULL | [x] |
+| 11 | `cJSON_ParseWithLengthOpts` | `value == NULL` | NULL; error pointer remains/reset as C specifies | [x] |
+| 12 | `cJSON_ParseWithLengthOpts` | `buffer_length == 0` | NULL; parse-end points at input start | [x] |
+| 13 | parse entry points | first non-whitespace byte is not a recognized JSON value | NULL; exact error offset | [x] |
+| 14 | parse entry points | only whitespace is available | NULL; exact final-byte error offset | [x] |
+| 15 | parse entry points | string is missing closing quote | NULL; error at end | [x] |
+| 16 | parse entry points | string ends with a backslash | NULL; error at backslash/end | [x] |
+| 17 | parse entry points | string contains an unknown escape | NULL; error at escape | [x] |
+| 18 | parse entry points | `\u` has fewer than four hex digits | NULL | [x] |
+| 19 | parse entry points | `\uXXXX` contains a non-hex digit (hex parser yields zero behavior included) | same NULL/success behavior and bytes as C | [x] |
+| 20 | parse entry points | first UTF-16 unit is an unpaired low surrogate `DC00..DFFF` | NULL | [x] |
+| 21 | parse entry points | high surrogate `D800..DBFF` has no complete second `\uXXXX` | NULL | [x] |
+| 22 | parse entry points | high surrogate is followed by something other than `\u` | NULL | [x] |
+| 23 | parse entry points | second surrogate is outside `DC00..DFFF` | NULL | [x] |
+| 24 | parse entry points | array input ends immediately after `[`/whitespace | NULL | [x] |
+| 25 | parse entry points | array contains missing/invalid element after comma | NULL | [x] |
+| 26 | parse entry points | array lacks closing `]` | NULL | [x] |
+| 27 | parse entry points | object input ends immediately after `{`/whitespace | NULL | [x] |
+| 28 | parse entry points | object comma is not followed by a name | NULL | [x] |
+| 29 | parse entry points | object key is not a valid quoted string | NULL | [x] |
+| 30 | parse entry points | object key is not followed by `:` | NULL | [x] |
+| 31 | parse entry points | object value is missing/invalid | NULL | [x] |
+| 32 | parse entry points | object lacks closing `}` | NULL | [x] |
+| 33 | parse entry points | array/object nesting reaches `CJSON_NESTING_LIMIT` (1000) | NULL | [x] |
+| 34 | `cJSON_ParseWithLengthOpts` | `require_null_terminated != 0` and parsed JSON is followed by non-whitespace/non-NUL garbage | NULL at first garbage byte | [x] |
+| 35 | parse entry points | root-item or parse temporary allocation fails | NULL | [x] |
+| 36 | `cJSON_Print`, `cJSON_PrintUnformatted` | item is NULL | NULL | [x] |
+| 37 | print entry points | item low-byte type is invalid/out-of-range | NULL/0 | [x] |
+| 38 | print entry points | raw item has NULL `valuestring` | NULL/0 | [x] |
+| 39 | print entry points | output allocation/reallocation fails | NULL/0 | [x] |
+| 40 | `cJSON_PrintBuffered` | `prebuffer < 0` | NULL | [x] |
+| 41 | `cJSON_PrintBuffered` | initial buffer allocation fails, including zero-size allocator returning NULL | NULL | [x] |
+| 42 | `cJSON_PrintPreallocated` | `length < 0` | 0 | [x] |
+| 43 | `cJSON_PrintPreallocated` | `buffer == NULL` | 0 | [x] |
+| 44 | `cJSON_PrintPreallocated` | buffer length is zero or insufficient (`noalloc` ensure failure) | 0 | [x] |
+| 45 | `cJSON_GetArraySize` | array is NULL | 0 | [x] |
+| 46 | `cJSON_GetArrayItem` | array is NULL | NULL | [x] |
+| 47 | `cJSON_GetArrayItem` | index is negative | NULL | [x] |
+| 48 | `cJSON_GetArrayItem` | index is at/past child count | NULL | [x] |
+| 49 | object lookup/has entry points | object or key is NULL | NULL/0 | [x] |
+| 50 | object lookup entry points | key is absent or encountered child has NULL key | NULL | [x] |
+| 51 | `cJSON_AddItemToArray` | array/item is NULL or `array == item` | 0 | [x] |
+| 52 | `cJSON_AddItemToObject`, `cJSON_AddItemToObjectCS` | object/key/item is NULL or `object == item` | 0 | [x] |
+| 53 | `cJSON_AddItemToObject` | key duplication allocation fails | 0 | [x] |
+| 54 | `cJSON_AddItemReferenceToArray` | array or referenced item is NULL / reference allocation fails | 0 | [x] |
+| 55 | `cJSON_AddItemReferenceToObject` | object/key/item is NULL / reference or key allocation fails | 0 | [x] |
+| 56 | all `cJSON_Add*ToObject` convenience functions | object or name is NULL, child creation fails, or add fails | NULL | [x] |
+| 57 | `cJSON_DetachItemViaPointer` | parent/item NULL, item is neither first child nor linked with `prev` | NULL | [x] |
+| 58 | detach/delete array/object entry points | negative/out-of-range index or absent/NULL key | NULL/no-op | [x] |
+| 59 | `cJSON_InsertItemInArray` | `which < 0` or `newitem == NULL` | 0 | [x] |
+| 60 | `cJSON_InsertItemInArray` | array is NULL and append fallback is reached | 0 | [x] |
+| 61 | `cJSON_InsertItemInArray` | target is non-head with NULL `prev` (corrupt chain) | 0 | [x] |
+| 62 | `cJSON_ReplaceItemViaPointer` | parent NULL, parent child NULL, item NULL, or replacement NULL | 0 | [x] |
+| 63 | `cJSON_ReplaceItemInArray` | negative/out-of-range index or NULL replacement | 0 | [x] |
+| 64 | object replace entry points | key or replacement NULL, key duplication fails, or key absent | 0 | [x] |
+| 65 | `cJSON_CreateString`, `cJSON_CreateRaw` | source is NULL or item/string allocation fails | NULL | [x] |
+| 66 | scalar/container constructors | item allocation fails | NULL | [x] |
+| 67 | array constructors | count is negative | NULL | [x] |
+| 68 | array constructors | input pointer is NULL (including count zero) | NULL | [x] |
+| 69 | array constructors | child allocation/string duplication fails | NULL and partial array deleted | [x] |
+| 70 | `cJSON_Duplicate` | item is NULL | NULL | [x] |
+| 71 | `cJSON_Duplicate` | node/string/key allocation fails | NULL | [x] |
+| 72 | `cJSON_Duplicate` | recursive child traversal reaches `CJSON_CIRCULAR_LIMIT` (10000) | NULL | [x] |
+| 73 | all `cJSON_Is*` predicates | item is NULL | 0 | [x] |
+| 74 | `cJSON_Compare` | either input NULL, low-byte types differ, or low-byte type is invalid/out-of-range | 0 | [x] |
+| 75 | `cJSON_Compare` | unequal numbers/strings/raw values, NULL string value, array length/content mismatch, or object key/value mismatch | 0 | [x] |
+| 76 | `cJSON_Minify` | input is NULL | no-op | [x] |
+| 77 | `cJSON_malloc` | allocator rejects requested size (including oversized size) | NULL | [x] |
+| 78 | `cJSON_free`, `cJSON_Delete` | input is NULL | no-op | [x] |
+
+Completion check:
+
+- [x] Every row above has a passing C-vs-Rust differential assertion.

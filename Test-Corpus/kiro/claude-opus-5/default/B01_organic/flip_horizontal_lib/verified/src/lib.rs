@@ -75,16 +75,13 @@ pub struct cp_image_t {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn flip_horizontal(img: *mut cp_image_t) {
     // `img->pix`, `img->w`, `img->h` are read unconditionally by the C code,
-    // before any bounds or sanity checking (of which there is none). A NULL
-    // `img` therefore faults here, exactly as it does in C.
+    // before any bounds or sanity checking (of which there is none).
     let pix: *mut cp_pixel_t = (*img).pix;
     let w: c_int = (*img).w;
     let h: c_int = (*img).h;
 
     // C integer division truncates toward zero, so a negative `h` yields a
-    // non-positive `flips` and the outer loop body never runs. `INT_MIN / 2`
-    // is well-defined (only `INT_MIN / -1` traps), so a plain division is the
-    // faithful translation.
+    // non-positive `flips` and the outer loop body never runs.
     let flips: c_int = h / 2;
 
     let mut i: c_int = 0;
@@ -95,25 +92,30 @@ pub unsafe extern "C" fn flip_horizontal(img: *mut cp_image_t) {
         let off_a = w.wrapping_mul(i) as isize;
         let off_b = w.wrapping_mul(h.wrapping_sub(i).wrapping_sub(1)) as isize;
 
-        // The inner loop runs `w` times; for `w <= 0` it does nothing.
-        //
         // `wrapping_offset` / `wrapping_add` are used instead of
-        // `offset` / `add` on purpose: for the degenerate inputs the C
-        // tolerates (`w < 0`, `w == INT_MIN`, `pix == NULL` with `w <= 0`) the
-        // C code *forms* these addresses without ever dereferencing them.
-        // The wrapping variants reproduce the same two's-complement address
-        // arithmetic without imposing Rust's stricter in-bounds requirement,
-        // so those inputs stay well-defined here exactly as they are in C.
+        // `offset` / `add` on purpose: C forms `pix + w*i` with a plain
+        // address computation and never traps on it, whereas `offset`/`add`
+        // carry a debug-assertion ("unsafe precondition") that aborts the
+        // process when the address calculation overflows or leaves the
+        // allocation. Those cases are reachable here (negative `w`, an `int`
+        // overflow in `w * (h - i - 1)`), and the C simply computes the
+        // wrapped address without dereferencing it. The wrapping variants
+        // reproduce that, so behavior no longer depends on whether the crate
+        // is built with `debug_assertions`.
         let mut a: *mut cp_pixel_t = pix.wrapping_offset(off_a);
         let mut b: *mut cp_pixel_t = pix.wrapping_offset(off_b);
+
+        // The inner loop runs `w` times; for `w <= 0` it does nothing.
         let mut j: c_int = 0;
         while j < w {
-            // Element-wise temp-copy swap, matching the C loop exactly. Using
-            // `ptr::swap` keeps the semantics correct even for the degenerate
-            // case where the two rows would overlap. (They cannot: `a == b`
-            // would require `i == h - i - 1`, i.e. `i == flips`, which the
-            // loop guard excludes.)
-            core::ptr::swap(a, b);
+            // Literal transcription of the C temp-copy swap. Plain raw-pointer
+            // dereferences are used rather than `core::ptr::swap` / `read` /
+            // `write`, which also carry debug-only null/alignment precondition
+            // asserts; a null `img->pix` must fault with SIGSEGV exactly as the
+            // C does, not abort with a Rust diagnostic.
+            let t: cp_pixel_t = *a;
+            *a = *b;
+            *b = t;
             a = a.wrapping_add(1);
             b = b.wrapping_add(1);
             j = j.wrapping_add(1);

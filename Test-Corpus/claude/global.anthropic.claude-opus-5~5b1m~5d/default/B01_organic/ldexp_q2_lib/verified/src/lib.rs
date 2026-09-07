@@ -13,15 +13,7 @@ use std::ffi::c_int;
 
 /// `static const float g_expfrac[4]` from `src/lib.c`.
 ///
-/// These are `2^-30 * 2^(-k/4)` for `k = 0..3`. Note `g_expfrac[0]` is exactly
-/// `2^-30`, so `g_expfrac[0] * (1 << 30)` is exactly `1.0f` — that is what
-/// makes a shift count of 0 the identity.
-///
-/// The literals are reproduced **verbatim** from the C source. Clippy's
-/// `excessive_precision` lint suggests truncating them; that is deliberately
-/// suppressed, because keeping the C spelling is the whole point and any
-/// re-rounding risks a 1-ULP divergence.
-#[allow(clippy::excessive_precision)]
+/// These are `2^-30 * 2^(-k/4)` for `k = 0..3`.
 const G_EXPFRAC: [f32; 4] = [
     9.31322575e-10f32,
     7.83145814e-10f32,

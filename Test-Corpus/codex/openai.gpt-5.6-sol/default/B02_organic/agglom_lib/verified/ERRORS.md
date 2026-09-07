@@ -1,24 +1,25 @@
-# Error Surface
+# Error-surface table
 
-Mechanical search:
+Derived from every `return 0` rejection branch and every pointer dereference in
+`../c_src/src/lib.c`. This API has no lengths, allocation failures, assertions,
+error enums, `NULL` returns, or `-1` returns.
 
-```sh
-rg -n 'RETURN_ERROR|return[[:space:]]+-1|return[[:space:]]+NULL|assert|if[[:space:]]*\(|switch|default:' ../c_src
-```
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| 1 | `f2` | `typeA == C2_TYPE_CIRCLE` and `typeB` is neither `CIRCLE` nor `AABB` | returns `0` without dereferencing `B` | [x] |
+| 2 | `f2` | `typeA == C2_TYPE_AABB` and `typeB` is neither `CIRCLE` nor `AABB` | returns `0` without dereferencing `B` | [x] |
+| 3 | `f2` | `typeA` is neither `CIRCLE` nor `AABB` | returns `0` without dereferencing either pointer | [x] |
+| 4 | `f3` | `v2 == 0` | returns `0` | [x] |
+| 5 | `f2` | valid tags and `A == NULL` | process terminates by invalid pointer access | [x] |
+| 6 | `f2` | valid tags and `B == NULL` | process terminates by invalid pointer access | [x] |
+| 7 | `f4` | `rnd == NULL` | process terminates by invalid pointer access | [x] |
+| 8 | `f11` | `dest == NULL` with valid `src` | process terminates by invalid pointer access | [x] |
+| 9 | `f11` | `src == NULL` with valid `dest` | process terminates by invalid pointer access | [x] |
+| 10 | `f12` | `dest == NULL` with valid `src` | process terminates by invalid pointer access | [x] |
+| 11 | `f12` | `src == NULL` with valid `dest` | process terminates by invalid pointer access | [x] |
+| 12 | `f13` | `dest == NULL` with valid `src` | process terminates by invalid pointer access | [x] |
+| 13 | `f13` | `src == NULL` with valid `dest` | process terminates by invalid pointer access | [x] |
 
-The C library has no error enum, error macro, assertion, allocation failure,
-length argument, or checked min/max range. These are all explicit rejection
-branches in `c_src/src/lib.c`.
-
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
-| [x] E1 | `f2` | `typeA` is neither `C2_TYPE_CIRCLE` (0) nor `C2_TYPE_AABB` (1) | return `0` without dereferencing either pointer |
-| [x] E2 | `f2` | `typeA == C2_TYPE_CIRCLE` and `typeB` is neither 0 nor 1 | return `0` without dereferencing either pointer |
-| [x] E3 | `f2` | `typeA == C2_TYPE_AABB` and `typeB` is neither 0 nor 1 | return `0` without dereferencing either pointer |
-| [x] E4 | `f3` | `v2 == 0` | return `0` |
-
-Pointer note: `f2` with valid tags, `f4`, `f11`, `f12`, and `f13` dereference
-their pointer arguments without null checks. A null pointer on those paths is
-undefined behavior in C, not an error return or rejection, so there is no C
-result to put in the table. E1-E3 exercise null pointers safely because the C
-control flow returns before dereferencing them.
+The null-pointer rows are generic FFI-boundary cases, not explicit C
+rejections. Their differential tests run in child processes so either library
+cannot terminate the test harness.

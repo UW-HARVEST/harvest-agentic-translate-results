@@ -1,196 +1,204 @@
-# CONFIGS.md — Configuration-surface table (Phase A → gates Phase B)
+# CONFIGS.md — Phase B: configuration surface (VALID inputs)
 
-## Mechanical derivation of the axes
+Mechanically derived from every branch the C actually takes in
+`c_src/src/lib.c`. The public API is a **single** entry point,
+`int encode_quant(int uni, int step, int pred, int tgt, int tgt2, int lsbit)`
+(`c_src/include/lib.h`), and it is also the lowest-level entry point — there are
+no convenience wrappers, no init/teardown state, no global options, and no
+`#ifdef` compile-time modes in the C. So the configuration axes are the value
+classes of the six `int` parameters that the code branches on.
 
-The public API surface is enumerated from `c_src/include/lib.h` (one prototype)
-and the branch axes from every `if`/`else`/`switch`/`#if` in `c_src/src/lib.c`:
+## Axes (each taken from a real branch in the C)
 
-```
-grep -nE '\b(if|else|switch|case|while|for)\b' -r src include
-  8:  if ((uni ^ uni1) & (~7))     <-- axis K (upper-candidate clamp)
-  10: if ((uni ^ uni2) & (~7))     <-- axis K (lower-candidate clamp)
-  12: if (lsbit) {                 <-- axis L (LSB mode)
-  13:     if (lsbit == 4) {        <-- axis L
-  20: } else if (lsbit & 1) {      <-- axis L
-  24: } else {                     <-- axis L
-  31: if (uni  & 8)                <-- axis G (diff sign / negation)
-  37: if (uni1 & 8)                <-- axis G
-  43: if (uni2 & 8)                <-- axis G
-  57: if (d1 < d0)                 <-- axis W (winner selection)
-  59: if (d2 < d0)                 <-- axis W
-```
-
-There are **no `#ifdef`s, no compile-time options, no runtime option/flag
-setters, no handle/context object and no state to initialise** — the library is
-a single pure function, so the "options" axis is carried entirely by the
-`lsbit` mode argument and the "input shape" axes by the value classes below.
-
-### Entry points (full set — no wrappers omitted)
-
-| entry point | level | notes |
+| axis | source line(s) in `c_src/src/lib.c` | values the code distinguishes |
 |---|---|---|
-| `encode_quant(uni, step, pred, tgt, tgt2, lsbit)` | **lowest level == only level** | The library exports exactly one symbol (see `SYMBOLS.md`). There is no convenience / one-shot wrapper above it and no internal helper below it, so "exercise the low-level entry points directly" is satisfied by construction. |
+| `lsbit` mode | `if (lsbit)` / `if (lsbit == 4)` / `else if (lsbit & 1)` / `else` (L12-27) | `OFF` (0), `FOUR` (==4), `ODD` (odd), `EVEN` (even, !=0, !=4) |
+| `uni & 7 == 7` | `if ((uni ^ uni1) & (~7)) uni1 = uni;` (L8-9) | clamped vs not |
+| `uni & 7 == 0` | `if ((uni ^ uni2) & (~7)) uni2 = uni;` (L10-11) | clamped vs not |
+| `uni & 8` | `if (uni & 8) diff = -diff;` and the uni1/uni2 copies (L31,37,43) | diff kept vs negated, independently per candidate |
+| `uni` sign | `(uni >> 1) & (uni >> 2) & 1` inside the `lsbit==4` path (L17-19) | negative (sign-extending shift) vs non-negative |
+| `step` magnitude/sign | `diff = ((2*(uni&7)+1)*step)/8` (L29,34,40) | 0, small +, small -, huge + (wraps), huge - (wraps), INT_MIN/INT_MAX |
+| `pred`,`tgt`,`tgt2` | `p0=pred+diff`, `d0=tgt-p0`, `d3=tgt2-p0`, `d0+=d3>>5` (L30-56) | 0, small, huge, INT_MIN, INT_MAX (all wrap paths) |
+| selection | `if (d1 < d0) uni = uni1;` `if (d2 < d0) uni = uni2;` (L57-60) | uni kept / uni1 wins / uni2 wins / both branches taken |
 
-### Axes
+`uni & 7 == 7` and `uni & 7 == 0` are mutually exclusive, so the `uni`
+low-nibble axis is pruned to 6 classes rather than 2x2x2 = 8.
 
-* **L — `lsbit` mode** (the one runtime option; dispatch is exhaustive over all `int`):
-  * `L0`  : `lsbit == 0` → no LSB forcing at all.
-  * `L4`  : `lsbit == 4` → clear bit0, then `x |= (x>>1) & (x>>2) & 1` on all three candidates. Checked **before** `lsbit & 1`, so `4` does *not* take the even branch.
-  * `LODD`: `lsbit != 0,4` and `lsbit & 1` → force bit0 **set** on all three candidates (includes negative odd).
-  * `LEVEN`: `lsbit != 0,4` and `!(lsbit & 1)` → force bit0 **clear** (includes `-4`, `INT_MIN`).
-* **K — candidate-clamp shape**, driven by `uni & 7` (mutually exclusive; "both clamped" is unreachable):
-  * `K0`  : `uni & 7 == 0` → `uni-1` borrows past bit 2, so `uni2` is clamped to `uni`.
-  * `K7`  : `uni & 7 == 7` → `uni+1` carries past bit 2, so `uni1` is clamped to `uni`.
-  * `KMID`: `uni & 7 ∈ 1..=6` → neither candidate clamped.
-* **G — `uni & 8`** (`S0` / `S8`): selects whether `diff` is negated. Bit 3 is identical across `uni`/`uni1`/`uni2` after clamping (clamp guarantees it, and `L*` only touches bit 0), so this is a single shared axis.
-* **T — `step` class**: `0`, small positive, small negative, magnitude large enough to overflow `(2*(uni&7)+1)*step` (`> INT_MAX/15`), `INT_MAX`, `INT_MIN`.
-* **W — winner selection** (`d0` kept / `d1` wins / `d2` wins / both `d1<d0` and `d2<d0` / exact ties): both comparisons are against the **original** `d0`, and `d2` is tested last, so when both beat `d0` the result is `uni2` even if `d1 < d2`.
-* **V — value shape of `pred`/`tgt`/`tgt2`**: near-zero, `tgt2 == tgt`, `tgt2` far from `tgt` (so the `d3 >> 5` tiebreak term dominates), and `i32` extremes that wrap.
-* **N — sign of `uni`**: negative `uni` makes `uni >> 1` / `uni >> 2` in the `L4` branch arithmetic (sign-propagating) shifts.
+## Rows
 
-## Configuration rows
-
-Cross-product `L × K × G` (24 rows, all reachable and all treated differently by
-the C), then the `T`, `W`, `V`, `N` classes that the code additionally branches
-on. Every row is driven with **many randomized inputs** (fixed-seed xorshift64\*
-PRNG in `translation/tests/differential.rs`) over the free arguments, never a
-single hand-picked value.
+Rows 1-144 are the pruned cross-product `lsbit mode (4) x uni class (6) x step
+class (6)`. Every row is exercised with **512 randomized `(uni, step, pred,
+tgt, tgt2, lsbit)` tuples** drawn from that row's classes with a fixed seed
+(`SplitMix64`, seed derived from the row index), so `pred`/`tgt`/`tgt2` and the
+selection outcome are swept within each row rather than hand-picked.
+Rows 145-156 are the extreme-value / overflow shapes and the forced selection
+outcomes.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `encode_quant` | L0 · K0 · S0 — `lsbit=0`, `uni&15 == 0`; `step`/`pred`/`tgt`/`tgt2` randomized | [x] |
-| 2 | `encode_quant` | L0 · K0 · S8 — `lsbit=0`, `uni&15 == 8` | [x] |
-| 3 | `encode_quant` | L0 · K7 · S0 — `lsbit=0`, `uni&15 == 7` | [x] |
-| 4 | `encode_quant` | L0 · K7 · S8 — `lsbit=0`, `uni&15 == 15` | [x] |
-| 5 | `encode_quant` | L0 · KMID · S0 — `lsbit=0`, `uni&15 ∈ 1..=6` | [x] |
-| 6 | `encode_quant` | L0 · KMID · S8 — `lsbit=0`, `uni&15 ∈ 9..=14` | [x] |
-| 7 | `encode_quant` | L4 · K0 · S0 — `lsbit=4`, `uni&15 == 0` | [x] |
-| 8 | `encode_quant` | L4 · K0 · S8 — `lsbit=4`, `uni&15 == 8` | [x] |
-| 9 | `encode_quant` | L4 · K7 · S0 — `lsbit=4`, `uni&15 == 7` | [x] |
-| 10 | `encode_quant` | L4 · K7 · S8 — `lsbit=4`, `uni&15 == 15` | [x] |
-| 11 | `encode_quant` | L4 · KMID · S0 — `lsbit=4`, `uni&15 ∈ 1..=6` | [x] |
-| 12 | `encode_quant` | L4 · KMID · S8 — `lsbit=4`, `uni&15 ∈ 9..=14` | [x] |
-| 13 | `encode_quant` | LODD · K0 · S0 — odd `lsbit ∉ {0,4}`, `uni&15 == 0` | [x] |
-| 14 | `encode_quant` | LODD · K0 · S8 — odd `lsbit`, `uni&15 == 8` | [x] |
-| 15 | `encode_quant` | LODD · K7 · S0 — odd `lsbit`, `uni&15 == 7` | [x] |
-| 16 | `encode_quant` | LODD · K7 · S8 — odd `lsbit`, `uni&15 == 15` | [x] |
-| 17 | `encode_quant` | LODD · KMID · S0 — odd `lsbit`, `uni&15 ∈ 1..=6` | [x] |
-| 18 | `encode_quant` | LODD · KMID · S8 — odd `lsbit`, `uni&15 ∈ 9..=14` | [x] |
-| 19 | `encode_quant` | LEVEN · K0 · S0 — even `lsbit ∉ {0,4}`, `uni&15 == 0` | [x] |
-| 20 | `encode_quant` | LEVEN · K0 · S8 — even `lsbit`, `uni&15 == 8` | [x] |
-| 21 | `encode_quant` | LEVEN · K7 · S0 — even `lsbit`, `uni&15 == 7` | [x] |
-| 22 | `encode_quant` | LEVEN · K7 · S8 — even `lsbit`, `uni&15 == 15` | [x] |
-| 23 | `encode_quant` | LEVEN · KMID · S0 — even `lsbit`, `uni&15 ∈ 1..=6` | [x] |
-| 24 | `encode_quant` | LEVEN · KMID · S8 — even `lsbit`, `uni&15 ∈ 9..=14` | [x] |
-| 25 | `encode_quant` | T=`step == 0` (degenerate quantizer: all three predictions equal `pred`) × all four `L` modes | [x] |
-| 26 | `encode_quant` | T=small positive `step ∈ 1..=1024` (nominal codec range) × all `L`, `uni ∈ 0..=15` | [x] |
-| 27 | `encode_quant` | T=small negative `step ∈ -1024..=-1` (`/8` truncation toward zero on a negative numerator) | [x] |
-| 28 | `encode_quant` | T=`step` magnitude `> INT_MAX/15` → `(2*(uni&7)+1)*step` wraps | [x] |
-| 29 | `encode_quant` | T=`step == INT_MAX` × all `L` × `uni ∈ 0..=15` | [x] |
-| 30 | `encode_quant` | T=`step == INT_MIN` × all `L` × `uni ∈ 0..=15` | [x] |
-| 31 | `encode_quant` | N=negative `uni` (arithmetic `>>1`/`>>2`) specifically under L4, plus under L0/LODD/LEVEN | [x] |
-| 32 | `encode_quant` | `uni ∈ {INT_MIN, INT_MIN+1, -1, 0, 1, INT_MAX-1, INT_MAX}` — `uni±1` wraps, clamp guard interaction | [x] |
-| 33 | `encode_quant` | W=`d0` strictly best (`tgt` aligned on the `uni` prediction) → returns `uni` | [x] |
-| 34 | `encode_quant` | W=`d1 < d0` only → returns `uni1` | [x] |
-| 35 | `encode_quant` | W=`d2 < d0` only → returns `uni2` | [x] |
-| 36 | `encode_quant` | W=**both** `d1 < d0` and `d2 < d0` → C returns `uni2` even when `d1 < d2` (quirk) | [x] |
-| 37 | `encode_quant` | W=exact ties `d1 == d0` / `d2 == d0` → strict `<` keeps `uni` | [x] |
-| 38 | `encode_quant` | V=`tgt2 == tgt` (the `d3 >> 5` secondary term mirrors the primary) | [x] |
-| 39 | `encode_quant` | V=`tgt2` far from `tgt` so `d3 >> 5` dominates and flips the winner | [x] |
-| 40 | `encode_quant` | V=`pred`/`tgt`/`tgt2` at `i32` extremes → `pred+diff`, `tgt-p0`, `d0+(d3>>5)` all wrap; `d ^ (d>>31)` maps `INT_MIN → INT_MAX` | [x] |
-| 41 | `encode_quant` | unconstrained: all six arguments uniformly random over the full `i32` range | [x] |
-| 42 | `encode_quant` | exhaustive nominal domain: every `uni ∈ 0..=15` × every `lsbit ∈ 0..=8`, randomized `step`/`pred`/`tgt`/`tgt2` | [x] |
-| 43 | `encode_quant` | exhaustive `lsbit ∈ -16..=16` (covers `0`, `4`, negative odd/even, `-4`) × `uni ∈ 0..=15` | [x] |
-| 44 | `encode_quant` | exhaustive low-bit shape: `uni ∈ -32..=32` (all `uni&15` patterns in both signs) × all `L` modes | [x] |
+| 1 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 2 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 3 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 4 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 5 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 6 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 7 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 8 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 9 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 10 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 11 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 12 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 13 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 14 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 15 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 16 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 17 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 18 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 19 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 20 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 21 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 22 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 23 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 24 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 25 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 26 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 27 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 28 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 29 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 30 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 31 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 32 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 33 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 34 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 35 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 36 | `encode_quant` | lsbit=OFF (lsbit == 0 (whole lsbit block skipped)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 37 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 38 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 39 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 40 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 41 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 42 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 43 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 44 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 45 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 46 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 47 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 48 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 49 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 50 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 51 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 52 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 53 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 54 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 55 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 56 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 57 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 58 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 59 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 60 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 61 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 62 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 63 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 64 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 65 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 66 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 67 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 68 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 69 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 70 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 71 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 72 | `encode_quant` | lsbit=FOUR (lsbit == 4 (clear bit0, then bit0 |= (x>>1)&(x>>2)&1)) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 73 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 74 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 75 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 76 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 77 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 78 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 79 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 80 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 81 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 82 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 83 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 84 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 85 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 86 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 87 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 88 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 89 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 90 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 91 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 92 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 93 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 94 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 95 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 96 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 97 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 98 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 99 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 100 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 101 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 102 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 103 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 104 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 105 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 106 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 107 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 108 | `encode_quant` | lsbit=ODD (lsbit & 1 != 0 (force bit0 = 1); incl. negative odds & INT_MAX) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 109 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 110 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 111 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 112 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 113 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 114 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW0 (uni&7==0, bit3=0 -> uni2 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 115 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 116 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 117 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 118 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 119 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 120 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW7 (uni&7==7, bit3=0 -> uni1 clamped to uni, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 121 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 122 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 123 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 124 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 125 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 126 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_0 (uni&7 in 1..6,  bit3=0 -> neither clamped, diff positive) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 127 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 128 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 129 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 130 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 131 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 132 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW8 (uni&7==0, bit3=1 -> uni2 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 133 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 134 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 135 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 136 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 137 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 138 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=LOW15 (uni&7==7, bit3=1 -> uni1 clamped to uni, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 139 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=ZERO (step == 0 -> diff == 0 for all three candidates); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 140 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_SMALL (step in 1..=4096 -> no overflow in (2*(uni&7)+1)*step); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 141 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_SMALL (step in -4096..=-1 -> negative diff, truncate-toward-zero /8); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 142 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=POS_HUGE (step >= 2^28 -> (2*(uni&7)+1)*step wraps (signed overflow)); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 143 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=NEG_HUGE (step <= -2^28 -> wraps; -diff can hit INT_MIN negation); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 144 | `encode_quant` | lsbit=EVEN (lsbit even, !=0, !=4 (clear bit0); incl. negative evens & INT_MIN) + uni=MID_B3_1 (uni&7 in 1..6,  bit3=1 -> neither clamped, diff negated) + step=EXTREME (step in {INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}); pred/tgt/tgt2 randomized full-i32 | [x] |
+| 145 | `encode_quant` | EXTREME: uni == INT_MAX — uni+1 overflows -> uni1 wraps to INT_MIN, then (uni^uni1)&~7 clamp test; other args randomized | [x] |
+| 146 | `encode_quant` | EXTREME: uni == INT_MIN — uni-1 overflows -> uni2 wraps to INT_MAX, then clamp test; other args randomized | [x] |
+| 147 | `encode_quant` | EXTREME: uni == -1 — all bits set: uni&7==7, bit3=1, arithmetic >> of negative in lsbit==4 path; other args randomized | [x] |
+| 148 | `encode_quant` | EXTREME: uni == INT_MAX-1 / INT_MIN+1 — near-boundary uni with both clamp tests live; other args randomized | [x] |
+| 149 | `encode_quant` | EXTREME: pred == INT_MAX — pred+diff overflows for positive diff; other args randomized | [x] |
+| 150 | `encode_quant` | EXTREME: pred == INT_MIN — pred+diff overflows for negative diff; other args randomized | [x] |
+| 151 | `encode_quant` | EXTREME: tgt == INT_MIN — tgt-p0 overflows; d0 ^ (d0>>31) applied to INT_MIN; other args randomized | [x] |
+| 152 | `encode_quant` | EXTREME: tgt == INT_MAX — tgt-p0 overflows the other direction; other args randomized | [x] |
+| 153 | `encode_quant` | EXTREME: tgt2 == INT_MIN — tgt2-p0 overflows; d3>>5 of wrapped value; other args randomized | [x] |
+| 154 | `encode_quant` | EXTREME: tgt2 == INT_MAX — d0 += d3>>5 overflows; other args randomized | [x] |
+| 155 | `encode_quant` | EXTREME: all of pred/tgt/tgt2 extreme simultaneously — compounded wrap in d0/d1/d2 -> exercises d1<d0 / d2<d0 on wrapped values; other args randomized | [x] |
+| 156 | `encode_quant` | EXTREME: selection outcomes forced — inputs tuned so each of {uni kept, uni1 wins, uni2 wins, both branches taken} occurs; other args randomized | [x] |
 
-## Feature combinations
+Total rows: **156**. All checked off only after the randomized differential test for that row passed C-vs-Rust byte-for-byte (see `tests/differential.rs`, test `phase_b_config_surface` / `phase_b_extreme_shapes`).
 
-`translation/Cargo.toml` has no `[features]` table → one configuration only.
-All 44 rows are executed under `--no-default-features`, the default feature set,
-and `--all-features` by `run_all_feature_combos.sh`.
+## Not applicable
 
-## Finding: row 36 is only reachable through integer wraparound
-
-Row 36 (`d1 < d0 && d2 < d0`, where the C returns `uni2` even when `uni1` is the
-better candidate) is **unreachable with ordinary values**. For non-wrapping
-inputs the distance is a convex function of the candidate index — it is the sum
-of two V-shaped terms, `absish(tgt - p)` and `absish(tgt2 - p) >> 5`, composed
-with the monotone index → prediction map (the `lsbit == 4` remap
-`k → {0,0,2,2,4,4,7,7}` is monotone too) — so the middle candidate can never be
-strictly worse than *both* neighbours.
-
-It becomes reachable only once the `int` arithmetic wraps, which requires
-`pred`/`tgt` clustered at one end of the `i32` range and `tgt2` at the other.
-Measured hit rates:
-
-| sampling strategy | hits |
-|---|---|
-| uniform over the full `i32^6` domain, 40M samples | **0** |
-| small `step` + far `tgt2` (hunting the `>>5` non-convexity), 40M samples | **0** |
-| exhaustive small-value grid (`uni`<64 × `step`,`tgt`∈±80 × `tgt2` swept), ~1.4G | **0** |
-| near-overflow values in every slot, 40M samples | 23 |
-| focused: `pred`,`tgt ≈ INT_MIN`, `tgt2 ≈ INT_MAX`, `step > 2^24`, 20M samples | **945,405 (≈4.7%)** |
-| mirror region (`pred`,`tgt ≈ INT_MAX`, `tgt2 ≈ INT_MIN`), 20M samples | 944,589 |
-
-The test therefore uses a dedicated generator for that region plus six
-hardcoded witnesses, and separately asserts coverage of the sub-case where
-`d1 < d2` (so `uni1` is genuinely better yet `uni2` still wins) — that sub-case
-is the only thing that distinguishes the C's comparison order from the
-swapped order. `mutation_check.sh` confirms it: the "swap selection order"
-mutant is detected, which is possible *only* if row 36 is truly exercised.
-
-## Validation of this table
-
-`mutation_check.sh` injects 19 distinct plausible mistranslations (mask changes,
-shift-width changes, `<` vs `<=`, dropped branches, saturating instead of
-wrapping arithmetic, swapped comparison order, wrong operand) and asserts that
-the suite detects **every** one. It also pins one *equivalent* mutant
-(arithmetic vs logical shift underneath a `& 1` mask, which is provably
-unobservable) and asserts it is correctly **not** flagged.
-
-Result: 19/19 real bugs caught, 0 missed.
-
-## Row → test mapping (all in `translation/tests/differential.rs`)
-
-| rows | test |
-|---|---|
-| 1–24 | `cfg_rows_1_to_24_lsmode_x_clamp_x_bit3` |
-| 25 | `cfg_row_25_step_zero` |
-| 26 | `cfg_row_26_step_small_positive` |
-| 27 | `cfg_row_27_step_small_negative` |
-| 28 | `cfg_row_28_step_multiply_overflow` |
-| 29, 30 | `cfg_rows_29_30_step_extremes` |
-| 31 | `cfg_row_31_negative_uni` |
-| 32 | `cfg_row_32_uni_boundaries` |
-| 33–36 | `cfg_rows_33_to_36_winner_selection` |
-| 37 | `cfg_row_37_ties` |
-| 38 | `cfg_row_38_tgt2_equals_tgt` |
-| 39 | `cfg_row_39_tgt2_far_from_tgt` |
-| 40 | `cfg_row_40_extreme_values_wraparound` |
-| 41 | `cfg_row_41_fully_random_full_i32` |
-| 42 | `cfg_row_42_exhaustive_nominal_domain` |
-| 43 | `cfg_row_43_exhaustive_lsbit_signed` |
-| 44 | `cfg_row_44_exhaustive_low_bit_shapes` |
-
-Two additional cross-cutting tests back the whole table up:
-
-* `sweep_dense_exhaustive_projection` — **45,664,560** differential call pairs
-  over a dense contiguous projection (`uni ∈ -1..=16` × 8 `lsbit`
-  representatives × `step ∈ -72..=72` × `tgt ∈ -40..=40` × 9 `tgt2` × 3 `pred`).
-  Contiguous rather than sampled, which is what catches off-by-one errors at the
-  `/8` quantization and `>>5` tiebreak boundaries.
-* `sweep_large_random_sample` — **21,320,000** differential call pairs: uniform
-  over the full `i32^6` domain, boundary-biased, and "one axis pinned to an
-  extreme, rest random" for each of the six arguments.
-
-Total: ≈67M differential call pairs (≈134M FFI calls) in 2.6 s. Both sweeps are
-time-budgeted (`DIFF_SWEEP_SECS`, default 120 s) so they cannot run away.
-
-## Harness integrity note
-
-`cargo test` does **not** build a `crate-type = ["cdylib"]` library, because no
-test target links against it. An early version of the harness silently fell back
-to a stale `target/release` artifact, which made the suite pass even with a
-deliberately injected bug. The loader now builds the cdylib for the running
-profile itself and refuses to run against a `.so` older than any file in `src/`
-(`assert_not_stale`). `mutation_check.sh` is what surfaced this.
+* **Binary / driver executable:** `c_src/CMakeLists.txt` declares only
+  `add_library(... SHARED src/lib.c)`. There is no `add_executable` and no
+  `main()` in the C, so there is no stdout to compare.
+* **Compile-time feature combinations:** `translation/Cargo.toml` has no
+  `[features]` section, so there is exactly one configuration.

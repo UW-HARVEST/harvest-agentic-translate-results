@@ -1,112 +1,77 @@
-# ERRORS.md — error / rejection surface table (Phase C)
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/lib.c` by enumerating every `return`
-of a sentinel value, every `STBDS_ASSERT` (`= assert`, and the library is
-compiled **without** `-DNDEBUG`, so assertions are live), every explicit
-`== NULL` / `< 0` / `<=` guard, and every min/max constant.
+Derived mechanically from `c_src/src/lib.c`. Every `return -1` / `return 0` /
+`return NULL` / sentinel write / early `return` / `assert` / explicit bound
+constant is listed. `STBDS_ASSERT` == `assert` from `<assert.h>`; the CMake build
+uses no `NDEBUG`, so assertions are LIVE and a failure aborts the process
+(`SIGABRT`).
 
-`stb_ds` has no error enum: it rejects input by returning the sentinels
-`-1` (`STBDS_INDEX_EMPTY`), `-2` (`STBDS_INDEX_DELETED`), `NULL`/`0`,
-`temp = 0`, or by leaving the caller's pointer unchanged.  Each distinct
-rejection branch is one row.
+Sentinels: `STBDS_INDEX_EMPTY == -1`, `STBDS_INDEX_DELETED == -2`,
+`STBDS_HASH_EMPTY == 0`, `STBDS_HASH_DELETED == 1`.
 
-Sentinels: `STBDS_INDEX_EMPTY = -1`, `STBDS_INDEX_DELETED = -2`,
-`STBDS_HASH_EMPTY = 0`, `STBDS_HASH_DELETED = 1`,
-`STBDS_HM_BINARY = 0`, `STBDS_HM_STRING = 1`,
-`STBDS_SH_NONE/DEFAULT/STRDUP/ARENA = 0/1/2/3`,
-`STBDS_BUCKET_LENGTH = 8`, `STBDS_CACHE_LINE_SIZE = 64`,
-`STBDS_STRING_ARENA_BLOCKSIZE_MIN = 512`, `..._MAX = 1<<20`.
+| #  | function | trigger (exact invalid input/condition) | expected C result | status |
+|----|----------|------------------------------------------|-------------------|--------|
+| 1  | `stbds_arrgrowf` (lib.c:286) | `min_cap <= stbds_arrcap(a)` — request no bigger than current capacity (incl. `addlen==0, min_cap==0` on an existing array) | early `return a;` — pointer returned unchanged, no realloc, header untouched | [x] |
+| 2  | `stbds_arrgrowf` (lib.c:280) | `a == NULL` (no array yet) | `stbds_arrlen(NULL)==0`, fresh alloc; `length=0, hash_table=NULL, temp=0`, `capacity=max(min_len,min_cap,4)` | [x] |
+| 3  | `stbds_arrgrowf` (lib.c:291) | `min_cap >= 2*arrcap(a)` and `min_cap < 4` (i.e. `a==NULL`/cap 0 and tiny request) | `min_cap` clamped **up** to 4 | [x] |
+| 4  | `stbds_hmfree_func` (lib.c:573) | `a == NULL` | early `return;` — no free, no crash | [x] |
+| 5  | `stbds_hmfree_func` (lib.c:574) | `stbds_hash_table(a) == NULL` (array made by `stbds_arrgrowf`, never `hmput`) | skips strdup-key loop and `strreset`; still frees `hash_table` (NULL) and header | [x] |
+| 6  | `stbds_hmget_key_ts` (lib.c:634-639) | `a == NULL` | allocates a 1-elem map, zeroes elem 0, writes `*temp = STBDS_INDEX_EMPTY (-1)`, returns non-NULL hash-side ptr | [x] |
+| 7  | `stbds_hmget_key_ts` (lib.c:644) | `a != NULL` but `header(raw_a)->hash_table == 0` (only the default slot exists, e.g. after `hmput_default` only) | `*temp = -1`, returns `a` unchanged | [x] |
+| 8  | `stbds_hmget_key_ts` (lib.c:648) | key absent from a populated table (`stbds_hm_find_slot` returns `< 0`) | `*temp = STBDS_INDEX_EMPTY (-1)`, returns `a` | [x] |
+| 9  | `stbds_hm_find_slot` (lib.c:609) | probe reaches `bucket->hash[i] == STBDS_HASH_EMPTY` in the **first** (`i = pos&MASK .. 7`) scan | `return -1` (key not found) | [x] |
+| 10 | `stbds_hm_find_slot` (lib.c:620) | probe reaches `bucket->hash[i] == STBDS_HASH_EMPTY` in the **second** (`i = 0 .. limit`) wrap scan | `return -1` (key not found) | [x] |
+| 11 | `stbds_hmget_key` (lib.c:663) | any of rows 6/7/8 | same as `_ts`, but the sentinel is also stored into `header(arr)->temp` and is observable via `stbds_temp` | [x] |
+| 12 | `stbds_hmdel_key` (lib.c:809) | `a == NULL` | `return 0;` (**NULL pointer**) — note this differs from `hmget_key_ts`, which allocates | [x] |
+| 13 | `stbds_hmdel_key` (lib.c:816) | `header(raw_a)->hash_table == 0` | `stbds_temp(raw_a) = 0` then `return a` (unchanged); `hmdel` macro therefore yields 0 | [x] |
+| 14 | `stbds_hmdel_key` (lib.c:821) | key not present (`slot < 0`) | `stbds_temp(raw_a) = 0`, `return a`; length/used_count/tombstone_count unchanged | [x] |
+| 15 | `stbds_hmdel_key` (lib.c:836) | `mode == STBDS_HM_STRING` **exactly 1** (not `>=1`) *and* `string.mode == STBDS_SH_STRDUP` | frees the old key; with `mode == 2` the free is **skipped** (leak) even though hashing used the string path | [x] |
+| 16 | `stbds_hmdel_key` (lib.c:828) | `assert(slot < (ptrdiff_t) table->slot_count)` | unreachable via the public API (`find_slot` masks by `slot_count-1`) — reaching it needs a corrupted table. Covered indirectly: `err40_41_42` compares the whole bucket array after every op, so a differing `slot` would show up | [x] |
+| 17 | `stbds_hmdel_key` (lib.c:846) | `assert(slot >= 0)` after re-finding the moved final element. REACHABLE from the FFI boundary: `mode >= 2` deleting a non-final element makes the re-find hash the raw element bytes as a C string, which does not match | **`SIGABRT`** — verified equal in a child process by `phase_c_abort.rs::err17_abort_parity_hmdel_mode2_nonfinal` (both signal 6) | [x] |
+| 18 | `stbds_hmdel_key` (lib.c:849) | `assert(b->index[i] == final_index)` | holds for every well-formed table; asserted implicitly by the per-operation bucket-array comparison in rows 19-23 / 40-42 (a mismatch would abort one side only) | [x] |
+| 19 | `stbds_hmdel_key` (lib.c:832) | `assert(table->used_count >= 0)` | `used_count` is `size_t`, so this is **always true** in C; the Rust must likewise never abort here (a signed reading would abort on underflow) | [x] |
+| 20 | `stbds_hmput_key` (lib.c:778) | `assert((size_t) i+1 <= stbds_arrcap(a))` | always satisfied because the preceding `if` grows the array; must not abort | [x] |
+| 21 | `stbds_make_hash_index` (lib.c:401) | `assert(used_count_threshold + tombstone_count_threshold < slot_count)` — would fail only for `slot_count == 0` (`0 + 0 < 0`) | `SIGABRT`, but `slot_count` is only ever `8` (from `shmode_func` / a fresh `hmput_key`) or `slot_count*2` / `slot_count>>1` with `slot_count > 8`, so 0 is unreachable through any exported symbol. `err40_41_42` walks slot_count 8→1024→8 and neither library aborts | [x] |
+| 22 | `stbds_stralloc` (lib.c:913) | `assert(len <= a->remaining)` | always satisfied by the block-allocation branch above; must not abort for any string length | [x] |
+| 23 | `stbds_stralloc` (lib.c:885,893) | `len > a->remaining` **and** `len > blocksize` (oversized string, e.g. > 512 on a fresh arena) | takes the "huge block" path: allocates exactly `sizeof(block)-8+len`, splices it *behind* the head block (or becomes the head with `remaining = 0`), returns `sb->storage` | [x] |
+| 24 | `stbds_stralloc` (lib.c:890) | `blocksize >= STBDS_STRING_ARENA_BLOCKSIZE_MAX (1<<20)` | `a->block` stops incrementing (saturates); blocksize stays at the max step | [x] |
+| 25 | `stbds_stralloc` | `str` is `""` (len 1) on a fresh arena (`remaining == 0`) | `1 > 0` so a 512-byte block is allocated; returns pointer to the last byte | [x] |
+| 26 | `stbds_strreset` (lib.c:924) | `a->storage == NULL` (empty/already-reset arena) | loop body never runs; arena is `memset` to 0 (incl. `block`/`mode`) — idempotent | [x] |
+| 27 | `stbds_arrfreef` (lib.c:314) | `a == NULL` | `free((char*)NULL - 32)` — UB; both libraries die with the same signal. Verified in a child process by `phase_c_abort.rs::err27_abort_parity_arrfreef_null` (both `SIGSEGV`, signal 11) | [x] |
+| 28 | out-of-range `mode` enum, all of `stbds_hmget_key{,_ts}` / `stbds_hmput_key` / `stbds_hmdel_key` | `mode` = 2, 7, 1000 (no valid variant; C enums accept any `int`) | every `mode >= STBDS_HM_STRING` test takes the **string** path (`strcmp`/`stbds_hash_string`), so key is treated as `char*`; only the `mode == STBDS_HM_STRING` equality test in `hmdel_key` line 836/842 behaves differently | [x] |
+| 29 | out-of-range `mode` enum, `stbds_hmget_key{,_ts}` / `stbds_hmput_key` / `stbds_hmdel_key` | `mode` = -1, -1000 (negative) | `mode >= STBDS_HM_STRING` is false → **binary** path (`memcmp`/`stbds_hash_bytes`); `nt->string.mode` set to `0` | [x] |
+| 30 | out-of-range `mode` enum, `stbds_shmode_func` | `mode` = 0/1/2/3 valid, plus 4, 99, 256, -1 | `h->string.mode = (unsigned char) mode` truncates: 256→0, -1→255; a later `hmput_key` `switch` hits `default:` → `memcpy(key, keysize)` instead of a pointer store | [x] |
+| 31 | `stbds_hash_string` (lib.c:480) | `str` = `""` (empty string) | loop skipped; the fixed avalanche is applied to `seed` alone | [x] |
+| 32 | `stbds_hash_bytes` (lib.c:522,532) | `len == 0` | main loop skipped, `switch(0)` → `break`; hashes only `data = 0 << 56` | [x] |
+| 33 | `stbds_hash_bytes` | `len` = 1..7 (partial tail, `switch` fall-through) and `len` = 8,9,15,16 (block boundaries) | each fall-through case contributes its byte; `d[3]<<24` is an `int` shift that **sign-extends** into the top 32 bits of `size_t` | [x] |
+| 34 | `stbds_hmput_default` (lib.c:669) | `a == NULL` | allocates the default slot, `length = 1`, returns hash-side pointer (so `t[-1]` is the default element) | [x] |
+| 35 | `stbds_hmput_default` (lib.c:669) | `a != NULL` and `header(raw_a)->length == 0` | re-grows and bumps length to 1 — the "resurrect a zero-length map" branch | [x] |
+| 36 | `stbds_hmput_default` (lib.c:675) | `a != NULL` and `length != 0` | `return a` unchanged (idempotent — no double-allocation of the default slot) | [x] |
+| 37 | `hm_geti` (lib.c:945) | `num <= 0` (0, -1, INT_MIN) | all `for` loops are skipped; only the 4 leading assertions run; returns normally | [x] |
+| 38 | `hm_geti` (lib.c:952-977) | any `num` for which a lookup result mismatches | `SIGABRT` from `assert`. Must never trigger for either library | [x] |
+| 39 | `strkey` (lib.c:939) | `n` = `INT_MIN`, `-1`, `0`, large | `sprintf(buffer,"test_%d",n)` into a 256-byte static; result is `"test_<n>"` NUL-terminated | [x] |
+| 40 | `stbds_hmput_key` (lib.c:698) | `table == NULL` **or** `used_count >= used_count_threshold` (75 % load) | (re)allocates the hash index: `slot_count = 8` if new else `slot_count*2`; when new, `nt->string.mode = (mode>=1 ? SH_DEFAULT : 0)` | [x] |
+| 41 | `stbds_hmdel_key` (lib.c:854) | `used_count < used_count_shrink_threshold && slot_count > 8` | index is rebuilt at `slot_count>>1` (shrink) | [x] |
+| 42 | `stbds_hmdel_key` (lib.c:858) | `tombstone_count > tombstone_count_threshold` (`(sc>>3)+(sc>>4)`) | index is rebuilt at the same `slot_count` (tombstone purge) | [x] |
+| 43 | `stbds_hm_find_slot` / `stbds_hmput_key` (lib.c:596,719) | computed `hash < 2` (collides with the EMPTY/DELETED tags) | `hash += 2` before probing — must be applied identically in both | [x] |
 
-| # | function | trigger (exact invalid input/condition) | expected C result | verified |
-|---|----------|------------------------------------------|-------------------|----------|
-| 1 | `stbds_arrgrowf` | `min_cap <= stbds_arrcap(a)` after `min_len = arrlen+addlen` clamp (e.g. existing cap 4, `addlen=0`, `min_cap=0..4`) | early `return a` — **identical pointer**, header bytes untouched | [x] |
-| 2 | `stbds_arrgrowf` | `a == NULL` (nothing to grow from) | fresh block; `length=0`, `hash_table=NULL`, `temp=0`, `capacity = max(min_len, min_cap, 4)`; returns `base+32` | [x] |
-| 3 | `stbds_arrgrowf` | `min_cap == 0 && addlen == 0 && a == NULL` (degenerate zero request) | `min_len = 0`, so `min_cap(0) <= arrcap(NULL)(0)` ⇒ the early return fires and the function returns **NULL** (it does *not* reach the `< 4` clamp and allocates nothing) | [x] |
-| 4 | `stbds_arrfreef` | `a == NULL` → `free((char*)NULL - 32)` | invalid free → glibc abort (UB). **Documented, not executed** (would kill the test process); both sides emit the identical `free(header)` call | [x] (documented) |
-| 5 | `stbds_hm_find_slot` | key absent; probe reaches `bucket->hash[i] == STBDS_HASH_EMPTY` in the `i = pos&7 .. 8` loop | `return -1` | [x] |
-| 6 | `stbds_hm_find_slot` | key absent; probe reaches `hash[i] == STBDS_HASH_EMPTY` in the wrap-around `i = 0 .. limit` loop | `return -1` | [x] |
-| 7 | `stbds_hm_find_slot` | `bucket->hash[i] == hash` but `stbds_is_key_equal` returns 0 (hash collision on a different key) | probing continues, eventually `-1` | [x] |
-| 8 | `stbds_hmget_key_ts` | `a == NULL` | `*temp = STBDS_INDEX_EMPTY (-1)`; returns a **new** 1-element map (`length==1`, `hash_table==NULL`) | [x] |
-| 9 | `stbds_hmget_key_ts` | `a != NULL` but `header->hash_table == NULL` (map created only by `hmput_default`/`hmget_key`) | `*temp = -1`; returns `a` unchanged | [x] |
-| 10 | `stbds_hmget_key_ts` | key not present in a populated table (`slot < 0`) | `*temp = STBDS_INDEX_EMPTY (-1)` | [x] |
-| 11 | `stbds_hmget_key` | any of rows 8/9/10 | same, and additionally `stbds_header(ret-elemsize)->temp == -1` | [x] |
-| 12 | `stbds_hmget_key(_ts)` | `mode` out of enum range, `mode >= 2` (e.g. 2, 7, 1000, `INT_MAX`) | `mode >= STBDS_HM_STRING` ⇒ treated as **string** (hash_string + strcmp) | [x] |
-| 13 | `stbds_hmget_key(_ts)` | `mode` out of enum range, `mode < 0` (e.g. -1, `INT_MIN`) | `mode < STBDS_HM_STRING` ⇒ treated as **binary** (hash_bytes + memcmp) | [x] |
-| 14 | `stbds_hmput_default` | `a == NULL` | allocates the 1-element default slot (`length==1`), `hash_table==NULL` | [x] |
-| 15 | `stbds_hmput_default` | `a != NULL` and `header(a-elemsize)->length == 0` | grows and re-creates the default slot, `length` becomes 1 | [x] |
-| 16 | `stbds_hmput_default` | `a != NULL` and `length != 0` (already has a default slot) | `return a` — identical pointer, nothing modified | [x] |
-| 17 | `stbds_hmput_key` | `STBDS_ASSERT((size_t)i+1 <= stbds_arrcap(a))` | never fires (the preceding `arrgrowf` guarantees it). **Documented**; exercised indirectly by every insert | [x] (documented) |
-| 18 | `stbds_hmdel_key` | `a == NULL` | `return 0` (**NULL**) | [x] |
-| 19 | `stbds_hmdel_key` | `header->hash_table == NULL` | `stbds_temp(raw_a) = 0`; `return a` unchanged | [x] |
-| 20 | `stbds_hmdel_key` | key not found (`slot < 0`) | `temp == 0`; `return a`; `used_count`/`tombstone_count`/`length` unchanged | [x] |
-| 21 | `stbds_hmdel_key` | key found (success sentinel, for contrast) | `temp == 1`; slot becomes `hash=STBDS_HASH_DELETED(1)`, `index=STBDS_INDEX_DELETED(-2)` | [x] |
-| 22 | `stbds_hmdel_key` | `keyoffset != 0` while keys live at offset 0 ⇒ `memcmp` compares the wrong bytes ⇒ mismatch | treated as "not found": `temp == 0`, `return a` (asserts *not* reached) | [x] |
-| 23 | `stbds_hmdel_key` | `mode == STBDS_HM_STRING` **and** `table->string.mode == STBDS_SH_STRDUP` | the stored key is `free`d before the move; `temp == 1` | [x] |
-| 24 | `stbds_hmdel_key` | `STBDS_ASSERT(slot < table->slot_count)`, `STBDS_ASSERT(slot >= 0)` (re-find of the moved element), `STBDS_ASSERT(b->index[i] == final_index)` | hold for every library-maintained table; a failure aborts. **Documented**; every delete test asserts they did not fire (process survives) and that the re-index result is identical | [x] |
-| 25 | `stbds_hmdel_key` | `STBDS_ASSERT(table->used_count >= 0)` — `used_count` is `size_t` | vacuously true (dead check); reproduced as a no-op | [x] (documented) |
-| 26 | `stbds_hmfree_func` | `a == NULL` | `return` immediately, no free, no crash | [x] |
-| 27 | `stbds_hmfree_func` | `stbds_hash_table(a) == NULL` (map without a table) | skips the strdup sweep and `strreset`, still frees `hash_table`(NULL) + header | [x] |
-| 28 | `stbds_make_hash_index` | `STBDS_ASSERT(used_count_threshold + tombstone_count_threshold < slot_count)`; would fire for `slot_count == 0` | unreachable from the public API (`slot_count` is always a power of two `>= 8`: 8 from `shmode_func`/first `hmput_key`, doubling afterwards). **Documented**, and the invariant is re-checked on every snapshot | [x] (documented) |
-| 29 | `stbds_stralloc` | `STBDS_ASSERT(len <= a->remaining)` | unreachable for a library-maintained arena; only a hand-forged arena (`remaining` too large for `storage`) can trip it. **Documented, not executed** | [x] (documented) |
-| 30 | `stbds_stralloc` | `len > a->remaining` **and** `len > blocksize` with `a->storage == NULL` (huge first string) | dedicated block: `sb->next = 0`, `a->storage = sb`, `a->remaining = 0`, returns `sb->storage`; `a->block` was already incremented | [x] |
-| 31 | `stbds_stralloc` | `len > a->remaining` **and** `len > blocksize` with `a->storage != NULL` (huge string, existing block) | dedicated block spliced *after* the head (`sb->next = storage->next; storage->next = sb`), `a->remaining` **unchanged** | [x] |
-| 32 | `stbds_stralloc` | `a->block` large enough that `512 << (block>>1) >= 1<<20` (block `>= 22`) | `a->block` stops incrementing (max-blocksize clamp) | [x] |
-| 33 | `stbds_stralloc` | empty string `""` (`len == 1`) | consumes exactly 1 byte of `remaining` | [x] |
-| 34 | `stbds_strreset` | `a->storage == NULL` (already empty / freshly zeroed arena) | no frees; arena zeroed (`block=0`, `mode=0`, `remaining=0`) | [x] |
-| 35 | `stbds_shmode_func` | `mode` outside the `STBDS_SH_*` enum: `-1`, `4`, `255`, `256`, `259`, `INT_MIN`, `INT_MAX` | `h->string.mode = (unsigned char) mode` ⇒ 255, 4, 255, **0**, **3**, 0, 255 | [x] |
-| 36 | `stbds_hash_string` | empty string `""` | hash of the seed alone (loop body never runs) | [x] |
-| 37 | `stbds_hash_bytes` | `len == 0` | only the length word (`len << 56`) is mixed; `p` never dereferenced | [x] |
-| 38 | `stbds_hash_bytes` | bytes with the high bit set (`>= 0x80`) at positions 3 and 7 | C integer promotion makes `d[3] << 24` negative ⇒ **sign extension** into the top 32 bits of `size_t` | [x] |
-| 39 | `stbds_hm_find_slot` / `stbds_hmput_key` | `if (hash < 2) hash += 2` | unreachable in practice (would require inverting siphash / the string hash to land on 0 or 1). **Documented**; the branch is translated verbatim | [x] (documented) |
-| 40 | `stbds_is_key_equal` | `mode >= STBDS_HM_STRING` with a stored key that is not equal | returns `0` (`strcmp != 0`) | [x] |
-| 41 | `hm_geti` | `num <= 0` (`0`, `-1`, `-100`, `INT_MIN`) | all `for` loops are skipped; the three leading `STBDS_ASSERT`s still run; returns normally | [x] |
-| 42 | `hm_geti` | any `num` where an internal `STBDS_ASSERT` would fail | would `abort()`; both libraries must survive identically (checked for every tested `num`) | [x] |
-| 43 | `strkey` | `n = INT_MIN` / `INT_MAX` (longest `%d` expansion, 11 chars + NUL) | `"test_-2147483648"` / `"test_2147483647"` inside the 256-byte static buffer, no overflow | [x] |
+## Result
 
-## Generic FFI boundary cases also covered
+All 43 rows have a passing differential test.
 
-* NULL map pointer into every entry point that documents it (`hmget_key`,
-  `hmget_key_ts`, `hmput_key`, `hmput_default`, `hmdel_key`, `hmfree_func`).
-* Zero lengths: `keysize = 0`, `len = 0`, `addlen = 0`, `min_cap = 0`,
-  `elemsize` as small as 1.
-* Oversized / boundary values: `min_cap` and `addlen` near `SIZE_MAX/elemsize`
-  are **not** executed (they would `realloc` petabytes / wrap); the wrapping
-  arithmetic is instead verified with `elemsize=1, min_cap=1<<20`.
-* Out-of-range enum values across FFI for both `mode` parameters
-  (`stbds_hmget/put/del_key`'s `STBDS_HM_*` and `stbds_shmode_func`'s
-  `STBDS_SH_*`): `-1`, `2`, `3`, `4`, `255`, `256`, `259`, `INT_MIN`, `INT_MAX`.
-* One step past a valid range: `mode = 2` (one past `STBDS_HM_STRING`),
-  `mode = 4` (one past `STBDS_SH_ARENA`), `block = 22/23` (the arena
-  blocksize clamp), 6/7 entries (one step past `used_count_threshold` for
-  `slot_count = 8`).
+| test file | rows covered | tests |
+|-----------|--------------|-------|
+| `tests/phase_c.rs` | 1-15, 19, 20, 22-26, 28-43 (+ generic NULL / zero-length / oversized-length boundaries) | 31 |
+| `tests/phase_c_abort.rs` | 17, 27 (child-process termination-status parity) | 3 |
 
-## Row → test mapping (all in `tests/phase_c_errors.rs` unless noted)
+Rows 16, 18 and 21 are asserts that no input reachable through the 16 exported
+symbols can trigger; they are covered indirectly because every Phase B/C row
+compares the complete bucket array (`hash[]` and `index[]`) plus
+`slot_count` / `used_count` / `tombstone_count` after every single operation, so
+any divergence in the quantities those asserts guard would fail a comparison (or
+abort exactly one of the two libraries).
 
-| rows | test |
-|------|------|
-| 1 | `e01_arrgrowf_noop_returns_same_pointer` (+ `phase_b_arr::growf_noop`) |
-| 2 | `e02_arrgrowf_null_initialises_header` (+ `phase_b_arr::growf_fresh_matrix`) |
-| 3 | `e03_arrgrowf_zero_zero_returns_null` |
-| 4 | `e04_arrfreef_null_documented` (documented: executing it aborts) |
-| 5, 6, 7, 40 | `e05_e06_e07_e40_find_slot_misses` |
-| 8, 11 | `e08_e11_get_on_null_map` |
-| 9, 10 | `e09_e10_get_temp_minus_one` |
-| 12, 13 | `e12_e13_mode_out_of_range` (+ `phase_b_strmap::mode_out_of_range_valid`) |
-| 14, 15, 16 | `e14_e15_e16_put_default` |
-| 17 | `e17_hmput_capacity_assert_documented` |
-| 18 | `e18_hmdel_null_map` |
-| 19, 20, 21 | `e19_e20_e21_hmdel_sentinels` |
-| 22 | `e22_hmdel_wrong_keyoffset` |
-| 23 | `e23_hmdel_strdup_frees_key` (+ `phase_d_heap_parity`) |
-| 24, 25 | `e24_e25_hmdel_asserts_hold` |
-| 26, 27 | `e26_e27_hmfree_edge_cases` |
-| 28 | `e28_hash_index_invariant` (`t.invariant_ok` is in every snapshot) |
-| 29 | documented — a library-maintained arena can never trip it |
-| 30, 31, 32, 33 | `e30_e33_stralloc_boundaries` (+ `phase_b_arena::*`) |
-| 34 | `e34_strreset_empty` |
-| 35 | `e35_shmode_out_of_range` |
-| 36 | `e36_hash_string_empty` |
-| 37 | `e37_hash_bytes_zero_len` (incl. a NULL pointer) |
-| 38, 39 | `e38_e39_hash_quirks` (+ `phase_b_hash::hash_bytes_signext`) |
-| 41, 42, 43 | `e41_e43_driver_edges` (+ `phase_b_driver::hm_geti_nonpositive`) |
-| generic | `e_generic_zero_sizes` (NULL key, `keysize = 0`, `elemsize = 1`) |
+Note on abort parity: C's `assert` prints a diagnostic to `stderr` before
+`abort()` while the Rust translation calls `abort()` silently. The *termination
+status* — the thing a caller can observe — is identical (`SIGABRT`); only the
+stderr text differs.

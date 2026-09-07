@@ -1,23 +1,24 @@
 # Dynamic Symbol Surface
 
-Derived from:
+Source command:
 
 ```text
 nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-The C library's undefined dynamic entries (`printf`, `puts`, and weak ELF
-runtime hooks) are external runtime imports, not library-owned API symbols.
+The C shared library has five globally defined dynamic symbols. The private
+`static` functions `goodG2B` and `goodB2G` are not part of the dynamic surface.
 
-| symbol | C definition | Rust definition | status |
-|--------|--------------|-----------------|--------|
-| `bad` | `src/driver.c:42` | `src/lib.rs:29` | present |
-| `driver` | `src/driver.c:106` | `src/lib.rs:78` | present |
-| `good` | `src/driver.c:100` | `src/lib.rs:72` | present |
-| `printIntLine` | `src/driver.c:37` | `src/lib.rs:22` | present |
-| `printLine` | `src/driver.c:29` | `src/lib.rs:13` | present |
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `bad` | `T` | `bad` | [x] |
+| `driver` | `T` | `driver` | [x] |
+| `good` | `T` | `good` | [x] |
+| `printIntLine` | `T` | `printIntLine` | [x] |
+| `printLine` | `T` | `printLine` | [x] |
 
-- [x] Every library-owned C dynamic definition is exported by Rust with the
-      exact name.
-- [x] Missing library-owned symbols: 0.
-- [x] Undefined non-runtime/non-libc C symbols: 0.
+The C library's undefined dynamic symbols are libc/toolchain dependencies:
+`printf`, `puts`, `__cxa_finalize`, `_ITM_deregisterTMCloneTable`,
+`_ITM_registerTMCloneTable`, and `__gmon_start__`. They are not library API
+symbols that the Rust shared library must define.
+

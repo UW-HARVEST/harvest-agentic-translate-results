@@ -1,43 +1,35 @@
-# Configuration Surface
+# Configuration-Surface Table
 
-The public surface is the union of `driver.h` and all functions exported by
-the C shared object. There are no runtime options, modes, flags, element
-types, lengths, byte-order settings, preprocessor feature branches, or Cargo
-features. The meaningful data-shape matrix comes from the null branch in
-`printLine`, the floating comparison in `goodB2G`, C integer formatting, and
-the division/conversion operations.
+Mechanically derived from all five public dynamic symbols, the null/range
+branches in `driver.c`, the two composed call paths, and the distinct scalar
+shapes consumed by C formatting, floating division, `fabs`, and float-to-int
+conversion. There are no compile-time Cargo features or C preprocessor feature
+flags.
 
-| # | entry point(s) | configuration (options set + input shape) | Status |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `printLine` | Non-null pointer to an empty C string. | [x] |
-| 2 | `printLine` | Non-null pointer to a non-empty, NUL-terminated byte string. | [x] |
-| 3 | `printIntLine` | Negative integer values. | [x] |
-| 4 | `printIntLine` | Zero. | [x] |
-| 5 | `printIntLine` | Positive integer values. | [x] |
-| 6 | `printIntLine` | Exact `INT_MIN` and `INT_MAX` boundaries. | [x] |
-| 7 | `bad` | Positive finite nonzero float with an in-range quotient. | [x] |
-| 8 | `bad` | Negative finite nonzero float with an in-range quotient. | [x] |
-| 9 | `bad` | Positive and negative zero. | [x] |
-| 10 | `bad` | Finite nonzero float whose quotient is outside `int` range. | [x] |
-| 11 | `bad` | Positive infinity, negative infinity, and NaN. | [x] |
-| 12 | `good` | Positive finite `data` with `fabs(data) > 0.000001`. | [x] |
-| 13 | `good` | Negative finite `data` with `fabs(data) > 0.000001`. | [x] |
-| 14 | `good` | Positive/negative zero, sub-threshold finite values, and exact positive/negative threshold. | [x] |
-| 15 | `good` | NaN, for which the ordered comparison is false. | [x] |
-| 16 | `good` | Positive and negative infinity, for which the comparison is true. | [x] |
-| 17 | `driver` | Accepted finite positive `goodData`; in-range positive/negative finite `badData`. | [x] |
-| 18 | `driver` | Accepted finite negative `goodData`; in-range positive/negative finite `badData`. | [x] |
-| 19 | `driver` | Rejected finite threshold-or-smaller `goodData`; in-range finite `badData`. | [x] |
-| 20 | `driver` | NaN `goodData`; in-range finite `badData`. | [x] |
-| 21 | `driver` | Infinite `goodData`; in-range finite `badData`. | [x] |
-| 22 | `driver` | Accepted finite `goodData`; zero, quotient-overflow, infinite, or NaN `badData`. | [x] |
-| 23 | `driver` | Rejected finite or NaN `goodData`; zero, quotient-overflow, infinite, or NaN `badData`. | [x] |
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| C1 | `printLine` | Non-null C string: empty string. | [x] |
+| C2 | `printLine` | Non-null C string: randomized non-empty printable bytes, excluding interior NUL. | [x] |
+| C3 | `printIntLine` | Randomized negative `int`, including `INT_MIN`. | [x] |
+| C4 | `printIntLine` | Zero. | [x] |
+| C5 | `printIntLine` | Randomized positive `int`, including `INT_MAX`. | [x] |
+| C6 | `bad` | Positive finite `data` whose `100.0 / data` converts to an in-range positive `int`; include exact and fractional quotients. | [x] |
+| C7 | `bad` | Negative finite `data` whose quotient converts to an in-range negative `int`; include exact and fractional quotients. | [x] |
+| C8 | `bad` | Positive or negative finite nonzero `data` whose quotient is outside the C `int` range, including subnormals and threshold-adjacent magnitudes. | [x] |
+| C9 | `bad` | `data` is `+0.0` or `-0.0`. | [x] |
+| C10 | `bad` | `data` is `+infinity`, `-infinity`, or NaN. | [x] |
+| C11 | `good` | Positive finite `data > 0.000001`; fixed `goodG2B` output followed by an in-range positive quotient. | [x] |
+| C12 | `good` | Negative finite `data < -0.000001`; fixed output followed by an in-range negative quotient. | [x] |
+| C13 | `good` | `fabs(data) > 0.000001` immediately beyond the threshold; quotient is the largest range (near 100,000,000) reachable through the accepted branch. | [x] |
+| C14 | `good` | `data` is `+infinity` or `-infinity`; accepted `fabs` branch and zero quotient. | [x] |
+| C15 | `driver` | Accepted positive `goodData`; positive in-range `badData`. | [x] |
+| C16 | `driver` | Accepted negative `goodData`; negative in-range `badData`. | [x] |
+| C17 | `driver` | Accepted threshold-adjacent `goodData`; out-of-range-conversion `badData`. | [x] |
+| C18 | `driver` | Accepted infinite `goodData`; infinite or NaN `badData`. | [x] |
+| C19 | `driver` | Rejected near-zero `goodData`; nonzero in-range `badData` (composed pipeline continues after warning). | [x] |
+| C20 | `driver` | Rejected NaN `goodData`; zero-sign `badData` (composed pipeline continues after warning). | [x] |
 
-## Build Configurations
+## Feature combinations
 
-Cargo.toml declares no features. The complete build-configuration set is:
-
-| # | Cargo arguments | Status |
-|---|-----------------|-----|
-| 1 | default (`cargo test`) | [x] |
-| 2 | no defaults (`cargo test --no-default-features`) | [x] |
+`Cargo.toml` declares no `[features]` table. The sole build configuration is
+the default/no-feature build, and `--no-default-features` is equivalent.

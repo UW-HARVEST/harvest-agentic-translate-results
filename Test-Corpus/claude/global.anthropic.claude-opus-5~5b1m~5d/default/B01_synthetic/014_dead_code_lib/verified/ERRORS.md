@@ -1,52 +1,42 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/driver.c`. The exhaustive grep for every
-rejection construct in the whole library is:
+Derived mechanically from `c_src/src/driver.c`. Grep audit of every rejection
+construct the C source could contain:
 
 ```
-$ grep -n 'return\|assert\|NULL\|if\|else\|switch\|#if\|exit\|abort\|-1' c_src/src/driver.c
-31:    if (line != NULL)
+grep -nE 'RETURN_ERROR|return +-?[0-9]|return +NULL|assert|errno|exit\(|abort\(' c_src/src/driver.c   -> no matches
+grep -nE 'if *\(|switch|#if'                                                     c_src/src/driver.c   -> 1 match (line 31)
+grep -nE 'NULL'                                                                  c_src/src/driver.c   -> 1 match (line 31)
+grep -nE 'enum|#define'                                                          c_src/src/driver.c   -> no matches
 ```
 
-(the only other hits are in the licence comment block)
+The library has **no** return codes, **no** error enums, **no** `assert`, **no**
+`errno` use, **no** numeric range checks and **no** min/max constants. All four
+exported functions return `void`. The entire error surface is therefore the
+single NULL guard in `printLine`, plus the generic FFI boundaries required by
+the task.
 
-That is the **complete** rejection surface. Concretely, the library contains:
+## Table
 
-- error-return macros (`RETURN_ERROR` &c.): **none**
-- `return -1` / `return NULL` / error enums / status codes: **none** — all five
-  functions are `void` and return no value at all
-- `assert` / `abort` / `exit`: **none**
-- explicit range checks, min/max constants: **none** — no numeric input exists
-- null checks: **one** (`driver.c:31`)
-- `switch` / `#ifdef` branches: **none**
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
+|---|----------|---------------------------------------------|-------------------|------|-----|
+| 1 | `printLine` | `line == NULL` (line 31: `if (line != NULL)`) — the guard's false branch | returns normally, emits **zero bytes** to stdout, no crash | `err_1_print_line_null` | [x] |
+| 2 | `printLine` | `line` points at `""` (a lone `'\0'`) — zero-length, *valid* but the degenerate boundary of the true branch | returns normally, emits exactly one byte `"\n"` | `err_2_print_line_empty_string` | [x] |
+| 3 | `printLine` | `line` points at a buffer whose first byte is `'\0'` but which has trailing garbage after it (embedded-NUL / "oversized length") | `puts` stops at the first `'\0'`: emits only `"\n"`, ignores the tail | `err_3_print_line_embedded_nul` | [x] |
+| 4 | `printLine` | `line` is a non-NULL but *misaligned / arbitrary low* pointer value that is still a valid readable string (`(char*)p + 1` into a buffer) — proves the guard tests only against NULL, not against "looks bogus" | prints from the offset byte | `err_4_print_line_unaligned_offset` | [x] |
+| 5 | `printLine` | `line` is a 4095-byte string with no interior NUL (oversized length, no internal C buffer to overflow) | prints all 4095 bytes + `"\n"` | `err_5_print_line_oversized` | [x] |
+| 6 | `bad`, `good`, `driver` | called with a *wrong-arity* FFI signature — declared `void(void)` in the header, so any extra argument is ignored by the SysV ABI (the "value one step past a documented range" analogue for a nullary API) | ignores the extra argument, identical output | `err_6_nullary_extra_args_ignored` | [x] |
 
-So the table has exactly one row.
+## Not applicable (documented for completeness)
 
-## Error-surface table
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|----------------------------------------------|-------------------|------|--------|
-| 1 | `printLine` | `line == NULL` — the `if (line != NULL)` guard at `driver.c:31` is false | Guard falls through, `puts` is **not** called. Function returns normally (`void`, no error code). Net effect: **zero bytes** written to `stdout`, no crash. | `err_01_print_line_null` | [x] |
-
-## Generic FFI boundary conditions
-
-The task also mandates covering the boundaries every C API has, even when not in
-the table above. Several are **not instantiable** for this library, and it is
-worth recording *why*, so their absence is a derived fact rather than an
-oversight:
-
-| boundary | applicable? | covered by |
-|----------|-------------|------------|
-| Null pointer argument | yes — `printLine(NULL)` | row 1 / `err_01_print_line_null` |
-| Zero length | yes — the empty string `""` is the zero-length input | `err_02_print_line_empty` |
-| Oversized length | yes — no length argument exists, but the NUL-terminated string may be arbitrarily long, incl. past libc's `BUFSIZ` stdout buffer | `err_03_print_line_oversized` |
-| Value one step past a valid range | **n/a** — no function takes a numeric/bounded argument | — (documented, not testable) |
-| Out-of-range enum value across FFI | **n/a** — the library declares no `enum` and no function takes an integer parameter, so there is no int-with-no-valid-variant to pass | — (documented, not testable) |
-| Unterminated / non-UTF-8 bytes | yes — `puts` is byte-oriented, so arbitrary non-UTF-8 bytes are valid input that Rust must not mangle or reject | `err_04_print_line_non_utf8`, `cfg_*` randomized rows |
-| Argument-less functions given no state | yes — `bad`/`good`/`driver` take no arguments and read no state, so they have no invalid input; called for parity anyway | `cfg_05`–`cfg_07` |
-| Misaligned / interior-NUL pointer | yes — a pointer into the middle of a buffer, and a buffer whose first byte is NUL | `err_02_print_line_empty`, `err_05_print_line_interior_nul` |
-
-**Every row is checked off with a passing differential test** that asserts the
-two implementations produce the *same* observable result (identical captured
-`stdout` bytes and identical non-crashing return), not merely that "both did
-something".
+- **Out-of-range enum values across FFI:** the C source declares no `enum` and
+  no function takes an integer parameter, so there is no enum-shaped input to
+  push out of range. Row 6 covers the closest real analogue (an extra argument
+  passed to a `void(void)` symbol).
+- **Non-zero return / sentinel comparison:** all four symbols return `void`.
+  Rows therefore assert on *observable stdout bytes*, which is the only result
+  channel this library has. `puts`'s own return value is discarded by the C, so
+  it is not part of the observable surface.
+- **Truly invalid pointers** (e.g. `(char*)1`, freed memory) are undefined
+  behaviour in the C and are *not* tested: the C is not required to reject them,
+  so a differential test would compare two undefined behaviours.

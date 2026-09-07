@@ -1,43 +1,30 @@
 # Error Surface
 
-The following mechanical search was applied to all files under `c_src/include`
-and `c_src/src`:
+Mechanical source search:
 
-```text
-RETURN_ERROR
-return -1
-return NULL
-assert(...)
-error
-min/max
-NULL comparisons
-if/switch branches
-#if/#ifdef branches
+```sh
+rg -n -i \
+  'RETURN_ERROR|return\s+(-1|NULL)|\bassert\s*\(|\bif\s*\(|\bswitch\s*\(|#\s*if(n?def)?|\bNULL\b|\benum\b|\b(MIN|MAX)\b' \
+  ../c_src/src ../c_src/include
 ```
 
-It found no rejection statements, error enums, assertions, null checks, range
-checks, min/max constants, conditional branches, or compile-time branches.
-`md5_digest` returns `void` and assumes both pointers satisfy the contract in
-`lib.h`; invalid pointers invoke undefined behavior rather than a defined C
-error result.
+The search has no matches. The sole public function, `md5_digest`, returns
+`void` and the C source performs no explicit rejection, null check, assertion,
+range check, enum validation, or error return. Therefore there are no
+source-derived rejection rows.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|----------------------------------------------|-------------------|------|
+| — | — | No explicit C rejection paths exist. | — | N/A |
 
-Distinct defined C rejection paths: **0**
+Generic FFI pointer-boundary behavior is tested separately in Phase C because
+null pointers violate the C function's pointer contract and are not explicit
+rejection branches in the source. Length and enum boundary cases are
+inapplicable: this API accepts neither a length nor an enum.
 
-Generic length and enum boundaries do not apply: the API accepts no length or
-enum parameters. Null and invalid pointers are outside the C function's defined
-input domain, so they cannot be asserted as portable differential results.
+Generic Phase C boundary coverage:
 
-## Generic Boundary Coverage
-
-The applicable null cases are isolated in subprocesses. The C and Rust calls
-produce identical process termination on this target.
-
-| boundary | applicability and result | status |
-|----------|--------------------------|--------|
-| Null `m` | Outside defined pointer contract; C and Rust process rejection matches | [x] |
-| Null `out` | Outside defined pointer contract; C and Rust process rejection matches | [x] |
-| Zero/oversized length | Not applicable; no length parameter | [x] |
-| Out-of-range enum | Not applicable; no enum parameter | [x] |
+- [x] Null `m`: C and Rust terminate with the same signal in isolated probes.
+- [x] Null `out`: C and Rust terminate with the same signal in isolated probes.
+- [x] Zero/oversized lengths: not applicable; no length parameter exists.
+- [x] Out-of-range enums: not applicable; no enum parameter exists.

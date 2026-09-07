@@ -1,74 +1,54 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Mechanically derived from `nm -D` on both shared objects.
+Source of truth: `nm -D --defined-only` on the C shared library
+`c_src/build/libharvest-work-qma4tq.so`, compared against the Rust cdylib
+`translation/target/release/libcleanup_lib.so`.
+
+## C `.so` exported (global, defined) symbols
 
 ```
-C   : c_src/build/libharvest-work-K67KsE.so      (cmake target name == parent dir name)
-Rust: translation/target/release/libcleanup_lib.so
+T cleanup
+T cleanup_resources
+T print_result
 ```
 
-Regenerate with:
+(`nm -D` additionally lists only compiler/linker-generated local or weak
+entries — `_init`, `_fini`, `__bss_start`, `_edata`, `_end` — which are not part
+of the library's API surface and are emitted automatically by the linker for any
+shared object. They are not required of the Rust cdylib.)
 
-```sh
-nm -D --defined-only c_src/build/lib*.so                     | awk '{print $3}' | sort > /tmp/c.syms
-nm -D --defined-only translation/target/release/libcleanup_lib.so | awk '{print $3}' | sort > /tmp/r.syms
-comm -23 /tmp/c.syms /tmp/r.syms   # MUST be empty
+## Parity table
+
+| # | symbol | C signature (`include/lib.h` + `src/lib.c`) | in C `.so` | in Rust `.so` | status |
+|---|--------|--------------------------------------------|-----------|---------------|--------|
+| 1 | `cleanup`           | `int cleanup(int a, int b, int c, int d)`   | T | T | ✅ present |
+| 2 | `print_result`      | `void print_result(const char *label, int result)` | T | T | ✅ present |
+| 3 | `cleanup_resources` | `void cleanup_resources(char *dynamic_str)` | T | T | ✅ present |
+
+Only `cleanup` is declared in the public header `include/lib.h`;
+`print_result` and `cleanup_resources` are declared and defined with external
+linkage in `src/lib.c`, so they are exported from the `.so` too and are part of
+the ABI surface that must be matched.
+
+## Missing symbols
+
+None. The symbol diff (C exports minus Rust exports) is **empty**.
+
+```
+$ comm -23 c_syms.txt rust_syms.txt
+(no output)
 ```
 
-## C source inventory (completeness check)
+## Undefined (imported) symbols
 
-`c_src` contains exactly one translation unit and one public header, so there is
-no possibility of a whole module having been skipped:
+The Rust `.so` imports only libc entry points that the C `.so` also imports —
+`printf`, `snprintf`, `malloc`, `free`, `strncmp`, `strlen` (plus the Rust
+runtime's `memcpy`/unwind-free `panic = "abort"` bits). There are **0 missing or
+undefined non-libc symbols**.
 
-| C file | contents | translated in |
-|--------|----------|---------------|
-| `c_src/include/lib.h` | declares `cleanup` | `translation/src/lib.rs` |
-| `c_src/src/lib.c` | defines `cleanup`, `print_result`, `cleanup_resources`; macros `STRINGIZE`, `TO_STRING` | `translation/src/lib.rs` |
+## Feature combinations
 
-`STRINGIZE` / `TO_STRING` are preprocessor-only (no symbol emitted); their
-expansion `TO_STRING(numbers)` == the literal `"numbers"` is materialised in the
-Rust as the constant `STRINGIZED_NUMBERS`.
-
-## Defined (exported) dynamic symbols
-
-| # | symbol | C `.so` | Rust `.so` | signature | status |
-|---|--------|---------|------------|-----------|--------|
-| 1 | `cleanup`           | `T` | `T` | `int cleanup(int,int,int,int)`      | present in both |
-| 2 | `print_result`      | `T` | `T` | `void print_result(const char*,int)`| present in both |
-| 3 | `cleanup_resources` | `T` | `T` | `void cleanup_resources(char*)`     | present in both |
-
-`comm -23 c.syms r.syms` → **empty**: 0 symbols missing from the Rust `.so`.
-No stubs were introduced; all three are full translations of the C bodies.
-
-The Rust `.so` additionally exports nothing else (no `rust_eh_personality`,
-no mangled items) — `crate-type = ["cdylib"]` plus `#[unsafe(no_mangle)]`
-yields exactly the three C names.
-
-## Undefined (imported) symbols — libc / unwinder only
-
-C `.so` imports: `free`, `malloc`, `printf`, `puts`, `snprintf`, `strlen`,
-`strncmp` (all `@GLIBC_2.2.5`), plus the weak `_ITM_*`, `__cxa_finalize`,
-`__gmon_start__`.
-
-Note `puts`: gcc rewrites `printf("%s\n", p)` → `puts(p)`. LLVM performs the
-same rewrite for the Rust translation, so the Rust `.so` also imports `puts`
-and both libraries emit byte-identical stdout through the same stream.
-
-Rust `.so` imports the same libc entry points that matter for behaviour
-(`malloc`, `free`, `printf`, `puts`, `snprintf`, `strlen`, `strncmp`) plus the
-usual Rust runtime set (`_Unwind_*`, `memcpy`, `mmap64`, `pthread_key_*`, …).
-There are **0 undefined non-libc symbols**: every import resolves out of
-`libc.so.6` / `libgcc_s.so.1`, verified with
-
-```sh
-ldd -r translation/target/release/libcleanup_lib.so   # no "undefined symbol" lines
-```
-
-## Feature matrix
-
-`translation/Cargo.toml` declares **no `[features]` section**, therefore the
-complete feature powerset is a single configuration: the (empty) default.
-`--no-default-features` and `--all-features` resolve to the same unit. Both are
-still exercised explicitly by `tests/run_all.sh`, in debug and release, because
-the release profile applies materially different optimisations (e.g. the
-`printf` → `puts` rewrite above).
+`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
+build configuration is the default one. `cargo check --no-default-features`
+and `cargo check` produce the same crate; there are no additional feature
+combinations to sweep.

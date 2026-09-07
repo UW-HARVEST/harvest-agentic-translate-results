@@ -94,15 +94,7 @@ impl foo_t {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn print_foo(foo: *const foo_t) {
     // The C code dereferences unconditionally; do the same.
-    //
-    // `read_unaligned` rather than `read`: the C code loads the bit-field byte
-    // and `z` with plain (alignment-agnostic on x86) `mov`s and performs no
-    // alignment check, so a caller passing a misaligned `foo_t *` gets a
-    // well-defined result from the C library. Using `read_unaligned` keeps the
-    // translation faithful for that input instead of relying on UB. The touched
-    // byte range is identical (`foo[0..8]`, exactly what the C reads: byte 0
-    // and the dword at offset 4).
-    let foo = unsafe { std::ptr::read_unaligned(foo) };
+    let foo = unsafe { std::ptr::read(foo) };
     unsafe {
         printf(
             b"%u %u %d %d\n\0".as_ptr() as *const c_char,

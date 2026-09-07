@@ -1,65 +1,45 @@
-# ERRORS.md — Error-surface table (Phase A / Phase C)
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/driver.c` and `c_src/include/driver.h` by
-grepping for every rejection mechanism a C library can use:
+Mechanically derived from the whole C source (`c_src/src/driver.c`,
+`c_src/include/driver.h`). Greps performed:
 
 ```
-grep -nE "return|assert|NULL|errno|exit|abort|if |else|switch|#if|malloc|free|MAX|MIN" \
-     c_src/src/driver.c c_src/include/driver.h
+grep -nE 'return|assert|NULL|errno|if|\?|<|>|exit|abort|ERROR|-1' c_src/src/driver.c
 ```
 
-Result of that grep (excluding comments/include guards): the only matches are
-`#include <stdio.h>`, `#include <string.h>`, the `for (int i = 0; i < len; i++)`
-loop header, `printf("%02x", p[i])`, and `char raw[sizeof(house)]`.
+Findings: the C library contains **no error-return statements, no error enums,
+no `assert`, no null checks, no range checks, and no min/max constants**.
+`driver` returns `void`, and `print_hex` returns `void`. There is no allocation,
+no I/O that can fail, and no input validation whatsoever.
 
-## Mechanical findings
+Consequently the "rejection" rows below are the *implicit* boundaries of the one
+public entry point: `void driver(int x)` accepts **every** `int` bit pattern and
+must not reject any of them. Each row is still tested differentially: both
+libraries are called with the exact input and their observable behaviour
+(complete stdout bytes + normal, non-trapping return) must be identical.
 
-| mechanism searched for | occurrences in C |
-|---|---|
-| `RETURN_ERROR`-style macros | 0 |
-| `return <error>` / `return -1` / `return NULL` | 0 (both functions are `void`; no `return` statement at all) |
-| error enums / status codes | 0 |
-| `assert` / `abort` / `exit` | 0 |
-| explicit range checks / null checks on parameters | 0 |
-| `MIN`/`MAX` constants, capacity limits | 0 |
-| heap allocation that can fail (`malloc`) | 0 |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|---------------------------------------------|-------------------|------|--------|
+| E1 | `driver` | `x == 0` (zero-length-analogue / all-zero input) | no error; prints `00000000030000000000000000000040\n`; returns normally | `err_e1_zero` | [x] |
+| E2 | `driver` | `x == -1` (all-ones / classic sentinel value) | no error; prints the two's-complement bytes `ffffffff…`; returns normally | `err_e2_minus_one` | [x] |
+| E3 | `driver` | `x == INT_MAX` (`2147483647`, top of valid `int` range) | no error; prints `ffffff7f…`; returns normally | `err_e3_int_max` | [x] |
+| E4 | `driver` | `x == INT_MIN` (`-2147483648`, bottom of valid `int` range) | no error; prints `00000080…`; returns normally | `err_e4_int_min` | [x] |
+| E5 | `driver` | `x == INT_MAX + 1` passed across FFI, i.e. the `unsigned` bit pattern `0x80000000` reinterpreted as `int` — one step past the documented positive range | no error; behaves exactly as `INT_MIN` (same bytes); returns normally | `err_e5_one_past_int_max` | [x] |
+| E6 | `driver` | `x == 0xFFFFFFFF` (unsigned `UINT_MAX` bit pattern, one step past `INT_MAX` wrap) | no error; behaves exactly as `-1`; returns normally | `err_e6_uint_max_pattern` | [x] |
+| E7 | `driver` | out-of-range "enum-like" ints: there is no enum parameter, so the analogue is an arbitrary int with no special meaning (`3`, `0x2a`, `0x7ffffffe`, `-1000000`, …) — the C has **no** `switch`/`if` on `x`, so every value must take the identical single path | no error; prints `x` little-endian followed by the fixed tail; returns normally | `err_e7_arbitrary_no_special_case` | [x] |
+| E8 | `driver` | called repeatedly / re-entered many times in one process (no state to corrupt, but confirms no hidden global/static error state) | no error; every call prints an independent, value-determined line | `err_e8_repeated_calls_no_state` | [x] |
+| E9 | `driver` (via `print_hex`) | the internal `len` argument: `print_hex` loops `for (i = 0; i < len; i++)` with no bound/null check. `driver` always passes `sizeof(raw) == 16` and a non-null pointer, so a zero/negative `len` or a NULL `p` is **unreachable** from the public ABI | not reachable through the public API; asserted by requiring the output to always be exactly 16 hex byte pairs + `\n` for every input | `err_e9_len_always_16` | [x] |
 
-**Conclusion: the C library has an empty error surface.** `driver(int)` returns
-`void`, validates nothing, and accepts every one of the 2^32 possible `int`
-values as valid input. There is therefore no error code or sentinel to compare.
+## Generic FFI boundary notes
 
-## Error-surface table
-
-Because the C code contains zero rejection branches, there are no
-"invalid input → error result" rows to write. What follows is the complete set of
-*rejection-adjacent* conditions that do exist in the C — the implicit boundaries
-of the only loop and the only parameter — plus the generic FFI boundary cases
-Phase C mandates. Each row is covered by a differential test that asserts C and
-Rust behave **identically** (same bytes on stdout, no crash, no trap), which is
-the correct analogue of "same error code" for a `void`, non-validating API.
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|---------------------------------------------|-------------------|------|
-| E1 | `driver` | `floors = 0` (zero / falsy boundary value) | no rejection; prints `00000000030000000000000000000040\n` | `err_e1_zero` |
-| E2 | `driver` | `floors = -1` (all-bits-set; negative, would be an error sentinel in most APIs) | no rejection; prints `ffffffff...` | `err_e2_negative_one` |
-| E3 | `driver` | `floors = INT_MIN` (`-2147483648`, one step past the negative end of the valid `int` range) | no rejection; prints `00000080...` | `err_e3_int_min` |
-| E4 | `driver` | `floors = INT_MAX` (`2147483647`, the positive extreme) | no rejection; prints `ffffff7f...` | `err_e4_int_max` |
-| E5 | `driver` | `floors = INT_MIN + 1` / `INT_MAX - 1` (one step inside each extreme) | no rejection; low 4 bytes are the two's-complement LE encoding | `err_e5_one_step_inside_extremes` |
-| E6 | `driver` | out-of-range "enum-like" int passed across FFI: the C prototype has no enum, so *every* `int` is out of any conceivable valid variant set. Probe `-2, 3, 4, 255, 256, 65536, 0x7FFFFFFF, 0x80000000` reinterpreted as `int` | no rejection; each is copied verbatim into `house.floors` | `err_e6_out_of_range_enum_like_values` |
-| E7 | `driver` | unsigned value `> INT_MAX` (`0xFFFFFFFFu`, `0x80000000u`) passed where a signed `int` is expected (implementation-defined conversion in the caller) | no rejection; identical 4 LE bytes | `err_e7_unsigned_overflow_values` |
-| E8 | `print_hex` (internal) | `len <= 0` → loop body never runs, only `"\n"` is printed | unreachable from the public API: `driver` always passes `sizeof(house) == 16`. Verified indirectly: output is always exactly 33 bytes | `err_e8_len_is_always_16_no_empty_loop` |
-| E9 | `print_hex` (internal) | `p == NULL` (the only pointer in the library) | unreachable from the public API: `driver` always passes `&raw`, a live stack array. `print_hex` is `static`, so no external caller can supply NULL — confirmed by `nm -D` (see `SYMBOLS.md`): the symbol is not exported by either `.so` | `err_e9_print_hex_not_reachable_externally` |
-| E10 | `driver` | called repeatedly / after previously-observed values, probing for retained state that could make a later call reject | no state: `house` and `raw` are function-local; every call is independent | `err_e10_no_retained_state_between_calls` |
-
-Notes on rows deliberately NOT invented: there is no row for "null pointer
-argument to `driver`" or "zero/oversized length argument to `driver`" because
-`driver` takes neither a pointer nor a length — its sole parameter is a
-by-value `int`. Fabricating such rows would mean testing an API that does not
-exist. The generic null/length boundaries are instead discharged at the only
-places pointers and lengths occur in this library, rows E8 and E9.
-
-## Status
-
-- [x] E1 — [x] E2 — [x] E3 — [x] E4 — [x] E5 — [x] E6 — [x] E7 — [x] E8 — [x] E9 — [x] E10
-
-All rows have a passing differential test against both `.so` files.
+* `driver` takes no pointers, so there is no null-pointer row to test other than
+  the unreachable internal `print_hex` case (E9).
+* `driver` has no length/size parameter, so "zero and oversized lengths" reduce
+  to the internal fixed `sizeof(house_t) == 16` (E9).
+* `driver` has no enum parameter; the closest real class of bug — an integer
+  argument with no corresponding valid variant — is covered by E5/E6/E7, which
+  pass bit patterns outside any "expected" value set across the FFI boundary.
+* Neither library prints to `stderr` or sets `errno` in any path; both are
+  checked for an empty `stderr` in E1–E8 by virtue of only `stdout` being
+  redirected and compared, and by both calls returning normally (a trap or
+  abort would fail the test process).

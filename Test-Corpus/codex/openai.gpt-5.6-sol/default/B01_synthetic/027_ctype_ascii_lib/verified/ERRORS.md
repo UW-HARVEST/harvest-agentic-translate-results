@@ -1,16 +1,22 @@
 # Error Surface
 
-Mechanical searches covered `return`, `assert`, `if`, `switch`, `NULL`,
-`ERROR`, `MIN`, `MAX`, and enums in `../c_src/include` and `../c_src/src`.
-The sole public function returns `void`, accepts a value (not a pointer), and
-contains no rejection, assertion, range check, error enum, or error-return
-branch.
+Mechanical source scan:
+
+```text
+rg -n 'RETURN_ERROR|return\s+(-1|NULL)|\bassert\s*\(|if\s*\(|switch\s*\(|NULL|enum' \
+  ../c_src/include ../c_src/src
+```
+
+The scan has no matches. `driver` returns `void`, accepts one by-value `char`,
+and contains no error return, assertion, range check, null check, enum, pointer,
+or length. Consequently the C API has zero distinct rejection rows.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|---------------------------------------------|-------------------|
 
-There are no error-surface rows. Generic pointer, length, and enum boundaries
-are not applicable to the `void driver(char)` API. Every bit pattern of its
-only argument is covered as a valid `char` input in `CONFIGS.md`.
+Generic pointer, length, and enum boundary cases do not apply to this API.
+Every bit pattern of its sole `char` argument is covered as valid input in
+`CONFIGS.md`.
 
-Completion: [x] all zero rejection rows have differential coverage.
+- [x] Phase C complete: zero C rejection paths and no inapplicable boundary
+  categories were treated as test cases.

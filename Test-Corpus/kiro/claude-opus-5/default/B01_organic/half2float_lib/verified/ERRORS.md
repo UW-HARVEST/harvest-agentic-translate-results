@@ -1,128 +1,150 @@
-# ERRORS.md — Phase A: error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/lib.c` and `c_src/include/lib.h`.
+## Mechanical derivation
 
-## Mechanical grep result
+Every rejection path was searched for in `c_src/src/lib.c`. Because 343 of the
+file's 376 lines are pure table data, the grep excluded lines consisting only of
+hex literals, leaving the complete set of executable lines:
 
-```sh
-grep -nE 'return[[:space:]]+(-1|NULL|[A-Z_]+ERR)|assert|RETURN_ERROR|errno|abort|exit\(|if[[:space:]]*\(|switch|#if|goto|malloc|free' c_src/src/lib.c
-# -> 0 matches
+```
+$ grep -vnE '^\s+0x|^\s*0x' c_src/src/lib.c
+1:#include "lib.h"
+3:static uint32_t m__mantissa[2048] = {
+346:static uint16_t m__offset[64] = {
+355:static uint32_t m__exponent[64] = {
+368:float half2float(uint16_t h) {
+369:    union {
+370:        float flt;
+371:        uint32_t num;
+372:    } out;
+373:    int n = h >> 10;
+374:    out.num = m__mantissa[(h & 0x3ff) + m__offset[n]] + m__exponent[n];
+375:    return out.flt;
+376:}
 ```
 
-The whole non-table body of `lib.c` is 9 lines:
+Searched-for patterns and their results:
 
-```c
-float half2float(uint16_t h) {
-    union {
-        float flt;
-        uint32_t num;
-    } out;
-    int n = h >> 10;
-    out.num = m__mantissa[(h & 0x3ff) + m__offset[n]] + m__exponent[n];
-    return out.flt;
-}
-```
-
-Consequently the C code contains:
-
-- **0** error-return macros / `return -1` / `return NULL` / error enums
-- **0** `assert`s
-- **0** explicit range checks, null checks, or min/max guard constants
-- **0** conditionals or `switch`es of any kind (the function is branch-free)
-- **0** pointer parameters, **0** enum parameters, **0** length parameters,
-  **0** allocations, **0** out-parameters
-
-`half2float` is a total function over `uint16_t`: **every one of the 65536
-possible inputs is valid and produces a defined `float`**. There is therefore no
-"rejection" behaviour to mirror — the correct Rust behaviour is to *also* never
-reject.
-
-That absence is itself the property under test, so the table below has one row
-per *latent* / *boundary* condition that a naive translation could plausibly
-turn into a rejection (a Rust `panic!` on index-out-of-bounds, an arithmetic
-overflow panic, a debug assertion, a truncation difference), plus the generic
-FFI boundaries the instructions require. "Expected C result" is what the C
-`.so` actually does, observed differentially.
+| pattern searched | occurrences in executable code |
+|---|---|
+| `return -1`, `return NULL`, `return 0;` | 0 |
+| `RETURN_ERROR` / error macros | 0 |
+| `assert` / `abort` / `exit(` | 0 |
+| `errno` | 0 |
+| explicit range check (`if`, `switch`, `?:`, `<`, `>`, `==`, `!=`) | 0 |
+| null-pointer check | 0 (the API takes no pointers) |
+| `goto` / error labels | 0 |
+| error enum / status type | 0 (return type is plain `float`) |
+| `#ifdef` / `#if` conditional compilation | 0 |
+| min/max validity constant | 0 |
 
 ## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] | test |
-|---|----------|----------------------------------------------|-------------------|-----|------|
-| 1 | `half2float` | `h = 0x0000` — minimum input; drives `m__mantissa` index to its lower bound `0` (`n=0`, `m__offset[0]=0`, `h&0x3ff=0`) | no error; returns `+0.0f` (bits `0x00000000`). Must NOT panic/abort. | [x] | `row01_row02_min_and_max_input_never_rejected` |
-| 2 | `half2float` | `h = 0xFFFF` — maximum input; drives `n` to its upper bound `63` and `m__mantissa` index to its upper bound `2047` (`0x3ff + 0x400`) | no error; returns a negative NaN (bits `0xFFFFE000`). Must NOT panic/abort. | [x] | `row01_row02_min_and_max_input_never_rejected` |
-| 3 | `half2float` | `h = 0x03FF` — largest `h` for which `m__offset[n] == 0`, i.e. last index of the *first* half of `m__mantissa` (index `1023`) | no error; returns largest positive subnormal half as `float`. Must NOT panic/abort. | [x] | `row03_row04_offset_transition_positive_side` |
-| 4 | `half2float` | `h = 0x0400` — first `h` for which `m__offset[n] == 0x400`, i.e. first index of the *second* half of `m__mantissa` (index `1024`) | no error; returns smallest positive normal half as `float`. Must NOT panic/abort. | [x] | `row03_row04_offset_transition_positive_side` |
-| 5 | `half2float` | `h = 0x83FF` — the *second* `m__offset` zero entry (`m__offset[32] == 0`), index `1023` again, reached via the negative half of the exponent table | no error; returns largest negative subnormal. Must NOT panic/abort. | [x] | `row05_row06_offset_transition_negative_side` |
-| 6 | `half2float` | `h = 0x8400` — negative-side transition into the second half of `m__mantissa` (index `1024`, `n=33`) | no error; returns smallest negative normal. Must NOT panic/abort. | [x] | `row05_row06_offset_transition_negative_side` |
-| 7 | `half2float` | `h = 0x7C00` — `n = 31`, the special `m__exponent[31] = 0x47800000` entry; `uint32_t` sum `0x38000000 + 0x47800000` (largest positive-side sum, potential overflow site) | no error; returns `+Inf` (bits `0x7F800000`). No `uint32_t` wrap; Rust must not panic on overflow. | [x] | `row07_irregular_exponent_31_no_overflow_panic` |
-| 8 | `half2float` | `h = 0xFC00` — `n = 63`, the special `m__exponent[63] = 0xC7800000` entry; sum `0x38000000 + 0xC7800000` (largest sum overall, `0xFF800000`) | no error; returns `-Inf` (bits `0xFF800000`). No `uint32_t` wrap; Rust must not panic on overflow. | [x] | `row08_irregular_exponent_63_no_overflow_panic` |
-| 9 | `half2float` | `h = 0x7FFF` / `h = 0xFFFF` — maximum sum on each sign: `m__exponent[31/63] + m__mantissa[2047]` (`0x387FE000`), the arithmetically largest addition the code ever performs | no error; returns NaN with bits `0x7FFFE000` / `0xFFFFE000`. Must not panic on overflow. | [x] | `row09_maximum_sums_exact_bits` |
-| 10 | `half2float` | Signalling/quiet NaN payload inputs `h = 0x7C01`, `0x7DFF`, `0xFC01`, `0xFDFF` — payload must be carried through the table, not canonicalised | no error; returns NaN whose payload bits are `m__mantissa[...] + 0x47800000`, i.e. the exact bit pattern, not a canonical NaN. Rust must return the identical *bit pattern* (comparing `f32 == f32` would silently pass for any NaN; must compare `to_bits`). | [x] | `row10_nan_payloads_bit_exact_not_canonicalised` (exhaustive over all 2·1023 NaN encodings) |
-| 11 | `half2float` | Argument register carries garbage in bits 16..31 (a caller that does not zero-extend the `uint16_t`, e.g. FFI signature declared `int`). C ABI leaves this unspecified. | Whatever the C `.so` does — Rust must do the same. Tested differentially with the argument declared `u32`/`i32` and high bits set. | [x] | `row11_argument_with_garbage_in_high_bits_matches_c` — **FOUND A REAL BUG, see below** |
-| 11b | `half2float` | Garbage in bits 32..63 of the argument register (`rdi` vs `edi`) | C reads only the low 32 bits; upper bits irrelevant. Rust must match. | [x] | `row11b_argument_with_garbage_in_upper_64_bits_matches_c` |
-| 12 | `half2float` | No pointer, length, enum, or count parameters exist, so the generic "null pointer", "zero length", "oversized length", and "out-of-range enum value" FFI boundaries are **structurally unreachable**. | N/A — verified by inspection of `lib.h`: the sole parameter is a scalar `uint16_t`, and the return is a scalar `float`. No row can be constructed. | [x] | `row12_no_pointer_length_or_enum_parameters_exist` (asserts the header still declares exactly `float half2float(uint16_t h);`, so this premise cannot silently rot) |
-| 13 | `half2float` | Called repeatedly / from many threads with interleaved inputs (no internal mutable state to corrupt, but a translation could have introduced some, e.g. a lazily-initialised table) | no error; each call's result depends only on its own argument. Order- and thread-independent. | [x] | `row13_calls_are_pure_and_order_independent`, `row23_concurrent_invocation_is_consistent` |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| — | — | *(no rows)* | — |
 
-## Row 11 — the divergence this table actually caught
+**The error surface is empty, and this is a derived fact, not an assumption.**
+`half2float` is a total function over its domain. It takes a single `uint16_t`
+by value, performs no allocation, dereferences no pointer, and contains zero
+branches. It has no error return channel: the return type is `float`, with no
+out-parameter and no sentinel. Every one of the 65 536 possible `uint16_t`
+values is a *valid* input that produces a defined result, so there is no
+"invalid input" for which C and Rust could disagree on a rejection.
 
-This is the one place the Rust did **not** match the C, and it is exactly the
-class of bug the instructions warn about: an input with no valid interpretation
-crossing the FFI boundary.
+Both table indices are provably in bounds for the whole domain, which is why no
+range check exists in the C:
 
-The original Rust signature was:
+- `n = h >> 10` with `h` 16-bit ⇒ `n ∈ [0, 63]`, and both `m__offset` and
+  `m__exponent` have exactly 64 elements.
+- `(h & 0x3ff) + m__offset[n]` ⇒ at most `0x3ff + 0x400 = 0x7ff = 2047`, and
+  `m__mantissa` has exactly 2048 elements.
+
+## Boundary conditions tested anyway (Phase C)
+
+Although the table has no rows, the generic boundaries every C API has are still
+covered by `tests/differential.rs`, since "no error path" is itself a claim that
+must be verified differentially rather than trusted:
+
+| # | boundary | test |
+|---|----------|------|
+| B1 | minimum input `h = 0x0000` | `test_boundary_values` |
+| B2 | maximum input `h = 0xFFFF` | `test_boundary_values` |
+| B3 | one step past each sub-range boundary (`0x03FF/0x0400`, `0x7BFF/0x7C00/0x7C01`, `0x7FFF/0x8000`, `0xFBFF/0xFC00`) | `test_boundary_values` |
+| B4 | **out-of-range value across the FFI boundary**: an argument wider than `uint16_t` with dirty high bits (`0x1_0000`, `0xDEAD_0000 \| h`, `0xFFFF_FFFF`) passed into the 16-bit parameter slot. C accepts any int in a narrow parameter slot, so this is a real input; both sides must truncate identically. | `test_ffi_dirty_upper_bits` |
+| B5 | exhaustive: all 65 536 inputs, i.e. the entire domain, leaving no untested input for which a hidden rejection could exist | `test_exhaustive_all_inputs` |
+| B6 | NaN payload preservation (bit-exact, not `==`, since `NaN != NaN`) | `test_exhaustive_all_inputs` compares raw bits via `to_bits()` |
+
+There is no "oversized length" or "null pointer" boundary to test: the API has
+no length parameter and no pointer parameter.
+
+## Divergence found and fixed (boundary B4)
+
+Boundary B4 caught a real defect. It is recorded here because it is the only
+divergence the whole verification found, and it is exactly the class the
+happy-path rows cannot see.
+
+**Symptom.** `test_ffi_dirty_upper_bits` aborted the Rust `.so` with
+`index out of bounds: the len is 2048 but the index is 29299`, SIGABRT (the
+release profile sets `panic = "abort"`), where C returned a value.
+
+**Root cause**, from the disassembly of both sides:
+
+- C narrows its own parameter. `gcc` emits `movzwl -0x14(%rbp),%eax` at the top
+  of `half2float`, so the callee reads only bits 0..15 of `%edi`. `n` is
+  therefore always in `[0, 63]` no matter what the caller left in the register.
+- The original Rust took `h: c_ushort`. That gives the LLVM parameter a
+  `zeroext` attribute, i.e. "the caller already zero-extended", so LLVM shifted
+  the *full* 32-bit register (`mov %edi,%ecx; shr $0xa,%ecx`) and, having proved
+  `n < 64` from the `u16` type, **deleted the `M__OFFSET` bounds check
+  entirely** — an unchecked out-of-bounds read. The surviving `M__MANTISSA`
+  check then aborted.
+
+So there were two defects with no C counterpart: a silent OOB read on
+`M__OFFSET`/`M__EXPONENT`, and an abort where C returns.
+
+**First attempt was insufficient.** Writing `let n = ((h >> 10) & 0x3f)` while
+keeping the `u16` parameter did remove the mantissa panic, but LLVM *folded the
+`& 0x3f` away* — the disassembly still showed a bare `shr $0xa,%edi` — because
+the `zeroext` assumption makes the mask provably redundant. The OOB reads
+remained. Masking cannot fix this from behind a `u16` parameter.
+
+**Fix.** Declare the exported wrapper as taking the full argument slot
+(`c_uint`) and truncate explicitly, then call an inner `half2float_impl(u16)`
+that is the literal translation:
 
 ```rust
-pub extern "C" fn half2float(h: c_ushort) -> c_float
-```
-
-With a `c_ushort` parameter LLVM is entitled to assume the caller already
-zero-extended the value, so bits 16..31 of the argument register flowed straight
-into `h >> 10`. That produced `n > 63`, a `m__mantissa` index far past the end
-(observed: `index out of bounds: the len is 2048 but the index is 29299`), and —
-because `Cargo.toml` sets `panic = "abort"` for the release profile — a
-**`SIGABRT` that killed the whole process**.
-
-The C does not do that. At every optimisation level GCC truncates the argument
-to 16 bits before using it:
-
-```text
--O0:  mov %edi,%eax ; mov %ax,-0x14(%rbp) ; movzwl -0x14(%rbp),%eax
--O1:  mov %edi,%eax ; shr $0xa,%ax ; and $0x3ff,%edi ; and $0x3f,%eax
--O2/-O3/-Os:  mov %edi,%eax ; and $0x3ff,%edi ; shr $0xa,%ax
-```
-
-`shr $0xa,%ax` is a 16-bit shift, so `n` is always in `0..=63` and the C simply
-computes `half2float(arg & 0xFFFF)` for any register contents.
-
-Fix applied to the Rust (`src/lib.rs`): take the wide value and truncate
-explicitly, reproducing the C exactly.
-
-```rust
+#[unsafe(no_mangle)]
 pub extern "C" fn half2float(h: c_uint) -> c_float {
-    let h = h as u16;
-    ...
+    half2float_impl((h & 0xffff) as u16)
 }
 ```
 
-`uint16_t` and `unsigned int` parameters occupy the same argument register on
-the SysV x86-64 and AArch64 C ABIs, so this is ABI-compatible for well-behaved
-callers and now bit-identical to the C for ill-behaved ones. Verified against
-the C built at `-O0`, `-O1`, `-O2`, `-O3` and `-Os`, and with the Rust `.so`
-built in both the debug profile (bounds and overflow checks **on**) and the
-release profile.
+On x86-64 SysV a `uint16_t` argument occupies `%edi`, the same slot a `c_uint`
+occupies, so the ABI footprint is unchanged and conforming callers are
+unaffected (the mask is a no-op for them). The masks are now preserved —
+`and $0x3f,%edi` and `and $0x7ff,%ecx` both survive — both indices are provably
+in bounds, and the emitted code is straight-line to `ret` with no panic path at
+all, matching C's total behavior for every possible register value.
 
-## Notes on rows 7–9 (the one real arithmetic hazard)
+Equivalence for an arbitrary 32-bit slot value `a`:
 
-The C addition `m__mantissa[...] + m__exponent[n]` is `uint32_t` arithmetic and
-would wrap silently. Rust's `+` panics on overflow in debug builds. The maximum
-possible sum is `m__mantissa[2047] + m__exponent[63] = 0x387FE000 + 0xC7800000
-= 0xFFFFE000`, which does **not** overflow, so C and Rust agree either way; the
-Rust translation nevertheless uses `wrapping_add`, which is the exact C
-semantics unconditionally. Rows 7–9 pin this down empirically.
+| quantity | C | Rust after fix |
+|---|---|---|
+| `n` | `(a & 0xffff) >> 10` = bits 10..15 | `((a & 0xffff) >> 10) & 0x3f` = bits 10..15 |
+| `m` | `(a & 0xffff) & 0x3ff` = bits 0..9 | `(a & 0xffff) & 0x3ff` = bits 0..9 |
 
-## Completion status
+## Suite validity (mutation testing)
 
-All 14 rows have a passing differential test in `tests/differential.rs`
-(module `phase_c_error_surface`, plus `row23_...` in `phase_b_...` for row 13).
-Verified under both the debug and release Rust profiles and against the C built
-at every optimisation level: `./check_features.sh`.
+A passing suite is only meaningful if it can fail, so the harness was checked
+against deliberately broken Rust. Each mutation was applied, the suite run, and
+the source then regenerated from the C by `tools/gen_lib_rs.py` and re-diffed.
+
+| mutation | detected? | by |
+|---|---|---|
+| single bit flipped in one `M__MANTISSA` entry (`m__mantissa[1]`, reachable only at `h = 0x0001`) | yes — 8 tests failed | rows 2, 10, 17, 19, 20 |
+| FFI boundary truncation removed (back to a plain `u16` parameter) | yes — SIGABRT | `test_ffi_dirty_upper_bits` |
+
+The first mutation matters as evidence that `test_row19_exhaustive_all_inputs`
+really walks the whole domain: the corrupted entry is reachable from exactly one
+input, `h = 0x0001`, and row 19 flagged it.

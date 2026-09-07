@@ -1,80 +1,79 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+## Source of truth
 
-## Build commands
+C shared library: `c_src/build/libharvest-work-pgHR6S.so` (built from the single
+translation unit `c_src/src/lib.c`).
+Rust shared library: `translation/target/release/libmerge_sort_lib.so`
+(`crate-type = ["cdylib"]`).
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-5x6dJI.so   (name = parent dir name, per CMakeLists.txt)
-
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libmerge_sort_lib.so
-```
-
-## C `.so` — dynamic symbol table (`nm -D`)
+## `nm -D --defined-only` on the C `.so`
 
 ```
-                 U memcpy@GLIBC_2.14
-                 w _ITM_deregisterTMCloneTable
-                 w _ITM_registerTMCloneTable
-                 w __cxa_finalize@GLIBC_2.2.5
-                 w __gmon_start__
 00000000000012e0 T merge_sort
 ```
 
-## Defined (`T`) symbol parity
+## `nm -D --defined-only` on the Rust `.so`
 
-| # | C symbol | kind | in Rust `.so`? | notes |
-|---|----------|------|----------------|-------|
-| 1 | `merge_sort` | `T` (global text) | **YES** — `T merge_sort` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn merge_sort` in `src/lib.rs` |
-
-`comm -23` of the two defined-symbol name lists is **EMPTY** → 0 missing symbols.
-
-```sh
-comm -23 <(nm -D --defined-only c_src/build/libharvest-work-5x6dJI.so   | awk '{print $NF}' | sort -u) \
-         <(nm -D --defined-only translation/target/release/libmerge_sort_lib.so | awk '{print $NF}' | sort -u)
-# (no output)
+```
+00000000000117f0 T merge_sort
 ```
 
-## Non-exported C functions (`static` — correctly absent from BOTH `.so`s)
+## Parity table
 
-These are `static` in `c_src/src/lib.c`, so they have no dynamic symbol and are
-**not** part of the ABI. They are fully translated in `src/lib.rs` as private
-`unsafe fn`s and are exercised *indirectly* through `merge_sort` (see
-`CONFIGS.md` for the input shapes that provably reach every branch of each).
-Adding `#[no_mangle]` wrappers for them would *add* symbols the C `.so` does not
-have, so it is deliberately not done.
+| # | C symbol | type | exported by Rust `.so`? | notes |
+|---|----------|------|-------------------------|-------|
+| 1 | `merge_sort` | `T` (global text) | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn merge_sort` | only public symbol of the library |
 
-| C static function | Rust counterpart | reached from |
-|---|---|---|
-| `spritebatch_internal_sprite_less_than_or_equal` | `spritebatch_internal_sprite_less_than_or_equal` | `_iteration` |
-| `spritebatch_internal_merge_sort_iteration` | `spritebatch_internal_merge_sort_iteration` | `_recurse` |
-| `spritebatch_internal_merge_sort_recurse` | `spritebatch_internal_merge_sort_recurse` | `merge_sort` |
+### Missing symbols
 
-No C source file was left untranslated: `c_src/src/lib.c` is the only `.c` file
-in `CMakeLists.txt`, and all 4 of its functions are present in `src/lib.rs`.
+**None.** The symbol diff is EMPTY in both directions (no C symbol absent from
+Rust, no extra non-boilerplate symbol in Rust).
 
-## Undefined (`U`/`w`) symbols in the Rust `.so`
+### `static` C functions (deliberately NOT exported)
 
-All are libc / libgcc-unwind imports pulled in by the Rust standard library
-runtime (`memcpy`, `malloc`, `free`, `_Unwind_*`, `dl_iterate_phdr`, …).
-**0 undefined non-libc symbols.** The C `.so` imports `memcpy` only; the Rust
-`.so` imports a superset consisting purely of platform/runtime symbols, which is
-expected for a `cdylib` linked against `std` and does not affect the ABI.
+These are `static` in `c_src/src/lib.c`, so they have no dynamic symbol in the C
+`.so` and must NOT be exported by the Rust `.so` either. All three ARE
+translated (as private `unsafe fn`s), so this is not a completeness gap:
 
-## Types
+| C `static` function | Rust counterpart | exported? (correct) |
+|---------------------|------------------|---------------------|
+| `spritebatch_internal_sprite_less_than_or_equal` | `spritebatch_internal_sprite_less_than_or_equal` | no (matches C) |
+| `spritebatch_internal_merge_sort_iteration` | `spritebatch_internal_merge_sort_iteration` | no (matches C) |
+| `spritebatch_internal_merge_sort_recurse` | `spritebatch_internal_merge_sort_recurse` | no (matches C) |
 
-`spritebatch_sprite_t` is a `typedef` — types emit no symbols. Layout parity was
-verified independently with `offsetof`/`sizeof` against the C compiler:
+### Undefined (imported) symbols
 
-| property | C (gcc, x86-64) | Rust `#[repr(C)]` |
-|---|---|---|
-| `sizeof` | 16 | 16 |
-| `_Alignof` | 8 | 8 |
-| `offsetof(texture_id)` | 0 | 0 |
-| `offsetof(sort_bits)` | 8 | 8 |
-| trailing padding | bytes 12..16 | bytes 12..16 |
+C `.so` imports: `memcpy@GLIBC_2.14` plus the usual weak CRT stubs
+(`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+`__cxa_finalize`, `__gmon_start__`).
+The Rust `.so` imports only libc/CRT symbols (`memcpy`, unwinder/allocator
+stubs). **0 missing/undefined non-libc symbols.**
+
+### Data types crossing the FFI boundary
+
+| C | Rust | size / align (x86-64) |
+|---|------|------------------------|
+| `struct spritebatch_sprite_t { unsigned long long texture_id; int sort_bits; }` | `#[repr(C)] struct spritebatch_sprite_t { texture_id: c_ulonglong, sort_bits: c_int }` | 16 bytes, align 8, 4 trailing padding bytes |
+
+## Automated checks
+
+Symbol parity is not just recorded here, it is asserted by tests
+(`tests/phase_d_symbols.rs`) and by `verify.sh`:
+
+| check | test |
+|---|---|
+| every C dynamic symbol is exported by the Rust `.so` under the same name | `every_c_symbol_is_exported_by_rust` |
+| the three `static` C helpers are exported by neither | `c_static_helpers_are_not_exported_by_either` |
+| the Rust `.so` has no unresolved non-libc symbols (each undefined symbol is proven resolvable via `dlsym(RTLD_DEFAULT, ..)`) | `rust_so_has_no_unresolved_non_libc_symbols` |
+| the Rust `.so` publishes no extra public API beyond the C's | `rust_so_exports_no_extra_public_api` |
+| `comm -23` of the two `nm -D --defined-only` outputs is empty, for every feature combination | `verify.sh` |
+
+All pass. The symbol diff is empty in both directions.
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+build configuration is the default one (`--no-default-features` is equivalent).
+See `CONFIGS.md` for the runtime configuration surface, which is where all the
+real variation lives.

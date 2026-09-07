@@ -1,132 +1,58 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Derived **mechanically** from `c_src/src/lib.c` and `c_src/include/lib.h`.
-
-## Mechanical grep results
-
-```
-$ grep -nE 'RETURN_ERROR|return|assert|NULL|errno|goto|error|ERROR|_MIN|_MAX|abort|exit' \
-        c_src/src/lib.c c_src/include/lib.h
-src/lib.c:38:        return g_pow43[16 + x];      # value return, not an error return
-src/lib.c:46:    return g_pow43[16 + ...] * ...;  # value return, not an error return
-```
+Derived mechanically from the whole C source. Exhaustive grep of every
+rejection-capable construct in `c_src/`:
 
 ```
-$ grep -cE 'assert|RETURN_ERROR|return *-1|return *NULL|enum' c_src/src/lib.c
-0
+$ grep -n "return\|assert\|NULL\|ERROR\|errno\|if \|switch\|#if\|enum" c_src/src/lib.c c_src/include/lib.h
+c_src/src/lib.c:37:    if (x < 129) {
+c_src/src/lib.c:38:        return g_pow43[16 + x];
+c_src/src/lib.c:40:    if (x < 1024) {
+c_src/src/lib.c:46:    return g_pow43[16 + ((x + sign) >> 6)] *
 ```
 
-**Finding: the C library has NO error-return surface at all.**
+**Finding:** the library contains **no explicit error surface at all** — no
+`RETURN_ERROR` macro, no error enum, no `return -1` / `return NULL`, no
+`assert`, no null check, no explicit range check, and no `#ifdef`. `pow43`
+returns a `float` unconditionally on both of its two code paths.
 
-* There is no error enum, no sentinel return value, no `errno` use, no `assert`,
-  no `abort`, no `goto` error label, no `NULL` check, and no explicit range
-  check that rejects input.
-* `pow43` takes a single `int` by value — there are **no pointer parameters**,
-  therefore **no null-pointer rejection path exists** in the C.
-* There are **no enum parameters**, therefore no out-of-range-enum path exists.
-* There are **no length/size parameters**, therefore no zero/oversized-length
-  path exists.
-* The return type is `float`; every `int` input maps to some `float`. The
-  function never signals failure to its caller.
+The entire rejection surface is therefore *implicit*: the constant
+`static const float g_pow43[129 + 16]` (145 elements, valid indices `0..=144`)
+is indexed **without a bounds check**, so inputs whose computed index falls
+outside `0..=144` are out-of-bounds reads (UB in C). The min/max constants that
+define the implicit valid domain, computed from the source:
 
-The only input-dependent control flow is two *branch selectors* (not
-rejections), and the only way to drive the function outside its defined
-behaviour is an out-of-bounds table read, which C leaves **undefined** rather
-than rejecting.
+* path A (`x < 129`): index `16 + x` ⇒ requires `x >= -16`.
+* path B (`129 <= x < 1024`): `x <<= 3`, index `16 + ((x+sign)>>6)` ⇒ max index
+  144 at `x == 1023`; the whole interval is in range.
+* path C (`x >= 1024`): index `16 + ((x+sign)>>6)`, `sign = (2*x)&64` ⇒ in range
+  up to and including `x == 8223`; `x == 8224` is the first input whose index is
+  145.
 
-## The table
+Implicit valid domain: **`x ∈ [-16, 8223]`**.
 
-Every distinct condition under which the C code does something other than
-return a well-defined finite `float` for its argument. One row per distinct
-condition actually present in the source.
+For UB rows the C standard defines no result, so "same error code" is not
+available. The observable, comparable contract across the FFI boundary is:
+**the Rust `.so` must not panic/abort where the C `.so` returns, and must fault
+where the C `.so` faults.** Each row below asserts exactly that (plus value
+equality wherever the behaviour is actually defined). This is the divergence
+class that matters here, because a bounds-checked Rust index would panic where C
+quietly returns.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `pow43` | `x == -16` — smallest argument whose direct index `16 + x` is still in bounds (index 0). One step below the boundary is row 2. | returns `g_pow43[0]` = `0.0f`. **Not** an error; must match exactly. |
-| 2 | `pow43` | `x < -16` (e.g. `-17`, `-64`, `INT_MIN`): `line 38` computes `g_pow43[16 + x]` with a **negative** index ⇒ out-of-bounds read before the table. C: undefined behaviour, in practice loads whatever `.rodata` precedes `g_pow43`. Also `16 + x` overflows for `x < INT_MIN + 16` (signed overflow, UB). | **No error is returned.** C reads adjacent memory and returns garbage; the value is not reproducible across two different shared objects. Rust must mirror the *shape* (no panic, no abort, returns some `f32`) — bit-value equality is not defined by the C. |
-| 3 | `pow43` | `x == 8223` — largest argument whose computed index `16 + ((x + sign) >> 6)` is still in bounds (index 144, the last element). | returns the well-defined product; must match exactly. |
-| 4 | `pow43` | `x > 8223` (e.g. `8224`, `8255`, `100000`): `line 46` computes index `> 144` ⇒ out-of-bounds read past the end of `g_pow43`. UB. | **No error is returned.** Reads adjacent memory; value not reproducible across two `.so`s. Rust must not panic/abort. |
-| 5 | `pow43` | `x` large enough that `x <<= 3` (line 41) would overflow — **unreachable**: the shift is guarded by `129 <= x < 1024`, so `x << 3 <= 8184`. No overflow is possible on this path. | n/a — verified unreachable; no divergence possible. |
-| 6 | `pow43` | Division by zero at line 44: `(x & ~63) + sign == 0`. Reachable only when `x >= 129`; on that path `x >= 1024` (post-shift) so `x & ~63 >= 1024 > 0` and `sign ∈ {0, 64}` ⇒ denominator `>= 1024`, **never zero** for `x` in `[129, INT_MAX]`. For `x` near `INT_MAX` the denominator wraps to `INT_MIN` (signed overflow, UB) but is still non-zero. | n/a — division by zero is unreachable. No `inf`/`NaN` is producible from a defined-domain input. Confirmed empirically in `tests/differential.rs::errors_row6_denominator_never_zero`. |
-| 7 | `pow43` | Signed-overflow UB in `2 * x` (line 43) for `x > INT_MAX/2`, and in `(x & ~63) + sign` / `(x + sign)` (lines 44, 46) for `x` near `INT_MAX`. | **No error is returned.** gcc at `-O0` wraps two's-complement; Rust uses `wrapping_mul`/`wrapping_add` to mirror. Reachable only together with row 4 (OOB index), so the returned value is UB either way. Rust must not panic in debug. |
+| # | function | trigger (exact invalid input/condition) | expected C result | test | [x] |
+|---|----------|------------------------------------------|-------------------|------|-----|
+| 1 | `pow43` | `x = -17` — first input below the table start; index `16 + x = -1` | UB read of the 4 bytes immediately preceding `g_pow43`; **returns normally**, no trap, no error sentinel | `err_row01_x_minus_17_returns_without_trap` | [x] |
+| 2 | `pow43` | `x ∈ {-18, -32, -64, -100, -1000}` — index far negative but still inside a mapped page | UB out-of-bounds read; **returns normally**, no trap | `err_row02_moderately_negative_returns_without_trap` | [x] |
+| 3 | `pow43` | `x = i32::MIN` (and `i32::MIN + 16`) — `16 + x` overflows signed int, index wildly out of range | UB: signed overflow + unmapped read ⇒ process fault (SIGSEGV) | `err_row03_int_min_faults_in_both` (subprocess, compares exit status) | [x] |
+| 4 | `pow43` | `x = 8224` — smallest `x >= 1024` whose index is 145 (`x & 32 != 0` ⇒ `sign = 64`, `(8224+64)>>6 = 129`) | UB read one element past the table end; **returns normally** | `err_row04_x_8224_first_overrun_returns_without_trap` | [x] |
+| 5 | `pow43` | `x ∈ {8256, 8320, 9000, 16384, 65536}` — index 145…1040, larger overrun | UB out-of-bounds read; **returns normally** | `err_row05_larger_overruns_return_without_trap` | [x] |
+| 6 | `pow43` | `x = i32::MAX` (and `i32::MAX - 63`) — `2 * x` overflows, `(x & ~63) + sign` overflows, index overflows | UB ⇒ process fault (SIGSEGV) | `err_row06_int_max_faults_in_both` (subprocess, compares exit status) | [x] |
+| 7 | `pow43` | division by zero: `(x & ~63) + sign == 0` | **unreachable** — the divide is only reached when `x >= 129`, where `x & ~63 >= 1024` (path B shifts `x` to `>= 1032` first). No input in the defined domain divides by zero. | `err_row07_no_division_by_zero_in_domain` (exhaustive scan of `[-16, 8223]`: 0 non-finite results, 0 NaN) | [x] |
+| 8 | `pow43` | out-of-range enum value across the FFI boundary | **no enum exists** in the ABI: the signature is `float pow43(int x)`, so every one of the 2^32 `int` values is a syntactically valid argument. The "no valid variant" analogue is an argument outside the implicit domain, covered by rows 1–6. Additionally verified: every value in the defined domain matches bit-for-bit. | `err_row08_full_int_domain_no_enum_surface` (asserts the entire `[-16, 8223]` domain matches and documents the absence of an enum) | [x] |
+| 9 | `pow43` | null pointer / zero length / oversized length | **no such surface**: the API takes no pointer, buffer, size or length parameter, and returns by value. Nothing can be null and no length can be zero or oversized. | `err_row09_no_pointer_or_length_surface` (documents; asserts the by-value ABI round-trips for the `0` and boundary inputs) | [x] |
+| 10 | `pow43` | one step past each *documented branch* constant (the only literals the C branches on: `129`, `1024`) — `x = 128/129` and `x = 1023/1024` | defined, but a different code path each side of the boundary; values must match exactly | `err_row10_one_past_branch_constants` | [x] |
+| 11 | `pow43` | one step past the implicit domain maximum: `x = 8223` (last valid) vs `x = 8224` (first invalid) | `8223` defined and must match bit-exactly; `8224` UB but must still return without panicking | `err_row11_one_past_domain_max` | [x] |
+| 12 | `pow43` | one step past the implicit domain minimum: `x = -16` (last valid) vs `x = -17` (first invalid) | `-16` defined and must match bit-exactly; `-17` UB but must still return without panicking | `err_row12_one_past_domain_min` | [x] |
 
-### Boundary inputs covered even though they are not rejections
-
-| # | input | why it is tested | expected |
-|---|-------|------------------|----------|
-| 8  | `x == 128` / `x == 129` | the `x < 129` branch selector, both sides | both defined, must match bit-for-bit |
-| 9  | `x == 1023` / `x == 1024` | the `x < 1024` branch selector, both sides | both defined, must match bit-for-bit |
-| 10 | `x == 0` | `g_pow43[16]` = `0.0f`; also the natural "zero length" analogue for a scalar API | `+0.0f`, same sign bit |
-| 11 | `x == INT_MIN`, `x == INT_MAX` | extreme values one step past every documented range | must not panic/abort in Rust (values are UB, see rows 2/4) |
-| 12 | out-of-range "enum" values | **N/A** — `pow43` has no enum, flag, mode or pointer parameter. Every one of the 2^32 `int` bit patterns is a syntactically valid argument; the whole defined sub-range `[-16, 8223]` is tested exhaustively, and the UB remainder is probed for absence of panic. | see rows 2, 4, 11 |
-
-## Defined-behaviour domain (derived, not guessed)
-
-Solving `0 <= 16 + index <= 144` for each of the three paths:
-
-* `x < 129`:            index `= 16 + x`               → in bounds ⟺ `x ∈ [-16, 128]`
-* `129 <= x < 1024`:    `y = 8x`, index `= 16 + ((y + ((2y)&64)) >> 6)` → `[32, 144]`, **always** in bounds
-* `x >= 1024`:          index `= 16 + ((x + ((2x)&64)) >> 6)` → in bounds ⟺ `x <= 8223`
-  (`x = 8224` has bit 5 set ⇒ `sign = 64` ⇒ `(8224+64)>>6 = 129` ⇒ index 145, OOB)
-
-**Defined domain = `x ∈ [-16, 8223]` (8240 values), tested EXHAUSTIVELY.**
-
-## Row check-off status
-
-| # | test | status |
-|---|------|--------|
-| 1  | `errors_row01_lowest_in_bounds` | [x] |
-| 2  | `errors_row02_negative_index_oob_is_not_rejected`, `errors_row02b_index_addition_overflow_is_not_rejected` | [x] |
-| 3  | `errors_row03_highest_in_bounds` | [x] |
-| 4  | `errors_row04_high_index_oob_is_not_rejected`, `errors_row04b_first_oob_is_8224` | [x] |
-| 5  | `errors_row05_shift_overflow_unreachable` | [x] |
-| 6  | `errors_row06_denominator_never_zero` | [x] |
-| 7  | `errors_row07_signed_overflow_wraps_without_rejecting` | [x] |
-| 8  | `errors_row08_selector_129` | [x] |
-| 9  | `errors_row09_selector_1024` | [x] |
-| 10 | `errors_row10_zero_input` | [x] |
-| 11 | `errors_row11_extreme_ints` | [x] |
-| 12 | `errors_row12a_defined_domain_exhaustive`, `errors_row12b_undefined_remainder_never_rejected` | [x] |
-| — | `errors_generic_one_step_past_every_edge`, `errors_generic_idempotent` | [x] |
-
-## Empirical findings for the UB rows (2, 4, 7, 11)
-
-Measured with `examples/probe.rs`, which `dlopen`s one object and calls `pow43`
-in a child process so a faulting read does not kill the test binary:
-
-```
-x=-17            C: 0x00000000   Rust: 0x00000168      (both returned; values differ)
-x=-1000          C: 0x0f66e0ff   Rust: 0x00038920      (both returned; values differ)
-x=-65536         C: SIGSEGV      Rust: SIGSEGV
-x=8224           C: 0x4262615d   Rust: 0x00e91400      (both returned; values differ)
-x=1048576        C: 0x7f800000   Rust: 0xfc958948      (both returned; values differ)
-x=4194304        C: SIGBUS       Rust: returned
-x=2147483647     C: SIGSEGV      Rust: SIGSEGV
-```
-
-Two conclusions, both of which shape the Phase C assertions:
-
-1. **There is no ground truth to match in the UB region.** The value an OOB read
-   yields is whatever bytes neighbour `g_pow43` inside that particular shared
-   object, and the two objects have different `.rodata`/`.text` layouts. C
-   leaves this undefined, so byte-equality is not a requirement the C
-   establishes — asserting it would be asserting a property of the linker, not
-   of the translation. Likewise, *whether* the read faults depends on where the
-   object's mapping ends, which also differs (`x=4194304` above).
-2. **The Rust must never reject an input the C accepts, and it does not.** Over
-   ~460 probes spanning both UB regions (curated boundaries plus randomized
-   draws across the full `int` space, in release *and* in the debug profile with
-   integer-overflow checks enabled), the Rust `.so` produced exit code 101 /
-   SIGABRT / a `panicked` message **zero** times. This is the property a
-   bounds-checked Rust index or non-`wrapping_*` arithmetic would break, and it
-   is what `assert_rust_does_not_reject` enforces for every UB row.
-
-## Optimization invariance of the C ground truth
-
-Because the C is the reference, its own stability was checked: the results are
-identical for the CMake build (`-O0`, the specified build) and for a `gcc -O3`
-build, and both match the Rust bit-for-bit. Disassembly of `pow43` shows plain
-`mulss`/`addss`/`divss` with no `vfmadd*`, so GCC's default
-`-ffp-contract=fast` cannot alter the result on the baseline x86-64 target (no
-FMA instruction available), and there is no double-rounding difference to
-reproduce.
+All 12 rows have a passing differential test (see
+`translation/tests/differential.rs`).

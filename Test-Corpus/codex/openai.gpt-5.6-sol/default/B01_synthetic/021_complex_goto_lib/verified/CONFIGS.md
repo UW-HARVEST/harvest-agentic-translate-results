@@ -1,31 +1,38 @@
-# Configuration Surface
+# Configuration surface
 
-The sole public and lowest-level entry point is `driver(int x, int y)`. There
-are no runtime options, modes, flags, element types, formats, byte-order
-choices, compile-time feature branches, convenience wrappers, or lower-level
-public calls.
+The public API has one entry point:
 
-Rows below are the branch partitions mechanically derived from:
+```c
+void driver(int x, int y);
+```
 
-- outer loop: `x > 0 || y > 0`;
-- special jump: `x == 1 && y == 4`;
-- x block: `x > 0`;
-- continue: `y == 0`;
-- inner jump: `x < 3`;
-- signed `int` boundary shapes.
+There are no runtime options, modes, flags, element types, formats, byte-order
+choices, compile-time feature gates, or lower-level public entry points. The
+rows below are the mechanically pruned cross-product of the C branches
+`x > 0 || y > 0`, `x == 1 && y == 4`, `x > 0`, `y == 0`, and `x < 3`, plus
+empty/one/many repetition shapes.
 
-“Bounded prefix” means comparing a deterministic output prefix in isolated
-child processes. This is required for very large positive values and for
-`x > 0, y < 0`, where the C control flow does not terminate after reaching
-`x < 3`.
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|---|---|:---:|
+| 1 | `driver` | `x <= 0`, `y <= 0`: outer loop is empty | [x] |
+| 2 | `driver` | `x == 1`, `y == 0`: one outer iteration, then `y == 0` continue | [x] |
+| 3 | `driver` | `x >= 2`, `y == 0`: many outer iterations through the `y == 0` continue | [x] |
+| 4 | `driver` | `x <= 0`, `y == 1`: one `y` operation reached through `x < 3` | [x] |
+| 5 | `driver` | `x <= 0`, `y >= 2`: many inner `y` operations through `goto label1` | [x] |
+| 6 | `driver` | exact `x == 1`, `y == 4`: special `goto label2` skips the first `x` operation | [x] |
+| 7 | `driver` | `x == 1`, `y > 0`, `y != 4`: normal immediate `x < 3` inner path | [x] |
+| 8 | `driver` | `x` is `2` or `3`, `y > 0`: first `x` decrement makes `x < 3`, entering the inner path | [x] |
+| 9 | `driver` | `x == 4`, `y == 1`: one paired outer iteration exhausts `y`, then the `y == 0` path drains `x` | [x] |
+| 10 | `driver` | `x == 4`, `y >= 2`: one paired outer iteration leaves `y`, then the low-`x` inner path drains both | [x] |
+| 11 | `driver` | `x >= 5`, `1 <= y <= x - 3`: repeated paired iterations exhaust `y` before low-`x`, then `y == 0` drains `x` | [x] |
+| 12 | `driver` | `x >= 5`, `y >= x - 2`: repeated paired iterations reach low `x` while `y` remains, then the inner path drains both | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `driver` | `x <= 0, y <= 0`: outer loop is skipped, including zero and `INT_MIN` | [x] |
-| 2 | `driver` | `x > 0, y == 0`: x block runs, then the y-zero branch continues the outer loop | [x] |
-| 3 | `driver` | `x <= 0, y > 0`: x block is skipped and `x < 3` loops through labels until y reaches zero | [x] |
-| 4 | `driver` | `x == 1, y == 4`: special jump skips the first x block | [x] |
-| 5 | `driver` | `x > 0, y > 0`, not special, and x becomes `< 3`: inner jump revisits both labeled blocks | [x] |
-| 6 | `driver` | `x > 0, y > 0`, not special, and x remains `>= 3`: inner jump is not taken and the outer loop repeats | [x] |
-| 7 | `driver` | `x > 0, y < 0`: bounded prefix of the nonterminating label cycle | [x] |
-| 8 | `driver` | `INT_MAX` in x or y with the other argument nonpositive: bounded prefix of valid but impractically long execution | [x] |
+All rows are for inputs on which the C implementation has defined, terminating
+behavior. `x > 0 && y < 0` repeatedly decrements a negative signed `int` and
+cannot normally return before signed underflow, so it is not a valid-path
+configuration.
+
+## Build configurations
+
+`Cargo.toml` defines no features, so the only feature combination is the
+default/no-feature build. There is no binary target in either build system.

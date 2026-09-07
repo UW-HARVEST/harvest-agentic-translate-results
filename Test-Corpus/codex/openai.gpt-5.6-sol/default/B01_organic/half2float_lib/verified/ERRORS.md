@@ -1,14 +1,13 @@
-# Error Surface
+# Error surface
 
-Mechanical searches of `../c_src/include/lib.h` and
-`../c_src/src/lib.c` found no error-return macros, error sentinels, assertions,
-explicit range checks, null checks, enums, pointer parameters, length
-parameters, or min/max constants. The only public function accepts every value
-of its complete `uint16_t` domain, so there are no C rejection rows.
+The C header and implementation expose only `float half2float(uint16_t h)`.
+Mechanical inspection found no rejection paths: no error-return statements or
+macros, assertions, null/range checks, error enums, pointers, lengths, or
+documented validity limits. Every possible `uint16_t` value is valid.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
-|---|----------|---------------------------------------------|-------------------|-----|
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
 
-Generic boundary audit: `0`, `UINT16_MAX`, and every value between them pass
-the exhaustive FFI differential test. Null pointers, lengths, oversized
-lengths, enums, and one-past-range values are not representable in this API.
+Generic FFI boundary cases involving null pointers, zero/oversized lengths, or
+out-of-range enum values are not applicable because the API accepts one
+by-value `uint16_t` and returns one `float`.

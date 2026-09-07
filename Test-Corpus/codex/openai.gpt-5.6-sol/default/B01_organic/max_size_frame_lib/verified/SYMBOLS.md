@@ -1,16 +1,22 @@
-# Exported Symbol Surface
+# Dynamic Symbol Surface
 
-Source command:
+Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-GY1cd5.so
+nm -D --defined-only ../c_src/build/libharvest-work-Bpf12g.so
+nm -D --defined-only target/release/libmax_size_frame_lib.so
 ```
 
 | C symbol | C type | Rust export | Status |
 |----------|--------|-------------|--------|
-| `max_size_frame` | `T` | `max_size_frame` | [x] present |
+| `max_size_frame` | `T` | `max_size_frame` (`T`) | present |
 
-The C shared library exports one public symbol. The Rust shared library exports
-the same symbol with the exact name.
+Missing C symbols in Rust: **0**
 
-- [x] `nm -D` shows 0 C symbols missing from the Rust shared library.
+Extra Rust exports: **0**
+
+Unresolved application/library symbols at load time (`ldd -r`): **0**.
+The Rust standard library's toolchain/system imports resolve through the
+installed `libc` and `libgcc_s`.
+
+- [x] Phase D symbol parity complete.

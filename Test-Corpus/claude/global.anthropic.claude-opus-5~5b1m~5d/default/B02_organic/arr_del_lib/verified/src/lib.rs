@@ -16,6 +16,17 @@
 use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
+/// `#define STBDS_ASSERT assert` (c_src/src/lib.c:3). The C is compiled without
+/// `NDEBUG`, so these are live and `abort()` on violation; `panic!` under an
+/// `extern "C"` fn likewise aborts, so the two libraries fail identically.
+/// Deliberately `assert!` and not `debug_assert!`, so the checks exist in every
+/// profile just as they do in the C build.
+macro_rules! stbds_assert {
+    ($cond:expr, $what:literal) => {
+        assert!($cond, concat!("stbds_assert: ", $what))
+    };
+}
+
 // ---------------------------------------------------------------------------
 // libc bindings (we use the platform allocator so that memory returned by this
 // library is interchangeable with memory from the original C library).
@@ -338,13 +349,12 @@ unsafe fn stbds_make_hash_index(
         if slot_count <= STBDS_BUCKET_LENGTH {
             (*t).used_count_shrink_threshold = 0;
         }
-        // STBDS_ASSERT(t->used_count_threshold + t->tombstone_count_threshold < t->slot_count);
-        // The C .so is built without NDEBUG, so this assert is live there and
-        // must be live here too.
-        assert!(
-            (*t).used_count_threshold.wrapping_add((*t).tombstone_count_threshold)
+        stbds_assert!(
+            (*t)
+                .used_count_threshold
+                .wrapping_add((*t).tombstone_count_threshold)
                 < (*t).slot_count,
-            "stbds_make_hash_index: used_count_threshold + tombstone_count_threshold < slot_count"
+            "lib.c:401: stbds_make_hash_index: used_count_threshold + tombstone_count_threshold < slot_count"
         );
 
         if !ot.is_null() {
@@ -743,7 +753,7 @@ pub unsafe extern "C" fn stbds_hmget_key_ts(
         let keyoffset: usize = 0;
         if a.is_null() {
             let a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
-            (*stbds_header(a)).length += 1;
+            (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
             memset(a, 0, elemsize);
             *temp = STBDS_INDEX_EMPTY;
             stbds_arr_to_hash(a, elemsize)
@@ -799,7 +809,7 @@ pub unsafe extern "C" fn stbds_hmput_default(a: *mut c_void, elemsize: usize) ->
                 ptr::null_mut()
             };
             a = stbds_arrgrowf(old, elemsize, 0, 1);
-            (*stbds_header(a)).length += 1;
+            (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
             memset(a, 0, elemsize);
             a = stbds_arr_to_hash(a, elemsize);
         }
@@ -828,7 +838,7 @@ pub unsafe extern "C" fn stbds_hmput_key(
         if a.is_null() {
             a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
             memset(a, 0, elemsize);
-            (*stbds_header(a)).length += 1;
+            (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
             a = stbds_arr_to_hash(a, elemsize);
         }
 
@@ -962,16 +972,16 @@ pub unsafe extern "C" fn stbds_hmput_key(
                 }
                 raw_a = stbds_arr_to_hash(a, elemsize);
 
-                // STBDS_ASSERT((size_t) i+1 <= stbds_arrcap(a));
-                assert!(
+                // The C casts `i+1` to `size_t`, so this is an unsigned compare.
+                stbds_assert!(
                     (i as usize).wrapping_add(1) <= stbds_arrcap(a),
-                    "stbds_hmput_key: i+1 <= stbds_arrcap(a)"
+                    "lib.c:778: stbds_hmput_key: (size_t) i+1 <= stbds_arrcap(a)"
                 );
-                (*stbds_header(a)).length = (i + 1) as usize;
+                (*stbds_header(a)).length = i.wrapping_add(1) as usize;
                 bucket = (*table).storage.wrapping_add(pos >> STBDS_BUCKET_SHIFT);
                 (*bucket).hash[pos & STBDS_BUCKET_MASK] = hash;
-                (*bucket).index[pos & STBDS_BUCKET_MASK] = i - 1;
-                set_stbds_temp(a, i - 1);
+                (*bucket).index[pos & STBDS_BUCKET_MASK] = i.wrapping_sub(1);
+                set_stbds_temp(a, i.wrapping_sub(1));
 
                 let dst = elem_at(a, elemsize, i as usize, 0) as *mut *mut c_char;
                 match (*table).string.mode {
@@ -1056,16 +1066,25 @@ pub unsafe extern "C" fn stbds_hmdel_key(
             .wrapping_add((slot >> STBDS_BUCKET_SHIFT) as usize);
         let mut i: c_int = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
         let old_index: isize = (*b).index[i as usize];
-        let final_index: isize = stbds_arrlen(raw_a) - 1 - 1;
-        // STBDS_ASSERT(slot < (ptrdiff_t) table->slot_count);
-        assert!(
-            (slot as usize) < (*table).slot_count,
-            "stbds_hmdel_key: slot < table->slot_count"
+        let final_index: isize = stbds_arrlen(raw_a).wrapping_sub(1).wrapping_sub(1);
+        // The C casts `table->slot_count` to `ptrdiff_t`, so this is a signed compare.
+        stbds_assert!(
+            slot < (*table).slot_count as isize,
+            "lib.c:828: stbds_hmdel_key: slot < (ptrdiff_t) table->slot_count"
         );
         (*table).used_count = (*table).used_count.wrapping_sub(1);
         (*table).tombstone_count = (*table).tombstone_count.wrapping_add(1);
         set_stbds_temp(raw_a, 1);
-        // STBDS_ASSERT(table->used_count >= 0);  -- always true for size_t in C
+        // lib.c:832: STBDS_ASSERT(table->used_count >= 0). `used_count` is
+        // `size_t`/`usize`, so the comparison is vacuously true and gcc compiles
+        // it away; reproduced here as a trivially-true check for the same reason.
+        {
+            #![allow(unused_comparisons)]
+            stbds_assert!(
+                (*table).used_count >= 0,
+                "lib.c:832: stbds_hmdel_key: table->used_count >= 0"
+            );
+        }
         (*b).hash[i as usize] = STBDS_HASH_DELETED;
         (*b).index[i as usize] = STBDS_INDEX_DELETED;
 
@@ -1090,20 +1109,18 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                 let k = elem_at(a, elemsize, old_index as usize, keyoffset);
                 slot = stbds_hm_find_slot(a, elemsize, k as *mut c_void, keysize, keyoffset, mode);
             }
-            // STBDS_ASSERT(slot >= 0);
-            assert!(slot >= 0, "stbds_hmdel_key: slot >= 0");
+            stbds_assert!(slot >= 0, "lib.c:846: stbds_hmdel_key: slot >= 0");
             b = (*table)
                 .storage
                 .wrapping_add((slot >> STBDS_BUCKET_SHIFT) as usize);
             i = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
-            // STBDS_ASSERT(b->index[i] == final_index);
-            assert!(
+            stbds_assert!(
                 (*b).index[i as usize] == final_index,
-                "stbds_hmdel_key: b->index[i] == final_index"
+                "lib.c:849: stbds_hmdel_key: b->index[i] == final_index"
             );
             (*b).index[i as usize] = old_index;
         }
-        (*stbds_header(raw_a)).length -= 1;
+        (*stbds_header(raw_a)).length = (*stbds_header(raw_a)).length.wrapping_sub(1);
 
         if (*table).used_count < (*table).used_count_shrink_threshold
             && (*table).slot_count > STBDS_BUCKET_LENGTH
@@ -1148,7 +1165,12 @@ pub unsafe extern "C" fn stbds_stralloc(
         if len > (*a).remaining {
             let mut blocksize: usize = (*a).block as usize;
 
-            blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize >> 1);
+            // gcc emits `shlq %cl`, which masks the shift count to 6 bits, and
+            // `a->block` is an `unsigned char` that callers of this exported
+            // function can set as high as 255 (so `blocksize >> 1` reaches 127).
+            // `wrapping_shl` masks the count with `& 63` on a 64-bit target,
+            // matching the hardware shift exactly.
+            blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN.wrapping_shl((blocksize >> 1) as u32);
 
             if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
                 (*a).block = (*a).block.wrapping_add(1);
@@ -1157,7 +1179,9 @@ pub unsafe extern "C" fn stbds_stralloc(
             if len > blocksize {
                 let sb = stbds_realloc(
                     ptr::null_mut(),
-                    core::mem::size_of::<stbds_string_block>() - 8 + len,
+                    core::mem::size_of::<stbds_string_block>()
+                        .wrapping_sub(8)
+                        .wrapping_add(len),
                 ) as *mut stbds_string_block;
                 memmove(
                     (&raw mut (*sb).storage) as *mut c_void,
@@ -1176,7 +1200,9 @@ pub unsafe extern "C" fn stbds_stralloc(
             } else {
                 let sb = stbds_realloc(
                     ptr::null_mut(),
-                    core::mem::size_of::<stbds_string_block>() - 8 + blocksize,
+                    core::mem::size_of::<stbds_string_block>()
+                        .wrapping_sub(8)
+                        .wrapping_add(blocksize),
                 ) as *mut stbds_string_block;
                 (*sb).next = (*a).storage;
                 (*a).storage = sb;
@@ -1184,8 +1210,10 @@ pub unsafe extern "C" fn stbds_stralloc(
             }
         }
 
-        // STBDS_ASSERT(len <= a->remaining);
-        assert!(len <= (*a).remaining, "stbds_stralloc: len <= a->remaining");
+        stbds_assert!(
+            len <= (*a).remaining,
+            "lib.c:913: stbds_stralloc: len <= a->remaining"
+        );
         p = ((&raw mut (*(*a).storage).storage) as *mut c_char)
             .wrapping_add((*a).remaining as isize as usize)
             .wrapping_sub(len);
@@ -1278,7 +1306,7 @@ unsafe fn arrpush_int(arr: &mut *mut c_int, v: c_int) {
         }
         let h = stbds_header(*arr as *mut c_void);
         let idx = (*h).length;
-        (*h).length = idx + 1;
+        (*h).length = idx.wrapping_add(1);
         *arr.wrapping_add(idx) = v;
     }
 }

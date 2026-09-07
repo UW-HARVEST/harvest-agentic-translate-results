@@ -50,6 +50,7 @@ pub struct c2Raycast {
 // All enumerators are non-negative, so the underlying type is `unsigned int`.
 const C2_TYPE_CIRCLE: c_uint = 0;
 const C2_TYPE_AABB: c_uint = 1;
+#[cfg_attr(target_arch = "x86_64", allow(dead_code))]
 const C2_TYPE_CAPSULE: c_uint = 2;
 
 #[repr(C)]
@@ -546,76 +547,64 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
     0
 }
 
-/// The body of `c2CastRay`.
+/// Real dispatch body for [`c2CastRay`], covering the three tags the C
+/// `switch` has labels for.
 ///
-/// `entry_eax` is a synthetic 5th parameter carrying the value the *caller*
-/// left in `%eax`; the naked thunk below supplies it. See `c2CastRay`.
-#[inline(never)]
-unsafe extern "C" fn c2CastRay_body(
+/// Not exported: the public `c2CastRay` symbol is the naked stub below, so this
+/// contributes no entry to `nm -D` and the symbol diff against the C `.so`
+/// stays empty. The stub guarantees `typeB <= 2` before jumping here, so the
+/// final arm is unreachable.
+unsafe extern "C" fn c2CastRay_impl(
     A: c2Ray,
     B: *const c_void,
     typeB: c_uint,
     out: *mut c2Raycast,
-    entry_eax: c_uint,
 ) -> c_int {
     match typeB {
         C2_TYPE_CIRCLE => unsafe { c2RaytoCircle(A, *(B as *const c2Circle), out) },
         C2_TYPE_AABB => unsafe { c2RaytoAABB(A, *(B as *const c2AABB), out) },
-        C2_TYPE_CAPSULE => unsafe { c2RaytoCapsule(A, *(B as *const c2Capsule), out) },
-        // The C `switch` has no `default` label and no trailing `return`, so
-        // control flows off the end of a non-void function for an out-of-range
-        // `C2_TYPE` -- undefined behaviour, but with an entirely concrete
-        // compiled meaning. GCC at the reference build's optimisation level
-        // emits, for the two out-of-range edges (`ja` and the fall-through
-        // `jmp`), a direct branch to the epilogue:
-        //
-        //     cmpl $0x2,-0xc(%rbp) ; ja <epilogue>
-        //     ...
-        //     jmp <epilogue>
-        //     <epilogue>: leave; ret
-        //
-        // Nothing on either edge writes `%eax`, so the value returned is
-        // literally whatever the caller happened to leave in `%eax` at the
-        // call site. (For the library's own internal call from `spec_ray` that
-        // is `ray.t`, because GCC stages the 20-byte `c2Ray` through `%eax`.)
-        //
-        // Reproducing a *guessed constant* here would diverge from the C for
-        // every caller. Forwarding the caller's `%eax` reproduces it for
-        // *every* caller, which is the only faithful translation available.
-        _ => entry_eax as c_int,
+        _ => unsafe { c2RaytoCapsule(A, *(B as *const c2Capsule), out) },
     }
 }
 
-/// `int c2CastRay(c2Ray A, const void *B, C2_TYPE typeB, c2Raycast *out)`
-///
-/// A naked thunk, purely so that the caller's incoming `%eax` can be captured
-/// before any Rust prologue can clobber it, and handed to
-/// [`c2CastRay_body`] as a 5th argument.
-///
-/// ABI: `A` is 20 bytes, so it is MEMORY-classed and passed on the stack;
-/// `B` → `rdi`, `typeB` → `esi`, `out` → `rdx`. `rcx` is therefore the next
-/// free integer argument register and `r10`/`r11` are free scratch. `jmp`
-/// (rather than `call`) keeps the stack frame -- and hence `A` -- exactly where
-/// the callee expects it.
+// `int c2CastRay(c2Ray A, const void *B, C2_TYPE typeB, c2Raycast *out)`
+//
+// The C `switch` has no `default` label and no trailing `return`, so for a tag
+// outside `{0, 1, 2}` control flows off the end of a non-void function. The
+// compiled C reaches a bare `leave; ret` that never writes `%eax`, so the value
+// the caller observes is whatever the *caller* itself last left in `%eax`
+// before the `call`. It is not a function of the arguments.
+//
+// Reproducing that requires returning with `%eax` genuinely untouched, which no
+// ordinary Rust body can promise: with optimisations off, the prologue spills
+// the memory-passed `c2Ray` argument through `%rax` before any user code runs.
+// So the public symbol is a naked stub that performs only the unsigned range
+// check the C's `ja` performs and then either tail-jumps to the real body --
+// a plain `jmp`, so `%rsp`, the return address, the stack-passed `c2Ray` and
+// all argument registers are untouched -- or returns immediately with `%eax`
+// exactly as the caller left it.
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2CastRay(
-    _A: c2Ray,
-    _B: *const c_void,
-    _typeB: c_uint,
-    _out: *mut c2Raycast,
+    A: c2Ray,
+    B: *const c_void,
+    typeB: c_uint,
+    out: *mut c2Raycast,
 ) -> c_int {
     core::arch::naked_asm!(
-        "mov ecx, eax",
-        "jmp {body}",
-        body = sym c2CastRay_body,
+        // typeB is an unsigned int in esi; `ja` mirrors the C's own
+        // `cmpl $0x2` / `ja` range check.
+        "cmp esi, 2",
+        "ja 2f",
+        "jmp {impl}",
+        // Fall off the end: `ret` without ever writing eax.
+        "2:",
+        "ret",
+        impl = sym c2CastRay_impl,
     )
 }
 
-/// Portable fallback. The `%eax` forwarding above is inherently x86-64
-/// specific; on other targets there is no reference build to match, so the
-/// out-of-range arm yields `0`.
 #[cfg(not(target_arch = "x86_64"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2CastRay(
@@ -624,7 +613,11 @@ pub unsafe extern "C" fn c2CastRay(
     typeB: c_uint,
     out: *mut c2Raycast,
 ) -> c_int {
-    unsafe { c2CastRay_body(A, B, typeB, out, 0) }
+    if typeB > C2_TYPE_CAPSULE {
+        // No portable way to observe the caller's return register.
+        return 0;
+    }
+    unsafe { c2CastRay_impl(A, B, typeB, out) }
 }
 
 // ---------------------------------------------------------------------------

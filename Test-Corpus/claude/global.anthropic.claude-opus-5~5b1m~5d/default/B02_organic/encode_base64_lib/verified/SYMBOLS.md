@@ -1,71 +1,67 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public symbol parity
 
-Derived mechanically from `nm -D` on both shared objects.
+## Source of truth
 
-Commands used:
-
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libdriver.so
-
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libdriver.so
-```
-
-## C source inventory (completeness check)
-
-The whole library is a single translation unit, so there is no possibility of a
-"skipped module":
-
-| C file | translated? | notes |
-|--------|-------------|-------|
-| `c_src/src/lib.c` | yes | both functions present in `translation/src/lib.rs` |
-| `c_src/include/lib.h` | yes | declares the single public symbol `encode_base64` |
-
-`c_src/CMakeLists.txt` builds exactly one target: `add_library(driver SHARED src/lib.c)`.
-There is no conditional compilation (`grep '#if\|#ifdef\|#ifndef'` over the C
-sources returns nothing), so there is only ONE C build configuration.
-
-## Defined (exported) symbols
-
-`nm -D --defined-only` on the C `.so` yields exactly one symbol:
-
-| # | C symbol | type | exported by Rust `.so`? | Rust item |
-|---|----------|------|--------------------------|-----------|
-| 1 | `encode_base64` | `T` (global text) | YES — `T encode_base64` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn encode_base64` |
-
-### Non-exported C functions (must NOT appear in either `.so`)
-
-| C symbol | linkage | in C `.so` dyn table? | in Rust `.so` dyn table? |
-|----------|---------|------------------------|---------------------------|
-| `encode` | `static char encode(unsigned char)` | no (internal) | no (private `fn encode`) |
-
-## Symbol diff
+C shared library: `c_src/build/libdriver.so` (built from the single TU
+`c_src/src/lib.c`; public header `c_src/include/lib.h` declares exactly one
+function).
 
 ```
-symbols in C .so but missing from Rust .so:   (none)
+$ nm -D --defined-only c_src/build/libdriver.so
+0000000000001163 T encode_base64
 ```
 
-The diff is EMPTY. No `#[no_mangle]` wrapper had to be added and no C module
-was left untranslated, so no stubbing was required or performed.
-
-## Undefined (imported) symbols
-
-The C `.so` imports `calloc@GLIBC` and `strlen@GLIBC`. The Rust `.so` imports
-both of these as well (it calls the real libc `calloc`/`strlen` through
-`unsafe extern "C"` declarations, so the returned buffer is `free()`-able by the
-caller exactly as in C). The Rust `.so` additionally imports the usual Rust
-runtime/libc support symbols (`_Unwind_*`, `memcpy`, `malloc`, `abort`, …); all
-of these resolve from `libc`/`libgcc_s` and none is an unresolved non-libc
-symbol.
+Rust shared library: `translation/target/release/libdriver.so`
+(`crate-type = ["cdylib"]`).
 
 ```
-non-libc / non-runtime undefined symbols in Rust .so: 0
+$ nm -D --defined-only translation/target/release/libdriver.so
+00000000000116d0 T encode_base64
 ```
 
-## Completion gate item
+## Symbol table
 
-- [x] `SYMBOLS.md`: `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+| # | symbol | C `.so` | Rust `.so` | notes |
+|---|--------|---------|------------|-------|
+| 1 | `encode_base64` | `T` (global text) | `T` (global text) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn` in `src/lib.rs` |
+
+## Non-exported (internal) C symbols
+
+| C symbol | linkage | Rust counterpart | exported? |
+|----------|---------|------------------|-----------|
+| `encode` | `static char encode(unsigned char)` — TU-local, not in `nm -D` | `fn encode(u: u8) -> c_char` (private, `#[inline]`) | no — correct, must NOT be exported |
+
+## Undefined / imported symbols
+
+The two libc functions the translation genuinely needs are the same two the C
+uses:
+
+| imported by | C `.so` | Rust `.so` |
+|-------------|---------|------------|
+| `calloc@GLIBC_2.2.5` | yes | yes |
+| `strlen@GLIBC_2.2.5` | yes | yes |
+
+Every remaining undefined symbol in the Rust `.so` is glibc (`@GLIBC_*`), the
+GCC unwinder (`_Unwind_*@GCC_*`), or a weak symbol (`w`) — i.e. the standard
+Rust `std`/panic-machinery and allocator glue, not untranslated code:
+
+```
+$ nm -D --undefined-only translation/target/release/libdriver.so \
+    | awk '{print $NF}' \
+    | grep -v '@GLIBC\|@GCC\|^_ITM_\|^__gmon_start__\|^gettid\|^statx'
+(empty)
+```
+
+**Non-libc undefined symbols: 0.** (Checked automatically by `verify.sh`.)
+
+## Diff
+
+**Symbols in C `.so` missing from Rust `.so`: 0.**
+**Non-libc undefined symbols in Rust `.so`: 0.**
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no** `[features]` table and no optional
+dependencies, so there is exactly one build configuration (the default). There
+is no `[[bin]]` target and no `src/main.rs`, so the project builds **no binary
+driver** — the "compare C and Rust stdout" gate is not applicable.

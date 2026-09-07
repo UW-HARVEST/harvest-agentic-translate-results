@@ -1,112 +1,108 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Error-surface table
 
-Derived mechanically from `c_src/src/lib.c` and `c_src/include/lib.h`.
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
 
-## Mechanical grep evidence
+## Mechanical extraction
 
 ```
-$ grep -n 'return' src/lib.c include/lib.h
+$ grep -n 'return'                       src/lib.c include/lib.h
 src/lib.c:23:    return 0;
 
-$ grep -nE 'assert|RETURN_ERROR|NULL|errno|abort|exit\(|-1' src/lib.c include/lib.h
-(none)
+$ grep -nE 'assert|RETURN_ERROR|ERROR|NULL|errno|-1|goto|if *\(' src/lib.c include/lib.h
+(no matches — exit 1)
 
-$ grep -nE '#if|#ifdef|switch|case ' src/lib.c include/lib.h
-(none)
+$ grep -nE 'while|if|\?|switch|#if'      src/lib.c
+src/lib.c:11:    while ((bw->bits + bits >= (8 * sizeof(tflac_uint))) && i < 100) {
+src/lib.c:13:        b = b > bits ? bits : b;
 
-$ grep -nE 'if|while|for|\?' src/lib.c
-11:    while ((bw->bits + bits >= (8 * sizeof(tflac_uint))) && i < 100) {
-13:        b = b > bits ? bits : b;
-
-$ grep -noE '[0-9]{2,}' src/lib.c
-3:32   5:18446744073709551615   6:32   11:100
+$ grep -noE '[0-9]+' src/lib.c | sort -u -t: -k2
+5:1                       # mask shift amount
+5:18446744073709551615    # UINT64_MAX, base of `mask`
+8:8                       # 8 * sizeof(tflac_uint)
+10:0                      # int i = 0
+11:100                    # loop iteration cap
+23:0                      # the sole return value
 ```
 
-**Finding: the C code has NO error surface.** There is exactly one `return`
-statement and it is the unconditional `return 0` at the end of the function.
-There are no error-return macros, no error enums, no `assert`, no null checks,
-no explicit range checks, and no documented min/max validation constants. The
-function is total on its declared parameter types: for *every* `bits` in
-`[0, 2^32)` and *every* `val` in `[0, 2^64)` it mutates `*bw` and returns `0`.
+## Findings
 
-Consequently the rows below are the complete set of "rejection" rows that the
-C code actually has, plus the generic C-API boundaries the task requires us to
-cover even when the table is empty. Every row states the *observed* C result,
-not an invented one, and each has a differential test asserting Rust matches.
+`bitwriter_add` performs **no validation whatsoever**:
 
-## Error-surface table
+* no `assert`
+* no null-pointer check on `bw`
+* no range check on `bits` (the header documents no range; nothing rejects
+  `bits == 0`, `bits > 64`, or `bits == UINT32_MAX`)
+* no bounds check against `bw->len` / `bw->pos` (those fields are never read
+  or written by this function)
+* no error enum, no `-1`, no `NULL` return, no `errno`
+* exactly one `return` statement: `return 0`
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|---------------------------------------------|-------------------|------|--------|
-| E1 | `bitwriter_add` | any input at all — the sole `return` is unconditional `return 0` (src/lib.c:23); no branch can produce a different return value | returns `0`; `*bw` mutated | `e1_return_value_is_always_zero` | [x] |
-| E2 | `bitwriter_add` | `bits == 0` — degenerate zero length. `val <<= (64-0)`; shift count 64 is out of range for `uint64_t` (C UB), realised by the emitted `shlq %cl` as count masked to 6 bits → shift by 0 | returns `0`; no error; `val` left unshifted, `tot += 0` | `e2_zero_bits` | [x] |
-| E3 | `bitwriter_add` | `bits == 64` — exactly the full word width, the largest "documented-sane" value. `val <<= (64-64)` = shift by 0; loop is entered for any `bw->bits` | returns `0`; no error | `e3_bits_equals_word_width` | [x] |
-| E4 | `bitwriter_add` | `bits == 65` — one step past the valid range `[0,64]`. `64-65` wraps; the emitted 32-bit `sub` gives `0xFFFFFFFF`, `%cl`-masked to a shift of 63 | returns `0`; no error; silently corrupt-but-defined value | `e4_bits_one_past_word_width` | [x] |
-| E5 | `bitwriter_add` | `bits` oversized: `0xFFFFFFFF`, `0x80000000`, `100`, `1000`, `0x10000000` etc. — no upper bound is ever checked | returns `0`; no error; the `i < 100` guard is what terminates the loop | `e5_oversized_bits` | [x] |
-| E6 | `bitwriter_add` | `bw->bits == 63` on entry with `bits >= 1`: `b = (u32)(63-63) = 0`, so `bits -= 0` never progresses — the loop only terminates via the `i < 100` cap, executing exactly 100 iterations | returns `0`; no hang, no error; `bw->bits` ends at 63 + trailing `bits` | `e6_b_zero_hits_iteration_cap` | [x] |
-| E7 | `bitwriter_add` | `bw->bits > 63` on entry (out-of-range state, e.g. 64, 65, 100, 0xFFFFFFFF): `b = (u32)(63 - bw->bits)` underflows to a huge `u32`, then clamps to `bits`; `val >> bw->bits` has an out-of-range shift count | returns `0`; no error; loop caps at 100 iterations | `e7_out_of_range_bw_bits` | [x] |
-| E8 | `bitwriter_add` | `bw->bits + bits` overflows `u32` so the loop condition `(u32)(bw->bits+bits) >= 64` is **false** despite both operands being huge (e.g. `bw->bits=0xFFFFFFFF`, `bits=0x41`) — the wrap skips the loop entirely | returns `0`; loop body never runs; `bw->val` OR'd once | `e8_loop_condition_u32_wrap` | [x] |
-| E9 | `bitwriter_add` | `bw->tot` arithmetic overflow: `bw->tot += bits` on `u32` with `tot` near `0xFFFFFFFF`; unsigned wrap-around is unchecked | returns `0`; `tot` wraps mod 2^32 | `e9_tot_wraps` | [x] |
-| E10 | `bitwriter_add` | `bw->bits += b` / `bw->bits += bits` arithmetic overflow: final `bw->bits` addition on `u32` with no check | returns `0`; `bits` field wraps mod 2^32 | `e10_bw_bits_wraps` | [x] |
-| E11 | `bitwriter_add` | out-of-range "enum"-style value across FFI: `bits` is a `tflac_u32` with no valid-variant restriction, so every one of the 2^32 ints is a real input. Sweep the whole low range plus each power-of-two boundary and each `64k±1` multiple | returns `0` for all; identical `*bw` for all | `e11_exhaustive_bits_sweep` | [x] |
-| E12 | `bitwriter_add` | `bw->buffer` null / dangling, and `bw->pos`/`bw->len` inconsistent (e.g. `pos > len`) — the function never dereferences `buffer` nor reads `pos`/`len`, so no check exists and none is needed | returns `0`; `buffer`, `pos`, `len` left byte-identical | `e12_buffer_pos_len_untouched` | [x] |
-| E13 | `bitwriter_add` | `bw == NULL` — dereferenced unconditionally at `bw->tot += bits` with no null check | SIGSEGV (both C and Rust); *not* an error return | `e13_null_bw_documented_only` (documented, executed under an opt-in subprocess check) | [x] |
+The only guard in the function is the `i < 100` loop cap, which is a
+*termination* bound, not an input rejection: it silently truncates the
+bit-consuming loop instead of signalling an error.
 
-Row E13 is the one row that cannot be asserted as an equal *return* value,
-because the C code has no null check: it faults. The test documents this and
-verifies both libraries agree that it faults rather than returning a value, by
-running each call in a forked child process and comparing the wait status.
+Therefore the "rejection" rows below are the *complete* set of ways the C code
+can be fed invalid/out-of-range input, together with what the C **actually
+does** (which is the contract the Rust must reproduce). Each row is covered by
+a differential test in `tests/differential.rs`.
 
-## Phase C result
+| #  | function | trigger (exact invalid input/condition) | expected C result | test | [x] |
+|----|----------|------------------------------------------|-------------------|------|-----|
+| 1  | `bitwriter_add` | any input at all — the sole `return` is `return 0` (`src/lib.c:23`); no branch can return anything else | returns `0` unconditionally; `bw` mutated in place | `err_row01_return_is_always_zero` | [x] |
+| 2  | `bitwriter_add` | `bits == 0` → `val <<= (64 - 0)` = shift-by-64, out of range for `uint64_t` (UB in C; `shlq %cl` masks count to 6 bits ⇒ shift by 0) | no rejection; `val` unshifted; `tot += 0`; loop entered iff `bw->bits >= 64` | `err_row02_bits_zero` | [x] |
+| 3  | `bitwriter_add` | `bits == 64` → `val <<= 0`, boundary of the documented width | no rejection; returns `0` | `err_row03_bits_exactly_64` | [x] |
+| 4  | `bitwriter_add` | `bits == 65` — one step past the maximum meaningful width (`8*sizeof(tflac_uint)`) | no rejection; `64 - 65` wraps in `unsigned int` ⇒ shift count `& 63 == 63`; returns `0` | `err_row04_bits_65_one_past_range` | [x] |
+| 5  | `bitwriter_add` | `bits` grossly oversized: `100`, `128`, `4096`, `0x7FFFFFFF`, `0x80000000`, `UINT32_MAX` | no rejection; wrapped shift counts and wrapped `bits -= b`; returns `0` | `err_row05_bits_oversized` | [x] |
+| 6  | `bitwriter_add` | `bw->bits` already `== 64` (accumulator "full", out of the `0..=63` range the algorithm implies) | no rejection; `b = 63 - 64` wraps to `0xFFFFFFFF`, clamped to `bits` by the ternary | `err_row06_bw_bits_at_64` | [x] |
+| 7  | `bitwriter_add` | `bw->bits` out of range: `65`, `0xFFFFFFFF`, and values making `63 - bw->bits` wrap | no rejection; wrapped `b`; `>> (bw->bits & 63)` | `err_row07_bw_bits_out_of_range` | [x] |
+| 8  | `bitwriter_add` | `bw->bits + bits` overflows `tflac_u32` (e.g. `bw->bits = 0xFFFFFFFF`, `bits = 1` ⇒ sum `0`) so the `>= 64` loop test is evaluated on the wrapped sum | no rejection; loop **not** entered; returns `0` | `err_row08_bw_bits_plus_bits_u32_wrap` | [x] |
+| 9  | `bitwriter_add` | `bw->tot + bits` overflows `tflac_u32` (`tot` near `UINT32_MAX`) | no rejection; `tot` wraps modulo 2^32 | `err_row09_tot_u32_wrap` | [x] |
+| 10 | `bitwriter_add` | loop cap `i < 100` (`src/lib.c:11`) reached — input that would need >100 iterations | loop exits with `bits` still non-zero; remaining bits merged by the trailing `bw->val \|= val >> bw->bits`; returns `0` | `err_row10_loop_cap_100` | [x] |
+| 11 | `bitwriter_add` | `bits -= b` underflows `tflac_u32` inside the loop (`b > bits` is clamped, so this needs the wrapped-`b` path) | no rejection; `bits` wraps modulo 2^32 | `err_row11_bits_minus_b_underflow` | [x] |
+| 12 | `bitwriter_add` | `bw == NULL` — no null check exists; the first access is `bw->tot` (a write) | both implementations dereference null ⇒ same fatal signal (`SIGSEGV`) | `err_row12_null_pointer_parity` | [x] |
+| 13 | `bitwriter_add` | `val == 0` and `val == UINT64_MAX` (extreme value operands, incl. all bits above `bits` set) | no rejection; returns `0` | `err_row13_val_extremes` | [x] |
+| 14 | `bitwriter_add` | garbage in the fields this function never validates or uses (`bw->pos`, `bw->len`, `bw->buffer` = wild pointer) | no rejection, no deref of `buffer`; `pos`/`len`/`buffer` left byte-identical | `err_row14_unused_fields_untouched` | [x] |
 
-All 13 rows pass: `cargo test --test phase_c_errors` → **13 passed, 0 failed**
-against the release cdylib (12 passed against the debug cdylib, with E13 skipped
-for the reason below), and against the C `.so` rebuilt at `-O2` and `-O3`.
+### Out-of-range enum values
 
-Each row asserts the *same* outcome, not merely "both did something": the same
-`int` return value **and** a byte-identical 32-byte struct image.
+`include/lib.h` declares **no `enum` types** — the only parameters are
+`tflac_u32 bits` and `tflac_uint val`, both plain integers, and every value of
+both is exercised as an "out-of-range" input by rows 2–5 and 13. There is
+therefore no enum-with-no-valid-variant case to cross the FFI boundary.
 
-### One real divergence was found and fixed by this phase
+## Divergence found and fixed
 
-Row **E13** (`bw == NULL`) initially failed:
+**Row 12 (NULL `bw`) initially FAILED.** The C died with `SIGSEGV` (11); the
+Rust died with `SIGABRT` (6).
 
-```
-c:    code=None signal=Some(11)   # SIGSEGV
-rust: code=None signal=Some(6)    # SIGABRT
-```
-
-Cause: the Rust translation opened with
+Cause: the translation opened with
 
 ```rust
 let bw: &mut tflac_bitwriter = unsafe { &mut *bw };
 ```
 
-Forming a Rust reference from the caller's raw pointer asserts non-null and
-aligned. With `debug_assertions` on, rustc's `ub_checks` turn a NULL `bw` into
-the panic "null pointer dereference occurred", which — escaping an
-`extern "C"` fn — aborts with `SIGABRT`. The C has no null check and simply
-faults with `SIGSEGV`.
+Forming a Rust reference from the raw pointer — and, once that was removed, the
+plain `(*bw).tot` raw dereference in a `debug_assertions` build — makes rustc
+emit a UB check that reports *"null pointer dereference occurred"* as a
+non-unwinding panic, i.e. `abort()`. The C has no null check at all and simply
+faults on its first access to `bw->tot`.
 
-Fix (in `src/lib.rs`, never in the C): access the fields through raw place
-expressions, `(*bw).tot`, `(*bw).bits`, `(*bw).val`, exactly as the C does. This
-also stops the translation from claiming the `noalias` guarantee that the C
-pointer does not carry. Both `.so`s now fault identically. Note that rustc's
-`ub_checks` also fire on raw place access in debug builds, so the release
-artifact — the shipped one — is what E13 is asserted against; `SYMBOLS.md`
-records the profile caveat.
+Fix (`src/lib.rs`): never form a reference from the parameter; operate through
+raw-pointer places `(*bw).field` only. Verified that the shipped release `.so`
+and the C `.so` now both terminate with `SIGSEGV` under a neutral C `dlopen`
+driver as well as under the Rust test.
 
-### Coverage beyond the table
+## Robustness note (behaviour is not compiler-dependent)
 
-Also exercised, as required, even though the C checks none of them:
+`bitwriter_add` shifts a `uint64_t` by counts that can reach or exceed 64
+(`val <<= 64 - bits` with `bits == 0`, `val >> bw->bits` with `bw->bits >= 64`),
+which is UB in C. The generated code uses `shlq %cl` / `shrq %cl`, which mask
+the count to its low 6 bits; the Rust reproduces this with explicit `& 63` in
+`c_shl_u64` / `c_shr_u64`.
 
-* null pointer (E13), zero length (E2), oversized lengths (E5, up to
-  `0xFFFFFFFF`), one step past the valid range (E4 `bits == 65`, E7
-  `bw->bits == 64`);
-* out-of-range "enum"-style values across the FFI boundary (E11): `bits` is a
-  bare `tflac_u32` with no valid-variant set, so the whole `0..=512` range, every
-  power-of-two boundary ±1, and every multiple of 64 ±1 up to 4096 are swept
-  against several incoming states;
-* unsigned wrap-around on both accumulators (E9 `tot`, E10 `bits`) including a
-  200-value sweep straddling `0xFFFFFFFF`;
-* inconsistent/garbage untouched fields (E12): `pos > len`, null and bogus
-  non-null `buffer`, all asserted to come back unchanged.
+To confirm this is not an artifact of the unoptimized cmake build, the C source
+was additionally compiled at `-O0`, `-O1`, `-O2`, `-O3` and `-Os` and each
+resulting `.so` was compared against the Rust release `.so` through a neutral C
+`dlopen` driver over **560,000 cases each** (a full cross-product of the
+interesting `bw->bits` × `bits` boundary values plus 400,000 fully random
+cases): **0 mismatches at every optimization level.**

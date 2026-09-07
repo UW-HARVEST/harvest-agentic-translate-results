@@ -1,69 +1,98 @@
-# CONFIGS.md — Configuration surface table (Phase B)
+# CONFIGS.md — Phase B configuration surface table
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
+Mechanically derived from `c_src/include/lib.h` + `c_src/src/lib.c`.
 
-## Axes the C actually branches on
+## Axes the C code actually branches on
 
-The library has **no runtime options, modes, or flags** — there is no init
-struct, no context object, no setter, and no `#ifdef` in the source. The public
-API is a single function, and it is also the *lowest-level* entry point (there
-is no convenience wrapper layered over a lower-level core, so "exercise the
-low-level entry points, not just the wrappers" is satisfied by definition —
-`flip_horizontal` *is* the low level).
+The public header exposes exactly one entry point and no options:
 
-Everything the code distinguishes therefore comes from **input shape**, i.e. the
-three fields of `cp_image_t` plus the buffer contents:
+```c
+void flip_horizontal(cp_image_t *img);   /* the ONLY public symbol */
+```
 
-| axis | values the code special-cases | where |
+* **Runtime options / modes / flags:** none. There is no context struct, no
+  setter, no flag word, no format/byte-order/element-type selector, no
+  `#ifdef`, no `switch`. The complete input is the three struct fields
+  `w`, `h`, `pix`.
+* **Compile-time features:** the Rust crate declares **no** `[features]` at all
+  (`translation/Cargo.toml`), so there is exactly one feature combination
+  (the empty/default one). No `#ifdef`/`#if` in the C either.
+* **Binary / driver:** the project builds **no executable** — `CMakeLists.txt`
+  has a single `add_library(... SHARED src/lib.c)` and `[lib] crate-type =
+  ["cdylib"]`. There is no stdout to compare.
+
+Everything the code distinguishes is therefore the *shape of the input*, along
+these axes read straight out of the source:
+
+| axis | values the code distinguishes | where |
 |------|-------------------------------|-------|
-| `h` (row count) parity | **even** → every row paired; **odd** → the middle row `h/2` is never touched | `flips = h / 2` |
-| `h` magnitude | `0`, `1` → `flips == 0`, no work; `2`,`3` → one flip; `≥4` → multiple flips | outer guard `i < flips` |
-| `h` sign | negative → `flips <= 0` → no work | outer guard |
-| `w` (row width) magnitude | `0` → inner loop never runs; `1` → single pixel per row (a==b never, but degenerate stride); `≥2` → real per-pixel walk | inner guard `j < w` |
-| `w` sign | negative → inner loop never runs, and row pointers go out of bounds (computed only) | inner guard |
-| row stride interaction | rows are addressed as `pix + w*i`, so the buffer must be exactly `w*h` — any `(w,h)` pair with the same product exercises a *different* pairing | `pix + w*i`, `pix + w*(h-i-1)` |
-| `pix` | non-null valid `w*h` buffer; **null tolerated iff no work is due** | dereferenced only inside inner loop |
-| pixel byte values | all 4 channels are copied verbatim; `0x00`, `0xFF`, and random bytes must all round-trip (catches partial-channel / alpha-dropping bugs) | `cp_pixel_t t = *a; *a = *b; *b = t;` |
-| struct write-back | the function must **not** modify `img->w`, `img->h`, `img->pix` | (it never assigns them) |
+| A1 `h` parity | even (middle row absent) vs odd (middle row `h/2` must be left untouched) | `int flips = h / 2;` |
+| A2 `h` magnitude | `0`, `1` (→ `flips == 0`, no-op), `2`, `3`, small, large | `flips = h/2`, `i < flips` |
+| A3 `h` sign | `> 0` vs `<= 0` (`flips <= 0` → no-op), `INT_MIN` | `i < flips` |
+| A4 `w` magnitude | `0` (inner loop no-op), `1` (single column), `> 1` (many) | `j < w` |
+| A5 `w` sign | `> 0` vs `<= 0` (inner loop no-op) | `j < w` |
+| A6 row stride vs width | the code assumes stride == `w`; buffer must be exactly `w*h` pixels — so `w*h == 0`, `== 1`, and `>> 1` are distinct shapes | `pix + w*i` |
+| A7 pixel content | all four channels `r,g,b,a` are copied by struct assignment `*a = *b` — per-channel content must round-trip, incl. `0x00`/`0xFF` extremes | `cp_pixel_t t = *a; *a = *b; *b = t;` |
+| A8 aliasing of the swapped rows | `i` vs `h-i-1`: distinct rows for every `i < h/2`; they can never alias, but `h==2` is the boundary where the two rows are adjacent | pointer setup |
+| A9 idempotence / involution | applying the function twice restores the original (a property the C satisfies for every valid shape) | whole loop |
+| A10 buffer alignment | `cp_pixel_t` is align-1, so `pix` may be at any byte offset | `pix + w*i` |
 
-## Table — one row per meaningful combination
+Rows below are the cross-product of these axes pruned to the combinations the C
+actually treats differently. Every row is driven through **both** `.so`
+exports with **many randomized pixel payloads** (fixed seed `0x5EED_1234`,
+xorshift64* PRNG) and the two output buffers compared byte-for-byte, plus the
+whole 16-byte `cp_image_t` struct compared (the C must not mutate `w`/`h`/`pix`).
 
-Every row is driven through **both** `.so` exports with **many randomized pixel
-buffers** (deterministic SplitMix64, fixed seed `0x5EED_1234_ABCD_EF01`), plus
-the all-`0x00` and all-`0xFF` extremes, and compared byte-for-byte.
+| #   | entry point(s) | configuration (options set + input shape) | [x] |
+|-----|----------------|-------------------------------------------|-----|
+| C1  | `flip_horizontal` | `w=0, h=0` — empty image, both dims zero, `pix` = valid 0-length alloc | [x] |
+| C2  | `flip_horizontal` | `w=1, h=1` — single pixel, odd `h`, `flips=0` | [x] |
+| C3  | `flip_horizontal` | `w=1, h=2` — single column, even `h`, minimal swap, adjacent rows (A8 boundary) | [x] |
+| C4  | `flip_horizontal` | `w=1, h=3` — single column, odd `h`, middle row must stay put | [x] |
+| C5  | `flip_horizontal` | `w=2, h=1` — one row only, `flips=0`, no-op with valid buffer | [x] |
+| C6  | `flip_horizontal` | `w=3, h=2` — even `h`, multi-column | [x] |
+| C7  | `flip_horizontal` | `w=4, h=5` — odd `h`, multi-column, middle row `2` untouched | [x] |
+| C8  | `flip_horizontal` | `w=1, h=64` — tall & thin, even | [x] |
+| C9  | `flip_horizontal` | `w=1, h=65` — tall & thin, odd | [x] |
+| C10 | `flip_horizontal` | `w=64, h=1` — wide & flat (`flips=0`) | [x] |
+| C11 | `flip_horizontal` | `w=97, h=2` — wide, even `h`, non-power-of-two width | [x] |
+| C12 | `flip_horizontal` | `w=97, h=97` — large square, odd `h`, non-power-of-two | [x] |
+| C13 | `flip_horizontal` | `w=128, h=128` — large square, even `h`, power-of-two | [x] |
+| C14 | `flip_horizontal` | `w=0, h=7` — zero width with `flips=3 > 0`: outer loop runs, inner never (A4/A6 interaction) | [x] |
+| C15 | `flip_horizontal` | `w=5, h=0` — zero height with non-zero width | [x] |
+| C16 | `flip_horizontal` | randomized `w in 1..=40`, `h in 1..=40` (200 random shapes × random payload) — full shape sweep incl. both parities | [x] |
+| C17 | `flip_horizontal` | pixel payload extremes: every pixel `{0,0,0,0}`, every pixel `{255,255,255,255}`, per-channel one-hot patterns, at `w=7,h=6` (A7) | [x] |
+| C18 | `flip_horizontal` | payload is a channel-index ramp `r=x, g=y, b=x^y, a=x+y` at `w=17,h=9` — detects channel swaps and row/column transposition (A7) | [x] |
+| C19 | `flip_horizontal` | double application (`flip` twice) at randomized shapes — involution property must hold identically in both libs (A9) | [x] |
+| C20 | `flip_horizontal` | unaligned `pix` (base pointer offset by 1, 2, 3 bytes inside a `u8` allocation) at `w=6,h=4` (A10) | [x] |
+| C21 | `flip_horizontal` | struct-preservation: after the call, `w`, `h`, `pix` are unchanged, checked as raw 16 bytes, over the randomized sweep | [x] |
+| C22 | `flip_horizontal` | called repeatedly (10×) on the same buffer — parity of the number of applications must match | [x] |
+| C23 | `flip_horizontal` | `w=2, h=3` with padding canaries around the pixel buffer — asserts neither lib writes outside `[pix, pix + w*h)` | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `flip_horizontal` | `w=0, h=0`, `pix` = null — fully degenerate | [x] |
-| 2 | `flip_horizontal` | `w=0, h=0`, `pix` = valid 0-len (dangling-but-aligned) | [x] |
-| 3 | `flip_horizontal` | `w=8, h=0` — zero rows, non-empty width | [x] |
-| 4 | `flip_horizontal` | `w=1, h=1` — smallest non-empty, odd, no flip | [x] |
-| 5 | `flip_horizontal` | `w=8, h=1` — single row, odd, no flip | [x] |
-| 6 | `flip_horizontal` | `w=0, h=4` — outer loop spins, inner never runs, `pix` null | [x] |
-| 7 | `flip_horizontal` | `w=0, h=5` — same, odd `h` | [x] |
-| 8 | `flip_horizontal` | `w=1, h=2` — one swap of one pixel (minimal real work) | [x] |
-| 9 | `flip_horizontal` | `w=1, h=3` — odd, middle row must be preserved | [x] |
-| 10 | `flip_horizontal` | `w=2, h=2` — smallest multi-pixel row | [x] |
-| 11 | `flip_horizontal` | `w=8, h=2` — one flip, wide row | [x] |
-| 12 | `flip_horizontal` | `w=8, h=3` — odd `h`, wide row, middle preserved | [x] |
-| 13 | `flip_horizontal` | `w=8, h=4` — multiple flips, even | [x] |
-| 14 | `flip_horizontal` | `w=3, h=5` — multiple flips, odd, non-power-of-2 width | [x] |
-| 15 | `flip_horizontal` | `w=1, h=64` — degenerate width, many flips, even | [x] |
-| 16 | `flip_horizontal` | `w=1, h=65` — degenerate width, many flips, odd | [x] |
-| 17 | `flip_horizontal` | `w=64, h=1` — wide single row (transpose of #15's shape) | [x] |
-| 18 | `flip_horizontal` | `w=37, h=64` — large even, non-power-of-2 width | [x] |
-| 19 | `flip_horizontal` | `w=37, h=65` — large odd, non-power-of-2 width | [x] |
-| 20 | `flip_horizontal` | `w=256, h=2` — row wider than a cache line / vectorizable | [x] |
-| 21 | `flip_horizontal` | `w=2, h=256` — many flips, narrow | [x] |
-| 22 | `flip_horizontal` | same `w*h` product, different factorisations (`w×h` = 1×24, 2×12, 3×8, 4×6, 6×4, 8×3, 12×2, 24×1) over the *same* 24-pixel buffer — isolates the `pix + w*i` row-addressing | [x] |
-| 23 | `flip_horizontal` | pixel values = all `0x00` (across a representative shape set) | [x] |
-| 24 | `flip_horizontal` | pixel values = all `0xFF` (across a representative shape set) | [x] |
-| 25 | `flip_horizontal` | pixel values = per-channel distinguishable pattern (`r=idx, g=!idx, b=0xA5, a=idx*7`) — catches channel swap / alpha loss | [x] |
-| 26 | `flip_horizontal` | **idempotence/involution**: applying the op twice restores the original, checked on both libs (`h` even and odd) | [x] |
-| 27 | `flip_horizontal` | **struct not mutated**: `img->w`, `img->h`, `img->pix` identical after the call, all shapes | [x] |
-| 28 | `flip_horizontal` | **no out-of-bounds writes**: buffer padded with guard pixels before/after; guards must be untouched by both libs | [x] |
-| 29 | `flip_horizontal` | randomized sweep: 400 random `(w,h)` in `1..=24` with random pixel bytes | [x] |
-| 30 | `flip_horizontal` | randomized sweep incl. degenerate/negative dims: 400 random `(w,h)` in `-4..=12` | [x] |
+## Feature combinations
 
-Rows 1–28 are enumerated shapes/data patterns; rows 29–30 are the property-style
-randomized sweeps that cover the cross-product beyond the hand-listed points.
+`translation/Cargo.toml` declares no `[features]` table → the only combination
+is the default (empty) one. `cargo test --no-default-features` is equivalent to
+`cargo test` here and both are run by `run_all.sh`.
+
+## Row → test mapping (`tests/phase_b_valid.rs`)
+
+| rows | test |
+|------|------|
+| C1–C15 | `c01_w0_h0_empty` … `c15_w5_h0_zero_height` (one test per row, `REPS = 32` random payloads each) |
+| C16 | `c16_random_shape_sweep` (200 random `w,h` in `1..=40`) |
+| C17 | `c17_payload_extremes` (8 payload patterns) |
+| C18 | `c18_coordinate_ramp` |
+| C19 | `c19_double_application_is_identity` (60 random shapes) |
+| C20 | `c20_unaligned_pix` (byte shifts 0..8) |
+| C21 | `c21_struct_preserved` (80 random shapes, raw 16-byte struct compare) |
+| C22 | `c22_repeated_application_parity` (20 shapes × 10 applications) |
+| C23 | `c23_no_out_of_bounds_writes` (5 shapes × 3 canary values) |
+| layout | `layout_c_struct_layout_assumptions` |
+
+Every one of these compares the *entire* allocation (payload + 4 KiB canary
+padding either side) byte-for-byte between the two `.so` files, and additionally
+against an independent reference model of the C loop, so the two libraries
+cannot pass by agreeing on the same wrong answer.
+
+Status: **24/24 tests pass**, covering all 23 rows.

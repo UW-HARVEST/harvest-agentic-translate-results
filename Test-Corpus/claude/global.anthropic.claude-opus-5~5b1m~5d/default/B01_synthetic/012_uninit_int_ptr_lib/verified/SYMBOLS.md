@@ -1,51 +1,48 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Source of truth: `nm -D` on the C shared library
-`c_src/build/libdriver.so`, compared against the Rust cdylib
-`translation/target/release/libdriver.so`.
+Derived mechanically from `nm -D` on both shared objects.
 
-## Regeneration command
+Commands:
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so            | awk '{print $3}' | sort > /tmp/c.syms
-nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/r.syms
-comm -23 /tmp/c.syms /tmp/r.syms    # MUST be empty
+```bash
+# C
+cd c_src/build && nm -D --defined-only libdriver.so | sort
+# Rust
+cd translation && cargo build --release \
+  && nm -D --defined-only target/release/libdriver.so | sort
 ```
 
-## Defined (exported) dynamic symbols
+## Exported (defined, global) symbols
 
-| # | symbol | C `.so` | Rust `.so` | C declaration | notes |
-|---|--------|---------|------------|---------------|-------|
-| 1 | `printIntPtrLine` | T | T | `void printIntPtrLine(const int *intNumber)` | Lowest-level entry point. Not declared in `driver.h`, but has external linkage in `driver.c`, so it IS part of the ABI surface and must be tested directly. |
-| 2 | `bad`             | T | T | `void bad(void)`               | CWE-457: reads an uninitialised `int *` and passes it to `printIntPtrLine`. Undefined behaviour by construction. |
-| 3 | `good`            | T | T | `void good(void)`              | Initialises `int data = 5`, takes its address, prints `5\n`. |
-| 4 | `driver`          | T | T | `void driver(int useGood)`     | The only symbol declared in `driver.h`. Dispatches to `good()` when `useGood` is non-zero, else `bad()`. |
+| # | symbol | C `.so` | Rust `.so` | C source of truth |
+|---|--------|---------|-----------|-------------------|
+| 1 | `printIntPtrLine` | `T` | `T` | `c_src/src/driver.c:28` |
+| 2 | `bad`             | `T` | `T` | `c_src/src/driver.c:33` |
+| 3 | `good`            | `T` | `T` | `c_src/src/driver.c:39` |
+| 4 | `driver`          | `T` | `T` | `c_src/src/driver.c:48` |
 
-**Missing from Rust `.so`: none.** No `#[no_mangle]` wrapper had to be added and
-no C module was left untranslated: `c_src/src/driver.c` is the only translation
-unit in `CMakeLists.txt`, and all four of its external functions are exported by
-the Rust crate via `#[unsafe(no_mangle)] pub unsafe extern "C"`.
+Only `driver` is declared in the public header `c_src/include/driver.h`, but the
+other three have external linkage in C (no `static`), so they are part of the
+`.so`'s ABI surface and MUST be exported (and are) by the Rust `cdylib`.
+
+**Symbol diff (C-defined minus Rust-defined): EMPTY.** No stubs were used; every
+symbol is a real translation of the corresponding C function.
 
 ## Undefined (imported) symbols
 
-The C `.so` imports exactly one non-weak, non-libc-startup symbol:
-`printf@GLIBC_2.2.5`.
+C `.so` imports: `printf@GLIBC_2.2.5` plus the usual weak CRT symbols
+(`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
 
-The Rust `.so` imports `printf@GLIBC_2.2.5` as well — the translation
-deliberately calls the platform libc `printf` rather than Rust's `println!`, so
-stdout buffering, `%d` formatting and flush ordering are byte-identical to C.
+Rust `.so` imports: `printf@GLIBC_2.2.5` (the translation deliberately calls the
+platform `printf` so stdout formatting/buffering is byte-identical) plus libc
+allocator / unwinder / std-startup symbols (`malloc`, `memcpy`, `_Unwind_*`,
+`dl_iterate_phdr`, ...). **0 missing / non-libc undefined symbols.**
 
-The remaining Rust imports (`_Unwind_*`, `malloc`, `free`, `memcpy`,
-`dl_iterate_phdr`, `pthread_key_*`, `write`, ...) come from the Rust standard
-library / panic-unwind runtime that is statically linked into every cdylib.
-They are all libc / libgcc_s symbols, so the "0 missing/undefined non-libc
-symbols" gate holds.
+## Non-symbol artifacts
 
-## Verdict
-
-- [x] Every symbol exported by the C `.so` is exported by the Rust `.so` with the
-      exact same name.
-- [x] `comm -23 c.syms r.syms` is empty.
-- [x] No extra *public API* symbols are exported by Rust (no leaked Rust
-      mangled `_ZN...` symbols in the dynamic table).
-- [x] 0 missing / 0 undefined non-libc symbols.
+There is no binary/driver executable target in `c_src/CMakeLists.txt`
+(`add_library(driver SHARED ...)` only), and `translation/Cargo.toml` declares
+`crate-type = ["cdylib"]` with no `[[bin]]`. Therefore the "compare binary
+stdout" gate is **not applicable**; the equivalent check is performed by the
+differential harness executables in `tests/` which load each `.so` and compare
+captured stdout byte-for-byte.

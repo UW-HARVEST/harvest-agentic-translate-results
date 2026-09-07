@@ -3,16 +3,33 @@
 Generated from:
 
 ```text
-nm -D --defined-only --extern-only ../c_src/build/libharvest-work-oGS0vJ.so
-nm -D --defined-only --extern-only target/release/libjumpnode_lib.so
+nm -D --defined-only ../c_src/build/libharvest-work-KDzdfj.so
+nm -D --defined-only target/release/libjumpnode_lib.so
 ```
 
-| symbol | C type | Rust type | parity |
-|--------|--------|-----------|--------|
-| `jumpnode` | `T` | `T` | [x] |
+## Required public exports
 
-The C library has no other defined dynamic symbols. Its undefined entries
-(`sprintf`, `sqrt`, `strlen`, and ELF runtime hooks) are system-library imports,
-not public library exports or unresolved project symbols.
+| C symbol | C type | Rust symbol present | Notes |
+|----------|--------|---------------------|-------|
+| `jumpnode` | `T` | yes | Exact unmangled name and `extern "C"` ABI |
 
-Completion status: **0 C API symbols missing from Rust**.
+Missing required exports: **0**
+
+## C dynamic imports (not library exports)
+
+The unfiltered `nm -D`/`readelf -Ws` output also contains the undefined runtime
+imports `strlen`, `sprintf`, and `sqrt`, plus ELF toolchain weak symbols. These
+are implementation dependencies, not public symbols defined by the C library,
+and therefore are not export-parity requirements.
+
+## Final parity command
+
+```text
+comm -23 \
+  <(nm -D --defined-only ../c_src/build/libharvest-work-KDzdfj.so | awk '{print $3}' | sort -u) \
+  <(nm -D --defined-only target/release/libjumpnode_lib.so | awk '{print $3}' | sort -u)
+```
+
+Final missing-symbol diff: **empty**
+
+`ldd -r target/release/libjumpnode_lib.so` reports no unresolved symbols.

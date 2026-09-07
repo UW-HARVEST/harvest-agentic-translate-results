@@ -1,16 +1,25 @@
 # Error Surface
 
-The three explicit rejection branches come from `src/slicing.c:45`,
-`src/slicing.c:55`, and `src/slicing.c:59`. Row 4 records the generic null
-boundary required for every public API; C does not check it before `strlen`.
+Mechanically derived from every rejecting branch in
+`../c_src/src/slicing.c`. The C API defines no enums, explicit min/max
+constants, assertions, or length arguments.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `slice` | `start_ptr != NULL` and `(size_t)*start_ptr > strlen(mystr)`; this includes every negative `int` on this platform | prints `Error: start is off the end of the string!\n` and returns `1` | [x] |
-| 2 | `slice` | start passed validation, `stop_ptr != NULL`, and `(size_t)*stop_ptr > strlen(mystr)`; this includes every negative `int` on this platform | prints `Error: stop is off the end of the string!\n` and returns `1` | [x] |
-| 3 | `slice` | start and stop passed their upper-bound checks, `stop_ptr != NULL`, and `*stop_ptr <= start` | prints `Error: stop must come after start!\n` and returns `1` | [x] |
-| 4 | `slice` | `mystr == NULL` (with either optional index pointer null or non-null) | no explicit rejection; this build terminates with `SIGSEGV` in `strlen(NULL)` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `slice` | `start_ptr != NULL` and, after C's signed-to-`size_t` conversion, `*start_ptr > strlen(mystr)`; this includes every negative `int` | prints `Error: start is off the end of the string!\n`; returns `1` | [x] |
+| 2 | `slice` | start passed validation, `stop_ptr != NULL`, and, after C's signed-to-`size_t` conversion, `*stop_ptr > strlen(mystr)`; this includes every negative `int` | prints `Error: stop is off the end of the string!\n`; returns `1` | [x] |
+| 3 | `slice` | start and stop passed their end checks, `stop_ptr != NULL`, and `*stop_ptr <= start` | prints `Error: stop must come after start!\n`; returns `1` | [x] |
 
-There is no length parameter and no enum parameter. Zero-length input and null
-`start_ptr`/`stop_ptr` are valid configurations in `CONFIGS.md`; oversized and
-one-past-end indices are covered by rows 1 and 2.
+## Generic FFI boundaries
+
+These are tested in addition to the source-derived rows:
+
+- `mystr == NULL`: the C source performs no null check and calls `strlen(NULL)`;
+  compare C and Rust as isolated child processes so undefined behavior cannot
+  kill the test runner.
+- `start_ptr == NULL` and `stop_ptr == NULL`: these are valid, source-defined
+  option states and are covered in `CONFIGS.md`.
+- Zero length: represented by an empty NUL-terminated string and covered in
+  `CONFIGS.md`.
+- Oversized explicit length and out-of-range enum: not applicable; this API has
+  neither a length parameter nor an enum parameter.

@@ -1,83 +1,143 @@
-# CONFIGS.md — configuration / valid-input surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from the branches the C actually takes.
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`, plus the
+compiled C `.so` disassembly (the C is built with **no** optimisation flags —
+`c_src/CMakeLists.txt` sets none — so every helper is a real `call` through the
+PLT and every FP operation is a discrete `mulss`/`addss`/`subss`/`comiss`; the
+operand order in that asm is part of the observable behaviour for NaN payloads).
 
-```sh
-grep -nE "\?|switch|case|<|>|\||!" c_src/src/lib.c
-nm -D --defined-only c_src/build/libharvest-work-oWYE5y.so   # the FULL public API, 10 entry points
-```
+## Axes the C actually branches on
 
-## Axes the C branches on
+**Axis 1 — entry point.** There are 10 exported functions, only *one* of which
+(`collided`) is declared in the public header. The other nine are the low-level
+API and are exercised directly, not only through the `collided` wrapper:
+`c2V`, `c2Maxv`, `c2Minv`, `c2Clampv`, `c2Sub`, `c2Dot`, `c2CircletoCircle`,
+`c2CircletoAABB`, `c2AABBtoAABB`, `collided`.
 
-**A. Runtime options / modes.** The only runtime-selectable mode in the whole
-library is the pair of `C2_TYPE` tags handed to `collided` (`lib.h:1-4`). They
-drive a nested `switch` (`lib.c:74-97`) with 4 valid combinations, and the
-`AABB × CIRCLE` arm *swaps* the operands (`c2CircletoAABB(*(c2Circle*)B, *(c2AABB*)A)`
-— B is the circle, A is the box). There are no `#ifdef`s, no global state, no
-init/config struct, and no flags.
+**Axis 2 — runtime option/mode.** The only runtime option the public API can set
+is the `C2_TYPE` tag pair `(typeA, typeB)` passed to `collided`. Valid states:
+`(CIRCLE,CIRCLE)`, `(CIRCLE,AABB)`, `(AABB,CIRCLE)`, `(AABB,AABB)`.
+Note `(AABB,CIRCLE)` (lib.c:89-90) dispatches to
+`c2CircletoAABB(*(c2Circle*)B, *(c2AABB*)A)` — the *swapped* operand order, a
+distinct code path from `(CIRCLE,AABB)`. There are no `#ifdef`s and no other
+flags (`grep -c '#if' → 0`).
 
-**B. Entry points — all 10 exported symbols, lowest level first.** Phase B drives
-the low-level ones (`c2V`, `c2Maxv`, `c2Minv`, `c2Clampv`, `c2Sub`, `c2Dot`)
-directly, not only through the `collided` one-shot wrapper, and also drives the
-mid-level predicates (`c2CircletoCircle`, `c2CircletoAABB`, `c2AABBtoAABB`)
-directly as well as through `collided`.
+**Axis 3 — control-flow branches inside the math.** 13 branch/ternary sites:
+the 2 ternaries in `c2Maxv`, the 2 in `c2Minv`, the 4 `<` comparisons in
+`c2AABBtoAABB`, the 2 `d2 < r2` compares, and the 3 `switch`es. Each ternary
+takes the *else* arm for NaN (`comiss`+`jbe`), so NaN-vs-finite ordering is a
+distinct configuration from finite-vs-finite.
 
-**C. Input shapes.** Every parameter is a `float` (or a struct of floats), and the
-C validates nothing, so **all 2^32 bit patterns are valid input**. The classes the
-hardware/compiler treat differently are: normal finite, ±0, subnormal, ±inf,
-quiet NaN (payload-carrying), **signalling** NaN (quieted by SSE, so the output
-payload differs from the input), overflow-magnitude (squaring `r` overflows to
-inf), underflow-magnitude (squaring underflows to 0/subnormal), and the
-invalid-operation pairs `0*inf` and `inf-inf` (which produce the x86
-QNaN-indefinite `0xFFC00000` rather than propagating an input payload).
+**Axis 4 — input value shape (float bit classes).** The code does no
+classification, but the hardware does: `+/-` normal, `+0.0`, `-0.0`, subnormal,
+`+inf`, `-inf`, QNaN (payload-carrying), SNaN (quieted by the ALU), and
+magnitudes large enough that `r*r` / `d2` overflow to `inf`, or small enough that
+`x*x` underflows to `0`/subnormal.
 
-**D. Geometric shapes the predicates distinguish.** overlapping; exactly touching
-(`d2 == r2`, where the `<` is strictly false — the boundary case); separated;
-one contained in the other; AABB **inverted** (`min > max`, which
-`c2Clampv`'s `max(lo, min(a,hi))` handles asymmetrically); degenerate zero-area
-AABB (`min == max`); negative radius; zero radius; edge/corner-touching boxes.
+**Axis 5 — geometric shape.** overlapping, exactly touching (`d2 == r2`, the
+strict-`<` boundary), disjoint, one shape fully inside the other, circle centre
+inside the AABB (clamp is a no-op ⇒ `d2 == 0`), zero radius, negative radius,
+inverted AABB (`min > max`), degenerate AABB (`min == max`), and box/circle
+struct sizes mismatching the tag (12-byte `c2Circle` vs 16-byte `c2AABB`
+reinterpretation).
 
-## Table (cross-product, pruned to combinations the C distinguishes)
+## Rows
 
-Every row is exercised with **1000+ randomized inputs** from a fixed-seed PRNG
-(seed `0x2545F4914F6CDD1D`), not one hand-picked value, plus a hand-written
-boundary corpus. Row is checked only after all of its inputs match bit-for-bit.
+Each row is checked off only after **many randomized inputs** (fixed seed,
+property-style) pass byte-for-byte against the C `.so`. Test names refer to
+`translation/tests/differential.rs`.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| 1 | `c2V` | random full-range `u32` bit patterns reinterpreted as `(x, y)` — covers every float class incl. SNaN payloads | `cfg_row01_c2v_random_bits` | [x] |
-| 2 | `c2V` | boundary corpus: ±0, ±1, ±inf, QNaN/SNaN with distinct payloads, `f32::MIN_POSITIVE`, subnormals, `MAX` | `cfg_row02_c2v_boundary_corpus` | [x] |
-| 3 | `c2Maxv` | random full-range bits ×2 — exercises `a>b ? a : b` incl. the NaN-⇒-take-`b` path | `cfg_row03_c2maxv_random_bits` | [x] |
-| 4 | `c2Maxv` | boundary corpus cross-product (both operands drawn from the special-value list, incl. NaN vs NaN, ±0 vs ∓0, inf vs inf) | `cfg_row04_c2maxv_boundary_cross` | [x] |
-| 5 | `c2Minv` | random full-range bits ×2 — exercises `a<b ? a : b` | `cfg_row05_c2minv_random_bits` | [x] |
-| 6 | `c2Minv` | boundary corpus cross-product | `cfg_row06_c2minv_boundary_cross` | [x] |
-| 7 | `c2Clampv` | random `(a, lo, hi)` full-range bits — includes **inverted** ranges (`lo > hi`) since the C never orders them | `cfg_row07_c2clampv_random_bits` | [x] |
-| 8 | `c2Clampv` | boundary corpus triple-cross: `a`/`lo`/`hi` from specials; explicit `lo>hi`, `lo==hi`, NaN in each of the three positions | `cfg_row08_c2clampv_boundary_cross` | [x] |
-| 9 | `c2Sub` | random full-range bits ×2 — exercises `subss` incl. `inf - inf` ⇒ QNaN-indefinite and SNaN quieting | `cfg_row09_c2sub_random_bits` | [x] |
-| 10 | `c2Sub` | boundary corpus cross-product; explicit `inf-inf`, `-inf-(-inf)`, `0-0`, `-0-0`, overflow (`MAX - -MAX`), underflow (nearest subnormals) | `cfg_row10_c2sub_boundary_cross` | [x] |
-| 11 | `c2Dot` | random full-range bits ×4 — exercises the pinned `mulss(a.x,b.x)` / `mulss(b.y,a.y)` / `addss(q,p)` operand order that decides which NaN payload survives | `cfg_row11_c2dot_random_bits` | [x] |
-| 12 | `c2Dot` | boundary corpus: `0*inf`, `inf*0`, two *different* NaN payloads in the two products (payload-selection test), `inf + -inf` from the two products, overflow to inf, underflow to 0 | `cfg_row12_c2dot_boundary_cross` | [x] |
-| 13 | `c2CircletoCircle` | direct call, random full-range bits (all 6 floats) — unconstrained, hits NaN/inf radii and the `A.r + B.r` operand order | `cfg_row13_circle_circle_random_bits` | [x] |
-| 14 | `c2CircletoCircle` | direct call, random *plausible geometry* (finite coords in ±100, radii in ±10, so overlap and non-overlap are both frequent) | `cfg_row14_circle_circle_random_geometry` | [x] |
-| 15 | `c2CircletoCircle` | direct call, geometric boundaries: exactly touching (`d == rA+rB`, tests strict `<`), concentric, zero radius, **negative** radius (sum can be negative ⇒ `r2` positive after squaring), radii summing to inf | `cfg_row15_circle_circle_boundaries` | [x] |
-| 16 | `c2CircletoAABB` | direct call, random full-range bits (all 7 floats) | `cfg_row16_circle_aabb_random_bits` | [x] |
-| 17 | `c2CircletoAABB` | direct call, random plausible geometry with **well-ordered** box (`min <= max`) | `cfg_row17_circle_aabb_random_geometry` | [x] |
-| 18 | `c2CircletoAABB` | direct call, random plausible geometry with **inverted** box (`min > max`) — different `c2Clampv` path | `cfg_row18_circle_aabb_inverted_box` | [x] |
-| 19 | `c2CircletoAABB` | direct call, boundaries: centre inside box, centre on edge, centre on corner, exactly-touching edge/corner, zero-area box, zero and negative radius, NaN in one box component only | `cfg_row19_circle_aabb_boundaries` | [x] |
-| 20 | `c2AABBtoAABB` | direct call, random full-range bits (all 8 floats) — exercises the `int` bitwise `d0|d1|d2|d3` and `!` | `cfg_row20_aabb_aabb_random_bits` | [x] |
-| 21 | `c2AABBtoAABB` | direct call, random plausible geometry, both boxes well-ordered | `cfg_row21_aabb_aabb_random_geometry` | [x] |
-| 22 | `c2AABBtoAABB` | direct call, random plausible geometry, one or both boxes **inverted** | `cfg_row22_aabb_aabb_inverted` | [x] |
-| 23 | `c2AABBtoAABB` | direct call, boundaries: edge-touching (`A.max.x == B.min.x`, tests strict `<`), corner-touching, identical, contained, zero-area, separated on each of the 4 axes independently | `cfg_row23_aabb_aabb_boundaries` | [x] |
-| 24 | `c2Dot`+`c2Sub`+`c2Clampv` composed | the composed pipeline as a real consumer runs it: `c2Sub`→`c2Dot` and `c2Clampv`→`c2Sub`→`c2Dot` chained by the test itself, with random full-range bits, cross-checked against `c2CircletoCircle`/`c2CircletoAABB` in **both** libraries | `cfg_row24_composed_pipeline` | [x] |
-| 25 | `collided` | `typeA=CIRCLE, typeB=CIRCLE` — random full-range bits **and** random plausible geometry; result cross-checked against a direct `c2CircletoCircle` call | `cfg_row25_collided_circle_circle` | [x] |
-| 26 | `collided` | `typeA=CIRCLE, typeB=AABB` — random bits + geometry, well-ordered and inverted boxes; cross-checked against direct `c2CircletoAABB(A,B)` | `cfg_row26_collided_circle_aabb` | [x] |
-| 27 | `collided` | `typeA=AABB, typeB=CIRCLE` — the **operand-swapping** arm; cross-checked against direct `c2CircletoAABB(*B, *A)` to confirm the swap is reproduced, not "fixed" | `cfg_row27_collided_aabb_circle` | [x] |
-| 28 | `collided` | `typeA=AABB, typeB=AABB` — random bits + geometry, well-ordered and inverted | `cfg_row28_collided_aabb_aabb` | [x] |
-| 29 | `collided` | aliasing: `A == B` (same pointer) for all 4 valid tag combinations, incl. the 12-byte-circle-read-as-16-byte-AABB overlap the tags allow | `cfg_row29_collided_aliased_pointers` | [x] |
-| 30 | `collided` | tag combos read from a **`u8` blob** interpreted as both shapes: a single 16-byte buffer of random bytes passed with all 4 tag pairs, i.e. arbitrary struct contents rather than constructed values | `cfg_row30_collided_raw_blob` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `c2V` | random finite `f32` bit patterns; asserts returned struct bits identical (pure struct-return ABI check) | [x] |
+| 2 | `c2V` | special values: `±0.0`, `±inf`, subnormals, QNaN & SNaN payloads (must pass through unquieted — no arithmetic) | [x] |
+| 3 | `c2Maxv` | both components finite normals, all orderings (`a>b`, `a<b`, `a==b`) | [x] |
+| 4 | `c2Maxv` | `±0.0` mixes (`+0.0 > -0.0` is false ⇒ returns `b`) and subnormals | [x] |
+| 5 | `c2Maxv` | NaN in `a` only / `b` only / both, with distinct payloads ⇒ else-arm (`b`) taken, payload preserved | [x] |
+| 6 | `c2Maxv` | `±inf` operands, mixed with finites and NaN | [x] |
+| 7 | `c2Minv` | both components finite normals, all orderings | [x] |
+| 8 | `c2Minv` | `±0.0` mixes and subnormals | [x] |
+| 9 | `c2Minv` | NaN in `a` / `b` / both with distinct payloads ⇒ else-arm (`b`) | [x] |
+| 10 | `c2Minv` | `±inf` operands mixed with finites and NaN | [x] |
+| 11 | `c2Clampv` | `lo <= hi`, point below / inside / above the range (composes `c2Maxv(lo, c2Minv(a,hi))`) | [x] |
+| 12 | `c2Clampv` | **inverted range** `lo > hi` (unchecked by C; result is `lo`-dominated) | [x] |
+| 13 | `c2Clampv` | NaN in `a`, in `lo`, in `hi`, and combinations — exercises the composed ternary chain, where NaN placement changes which operand survives | [x] |
+| 14 | `c2Clampv` | `±inf` bounds, `lo == hi` (degenerate), `±0.0` bounds | [x] |
+| 15 | `c2Sub` | random finite normals (`subss` per component) | [x] |
+| 16 | `c2Sub` | overflow to `±inf` (`FLT_MAX - -FLT_MAX`), underflow to subnormal/`±0.0`, `x - x == +0.0`, `-0.0 - +0.0 == -0.0` | [x] |
+| 17 | `c2Sub` | `inf - inf` (same sign) ⇒ QNaN indefinite `0xFFC00000`; `inf - (-inf)` ⇒ `inf` | [x] |
+| 18 | `c2Sub` | NaN operands with distinct payloads in `a` and/or `b` ⇒ SSE dst-preference (`a` wins), SNaN quieted | [x] |
+| 19 | `c2Dot` | random finite normals (checks the pinned `mulss a.x,b.x` / `mulss b.y,a.y` / `addss q,p` operand order) | [x] |
+| 20 | `c2Dot` | products that overflow to `±inf`, and `+inf + -inf` in the sum ⇒ QNaN indefinite | [x] |
+| 21 | `c2Dot` | `0 * inf` ⇒ QNaN indefinite; subnormal products underflowing to `0` | [x] |
+| 22 | `c2Dot` | NaN in one/both products with distinct payloads ⇒ exercises the exact `addss` dst/src NaN priority (`b.y*a.y` is dst) | [x] |
+| 23 | `c2CircletoCircle` | random overlapping circles (finite normals, positive radii) | [x] |
+| 24 | `c2CircletoCircle` | random disjoint circles | [x] |
+| 25 | `c2CircletoCircle` | exactly touching, `d2 == r2` — the strict-`<` boundary ⇒ `0` | [x] |
+| 26 | `c2CircletoCircle` | identical circles, zero radius (`r == 0`, coincident centres ⇒ `d2 == r2 == 0` ⇒ `0`) | [x] |
+| 27 | `c2CircletoCircle` | **negative radii** (unchecked; `A.r + B.r` may cancel to `0` or go negative before squaring) | [x] |
+| 28 | `c2CircletoCircle` | huge radii/centres so `r2` or `d2` overflows to `inf` (`inf < inf` ⇒ `0`) | [x] |
+| 29 | `c2CircletoCircle` | NaN / `±inf` in centres and/or radii (unordered `comiss` ⇒ `0`) | [x] |
+| 30 | `c2CircletoAABB` | circle centre **inside** the box (clamp is identity ⇒ `d2 == 0 < r2`) | [x] |
+| 31 | `c2CircletoAABB` | centre outside on each of the 8 sides/corners, overlapping | [x] |
+| 32 | `c2CircletoAABB` | centre outside, disjoint | [x] |
+| 33 | `c2CircletoAABB` | exactly touching (`d2 == r2`) ⇒ `0`; and the corner-touch case | [x] |
+| 34 | `c2CircletoAABB` | degenerate box `min == max` (point box) and zero-radius circle | [x] |
+| 35 | `c2CircletoAABB` | **inverted box** `min > max` on one or both axes (unchecked by C) | [x] |
+| 36 | `c2CircletoAABB` | negative radius; huge coordinates overflowing `d2`/`r2` to `inf` | [x] |
+| 37 | `c2CircletoAABB` | NaN / `±inf` in centre, radius, and box corners (all placements) | [x] |
+| 38 | `c2AABBtoAABB` | random overlapping boxes | [x] |
+| 39 | `c2AABBtoAABB` | disjoint on x only, y only, and both | [x] |
+| 40 | `c2AABBtoAABB` | edge-touching (`B.max.x == A.min.x`) — `<` is false ⇒ `1` (touching counts as collision, unlike the circles) | [x] |
+| 41 | `c2AABBtoAABB` | degenerate `min == max`, inverted `min > max`, `±0.0` corners | [x] |
+| 42 | `c2AABBtoAABB` | `±inf` corners (infinite box contains everything) | [x] |
+| 43 | `c2AABBtoAABB` | NaN corners in every one of the 8 slots ⇒ all four `<` false ⇒ `1` | [x] |
+| 44 | `collided` | `(CIRCLE, CIRCLE)` — random circles across all shapes of rows 23-29 | [x] |
+| 45 | `collided` | `(CIRCLE, AABB)` — `A` read as 12-byte circle, `B` as 16-byte box | [x] |
+| 46 | `collided` | `(AABB, CIRCLE)` — the **swapped** dispatch: `B` read as circle, `A` as box | [x] |
+| 47 | `collided` | `(AABB, AABB)` | [x] |
+| 48 | `collided` | all 4 valid tag pairs where the *same* pointer is passed for `A` and `B` (aliasing) | [x] |
+| 49 | `collided` | all 4 valid tag pairs over a shared 16-byte buffer, so the tag decides how many bytes are read and which struct layout is applied to identical bytes | [x] |
+| 50 | `collided` | all 4 valid tag pairs with NaN/inf/subnormal payloads in the pointed-to structs | [x] |
+| 51 | end-to-end | full random sweep: for each iteration build random `c2Circle`/`c2AABB` from random 32-bit words (all float classes reachable) and compare every one of the 10 exports in one pass | [x] |
 
-## Feature combinations
+## How the rows are exercised
 
-`translation/Cargo.toml` declares no `[features]`, so `default`,
-`--no-default-features`, and `--all-features` are the same build. All 30 rows are
-re-run under each of those invocations by `scripts/verify_all.sh` to prove it.
+- `tests/differential.rs` — one `rowNN_*` test per row above (51 tests).
+- `tests/adversarial.rs` — 8 denser sweeps layered on top of the rows:
+  exhaustive 4-slot cross-products over a 24-entry NaN/inf/zero/boundary bit
+  pattern pool (331 776 argument sets per function), a 1 000 000-iteration
+  uniform-random-bits sweep, a 500 000-iteration special-value-biased sweep, a
+  200 000-iteration raw-byte sweep through `collided`, a full 255×255
+  exponent grid for `c2Dot`/`c2Sub` rounding, and a ±4-ULP sweep across
+  many magnitudes around the `d2 < r2` decision boundary.
+- `tests/errors.rs` — Phase C (see `ERRORS.md`).
+- `tests/symbols.rs` — Phase D symbol parity, asserted as a test so it cannot
+  drift.
+
+All of it runs via `./run-tests.sh`, which builds the C `.so`, builds the Rust
+cdylib (**required** — `cargo test` does *not* rebuild a `cdylib`-only lib
+target, so without this the tests would `dlopen` a stale `.so`; the harness also
+asserts `.so` freshness and refuses to run otherwise), then runs every test in
+`debug` and `release` for every feature combination, and finally diffs `nm -D`.
+
+## Mutation testing (test-sensitivity evidence)
+
+Passing tests only prove something if they would fail on a wrong translation. 25
+mutations were injected into `src/lib.rs` one at a time, rebuilt, and re-tested.
+Every behaviour-changing mutation was caught. The 5 survivors were confirmed by
+hand to be **semantically equivalent** to the original, i.e. unkillable:
+
+| survivor | why it is equivalent |
+|----------|----------------------|
+| `c2CircletoCircle`: `addss(B.r, A.r)` → `addss(A.r, B.r)` | FP addition is commutative except for the NaN payload, and any NaN `r2` makes `comiss` unordered ⇒ `0` either way, so the payload is unobservable through the `int` return |
+| `c2AABBtoAABB`: `(d0\|d1\|d2\|d3) == 0` → `(d0+d1+d2+d3) == 0` | each `dN` is `0` or `1`, so bitwise-or and sum are zero on exactly the same inputs |
+| `mulss`: drop the explicit `0*inf` → `0xFFC00000` rule | Rust's own `f32 *` lowers to `mulss` on x86-64 and already yields `0xFFC00000` (verified empirically) |
+| `subss`: drop the explicit `inf-inf` rule | same reason, for `subss` |
+| `addss`: drop the explicit `inf+(-inf)` rule | same reason, for `addss` |
+
+Representative kills: flipping the NaN dst/src priority in `mulss`/`addss`/`subss`
+(5 tests each), replacing the `c2Maxv`/`c2Minv` ternaries with `f32::max`/`f32::min`
+(30–36 tests), un-swapping the `(AABB, CIRCLE)` dispatch in `collided` (6 tests),
+turning a `default: return 0` arm into `1` (4–5 tests), `<` → `<=` at the
+`d2 < r2` boundary (15–18 tests), and reverting the `read_unaligned` fix.

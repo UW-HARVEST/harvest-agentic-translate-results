@@ -16,15 +16,6 @@ unsafe extern "C" {
     fn free(ptr: *mut c_void);
 }
 
-#[used]
-static MALLOC: unsafe extern "C" fn(usize) -> *mut c_void = malloc;
-
-#[inline(never)]
-unsafe fn call_malloc(size: usize) -> *mut c_void {
-    let allocator = unsafe { std::ptr::read_volatile(&raw const MALLOC) };
-    unsafe { allocator(size) }
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn safe_double_to_int(d: c_double) -> c_int {
     if d.is_nan() {
@@ -125,7 +116,9 @@ pub extern "C" fn fallcalc(param1: c_int, param2: c_int, param3: c_int, param4: 
 
     let array_size: c_int = 5;
     let allocation_size = (array_size as usize).wrapping_mul(size_of::<c_int>());
-    let data_array = unsafe { call_malloc(allocation_size) }.cast::<c_int>();
+    // The allocation failure is observable in the C implementation. Prevent
+    // LLVM from deleting this otherwise-local malloc/free pair.
+    let data_array = std::hint::black_box(unsafe { malloc(allocation_size) }.cast::<c_int>());
 
     if data_array.is_null() {
         return -1;

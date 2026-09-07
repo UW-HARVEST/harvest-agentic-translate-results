@@ -1,92 +1,87 @@
-# CONFIGS.md — configuration / valid-input surface table (Phase B gate)
+# CONFIGS.md — configuration-surface table (Phase B)
 
-Derived mechanically from the branches `c_src/src/lib.c` actually takes, not from
-what looks important. The axes below are the complete set of things the C code
-distinguishes.
+The mirror of `ERRORS.md`: every **valid** input configuration the C actually
+branches on. Axes derived mechanically from the `if` / `switch` / guard
+structure of `c_src/src/lib.c` plus the public surface in
+`c_src/include/lib.h` and `nm -D`.
 
-## Axis inventory (from the source)
+## Axes the C code actually distinguishes
 
-**Build-time configuration.** The C library has no `#ifdef`, no build options and
-no compile-time flags (`c_src/CMakeLists.txt` lists one source and no
-`target_compile_definitions`). `translation/Cargo.toml` declares no `[features]`.
-There is therefore exactly **one** build configuration; `scripts/check_features.sh`
-enumerates and re-runs everything for every combination it can find.
+There are no runtime option structs, no global mode flags, no `#ifdef`s and no
+Cargo features in this library — every "option" is a scalar argument. The axes
+are therefore:
 
-**Runtime configuration** (the "options" a caller can set):
+| axis | values the C treats differently | where it branches |
+|------|--------------------------------|-------------------|
+| **entry point** | 9 exported symbols; 5 low-level (`shift_array`, `process_string`, `apply_bitmask`, `init_matrix`, `compare_allocations`) + 4 composed (`arity4`, `arity3`, `arity2`, `arity`) | `nm -D` |
+| `apply_bitmask.operation` | `0`, `1`, `2`, `3`, other | `switch` |
+| `shift_array` guard | `positions <= 0` \| `0 < positions < size` \| `positions >= size` | `if (positions > 0 && positions < size)` |
+| `shift_array.positions` shape | `1`, `2`, `3` (mid), `size-1` (max shifting) | loop bound + `memmove` length |
+| `process_string` guard | first byte `0` vs non-zero | `if (*str)` |
+| `process_string` length shape | 0, 1, many, high-bit bytes, embedded NUL | `strlen` |
+| `compare_allocations.val1` sign | `val1 > 0` vs `val1 <= 0` | `(*uninit_ptr > 0) ? 10 : 0` |
+| **heap phase** | tcache parity: `ptr1 < ptr2` vs `ptr1 > ptr2` | address compare; alternates per call |
+| `arity4.param1 mod 4` | `0`,`1`,`2`,`3` and `-1`,`-2`,`-3` (C `%` keeps the sign, so negative `param1` reaches `default:`) | `apply_bitmask(result, param1 % 4)` |
+| `arity4.param3` | `== 0` (skip rescale) vs `!= 0` (`*param3 / 100`), positive vs negative | `if (param3 != 0)` |
+| `arity4.param4` | `== 0` vs `!= 0` | `if (param4 != 0)` |
+| `arity.len` dispatch | `<2` → `-1`; `2` → `arity2`; `3` → `arity3`; `>=4` → `arity4`; all after `& 0xFF` | `if/else if/else` chain |
+| magnitude | small, `INT_MAX`/`INT_MIN` boundaries, wrapping-overflow values | signed arithmetic |
 
-| axis | values the C branches on | site |
-|------|--------------------------|------|
-| A. `apply_bitmask` `operation` | `0` (`&0xF0`), `1` (`&0x0F`), `2` (`\|0xAA`), `3` (`^0x55`), anything else (identity) | `switch` in `apply_bitmask` |
-| B. `arity` dispatch `len` (low byte) | `<2` → `-1`; `==2` → `arity2`; `==3` → `arity3`; else → `arity4` | `if/else` chain in `arity` |
-| C. `arity4` derived operation `param1 % 4` | `0,1,2,3` (param1 ≥ 0) and `-1,-2,-3` (param1 < 0, C truncating remainder) → 7 reachable values, 3 of which fall through to `default` | `apply_bitmask(result, param1 % 4)` |
-| D. `arity4` scaling switch `param3 != 0` | off (`0`) / on-positive / on-negative | `if (param3 != 0)` |
-| E. `arity4` offset switch `param4 != 0` | off (`0`) / on-positive / on-negative | `if (param4 != 0)` |
-| F. `compare_allocations` bonus `val1 > 0` | bonus applied / not applied | ternary on `*uninit_ptr` |
-| G. heap address ordering `ptr1 < ptr2` | ascending (`1`) / descending (`2`) — a real, observable runtime state of glibc's LIFO tcache, controlled in the tests by pre-seeding the 32-byte bin | `if (ptr1 < ptr2)` chain |
-| H. `shift_array` shift amount | `1 .. size-1` (in range), plus the rejected values in `ERRORS.md` | guard in `shift_array` |
+Every row below is checked with **many randomized inputs from a fixed seed**
+(a deterministic SplitMix64 PRNG in the test file), not one hand-picked value.
+Rows touching `compare_allocations` transitively are compared as phase-neutral
+call *pairs* (see `SYMBOLS.md`) so that both heap phases are observed per input.
 
-**Input shapes** the code special-cases:
+## Table
 
-| axis | values | site |
-|------|--------|------|
-| I. `shift_array` `size` | `2`, `3`, `4` (the size `arity4` uses), `5`, `8`, `64`, `1024` | loop/`memmove` length |
-| J. `shift_array` overlap | destination always overlaps source (`memmove`, not `memcpy`) — full overlap (`positions == 1`) through minimal overlap (`positions == size-1`) | `memmove(arr+positions, arr, ...)` |
-| K. `process_string` length | `1`, `2`, `5` (the literal `arity4` uses), `63`, `64`, `255`, `4096` | `strlen` |
-| L. `process_string` byte values | ASCII, bytes ≥ 0x80 (`char` signedness), `0x01`, `0x7F`, `0xFF` | `*str` truthiness / `strlen` |
-| M. `init_matrix` buffer | exactly 3×4, and a 3×4 window inside a larger sentinel-guarded buffer | `matrix[i][j]` writes |
-| N. `int` magnitude | small (no overflow), boundary (`INT_MAX`, `INT_MIN`, `±100`, `±99`, `0x7fff0000`), fully random 32-bit | all arithmetic |
-| O. entry-point level | low-level (`shift_array`, `process_string`, `apply_bitmask`, `init_matrix`, `compare_allocations`) → mid (`arity4`) → wrappers (`arity3`, `arity2`) → dispatcher (`arity`) | call hierarchy |
+| # | entry point(s) | configuration (options set + input shape) | ✔ |
+|---|----------------|--------------------------------------------|---|
+| 1 | `apply_bitmask` | `operation = 0` (`value & 0xF0`), `value` random over full `i32` incl. negatives | [x] |
+| 2 | `apply_bitmask` | `operation = 1` (`value & 0x0F`), full-range random `value` | [x] |
+| 3 | `apply_bitmask` | `operation = 2` (`value \| 0xAA`), full-range random `value` | [x] |
+| 4 | `apply_bitmask` | `operation = 3` (`value ^ 0x55`), full-range random `value` | [x] |
+| 5 | `apply_bitmask` | `operation` random over full `i32` (mostly `default:` identity), full-range `value` — cross-product of both args | [x] |
+| 6 | `init_matrix` | fresh 3×4 buffer pre-filled with a random poison pattern; assert all 12 cells overwritten with `1..12` and no out-of-bounds write (guard cells around the buffer) | [x] |
+| 7 | `init_matrix` | called twice on the same buffer (idempotence) | [x] |
+| 8 | `process_string` | empty string (guard-false path) | [x] |
+| 9 | `process_string` | length 1 | [x] |
+| 10 | `process_string` | random length 2..64 of random **non-zero** bytes over the full `1..=255` range (exercises signed-`char` high-bit values) | [x] |
+| 11 | `process_string` | first byte non-zero, embedded NUL in the middle → `strlen` stops early | [x] |
+| 12 | `process_string` | long string (512 bytes) | [x] |
+| 13 | `shift_array` | `size` random 1..16, `positions = 1` (the value `arity4` actually uses), random contents | [x] |
+| 14 | `shift_array` | `size` random 2..16, `positions` random in `1..size-1` (guard-true, mid range) | [x] |
+| 15 | `shift_array` | `positions = size - 1` (maximal in-range shift: 1 element moved, `size-1` zeroed) | [x] |
+| 16 | `shift_array` | `positions = 0` and `positions < 0` (guard-false no-op) with random contents | [x] |
+| 17 | `shift_array` | `positions == size` and `positions > size` (guard-false no-op) | [x] |
+| 18 | `shift_array` | `size = 1`, `size = 0`, and negative `size`, random `positions` | [x] |
+| 19 | `shift_array` | overlapping-region correctness: `size = 16`, `positions = 8` (dst/src overlap exactly half — the case a naive `memcpy` would corrupt) | [x] |
+| 20 | `compare_allocations` | `val1 > 0` (adds 10) — phase-neutral pair, random `val1` in `1..=INT_MAX`, random `val2` | [x] |
+| 21 | `compare_allocations` | `val1 == 0` and `val1 < 0` (no bonus) — phase-neutral pair, random `val2` | [x] |
+| 22 | `compare_allocations` | both `val1`,`val2` random full-range `i32` — phase-neutral pair, many iterations | [x] |
+| 23 | `arity4` | `param1 % 4 == 0`, `param3 == 0`, `param4 == 0` (both guards skipped) | [x] |
+| 24 | `arity4` | `param1 % 4 == 1`, `param3 == 0`, `param4 == 0` | [x] |
+| 25 | `arity4` | `param1 % 4 == 2`, `param3 == 0`, `param4 == 0` | [x] |
+| 26 | `arity4` | `param1 % 4 == 3`, `param3 == 0`, `param4 == 0` | [x] |
+| 27 | `arity4` | `param1 < 0` so `param1 % 4 ∈ {-1,-2,-3}` → `apply_bitmask` `default:` identity | [x] |
+| 28 | `arity4` | `param3 != 0` positive (rescale `*param3/100`), `param4 == 0` | [x] |
+| 29 | `arity4` | `param3 != 0` negative (negative product → truncate-toward-zero division), `param4 == 0` | [x] |
+| 30 | `arity4` | `param3 != 0`, `param4 != 0` (both branches taken) | [x] |
+| 31 | `arity4` | `param3 == 0`, `param4 != 0` (only the second branch) | [x] |
+| 32 | `arity4` | all four params random full-range `i32` — the full cross-product, many iterations, exercises wrapping mul/add and every `%4` residue | [x] |
+| 33 | `arity4` | boundary magnitudes: each param drawn from `{0, ±1, ±2, ±3, ±4, ±99, ±100, ±101, INT_MAX, INT_MIN, INT_MAX-1, INT_MIN+1}` — exhaustive cross-product over a curated set | [x] |
+| 34 | `arity2` | random `p1`,`p2` full range; also asserted equal to `arity4(p1,p2,0,0)` on the C side | [x] |
+| 35 | `arity3` | random `p1..p3` full range incl. `p3 == 0` and `p3 != 0` | [x] |
+| 36 | `arity` | `len = 2` → `arity2` dispatch, random `params` (buffer sized exactly 2 to catch over-read) | [x] |
+| 37 | `arity` | `len = 3` → `arity3` dispatch, random `params` (buffer sized exactly 3) | [x] |
+| 38 | `arity` | `len = 4` → `arity4` dispatch, random `params` | [x] |
+| 39 | `arity` | `len = 5..255` → still `arity4`, reads only first 4; random `params` of matching length | [x] |
+| 40 | `arity` | `len = 258`/`259`/`260` → truncate to 2/3/4, same dispatch as `len = 2/3/4` | [x] |
+| 41 | `arity` | `len` negative → low byte unsigned; `-1`→255→`arity4`, `-254`→2→`arity2` | [x] |
+| 42 | *composed pipeline* | `arity` driven end-to-end as a real consumer would: random `len` and random `params` together, many iterations — the low-level helpers reached only through the composed call chain | [x] |
+| 43 | *cross-check* | low-level vs composed consistency: independently recompute `arity4`'s expected value from the C's own `shift_array` / `apply_bitmask` / `process_string` / `init_matrix` exports and confirm C and Rust agree at every stage, not just at the end | [x] |
 
-Every row is exercised with **many randomized inputs** from a fixed-seed
-xorshift PRNG (`common::Rng`), and — for every row that reaches
-`compare_allocations` — under **both** heap-ordering states (axis G), so each row
-is really run twice.
+## Feature combinations
 
-## Rows
-
-| # | entry point(s) | configuration (options set + input shape) | test | ✔ |
-|---|----------------|-------------------------------------------|------|---|
-| 1 | `apply_bitmask` | `operation = 0` (`& 0xF0`) × 512 random + boundary `value`s | `valid_apply_bitmask_all_operations` | [x] |
-| 2 | `apply_bitmask` | `operation = 1` (`& 0x0F`) × 512 random + boundary `value`s | `valid_apply_bitmask_all_operations` | [x] |
-| 3 | `apply_bitmask` | `operation = 2` (`\| 0xAA`) × 512 random + boundary `value`s | `valid_apply_bitmask_all_operations` | [x] |
-| 4 | `apply_bitmask` | `operation = 3` (`^ 0x55`) × 512 random + boundary `value`s | `valid_apply_bitmask_all_operations` | [x] |
-| 5 | `apply_bitmask` | fully random `(value, operation)` pairs, both 32-bit — covers valid and `default` labels mixed | `valid_apply_bitmask_random_pairs` | [x] |
-| 6 | `process_string` | length 1 string, every possible single byte `0x01..0xFF` (incl. ≥ 0x80, axis L) | `valid_process_string_single_byte_all_values` | [x] |
-| 7 | `process_string` | random lengths 1..=255, random non-NUL bytes | `valid_process_string_random_lengths` | [x] |
-| 8 | `process_string` | boundary lengths `1, 2, 5, 63, 64, 255, 4096` | `valid_process_string_boundary_lengths` | [x] |
-| 9 | `shift_array` | `size = 4`, `positions = 1` — the exact configuration `arity4` uses, random contents | `valid_shift_array_arity4_config` | [x] |
-| 10 | `shift_array` | `size ∈ {2,3,4,5,8,64,1024}` × **every** in-range `positions = 1..size-1` (full overlap → minimal overlap, axis J) × random contents | `valid_shift_array_all_sizes_and_positions` | [x] |
-| 11 | `shift_array` | random `size` 2..=256 × random in-range `positions`, with guard bytes around the buffer to prove neither impl writes out of bounds | `valid_shift_array_random_with_guards` | [x] |
-| 12 | `init_matrix` | exact 3×4 destination, buffer pre-filled with random garbage | `valid_init_matrix_exact_buffer` | [x] |
-| 13 | `init_matrix` | 3×4 window inside a larger sentinel-guarded buffer (proves exactly 12 ints written) | `valid_init_matrix_guarded_window` | [x] |
-| 14 | `compare_allocations` | `val1 > 0` (bonus on, axis F) × heap ascending (axis G) × random `val2` | `valid_compare_allocations_matrix` | [x] |
-| 15 | `compare_allocations` | `val1 > 0` × heap descending | `valid_compare_allocations_matrix` | [x] |
-| 16 | `compare_allocations` | `val1 == 0` (bonus off) × heap ascending / descending | `valid_compare_allocations_matrix` | [x] |
-| 17 | `compare_allocations` | `val1 < 0` (bonus off) × heap ascending / descending × `INT_MIN` | `valid_compare_allocations_matrix` | [x] |
-| 18 | `compare_allocations` | fully random `(val1, val2)` × both heap states | `valid_compare_allocations_random` | [x] |
-| 19 | `arity4` | `param1 % 4 == 0` with `param1 > 0`; `param3 = 0`, `param4 = 0` (both switches off) × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 20 | `arity4` | `param1 % 4 == 1`; `param3 = 0`, `param4 = 0` × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 21 | `arity4` | `param1 % 4 == 2`; `param3 = 0`, `param4 = 0` × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 22 | `arity4` | `param1 % 4 == 3`; `param3 = 0`, `param4 = 0` × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 23 | `arity4` | `param1 % 4 == -1` (`param1 < 0`, `default` label, bonus off) × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 24 | `arity4` | `param1 % 4 == -2` × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 25 | `arity4` | `param1 % 4 == -3` × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 26 | `arity4` | `param1 == 0` (mod 0, bonus off — distinct from row 19 which has the bonus on) × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 27 | `arity4` | each of the 7 `param1 % 4` values × `param3 > 0` (scaling on, positive) × `param4 = 0` × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 28 | `arity4` | each `param1 % 4` × `param3 < 0` (scaling on, negative → negative numerator, truncation toward zero) × `param4 = 0` × both heap states | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 29 | `arity4` | each `param1 % 4` × `param3 = 0` × `param4 > 0` | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 30 | `arity4` | each `param1 % 4` × `param3 = 0` × `param4 < 0` | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 31 | `arity4` | each `param1 % 4` × `param3 != 0` × `param4 != 0` (both switches on, all four sign combinations) | `valid_arity4_mod_and_switch_matrix` | [x] |
-| 32 | `arity4` | small-magnitude random params (no overflow anywhere) × both heap states | `valid_arity4_random_small` | [x] |
-| 33 | `arity4` | fully random 32-bit params (overflow in the sum, in `result * param3`, and in `result + param4`) × both heap states | `valid_arity4_random_full_range` | [x] |
-| 34 | `arity4` | params drawn from the boundary pool (`INT_MAX`, `INT_MIN`, `±100`, `±99`, `255`, `256`, `0x7fff0000`, …) in all four positions × both heap states | `valid_arity4_boundary_pool` | [x] |
-| 35 | `arity3` | `param3 = 0` and `param3 != 0` (both signs) × all 7 `param1 % 4` × both heap states, small + full-range values | `valid_arity3_matrix` | [x] |
-| 36 | `arity2` | all 7 `param1 % 4` × both heap states, small + full-range values | `valid_arity2_matrix` | [x] |
-| 37 | `arity` | `len = 2` (dispatch → `arity2`); trailing `params[2..]` filled with garbage to prove they are not read | `valid_arity_dispatch_len2` | [x] |
-| 38 | `arity` | `len = 3` (dispatch → `arity3`); `params[3]` garbage | `valid_arity_dispatch_len3` | [x] |
-| 39 | `arity` | `len = 4` (dispatch → `arity4`) | `valid_arity_dispatch_len4` | [x] |
-| 40 | `arity` | `len ∈ {5, 6, 7, 8, 100, 127, 128, 200, 254, 255}` — all take the `arity4` branch and read exactly 4 ints | `valid_arity_dispatch_len_above_four` | [x] |
-| 41 | `arity` | `len` swept over all `0..=255` with a fixed 4-element buffer × both heap states | `valid_arity_full_len_sweep` | [x] |
-| 42 | `arity` | random `len` × random 4-element `params` × both heap states (end-to-end, the way a real consumer drives the library) | `valid_arity_random_end_to_end` | [x] |
-| 43 | composed pipeline | `shift_array` → `process_string` → `apply_bitmask` → `init_matrix` → `compare_allocations` driven **directly** in `arity4`'s exact order and with `arity4`'s exact arguments, then compared against `arity4` itself, for both impls — catches divergence that per-function tests hide | `valid_manual_pipeline_matches_arity4` | [x] |
-| 44 | cross-impl mixing | C helpers + Rust helpers used interchangeably inside one hand-rolled pipeline (Rust `shift_array` on a buffer later summed by the C path, and vice versa) | `valid_cross_impl_pipeline` | [x] |
+`translation/Cargo.toml` has no `[features]` table, so the only combination is
+the default/empty one. Phase D runs the suite under both `cargo test` and
+`cargo test --no-default-features` to confirm they are equivalent.

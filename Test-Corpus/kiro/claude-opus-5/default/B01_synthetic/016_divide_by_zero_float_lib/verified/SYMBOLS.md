@@ -1,99 +1,108 @@
-# SYMBOLS.md — Symbol parity (Phase A / Phase D)
+# SYMBOLS.md — public symbol parity (Phase A / Phase D)
 
 Derived mechanically from:
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
+```
+nm -D --defined-only ../c_src/build/libdriver.so
+nm -D --defined-only target/release/libdriver.so
 ```
 
-## Dynamic symbols DEFINED by the C `.so`
+## C source inventory
 
-| # | symbol | C decl | C linkage | exported by Rust `.so`? |
-|---|--------|--------|-----------|-------------------------|
-| 1 | `printLine`    | `void printLine(const char *line)`            | `T` (global) | YES |
-| 2 | `printIntLine` | `void printIntLine(int intNumber)`            | `T` (global) | YES |
-| 3 | `bad`          | `void bad(float data)`                        | `T` (global) | YES |
-| 4 | `good`         | `void good(float data)`                       | `T` (global) | YES |
-| 5 | `driver`       | `void driver(float goodData, float badData)`  | `T` (global) | YES |
+`c_src/CMakeLists.txt` builds exactly one shared library (`driver`) from exactly
+one translation unit (`src/driver.c`). There is **no** second module and **no**
+binary/driver executable target, so there is no missing-file class of failure
+here: `src/driver.c` is 86 lines and is fully translated in `translation/src/lib.rs`.
 
-Missing from Rust `.so`: **NONE**. Symbol diff is empty.
+Functions defined in `c_src/src/driver.c`:
 
-## C symbols deliberately NOT exported
+| C function | linkage | exported? |
+|------------|---------|-----------|
+| `printLine(const char *)` | external | yes |
+| `printIntLine(int)`       | external | yes |
+| `bad(float)`              | external | yes |
+| `goodG2B(void)`           | `static` | **no** (internal) |
+| `goodB2G(float)`          | `static` | **no** (internal) |
+| `good(float)`             | external | yes |
+| `driver(float, float)`    | external | yes |
 
-These are `static` in `c_src/src/driver.c`, therefore absent from the C `.so`'s
-dynamic symbol table. The Rust translation keeps them private too, so parity is
-preserved in both directions (no extra exports either).
+`goodG2B` / `goodB2G` are `static` and therefore have `t` (local) linkage in the
+C `.so`; they are deliberately *not* exported from the Rust `.so` either
+(they are private `unsafe fn`s in `lib.rs`).
 
-| symbol | C decl | why not exported |
-|--------|--------|------------------|
-| `goodG2B` | `static void goodG2B(void)`        | `static` → internal linkage (local `t` at `0x11d8`) |
-| `goodB2G` | `static void goodB2G(float data)`  | `static` → internal linkage (local `t` at `0x1216`) |
+## Dynamic symbol table comparison
 
-They are still covered by the differential tests transitively, because `good()`
-calls `goodG2B()` then `goodB2G(data)`, and `driver()` calls `good()`.
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `bad`          | `T` | `T` | MATCH |
+| 2 | `driver`       | `T` | `T` | MATCH |
+| 3 | `good`         | `T` | `T` | MATCH |
+| 4 | `printIntLine` | `T` | `T` | MATCH |
+| 5 | `printLine`    | `T` | `T` | MATCH |
 
-## Extra symbols exported by the Rust `.so` but not the C `.so`
+Symbol diff (C-exported symbols absent from Rust): **EMPTY** — 0 missing.
 
-None in the `T`/`W`/`D` set beyond the five above (Rust `cdylib` exports only
-`#[no_mangle] pub extern "C"` items; the crate has no other public exports).
+Verified by `tests/symbols.rs::symbol_parity_c_vs_rust`, which shells out to
+`nm -D --defined-only` on both objects, filters to the C source's own symbols
+(excluding the libc/loader boilerplate `_init`, `_fini`, `__bss_start`, `_edata`,
+`_end`, and Rust's allocator/panic runtime symbols), and asserts the C set is a
+subset of the Rust set.
 
-## UNDEFINED symbols
+## Undefined (imported) symbols
 
-The C `.so` imports only `printf`, `puts` (GCC rewrites
-`printf("%s\n", s)` → `puts(s)`), plus the standard weak ELF/`__cxa_finalize`
-set.
+The C `.so` imports `printf` and (folded to `andps` by the compiler, so not
+actually imported) `fabs` from libc. The Rust `.so` imports `printf` from libc
+too — intentional, so that both libraries share the *same* `stdout` FILE buffer
+and produce identically ordered output when both are loaded into one process.
 
-The Rust `.so` imports the same `printf`/`puts` plus libc/`libgcc` runtime
-symbols pulled in by Rust's `std` (`malloc`, `memcpy`, `_Unwind_*`,
-`pthread_key_*`, `dl_iterate_phdr`, …). Checked with:
+Non-libc undefined symbols in the Rust `.so`: **NONE** (checked with
+`nm -D --undefined-only target/release/libdriver.so`).
 
-```sh
-nm -D -u translation/target/release/libdriver.so
+## Cargo feature combinations
+
+`translation/Cargo.toml` declares **no** `[features]` table and no optional
+dependencies, so the only build configuration is the default one. Confirmed by
+`grep -n '\[features\]' Cargo.toml` returning nothing. Phase D's
+"repeat for every feature combination" therefore reduces to the single default
+combination, which is additionally re-run explicitly with
+`--no-default-features` (a no-op here, but checked).
+
+## Verification evidence
+
+```
+$ nm -D --defined-only --format=posix ../c_src/build/libdriver.so | awk '{print $1}' | sort
+bad
+driver
+good
+printIntLine
+printLine
+
+$ comm -23 <(C symbols) <(Rust symbols)      # debug profile
+<empty>
+$ comm -23 <(C symbols) <(Rust symbols)      # release profile
+<empty>
 ```
 
-Every undefined symbol resolves against `libc`/`libgcc_s`, i.e. **0
-missing/undefined non-libc symbols**. Verified concretely by `ldd -r`, which
-reports no unresolved relocations.
+Symbol diff is EMPTY for **both** profiles. Automated by `run_all.sh`.
 
-## Feature combinations
+### Harness caveat that was found and fixed
 
-`translation/Cargo.toml` declares **no `[features]` table**, so `default` is the
-one and only configuration. `cargo check --no-default-features` and
-`cargo check` are therefore the complete cross-product, and both are exercised.
+`cargo test` does **not** build `crate-type = ["cdylib"]` artifacts, because the
+test harness never links them. The first version of the harness fell back to
+whichever profile's `.so` happened to exist, which meant a `debug` test run
+silently exercised the `release` object — coverage that looked real but was not.
+`common::rust_so_path()` is now profile-strict: it uses only
+`target/<this profile>/libdriver.so`, honours a `DRIVER_RUST_SO` override, and
+panics with build instructions rather than falling back. `run_all.sh` therefore
+runs `cargo build [--release]` before each `cargo test`.
 
-## Verification commands and results
+### Harness self-checks
 
-```sh
-cd translation && ./run_verification.sh
-```
+`tests/symbols.rs` also contains two negative controls, so the suite cannot pass
+vacuously:
 
-which does, and reports:
-
-| check | result |
-|-------|--------|
-| `nm -D` diff, C `.so` vs Rust `.so` (default features) | **empty** |
-| `nm -D` diff, C `.so` vs Rust `.so` (`--no-default-features`) | **empty** |
-| Rust `.so` exports no symbols the C `.so` lacks | confirmed |
-| `ldd -r` unresolved symbols in the Rust `.so` | **none** |
-| differential suite, default features | 58/58 pass |
-| differential suite, `--no-default-features` | 58/58 pass |
-
-Symbol parity is also asserted from inside the suite
-(`phase_d_symbol_parity`), which shells out to `nm -D` on both objects and
-fails on any C symbol missing from the Rust side, on any Rust symbol absent
-from the C side, and if the C `.so`'s exported set ever changes — so this table
-cannot silently go stale.
-
-Mutation-tested: un-exporting `printIntLine` (removing its `#[no_mangle]`)
-makes `phase_d_symbol_parity` and every differential case fail, confirming the
-check is live rather than vacuous.
-
-## Completeness note
-
-No C source file was left untranslated. `c_src/` contains exactly one
-implementation file (`src/driver.c`, 86 lines including the 22-line licence
-header) and one header (`include/driver.h`), and every function in it —
-`printLine`, `printIntLine`, `bad`, `goodG2B`, `goodB2G`, `good`, `driver` —
-has a counterpart in `translation/src/lib.rs`. Nothing is stubbed and there is
-no `unimplemented!()`/`todo!()` anywhere in the crate.
+* `harness_capture_observes_real_bytes` — asserts the fd-1 capture returns the
+  exact expected bytes from both libraries (a capture that silently returned
+  nothing would make every differential test trivially pass).
+* `harness_diff_detects_divergence` — feeds `diff` two deliberately different
+  payloads and asserts it panics.

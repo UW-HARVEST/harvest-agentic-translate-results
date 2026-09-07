@@ -1,110 +1,103 @@
 # ERRORS.md — Phase C error / rejection surface table
 
-Derived mechanically from `c_src/src/lib.c` by grepping **every** guard, `if`, range
-check, null-sensitive dereference, clamp constant and sentinel return. This library has
-no error enum, no `RETURN_ERROR` macro, no `return -1` and no `assert`; it rejects input
-exclusively via (a) **guard branches that silently skip work**, (b) **clamping to a
-min/max constant**, (c) a **sentinel return value**, and (d) **unchecked operations that
-trap**. Each distinct branch gets its own row.
+Mechanically derived from `c_src/src/lib.c`. This library has **no error enum,
+no `RETURN_ERROR` macro, no `assert`, and no `return -1`/`return NULL`
+statements**. Its entire rejection surface consists of:
 
-Octal constants in the C, spelled in decimal for clarity:
-`01`=1, `02`=2, `03`=3, `04`=4, `010`=8, `0100`=64, `0123`=83, `0150`=104, `0777`=511.
+* guard conditions that *silently skip* work (`if (b != 0)`, `if (found)`,
+  `if (is_nonzero && value > 0)`),
+* saturation / clamping range checks (`< 0100`, `> 0777`),
+* a sentinel substitution on an empty result (`if (!result_exists) result = 0777`),
+* undefined-behaviour cases reached through the FFI boundary (null pointers,
+  signed overflow, `INT_MIN / -1`).
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | ✔ |
-|---|----------|---------------------------------------------|-------------------|---|
-| 1 | `divide_multiplier` | `b == 0` — guard `if (b != 0)` at L54 is false | division **skipped**; `multiplier` unchanged; `operation_count` **still incremented**; returns current `multiplier` | [x] |
-| 2 | `divide_multiplier` | `b == 0` **and** `multiplier` previously driven negative | same as #1: no division, returns unchanged negative `multiplier` | [x] |
-| 3 | `divide_multiplier` | `multiplier == INT_MIN`, `b == -1` — no overflow guard exists; `idiv` traps | **SIGFPE** (process dies); Rust must die on the same signal | [x] |
-| 4 | `divide_multiplier` | negative `multiplier / positive b` (e.g. `-7 / 2`) | C99 truncation **toward zero** → `-3` (not floor `-4`) | [x] |
-| 5 | `validate_and_normalize` | `value == 0` — `is_nonzero == 0`, outer guard L81 false | returns `0` **unclamped** (0 is *not* raised to 64) | [x] |
-| 6 | `validate_and_normalize` | `value < 0` — `value > 0` half of guard L81 false | returns `value` **unchanged**; negatives are *never* clamped, incl. `INT_MIN` | [x] |
-| 7 | `validate_and_normalize` | `0 < value < 0100` (1..63) — L82 `value < lower_threshold` | returns `0100` = **64** | [x] |
-| 8 | `validate_and_normalize` | `value > 0777` (512..`INT_MAX`) — L84 `value > upper_threshold` | returns `0777` = **511** | [x] |
-| 9 | `validate_and_normalize` | boundary `value == 0100` (64) — neither L82 nor L84 fires | returns `64` unchanged (`<` is strict) | [x] |
-| 10 | `validate_and_normalize` | boundary `value == 0777` (511) — neither L82 nor L84 fires | returns `511` unchanged (`>` is strict) | [x] |
-| 11 | `validate_and_normalize` | one step past range: `value == 63` / `value == 512` | `64` / `511` respectively | [x] |
-| 12 | `find_and_replace_char` | `search_char` absent from the string — guard `if (found)` at L69 false | **no write**; string left byte-identical | [x] |
-| 13 | `find_and_replace_char` | empty string (`*str == 0`) → `strlen == 0`, `memchr(...,0)` returns NULL | **no write**; NUL byte not overwritten | [x] |
-| 14 | `find_and_replace_char` | `search_char == 0` — searching for NUL over only `strlen` bytes | never found → **no write** (terminator is outside the searched range) | [x] |
-| 15 | `find_and_replace_char` | `search_char` out of `unsigned char` range, e.g. `0x141`, `256+'A'` | `memchr` converts to `unsigned char` → **aliases** the low byte and *does* match | [x] |
-| 16 | `find_and_replace_char` | negative `search_char`, e.g. `-191` (`0xFFFFFF41`) | low byte `0x41` = `'A'` → **matches `'A'`** | [x] |
-| 17 | `find_and_replace_char` | multiple occurrences of `search_char` | only the **first** occurrence replaced with `'X'` | [x] |
-| 18 | `find_and_replace_char` | `str == NULL` — no null check; `strlen(NULL)` dereferences | **SIGSEGV** | [x] |
-| 19 | `process_octal_string` | `dest == NULL` — no null check; `strcpy(NULL, buffer)` | **SIGSEGV** | [x] |
-| 20 | `process_octal_string` | `octal_val < 0` — `%o` takes `unsigned int`, no range check | octal field printed as **two's-complement `unsigned`**, decimal field printed **signed** (e.g. `-1` → `Octal: 037777777777, Decimal: -1`) | [x] |
-| 21 | `process_octal_string` | `octal_val == INT_MIN` — widest output, `char buffer[50]` | `Octal: 020000000000, Decimal: -2147483648` (41 bytes + NUL, fits) | [x] |
-| 22 | `findrep` | all four params `== 0` → `active_params == 0 < mode_add` | both `if` blocks at L132/L137 **skipped**; no accumulator/multiplier op runs | [x] |
-| 23 | `findrep` | exactly one param non-zero → `active_params == 1`, `>= mode_add` but `< mode_multiply` | **only** `operations[0]` (add) runs; multiply block skipped | [x] |
-| 24 | `findrep` | `accumulator <= 0150` (104) — guard L142 false | `operations[2]` (subtract) **not** invoked; `operation_count` not bumped by it | [x] |
-| 25 | `findrep` | `accumulator == 0` (so `has_accumulator == 0`) → `both_active == 0` | L158 `result += accumulator + multiplier` **skipped** | [x] |
-| 26 | `findrep` | `multiplier == 0` (so `has_multiplier == 0`) → `both_active == 0` | L158 **skipped** even though `accumulator != 0` | [x] |
-| 27 | `findrep` | `multiplier <= 0100` (64) — guard L161 false | `operations[3]` (divide) **not** invoked | [x] |
-| 28 | `findrep` | computed `result == 0` → `result_exists == 0` at L169 | returns the **sentinel `0777` = 511** instead of 0 | [x] |
-| 29 | `findrep` | `'p'` not found in the hard-coded literal — guard L126 `if (found_char)` | unreachable branch (literal always contains `'p'` at index 9); asserts the offset contribution is exactly `+9`, never skipped | [x] |
-| 30 | `findrep` | `INT_MIN` / `INT_MAX` params — no overflow guard anywhere | wrapping two's-complement arithmetic throughout (gcc `-O0`, no `-ftrapv`) | [x] |
-| 31 | all four `operations[]` | signed overflow in `accumulator += a+b`, `multiplier *= a*b`, `accumulator -= a-b` — unchecked | wraps modulo 2^32; Rust must use `wrapping_*`, never panic | [x] |
+Every row is one distinct rejection branch the C actually contains.
 
-## Notes on "out-of-range enum values across the FFI boundary"
+| #  | function | trigger (exact invalid input/condition) | expected C result | test | status |
+|----|----------|------------------------------------------|-------------------|------|--------|
+| 1  | `divide_multiplier` | `b == 0` (`lib.c:54` guard false) | division skipped; `multiplier` unchanged; `operation_count` still incremented; returns unchanged `multiplier` | `err_01_divide_by_zero_guard` | [x] |
+| 2  | `divide_multiplier` | `b == 0` repeatedly — confirms `operation_count` side effect still occurs on the rejected path (observable via `findrep`'s `+= operation_count * 010`) | `operation_count` advances once per call | `err_02_divide_by_zero_still_counts` | [x] |
+| 3  | `divide_multiplier` | `b == 1` (no-op divisor, boundary just past the `!= 0` guard) | `multiplier /= 1` — unchanged value but division *is* executed | `err_03_divide_by_one` | [x] |
+| 4  | `divide_multiplier` | `b == -1` with `multiplier != INT_MIN` (sign flip, one step past 0 on the negative side) | `multiplier = -multiplier` | `err_04_divide_by_negative_one` | [x] |
+| 5  | `divide_multiplier` | `b` such that `|b| > |multiplier|` → truncation toward zero of a negative quotient | C integer division truncates toward zero (e.g. `-7/2 == -3`, not `-4`) | `err_05_division_truncates_toward_zero` | [x] |
+| 6  | `find_and_replace_char` | `memchr` returns `NULL` — `search_char` absent from the string (`lib.c:69` guard false) | no byte written; string left byte-identical | `err_06_replace_char_not_found` | [x] |
+| 7  | `find_and_replace_char` | empty string (`strlen == 0` → `memchr(s, c, 0)` always `NULL`) | no write; nothing past the NUL is touched | `err_07_replace_empty_string` | [x] |
+| 8  | `find_and_replace_char` | `search_char == 0` — the NUL terminator is *outside* the `strlen` window, so it can never be found | no write (NUL is never replaced) | `err_08_replace_nul_never_found` | [x] |
+| 9  | `find_and_replace_char` | `search_char` outside `unsigned char` range, e.g. `0x14F`, `'O' + 256`, `-79` (== `0xB1`) — `memchr` narrows to `unsigned char` | narrowed byte is matched: `0x14F` behaves as `0x4F` == `'O'` | `err_09_replace_char_narrowing` | [x] |
+| 10 | `find_and_replace_char` | `search_char == 'X'` (the replacement byte itself) | first `'X'` overwritten with `'X'` — idempotent no-visible-change | `err_10_replace_char_is_x` | [x] |
+| 11 | `find_and_replace_char` | multiple occurrences of `search_char` | only the **first** is replaced (`memchr`, not a loop) | `err_11_replace_only_first` | [x] |
+| 12 | `validate_and_normalize` | `value == 0` → `is_nonzero == 0`, outer guard false | clamping skipped entirely; returns `0` (**not** `0100`) | `err_12_normalize_zero_not_clamped` | [x] |
+| 13 | `validate_and_normalize` | `value < 0` → `value > 0` false, outer guard false | clamping skipped; negative value returned unchanged (**no** lower clamp) | `err_13_normalize_negative_not_clamped` | [x] |
+| 14 | `validate_and_normalize` | `0 < value < 0100` (`lib.c:82`) | returns `lower_threshold` == `0100` == 64 | `err_14_normalize_lower_clamp` | [x] |
+| 15 | `validate_and_normalize` | `value > 0777` (`lib.c:84`) | returns `upper_threshold` == `0777` == 511 | `err_15_normalize_upper_clamp` | [x] |
+| 16 | `validate_and_normalize` | `value == 0100` exactly (boundary: `<` is strict, so NOT clamped) | returns `64` unchanged | `err_16_normalize_lower_boundary` | [x] |
+| 17 | `validate_and_normalize` | `value == 0777` exactly (boundary: `>` is strict, so NOT clamped) | returns `511` unchanged | `err_17_normalize_upper_boundary` | [x] |
+| 18 | `validate_and_normalize` | `value == 0o77` / `value == 0o1000` (one step *inside* each clamp) | `63 -> 64`, `512 -> 511` | `err_18_normalize_one_past_boundaries` | [x] |
+| 19 | `validate_and_normalize` | `value == INT_MAX` (oversized) | clamped to `511` | `err_19_normalize_int_max` | [x] |
+| 20 | `validate_and_normalize` | `value == INT_MIN` (negative extreme; note `-INT_MIN` is never computed) | returned unchanged, `INT_MIN` | `err_20_normalize_int_min` | [x] |
+| 21 | `findrep` | all four params `0` → `active_params == 0`, every `>= mode_*` guard false | no operation dispatched at all; only the `memchr` offset + `operation_count*010` contribute | `err_21_findrep_all_zero_params` | [x] |
+| 22 | `findrep` | computed `result == 0` → `!result_exists` (`lib.c:169`) | sentinel `0777` == 511 substituted for the real result | `err_22_findrep_zero_result_sentinel`, `err_22a_findrep_sentinel_known_hits`, `err_22b_findrep_sentinel_exhaustive_fresh_sweep` | [x] |
+| 23 | `findrep` | `accumulator <= 0150` → `lib.c:142` guard false | `subtract_from_accumulator` is NOT dispatched; `operation_count` does not advance for it | `err_23_findrep_accumulator_guard_false` | [x] |
+| 24 | `findrep` | `multiplier <= 0100` → `lib.c:161` guard false | `divide_multiplier` is NOT dispatched | `err_24_findrep_multiplier_guard_false` | [x] |
+| 25 | `findrep` | `multiplier == 0` (reachable: any `multiply_with_multiplier` with a zero operand latches it to 0 forever) → `has_multiplier == 0`, `both_active == 0` | the `accumulator + multiplier` term is skipped; multiplier stays 0 for all later calls | `err_25_findrep_multiplier_zero_latch` | [x] |
+| 26 | `findrep` | `accumulator == 0` → `has_accumulator == 0`, `both_active == 0` | `accumulator + multiplier` term skipped | `err_26_findrep_accumulator_zero` | [x] |
+| 27 | `add_to_accumulator` / `subtract_from_accumulator` | signed overflow of `accumulator += (a+b)` with `a == b == INT_MAX` (C UB; gcc `-fwrapv`-less codegen wraps on x86-64) | two's-complement wraparound | `err_27_accumulator_signed_overflow` | [x] |
+| 28 | `multiply_with_multiplier` | signed overflow of `multiplier *= (a*b)` with large `a`,`b` (C UB; wraps in practice) | two's-complement wraparound | `err_28_multiplier_signed_overflow` | [x] |
+| 29 | `subtract_from_accumulator` | `a - b` overflow, `a == INT_MIN`, `b == INT_MAX` | wraparound of the inner subtraction *then* of the outer one | `err_29_subtract_inner_overflow` | [x] |
+| 30 | `process_octal_string` | `octal_val < 0` — `%o` takes `unsigned int`, so the sign is reinterpreted, while `%d` prints it signed | e.g. `-1` -> `"Octal: 037777777777, Decimal: -1"` | `err_30_octal_negative_reinterpreted` | [x] |
+| 31 | `process_octal_string` | `octal_val == INT_MIN` (longest possible output, stresses `char buffer[50]`) | `"Octal: 020000000000, Decimal: -2147483648"` (40 bytes, fits) | `err_31_octal_int_min_longest` | [x] |
+| 32 | `process_octal_string` | `octal_val == 0` — `%o` of zero prints a single `0`, giving a doubled `00` after the literal `0` prefix | `"Octal: 00, Decimal: 0"` | `err_32_octal_zero_double_prefix` | [x] |
 
-The public API declares **no enum type** — `c_src/include/lib.h` exposes only
-`int findrep(int,int,int,int)`. The equivalent class of "an integer with no valid
-variant" is covered by:
+## Documented-but-untestable UB rows
 
-* rows **15/16** — `search_char` outside `unsigned char`, the *actual* narrowing
-  the C performs via `memchr`;
-* rows **20/21/30** — `octal_val` / params spanning the whole `int` range including
-  `INT_MIN`/`INT_MAX`;
-* the `mode_add`..`mode_divide` constants (`01`..`04`) are compared against
-  `active_params`, which is structurally bounded to `0..4`, so `mode_subtract` (`03`)
-  and `mode_divide` (`04`) are **dead constants** — the C never branches on them.
-  Rows 22–24 pin the reachable `active_params` values `0..4`.
-* `operations[4]` is indexed only by the literals `0..3`, so no out-of-bounds index
-  is reachable from any input.
+These are genuine rejection-free UB paths in the C. A differential test cannot
+assert "same result" because the C process dies; both implementations are
+documented here instead of being asserted.
 
----
+| # | function | trigger | C behaviour | why not tested |
+|---|----------|---------|-------------|----------------|
+| U1 | `process_octal_string` | `dest == NULL` | `strcpy` to NULL → SIGSEGV | crashes the test process; Rust also derefs NULL |
+| U2 | `find_and_replace_char` | `str == NULL` | `strlen(NULL)` → SIGSEGV | same |
+| U3 | `process_octal_string` | `dest` buffer shorter than the formatted message | heap/stack overflow past the caller's buffer | unbounded corruption, not a comparable value; tests always pass a 64-byte buffer as the header's contract implies |
+| U4 | `divide_multiplier` | `multiplier == INT_MIN && b == -1` | x86-64 `idiv` raises `#DE` → SIGFPE | kills the process; Rust's `wrapping_div` yields `INT_MIN`. Divergence is unavoidable and is documented rather than "fixed", since matching a SIGFPE is not possible in safe Rust. Unreachable from `findrep`, whose only divisor is the constant `2`. |
 
-## Divergences found by the Phase C tests and FIXED in the Rust
+## Reaching row 22 (the `result == 0` sentinel)
 
-Both were on error paths that happy-path testing cannot reach, and in both cases the
-Rust was changed to match the C (the C is ground truth).
-
-### 1. ERRORS #3 — `INT_MIN / -1` did not trap  (`src/lib.rs`)
-
-`divide_multiplier` used `wrapping_div`, which **returns `INT_MIN`** for
-`INT_MIN / -1`. The C guards only `b != 0`, so gcc's single `idiv` instruction
-executes and raises the `#DE` fault, killing the process with **SIGFPE**.
+Random inputs never hit this branch, so it was derived analytically. On FRESH
+state with `param1 = -9` and the rest `0`:
 
 ```
-case `div_intmin_by_neg1`:
-  C    -> signal 8 (SIGFPE),  no quotient printed
-  Rust -> exit 0,             quotient=-2147483648      <-- divergence
+memchr('p' in "Function pointer example with static vars") = 9   -> result = 9
+active_params == 1 >= mode_add -> add(normalize(-9), normalize(0))
+                                = accumulator = -9               -> result = 0
+accumulator(-9) > 0150?  no        active_params >= mode_multiply(2)?  no
+both_active (acc=-9, mult=1) -> result += -9 + 1                 -> result = -8
+multiplier(1) > 0100?    no
+result += operation_count(1) * 010 = 8                           -> result = 0
+!result_exists -> result = 0777
 ```
 
-State is reachable purely through the public API
-(`multiply_with_multiplier(INT_MIN, 1)` sets `multiplier = INT_MIN`, then
-`divide_multiplier(_, -1)`), so this was a genuine behavioural difference and not a
-theoretical one. Fixed by adding `c_idiv`, which reproduces the same hardware fault
-via an `idiv` in inline asm on `x86_64` (and `raise(SIGFPE)` elsewhere).
+Verified against the C `.so`: `findrep(-9,0,0,0) == 511` and
+`findrep(0,-9,0,0) == 511`, while the neighbours `-8` and `-10` do not return
+511. `err_22b` additionally sweeps every single-nonzero-parameter value in
+`-700..=700` and 2-parameter grids on fresh state, and asserts the branch is
+reached at least once so the coverage cannot silently regress.
 
-### 2. ERRORS #18 / #19 — null dereference aborted instead of segfaulting  (`Cargo.toml`)
+## Negative control (mutation testing)
 
-Only in the **dev profile**. `strlen(NULL)` / `strcpy(NULL, ..)` fault in the C
-(**SIGSEGV**), but Rust's default dev-profile `debug-assertions` insert a
-"null pointer dereference occurred" precondition check in `c_strlen`, producing a
-non-unwinding panic that **aborts (SIGABRT)**.
+`.scratch/mutate.sh` injects 29 known bugs into `src/lib.rs`, rebuilds, and
+checks the suite catches each. Result: **24 caught, 5 uncaught, 0 skipped**.
+Each uncaught mutant was analysed and is **semantically equivalent** to the
+original — no test can distinguish it, so it is not a coverage gap:
 
-```
-case `replace_null` (dev profile):
-  C    -> signal 11 (SIGSEGV)
-  Rust -> signal  6 (SIGABRT)                          <-- divergence
-```
+| mutant | why it cannot be caught |
+|--------|--------------------------|
+| `{:o}` on `i32` instead of `as c_uint` | Rust's `Octal` impl for `i32` already prints the two's-complement bit pattern; verified `format!("{:o}", v) == format!("{:o}", v as u32)` for `-1`, `-9`, `INT_MIN`, `INT_MAX`, `0` |
+| `value < lower_threshold` → `<=` | at `value == 64` the branch returns `lower_threshold == 64 == value` |
+| `value > upper_threshold` → `>=` | at `value == 511` the branch returns `upper_threshold == 511 == value` |
+| `if b != 0` → `if b != 0 && b != 1` | skipping a division by 1 is the identity |
+| `selected_op(normalized_p3, normalized_p4)` args swapped | `OPERATIONS[1]` is `multiply_with_multiplier`, and `a * b` is commutative |
 
-The release profile already matched. Fixed by pinning
-`[profile.dev] debug-assertions = false, overflow-checks = false`, since the C is
-compiled with no such preconditions and no overflow traps. All profiles now agree.
-
-## Verification status
-
-All 31 rows have a passing differential test. Rows 3, 18 and 19 are fatal in both
-libraries, so they are verified in `tests/crash.rs` by running each case in a child
-process and comparing the **exact terminating signal**, not merely "both failed".
+The sentinel mutant (`0777` → `0776`) was **uncaught before** `err_22a`/`err_22b`
+were added and is **caught after**, which is what proved row 22 was a genuine
+blind spot rather than an unreachable branch.

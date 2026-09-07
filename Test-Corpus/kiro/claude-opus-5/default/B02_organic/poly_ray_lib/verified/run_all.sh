@@ -1,110 +1,71 @@
 #!/usr/bin/env bash
-# Differential verification driver.
-#
-# IMPORTANT: `cargo test` does NOT rebuild the `cdylib`, because the
-# integration tests never link against it (they `dlopen` it). So the library
-# MUST be built explicitly first, otherwise the tests silently run against a
-# stale `.so`.
+# Full verification matrix: build the C reference and the Rust cdylib, diff the
+# exported symbol tables, then run every differential test under every feature
+# combination and both cargo profiles.
 set -uo pipefail
-
 cd "$(dirname "$0")"
 ROOT="$(cd .. && pwd)"
-C_BUILD="$ROOT/c_src/build"
-
-TESTS_FILTER="${TESTS_FILTER:-}"
-PROFILE_FLAG="--release"
-TIMEOUT="${TIMEOUT:-600}"
-
-# ---------------------------------------------------------------- C reference
-if [ ! -d "$C_BUILD" ] || ! ls "$C_BUILD"/*.so >/dev/null 2>&1; then
-    echo "== building C reference =="
-    mkdir -p "$C_BUILD"
-    ( cd "$C_BUILD" \
-      && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-      && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
-fi
-C_SO="$(ls "$C_BUILD"/*.so | head -1)"
-echo "C   .so: $C_SO"
-
-# ------------------------------------------------- feature combinations
-# Enumerate every feature combination declared in Cargo.toml. If there is no
-# [features] section there is exactly one combination: the default.
-mapfile -t FEATURES < <(
-  awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+[[:space:]]*=/{
-        sub(/[[:space:]]*=.*/,""); print }' Cargo.toml
-)
-
-COMBOS=()
-if [ "${#FEATURES[@]}" -eq 0 ]; then
-    COMBOS+=("default:")
-    COMBOS+=("no-default:--no-default-features")
-else
-    COMBOS+=("default:")
-    COMBOS+=("no-default:--no-default-features")
-    n=${#FEATURES[@]}
-    for (( mask=1; mask < (1<<n); mask++ )); do
-        combo=""
-        for (( i=0; i<n; i++ )); do
-            if (( mask & (1<<i) )); then combo="$combo,${FEATURES[$i]}"; fi
-        done
-        combo="${combo#,}"
-        COMBOS+=("$combo:--no-default-features --features $combo")
-    done
-fi
-
-echo "feature combinations: ${#COMBOS[@]}"
-for c in "${COMBOS[@]}"; do echo "  - ${c%%:*}"; done
-
 FAIL=0
-for entry in "${COMBOS[@]}"; do
-    name="${entry%%:*}"
-    flags="${entry#*:}"
-    echo
-    echo "================================================================"
-    echo "== FEATURE COMBO: $name   (cargo flags: '${flags:-<none>}')"
-    echo "================================================================"
+step() { printf '\n=== %s ===\n' "$*"; }
+ok()   { printf 'PASS  %s\n' "$*"; }
+bad()  { printf 'FAIL  %s\n' "$*"; FAIL=1; }
 
-    # shellcheck disable=SC2086
-    if ! timeout "$TIMEOUT" cargo build $PROFILE_FLAG $flags 2>&1 | tail -3; then
-        echo "!! cargo build FAILED for combo $name"; FAIL=1; continue
+step "Build C reference shared library"
+( cd "$ROOT/c_src" && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+  && cmake --build . >/dev/null ) || bad "C build"
+C_SO="$(ls "$ROOT"/c_src/build/*.so)"
+echo "C  .so: $C_SO"
+
+step "Enumerate feature combinations from Cargo.toml"
+# Cross-product of all declared features, always including the default set and
+# --no-default-features. `cargo read-manifest` is the source of truth.
+mapfile -t COMBOS < <(cargo read-manifest 2>/dev/null | python3 -c '
+import json,sys,itertools
+feats=sorted(k for k in json.load(sys.stdin).get("features",{}) if k!="default")
+print("--default")                       # default feature set
+print("--no-default-features")           # empty feature set
+for r in range(1,len(feats)+1):
+    for c in itertools.combinations(feats,r):
+        print("--no-default-features --features "+",".join(c))
+        print("--features "+",".join(c))
+')
+printf '%s\n' "${COMBOS[@]}"
+
+for PROFILE in debug release; do
+  PROF_FLAG=""
+  [ "$PROFILE" = release ] && PROF_FLAG="--release"
+  for COMBO in "${COMBOS[@]}"; do
+    FLAGS="$PROF_FLAG"
+    [ "$COMBO" != "--default" ] && FLAGS="$PROF_FLAG $COMBO"
+    LABEL="$PROFILE / ${COMBO}"
+
+    step "cargo build [$LABEL]"
+    if ! timeout 600 cargo build $FLAGS >/dev/null 2>&1; then
+      bad "build [$LABEL]"; continue
     fi
-    RUST_SO="$PWD/target/release/libpoly_ray_lib.so"
-    if [ ! -f "$RUST_SO" ]; then echo "!! no $RUST_SO"; FAIL=1; continue; fi
-    echo "RUST .so: $RUST_SO"
+    RUST_SO="target/$PROFILE/libpoly_ray_lib.so"
+    [ -f "$RUST_SO" ] || { bad "missing $RUST_SO [$LABEL]"; continue; }
 
-    # -------- symbol parity (Phase D) for this combo
-    nm -D --defined-only "$C_SO"   | awk '$2=="T"||$2=="W"{print $3}' | sort > /tmp/c_syms.txt
-    nm -D --defined-only "$RUST_SO" | awk '$2=="T"||$2=="W"{print $3}' | sort > /tmp/r_syms.txt
+    step "symbol diff [$LABEL]"
+    nm -D --defined-only "$C_SO"   | awk '$2=="T"{print $3}' | sort > /tmp/c_syms.txt
+    nm -D --defined-only "$RUST_SO" | awk '$2=="T"{print $3}' | sort > /tmp/r_syms.txt
     MISSING="$(comm -23 /tmp/c_syms.txt /tmp/r_syms.txt)"
     if [ -n "$MISSING" ]; then
-        echo "!! SYMBOLS MISSING FROM RUST .so:"; echo "$MISSING" | sed 's/^/     /'
-        FAIL=1
+      bad "symbols missing from Rust .so [$LABEL]:"; echo "$MISSING"
     else
-        echo "symbol parity: OK ($(wc -l < /tmp/c_syms.txt) C symbols, 0 missing)"
+      ok "symbol parity ($(wc -l < /tmp/c_syms.txt) symbols) [$LABEL]"
     fi
 
-    # -------- differential tests
-    export C_SO_PATH="$C_SO"
-    export RUST_SO_PATH="$RUST_SO"
-    LOG="$(mktemp)"
-    # shellcheck disable=SC2086
-    timeout "$TIMEOUT" cargo test $PROFILE_FLAG $flags $TESTS_FILTER \
-            -- --test-threads=4 >"$LOG" 2>&1
-    rc=$?
-    grep -E "^test result:|DIVERGENCE|panicked at|^error" "$LOG" | sed 's/^/    /'
-    awk -F'[ ;]' '/^test result:/{p+=$4; f+=$6} END{
-        printf "    TOTAL: %d passed, %d failed\n", p, f }' "$LOG"
-    if [ "$rc" -ne 0 ]; then
-        echo "!! TESTS FAILED for combo $name (see $LOG)"; FAIL=1
+    step "cargo test [$LABEL] DIFF_ITERS=${DIFF_ITERS:-default}"
+    if C_SO="$C_SO" RUST_SO="$(pwd)/$RUST_SO" timeout 600 cargo test $FLAGS 2>&1 | tail -25; then
+      ok "tests [$LABEL]"
     else
-        rm -f "$LOG"
+      bad "tests [$LABEL]"
     fi
+  done
 done
 
-echo
-if [ "$FAIL" -eq 0 ]; then
-    echo "########## ALL COMBOS PASSED ##########"
-else
-    echo "########## FAILURES PRESENT ##########"
-fi
+step "RESULT"
+if [ "$FAIL" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "FAILURES PRESENT"; fi
 exit "$FAIL"

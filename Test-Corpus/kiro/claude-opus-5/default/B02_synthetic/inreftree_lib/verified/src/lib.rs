@@ -142,44 +142,7 @@ unsafe fn strncpy(dst: *mut c_char, src: *const c_char, n: usize) {
 // Signed overflow is undefined in C but wraps on the x86-64 targets this
 // library is built for, so the wrapping operators reproduce the compiled
 // behavior without introducing Rust panics.
-//
-// Signed *division* overflow is the exception: `INT_MIN / -1` and
-// `INT_MIN % -1` pass the `b == 0` guard and then fault the `idiv` instruction,
-// so the C library dies with SIGFPE rather than returning. `wrapping_div` /
-// `wrapping_rem` would silently return `INT_MIN` / `0` instead, so the division
-// is issued through `idiv` directly to keep that observable behavior.
 // ---------------------------------------------------------------------------
-
-/// One `idiv` yielding both quotient (`eax`) and remainder (`edx`), exactly as
-/// the C compiler emits for `a / b` and `a % b`. Faults with SIGFPE when the
-/// quotient is not representable (`INT_MIN / -1`), matching the C `.so`.
-///
-/// # Safety
-/// `b` must be non-zero; the caller replicates the C code's `b == 0` guard.
-#[cfg(target_arch = "x86_64")]
-#[inline(never)]
-unsafe fn idiv_i32(a: c_int, b: c_int) -> (c_int, c_int) {
-    let quot: c_int;
-    let rem: c_int;
-    unsafe {
-        core::arch::asm!(
-            "cdq",              // sign-extend eax into edx:eax
-            "idiv {divisor:e}", // edx:eax / divisor -> eax (quot), edx (rem)
-            divisor = in(reg) b,
-            inout("eax") a => quot,
-            out("edx") rem,
-            options(nomem, nostack),
-        );
-    }
-    (quot, rem)
-}
-
-/// Portable fallback for non-x86-64 hosts: wraps instead of faulting.
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(never)]
-unsafe fn idiv_i32(a: c_int, b: c_int) -> (c_int, c_int) {
-    (a.wrapping_div(b), a.wrapping_rem(b))
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn add_op(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {
@@ -201,7 +164,7 @@ pub extern "C" fn divide_op(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int
     if b == 0 {
         return 0;
     }
-    unsafe { idiv_i32(a, b).0 }
+    a.wrapping_div(b)
 }
 
 #[unsafe(no_mangle)]
@@ -209,7 +172,7 @@ pub extern "C" fn modulo_op(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int
     if b == 0 {
         return 0;
     }
-    unsafe { idiv_i32(a, b).1 }
+    a.wrapping_rem(b)
 }
 
 // ---------------------------------------------------------------------------

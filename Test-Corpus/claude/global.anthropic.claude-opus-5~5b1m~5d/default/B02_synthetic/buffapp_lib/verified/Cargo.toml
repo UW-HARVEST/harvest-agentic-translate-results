@@ -8,23 +8,21 @@ name = "buffapp_lib"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
+[dev-dependencies]
+libloading = "0.8"
+
 [profile.release]
 panic = "abort"
 
-# This crate is a 1:1 translation of a C library and must reproduce the C's
-# behaviour for EVERY input, including the inputs on which the C has undefined
-# behaviour (NULL dereferences, INT_MIN / -1, signed overflow). Rust's
-# debug-assertions turn those into panics -- and a panic escaping an
-# `extern "C"` function aborts, so the process dies with SIGABRT where the C
-# dies with SIGSEGV/SIGFPE. Disabling the checks in the dev profile keeps the
-# debug cdylib observably identical to the C, exactly as the release one is.
-# (Verified by tests/phase_c_errors.rs run against both profiles.)
+# The C this crate mirrors is compiled without any UB instrumentation, so its
+# invalid-input behaviour is the raw hardware fault (e.g. SIGSEGV on a NULL
+# dereference in `append_to_buffer`, SIGFPE on `INT_MIN / -1`). Rust's debug
+# `ub_checks` would instead turn those into a panic/`SIGABRT`, which is an
+# observable divergence across the FFI boundary. Disable them so every profile
+# reproduces the C exactly; all arithmetic in `src/lib.rs` is already explicitly
+# `wrapping_*`, so `overflow-checks` never contributes anything but divergence.
 [profile.dev]
 debug-assertions = false
 overflow-checks = false
-
-[dev-dependencies]
-libloading = "0.8"
-libc = "0.2"
 
 [workspace]

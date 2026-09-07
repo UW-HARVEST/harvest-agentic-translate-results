@@ -1,21 +1,28 @@
 # Error Surface
 
-Mechanically derived from every `return NULL`, range check, allocation/null
-check, status check, and invalid-state branch in `../c_src/src/lib.c`. There
-are no assertions or error enums.
+This table is derived from every input range check, allocation null check, and
+error-result assignment in `src/lib.c`. Private cleanup null checks are not
+rejections and are therefore excluded. The two warning paths are accepted
+configurations and appear in `CONFIGS.md`.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
-| 1 [x] | `init_processor` via `gotomach` | First allocation, `malloc(sizeof(ProcessorState))`, returns `NULL` | Internal `NULL`; public result `-3` |
-| 2 [x] | `init_processor` via `gotomach` | Second allocation, `malloc(capacity * sizeof(int))`, returns `NULL` | Frees state and returns internal `NULL`; public result `-3` |
-| 3 [x] | `gotomach` | `iterations < 0` | `-1` |
-| 4 [x] | `gotomach` | `iterations > UINT16_MAX` (`65535`) | `-1` |
-| 5 [x] | `gotomach` | `seed < 0`, after a valid iteration count | `-2` |
-| 6 [x] | `gotomach` | `seed > UINT16_MAX` (`65535`), after a valid iteration count | `-2` |
-| 7 [x] | `gotomach` | `init_processor` returned `NULL` and `if (!state)` rejects it | `-3` |
-| 8 [x] | `gotomach` | Temporary-buffer allocation returns `NULL` after state initialization | `-4` |
-| 9 [x] | `gotomach` | `check_char_flag(state->status)` is false (`status == 0`) | `-5` |
-| 10 [x] | `gotomach` | `is_valid_state(state)` is false in the loop (`status == 0` or `count >= capacity`) | `-6` |
+|---|----------|----------------------------------------------|-------------------|
+| E01 | `gotomach` | `iterations < 0 || iterations > UINT16_MAX` | [x] `-1`; logs `Invalid iteration count` |
+| E02 | `gotomach` | valid `iterations`, then `seed < 0 || seed > UINT16_MAX` | [x] `-2`; logs `Invalid seed value` |
+| E03 | `init_processor` → `gotomach` | first allocation, `malloc(sizeof(ProcessorState))`, returns `NULL` | [x] `init_processor` returns `NULL`; `gotomach` returns `-3` |
+| E04 | `init_processor` → `gotomach` | state allocation succeeds, then `malloc(capacity * sizeof(int))` returns `NULL` | [x] frees state; `init_processor` returns `NULL`; `gotomach` returns `-3` |
+| E05 | `gotomach` | processor initializes, then `malloc(iterations * sizeof(int))` for `temp_buffer` returns `NULL` | [x] `-4`; processor is cleaned up |
+| E06 | `gotomach` | `state->status == 0` at the explicit pre-loop `check_char_flag` check | [x] `-5` |
+| E07 | `gotomach` | during the loop, `state->status == 0`, so `is_valid_state(state)` is false | [x] `-6` |
+| E08 | `gotomach` | during the loop, `state->count >= state->capacity`, so `is_valid_state(state)` is false | [x] `-6` |
 
-`cleanup_processor` and the `cleanup` block also contain null checks, but those
-checks guard optional deallocation and do not reject input or return an error.
+Generic FFI boundaries mapped to rows/configurations:
+
+- Null `unused_context` and non-null opaque `unused_context` are both valid for
+  all three operation functions because C explicitly discards the pointer.
+- Zero iterations is valid and covered by `CONFIGS.md`.
+- `UINT16_MAX + 1`, negative lengths, and extreme `int` lengths map to E01.
+- `UINT16_MAX + 1`, negative seeds, and extreme `int` seeds map to E02.
+- Every integer outside modes `0`, `1`, and `2` is accepted and selects the
+  default operation; these out-of-range enum-like values are covered by
+  `CONFIGS.md`, including negative and extreme `int` values.

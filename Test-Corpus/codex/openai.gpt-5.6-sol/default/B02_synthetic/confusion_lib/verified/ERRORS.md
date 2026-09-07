@@ -1,25 +1,24 @@
-# Error Surface
+# Error-surface table
 
-Derived from every allocation check, null check, and error-returning statement
-in `c_src/src/lib.c`. The C source contains no assertions, error enums, or
-explicit numeric range checks.
+Mechanically derived from every `if (... == NULL)`, error return, and
+out-of-range `switch` path in `c_src/src/lib.c`. There are no assertions,
+error enums, explicit numeric range checks, or min/max constants in this
+source.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
-|---|----------|----------------------------------------------|-------------------|----------|
-| 1 | `create_state` | `malloc(sizeof(ProcessState)) == NULL` | prints the state-allocation error and returns `NULL` | [x] |
-| 2 | `create_state` | state allocation succeeds and `malloc(capacity) == NULL` | prints the buffer-allocation error, frees the state, and returns `NULL` | [x] |
-| 3 | `create_state` | `capacity < 0`, converted by `malloc`/`snprintf` to an oversized `size_t` | buffer allocation fails and returns `NULL` as in row 2 | [x] |
-| 4 | `create_state` | oversized positive capacity whose allocation fails | buffer allocation fails and returns `NULL` as in row 2 | [x] |
-| 5 | `destroy_state` | `state == NULL` | returns normally without action | [x] |
-| 6 | `destroy_state` | `state != NULL && state->buffer == NULL` | skips the buffer free, frees the state, and returns | [x] |
-| 7 | `process_buffer` | `state == NULL` | prints the null-pointer error and returns `-1` | [x] |
-| 8 | `process_buffer` | `state != NULL && state->buffer == NULL` | prints the null-pointer error and returns `-1` | [x] |
-| 9 | `update_flags` | `state == NULL` | returns normally without action | [x] |
-| 10 | `confuse_types` | `state == NULL`, for any operation value including out-of-range values | returns `0` | [x] |
-| 11 | `confuse_types` | `state != NULL && operation` is outside `0..=3` (the `switch` has no matching case) | leaves state unchanged and returns `0` | [x] |
-| 12 | `confusion` | its internal `create_state(param1, 128)` returns `NULL` | returns `-1` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| [x] E01 | `create_state` | `malloc(sizeof(ProcessState)) == NULL` | prints `Error: Failed to allocate memory for state\n`; returns `NULL` |
+| [x] E02 | `create_state` | state allocation succeeds, then `malloc(capacity) == NULL` | prints `Error: Failed to allocate buffer\n`; frees the state; returns `NULL` |
+| [x] E03 | `destroy_state` | `state == NULL` | no output and no operation |
+| [x] E04 | `destroy_state` | `state != NULL && state->buffer == NULL` | frees only the state; no output |
+| [x] E05 | `process_buffer` | `state == NULL` | prints `Error: Null pointer in process_buffer\n`; returns `-1` |
+| [x] E06 | `process_buffer` | `state != NULL && state->buffer == NULL` | prints `Error: Null pointer in process_buffer\n`; returns `-1` |
+| [x] E07 | `update_flags` | `state == NULL` | returns immediately; no output |
+| [x] E08 | `confuse_types` | `state == NULL` | returns `0`; no output |
+| [x] E09 | `confuse_types` | `operation < 0 || operation > 3` (no matching `switch` case) | leaves state data unchanged; returns `0`; no output |
+| [x] E10 | `confusion` | its internal `create_state(param1, 128)` returns `NULL` | returns `-1` after the four parameter debug lines and allocation error line |
 
-Generic FFI boundaries are represented explicitly above. There are no public
-pointer-plus-length APIs and no C enum types. `capacity == 0` is not explicitly
-rejected by C and is therefore covered as a valid configuration in
-`CONFIGS.md`; negative and oversized capacities are rows 3 and 4.
+Generic FFI boundary cases attached to these rows: all pointer-taking APIs are
+called with null; `capacity` is tested at zero and with values too large for a
+successful allocation; and `confuse_types` is tested with `-1` and `4`, the
+two values immediately outside its handled operation range.

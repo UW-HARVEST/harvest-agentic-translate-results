@@ -1,95 +1,95 @@
-# CONFIGS.md — Phase A configuration-surface table
+# CONFIGS.md — Phase A: configuration-surface table
 
-Mechanically derived from `c_src/include/driver.h` (the public header) and the
-branch structure of `c_src/src/driver.c`.
+Mechanically derived from every branch / value-dependent behaviour in
+`c_src/src/driver.c` and the full set of exported entry points.
 
-## Public entry points (complete set)
+## Axes the C code actually distinguishes
 
-`nm -D --defined-only` on the C `.so` yields exactly two global functions, and
-both are tested directly through the `.so` exports:
+**Entry points (both exported, `nm -D`):**
 
-| entry point | signature | level |
-|-------------|-----------|-------|
-| `driver` | `void driver(const char *in)` | high-level one-shot wrapper (declared in `driver.h`) |
-| `run`    | `void run(house_t *the_house, int extra_bedrooms)` | **low-level** entry point — exported (`T`) but *not* declared in the public header. Must be driven directly, since `driver` can only ever reach it with `floors == 2, bedrooms == 5, bathrooms == 2.5` on the first call. |
+* `run(house_t *the_house, int extra_bedrooms)` — the LOW-LEVEL entry point.
+  Takes caller-supplied struct state, so all three fields are free inputs.
+* `driver(const char *in)` — the one-shot wrapper. Hard-codes
+  `house_t{.floors = 2, .bedrooms = 5, .bathrooms = 2.5}` and calls `run` **twice**
+  with the same parsed `extra_bedrooms`.
 
-`add_floor`, `add_bedrooms`, `print_house`, `parse_val` are `static` (`t`, not
-exported) and are reachable only through the two entry points above.
+**Runtime options/modes:** the library exposes no flags, no modes, no
+`#ifdef`-selected behaviour, and no global state. `grep -nE '#if|#ifdef|switch|case' c_src/src/driver.c` → no matches. The only `if` is the
+`parse_val` accept/reject branch (ERRORS.md) — so the configuration surface is
+entirely made of **input shapes**.
 
-## Axes the C actually branches on
+**Input shapes the code is sensitive to:**
 
-There are **no** runtime option/mode/flag setters, no global state, no
-`#ifdef` configuration blocks, and no `[features]` in `Cargo.toml`. The
-configuration surface is therefore entirely the **shape of the input data**:
+* `house_t.floors` (`int`): sign, magnitude, `INT_MAX` (`add_floor` does
+  `floors++` → signed overflow), `INT_MIN`.
+* `house_t.bedrooms` (`int`): interacts with `extra_bedrooms` in
+  `bedrooms += extra_bedrooms` → signed overflow in both directions.
+* `house_t.bathrooms` (`double`): consumed only by `%.1f` and `+= 1.0`.
+  Distinct shapes: normal, negative, `-0.0`, exact-tie rounding
+  (`x.x5` → glibc round-half-to-even), huge (`1e308`), subnormal, `NaN`,
+  `±Inf` — each formats differently.
+* `extra_bedrooms` (`int`): `0`, `±1`, random, `INT_MIN`, `INT_MAX`.
+* `in` (`const char *`) accepted shapes: plain digits, leading whitespace
+  (`strtol` skips it), explicit `+`/`-` sign, leading zeros, trailing garbage
+  (`"42abc"` → 42), base-10 stop at `'x'` (`"0x10"` → 0), `INT_MIN`/`INT_MAX`
+  boundaries, single digit vs many digits.
 
-* **A1 — `parse_val` outcome** (`driver.c:64`): the 4-conjunct condition
-  `endp != str && errno == 0 && tmp >= INT_MIN && tmp <= INT_MAX`. Accepting
-  branch → 8 `print_house` lines; rejecting branch → `ERRORS.md`.
-* **A2 — `strtol` lexical shape** of the input string (base 10, fixed):
-  leading whitespace / sign / digit run / trailing unconsumed suffix /
-  embedded NUL / string length (0, 1, many).
-* **A3 — parsed magnitude** of `extra_bedrooms`: `0`, small ±, `INT_MAX`,
-  `INT_MIN`, and values whose accumulation across the calls wraps `int`.
-* **A4 — `house_t.floors` (`int`)**: `0`, ±small, `INT_MIN`, `INT_MAX`
-  (`floors++` at `INT_MAX` wraps — `%d` width also changes).
-* **A5 — `house_t.bedrooms` (`int`)**: `0`, ±small, `INT_MIN`, `INT_MAX`
-  (`bedrooms += extra_bedrooms` wraps).
-* **A6 — `house_t.bathrooms` (`double`)** — the widest axis, because it feeds
-  both an arithmetic op (`+= 1.0`) and `%.1f` formatting, which
-  special-cases: normal values, negative zero, half-way rounding ties
-  (round-half-to-even in glibc), subnormals, values so large that `+= 1.0` is a
-  no-op, `±inf`, and NaN (incl. sign and payload).
-* **A7 — call multiplicity / state accumulation**: `driver` invokes `run`
-  **twice** on the *same* `house_t`, so the second call starts from the mutated
-  state. Driving `run` directly for 0, 1, 2, and many successive calls
-  exercises the composed pipeline that per-wrapper tests would miss.
-* **A8 — observable channels**: stdout bytes **and** the caller-visible
-  mutation of `*the_house` (checked field-by-field, `bathrooms` compared by
-  raw IEEE-754 bit pattern so `-0.0` and NaN payloads cannot hide).
+Observable output for every configuration is the exact stdout byte stream
+(`print_house` is called 4× per `run`, 8× per `driver`).
 
-## Configuration table
+## Configuration rows
 
-Every row is exercised with **many randomized inputs** (deterministic
-`splitmix64`, fixed seed `0x5eed_1234_dead_beef`) unless the row is inherently
-a single boundary value, in which case the row's *other* axes are randomized.
-Every row compares C vs Rust via the `.so` exports byte-for-byte.
-
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|-------------------------------------------|-----|
-| C1 | `driver` | accepting path, bare small positive decimal (`"0"`, `"1"`, `"7"`, random `0..=9999`), length 1 and many | [x] |
-| C2 | `driver` | accepting path, explicit `+` sign (`"+0"`, `"+42"`, random `+N`) | [x] |
-| C3 | `driver` | accepting path, `-` sign (`"-0"`, `"-1"`, random `-N`) | [x] |
-| C4 | `driver` | accepting path, every leading-whitespace class `strtol` skips (`' '`, `\t`, `\n`, `\v`, `\f`, `\r`) singly and in random mixtures, then sign+digits | [x] |
-| C5 | `driver` | accepting path, leading zeros: `"0000000042"`, 64 zeros + digits, `"-0000001"` | [x] |
-| C6 | `driver` | accepting path with **trailing garbage** (never checked by C): `"12abc"`, `"5 "`, `"5\n"`, `"7,9"`, random digits + random suffix | [x] |
-| C7 | `driver` | accepting path, hex-looking input under base 10: `"0x10"`, `"0X1f"`, `"0b1"` → parses `0`, `endp` advanced by 1 | [x] |
-| C8 | `driver` | accepting path, decimal-point / exponent forms truncated at the `.`/`e`: `"7.9"`, `"-3.5"`, `"2e5"`, `"1_000"` | [x] |
-| C9 | `driver` | accepting path, **embedded NUL** in the buffer (`"5\0abc"`) — `strtol` stops at the terminator | [x] |
-| C10 | `driver` | accepting path, exact valid boundaries `INT_MAX` (`"2147483647"`) and `INT_MIN` (`"-2147483648"`) | [x] |
-| C11 | `driver` | accepting path, magnitudes that make `bedrooms` wrap across the two internal `run` calls: `x` near `±INT_MAX/2`, `±INT_MAX`, `INT_MIN` | [x] |
-| C12 | `driver` | accepting path, randomized full-`i32`-range decimal strings (1000 iterations, fixed seed) | [x] |
-| C13 | `driver` | randomized composite strings: random whitespace prefix × random sign × random full-range magnitude × random trailing suffix (1000 iterations) | [x] |
-| C14 | `run` (low-level, direct) | `floors=2, bedrooms=5, bathrooms=2.5` (the state `driver` uses) × `extra_bedrooms ∈ {0, 1, -1}` | [x] |
-| C15 | `run` (low-level, direct) | `floors = INT_MAX` → `floors++` **wraps** to `INT_MIN`; also `floors = INT_MIN`, `-1`, `0` | [x] |
-| C16 | `run` (low-level, direct) | `bedrooms = INT_MAX` × `extra_bedrooms > 0` (wrap up) and `bedrooms = INT_MIN` × `extra_bedrooms < 0` (wrap down) | [x] |
-| C17 | `run` (low-level, direct) | `extra_bedrooms ∈ {INT_MIN, INT_MAX}` — the "arbitrary int with no valid variant" case across the FFI boundary | [x] |
-| C18 | `run` (low-level, direct) | negative `floors` and `bedrooms` (`%d` sign width) × random `extra_bedrooms` | [x] |
-| C19 | `run` (low-level, direct) | `bathrooms = 0.0` | [x] |
-| C20 | `run` (low-level, direct) | `bathrooms = -0.0` (sign must survive `%.1f` and `+= 1.0`) | [x] |
-| C21 | `run` (low-level, direct) | `bathrooms` = `%.1f` **rounding ties**: `0.05, 0.15, 0.25, 0.35, 2.45, -0.25, -1.05, 0.949999…, 0.95` (glibc round-half-to-even on the exact binary value) | [x] |
-| C22 | `run` (low-level, direct) | `bathrooms` = **subnormals**: `5e-324` (min subnormal), `f64::MIN_POSITIVE`, `-5e-324` | [x] |
-| C23 | `run` (low-level, direct) | `bathrooms` = huge, where `+= 1.0` is a no-op: `1e300`, `f64::MAX`, `2^53`, `2^53+1`, and negatives thereof (≈310-digit `%.1f` output) | [x] |
-| C24 | `run` (low-level, direct) | `bathrooms` = `+inf`, `-inf` (`+= 1.0` keeps inf; `%.1f` → `inf`/`-inf`) | [x] |
-| C25 | `run` (low-level, direct) | `bathrooms` = NaN: default quiet NaN, negative quiet NaN, NaN with a custom payload, signalling-NaN bit pattern (payload/sign propagation through `+= 1.0` and `%.1f`) | [x] |
-| C26 | `run` (low-level, direct) | fully randomized `house_t`: `floors`/`bedrooms` uniform over `i32`, `bathrooms` from a uniform random **raw u64 bit pattern** (hits normals, subnormals, inf, NaN, ±0), × random `extra_bedrooms` (2000 iterations) | [x] |
-| C27 | `run` (low-level, direct) | fully randomized `house_t` with `bathrooms` drawn from *finite* random exponents (`10^{-320..308}` × random mantissa) × random `extra_bedrooms` (1000 iterations) | [x] |
-| C28 | `run` (low-level, direct) | **state accumulation / composed pipeline**: the *same* `house_t` fed through `run` 1, 2, 3 … 16 times in a row with a per-call random `extra_bedrooms`, comparing stdout and the struct after **every** call (mirrors and extends `driver`'s double invocation) | [x] |
-| C29 | `driver` + `run` | **interleaved** sequence: random `driver` calls and random `run` calls in one process, in the same order for C and Rust, to catch hidden global/`errno` state coupling between the two entry points | [x] |
-| C30 | `driver` | input length axis: `""`(→error row E1), `"1"` (1 byte), 2 bytes, 4096-byte digit string of a valid magnitude (leading zeros), 4096-byte suffix after a valid digit | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `run` | baseline: `floors=2, bedrooms=5, bathrooms=2.5`, `extra_bedrooms=3` (the shape `driver` itself uses) | [x] |
+| C2 | `run` | randomized `floors`/`bedrooms` in a small range × randomized small `extra_bedrooms`, `bathrooms` a random "nice" multiple of 0.5 (200 seeded cases) | [x] |
+| C3 | `run` | fully randomized `int` `floors`, `bedrooms`, `extra_bedrooms` over the whole `i32` range × random finite `bathrooms` bit patterns (500 seeded cases) | [x] |
+| C4 | `run` | `bathrooms` = exact `%.1f` rounding ties: `0.05, 0.15, 0.25, 0.35, 0.45, 2.25, 2.75, -0.05, -0.25, 1.05, 1.15` (glibc round-half-to-even) × `+= 1.0` applied mid-run | [x] |
+| C5 | `run` | `bathrooms` = `-0.0`, `0.0` (sign of zero must survive `%.1f` and `+= 1.0`) | [x] |
+| C6 | `run` | `bathrooms` = `NaN`, `-NaN`, `+Inf`, `-Inf` (`%.1f` prints `nan`/`-nan`/`inf`/`-inf`; `+= 1.0` propagates) | [x] |
+| C7 | `run` | `bathrooms` = extreme finite: `f64::MAX`, `-f64::MAX`, `1e308`, `f64::MIN_POSITIVE`, `5e-324` (subnormal), `1e-1` (309+ digit `%.1f` expansions) | [x] |
+| C8 | `run` | `floors = INT_MAX` → `add_floor` signed-int overflow; also `floors = INT_MAX-1`, `INT_MIN` | [x] |
+| C9 | `run` | `bedrooms = INT_MAX`, `extra_bedrooms > 0` → positive signed overflow | [x] |
+| C10 | `run` | `bedrooms = INT_MIN`, `extra_bedrooms < 0` → negative signed overflow | [x] |
+| C11 | `run` | `extra_bedrooms = INT_MAX` × `bedrooms ∈ {0, 1, -1, INT_MIN, INT_MAX}` | [x] |
+| C12 | `run` | `extra_bedrooms = INT_MIN` × `bedrooms ∈ {0, 1, -1, INT_MIN, INT_MAX}` | [x] |
+| C13 | `run` | `extra_bedrooms = 0` (no-op add) × `bedrooms ∈ {0, INT_MAX, INT_MIN}` | [x] |
+| C14 | `run` | same `house_t` reused for two consecutive `run` calls (state accumulation across calls, mirroring `driver`) | [x] |
+| C15 | `driver` | plain positive decimal, single digit and multi-digit (`"0".."9"`, `"7"`, `"12345"`) | [x] |
+| C16 | `driver` | explicitly signed: `"+7"`, `"-7"`, `"+0"`, `"-0"` | [x] |
+| C17 | `driver` | leading whitespace skipped by `strtol`: `" 42"`, `"\t42"`, `"\n\v\f\r 42"`, `"   -42"` | [x] |
+| C18 | `driver` | leading zeros: `"007"`, `"0000000000000000042"`, `"-000042"` | [x] |
+| C19 | `driver` | trailing garbage after a valid prefix: `"42abc"`, `"42 43"`, `"42."`, `"7-"`, `"1e5"` (base 10 → 1) | [x] |
+| C20 | `driver` | base-10 stops at `'x'`: `"0x10"` → 0, `"0X1f"` → 0, `"0b101"` → 0 | [x] |
+| C21 | `driver` | boundary accepted values: `"2147483647"` (`INT_MAX`), `"-2147483648"` (`INT_MIN`), `"2147483646"`, `"-2147483647"` — includes the `bedrooms` overflow inside the two `run`s | [x] |
+| C22 | `driver` | randomized decimal renderings of 500 seeded `i32` values (full range), formatted with and without `+`, with and without leading spaces/zeros | [x] |
+| C23 | `driver` | pre-existing non-zero `errno` in the calling thread before a **valid** input (C clears `errno` at line 61, so it must still be accepted) | [x] |
+| C24 | `driver` | very long but valid input: `"+" + 300 zeros + "2147483647"` | [x] |
 
 ## Feature combinations
 
-`Cargo.toml` has no `[features]` section → the only combination is the default
-(identical to `--no-default-features`). Verified by `check_features.sh`, which
-enumerates features from `Cargo.toml` and runs the full suite for every
-combination it finds (plus the empty one).
+`translation/Cargo.toml` declares **no `[features]` table**, so the only build
+configuration is the default (empty) feature set. Verified mechanically:
+
+```
+$ grep -n '^\[features\]' translation/Cargo.toml   # → no match
+```
+
+Tests are nevertheless run under `--no-default-features` as well as the default
+set, and under BOTH cargo profiles (`dev` and `release` — they differ in UB
+checks and panic strategy, which is observable on the C library's null-pointer
+paths). See `run_tests.sh`, which enumerates the feature table mechanically and
+would pick up any feature added later.
+
+## Binary executable
+
+The project builds **no** executable: `c_src/CMakeLists.txt` has only
+`add_library(driver SHARED ...)` (no `add_executable`), and `driver.c` has no
+`main`. The "compare C and Rust binary stdout" gate is therefore N/A; all
+stdout comparison happens through the `.so` exports instead.
+
+Run everything with:
+
+```
+./run_tests.sh
+```

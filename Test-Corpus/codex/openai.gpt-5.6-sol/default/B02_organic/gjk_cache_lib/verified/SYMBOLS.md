@@ -1,50 +1,50 @@
-# Dynamic symbol surface
+# Exported Symbol Surface
 
-Generated from:
+Source command:
 
-```sh
-nm -D --defined-only ../c_src/build/libharvest-work-GriyDD.so |
-  awk '$2 ~ /^[TDBR]$/ {print $3}' | sort -u
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-rzwpTA.so
 ```
 
-C library: `../c_src/build/libharvest-work-GriyDD.so`
+Rust comparison command:
 
-Rust library: `target/release/libgjk_cache_lib.so`
+```text
+nm -D --defined-only target/release/libgjk_cache_lib.so
+```
 
-| # | C symbol | Rust export |
-|---:|---|:---:|
-| 1 | `c22` | [x] |
-| 2 | `c23` | [x] |
-| 3 | `c2Add` | [x] |
-| 4 | `c2BBVerts` | [x] |
-| 5 | `c2CCW90` | [x] |
-| 6 | `c2Clampv` | [x] |
-| 7 | `c2D` | [x] |
-| 8 | `c2Det2` | [x] |
-| 9 | `c2Div` | [x] |
-| 10 | `c2Dot` | [x] |
-| 11 | `c2GJK` | [x] |
-| 12 | `c2GJKSimplexMetric` | [x] |
-| 13 | `c2L` | [x] |
-| 14 | `c2Len` | [x] |
-| 15 | `c2MakeProxy` | [x] |
-| 16 | `c2Maxv` | [x] |
-| 17 | `c2Minv` | [x] |
-| 18 | `c2Mulrv` | [x] |
-| 19 | `c2MulrvT` | [x] |
-| 20 | `c2Mulvs` | [x] |
-| 21 | `c2Mulxv` | [x] |
-| 22 | `c2Neg` | [x] |
-| 23 | `c2Norm` | [x] |
-| 24 | `c2RotIdentity` | [x] |
-| 25 | `c2Skew` | [x] |
-| 26 | `c2Sub` | [x] |
-| 27 | `c2Support` | [x] |
-| 28 | `c2V` | [x] |
-| 29 | `c2Witness` | [x] |
-| 30 | `c2xIdentity` | [x] |
-| 31 | `gjk_cache` | [x] |
+| # | C symbol | C type | Rust export |
+|---|----------|--------|-------------|
+| 1 | `c22` | `T` | present |
+| 2 | `c23` | `T` | present |
+| 3 | `c2Add` | `T` | present |
+| 4 | `c2BBVerts` | `T` | present |
+| 5 | `c2CCW90` | `T` | present |
+| 6 | `c2Clampv` | `T` | present |
+| 7 | `c2D` | `T` | present |
+| 8 | `c2Det2` | `T` | present |
+| 9 | `c2Div` | `T` | present |
+| 10 | `c2Dot` | `T` | present |
+| 11 | `c2GJK` | `T` | present |
+| 12 | `c2GJKSimplexMetric` | `T` | present |
+| 13 | `c2L` | `T` | present |
+| 14 | `c2Len` | `T` | present |
+| 15 | `c2MakeProxy` | `T` | present |
+| 16 | `c2Maxv` | `T` | present |
+| 17 | `c2Minv` | `T` | present |
+| 18 | `c2Mulrv` | `T` | present |
+| 19 | `c2MulrvT` | `T` | present |
+| 20 | `c2Mulvs` | `T` | present |
+| 21 | `c2Mulxv` | `T` | present |
+| 22 | `c2Neg` | `T` | present |
+| 23 | `c2Norm` | `T` | present |
+| 24 | `c2RotIdentity` | `T` | present |
+| 25 | `c2Skew` | `T` | present |
+| 26 | `c2Sub` | `T` | present |
+| 27 | `c2Support` | `T` | present |
+| 28 | `c2V` | `T` | present |
+| 29 | `c2Witness` | `T` | present |
+| 30 | `c2xIdentity` | `T` | present |
+| 31 | `gjk_cache` | `T` | present |
 
-Missing C symbols in Rust: **0**
+Missing C symbols in Rust: **0**.
 
-Undefined non-system symbols in Rust: **0**

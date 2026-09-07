@@ -1,93 +1,81 @@
 #!/usr/bin/env bash
-# Full verification gate: builds both libraries and runs Phases B/C/D against
-# every feature combination and against BOTH Rust build profiles.
-#
-#   ./verify.sh            # normal run
-#   DIFF_ITERS=200 ./verify.sh   # quick smoke run
-set -uo pipefail
+# Full verification sweep: builds the C .so and the Rust .so, then runs the
+# differential suite for every feature combination and for both the release and
+# the debug Rust cdylib (debug turns Rust's arithmetic overflow checks ON).
+set -euo pipefail
 
-CRATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$CRATE_DIR/.." && pwd)"
+cd "$(dirname "$0")"
+ROOT="$(cd .. && pwd)"
 CARGO="cargo --offline"
-FAILED=0
 
-step() { printf '\n\033[1m=== %s ===\033[0m\n' "$*"; }
-ok()   { printf '  \033[32mPASS\033[0m %s\n' "$*"; }
-bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAILED=1; }
-
-# ---------------------------------------------------------------------------
-step "Building the C shared library"
+echo "=== building C shared library ==="
 mkdir -p "$ROOT/c_src/build"
-( cd "$ROOT/c_src/build" \
+(cd "$ROOT/c_src/build" \
   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-  && cmake --build . >/dev/null ) || { bad "C build"; exit 1; }
-C_SO="$(find "$ROOT/c_src/build" -maxdepth 1 -name '*.so' | head -1)"
-ok "C  .so: $C_SO"
+  && cmake --build . >/dev/null)
+C_SO="$(find "$ROOT/c_src/build" -maxdepth 1 -name '*.so' | sort | head -1)"
+echo "C .so: $C_SO"
 
-# ---------------------------------------------------------------------------
-# Enumerate feature combinations straight out of Cargo.toml.
-step "Enumerating feature combinations from Cargo.toml"
-FEATURES=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /=/ {split($0,a,"="); gsub(/ /,"",a[1]); if (a[1] != "default") print a[1]}' "$CRATE_DIR/Cargo.toml")
-if [ -z "$FEATURES" ]; then
-  echo "  no [features] table -> the only configurations are the default build"
-  echo "  and --no-default-features (equivalent here)."
-  COMBOS=("" "--no-default-features" "--all-features")
-else
-  COMBOS=("" "--no-default-features" "--all-features")
-  for f in $FEATURES; do COMBOS+=("--no-default-features --features $f"); done
+# Enumerate feature combinations from Cargo.toml. This crate declares no
+# [features] table, so the only combination is the default (empty) one; the
+# loop is written generically so it keeps working if features are added.
+mapfile -t FEATURES < <(
+  awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /=/ {split($0,a,"="); gsub(/ /,"",a[1]); if (a[1] != "default") print a[1]}' Cargo.toml
+)
+echo "=== declared features: ${#FEATURES[@]} (${FEATURES[*]:-none}) ==="
+
+COMBOS=("")            # default features
+if [ "${#FEATURES[@]}" -gt 0 ]; then
+  COMBOS+=("--no-default-features")
+  for f in "${FEATURES[@]}"; do
+    COMBOS+=("--no-default-features --features $f")
+  done
+  COMBOS+=("--all-features")
 fi
-printf '  combos: %s\n' "$(printf '[%s] ' "${COMBOS[@]}")"
 
-# ---------------------------------------------------------------------------
-step "cargo check for every feature combination"
+FAIL=0
 for combo in "${COMBOS[@]}"; do
-  if $CARGO check --tests $combo >/dev/null 2>&1; then
-    ok "cargo check ${combo:-<default>}"
-  else
-    bad "cargo check ${combo:-<default>}"
-  fi
-done
+  label="${combo:-<default features>}"
 
-# ---------------------------------------------------------------------------
-step "Symbol parity (nm -D)"
-$CARGO build --release >/dev/null 2>&1 || { bad "release build"; exit 1; }
-$CARGO build          >/dev/null 2>&1 || { bad "debug build";   exit 1; }
-R_SO="$CRATE_DIR/target/release/libupdate_frame_header_lib.so"
-D_SO="$CRATE_DIR/target/debug/libupdate_frame_header_lib.so"
-for so in "$R_SO" "$D_SO"; do
-  MISSING=$(comm -23 \
-    <(nm -D --defined-only "$C_SO" | awk '{print $NF}' | sort -u) \
-    <(nm -D --defined-only "$so"  | awk '{print $NF}' | sort -u))
-  if [ -z "$MISSING" ]; then
-    ok "0 symbols missing from $(basename "$(dirname "$so")")/$(basename "$so")"
-  else
-    bad "missing symbols in $so: $MISSING"
-  fi
-done
+  echo
+  echo "############ $label ############"
+  # shellcheck disable=SC2086
+  $CARGO check $combo --all-targets 2>&1 | tail -3
 
-# ---------------------------------------------------------------------------
-# Run the differential suite for each feature combo, once against the debug
-# cdylib and once against the release cdylib (the shipped artifact).
-for combo in "${COMBOS[@]}"; do
-  for profile in debug release; do
-    step "Phases B+C+D  |  features: ${combo:-<default>}  |  Rust .so: $profile"
-    if [ "$profile" = release ]; then SO="$R_SO"; else SO="$D_SO"; fi
-    $CARGO build          $combo >/dev/null 2>&1
-    $CARGO build --release $combo >/dev/null 2>&1
-    if C_LIB="$C_SO" RUST_LIB="$SO" $CARGO test $combo -- --test-threads="$(nproc)" 2>&1 \
-         | grep -E "^(test result|running|error|warning: unused)|FAILED|panicked"; then
-      ok "tests  features=${combo:-<default>}  so=$profile"
-    else
-      bad "tests  features=${combo:-<default>}  so=$profile"
+  echo "--- building both Rust cdylib profiles ---"
+  # shellcheck disable=SC2086
+  $CARGO build --release $combo >/dev/null 2>&1
+  cp target/release/libupdate_frame_header_lib.so "target/rust-release.so"
+  # shellcheck disable=SC2086
+  $CARGO build $combo >/dev/null 2>&1
+  cp target/debug/libupdate_frame_header_lib.so "target/rust-debug.so"
+
+  echo "--- nm -D symbol diff (C - Rust) must be empty ---"
+  diff <(nm -D --defined-only "$C_SO"       | awk '$2 ~ /^[A-Z]$/ {print $3}' | sort -u) \
+       <(nm -D --defined-only target/rust-release.so | awk '$2 ~ /^[A-Z]$/ {print $3}' | sort -u) \
+       > target/symdiff.txt || true
+  if grep -q '^<' target/symdiff.txt; then
+    echo "FAIL: C symbols missing from Rust:"; grep '^<' target/symdiff.txt; FAIL=1
+  else
+    echo "OK: no C symbol is missing from the Rust .so"
+  fi
+
+  for prof in release debug; do
+    echo "--- tests against the $prof Rust cdylib ---"
+    # shellcheck disable=SC2086
+    if RUST_SO="$PWD/target/rust-$prof.so" timeout 600 \
+         $CARGO test --release $combo 2>&1 | grep -E 'test result|FAILED|panicked' ; then :; fi
+    # shellcheck disable=SC2086
+    if ! RUST_SO="$PWD/target/rust-$prof.so" timeout 600 \
+           $CARGO test --release $combo >/dev/null 2>&1; then
+      echo "FAIL: suite failed for [$label] against the $prof cdylib"; FAIL=1
     fi
   done
 done
 
-# ---------------------------------------------------------------------------
-step "Result"
-if [ "$FAILED" -eq 0 ]; then
-  echo "ALL CHECKS PASSED"
+echo
+if [ "$FAIL" -eq 0 ]; then
+  echo "==== ALL CONFIGURATIONS PASSED ===="
 else
-  echo "THERE WERE FAILURES"
+  echo "==== FAILURES PRESENT ===="; exit 1
 fi
-exit "$FAILED"

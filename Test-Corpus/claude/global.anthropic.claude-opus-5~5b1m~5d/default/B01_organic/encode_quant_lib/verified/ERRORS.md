@@ -1,102 +1,147 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Mechanically derived from `c_src/src/lib.c` (62 lines) and `c_src/include/lib.h`.
+Mechanically derived from `c_src/src/lib.c` (62 lines) and `c_src/include/lib.h`
+(1 line). Greps performed over the whole C tree:
 
-## Mechanical grep of every rejection mechanism
+```
+grep -n 'RETURN_ERROR\|return -1\|return NULL\|assert\|errno\|exit(\|abort(' c_src/src/lib.c   # no match
+grep -n 'return'   c_src/src/lib.c   # only line 61: `return (uni);`
+grep -n 'if'       c_src/src/lib.c   # lines 8,10,12,13,20,31,37,43,57,59 — all value selection, none error
+grep -n 'enum\|#define\|#ifdef\|MIN\|MAX' c_src/src/lib.c c_src/include/lib.h  # no match
+grep -n '[*&]' c_src/include/lib.h   # no pointer parameters anywhere
+```
 
-| pattern grepped | count in C source | where |
-|---|---|---|
-| `return` statements | **1** | line 61 `return (uni);` |
-| `RETURN_ERROR` / error macros | 0 | — |
-| `return -1` / `return NULL` / negative sentinels | 0 | — |
-| `assert` / `static_assert` | 0 | — |
-| error `enum`s / status codes / `typedef`s | 0 | — |
-| `errno` / `exit` / `abort` | 0 | — |
-| pointer parameters, null checks | 0 (all 6 params are `int` by value; the 3 `*` hits are multiplications on lines 30/36/42) | — |
-| explicit range/bounds checks | 0 | — |
-| length/size parameters | 0 | — |
-| `MIN`/`MAX` constants | 0 | — |
-| `#if` / `#ifdef` gates | 0 | — |
+## Result: the C error surface is EMPTY
 
-**Conclusion: `encode_quant` has NO error-return path.** It is a pure,
-total `int(int,int,int,int,int,int)` function with a single exit. Every one of
-the 2^192 possible argument tuples is "accepted" and produces an `int`. There is
-no invalid input that the C rejects, so there is no error code or sentinel to
-match — the differential obligation for every row below is therefore
-**"both libraries return the exact same `int`, and neither traps/aborts"**.
+`encode_quant` is a **total function**. It:
 
-The 10 `if` conditions in the C are all *data-dependent branches*, not
-rejections (they are covered by `CONFIGS.md`):
+* takes six by-value `int` parameters — **no pointers**, so there is no null
+  check to mirror and no null-pointer row;
+* has **no error-return macro, no sentinel return, no error enum, no `assert`,
+  no explicit range check, and no min/max constant**;
+* has exactly **one** `return` statement (line 61) which always returns the
+  selected `uni`;
+* cannot fail: every one of the ten `if` statements selects between values, it
+  never rejects input.
 
-| line | condition | kind |
-|---|---|---|
-| 8  | `(uni ^ uni1) & (~7)` | branch (candidate clamp) |
-| 10 | `(uni ^ uni2) & (~7)` | branch (candidate clamp) |
-| 12 | `lsbit` | branch (mode select) |
-| 13 | `lsbit == 4` | branch (mode select) |
-| 20 | `lsbit & 1` | branch (mode select) |
-| 31 | `uni & 8` | branch (sign of `diff`) |
-| 37 | `uni1 & 8` | branch (sign of `diff`) |
-| 43 | `uni2 & 8` | branch (sign of `diff`) |
-| 57 | `d1 < d0` | branch (candidate selection) |
-| 59 | `d2 < d0` | branch (candidate selection) |
+So there are **zero classical rejection rows**. To keep this phase meaningful
+rather than vacuous, the table below instead enumerates every **implicit** edge
+condition in the C — the operations whose result is boundary-, overflow- or
+UB-adjacent, i.e. exactly the inputs where a naive Rust translation would
+*panic* or *wrap differently* instead of returning the C's value. Each row is a
+real differential test in `tests/error_paths.rs`.
 
-## Error-surface table
+| #  | function | trigger (the exact invalid/extreme input or condition) | expected C result |
+|----|----------|--------------------------------------------------------|-------------------|
+| 1  | `encode_quant` | no pointer args exist → nothing to null-check; call with all-zero args | returns a value (`0`), never faults |
+| 2  | `encode_quant` | `uni = INT_MAX`, so `uni1 = uni + 1` overflows (line 6) | wrapping add → `INT_MIN`; result equals C's |
+| 3  | `encode_quant` | `uni = INT_MIN`, so `uni2 = uni - 1` overflows (line 7) | wrapping sub → `INT_MAX`; result equals C's |
+| 4  | `encode_quant` | `step = INT_MAX` with `uni & 7 == 7` → `(2*7+1)*step` overflows (line 30) | wrapping mul, then `/8`; result equals C's |
+| 5  | `encode_quant` | `step = INT_MIN` → `(2*(uni&7)+1)*step` overflows and `diff = -diff` negates `INT_MIN` (lines 30–32) | wrapping neg of `INT_MIN` == `INT_MIN`; result equals C's |
+| 6  | `encode_quant` | `diff == INT_MIN` and `uni & 8` set → unary minus on `INT_MIN` (line 32) | `INT_MIN`; no trap |
+| 7  | `encode_quant` | `pred + diff` overflows (lines 33/39/45) | wrapping add for `p0`/`p1`/`p2` |
+| 8  | `encode_quant` | `tgt - p0` overflows, e.g. `tgt = INT_MAX`, `p0 < 0` (lines 34/40/46) | wrapping sub |
+| 9  | `encode_quant` | `tgt2 - p0` overflows (lines 48/51/54) | wrapping sub |
+| 10 | `encode_quant` | `d0 ^ (d0 >> 31)` where `d0 == INT_MIN` (line 35) — abs-via-xor cannot represent `+2^31` | `INT_MAX`, *not* `INT_MIN`; arithmetic (sign-propagating) shift |
+| 11 | `encode_quant` | `d3 >> 5` where `d3` is negative (lines 50/53/56) | **arithmetic** shift (rounds toward −inf), not logical |
+| 12 | `encode_quant` | `d0 += d3 >> 5` overflows (lines 50/53/56) | wrapping add |
+| 13 | `encode_quant` | `(2*(uni&7)+1)*step) / 8` with negative numerator (line 30) | truncation **toward zero**, not floor |
+| 14 | `encode_quant` | `uni` negative → `uni & 7` / `uni & 8` on two's-complement negative | mask of the two's-complement bit pattern |
+| 15 | `encode_quant` | `uni >> 1`, `uni >> 2` with `uni` negative in the `lsbit == 4` path (line 17) | arithmetic shift |
+| 16 | `encode_quant` | `lsbit` out-of-range / undocumented value (it is a plain `int`, not an enum with a fixed variant set): `lsbit = 4` exactly | takes the line 13 special branch |
+| 17 | `encode_quant` | `lsbit` odd and `!= 4`, incl. negative odd (`-1`, `-3`, `INT_MIN+1`) | takes the line 20 `uni \|= 1` branch |
+| 18 | `encode_quant` | `lsbit` even, nonzero, `!= 4`, incl. negative even (`-2`, `2`, `6`, `INT_MIN`) | takes the line 24 `uni &= ~1` else branch |
+| 19 | `encode_quant` | `lsbit == 0` | skips the whole line 12 block entirely |
+| 20 | `encode_quant` | out-of-`int`-range enum-style value in `lsbit`: `INT_MAX` (odd) and `INT_MIN` (even) | `INT_MAX` → odd branch, `INT_MIN` → else branch |
+| 21 | `encode_quant` | `uni & 7 == 7` → `uni ^ uni1` crosses the `~7` boundary (line 8) | `uni1` is clamped back to `uni` |
+| 22 | `encode_quant` | `uni & 7 == 0` → `uni ^ uni2` crosses the `~7` boundary (line 10) | `uni2` is clamped back to `uni` |
+| 23 | `encode_quant` | `step = 0` → every `diff` is `0`, so `p0 == p1 == p2` and `d1 == d0`, `d2 == d0` | neither `d1 < d0` nor `d2 < d0`; returns the conditioned `uni` |
+| 24 | `encode_quant` | tie: `d1 == d0` and `d2 == d0` (strict `<` on lines 57/59) | returns `uni`, **not** a candidate |
+| 25 | `encode_quant` | both `d1 < d0` and `d2 < d0` — the C's second `if` overwrites the first | returns `uni2`, even when `d1 < d2` |
+| 26 | `encode_quant` | all six args `INT_MIN` simultaneously (every overflow at once) | a defined wrapping value; must match bit-for-bit |
+| 27 | `encode_quant` | all six args `INT_MAX` simultaneously | a defined wrapping value; must match bit-for-bit |
 
-Because the C declares no rejections, the rows below enumerate the *implicit*
-rejection surface every C API of this shape still has: the generic FFI
-boundaries mandated by Phase C (null pointers, zero/oversized lengths, one-step
--past-range values, and out-of-range enum values crossing the FFI boundary), plus
-every place the C performs an operation that is undefined/trapping in C or
-panicking in Rust and where the two could therefore diverge instead of agreeing.
-"Expected C result" is the ground truth the Rust must reproduce byte-identically.
+Rows 2–13, 26 and 27 are the ones that would make a *non*-wrapping Rust
+translation panic in a debug build (`attempt to add with overflow`,
+`attempt to negate with overflow`), which is why they belong in the error phase.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `encode_quant` | **Out-of-range "enum" value for the `lsbit` mode selector**: `lsbit` is used as a 3-way mode switch (`0` / `4` / odd / other-even) but is typed `int`, so any `int` is a real input. `lsbit = 2, 3, 5, 6, 7, 8, 9, 100, 12345` — values with no "documented" variant. | No rejection: `lsbit==4` → dither branch; else odd → set bit0; else → clear bit0. Returns a normal `int`. Must match exactly. |
-| 2 | `encode_quant` | **Negative out-of-range enum values** for `lsbit`: `-1, -2, -3, -4, -5, -8, -100`. `lsbit & 1` on a negative `int` relies on two's complement (`-1 & 1 == 1`, `-2 & 1 == 0`). | No rejection: negative-odd → set-bit0 branch, negative-even → clear-bit0 branch. Must match exactly. |
-| 3 | `encode_quant` | **Extreme enum values** for `lsbit`: `INT_MIN` (even → clear branch), `INT_MAX` (odd → set branch), `INT_MIN+1`, `INT_MAX-1`, and `4` one step away on both sides (`3`, `5`). | No rejection; branch chosen purely by the `==4` / `&1` tests. Must match exactly. |
-| 4 | `encode_quant` | **Signed integer overflow, `uni + 1` (line 6)** with `uni == INT_MAX` — UB in C. | C (gcc, no `-fwrapv`) wraps to `INT_MIN`; the line-8 guard then detects the changed high bits and restores `uni1 = uni`. Rust must use wrapping and produce the same `int`, not panic. |
-| 5 | `encode_quant` | **Signed integer overflow, `uni - 1` (line 7)** with `uni == INT_MIN` — UB in C. | Wraps to `INT_MAX`; line-10 guard restores `uni2 = uni`. Rust must wrap, not panic. |
-| 6 | `encode_quant` | **Signed overflow in `(2 * (uni & 7) + 1) * step` (lines 30/36/42)**: multiplier is `1,3,5,7,9,11,13,15`; any `step > INT_MAX/15` overflows, e.g. `step = INT_MAX`, `step = 0x1000_0000`, `step = INT_MIN`. | Wraps (two's complement) before the `/ 8`. Rust must wrap, not panic. |
-| 7 | `encode_quant` | **`diff = -diff` (lines 32/38/44) with `diff == INT_MIN`** — would be UB in C. **Proven UNREACHABLE:** the multiplier `2*(uni&7)+1` is odd, so the wrapped product `P` ranges over all of `int`, but `diff = P / 8` is then bounded to `[-2^28, 2^28-1]`. `INT_MIN` is outside that range, so the negation can never overflow. Reachable extremes are `diff = -2^28` and `diff = 2^28-1`. | N/A by construction — no negation overflow exists in either library. The test instead drives `diff` to both reachable extremes (`±2^28`) with `uni & 8` set so the negation executes, and asserts C/Rust agree. |
-| 8 | `encode_quant` | **Signed overflow in `pred + diff` (lines 33/39/45)**: `pred = INT_MAX, diff > 0` or `pred = INT_MIN, diff < 0`. | Wraps. Rust must wrap, not panic. |
-| 9 | `encode_quant` | **Signed overflow in `tgt - p` / `tgt2 - p` (lines 34/40/46/48/51/54)**: e.g. `tgt = INT_MAX`, `p = INT_MIN`. | Wraps. Rust must wrap, not panic. |
-| 10 | `encode_quant` | **Signed overflow in `d0 += d3 >> 5` (lines 50/53/56)**: `d0` near `INT_MAX` plus a large `d3 >> 5`. | Wraps, so a "distortion" can become negative and flip the line-57/59 comparisons. Rust must wrap and select the same candidate. |
-| 11 | `encode_quant` | **Right shift of a negative value, `d >> 31` (lines 35/41/47/49/52/55)** — implementation-defined in C. | gcc emits an *arithmetic* shift → `-1` for negatives, so `d ^ (d >> 31)` is the branchless absolute value (`INT_MIN` maps to `INT_MAX`). Rust `i32 >> ` is arithmetic; must match. |
-| 12 | `encode_quant` | **Right shift of a negative value, `d3 >> 5` (lines 50/53/56)** — implementation-defined in C. (`d3` is non-negative after row 11's abs, so this exercises the non-negative path; the negative path is exercised by `(uni >> 1)`/`(uni >> 2)` below.) | Arithmetic shift, rounding toward −∞ for negatives. Must match. |
-| 13 | `encode_quant` | **Right shift of a negative value in the `lsbit == 4` dither, `(uni >> 1) & (uni >> 2) & 1` (lines 17–19)** with `uni`/`uni1`/`uni2` negative (e.g. `uni = -1`, `INT_MIN`, `-7`). | Arithmetic shift; `-1 >> 1 == -1` so the OR-ed bit is 1 for `uni = -1`. Must match. |
-| 14 | `encode_quant` | **`step == 0`** (degenerate "zero length"): all three `diff` values become `0`. | No rejection; all three candidates collapse to `p = pred`, so `d1 == d0`, `d2 == d0`, both `<` tests are false, and the (possibly lsbit-modified) `uni` is returned unchanged. |
-| 15 | `encode_quant` | **Negative `step`** (a "length" that a real API would reject): `step = -1, -8, -1000, INT_MIN`. | No rejection; `diff` becomes negative and the `uni & 8` sign flip inverts, `/ 8` truncates toward zero for negative numerators. Must match exactly. |
-| 16 | `encode_quant` | **Oversized `step`** (`INT_MAX`, `INT_MAX-1`, `0x7FFF_FFF8`): overflow per row 6 plus truncating division of a negative product. | No rejection; wrapped product then `/ 8` truncating **toward zero** (not floor). Must match exactly. |
-| 17 | `encode_quant` | **All six arguments simultaneously at the signed extremes** — the cross-product of `{INT_MIN, INT_MIN+1, -1, 0, 1, INT_MAX-1, INT_MAX}^6` (117 649 tuples), i.e. every "one step past the valid range" combination at once. | No rejection; every tuple returns an `int`. Must match exactly for all of them. |
-| 18 | `encode_quant` | **Null pointers / oversized lengths**: *not applicable and proven so* — `nm`/the header show the ABI is 6 by-value `int`s and no pointer or length parameter exists, so there is no pointer to null and no buffer to oversize. The nearest reachable analogue is passing `0` and `INT_MIN`/`INT_MAX` in every slot, which rows 14–17 cover. | N/A by construction; documented rather than invented. |
-| 19 | `encode_quant` | **Division `/ 8` (lines 30/36/42) can never trap**: the divisor is the literal `8`, so neither divide-by-zero nor the `INT_MIN / -1` overflow is reachable. | N/A by construction — no `SIGFPE` path exists in either library. Asserted by testing `step = INT_MIN` (row 16) without a crash. |
-| 20 | `encode_quant` | **Extra/garbage argument bits across the FFI boundary**: passing values whose upper bits are set so a wrong `int`/`long`/`unsigned` widening in the Rust wrapper would show up (`0xFFFF_FFFF`, `0x8000_0000` as `u32`-derived `c_int`). | No rejection; both must sign-extend/truncate identically, i.e. the Rust `extern "C" fn(c_int,...) -> c_int` must have the identical calling convention. |
+---
 
-All 20 rows have a dedicated differential test in
-`translation/tests/phase_c_errors.rs`; see that file's checklist and the
-`ERRORS.md` checklist at the bottom of this document.
+## Verification status (Phase C)
 
-## Checklist (Phase C)
+All 27 rows have a passing differential test in `tests/error_paths.rs`, plus one
+extra generic sweep. Both `.so`s are loaded via `libloading`; the Rust function
+is never called directly.
 
-- [x] Row 1 — `lsbit` out-of-range positive enum values
-- [x] Row 2 — `lsbit` negative enum values
-- [x] Row 3 — `lsbit` extreme enum values / one step past `4`
-- [x] Row 4 — `uni + 1` overflow at `INT_MAX`
-- [x] Row 5 — `uni - 1` overflow at `INT_MIN`
-- [x] Row 6 — `(2*(uni&7)+1)*step` overflow
-- [x] Row 7 — `-diff` overflow proven unreachable; both reachable `diff` extremes (`±2^28`) tested through the negation branch
-- [x] Row 8 — `pred + diff` overflow
-- [x] Row 9 — `tgt - p` / `tgt2 - p` overflow
-- [x] Row 10 — `d += d3 >> 5` overflow
-- [x] Row 11 — `d >> 31` on negative values
-- [x] Row 12 — `d3 >> 5` shift semantics
-- [x] Row 13 — `(uni >> 1) & (uni >> 2)` on negative values
-- [x] Row 14 — `step == 0`
-- [x] Row 15 — negative `step`
-- [x] Row 16 — oversized `step`
-- [x] Row 17 — full extremes cross-product (117 649 tuples)
-- [x] Row 18 — null-pointer/length surface proven N/A
-- [x] Row 19 — division trap surface proven N/A
-- [x] Row 20 — argument widening / calling convention
+| # | test | [x] |
+|---|------|-----|
+| 1 | `row01_no_pointer_args_all_zero_call` | [x] |
+| 2 | `row02_uni_int_max_plus_one_overflow` | [x] |
+| 3 | `row03_uni_int_min_minus_one_overflow` | [x] |
+| 4 | `row04_step_int_max_multiply_overflow` | [x] |
+| 5 | `row05_step_int_min_overflow_and_negate` | [x] |
+| 6 | `row06_negate_diff_at_attainable_extremes` (see correction below) | [x] |
+| 7 | `row07_pred_plus_diff_overflow` | [x] |
+| 8 | `row08_tgt_minus_p_overflow` | [x] |
+| 9 | `row09_tgt2_minus_p_overflow` | [x] |
+| 10 | `row10_xor_abs_of_int_min` | [x] |
+| 11 | `row11_d3_shift_right_five_arithmetic` | [x] |
+| 12 | `row12_penalty_add_overflow` | [x] |
+| 13 | `row13_division_truncates_toward_zero` | [x] |
+| 14 | `row14_negative_uni_masks` | [x] |
+| 15 | `row15_lsbit4_negative_arithmetic_shift` | [x] |
+| 16 | `row16_lsbit_exactly_four` | [x] |
+| 17 | `row17_lsbit_odd_including_negative_and_int_max` | [x] |
+| 18 | `row18_lsbit_even_nonzero_including_negative_and_int_min` | [x] |
+| 19 | `row19_lsbit_zero_skips_block` | [x] |
+| 20 | `row20_lsbit_out_of_range_extremes` | [x] |
+| 21 | `row21_uni1_clamped_at_group_top` | [x] |
+| 22 | `row22_uni2_clamped_at_group_bottom` | [x] |
+| 23 | `row23_step_zero_no_candidate_wins` | [x] |
+| 24 | `row24_strict_less_than_keeps_uni_on_ties` | [x] |
+| 25 | `row25_both_better_second_if_overwrites` | [x] |
+| 26 | `row26_all_args_int_min` | [x] |
+| 27 | `row27_all_args_int_max_and_extreme_cross_product` | [x] |
+| — | `generic_per_parameter_boundary_sweep` (every boundary in every position) | [x] |
+
+### Correction to row 6 (found by exhaustive reachability search)
+
+Row 6 as originally derived ("`diff == INT_MIN`, then negate it") is
+**UNREACHABLE**. `diff` is `(m * step) / 8`, and the wrapped product is an
+`i32`, so the `/ 8` confines `diff` to exactly
+
+```
+[INT_MIN/8, INT_MAX/8] == [-268435456, 268435455]
+```
+
+Hence the unary minus on C line 32 can never overflow. The test now (a) asserts
+that bound holds over a 200k-sample sweep, and (b) drives the two ATTAINABLE
+extremes deterministically — the window of products mapping to `INT_MIN/8` is
+only 8 wide out of 2^32, so it is reached by solving `step = product * m^-1`
+(mod 2^32; every multiplier `m = 2*(uni&7)+1` is odd, hence invertible) rather
+than by random search.
+
+### Note on row 25 (reachability)
+
+The "both candidates better" case (`d1 < d0` AND `d2 < d0`) is **unreachable for
+small, non-overflowing inputs**: `d(p)` is convex in `p` and `p0` lies strictly
+between `p1` and `p2`, so `d0 <= max(d1, d2)`. It becomes reachable only once the
+subtractions overflow, which breaks that argument. An offline 20M-sample
+full-range search hits it ~18% of the time, so the test draws from the FULL
+`i32` range (an early version used a small window and never reached the case).
+When it occurs, the C's second `if` overwrites the first and `uni2` is returned
+even if `uni1` was strictly better — the Rust reproduces this exactly.
+
+### Harness integrity
+
+`cargo test` does **not** rebuild a `cdylib`, so an early version of this suite
+was silently testing a stale `.so` and passed even with a deliberately mutated
+Rust source. Two safeguards now prevent a vacuous pass:
+
+1. `tests/common/mod.rs::assert_fresh` fails the test if either `.so` is older
+   than its sources (self-tested: touching `src/lib.rs` without rebuilding makes
+   every test fail with `STALE SHARED OBJECT`).
+2. `run_tests.sh` rebuilds both libraries before each test run.
+
+Mutation-tested: changing `if d2 < d0` to `if d2 <= d0` in the Rust is caught by
+19+ rows across both test files.

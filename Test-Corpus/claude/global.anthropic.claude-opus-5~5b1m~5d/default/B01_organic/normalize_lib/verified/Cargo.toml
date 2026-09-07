@@ -11,22 +11,23 @@ name = "normalize_lib"
 [dev-dependencies]
 libloading = "0.8"
 
-# This crate is a byte-for-byte ABI-compatible replacement for a C library, so
-# it must reproduce the C behaviour even for inputs that are UB in both
-# languages (NULL pointers, negative sizes). rustc's debug-assertion UB checks
-# turn a NULL dereference into a Rust `abort()` (SIGABRT) where the C code
-# faults (SIGSEGV), which is an observable divergence, so they are off in every
-# profile.
+[profile.release]
+panic = "abort"
+
+# The C `normalize` validates nothing: a null `dest`/`src`, or a negative `size`
+# (whose `size * sizeof(float)` memset length sign-extends and wraps), are all
+# inputs it happily executes straight into a SIGSEGV. Rust's `debug-assertions`
+# also enable `ub_checks`, which turn those very same operations (`*ptr` deref,
+# `ptr::write_bytes` on null) into a controlled `abort()` -- SIGABRT instead of
+# SIGSEGV -- and `overflow-checks` would panic on the `i += 1` wrap that C
+# performs silently. Both are disabled so that EVERY build profile of this
+# translation reproduces the C's observable behaviour identically, which is what
+# the differential test suite asserts.
 [profile.dev]
 debug-assertions = false
 overflow-checks = false
 
 [profile.test]
-debug-assertions = false
-overflow-checks = false
-
-[profile.release]
-panic = "abort"
 debug-assertions = false
 overflow-checks = false
 

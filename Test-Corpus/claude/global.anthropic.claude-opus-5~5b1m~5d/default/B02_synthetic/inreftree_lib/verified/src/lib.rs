@@ -66,66 +66,40 @@ fn table_ptr() -> *mut TreeNode {
 }
 
 // ---------------------------------------------------------------------------
-// libc, used directly.
-//
-// `lib.c` includes <string.h> and calls `strchr` / `strncpy`.  Re-declaring and
-// calling the very same libc entry points (rather than re-implementing them in
-// Rust) is what makes the behaviour identical *by construction*, including the
-// cases the C standard leaves undefined:
-//
-//   * `strncpy(dst, NULL, n)` faults with SIGSEGV inside libc, exactly as it
-//     does for the C build.  A hand-written Rust loop would instead trip
-//     rustc's debug-only "null pointer dereference" check and abort with
-//     SIGABRT, which is a different observable outcome.
-//   * `strchr` on the deliberately out-of-bounds `op_string[negative]` byte
-//     behaves the same because it is literally the same code.
+// libc helpers, replicated so that byte-level behaviour matches exactly.
 // ---------------------------------------------------------------------------
 
-extern "C" {
-    fn strchr(s: *const c_char, c: c_int) -> *mut c_char;
-    fn strncpy(dst: *mut c_char, src: *const c_char, n: usize) -> *mut c_char;
+/// `strchr(s, c)` — the terminating NUL is part of the searched string.
+unsafe fn c_strchr(s: *const c_char, c: c_int) -> *const c_char {
+    let needle = c as u8 as c_char;
+    let mut p = s;
+    loop {
+        let cur = *p;
+        if cur == needle {
+            return p;
+        }
+        if cur == 0 {
+            return ptr::null();
+        }
+        p = p.add(1);
+    }
 }
 
-// ---------------------------------------------------------------------------
-// Signed division, with gcc's x86-64 code generation.
-//
-// `divide_op` / `modulo_op` guard against `b == 0`, but *not* against the other
-// overflowing case, `INT_MIN / -1`.  In C that is undefined behaviour; gcc
-// emits `cdq; idiv`, and the CPU raises #DE, so the process dies from SIGFPE.
-// Executing the same instruction reproduces that exactly (a plain
-// `wrapping_div` would silently return `INT_MIN` instead).
-// ---------------------------------------------------------------------------
-
-/// Returns `(quotient, remainder)` the way `cdq; idivl` does.  `b` must be
-/// non-zero (both callers check).  Traps on `INT_MIN / -1`, as gcc's code does.
-#[inline]
-fn c_idiv(a: c_int, b: c_int) -> (c_int, c_int) {
-    #[cfg(target_arch = "x86_64")]
-    {
-        let mut quot: i32 = a;
-        let rem: i32;
-        unsafe {
-            core::arch::asm!(
-                "cdq",
-                "idiv {divisor:e}",
-                divisor = in(reg) b,
-                inout("eax") quot,
-                out("edx") rem,
-            );
+/// `strncpy(dst, src, n)` — copies at most `n` bytes, stops reading after the
+/// source NUL, and NUL-pads the remainder of the destination.
+unsafe fn c_strncpy(dst: *mut c_char, src: *const c_char, n: usize) {
+    let mut i = 0usize;
+    while i < n {
+        let ch = *src.add(i);
+        *dst.add(i) = ch;
+        if ch == 0 {
+            break;
         }
-        (quot, rem)
+        i += 1;
     }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        if a == c_int::MIN && b == -1 {
-            // Same observable outcome as the hardware trap: death by SIGFPE.
-            extern "C" {
-                fn raise(sig: c_int) -> c_int;
-            }
-            const SIGFPE: c_int = 8;
-            unsafe { raise(SIGFPE) };
-        }
-        (a.wrapping_div(b), a.wrapping_rem(b))
+    while i < n {
+        *dst.add(i) = 0;
+        i += 1;
     }
 }
 
@@ -148,6 +122,38 @@ pub extern "C" fn multiply_op(a: c_int, b: c_int, _unused1: c_int, _unused2: c_i
 #[unsafe(no_mangle)]
 pub extern "C" fn subtract_op(a: c_int, b: c_int, _unused1: c_int, _unused2: c_int) -> c_int {
     a.wrapping_sub(b)
+}
+
+/// The C `a / b` and `a % b` on `int`.
+///
+/// `divide_op` / `modulo_op` only guard against `b == 0`; they do **not** guard
+/// `INT_MIN / -1`, which on x86-64 makes `idiv` raise `#DE` and the process die
+/// with `SIGFPE`.  `i32::wrapping_div` / `wrapping_rem` would instead quietly
+/// return `INT_MIN` / `0`, and plain `/` would panic (→ `SIGABRT` under
+/// `panic = "abort"`).  Neither matches, so emit the real instruction.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn c_idiv(a: c_int, b: c_int) -> (c_int, c_int) {
+    let mut quot: i32 = a;
+    let rem: i32;
+    unsafe {
+        core::arch::asm!(
+            "cdq",
+            "idiv {divisor:e}",
+            divisor = in(reg) b,
+            inout("eax") quot,
+            out("edx") rem,
+            options(nomem, nostack),
+        );
+    }
+    (quot, rem)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+#[inline]
+fn c_idiv(a: c_int, b: c_int) -> (c_int, c_int) {
+    // No portable way to raise the hardware trap; `/` and `%` abort on overflow.
+    (a / b, a % b)
 }
 
 #[unsafe(no_mangle)]
@@ -205,7 +211,7 @@ pub extern "C" fn add_tree_node(
         (*node).parent_id = parent_id;
         (*node).left_child_id = -1;
         (*node).right_child_id = -1;
-        strncpy(ptr::addr_of_mut!((*node).label) as *mut c_char, label, 31);
+        c_strncpy(ptr::addr_of_mut!((*node).label) as *mut c_char, label, 31);
         (*node).label[31] = 0;
 
         if parent_id != -1 {
@@ -252,19 +258,19 @@ pub extern "C" fn calculate_tree_sum(node_id: c_int) -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn parse_operation(op_str: *const c_char) -> c_int {
     unsafe {
-        if op_str.is_null() || !strchr(op_str, '+' as c_int).is_null() {
+        if op_str.is_null() || !c_strchr(op_str, '+' as c_int).is_null() {
             return OP_ADD;
         }
-        if !strchr(op_str, '*' as c_int).is_null() {
+        if !c_strchr(op_str, '*' as c_int).is_null() {
             return OP_MULTIPLY;
         }
-        if !strchr(op_str, '-' as c_int).is_null() {
+        if !c_strchr(op_str, '-' as c_int).is_null() {
             return OP_SUBTRACT;
         }
-        if !strchr(op_str, '/' as c_int).is_null() {
+        if !c_strchr(op_str, '/' as c_int).is_null() {
             return OP_DIVIDE;
         }
-        if !strchr(op_str, '%' as c_int).is_null() {
+        if !c_strchr(op_str, '%' as c_int).is_null() {
             return OP_MODULO;
         }
         OP_ADD
@@ -319,7 +325,7 @@ pub extern "C" fn inreftree(param1: c_int, param2: c_int, param3: c_int, param4:
         let mut i: c_int = 0;
         while i < node_count {
             let node = table.offset(i as isize);
-            if !strchr(ptr::addr_of!((*node).label) as *const c_char, 'l' as c_int).is_null() {
+            if !c_strchr(ptr::addr_of!((*node).label) as *const c_char, 'l' as c_int).is_null() {
                 target_id = (*node).id;
                 break;
             }

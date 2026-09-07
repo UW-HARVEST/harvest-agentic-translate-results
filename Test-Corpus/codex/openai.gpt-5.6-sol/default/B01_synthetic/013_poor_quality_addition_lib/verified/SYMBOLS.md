@@ -1,22 +1,19 @@
-# Dynamic Symbol Surface
+# Exported Symbol Surface
 
-Derived mechanically with:
+Derived from:
 
-```sh
+```text
 nm -D --defined-only ../c_src/build/libdriver.so
 nm -D --defined-only target/release/libdriver.so
 ```
 
-| C symbol | C type | Rust symbol present |
-|----------|--------|---------------------|
-| `bad` | `T` | yes |
-| `driver` | `T` | yes |
-| `good` | `T` | yes |
-| `printIntLine` | `T` | yes |
-| `printLine` | `T` | yes |
+| C symbol | Rust symbol | Status |
+|----------|-------------|--------|
+| `bad` | `bad` | present |
+| `driver` | `driver` | present |
+| `good` | `good` | present |
+| `printIntLine` | `printIntLine` | present |
+| `printLine` | `printLine` | present |
 
-The C library also has undefined dynamic references to `printf` and `puts`,
-plus weak ELF toolchain symbols. These are runtime dependencies rather than
-symbols defined by the library.
+Missing C symbols in Rust: **0**.
 
-Missing C-defined symbols in Rust: **0**

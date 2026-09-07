@@ -1,57 +1,81 @@
-# SYMBOLS.md — Public symbol surface
+# SYMBOLS.md — Phase A: public symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared libraries.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-- C:    `c_src/build/libdriver.so`
-- Rust: `translation/target/release/libdriver.so`
+Build commands used:
 
-## Exported (dynamic, defined) symbols
+```
+cd c_src && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd translation && cargo build --release
+```
 
-| # | symbol | C `.so` | Rust `.so` | C signature | notes |
-|---|--------|---------|------------|-------------|-------|
-| 1 | `printLine`    | T | T | `void printLine(const char *line)` | NULL-guarded; `printf("%s\n", line)` |
-| 2 | `printIntLine` | T | T | `void printIntLine(int intNumber)`  | `printf("%d\n", intNumber)` |
-| 3 | `bad`          | T | T | `void bad(float data)`              | unguarded `(int)(100.0 / data)` |
-| 4 | `good`         | T | T | `void good(float data)`             | calls `goodG2B()` then `goodB2G(data)` |
-| 5 | `driver`       | T | T | `void driver(float goodData, float badData)` | header-declared entry point |
+* C  `.so`: `c_src/build/libdriver.so`
+* Rust `.so`: `translation/target/release/libdriver.so`
 
-**Symbol diff (C minus Rust): EMPTY.** All 5 exported C symbols are exported by
-the Rust `.so` under the exact same names. No symbol required a new
-`#[no_mangle]` wrapper and no C module was left untranslated.
+## C source inventory (completeness check)
 
-## Deliberately NOT exported (correctly so)
+`c_src` contains exactly two source files, both fully translated:
 
-These are `static` in `c_src/src/driver.c`, therefore have internal linkage and
-do **not** appear in `nm -D` of the C `.so`. The Rust translation likewise keeps
-them as private `fn`s, which is the correct parity:
+| C file | translated to | status |
+|--------|---------------|--------|
+| `c_src/include/driver.h` | `translation/src/lib.rs` (`driver` decl) | complete |
+| `c_src/src/driver.c`     | `translation/src/lib.rs`                | complete |
 
-| C symbol | linkage in C | Rust counterpart |
-|----------|--------------|------------------|
-| `goodG2B` | `static void goodG2B()`          | private `fn goodG2B()` |
-| `goodB2G` | `static void goodB2G(float data)` | private `fn goodB2G(data: c_float)` |
+Every function defined in `driver.c` has a Rust counterpart:
 
-They are still covered by the differential tests indirectly, because `good` and
-`driver` are the only ways to reach them — exactly as in C.
+| C function | linkage in C | Rust counterpart | exported from Rust `.so` |
+|------------|--------------|------------------|--------------------------|
+| `printLine`    | external | `printLine`    | yes (`#[unsafe(no_mangle)] extern "C"`) |
+| `printIntLine` | external | `printIntLine` | yes (`#[unsafe(no_mangle)] extern "C"`) |
+| `bad`          | external | `bad`          | yes (`#[unsafe(no_mangle)] extern "C"`) |
+| `goodG2B`      | `static` (internal) | `goodG2B` (private `fn`) | no — matches C, `static` is not exported |
+| `goodB2G`      | `static` (internal) | `goodB2G` (private `fn`) | no — matches C, `static` is not exported |
+| `good`         | external | `good`         | yes (`#[unsafe(no_mangle)] extern "C"`) |
+| `driver`       | external | `driver`       | yes (`#[unsafe(no_mangle)] extern "C"`) |
+
+No C module was skipped; there is nothing left to translate.
+
+## Dynamic symbol table (`nm -D --defined-only`)
+
+| # | symbol | C `.so` | Rust `.so` | note |
+|---|--------|---------|-----------|------|
+| 1 | `bad`          | `T` | `T` | `void bad(float)` |
+| 2 | `driver`       | `T` | `T` | `void driver(float, float)` |
+| 3 | `good`         | `T` | `T` | `void good(float)` |
+| 4 | `printIntLine` | `T` | `T` | `void printIntLine(int)` |
+| 5 | `printLine`    | `T` | `T` | `void printLine(const char *)` |
+
+### Symbol diff
+
+```
+$ diff <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort) \
+       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+(no output)
+```
+
+**Missing from Rust `.so`: 0.** No stubs, no `unimplemented!()`.
 
 ## Undefined (imported) symbols
 
-The Rust `.so` imports only libc symbols. Notably it deliberately imports
-`printf` rather than using `std::io::stdout`, so that output ordering,
-buffering and formatting are produced by the *same* libc `printf` the C library
-uses. This is what makes byte-identical capture through a single redirected
-`stdout` fd possible.
+The Rust `.so` imports only libc symbols, exactly like the C `.so`:
 
-Verification command used:
+| symbol | present in C `.so` imports | present in Rust `.so` imports |
+|--------|----------------------------|-------------------------------|
+| `printf`      | yes | yes |
+| `fabs`        | yes (may be inlined by the compiler) | not needed — `f64::abs` is a bit-mask intrinsic, semantically identical |
+| `__cxa_finalize` / `_ITM_*` / `__gmon_start__` (weak) | yes | n/a |
 
-```sh
-diff <(nm -D --defined-only c_src/build/libdriver.so        | awk '{print $3}' | sort) \
-     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
-```
+0 missing / unresolved non-libc symbols in the Rust `.so`.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, and
-`src/lib.rs` contains **no `#[cfg(...)]` / `feature =` gates** (verified by
-grep). Therefore there is exactly ONE build configuration, and the default
-`cargo test` run covers the complete feature surface. `--no-default-features`
-is equivalent to the default here.
+`translation/Cargo.toml` declares **no `[features]` table at all**, therefore the
+only build configuration is the default one:
+
+```
+$ cargo test                                  # default (== all features == no features)
+$ cargo test --no-default-features            # identical build, no features exist
+```
+
+Both were run; there is no further cross-product to enumerate.

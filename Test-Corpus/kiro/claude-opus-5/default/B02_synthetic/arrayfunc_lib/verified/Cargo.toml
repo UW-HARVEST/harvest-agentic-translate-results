@@ -11,22 +11,8 @@ path = "src/lib.rs"
 [dev-dependencies]
 libloading = "0.8"
 
-# The translated functions take raw C pointers and must trap exactly like the C
-# does. rustc's `ub_checks` (enabled by `debug-assertions`) inject a null/
-# alignment check in front of every raw-pointer deref; that check panics, and a
-# panic inside an `extern "C"` fn is non-unwinding, so the process dies with
-# SIGABRT where the C dies with SIGSEGV. `overflow-checks` are equally wrong
-# here: C signed overflow wraps on the target compilers and the translation
-# models that with `wrapping_*`. Both are therefore off in every profile so the
-# cdylib behaves identically regardless of how it was built.
-[profile.dev]
-debug-assertions = false
-overflow-checks = false
-panic = "abort"
-
 [profile.release]
-debug-assertions = false
-overflow-checks = false
 panic = "abort"
 
 [workspace]
+

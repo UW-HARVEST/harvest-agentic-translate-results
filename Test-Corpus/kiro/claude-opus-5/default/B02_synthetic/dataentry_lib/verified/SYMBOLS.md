@@ -1,53 +1,72 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — public symbol parity
 
 Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-- C   `.so`: `c_src/build/libharvest-work-CVzZrt.so` (built from `c_src/src/lib.c`)
-- Rust `.so`: `translation/target/release/libdataentry_lib.so` (`crate-type = ["cdylib"]`)
-
-## C public symbols (`nm -D --defined-only`)
-
-| # | symbol | type | present in Rust `.so`? | notes |
-|---|--------|------|------------------------|-------|
-| 1 | `dataentry` | `T` (global text) | YES (`T dataentry`) | `#[unsafe(no_mangle)] pub extern "C" fn dataentry` |
-
-## Symbol diff
+## Build commands
 
 ```
-$ comm -23 <(nm -D --defined-only C.so   | awk '{print $3}' | sort -u) \
-           <(nm -D --defined-only rust.so | awk '{print $3}' | sort -u)
-<empty>
+cd c_src && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libharvest-work-PvTb82.so
+
+cd translation && cargo build --release
+# -> translation/target/release/libdataentry_lib.so
 ```
 
-**0 missing symbols.** The diff is empty.
+## C `.so` exported (defined) dynamic symbols
+
+```
+$ nm -D --defined-only c_src/build/libharvest-work-PvTb82.so
+00000000000013fb T dataentry
+```
+
+Total: **1** symbol.
+
+## Rust `.so` exported (defined) dynamic symbols
+
+```
+$ nm -D --defined-only translation/target/release/libdataentry_lib.so
+0000000000012360 T dataentry
+```
+
+Total: **1** symbol.
+
+## Parity table
+
+| # | symbol | in C `.so` | in Rust `.so` | status |
+|---|--------|-----------|---------------|--------|
+| 1 | `dataentry` | yes (`T`) | yes (`T`) | MATCH |
+
+**Missing from Rust: none. Symbol diff is EMPTY.**
 
 ## Why the surface is exactly one symbol
 
-`c_src/include/lib.h` declares exactly one prototype:
+`c_src/src/lib.c` is the only translation unit (`CMakeLists.txt` lists
+`src/lib.c` alone). Every other function in it has internal linkage:
 
-```c
-int dataentry(int a, int b, int c, int d);
-```
+| C function | linkage | translated in Rust as |
+|---|---|---|
+| `dataentry` | extern (public, declared in `include/lib.h`) | `#[unsafe(no_mangle)] pub extern "C" fn dataentry` |
+| `find_entry` | `static` | private `fn find_entry` |
+| `process_name` | `static` | private `fn process_name` |
+| `calculate_lookup` | `static` | private `fn calculate_lookup` |
+| `create_entries` | `static` | private `fn create_entries` |
+| `modify_entries` | `static` | private `fn modify_entries` |
+| `lookup_table` | `static` data | private `static LOOKUP_TABLE` |
 
-Every other function in `c_src/src/lib.c` is declared `static`
-(`find_entry`, `process_name`, `calculate_lookup`, `create_entries`,
-`modify_entries`) and so has internal linkage and no dynamic symbol. The
-file-scope data (`lookup_table`) is `static` as well. There are no macros that
-generate additional exported symbols, no `#ifdef`-gated extra sources, and
-`CMakeLists.txt` compiles a single translation unit (`src/lib.c`).
+`include/lib.h` declares exactly `int dataentry(int a, int b, int c, int d);`,
+confirming the intended public surface. No C module was left untranslated; no
+symbol is stubbed.
 
-Consequently the Rust crate keeps the five helpers as private `fn`s with the
-same names and exports only `dataentry`. No module of C source was skipped:
-`c_src/src/lib.c` (199 lines, one TU) is translated in full, and no stubs or
-`unimplemented!()` are present.
+## Undefined (imported) symbols
 
-```
-$ grep -c 'unimplemented!\|todo!\|panic!("not' translation/src/lib.rs
-0
-```
+Rust `.so` undefined non-libc symbols: none (checked with
+`nm -D --undefined-only`; all entries resolve to `libc`/`libgcc`
+`GLIBC_*`/`GCC_*` versioned imports).
 
-## Undefined (imported) symbols in the Rust `.so`
+## Feature combinations
 
-`nm -D --undefined-only` on the Rust `.so` lists only libc / runtime imports
-(`malloc`, `free`, `memcpy`, `__libc_start_main`-family, unwinding hooks). No
-non-libc undefined symbols.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+configuration is the default one. `--no-default-features` and the default build
+are the same compilation, and both produce the symbol set above. (Verified by
+`cargo build --release --no-default-features`.)

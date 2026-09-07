@@ -1,77 +1,72 @@
-# SYMBOLS.md — Public symbol surface (Phase A)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-Build commands used:
+* C  `.so`: `c_src/build/libharvest-work-g4xO1U.so`
+* Rust `.so`: `translation/target/release/libdataentry_lib.so`
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-T1HrAZ.so   (name comes from the parent dir name,
-#    see CMakeLists.txt: project(${project_name}) via cmake_path(... FILENAME))
+## C source inventory
 
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libdataentry_lib.so
+`c_src` contains exactly one translation unit (`src/lib.c`) and one public
+header (`include/lib.h`). The header declares a single entry point:
+
+```c
+int dataentry(int a, int b, int c, int d);
 ```
 
-## Defined (exported) dynamic symbols
+All other functions in `lib.c` are `static` (internal linkage) and therefore
+have *no* dynamic symbol; they are not part of the ABI surface and must not be
+exported by the Rust `.so` either:
 
-`nm -D --defined-only <so>`:
+| C function | linkage | exported? |
+|---|---|---|
+| `find_entry` | `static` | no (file-local) |
+| `process_name` | `static` | no (file-local) |
+| `calculate_lookup` | `static` | no (file-local) |
+| `create_entries` | `static` | no (file-local) |
+| `modify_entries` | `static` | no (file-local) |
+| `lookup_table` | `static` data | no (file-local) |
+| `dataentry` | external | **yes** |
 
-| # | C symbol | C type | Exported by Rust `.so`? | Rust item |
-|---|----------|--------|-------------------------|-----------|
-| 1 | `dataentry` | `T` (global text) | YES — `T dataentry` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn dataentry` |
+## Exported (defined) dynamic symbols
 
-The C library's only public entry point is `int dataentry(int, int, int, int)`
-(declared in `c_src/include/lib.h`). Every other function in `c_src/src/lib.c`
-is `static` and therefore has **no** dynamic symbol:
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `dataentry` | `T` (0x13fb) | `T` (0x11b00) | **MATCH** |
 
-| C function | storage | dynamic symbol? | Rust counterpart (private, not exported — correct) |
-|------------|---------|-----------------|-----------------------------------------------------|
-| `find_entry` | `static` | no | `unsafe fn find_entry` |
-| `process_name` | `static` | no | `unsafe fn process_name` / `process_name_lit` |
-| `calculate_lookup` | `static` | no | `unsafe fn calculate_lookup` |
-| `create_entries` | `static` | no | `unsafe fn create_entries` |
-| `modify_entries` | `static` | no | `unsafe fn modify_entries` |
-| `lookup_table` | `static` data | no | `static LOOKUP_TABLE` |
+Symbol diff (`C defined` minus `Rust defined`, text/data symbols only): **empty**.
 
-`#define MAX_ENTRIES 10` and `#define NAME_LENGTH 32` are macros — no symbols.
-(`MAX_ENTRIES` is dead in the C source; it is mirrored as a dead `const` in Rust.)
+No symbol required a new `#[no_mangle]` wrapper and no C module was left
+untranslated — `src/lib.c` is the whole library and every function in it
+(including all six `static` helpers) is present in `translation/src/lib.rs`.
 
-## Symbol diff result
+## Undefined (imported) symbols
 
-```
-comm -23 c_syms.txt rust_syms.txt      # in C, missing from Rust
-<empty>
-```
+Both objects import only libc / platform runtime symbols. Neither imports a
+non-libc symbol that the other does not provide.
 
-**0 symbols missing from the Rust `.so`.** No module of the C source was
-skipped: `c_src/src/lib.c` is the only translation unit in `CMakeLists.txt`
-and all six of its functions plus its static table are present in
-`translation/src/lib.rs`. No stubs / `unimplemented!()` were introduced.
+* C imports: `malloc`, `free`, `sprintf`, `strcpy`, `strlen`
+  (+ weak `_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
+* Rust imports: `malloc`, `free`, `strlen`, `memcpy`, `memset`, `memmove`,
+  `calloc`, `realloc`, `posix_memalign`, `abort`, `bcmp`, plus the Rust
+  `std`/panic-runtime set (`_Unwind_*`, `dl_iterate_phdr`, `pthread_key_*`,
+  `open64`/`read`/`write`/`stat64`/`mmap64`/…) and weak
+  `_ITM_*`, `__cxa_*`, `__gmon_start__`, `gettid`, `statx`.
 
-## Undefined symbols in the Rust `.so`
+The extra Rust imports are the Rust standard-library/unwinder runtime, not
+library-level dependencies; `sprintf`/`strcpy` are re-implemented in Rust
+(`sprintf_entry_name`, `c_strcpy`, `c_strcpy_lit`) rather than imported.
 
-`nm -D -u` on the Rust `.so` lists only libc / libgcc-unwind imports
-(`malloc`, `free`, `strlen`, `memcpy`, `memset`, `mmap64`, `_Unwind_*`,
-`pthread_key_*`, …), all of which are satisfied by the system runtime.
-**0 missing/undefined non-libc symbols.**
+### Gate
 
-The C `.so` imports `malloc`, `free`, `sprintf`, `strcpy`, `strlen`. The Rust
-side imports `malloc`/`free` from libc (so heap behaviour, including
-allocation-failure thresholds, is identical) and re-implements `sprintf("%d")`,
-`strcpy`, `strlen` inline — byte-for-byte equivalent for the inputs the code
-can produce (see `CONFIGS.md` rows 1–14 and `ERRORS.md`).
+- [x] `nm -D` shows **0 missing** exported symbols in the Rust `.so`.
+- [x] `nm -D` shows **0 undefined non-libc / non-Rust-runtime** symbols in the
+      Rust `.so`.
 
 ## Feature combinations
 
 `translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one. `--no-default-features` is therefore
-equivalent to the default build. Verified:
-
-```sh
-cargo check                        # ok
-cargo check --no-default-features  # ok
-```
+configuration is the default one (`--no-default-features` is equivalent). The
+Phase D "every feature combination" requirement therefore collapses to the
+single default configuration; this is verified in
+`tests/feature_matrix.rs` / `check_features.sh`.

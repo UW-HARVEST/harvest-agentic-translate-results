@@ -1,76 +1,121 @@
-# SYMBOLS.md — Symbol-surface parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects. No assumptions.
+Derived mechanically from `nm -D` on both shared objects. No symbol on this page
+was chosen by judgement; the lists are the raw dynamic symbol tables.
+
+Artifacts compared:
+
+- C:    `c_src/build/libhello.so`            (cmake, `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`)
+- Rust: `translation/target/release/libhello.so` (`cargo build --release`, `crate-type = ["cdylib"]`)
 
 Commands used:
 
 ```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libhello.so
-
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libhello.so
+nm -D --defined-only   c_src/build/libhello.so
+nm -D --defined-only   translation/target/release/libhello.so
+nm -D --undefined-only c_src/build/libhello.so
+nm -D --undefined-only translation/target/release/libhello.so
+ldd -r <each .so>                      # confirm nothing is left unresolved
 ```
 
-## Translation-unit inventory (completeness check)
+## 1. Defined (exported) dynamic symbols
 
-Every C source file must have a Rust counterpart. A whole untranslated
-`.c` file is the main way symbols go missing, so the file list is checked
-first, not just the symbol list.
+The C library is built from exactly one translation unit (`c_src/src/hello.c`,
+31 lines) and its public header declares exactly one function
+(`c_src/include/hello.h:27` → `int helloworld();`). There are no
+namespace-renaming or symbol-generating macros in the header, so the exported
+name is the plain identifier.
 
-| C source file | translated in | status |
-|---|---|---|
-| `c_src/src/hello.c` | `translation/src/lib.rs` | translated |
+| # | C symbol | C type | exported by Rust `.so`? | Rust type | status |
+|---|----------|--------|-------------------------|-----------|--------|
+| 1 | `helloworld` | `T` (global text) | yes | `T` (global text) | MATCH |
 
-`find c_src -name '*.c'` returns exactly one file, so no module was skipped.
-`find c_src -name '*.h'` returns exactly one header (`include/hello.h`),
-which declares exactly one function. There are no macro-generated /
-namespace-prefixed symbol names in the header (no function-like macros at
-all — the only preprocessor directive is the `HELLO_H_` include guard), so
-the exported name set is not expanded by macro trickery.
+Rust side, for completeness — the Rust `.so` exports **no extra** public symbols
+beyond the one required (a `cdylib` hides all non-`#[no_mangle]` Rust items):
 
-## Exported (defined, dynamic) symbols
+| # | Rust symbol | type | present in C `.so`? |
+|---|-------------|------|---------------------|
+| 1 | `helloworld` | `T` | yes |
 
-| # | symbol | C `.so` | Rust `.so` | C binding | Rust binding | status |
-|---|--------|---------|------------|-----------|--------------|--------|
-| 1 | `helloworld` | yes (`T`) | yes (`T`) | global text | global text | MATCH |
+### Symbol diff
 
-Missing from Rust `.so`: **none**.
-Extra in Rust `.so` (not in C): **none**.
+```
+$ diff <(nm -D --defined-only c_src/build/libhello.so       | awk '{print $NF}' | sort) \
+       <(nm -D --defined-only translation/.../libhello.so   | awk '{print $NF}' | sort)
+(empty)
+```
 
-Rust source of the export: `#[unsafe(no_mangle)] pub extern "C" fn helloworld() -> c_int`
-in `translation/src/lib.rs`. `crate-type = ["cdylib"]` in `Cargo.toml`, so the
-symbol is exported from a real shared object and is reachable by `dlsym`,
-which is how every test in `tests/` calls it.
+**Missing from Rust: 0. Extra in Rust: 0.** No `#[no_mangle]` wrapper had to be
+added and no untranslated C module was found: `src/hello.c` is the only source
+file listed in `c_src/CMakeLists.txt`'s `add_library(hello SHARED src/hello.c)`,
+and it is fully translated in `translation/src/lib.rs`. Nothing is stubbed and
+there is no `unimplemented!()`/`todo!()` anywhere in the crate.
 
-## Undefined (imported) symbols
+## 2. Undefined (imported) symbols
 
-Only libc / unwinder imports are permitted. None of the imports is an
-untranslated project symbol.
+These are *not* a parity requirement — they are the libc/runtime imports each
+toolchain happens to need — but they are recorded because one of them is
+behaviourally significant.
 
-| `.so` | undefined symbols | all libc/libgcc? |
-|---|---|---|
-| C | `puts`, `__cxa_finalize`, `__gmon_start__`, `_ITM_*register TMCloneTable` | yes |
-| Rust | `puts`, `memcpy`, `memmove`, `memset`, `bcmp`, `strlen`, `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `abort`, `getenv`, `getcwd`, `readlink`, `realpath`, `open64`, `close`, `read`, `write`, `writev`, `lseek64`, `stat64`, `fstat64`, `statx`, `mmap64`, `munmap`, `syscall`, `gettid`, `dl_iterate_phdr`, `__errno_location`, `__tls_get_addr`, `pthread_key_{create,delete}`, `pthread_setspecific`, `__cxa_thread_atexit_impl`, `__cxa_finalize`, `__gmon_start__`, `_Unwind_*`, `_ITM_*` | yes |
+C `.so` imports:
 
-The extra Rust imports are the Rust standard library's own runtime
-(allocator, panic/unwind machinery, `std::fs`/`std::env` support pulled in
-by libstd), not project code. `ldd` on the Rust `.so` resolves to only
-`libgcc_s.so.1`, `libc.so.6` and the loader — no unresolved project
-dependency.
+```
+w _ITM_deregisterTMCloneTable
+w _ITM_registerTMCloneTable
+w __cxa_finalize@GLIBC_2.2.5
+w __gmon_start__
+U puts@GLIBC_2.2.5
+```
 
-Note that **both** objects import `puts`, not `printf`: the C compiler and
-LLVM each apply the standard `printf("...\n")` → `puts("...")` strength
-reduction. `puts` appends the newline itself, so the emitted bytes are
-identical, and both write through the *same* libc `stdout` `FILE` buffer.
+Rust `.so` imports: the same four weak toolchain symbols, `U puts@GLIBC_2.2.5`,
+plus the Rust `std` runtime's own libc/unwinder imports
+(`_Unwind_*@GCC_*` from `libgcc_s`, `malloc`/`free`/`realloc`/`calloc`/
+`posix_memalign`, `memcpy`/`memmove`/`memset`/`bcmp`/`strlen`,
+`open64`/`read`/`write`/`writev`/`close`/`lseek64`/`stat64`/`fstat64`/`statx`/
+`readlink`/`realpath`/`getcwd`, `mmap64`/`munmap`, `abort`, `syscall`,
+`getenv`, `__errno_location`, `dl_iterate_phdr`, `gettid`,
+`pthread_key_create`/`pthread_key_delete`/`pthread_setspecific`,
+`__cxa_thread_atexit_impl`, `__tls_get_addr`).
 
-## Gate
+Every one of those is a **libc / libgcc runtime** symbol. `ldd -r` on both
+objects reports no undefined and no missing symbols, so:
 
-- [x] `nm -D` shows **0** symbols missing from the Rust `.so`.
-- [x] `nm -D` shows **0** undefined non-libc symbols in the Rust `.so`.
-- [x] No stubs / `unimplemented!()` / `todo!()` anywhere — the single symbol
-      is a genuine translation of the C body
-      (`grep -rn 'unimplemented!\|todo!\|panic!' translation/src/` is empty).
+> **0 missing/undefined non-libc symbols in the Rust `.so`.**
+
+### Note: `printf` → `puts`
+
+Worth recording because it is the one place the two objects had to agree at the
+ABI level. The C source calls `printf("Hello World!\n")`; GCC rewrites a
+format-string-free `printf` ending in `\n` into `puts("Hello World!")`, which
+is why the C `.so` imports `puts` and not `printf`:
+
+```
+0000000000001109 <helloworld>:
+    110d: lea 0xeec(%rip),%rax   # -> "Hello World!"
+    1117: call 1030 <puts@plt>
+    111c: mov $0x0,%eax
+    1122: ret
+```
+
+`translation/src/lib.rs` deliberately calls the libc `printf` (rather than
+`std::io::stdout`) so the bytes land in the *same libc `stdout` FILE stream and
+buffer* the C used; LLVM applies the identical `printf`→`puts` rewrite, so the
+Rust `.so` also imports `puts`. This matters for observable behaviour, not just
+symbol names: it makes stdout buffering and interleaving with other C-side
+stdio writes identical, which rows C5–C8 of `CONFIGS.md` verify.
+
+## 3. Feature combinations
+
+`translation/Cargo.toml` has **no `[features]` section**, no `optional`
+dependencies, and `grep -rn feature translation/src/` finds no `cfg(feature)`.
+There is therefore exactly **one** build configuration; `--no-default-features`
+and the default build are the same object. Recorded here so the Phase D
+"every feature combination" gate is discharged explicitly rather than skipped.
+
+## 4. Binary / driver executables
+
+Neither project builds one: `c_src/CMakeLists.txt` has no `add_executable`
+(only `add_library(hello SHARED ...)`), and `translation/Cargo.toml` has no
+`[[bin]]`, no `src/main.rs` and no `src/bin/`. The "compare C and Rust binary
+stdout" gate is therefore **N/A** — there is no driver to run. Library stdout is
+still compared byte-for-byte at the fd level in Phase B.

@@ -1,131 +1,152 @@
-# CONFIGS.md — configuration / valid-input surface table
+# CONFIGS.md — Phase A: configuration surface table (valid inputs)
 
-## Where the axes come from (mechanical derivation)
+## How the axes were derived (mechanically)
 
-The library has **no** runtime flags, no options struct, no environment reads,
-no `#ifdef`, no `switch`. `grep`ing `c_src` for `#if|#ifdef|switch|getenv|static
-.*=` returns nothing but the single `#define N_SMOOTH 16`. So every branch the C
-takes is driven by (1) which entry point you call, (2) the integer length, and
-(3) the *values* in the buffers. Those are the axes:
+Public header `c_src/include/match.h` is the entire API:
 
-| axis | values the C actually distinguishes | where it branches |
-|------|-------------------------------------|-------------------|
-| **A. entry point** | `spectral_contrast` (lowest level, exported), `match` (composed: `total`→gate→`preprocess`×2→`spectral_contrast`→cut-off) | `match.h` |
-| **B. element type seen** | `f64` stride-8 (`match.c`, `float_t == double`), `f32` stride-4 (`spectral_contrast.c`, `float_t == float`) | the `float_t` split |
-| **C. length vs `N_SMOOTH == 16`** | `1`, `2`, `3`, `15`, `16`, `17`, `31`, `32`, `33`, `64`, `1000` — `smoothen`'s inner loop is `j < 16 && i+j < length`, so for `length <= 16` **every** output is clamped, for `length > 16` only the last 15 are | `match.c:16` |
-| **D. length parity** | odd vs even — `spectral_contrast` reads `bins` **f32** slots out of a `bins`-**f64** buffer, i.e. `ceil(bins/2)` doubles; for odd `bins` the last touched double contributes only its **low** 4 bytes | interaction of `match.c:40` with the `float_t` split |
-| **E. `differentiate` degenerate length** | `length == 1` (loop body never runs, the single element is zeroed) vs `length >= 2` | `match.c:24-25` |
-| **F. element value class** | `+0.0`, `-0.0`, subnormal, small normal, `1.0`, large normal, overflow-to-`inf` in f32 (`>= 2e19` squared), `±inf`, quiet NaN, signalling NaN, mixed signs, monotone ramp, constant | every arithmetic op; `normalize` divides by `sqrt(dot)` with no guard |
-| **G. `threshold` class** | `-inf`, `-DBL_MAX`, `-1.0`, `-0.0`, `+0.0`, `DBL_MIN`, `0.25`, `0.5`, `1.0`, `2.0`, `DBL_MAX`, `+inf`, `NaN` | `match.c:37` (`mulsd` + ordered `<`) and `match.c:40` (ordered `>=`) |
-| **H. test/reference relationship** | identical, positively scaled, negated, shifted, independent random, reference all-zero, test all-zero, one constant | drives which side of both gates you land on |
-| **I. pointer relationship** | distinct, fully aliased (`a == b`), partially overlapping (`b == a+1`, `b == a+k`) | C permits it; `normalize` is called twice so aliasing is observable |
-| **J. caller's declared element type for `spectral_contrast`** | called with a genuine `float*` buffer (true ABI) **and** called with a `double*` buffer the way `match.h` declares it (the type-confused path a real consumer takes) | `match.h` vs `spectral_contrast.c` |
+```c
+#define N_SMOOTH 16
+typedef double float_t;
+int    match(float_t *test, float_t *reference, int bins, double threshold);
+double spectral_contrast(float_t *a, float_t *b, int length);
+```
 
-Rows below are the pruned cross-product: one row per combination the C treats
-differently. Each is driven with **many** randomized inputs from a fixed-seed
-PRNG (`SplitMix64`, seed `0x9E3779B97F4A7C15`), not a single hand-picked value,
-and compared **bit-for-bit** (raw IEEE-754 bits of the return value *and* of
-every element of every buffer after the call, since both entry points mutate).
+* **Runtime options / modes / flags:** there are **none**. No global state, no
+  init function, no setter, no context struct, no `#ifdef`
+  (`grep -c '#if' c_src -r` -> 0), no environment variable. The only tunable is
+  the compile-time `#define N_SMOOTH 16`, which is fixed in the built `.so`.
+  So the "options" axis collapses; the whole configuration space is
+  **entry point × input shape × value class**.
+* **Entry points (both, including the low-level one):**
+  * `spectral_contrast` — the *low-level* entry point. It is exported and is
+    what `match` itself calls, and it mutates both of its arguments in place,
+    so it must be driven directly, not only through `match`.
+  * `match` — the composed pipeline
+    (`total` → gate → `preprocess`×2 → `spectral_contrast`).
+* **Branch points the C actually distinguishes** (`grep` of every `if`/`for`
+  guard, see ERRORS.md):
+  1. `i < length` in `total`, `dot_product`, `normalize`, `smoothen` outer —
+     ⇒ `length` `<= 0` vs `> 0`.
+  2. `j < N_SMOOTH && i + j < length` in `smoothen` — ⇒ `length < 16`,
+     `== 16`, `> 16` behave differently (window clamping, attenuated tail).
+  3. `i < length - 1` in `differentiate` — ⇒ `length` `0`, `1`, `>= 2`.
+  4. `if(total < threshold * total)` in `match` — ⇒ gate taken /
+     not taken / unordered, driven by the `threshold` **value class**.
+  5. `spectral_contrast(...) >= threshold` — ⇒ `threshold` value class again.
+  6. `magnitude` zero vs non-zero vs NaN in `normalize` (unguarded divide).
+  7. The `float_t` split: `spectral_contrast` indexes as **f32**, `match`'s
+     buffers are **f64**. ⇒ `bins` parity (odd/even) changes which half of
+     which `double` is the last f32 read; and the f32 view of arbitrary f64
+     bytes routinely decodes to NaN/inf/denormal, so the **bit pattern** of the
+     input, not just its magnitude, is a real axis.
+* **Input value classes that the code shape makes distinct:** all-zero
+  (`±0.0`), constant (which -- MEASURED -- is NOT all-zero after preprocessing, because `smoothen`'s clamped tail breaks the constancy; see ERRORS.md E18), small positive
+  "realistic spectrum", mixed sign, denormal, huge (f32 view overflows),
+  `±inf`, quiet NaN, signalling NaN, adversarial raw bit patterns whose f32
+  halves are NaN.
+* **Aliasing:** no `restrict` anywhere, so `a == b`, and partial overlap, are
+  valid configurations of `spectral_contrast`.
+* **Byte order / element type:** single fixed ABI (x86-64 little-endian,
+  IEEE-754 binary64/binary32). Not an axis, but it is *why* the f32/f64 split
+  is observable, so it is pinned by comparing raw bit patterns rather than
+  float values in every row.
 
-Test file: `tests/configs.rs`. Row ids are the `#[test]` name suffixes.
+No binary/driver target exists in `CMakeLists.txt` (library only), so there is
+no stdout comparison row.
 
-## `spectral_contrast` — true-ABI `f32` buffers (axis A=low-level, B=f32, J=float\*)
+## The table
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|-------------------------------------------|-----|
-| C01 | `spectral_contrast` | `length` ∈ {1,2,3,15,16,17,31,32,33,64,1000}, distinct buffers, random *positive normal* f32 in `[2^-40, 2^40]` (500 draws/len) | [x] |
-| C02 | `spectral_contrast` | as C01 but *signed* random normals (mixed signs) | [x] |
-| C03 | `spectral_contrast` | as C01 but random f32 drawn from arbitrary **bit patterns** (covers `±0`, subnormals, `±inf`, quiet+signalling NaN, every exponent) — 2000 draws | [x] |
-| C04 | `spectral_contrast` | random exponent-biased draws: exponent uniform over the full f32 range, so magnitudes span `1e-45 … 1e38` and the dot product both underflows and overflows | [x] |
-| C05 | `spectral_contrast` | `a` all-equal constant (random constant), `b` random | [x] |
-| C06 | `spectral_contrast` | `a == b` values (equal contents, distinct buffers) ⇒ contrast should be `1.0`-ish; exercises `dot(v,v)` twice | [x] |
-| C07 | `spectral_contrast` | `b[i] == -a[i]` ⇒ contrast ≈ `-1.0` | [x] |
-| C08 | `spectral_contrast` | monotone ramps (`i`, `-i`, `i*scale`) | [x] |
-| C09 | `spectral_contrast` | all elements subnormal (magnitude underflows to `+0` ⇒ divide-by-zero) | [x] |
-| C10 | `spectral_contrast` | all elements `> 2^64` so `x*x` overflows f32 to `+inf` ⇒ magnitude `+inf` | [x] |
-| C11 | `spectral_contrast` | exactly one element `±inf`, rest random finite | [x] |
-| C12 | `spectral_contrast` | exactly one element quiet NaN with a random payload, rest random finite | [x] |
-| C13 | `spectral_contrast` | exactly one element signalling NaN with a random payload | [x] |
-| C14 | `spectral_contrast` | **two or more** NaNs with distinct payloads in `a` (payload-precedence in `addsd`, axis F ∩ E28) | [x] |
-| C15 | `spectral_contrast` | NaN at the *same* index in both `a` and `b`, distinct payloads (`mulss` destination precedence, E27) | [x] |
-| C16 | `spectral_contrast` | `±0.0` mixture (some `+0`, some `-0`), rest zero ⇒ zero magnitude | [x] |
-| C17 | `spectral_contrast` | **aliased**: `a == b`, random contents, `length` ∈ {1,2,16,17,64} (axis I) | [x] |
-| C18 | `spectral_contrast` | **partially overlapping**: `b = a.add(1)`, and `b = a.add(k)` for random `k < length` (axis I) | [x] |
-| C19 | `spectral_contrast` | `length` sweep `1..=64` exhaustively with one fixed random buffer per length (axis C boundary scan around 16 and 32) | [x] |
-| C20 | `spectral_contrast` | large `length` (4096, 65536) random normals — accumulation-order sensitivity | [x] |
+Every row is driven with **many randomized inputs** (fixed seed
+`0x243F6A8885A308D3`, SplitMix64) unless the row is inherently a single point.
+"compare" always means: the returned value's **raw IEEE-754 bits** (or the
+`int`), **plus** the raw bits of every element of every buffer after the call,
+byte-for-byte between the C `.so` and the Rust `.so`.
 
-## `spectral_contrast` — header-declared `double*` caller (axis J=double\*, the type-confused path)
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `spectral_contrast` | `length = 0`; buffers non-empty but untouched; also `length = 0` with `NULL` pointers | [x] |
+| C2 | `spectral_contrast` | `length = 1`; random f64 bit patterns behind the pointer (1 f32 read out of 2 slots) | [x] |
+| C3 | `spectral_contrast` | `length = 2 .. 8` exhaustive lengths, random realistic f32-valued data written through an f32 view | [x] |
+| C4 | `spectral_contrast` | `length = 15, 16, 17` (N_SMOOTH boundary is irrelevant here, but these are the shared boundary lengths), random data | [x] |
+| C5 | `spectral_contrast` | `length` = 31, 32, 33, 64, 127, 128, 1024, 4096; random data | [x] |
+| C6 | `spectral_contrast` | all elements `+0.0` ⇒ `magnitude == 0` ⇒ unguarded `0.0/0.0` (E9); and all `-0.0`; and mixed `±0.0` | [x] |
+| C7 | `spectral_contrast` | data containing `+inf` / `-inf` ⇒ `dot_product` `+inf`, `sqrt(+inf) = +inf`, `x/inf` | [x] |
+| C8 | `spectral_contrast` | data containing quiet NaN with **assorted payloads** (payload-propagation order through `mulss`→`cvtss2sd`→`addsd`) | [x] |
+| C9 | `spectral_contrast` | data containing **signalling** NaN (`0x7FBFFFFF`, `0xFFA00001`) ⇒ quieting via `mulss`/`cvtss2sd` | [x] |
+| C10 | `spectral_contrast` | subnormal f32 data (`1e-42`) and data that makes `dot_product` underflow to `0` while elements are non-zero ⇒ divide by `0` | [x] |
+| C11 | `spectral_contrast` | huge f32 data (`1e38`) ⇒ `mulss` overflows to `+inf` in **single** precision even though an f64 dot product would be finite — the direct signature of the `float_t` confusion | [x] |
+| C12 | `spectral_contrast` | **fully aliased**: `spectral_contrast(v, v, length)` (E12), `length` 1/2/16/17/64, random data | [x] |
+| C13 | `spectral_contrast` | **partially overlapping**: `spectral_contrast(v, v.add(1), length)` and `spectral_contrast(v.add(1), v, length)` (E13) | [x] |
+| C14 | `spectral_contrast` | `length < 0`: `-1`, `-7`, `-1000`, `INT_MIN` (E7) | [x] |
+| C15 | `match` | ~~`bins = 0`~~ — **RECLASSIFIED after measurement.** This is not a valid configuration: C `match` with `bins == 0` always dies with SIGSEGV, because `differentiate`'s unguarded `v[length-1] = 0` writes `%rsp - 8`, the slot holding `preprocess`'s return address (verified standalone: exit 139). Moved to the error surface as `ERRORS.md` row E5 and tested in `tests/errors.rs::e5_match_bins_zero_crashes_in_c`, which asserts the C crash in a child process. | [x] |
+| C16 | `match` | `bins = 1`, random f64 data, `threshold` swept over the value classes (E16 zero-magnitude path) | [x] |
+| C17 | `match` | `bins = 2 .. 8` exhaustive (odd **and** even, E17), random realistic non-negative spectra, `threshold` random in `[-0.5, 1.5]` | [x] |
+| C18 | `match` | `bins = 15, 16, 17` — straddles `N_SMOOTH`: `<16` ⇒ **every** output attenuated by the clamped window (E18); `==16` ⇒ only element 0 gets a full window; `>16` ⇒ full windows exist | [x] |
+| C19 | `match` | `bins` = 31, 32, 33, 63, 64, 100, 127, 128, 256, 1024; random realistic spectra; `threshold` random | [x] |
+| C20 | `match` | gate **taken** (`return 0` before preprocessing, E1): `test` scaled far below `reference`, `threshold = 1.0` | [x] |
+| C21 | `match` | gate **not taken**: `test` energy `>=` `threshold *` `reference` energy | [x] |
+| C22 | `match` | gate **unordered** (E2/E3): `threshold = NaN`; `threshold = inf` with `total(reference) = 0`; `total(test) = NaN` | [x] |
+| C23 | `match` | `test` and `reference` are the **same pointer** (identical spectra) — contrast should be ≈1 | [x] |
+| C24 | `match` | **constant** spectra (all elements equal), plus all-`+0.0`, all-`-0.0` and mixed-`±0.0` spectra. **MEASURED correction:** a constant spectrum does *not* preprocess to all zeros — `smoothen`'s clamped tail (E18) turns `[7.5, 7.5]` into `[0.9375, 0.46875]`, then `[-0.46875, 0]`, then `[-0.029296875, 0]` — so it yields a finite contrast. It is the **all-zero** spectrum that reaches the zero-magnitude/NaN-contrast path (E9). Both are covered. | [x] |
+| C25 | `match` | monotone ramp / impulse / step / alternating-sign spectra (shapes that make `differentiate` output large, and that exercise the smoothing tail) at `bins` 16, 17, 33 | [x] |
+| C26 | `match` | spectra with `±inf`, quiet NaN, signalling NaN elements; `threshold` random | [x] |
+| C27 | `match` | spectra of **arbitrary raw f64 bit patterns** (`u64` from the PRNG, no filtering) at `bins` 1..8, 16, 17, 33, 64 — the highest-yield row: the f32 reinterpretation of random f64 mantissas hits NaN/inf/denormal f32 values at high probability | [x] |
+| C28 | `match` | spectra whose f64 values are huge (`1e300`) so that the **high** 32-bit half of each `double` decodes to an f32 NaN/inf, and tiny (`1e-300`) so the high half decodes to an f32 denormal/zero | [x] |
+| C29 | `match` | `threshold` at exact boundaries: `contrast == threshold` exactly (`threshold` = the contrast value returned by a previous C call) ⇒ tests `>=` vs `>` | [x] |
+| C30 | `match` | `threshold` = `-0.0` and `+0.0` (distinguishable bit patterns, equal under `>=`), and `threshold` = `f64::MIN_POSITIVE`, `f64::MAX` | [x] |
+| C31 | `match` + `spectral_contrast` | composed check: run `match`'s pipeline manually via the exported `spectral_contrast` on the *same* buffers `match` would build, confirming the exported low-level entry point and the internal call agree | [x] |
+| C32 | both | idempotence / no-side-channel: call each entry point twice in a row on the same buffer and compare both the return values and the twice-mutated buffers (catches state left in statics — there are none, but this pins it) | [x] |
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|-------------------------------------------|-----|
-| C21 | `spectral_contrast` | buffer of `n` `double`s, called with `length = n` (reads the low half of the bytes ⇒ mixture of mantissa-derived f32s), random positive doubles, `n` ∈ {1,2,3,15,16,17,33,64} | [x] |
-| C22 | `spectral_contrast` | buffer of `n` `double`s, called with `length = 2n` (reads *all* the bytes as f32) | [x] |
-| C23 | `spectral_contrast` | buffer of `n` `double`s with arbitrary random **bit patterns**, `length = 2n` — dense NaN/inf/subnormal coverage in the reinterpreted f32s | [x] |
-| C24 | `spectral_contrast` | doubles chosen so their *low* words are NaN f32 patterns and their high words are finite (odd-`length` corner from axis D) | [x] |
+## Row → test mapping
 
-## `match` — composed pipeline (axis A=high-level, B=f64)
+Each row is checked off only after its test passes across the randomized inputs.
+Tests live in `tests/configs.rs`; `REPS` (default 120) inputs per row × shape.
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|-------------------------------------------|-----|
-| C25 | `match` | `bins` ∈ {1,2,3,15,16,17,31,32,33,64,257,1000} × `threshold` ∈ {0.25,0.5,1.0}, random positive spectra (realistic), 300 draws/cell | [x] |
-| C26 | `match` | `bins` sweep `1..=80` (axis C/D/E boundary scan: `<16`, `==16`, `>16`, odd/even) × `threshold = 0.5`, fresh random data per `bins` | [x] |
-| C27 | `match` | `test == reference` contents ⇒ contrast `1.0`, gate passes ⇒ expect `1` for `threshold <= 1` | [x] |
-| C28 | `match` | `reference = test * s` for random `s` ∈ {1e-6, 0.5, 1, 2, 1e6} (gate is a *ratio* test) | [x] |
-| C29 | `match` | `reference = -test` | [x] |
-| C30 | `match` | `test` all-zero (gate: `0 < threshold*total(ref)`) — hits E1 for `threshold>0`, falls through for `threshold<=0` | [x] |
-| C31 | `match` | `reference` all-zero (`threshold*0 = ±0` or `NaN`) | [x] |
-| C32 | `match` | both all-zero ⇒ `differentiate` produces all-zero ⇒ zero magnitude ⇒ `NaN` contrast | [x] |
-| C33 | `match` | constant (non-zero) spectra ⇒ `smoothen`+`differentiate` yield the clamped tail only | [x] |
-| C34 | `match` | monotone ramp spectra (up, down) | [x] |
-| C35 | `match` | full `threshold` sweep `{-inf,-DBL_MAX,-1,-0.0,+0.0,DBL_MIN,0.25,0.5,1.0,2.0,DBL_MAX,+inf,NaN}` × `bins` ∈ {1,2,16,17,64} × random data (axis G) | [x] |
-| C36 | `match` | random doubles with **arbitrary bit patterns** (NaN/inf/subnormal doubles in the input, dense NaN coverage after reinterpretation), `bins` ∈ {2,16,17,64} | [x] |
-| C37 | `match` | exponent-biased random doubles spanning `1e-300 … 1e300` (overflow/underflow inside `total` and the f32 reinterpretation) | [x] |
-| C38 | `match` | one `±inf` element, one NaN element (separately), rest random | [x] |
-| C39 | `match` | **aliased** `test == reference` (same pointer) (axis I) | [x] |
-| C40 | `match` | **partially overlapping** `reference = test.add(1)` with `bins` elements available (axis I) | [x] |
-| C41 | `match` | input buffers must be **unmodified** by `match` (it only reads them) — asserted for every row above | [x] |
-| C42 | `match` | spectra with a sharp spike (one element `1e9`, rest ~1) — exercises `differentiate`'s large deltas and `smoothen`'s window | [x] |
-| C43 | `match` | spectra that are periodic with period 16 (`N_SMOOTH`) so `smoothen` sums a whole period | [x] |
-| C44 | `match` | `bins` = 4096 random positive spectra (large-buffer accumulation) | [x] |
+| rows | test |
+|---|---|
+| C1 | `c1_spectral_length_zero` |
+| C2 | `c2_spectral_length_one` |
+| C3 | `c3_spectral_small_lengths` |
+| C4, C5 | `c4_c5_spectral_boundary_and_large_lengths` |
+| C6 | `c6_spectral_zero_magnitude` |
+| C7–C11 | `c7_to_c11_spectral_special_values` |
+| C12 | `c12_spectral_aliased_same_pointer` |
+| C13 | `c13_spectral_partial_overlap` |
+| C14 | `c14_spectral_negative_length` |
+| C15 | reclassified → `tests/errors.rs::e5_match_bins_zero_crashes_in_c` |
+| C16 | `c16_match_bins_one` |
+| C17 | `c17_match_small_bins` |
+| C18 | `c18_match_nsmooth_boundary` |
+| C19 | `c19_match_large_bins` |
+| C20 | `c20_match_gate_taken` |
+| C21 | `c21_match_gate_not_taken` |
+| C22 | `c22_match_gate_unordered` |
+| C23 | `c23_match_same_pointer` |
+| C24 | `c24_match_constant_spectra` |
+| C25 | `c25_match_shapes` |
+| C26 | `c26_match_special_spectra` |
+| C27 | `c27_match_raw_bit_patterns` |
+| C28 | `c28_match_huge_and_tiny` |
+| C29 | `c29_match_threshold_equals_contrast` |
+| C30 | `c30_match_threshold_boundaries` |
+| C31 | `c31_pipeline_via_exported_low_level_entry_point` |
+| C32 | `c32_repeated_calls_no_hidden_state` |
+| all, crossed | `tests/soak.rs` — 500,000 fixed-seed random cases per entry point, mixing every value class, every shape and every aliasing mode |
 
-## Exhaustive special-value cross-products (added after the randomized rows)
+## No binary target
 
-Randomized sampling only hits IEEE-754 special values by chance, and never hits
-particular *combinations* of them. These rows enumerate the full cross-product
-of one representative bit pattern per class/boundary at the smallest lengths,
-which is exactly where the class interactions live (`0*inf`, `inf-inf`,
-`inf/inf`, subnormal², sNaN-vs-qNaN payload precedence, `±0` signs, values whose
-square overflows, …).
+`c_src/CMakeLists.txt` declares only `add_library(... SHARED ...)`; there is no
+`add_executable`, and `translation/Cargo.toml` declares only `[lib]` with
+`crate-type = ["cdylib"]` (no `src/main.rs`, no `[[bin]]`). There is therefore
+no driver executable and no stdout to compare. That completion-gate item is
+vacuous for this project, not skipped.
 
-Representatives: 25 f32 patterns (`F32_CLASSES`) and 16 f64 patterns
-(`F64_CLASSES`) in `tests/configs.rs`.
+## Compiler-sensitivity note (measured, affects how to read these rows)
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|-------------------------------------------|-----|
-| C45a | `spectral_contrast` | `length = 1`, all 25×25 `(a[0], b[0])` class pairs, distinct **and** aliased | [x] |
-| C45b | `spectral_contrast` | `length = 2`, all 25⁴ = 390 625 `(a[0],a[1],b[0],b[1])` class combinations | [x] |
-| C45c | `spectral_contrast` | `length = 2`, `b = a + 1` (partial overlap), all 25³ class triples | [x] |
-| C46a | `match` | `bins = 2`, all 16⁴ = 65 536 class combinations × `threshold` ∈ {0.5, 1.0, −1.0, NaN} | [x] |
-| C46b | `match` | `bins = 1`, all 16×16 class pairs × the full 13-value `threshold` sweep | [x] |
-| C46c | `match` | `bins = 3` (odd — the last touched double contributes only its low word), all 16³ class triples | [x] |
-
-## How the rows were driven
-
-* `./run_tests.sh` rebuilds **both** shared objects and runs the whole suite.
-  (`cargo test` alone is not sufficient: it builds test harnesses but does not
-  re-emit a `cdylib`, so the Rust `.so` under test would be stale. The test
-  harness now refuses to run against a `.so` older than `src/lib.rs`.)
-* `./stress.sh N` re-runs everything with `DIFF_SEED=0..N-1`, i.e. `N`
-  independent, still fully reproducible random corpora. **45 corpora agree.**
-* `./features.sh` runs the suite under every feature combination declared in
-  `Cargo.toml`. There is no `[features]` table, so the two configurations are
-  *default* and `--no-default-features`; both pass.
-* The suite also passes with the **debug-profile** Rust `.so`
-  (`RUST_SO=target/debug/libunderhanded_c_nuke_lib.so cargo test --release`),
-  which rules out opt-level-dependent NaN handling on the Rust side.
-* **Mutation check** — the suite was pointed at a `-O2` build of the *same* C
-  sources in the Rust slot (`RUST_SO=…/libo2.so`). 13 of the 48 rows fail,
-  proving the rows genuinely discriminate at the bit level rather than passing
-  vacuously, and quantifying the `-O0`/`-O2` NaN-payload split documented in
-  `src/lib.rs`. `match`-only rows do **not** fail, confirming that `match`'s
-  `int` result is payload-insensitive.
+The documented build (`cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON` with no
+`CMAKE_BUILD_TYPE`) compiles at `-O0`, and that is the artifact every row above
+is checked against. Re-running the entire suite with the C sources rebuilt at
+`-O1`, `-O2`, `-O3` and `-Os` (see `run_all.sh`) leaves every `match` row and
+every `ERRORS.md` row passing unchanged; the only difference is the payload bits
+of a NaN returned directly out of `spectral_contrast`, which the C source does
+not determine. See the `VERIFICATION` block in `src/lib.rs`.

@@ -1,60 +1,35 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared libraries.
+C library:    `c_src/build/libharvest-work-VRjRwc.so`
+Rust library: `translation/target/release/libbitwriter_add_lib.so`
 
-## Build commands
+## Defined symbols from `nm -D --defined-only` (excluding weak / libc / linker-generated)
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-mpLI0z.so   (name = parent dir name, see CMakeLists.txt)
+| # | symbol | C `.so` | Rust `.so` | notes |
+|---|--------|---------|------------|-------|
+| 1 | `bitwriter_add` | `T` | `T` | `int bitwriter_add(tflac_bitwriter*, tflac_u32, tflac_uint)` — exported from Rust via `#[unsafe(no_mangle)] pub unsafe extern "C" fn` |
 
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libbitwriter_add_lib.so   ([lib] name in Cargo.toml)
-```
+The C `.so` exports exactly one non-weak, non-linker-generated global text
+symbol. Weak/auto-generated entries filtered out of both libraries:
+`_init`, `_fini`, `__bss_start`, `_edata`, `_end`,
+`__cxa_finalize@GLIBC_2.2.5` (undefined import), plus the Rust runtime's
+`rust_eh_personality` / allocator shims (Rust-internal, not part of the C ABI
+surface and therefore not required to match in the C→Rust direction).
 
-## C `.so` exported (defined) dynamic symbols
+## Header-only surface (no symbols, but ABI-relevant)
 
-`nm -D --defined-only c_src/build/libharvest-work-mpLI0z.so`
+| item | C | Rust | match |
+|------|---|------|-------|
+| `tflac_u8` | `uint8_t` | `u8` | yes |
+| `tflac_u32` | `uint32_t` | `u32` | yes |
+| `tflac_u64` | `uint64_t` | `u64` | yes |
+| `tflac_uint` | `tflac_u64` | `u64` | yes |
+| `struct tflac_bitwriter` | `{u64 val; u32 bits, pos, len, tot; u8* buffer;}` | `#[repr(C)]` same order | size 32 / align 8 — verified by test `struct_layout_matches_c` |
 
-| # | symbol | type | present in Rust `.so`? |
-|---|--------|------|------------------------|
-| 1 | `bitwriter_add` | `T` (global text) | YES |
+## Missing-symbol remediation
 
-## Rust `.so` exported (defined) dynamic symbols
-
-`nm -D --defined-only translation/target/release/libbitwriter_add_lib.so`
-
-| # | symbol | type |
-|---|--------|------|
-| 1 | `bitwriter_add` | `T` (global text) |
-
-## Symbol diff
-
-```
-comm -23 <(c_syms) <(rust_syms)   # in C but not Rust
-=> (empty)
-```
-
-**0 missing symbols.** The C translation unit (`c_src/src/lib.c`, the only source
-file listed in `CMakeLists.txt`) defines exactly one external function, and it is
-implemented and exported by the Rust crate via `#[unsafe(no_mangle)] pub unsafe
-extern "C" fn bitwriter_add`. No module of the C source was skipped; there is no
-second `.c` file. No stubs are present — the Rust body is a statement-for-statement
-translation.
-
-`c_src/include/lib.h` additionally declares data *types* only
-(`tflac_u8`, `tflac_u32`, `tflac_u64`, `tflac_uint`, `struct tflac_bitwriter`);
-types produce no dynamic symbols. Their ABI (size 32, align 8, field offsets
-0/8/12/16/20/24) is verified behaviourally in Phase B instead of via `nm`.
-
-Undefined (imported) symbols in the Rust `.so` are libc/runtime only
-(`memcpy`, `__cxa_*`-class runtime helpers, etc.) — no unresolved project symbols.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one. `--no-default-features` is still exercised in
-Phase D for completeness and produces an identical symbol set.
+None required: the symbol diff (C-defined → Rust-defined) is **empty**.
+No C source file was left untranslated — `c_src/src/lib.c` (24 lines,
+one function) is the entire implementation and it is fully translated in
+`translation/src/lib.rs`. No stubs or `unimplemented!()` exist in the crate
+(verified by grep).

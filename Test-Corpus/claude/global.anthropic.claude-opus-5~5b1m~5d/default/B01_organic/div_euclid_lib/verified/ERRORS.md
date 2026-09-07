@@ -1,83 +1,78 @@
-# ERRORS.md — Error / rejection surface table (Phase A)
+# ERRORS.md — Phase C error / rejection surface table
 
-Derived **mechanically** from `c_src/src/lib.c` (33 lines). Every `return`,
-every explicit comparison against a min/max constant, and every guard that
-diverts control flow away from the ordinary arithmetic is listed as a row.
+Derived mechanically by grepping **every** `return`, `if`, comparison against a
+sentinel constant, `assert`, null check and min/max constant in
+`c_src/src/lib.c` (the only C source file).
 
-## Mechanical grep results
+## Mechanical grep result
 
-`c_src/src/lib.c` contains:
+```
+$ grep -nE 'return|assert|NULL|if *\(|0x7fffffff' c_src/src/lib.c
+4:    if (v2 == 0) {
+5:        return 0;
+8:    if (v1 >= 0)
+9:        if (v2 >= 0)
+10:            return ((v1) / (v2));
+11:        else if (v2 != (-0x7fffffff - 1))
+15:    else if (v1 != (-0x7fffffff - 1))
+16:        if (v2 >= 0)
+18:        else if (v2 != (-0x7fffffff - 1))
+22:    else if (v2 >= 0)
+24:    else if (v2 != (-0x7fffffff - 1))
+28:    if (r >= 0)
+29:        return q;
+31:        return q + (v2 > 0 ? -1 : 1);
+```
 
-* `return` statements: 4 — lines 5, 10, 29, 31.
-* early-out / rejection guards: 1 — `if (v2 == 0)` (line 4).
-* min/max constant checks: 3 — `v2 != (-0x7fffffff - 1)` (lines 11, 24) and
-  `v1 != (-0x7fffffff - 1)` (line 15), plus the same constant reached as the
-  `else` fallbacks on lines 14, 21, 27.
-* `assert` / `NULL` checks / error enums / `errno` / `RETURN_ERROR` macros: **0**
-  (`grep -c 'assert\|NULL\|errno\|ERROR\|exit\|abort' c_src/src/lib.c` → 0).
-* pointer parameters: **0** — the whole API is `int div_euclid(int, int)`, so
-  there is no null-pointer or length/size surface to reject.
+Notes on the shape of this API's error surface:
 
-The only *value* the C uses as a rejection sentinel is the early `return 0` for
-a zero divisor. The `INT_MIN` comparisons are explicit range checks that select
-alternative arithmetic (they never fail the call), and the `r < 0` tail is a
-correction branch. All of them are enumerated below because each is a distinct
-way the C diverts from the nominal path, and each is a place a translation can
-silently diverge.
-
-`INT_MIN` is written in the C exactly as `(-0x7fffffff - 1)` = `-2147483648`;
-`INT_MAX` = `2147483647`.
+* There are **no pointers** in the signature (`int div_euclid(int, int)`), hence
+  **no null-pointer checks** and no "null pointer" rejection row is derivable.
+* There are **no lengths/buffers**, hence no zero-length or oversized-length rows.
+* There are **no enums** in the signature, hence no out-of-range-enum row. (The
+  generic FFI robustness cases still get tests — see "Generic boundary coverage".)
+* There are **no `assert`s**, no `errno`, and no error enum. The *only* explicit
+  rejection is the `v2 == 0` divide-by-zero guard at line 4, which returns the
+  in-band sentinel `0`.
+* Lines 11/15/18/24 are `INT_MIN` guards: they exist specifically to **avoid the
+  UB** of `-INT_MIN` / `INT_MIN / -1`. Each guard is a distinct rejection of an
+  otherwise-UB-triggering input and gets its own row.
 
 ## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `div_euclid` | `v2 == 0` — divide-by-zero rejection guard, `c_src/src/lib.c:4`. Any `v1` (incl. `0`, `1`, `-1`, `INT_MAX`, `INT_MIN`). | `return 0` immediately (line 5); never touches `q`/`r`, never divides |
-| 2 | `div_euclid` | `v1 >= 0 && v2 == INT_MIN` — range check `v2 != (-0x7fffffff - 1)` on line 11 **fails**, falling to line 14 | `q = 0, r = v1`; `r >= 0` (since `v1 >= 0`) so line 29 returns `q` = **`0`** |
-| 3 | `div_euclid` | `v1 == INT_MIN` — range check `v1 != (-0x7fffffff - 1)` on line 15 **fails**, so `-v1` is never evaluated; control goes to the line 22/24/26 chain | one of rows 4/5/6 below; the ordinary `(-v1)` paths (lines 17, 19) are **not** taken |
-| 4 | `div_euclid` | `v1 < 0 && v1 != INT_MIN && v2 == INT_MIN` — range check on line 18 **fails**, falling to line 21 | `q = 1`, then `r = v1 - q*v2 = v1 - INT_MIN` ∈ `[1, INT_MAX]` > 0, so line 29 returns **`1`** |
-| 5 | `div_euclid` | `v1 == INT_MIN && v2 == INT_MIN` — range check on line 24 **fails**, falling to line 27 | `q = 1, r = 0`; `r >= 0` so line 29 returns **`1`** |
-| 6 | `div_euclid` | `v1 == INT_MIN && v2 >= 1` — line 22/23 `INT_MIN`-safe rewrite `-(v1 + v2)` (avoids the trapping `-INT_MIN`) | `q = -((-(v1+v2))/v2) - 1`, `r = -((-(v1+v2))%v2)`; then tail row 9/10. e.g. `(INT_MIN, 1) -> INT_MIN`, `(INT_MIN, 2) -> INT_MIN/2 = -1073741824` |
-| 7 | `div_euclid` | `v1 == INT_MIN && v2 < 0 && v2 != INT_MIN` — line 24/25 `INT_MIN`-safe rewrite `-(v1 - v2)` | `q = ((-(v1-v2))/(-v2)) + 1`, `r = -((-(v1-v2))%(-v2))`; then tail row 9/10 |
-| 8 | `div_euclid` | `v1 == INT_MIN && v2 == -1` — **signed-overflow** sub-case of row 7: `-(v1-v2) = INT_MAX`, `INT_MAX/1 = INT_MAX`, then `q = INT_MAX + 1` overflows | at the `-O0` build used here the add wraps: `q = INT_MIN`, `r = -(INT_MAX % 1) = 0`, `r >= 0` so returns **`INT_MIN` (-2147483648)** |
-| 9 | `div_euclid` | tail check `r >= 0` (line 28) true — the divisor divides exactly, or `r` came from rows 2/4/5 | `return q` unmodified (line 29) |
-| 10 | `div_euclid` | tail check `r >= 0` **false** i.e. `r < 0` (only reachable from lines 17, 19, 23, 25), with `v2 > 0` | `return q + (-1)` = `q - 1` (line 31, ternary true arm) |
-| 11 | `div_euclid` | tail check `r < 0` with `v2 < 0` (note the ternary tests `v2 > 0`, so `v2 == 0` can never reach here — row 1 already returned) | `return q + 1` (line 31, ternary false arm) |
-| 12 | `div_euclid` | `v1 == 0` with any `v2 != 0` — degenerate numerator; takes line 10 (`v2 > 0`) or line 12 (`v2 < 0`) with `q = -0 = 0`, `r = 0` | `return 0` |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|---------------------------------------------|-------------------|------|
+| E1 | `div_euclid` | `v2 == 0` (divide by zero) — with `v1 == 0` | returns `0` (line 5 sentinel; no trap, no `SIGFPE`) | `e1_v2_zero_v1_zero` |
+| E2 | `div_euclid` | `v2 == 0` with `v1 > 0` (incl. `INT_MAX`) | returns `0` (guard taken before any division) | `e2_v2_zero_v1_positive` |
+| E3 | `div_euclid` | `v2 == 0` with `v1 < 0` (incl. `INT_MIN`) | returns `0` (guard taken before any division) | `e3_v2_zero_v1_negative` |
+| E4 | `div_euclid` | `v2 == 0` with **randomized** `v1` over full `i32` range | returns `0` for every `v1` | `e4_v2_zero_random_v1` |
+| E5 | `div_euclid` | line 11 guard: `v1 >= 0 && v2 == INT_MIN` — rejects the `-v2` overflow path, falls to `q=0, r=v1` | `r = v1 >= 0` ⇒ returns `q == 0` | `e5_int_min_v2_nonneg_v1` |
+| E6 | `div_euclid` | line 15 guard: `v1 == INT_MIN` — rejects the `-v1` overflow path, diverts to lines 22–27 | takes the `v1 == INT_MIN` branch family, never negates `v1` | `e6_int_min_v1_guard` |
+| E7 | `div_euclid` | line 18 guard: `v1 < 0 && v1 != INT_MIN && v2 == INT_MIN` — rejects `-v2` overflow, falls to `q=1, r=v1-q*v2` | `r = v1 - INT_MIN >= 1 > 0` ⇒ returns `q == 1` | `e7_int_min_v2_negative_v1` |
+| E8 | `div_euclid` | line 24 guard: `v1 == INT_MIN && v2 == INT_MIN` — rejects both negations, falls to `q=1, r=0` | `r == 0` ⇒ returns `q == 1` | `e8_int_min_both` |
+| E9 | `div_euclid` | `v1 == INT_MIN && v2 > 0` (line 23) — the `-(v1+v2)` re-association that avoids `-INT_MIN` | quotient/remainder computed on `-(v1+v2)`; result must match C bit-for-bit incl. the `-1` adjustment | `e9_int_min_v1_positive_v2` |
+| E10 | `div_euclid` | `v1 == INT_MIN && v2 < 0 && v2 != INT_MIN` (line 25) — the `-(v1-v2)` re-association | quotient computed on `-(v1-v2)` with `+1` adjustment; must match C | `e10_int_min_v1_negative_v2` |
+| E11 | `div_euclid` | `v1 == INT_MIN && v2 == -1` — the classic `INT_MIN / -1` overflow trap input | must **not** trap; C reaches line 25 and returns its wrapped value | `e11_int_min_over_minus_one` |
+| E12 | `div_euclid` | `v1 == INT_MIN && v2 == 1` | must not trap; C reaches line 23 | `e12_int_min_over_one` |
+| E13 | `div_euclid` | negative-`r` epilogue, `v2 > 0` (line 31, `-1` adjustment) | returns `q - 1` | `e13_epilogue_negative_r_positive_v2` |
+| E14 | `div_euclid` | negative-`r` epilogue, `v2 < 0` (line 31, `+1` adjustment) | returns `q + 1` | `e14_epilogue_negative_r_negative_v2` |
+| E15 | `div_euclid` | `q + adjustment` overflow at line 31 (`q == INT_MAX` with `v2 < 0`, or `q == INT_MIN` with `v2 > 0`) | wrapping result, no trap — searched exhaustively over the `INT_MIN`/extreme grid | `e15_epilogue_adjust_overflow` |
 
-## Generic FFI-boundary cases (required even though not in the table above)
+## Generic boundary coverage (required even though not derivable as rows above)
 
-The C signature is `int div_euclid(int, int)`. There are **no pointers, no
-lengths/sizes, and no enums** in this API, so the classic null-pointer /
-zero-length / oversized-length / invalid-enum-variant probes do not exist as
-distinct C code paths. They are still covered as follows, so that the "value
-one step past the valid range" and "out-of-range enum" classes are not blind
-spots:
+Covered by `generic_boundaries` in `tests/differential.rs`:
 
-| # | boundary class | how it is exercised |
-|---|----------------|---------------------|
-| G1 | null pointers | not applicable — no pointer parameter exists. Asserted by inspection of `include/lib.h`; the FFI signature loaded by the tests is `extern "C" fn(c_int, c_int) -> c_int`. |
-| G2 | zero length / empty input | modelled by the scalar zeros: `v1 == 0`, `v2 == 0` (rows 1, 12), tested for both arguments. |
-| G3 | oversized / out-of-domain value | `int` accepts its full 32-bit range, so **every** bit pattern is in-domain. The extremes `INT_MAX` and `INT_MIN` are tested for both arguments in all sign combinations. |
-| G4 | one step past a documented range | the only ranges the C tests are `x != INT_MIN` and `x >= 0`. Both sides of each are probed: `INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `INT_MAX-1`, `INT_MAX`. |
-| G5 | out-of-range "enum" value across FFI | no enum parameter exists; the moral equivalent — an `int` bit pattern with no corresponding valid case in the C's `if`/`else` ladder — is impossible because the ladder is total over `int`. Verified empirically by the exhaustive sweeps in Phase B, which cover **all** `2^32` values of `v2` for fixed boundary `v1`s and vice-versa via `full_axis_sweep`, plus 100 % of `[-512, 512]^2`. |
-| G6 | signed-overflow / UB-adjacent input | row 8 (`INT_MIN, -1`) and the `INT_MIN` rewrites in rows 6/7 are the only overflow-capable expressions; each has a dedicated differential test. |
-| G7 | no input can crash the C | audited: every `/` and `%` in `lib.c` has a provably non-zero divisor and a non-`INT_MIN` dividend on its path, so no `SIGFPE` is reachable. This is what makes exhaustive differential sweeping safe. |
+* Both arguments at every extreme: `{INT_MIN, INT_MIN+1, -2, -1, 0, 1, 2, INT_MAX-1, INT_MAX}` full cross product.
+* "One step past a valid range": `INT_MIN` and `INT_MAX` on both operands, and
+  `v2 == 0` (the sole rejected value) plus `v2 == ±1` (its neighbours).
+* Out-of-range "enum-like" ints: since `c_int` accepts any 32-bit value, the
+  exhaustive sweeps in `tests/exhaustive.rs` pass **every** representable value
+  of one operand while the other is held at each boundary, which subsumes the
+  out-of-range-enum class for this signature.
+* No pointer arguments exist, so null-pointer tests are not applicable; this is
+  asserted explicitly by `no_pointer_arguments_in_api` (documents the reason).
 
-## Checklist
+## Status
 
-| # | test | status |
-|---|------|--------|
-| 1 | `err_row01_v2_zero_any_v1` | [x] pass |
-| 2 | `err_row02_v1_nonneg_v2_intmin` | [x] pass |
-| 3 | `err_row03_v1_intmin_guard` | [x] pass |
-| 4 | `err_row04_v1_neg_nonmin_v2_intmin` | [x] pass |
-| 5 | `err_row05_both_intmin` | [x] pass |
-| 6 | `err_row06_v1_intmin_v2_pos` | [x] pass |
-| 7 | `err_row07_v1_intmin_v2_neg_nonmin` | [x] pass |
-| 8 | `err_row08_v1_intmin_v2_minus_one_overflow` | [x] pass |
-| 9 | `err_row09_tail_r_nonneg` | [x] pass |
-| 10 | `err_row10_tail_r_neg_v2_pos` | [x] pass |
-| 11 | `err_row11_tail_r_neg_v2_neg` | [x] pass |
-| 12 | `err_row12_v1_zero` | [x] pass |
-| G1–G7 | `boundary_g1_g7_generic_ffi_edges` | [x] pass |
+All 15 rows have a passing differential test (C vs Rust, both loaded via
+`libloading` from their `.so`). See test output in `PHASES.md`.

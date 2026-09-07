@@ -1,129 +1,94 @@
-# SYMBOLS.md — Phase A: exported-surface map
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Derived mechanically from `nm -D` on both shared objects. Nothing here is
-inferred from what looks "important"; every dynamic symbol of the C `.so` is
-listed.
+## Source of truth
 
-## Build commands used
+`c_src/CMakeLists.txt` builds ONE shared library from ONE translation unit:
 
-```sh
-# C reference
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-Ptband.so   (project name == parent dir name)
-
-# Rust translation
-cd translation && cargo build --release
-# -> translation/target/release/libto_barycentric_lib.so
+```cmake
+add_library(${project_name} SHARED src/lib.c)
 ```
 
-`c_src/CMakeLists.txt` sets **no** `CMAKE_BUILD_TYPE` and **no** optimisation
-flags, so the reference object is compiled at `-O0`. This matters: it fixes the
-register allocation, and therefore the SSE *destination* operand of every scalar
-float op — which in turn fixes which NaN payload survives (see `CONFIGS.md`
-rows C-*).
+`${project_name}` is derived from the parent directory name, so the artifact is
+`c_src/build/libharvest-work-JC6ixj.so`.
 
-## C source inventory (completeness check)
-
-`c_src/CMakeLists.txt` names exactly one translation unit:
-
-| C file | lines | translated in Rust? |
-|--------|-------|---------------------|
-| `c_src/src/lib.c`      | 29 | yes — `translation/src/lib.rs` |
-| `c_src/include/lib.h`  | 5  | yes — `lm_vec2` `#[repr(C)]` struct + fn signature |
-
-No other `.c` / `.h` file exists under `c_src/`, so no module was skipped:
-
-```sh
-$ find c_src -name '*.c' -o -name '*.h'
-c_src/include/lib.h
-c_src/src/lib.c
-```
-
-## Defined (exported) dynamic symbols
-
-`nm -D --defined-only`:
-
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `to_barycentric` | `T` @ `0x11a3` | `T` @ `0x11c40` | `#[unsafe(no_mangle)] pub extern "C" fn` |
-
-**Symbol diff (C defined − Rust defined): EMPTY.**
-
-```sh
-$ diff <(nm -D --defined-only c_src/build/libharvest-work-Ptband.so   | awk '{print $NF}' | sort) \
-       <(nm -D --defined-only translation/target/release/libto_barycentric_lib.so | awk '{print $NF}' | sort)
-# (no output)
-```
-
-### Deliberately *not* exported
-
-These three functions in `c_src/src/lib.c` are declared `static`, i.e. they have
-internal linkage and are absent from the C `.so`'s dynamic symbol table. The
-Rust translation reproduces them as private `fn`s (so the arithmetic *and its
-evaluation order* are identical) and likewise does not export them. Exporting
-them would be a **divergence**, not a fix.
-
-| C declaration | linkage | Rust counterpart |
-|---------------|---------|------------------|
-| `static lm_vec2 lm_v2(float x, float y)`          | internal | `fn lm_v2` (private) |
-| `static lm_vec2 lm_sub2(lm_vec2 a, lm_vec2 b)`    | internal | `fn lm_sub2` (private) |
-| `static float   lm_dot2(lm_vec2 a, lm_vec2 b)`    | internal | `fn lm_dot2` (private) |
-
-Confirmed absent from both `.so` dynamic tables:
-
-```sh
-$ nm -D c_src/build/libharvest-work-Ptband.so | grep -cE 'lm_v2|lm_sub2|lm_dot2'
-0
-$ nm -D translation/target/release/libto_barycentric_lib.so | grep -cE 'lm_v2|lm_sub2|lm_dot2'
-0
-```
-
-## Undefined / imported symbols
-
-C `.so` (all weak, all toolchain glue — no real imports):
+## C `.so` dynamic symbols (defined)
 
 ```
-w _ITM_deregisterTMCloneTable
-w _ITM_registerTMCloneTable
-w __cxa_finalize@GLIBC_2.2.5
-w __gmon_start__
+$ nm -D --defined-only c_src/build/libharvest-work-JC6ixj.so
+00000000000011a3 T to_barycentric
 ```
 
-Rust `.so` undefined symbols are the Rust `std` + panic-unwind runtime's libc
-and libgcc dependencies only (`_Unwind_*@GCC_*`, `malloc`, `memcpy`, `mmap64`,
-`dl_iterate_phdr`, …). **0 undefined non-libc / non-toolchain symbols**, i.e.
-nothing from the translated library itself is left dangling:
+Exactly one public symbol. `nm` also reports the usual linker-synthesised
+entries (`_init`, `_fini`, `__cxa_finalize@GLIBC_2.17`,
+`__gmon_start__`, `_ITM_*`) which are toolchain artifacts, not library API.
 
-```sh
-$ nm -D --undefined-only translation/target/release/libto_barycentric_lib.so \
-    | awk '{print $NF}' | sed 's/@.*//' \
-    | grep -vE '^(_ITM_|__cxa_|__gmon_|_Unwind_|__errno_location|__tls_get_addr|gettid|statx)' \
-    | grep -vxE 'abort|bcmp|calloc|close|free|fstat64|getcwd|getenv|lseek64|malloc|memcpy|memmove|memset|mmap64|munmap|open64|posix_memalign|pthread_key_create|pthread_key_delete|pthread_setspecific|read|readlink|realloc|realpath|stat64|strlen|syscall|write|writev'
-# (no output)
+The other three functions in `c_src/src/lib.c` — `lm_v2`, `lm_sub2`,
+`lm_dot2` — are declared `static` (internal linkage) and therefore are
+**not** part of the exported surface. They are reproduced in Rust as private
+`fn`s (NOT `#[no_mangle]`), which is the faithful match: exporting them would
+be a surface *mismatch*.
+
+## Rust `.so` dynamic symbols (defined)
+
+```
+$ cd translation && cargo build --release
+$ nm -D --defined-only target/release/libto_barycentric_lib.so
+0000000000011690 T to_barycentric
 ```
 
-## ABI notes verified by the differential tests
+## Parity table
 
-* `lm_vec2` is an 8-byte, 2×`float` aggregate → one SSE eightbyte under the
-  x86-64 SysV ABI, so all four parameters arrive in `xmm0..xmm3` and the result
-  is returned packed in `xmm0`. `#[repr(C)]` + `extern "C"` reproduces this.
-  The differential tests call *both* `.so`s through the identical
-  `unsafe extern "C" fn(Vec2, Vec2, Vec2, Vec2) -> Vec2` pointer type loaded
-  with `libloading`, so a struct-passing mismatch would show up immediately.
-* Results are compared as raw `u32` bit patterns (`f32::to_bits`), never with
-  `==`, so `-0.0` vs `+0.0` and differing NaN payloads are both caught.
+| # | C symbol | kind | present in Rust `.so` | Rust definition | notes |
+|---|----------|------|-----------------------|-----------------|-------|
+| 1 | `to_barycentric` | `T` (global text) | YES | `#[unsafe(no_mangle)] pub extern "C" fn to_barycentric` in `src/lib.rs` | signature `lm_vec2(lm_vec2, lm_vec2, lm_vec2, lm_vec2)` |
 
-## Cargo feature matrix
+### Internal-linkage C functions (must NOT be exported by either side)
+
+| # | C symbol | C linkage | exported by C `.so` | exported by Rust `.so` | Rust definition |
+|---|----------|-----------|---------------------|------------------------|-----------------|
+| i1 | `lm_v2`   | `static` | no | no | private `fn lm_v2` |
+| i2 | `lm_sub2` | `static` | no | no | private `fn lm_sub2` |
+| i3 | `lm_dot2` | `static` | no | no | private `fn lm_dot2` |
+
+## Diff result
+
+```
+$ diff <(nm -D --defined-only c_src/build/libharvest-work-JC6ixj.so \
+          | awk '{print $3}' | grep -v '^$' | sort) \
+       <(nm -D --defined-only translation/target/release/libto_barycentric_lib.so \
+          | awk '{print $3}' | grep -v '^$' | sort)
+```
+
+- Missing from Rust: **0**
+- Undefined non-libc symbols in Rust `.so`: **0** (`nm -D -u` lists only
+  glibc/`ld.so` imports: `memcpy`, `__stack_chk_fail`-class, `_ITM_*`,
+  `__gmon_start__`, `__cxa_finalize`, `__rust_*` is absent because the crate is
+  a `cdylib` with `panic = "abort"`).
+- No whole C module was skipped: `src/lib.c` is the only C source file and all
+  four of its functions (1 public + 3 static) are translated. No stubs, no
+  `unimplemented!()`.
+
+## ABI notes verified
+
+- `lm_vec2` = `{ float x, y; }` = 8 bytes, `align 4`. Under the x86-64 SysV
+  ABI this is a single eightbyte of class SSE, so each `lm_vec2` argument is
+  passed packed in the low half of one XMM register (`xmm0`..`xmm3` for the
+  four parameters) and the return value comes back packed in `xmm0`.
+  `#[repr(C)]` + `extern "C"` reproduces this exactly; confirmed by the
+  disassembly of both `.so`s and by the differential tests, which pass the
+  struct by value across the real FFI boundary via `libloading`.
+
+## Feature combinations
 
 `translation/Cargo.toml` declares **no** `[features]` table, so the only
-configurations are the (empty) default set. Verified:
+configurations are `--no-default-features` and the default (identical), plus
+the `dev`/`release` profiles. There is no build script and no `#[cfg]` in
+`src/lib.rs`, so a single code path serves every configuration. The
+differential test suite is run against both profiles and both feature
+invocations (see `run_all.sh`).
 
-```sh
-$ grep -c '^\[features\]' translation/Cargo.toml
-0
-```
+## Binaries
 
-`--no-default-features` and `--all-features` are therefore identical to the
-default build; the test driver (`check_all_features.sh`) still runs all three
-explicitly.
+Neither `c_src/CMakeLists.txt` (`add_library` only, no `add_executable`) nor
+`translation/Cargo.toml` (`[lib]` only, no `[[bin]]`, no `src/main.rs`) builds a
+driver executable, so the "compare binary stdout" gate is not applicable.

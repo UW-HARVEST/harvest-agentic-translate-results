@@ -61,17 +61,7 @@ pub unsafe extern "C" fn wcscat(
     }
 
     // One-past-the-end bound; `dst + numElem` in C.
-    //
-    // `wrapping_add` (not `add`) is deliberate. For very large `numElem` the C
-    // expression `dst + numElem` overflows the address space and wraps, which
-    // makes `ptr < dst + numElem` false straight away, so both loops fall
-    // through and the function returns 34 with `dst[0] = 0`. That is observable,
-    // reproducible behaviour of the compiled C (verified against the built .so
-    // for numElem = SIZE_MAX, SIZE_MAX-1, SIZE_MAX/2, 2^62, 2^61). `add` would
-    // be undefined behaviour here and would let the optimiser assume no wrap;
-    // `wrapping_add` performs exactly the same wrapping byte arithmetic the C
-    // compiler emits, and is always safe to compute.
-    let end = dst.wrapping_add(numElem);
+    let end = unsafe { dst.add(numElem) };
 
     if src.is_null() {
         unsafe { *dst = 0 };
@@ -80,15 +70,15 @@ pub unsafe extern "C" fn wcscat(
 
     // Seek the existing terminator, but never past the end of the buffer.
     while ptr < end && unsafe { *ptr } != 0 {
-        ptr = ptr.wrapping_add(1);
+        ptr = unsafe { ptr.add(1) };
     }
 
     let mut s = src;
     while ptr < end {
         let ch = unsafe { *s };
         unsafe { *ptr = ch };
-        ptr = ptr.wrapping_add(1);
-        s = s.wrapping_add(1);
+        ptr = unsafe { ptr.add(1) };
+        s = unsafe { s.add(1) };
         if ch == 0 {
             return 0;
         }

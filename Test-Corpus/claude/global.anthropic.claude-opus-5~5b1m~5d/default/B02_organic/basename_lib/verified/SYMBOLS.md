@@ -1,81 +1,51 @@
-# SYMBOLS.md — Phase A symbol map
+# SYMBOLS.md — Phase A: public symbol surface
 
-Derived mechanically from `nm -D` on both shared objects. No symbol on this
-page was chosen by judgement; the lists below are the raw tool output.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-## How the artifacts were produced
-
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libdriver.so
-
-# Rust
-cd translation && cargo build --release      # -> target/release/libdriver.so
-cd translation && cargo build                # -> target/debug/libdriver.so
-```
-
-## C source inventory (completeness check)
-
-The whole library is three files, and every one of them is accounted for in the
-Rust crate — there is no untranslated module:
-
-| C file | contents | translated in |
-|---|---|---|
-| `c_src/include/lib.h` | 1 line: the `tool_basename` declaration | `translation/src/lib.rs` (signature) |
-| `c_src/src/lib.c` | 22 lines: the single definition of `tool_basename` | `translation/src/lib.rs` (`tool_basename`, `strrchr_index`) |
-| `c_src/CMakeLists.txt` | build recipe, one `add_library(driver SHARED src/lib.c)` | `translation/Cargo.toml` (`crate-type = ["cdylib"]`, `name = "driver"`) |
-
-`grep -c 'return' c_src/src/lib.c` → `1`. There is exactly one function in the
-library, so no `#[no_mangle]` wrapper can be missing for a translated-but-
-unexported implementation, and no C file was skipped.
-
-## Exported (defined) dynamic symbols
-
-`nm -D --defined-only`:
-
-| symbol | C `libdriver.so` | Rust `libdriver.so` | status |
-|---|---|---|---|
-| `tool_basename` | `T` (0x1109) | `T` (0x11c50) | ✅ present in both |
-
-Raw output:
+## C library
 
 ```
-=== C ===
+$ nm -D --defined-only c_src/build/libdriver.so
 0000000000001109 T tool_basename
-=== Rust ===
-0000000000011c50 T tool_basename
 ```
 
-Name-only diff (this is the gate from Phase D):
+## Rust library
 
-```sh
-diff <(nm -D --defined-only c_src/build/libdriver.so           | awk '{print $3}' | sort) \
-     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
-# -> empty (exit 0)
+```
+$ nm -D --defined-only translation/target/release/libdriver.so
+00000000000116b0 T tool_basename
 ```
 
-**0 symbols missing from the Rust `.so`. 0 extra symbols. Symbol diff is empty.**
+## Parity table
 
-This diff is also asserted automatically by
-`translation/tests/phase_d_symbols.rs`, so it cannot silently regress.
+| # | C symbol | type | present in Rust `.so`? | notes |
+|---|----------|------|------------------------|-------|
+| 1 | `tool_basename` | `T` (global text) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn tool_basename(*mut c_char) -> *mut c_char` |
+
+## Diff
+
+```
+$ diff <(nm -D --defined-only c_src/build/libdriver.so   | awk '{print $2, $3}' | sort) \
+       <(nm -D --defined-only translation/target/.../libdriver.so | awk '{print $2, $3}' | sort)
+(empty)
+```
+
+**Missing symbols: 0.** No C source file was left untranslated: the whole C
+library is `c_src/src/lib.c` (22 lines, one function) plus the single-line
+header `c_src/include/lib.h`.
 
 ## Undefined (imported) symbols
 
-The C object imports one non-weak symbol; the Rust object imports the Rust
-standard library's usual libc/unwinder set. All are libc, `libgcc_s`
-(`_Unwind_*`) or glibc-weak stubs — i.e. resolved by the platform, not missing
-pieces of this library.
+The Rust `.so` imports only libc/`std` runtime symbols (`memchr`, `strlen`,
+unwind/personality, `pthread`/`dl` stubs). The C `.so` imports `strrchr`.
+No non-libc undefined symbols in either.
 
-| | C | Rust |
-|---|---|---|
-| non-libc undefined symbols | none | none |
-| libc / platform undefined | `strrchr`, `__cxa_finalize` (w), `__gmon_start__` (w), `_ITM_*` (w) | `strlen`, `memcpy`, `malloc`, `free`, `realloc`, `calloc`, `posix_memalign`, `memmove`, `memset`, `bcmp`, `abort`, `getenv`, `getcwd`, `readlink`, `realpath`, `open64`, `close`, `read`, `write`, `writev`, `lseek64`, `stat64`, `fstat64`, `statx` (w), `mmap64`, `munmap`, `dl_iterate_phdr`, `syscall`, `gettid` (w), `__errno_location`, `__tls_get_addr`, `pthread_key_{create,delete}`, `pthread_setspecific`, `__cxa_thread_atexit_impl` (w), `__cxa_finalize` (w), `__gmon_start__` (w), `_ITM_*` (w), `_Unwind_*` |
+## Feature combinations
 
-The Rust import list is larger only because `libstd` is linked in (panic
-machinery, backtrace support, allocator shims). None of it is a dangling
-reference to an untranslated part of `libdriver`.
+`translation/Cargo.toml` declares **no `[features]` section**, therefore the
+only build configuration is the default one (`--no-default-features` is
+equivalent). Verified by:
 
-**Verdict: `nm -D` shows 0 missing and 0 undefined non-libc symbols in the Rust
-`.so`. Phase A symbol requirement satisfied.**
+```
+$ grep -n '^\[features\]' translation/Cargo.toml   # no match
+```

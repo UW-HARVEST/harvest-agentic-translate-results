@@ -1,44 +1,61 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
+
+- C `.so`:    `c_src/build/libharvest-work-LnnZo1.so`
+- Rust `.so`: `translation/target/release/libcollided_lib.so`
+
+Command used:
 
 ```sh
-nm -D --defined-only c_src/build/libharvest-work-oWYE5y.so | awk '{print $3}' | sort > /tmp/c_syms.txt
-nm -D --defined-only translation/target/release/libcollided_lib.so | awk '{print $3}' | sort > /tmp/r_syms.txt
-comm -23 /tmp/c_syms.txt /tmp/r_syms.txt   # -> EMPTY
+nm -D --defined-only <so> | awk '{print $3}' | sort
 ```
 
-The C library is a single translation unit (`c_src/src/lib.c`), built as
-`SHARED` by `c_src/CMakeLists.txt` with no version script and no
-`-fvisibility=hidden`, so every non-`static` function it defines is exported.
-There are no macro-generated symbols and no second C source file, so there is
-no "whole module never translated" gap.
+## Symbol table
 
-| # | C symbol | kind | C signature | exported by Rust `.so` | Rust item |
-|---|----------|------|-------------|------------------------|-----------|
-| 1 | `c2V` | T | `c2v c2V(float, float)` | YES | `c2V` |
-| 2 | `c2Maxv` | T | `c2v c2Maxv(c2v, c2v)` | YES | `c2Maxv` |
-| 3 | `c2Minv` | T | `c2v c2Minv(c2v, c2v)` | YES | `c2Minv` |
-| 4 | `c2Clampv` | T | `c2v c2Clampv(c2v, c2v, c2v)` | YES | `c2Clampv` |
-| 5 | `c2Sub` | T | `c2v c2Sub(c2v, c2v)` | YES | `c2Sub` |
-| 6 | `c2Dot` | T | `float c2Dot(c2v, c2v)` | YES | `c2Dot` |
-| 7 | `c2CircletoCircle` | T | `int c2CircletoCircle(c2Circle, c2Circle)` | YES | `c2CircletoCircle` |
-| 8 | `c2CircletoAABB` | T | `int c2CircletoAABB(c2Circle, c2AABB)` | YES | `c2CircletoAABB` |
-| 9 | `c2AABBtoAABB` | T | `int c2AABBtoAABB(c2AABB, c2AABB)` | YES | `c2AABBtoAABB` |
-| 10 | `collided` | T | `int collided(const void*, C2_TYPE, const void*, C2_TYPE)` | YES | `collided` |
+| # | C symbol | in C `.so` | in Rust `.so` | notes |
+|---|----------|-----------|---------------|-------|
+| 1 | `c2AABBtoAABB`     | yes | yes | `int c2AABBtoAABB(c2AABB, c2AABB)` |
+| 2 | `c2CircletoAABB`   | yes | yes | `int c2CircletoAABB(c2Circle, c2AABB)` |
+| 3 | `c2CircletoCircle` | yes | yes | `int c2CircletoCircle(c2Circle, c2Circle)` |
+| 4 | `c2Clampv`         | yes | yes | `c2v c2Clampv(c2v, c2v, c2v)` |
+| 5 | `c2Dot`            | yes | yes | `float c2Dot(c2v, c2v)` |
+| 6 | `c2Maxv`           | yes | yes | `c2v c2Maxv(c2v, c2v)` |
+| 7 | `c2Minv`           | yes | yes | `c2v c2Minv(c2v, c2v)` |
+| 8 | `c2Sub`            | yes | yes | `c2v c2Sub(c2v, c2v)` |
+| 9 | `c2V`              | yes | yes | `c2v c2V(float, float)` |
+| 10 | `collided`        | yes | yes | `int collided(const void*, C2_TYPE, const void*, C2_TYPE)` — the only symbol declared in the public header |
 
-**Missing from Rust `.so`: 0.**
-**Undefined non-libc symbols in the Rust `.so`: 0** (`nm -D -u` shows only the
-libc/`libgcc` imports the Rust runtime needs; the C `.so` imports none).
+## Diff result
 
-Types (not symbols, listed for completeness): `c2v` {f32 x, f32 y} = 8 B,
-`c2Circle` {c2v p, f32 r} = 12 B, `c2AABB` {c2v min, c2v max} = 16 B,
-`C2_TYPE` = `int` (verified: `collided` reads its tags with `cmpl` on `%esi`
-/ `%ecx`, i.e. a 4-byte integer).
+```
+$ comm -23 /tmp/c_syms.txt /tmp/r_syms.txt   # in C, missing from Rust
+<empty>
+```
+
+**0 missing symbols.** No C source module was skipped: the C library is a single
+translation unit (`c_src/src/lib.c`, 98 lines) and every non-static function it
+defines has a matching `#[unsafe(no_mangle)] pub extern "C"` definition in
+`translation/src/lib.rs`. No stubs / `unimplemented!()` were needed.
+
+## Undefined (imported) symbols
+
+The Rust `.so` imports only libc / Rust-runtime symbols. Check:
+
+```sh
+nm -D -u translation/target/release/libcollided_lib.so
+```
+
+No non-libc undefined symbols that the C `.so` would have to provide.
+
+## Build products
+
+`c_src/CMakeLists.txt` declares exactly one target — `add_library(... SHARED src/lib.c)`.
+There is **no binary executable / driver** in this project, so the
+"compare C and Rust stdout" clause of Phase B does not apply.
 
 ## Feature combinations
 
-`translation/Cargo.toml` has **no `[features]` table**, so the only
-configuration is the default (empty) feature set. `--no-default-features` is
-therefore identical to the default build; both are exercised by
-`scripts/verify_all.sh`.
+`translation/Cargo.toml` has **no `[features]` table**, so the only build
+configuration is the default one. `--no-default-features` is equivalent to the
+default here (verified by running the full test suite under both).

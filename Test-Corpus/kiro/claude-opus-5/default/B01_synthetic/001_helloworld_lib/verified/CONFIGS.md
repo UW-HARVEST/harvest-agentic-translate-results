@@ -1,73 +1,59 @@
-# CONFIGS.md — Configuration-surface table (Phase A → gates Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-The mirror of `ERRORS.md`, for **valid** inputs. Axes are derived from what
-the C code actually branches on / interacts with, not from a guess about what
-matters.
+The mirror of `ERRORS.md`, for VALID inputs. Axes are derived from what the C
+actually branches on, using the same greps.
 
-## Axis derivation
+## Axis enumeration (mechanical)
 
-Public entry points (`grep -rE '^[A-Za-z_].*\(' c_src/include/`):
+| candidate axis | present in C? | evidence |
+|----------------|---------------|----------|
+| runtime options / modes / flags settable via the public API | **none** | `c_src/include/hello.h` declares exactly one function, `int helloworld();`. No setters, no globals, no context struct, no flags parameter. |
+| compile-time options | **none** | the only preprocessor conditional in the tree is the `#ifndef HELLO_H_` include guard |
+| input shapes (sizes / widths / element types / counts / formats / byte order / empty-one-many / boundary values) | **none** | the function takes **no parameters**, so it has no input to shape |
+| `if` / `switch` branches on any flag | **none** | `grep -rEn "\bif\b|\bswitch\b|\bwhile\b|\bfor\b|\?"` over the whole C tree → 0 hits |
+| public entry points, including lowest-level ones | **1** | `helloworld` is *both* the highest- and lowest-level entry point; there is no convenience wrapper layered over a lower-level API to skip |
 
-| entry point | level | notes |
-|---|---|---|
-| `helloworld()` | **lowest level == only level** | there is no convenience wrapper and no lower-level function beneath it; this single symbol *is* the full public API |
+So the cross-product of API-level option axes is a single point. The C library
+genuinely has one entry point, no arguments and no branches.
 
-Runtime options / modes / flags: **none.** There is no init function, no
-context struct, no setter, no global variable, no environment lookup
-(`getenv` appears 0 times in the C), and 0 `if`/`switch`/`#ifdef` branches.
-Compile-time variants: **none** (`Cargo.toml` has no `[features]` section, and
-`CMakeLists.txt` defines no options).
+That does **not** mean one test suffices. `helloworld`'s observable output is not
+just its return value — it is the bytes it puts into the process's libc `stdout`
+stream. The axes the *behaviour* actually varies over, and which a wrong
+translation would get wrong (notably one using `std::io::stdout` instead of libc
+`printf`/`puts` — see `SYMBOLS.md` §2), are the **stdout destination, buffering
+mode, interleaving and concurrency** axes below. Each row is a combination that
+is treated differently by the underlying stdio machinery the C depends on.
 
-So the C code's behaviour cannot be varied by *arguments*. What it *does*
-interact with is the one piece of external state it touches: the libc
-`stdout` `FILE` stream, via `printf`. That makes the real configuration axes:
+Every row: load BOTH `.so`s via `libloading`, call the exported `helloworld`
+symbol in that configuration, capture fd 1 at the file-descriptor level, and
+assert the captured bytes and return values are byte-for-byte identical between
+C and Rust. Rows marked *randomized* draw their call counts / interleaving
+patterns / chunk sizes from a fixed-seed PRNG (seed `0x5DEECE66D`, 64 cases per
+row unless noted) rather than one hand-picked value.
 
-1. **Invocation count** — 0 / 1 / many (statelessness; the C keeps no state,
-   so output must be exactly N repetitions).
-2. **`stdout` buffering mode** — fully buffered, line buffered, unbuffered
-   (`setvbuf`). `printf` behaves differently in each; a translation that wrote
-   through a *different* buffer (e.g. `std::io::stdout()`) would diverge here.
-3. **`stdout` destination shape** — regular file vs. pipe. libc picks the
-   default buffering from `isatty`, so the destination changes the code path.
-4. **Interleaving with caller-side stdio** — the caller emits its own
-   `printf`/`fwrite` before/after/between calls. This is the composed-pipeline
-   case: it detects buffer mismatch and out-of-order flushing, which
-   per-call tests cannot see.
-5. **Interleaving C and Rust implementations in one stream** — C, Rust, C,
-   Rust… into a single fd, checking the merged byte stream.
-6. **Concurrency** — N threads calling simultaneously.
-7. **Call-shape / ABI variation on the valid path** — because the declaration
-   `int helloworld();` is unprototyped, a valid C caller may invoke it through
-   pointers of several arities. (Invalid *values* are `ERRORS.md`; here the
-   concern is that the arity itself is a shape the ABI distinguishes.)
+## The table
 
-Randomization (fixed seed `0x5EED_C0FFEE`, SplitMix64) supplies the
-per-row varying quantities: repetition counts, thread counts, buffer sizes,
-and the caller-side interleaved payload bytes.
+| # | entry point(s) | configuration (options set + input shape) | randomized | ✔ |
+|---|----------------|------------------------------------------|-----------|---|
+| C1 | `helloworld` | Single call, stdout → regular file (fully buffered). Baseline: exact bytes `"Hello World!\n"` (13 bytes) and return `0`. | no | [x] |
+| C2 | `helloworld` | `N` successive calls, stdout → regular file, `N` drawn from the PRNG over `1..=512`. Covers empty/one/many. Output must be `N` copies of the line. | yes | [x] |
+| C3 | `helloworld` | Call count chosen to straddle the **stdio buffer boundary**: `N` such that `13*N` lands just below / at / just above 1024, 4096 and 8192 bytes (the glibc `BUFSIZ`/page flush points). Boundary values for the only "size" the function has. | yes | [x] |
+| C4 | `helloworld` | stdout → **pipe** (fully buffered, and the reader can observe flush timing) vs → **regular file** vs → **`/dev/null`** (character device). glibc picks the buffering mode from `fstat` on fd 1, so these are three genuinely different stdio paths. | yes | [x] |
+| C5 | `helloworld` | **Interleaved with caller-side libc `printf`** writes: random alternation of `helloworld()` and the harness's own `printf` of a marker line. This is the row that catches a translation writing to a *different* buffer than libc's — ordering would scramble. | yes | [x] |
+| C6 | `helloworld` | **Interleaved with caller-side raw `write(2)`** to fd 1, with an explicit `fflush(NULL)` between phases. Checks that flush points are where the C's are. | yes | [x] |
+| C7 | `helloworld` | **Interleaved with `std::io::Write` on Rust's `stdout()`**, flushed at the boundaries — mixes the harness's Rust-side buffer with the library's libc buffer. C and Rust libraries must order identically relative to it. | yes | [x] |
+| C8 | `helloworld` | **stdout set to unbuffered (`_IONBF`)** and to **line-buffered (`_IOLBF`)** via `setvbuf`, then `N` calls. Different stdio write paths (per-call `write` syscall vs per-line vs block). | yes | [x] |
+| C9 | `helloworld` | **No explicit flush at all** — rely on the flush that `fflush(NULL)` performs at capture time, with `N` calls left sitting in the buffer. Confirms buffered-but-unflushed byte counts agree. | yes | [x] |
+| C10 | `helloworld` | **Concurrent calls from `T` threads × `K` calls each** (`T` in `2..=8`, `K` in `1..=64`), stdout → file. glibc locks the FILE, so each line is atomic and — since every line is identical — the byte stream is deterministic. Checks the Rust export is thread-safe like the C. | yes | [x] |
+| C11 | `helloworld` | **Both `.so`s loaded simultaneously** in one process, calls alternating between the C and Rust `helloworld` in a PRNG-chosen pattern. Verifies `RTLD_LOCAL` isolation (no symbol interposition) and that the two are interchangeable mid-stream: the combined output must equal the same total line count regardless of which library produced each line. | yes | [x] |
+| C12 | `helloworld` | Return value under load: assert `0` on **every one** of the calls in rows C2–C11, not just the first — a value-dependent or call-count-dependent return would otherwise hide. | yes | [x] |
+| C13 | `helloworld` | Symbol re-resolved fresh (`dlsym`) before each of `N` calls, vs resolved once and reused. Probes lazy-PLT-binding differences between the two objects. | yes | [x] |
 
-## Table
+All 13 rows pass across their randomized inputs (see `tests/differential.rs`).
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C1 | `helloworld` | single call; return value compared | [x] |
-| C2 | `helloworld` | single call; stdout redirected to a regular file; captured bytes compared | [x] |
-| C3 | `helloworld` | **zero** calls (empty case) — capture produces empty output for both | [x] |
-| C4 | `helloworld` | many calls, randomized N in 1..=64, sequential; full byte stream compared | [x] |
-| C5 | `helloworld` | fully buffered stdout (`setvbuf _IOFBF`, randomized buffer size) | [x] |
-| C6 | `helloworld` | line buffered stdout (`setvbuf _IOLBF`, randomized buffer size) | [x] |
-| C7 | `helloworld` | unbuffered stdout (`setvbuf _IONBF`) | [x] |
-| C8 | `helloworld` | destination is a **pipe** rather than a regular file | [x] |
-| C9 | `helloworld` | caller-side `printf` interleaved before/after each call (randomized payloads) — ordering within one libc buffer | [x] |
-| C10 | `helloworld` | caller-side `write(2)` (raw fd, bypassing the FILE buffer) interleaved — detects a translation that buffers separately | [x] |
-| C11 | `helloworld` | C and Rust alternating into the **same** captured fd, randomized interleave pattern; each half's slice compared | [x] |
-| C12 | `helloworld` | randomized thread count 2..=8, each thread calling randomized 1..=16 times; line-multiset compared | [x] |
-| C13 | `helloworld` | called through `extern "C" fn() -> c_int` (declared arity, the normal shape) | [x] |
-| C14 | `helloworld` | called through 1-, 3-, and 6-integer-argument pointers (unprototyped decl, valid values) | [x] |
-| C15 | `helloworld` | called through a pointer with float/SSE arguments (exercises a different ABI register class) | [x] |
-| C16 | `helloworld` | repeated dlopen/dlclose of the `.so` between calls (no per-load state; ctor/dtor parity) | [x] |
-| C17 | `helloworld` | both `.so`s loaded simultaneously in one process (symbol-collision safety, `RTLD_LOCAL`) | [x] |
+## Feature combinations
 
-## Gate
-
-- [x] Every row above passes across its randomized inputs, C vs. Rust,
-      both called through `dlsym` on their respective `.so`.
+None exist — `translation/Cargo.toml` has no `[features]`, no `optional`
+dependencies, and the crate source contains no `cfg(feature)`. The table above is
+therefore the complete configuration surface, and the default build is the only
+build. See `SYMBOLS.md` §3.

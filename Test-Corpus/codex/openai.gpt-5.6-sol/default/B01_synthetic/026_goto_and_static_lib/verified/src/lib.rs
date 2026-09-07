@@ -45,6 +45,6 @@ pub extern "C" fn driver(x: c_int, y: c_int, z: c_int) {
     let result = multi_stage(x, z);
 
     unsafe {
-        printf(c"Result: %d\n".as_ptr(), result);
+        printf(b"Result: %d\n\0".as_ptr().cast(), result);
     }
 }

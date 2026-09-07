@@ -1,65 +1,92 @@
-# ERRORS.md — Error / rejection surface table (Phase C)
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/lib.c`. The library has **no error enum and
-no error return codes**: every rejection path is either "return the caller's
-`default_val`", "print a warning to `stderr`", "take the state-restore branch",
-or "undefined behaviour / crash" (NULL pointer dereference). There is not a
-single `assert`, `return -1`, `return NULL`, or explicit range check in the file
-— the table below is the exhaustive list of every *early return*, *rejection*,
-*NULL check*, *conditional guard* and *magic constant boundary* the C actually
-contains, plus the generic FFI boundaries the task requires.
+Mechanically derived from `c_src/src/lib.c`. This library has **no error enum,
+no `RETURN_ERROR` macro, no `assert`, and no negative sentinel return**: every
+public function returns an unconstrained `int` (or `void`). Its entire rejection
+surface consists of
 
-Greps used:
+* the three early `return default_val` paths in `parse_env_numeric`,
+* the `NULL` guards on `strchr` results,
+* the `result < 0` recovery/rollback path in `envy`,
 
-```
-grep -n 'return'  c_src/src/lib.c   # 7 return statements total
-grep -n 'NULL'    c_src/src/lib.c   # 10 NULL comparisons
-grep -n 'assert'  c_src/src/lib.c   # 0 hits
-grep -n 'if ('    c_src/src/lib.c   # 15 branches
-```
+plus the generic FFI boundary conditions every C API has (null pointers,
+out-of-range "enum"/bit-field values, extreme integers). All of these are
+enumerated below; each row has a differential test.
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
-|----|----------|---------------------------------------------|-------------------|------|---|
-| 1  | `parse_env_numeric` | `getenv(env_name) == NULL` (variable unset) — `lib.c:50` | returns `default_val` verbatim, **no** output | `err_01_unset_var_returns_default` | [x] |
-| 2  | `parse_env_numeric` | value contains `','` — `lib.c:54-58` | `fprintf(stderr, "Warning: Invalid character in %s\n", env_name)` then returns `default_val` | `err_02_comma_returns_default_and_warns` | [x] |
-| 3  | `parse_env_numeric` | value contains `';'` (and no `','`) — `lib.c:60-64` | `fprintf(stderr, "Warning: Semicolon found in %s\n", env_name)` then returns `default_val` | `err_03_semicolon_returns_default_and_warns` | [x] |
-| 4  | `parse_env_numeric` | value contains **both** `','` and `';'` | comma check runs first ⇒ *only* the "Invalid character" warning, returns `default_val` | `err_04_comma_wins_over_semicolon` | [x] |
-| 5  | `parse_env_numeric` | value is `','` / `';'` alone, or has the char in first/last position | same as rows 2/3 (`strchr` is position-independent) | `err_05_separator_positions` | [x] |
-| 6  | `parse_env_numeric` | value is set but **not numeric** (`"abc"`, `""`, `" "`, `"+-3"`) | `atoi` returns `0` — value is *accepted*, `default_val` is **not** used | `err_06_non_numeric_atoi_zero` | [x] |
-| 7  | `parse_env_numeric` | value numerically **out of `int` range** (`"99999999999999"`, `"-99999999999999"`, `"2147483648"`) | `atoi` overflow ⇒ glibc-defined result (UB in ISO C); Rust must match byte-for-byte | `err_07_atoi_overflow` | [x] |
-| 8  | `parse_env_numeric` | `env_name` is a `NULL` pointer | `getenv(NULL)` dereferences NULL ⇒ fatal signal; must be the **same** signal in both | `err_08_null_env_name_same_signal` | [x] |
-| 9  | `parse_env_numeric` | `env_name` names a variable with an empty name / not present (`""`) | `getenv("")` ⇒ `NULL` ⇒ returns `default_val` | `err_09_empty_name_returns_default` | [x] |
-| 10 | `init_config_from_env` | `flags` is a `NULL` pointer | write through NULL ⇒ fatal signal; must match | `err_10_init_null_flags_same_signal` | [x] |
-| 11 | `init_config_from_env` | `PROG_VERBOSE` set but does **not** contain `'1'` (`"yes"`, `"0"`, `""`) | `verbose` bit rejected ⇒ `0` | `err_11_verbose_without_one_rejected` | [x] |
-| 12 | `init_config_from_env` | `PROG_DEBUG` set but does **not** contain `'1'` | `debug` bit rejected ⇒ `0` | `err_12_debug_without_one_rejected` | [x] |
-| 13 | `init_config_from_env` | `PROG_OPTIMIZE` set to the **empty string** | *presence-only* test ⇒ `optimize = 1` (empty is **not** rejected) | `err_13_optimize_empty_is_set` | [x] |
-| 14 | `perform_operation` | `flags` is a `NULL` pointer | read through NULL ⇒ fatal signal; must match | `err_14_perform_null_flags_same_signal` | [x] |
-| 15 | `perform_operation` | `flags->optimize == 0` **and** `flags->log_level` out of the "expected" value `3` — i.e. any of the 8 values a 3-bit field can hold, incl. `0` and `7` | no check at all: `val1 * log_level + val2/2` is computed with whatever the field holds | `err_15_log_level_full_range` | [x] |
-| 16 | `perform_operation` | signed overflow: `val1 + val2` or `val1 * log_level` or `+ val2/2` overflowing `int` (`INT_MAX`, `INT_MIN`) | UB in ISO C; gcc wraps (two's complement). Rust must produce the identical wrapped value | `err_16_perform_signed_overflow` | [x] |
-| 17 | `perform_operation` | `INT_MIN / 2` (`val2 == INT_MIN`) | truncate-toward-zero division ⇒ `-1073741824` (no trap: divisor is the constant 2) | `err_17_int_min_div_two` | [x] |
-| 18 | `apply_bit_operations` | `flags` is a `NULL` pointer | read through NULL ⇒ fatal signal; must match | `err_18_bitops_null_flags_same_signal` | [x] |
-| 19 | `apply_bit_operations` | `verbose == 1` and `value << 1` overflows (`value >= 0x40000000` or negative) | UB in ISO C; gcc emits a plain `shl` ⇒ bit-pattern shift. Rust must match | `err_19_shift_overflow` | [x] |
-| 20 | `apply_bit_operations` | `value == INT_MIN`, `verbose == 1` | `INT_MIN << 1 == 0`, then `| 0x0F` ⇒ `15` | `err_20_int_min_shift` | [x] |
-| 21 | `envy` | computed `result < 0` — `lib.c:171` | state is `memcpy`-restored from the backup and `result` becomes `state.base_value` (== `param1`) | `err_21_negative_result_restores_base` | [x] |
-| 22 | `envy` | `result < 0` **and** `param1 < 0` | the restore branch is **not** re-checked ⇒ `envy` returns a **negative** value (`param1`) | `err_22_restore_can_return_negative` | [x] |
-| 23 | `envy` | `param3 == 0` (guard at `lib.c:145`) | the `param3 * multiplier` term is skipped entirely | `err_23_param3_zero_skips_term` | [x] |
-| 24 | `envy` | `param4 == 0` (guard at `lib.c:149`) | the `param4 >> 2` term is skipped entirely | `err_24_param4_zero_skips_term` | [x] |
-| 25 | `envy` | `param4 < 0` ⇒ `param4 >> 2` on a negative `int` | implementation-defined; gcc = arithmetic shift (rounds toward −∞) | `err_25_negative_param4_arith_shift` | [x] |
-| 26 | `envy` | `strchr(buffer, ':') == NULL` — `lib.c:160` | unreachable in practice (`snprintf` always writes `"Result:"`), but the guard must not change behaviour; verified via the full-verbose output comparison | `err_26_colon_guard_always_taken` | [x] |
-| 27 | `envy` | `second_colon == NULL` — `lib.c:166` | unreachable in practice; `"Debug: Result string format validated"` is therefore always printed when `debug` is set | `err_27_second_colon_guard` | [x] |
-| 28 | `envy` | `snprintf` truncation boundary: `BUFFER_SIZE == 256` vs the longest possible `"Result:-2147483648:Complete"` (28 bytes) | never truncates; return value ignored by C | `err_28_no_snprintf_truncation` | [x] |
-| 29 | `envy` | `PROG_BASE_OFFSET` / `PROG_MULTIPLIER` rejected (rows 1–5) | the **octal** defaults `0100 == 64` and `012 == 10` are used | `err_29_octal_defaults_on_rejection` | [x] |
-| 30 | `envy` | extreme `param1..param4` (`INT_MIN`/`INT_MAX`) combined with an overflowing `PROG_MULTIPLIER` | every arithmetic step wraps; both libraries must agree exactly | `err_30_envy_extreme_overflow` | [x] |
-| 31 | all | out-of-range "enum"/flag values across the FFI boundary: the `ConfigFlags` allocation unit is 4 bytes but only bits 0..7 are declared. Passing a unit with **all 32 bits set** (`0xFFFFFFFF`) or arbitrary garbage in bits 8..31 | only bits 0..7 are consulted; bits 8..31 are ignored and left untouched by `init_config_from_env` | `err_31_garbage_upper_bits_ignored` | [x] |
-| 32 | all | zero-length / oversized *lengths* — the API takes no length arguments (grep: no `size_t` parameter anywhere), so the only analogous boundary is the fixed `BUFFER_SIZE` of row 28 | n/a — documented, covered by row 28 | `err_28_no_snprintf_truncation` | [x] |
+## Table
 
-## Divergences found and fixed (Rust side only; `c_src/` untouched)
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
+|---|----------|----------------------------------------------|-------------------|------|-----|
+| E1 | `parse_env_numeric` | `getenv(env_name) == NULL` (variable unset) | returns `default_val` verbatim; **no** output written | `err_e1_unset_returns_default` | [x] |
+| E2 | `parse_env_numeric` | value contains `','` (`strchr(v, ',') != NULL`) | `fprintf(stderr, "Warning: Invalid character in %s\n", env_name)` then returns `default_val` | `err_e2_comma_rejected` | [x] |
+| E3 | `parse_env_numeric` | value contains `';'` and **no** `','` | `fprintf(stderr, "Warning: Semicolon found in %s\n", env_name)` then returns `default_val` | `err_e3_semicolon_rejected` | [x] |
+| E4 | `parse_env_numeric` | value contains **both** `','` and `';'` — comma check runs first | only the *comma* warning is emitted (semicolon check unreachable); returns `default_val` | `err_e4_comma_wins_over_semicolon` | [x] |
+| E5 | `parse_env_numeric` | value set but empty string `""` | no `,`/`;` found → `atoi("") == 0`; returns **0**, *not* `default_val` | `err_e5_empty_string_is_zero` | [x] |
+| E6 | `parse_env_numeric` | value is non-numeric garbage (`"abc"`, `"--3"`, `"+"`, `"0x1f"`) | `atoi` returns its own parse result (`0`, `0`, `0`, `0`) — no rejection | `err_e6_garbage_atoi_passthrough` | [x] |
+| E7 | `parse_env_numeric` | value has leading whitespace / sign / trailing junk (`"  -42abc"`) | `atoi` skips space, parses `-42`, ignores junk | `err_e7_atoi_leading_trailing` | [x] |
+| E8 | `parse_env_numeric` | value overflows `int` (`"99999999999999999999"`, `"-99999999999999999999"`) | UB in ISO C; both libs call the **same** libc `atoi`, so results must be identical | `err_e8_atoi_overflow` | [x] |
+| E9 | `parse_env_numeric` | `default_val` at extremes `INT_MIN` / `INT_MAX` / `0` while var unset | returns that exact value (no clamping) | `err_e9_default_extremes` | [x] |
+| E10 | `parse_env_numeric` | `env_name` is an empty string `""` | `getenv("")` returns `NULL` → `default_val` | `err_e10_empty_env_name` | [x] |
+| E11 | `parse_env_numeric` | `env_name == NULL` | glibc `getenv(NULL)` dereferences the name → fatal signal. Tested for real: both libraries must die from the **same** signal, checked in a forked child. | `err_e11_null_env_name_faults_identically` | [x] |
+| E12 | `init_config_from_env` | `PROG_VERBOSE` set but with **no** `'1'` anywhere (`"true"`, `"yes"`, `"0"`) → `strchr(v,'1') == NULL` | `verbose` bit cleared to 0 | `err_e12_verbose_needs_literal_1` | [x] |
+| E13 | `init_config_from_env` | `PROG_DEBUG` set but with no `'1'` → `strchr(v,'1') == NULL` | `debug` bit cleared to 0 | `err_e13_debug_needs_literal_1` | [x] |
+| E14 | `init_config_from_env` | `PROG_OPTIMIZE` set to the **empty string** `""` (falsy-looking but non-NULL) | `optimize` bit **set to 1** (only NULL-ness is tested, not content) | `err_e14_optimize_empty_is_true` | [x] |
+| E15 | `init_config_from_env` | `flags` points at memory pre-filled `0xFF` (dirty non-zero padding) | byte 0 fully rewritten by byte-sized RMW; bytes 1..3 left as `0xFF` | `err_e15_dirty_padding_preserved` | [x] |
+| E16 | `perform_operation` | `flags->optimize == 0` and `flags->log_level == 0` (out-of-"range"-looking zero multiplier) | `result = val1*0 + val2/2 = val2/2` (C truncating division) | `err_e16_log_level_zero` | [x] |
+| E17 | `perform_operation` | `flags` bit-field byte 0 = **every** value `0x00..0xFF`, i.e. every out-of-range `log_level` 0..7 incl. values no named constant produces | no validation exists; `log_level` promotes to `int` 0..7 and multiplies | `err_e17_all_256_flag_bytes` | [x] |
+| E18 | `perform_operation` | signed overflow: `val1 = INT_MAX`, `log_level = 7` (`val1*7` overflows) | UB in ISO C; must match gcc's wrapping result | `err_e18_signed_overflow_mul` | [x] |
+| E19 | `perform_operation` | `val2 = INT_MIN` → `val2 / 2` (negative truncating division rounds toward zero) | `INT_MIN/2 == -1073741824` | `err_e19_negative_division` | [x] |
+| E20 | `perform_operation` | `val2 = -1` → `-1/2 == 0` (truncation toward zero, **not** floor `-1`) | `0` | `err_e20_minus_one_div_two` | [x] |
+| E21 | `apply_bit_operations` | `verbose == 1` and `value` has bit 30/31 set → `value << 1` overflows a signed `int` | UB in ISO C; must match gcc's wrapping (2's-complement) shift | `err_e21_shift_overflow` | [x] |
+| E22 | `apply_bit_operations` | `verbose == 1` and `value < 0` → left shift of a **negative** value | UB in ISO C; must match gcc | `err_e22_shift_negative` | [x] |
+| E23 | `apply_bit_operations` | `cache_enabled == 0` (the only way to skip the `\| 0x0F`) | returns `adjusted` **without** the low-nibble OR | `err_e23_cache_disabled` | [x] |
+| E24 | `envy` | final `result < 0` → rollback branch: `memcpy(&state,&state_backup,16)`; `result = state.base_value` | returns `param1` (the original base value), discarding all arithmetic | `err_e24_negative_result_rollback` | [x] |
+| E25 | `envy` | `param3 == 0` — the guard that *skips* `result += param3 * multiplier` | multiplier contribution omitted (indistinguishable from `*0` but a distinct branch) | `err_e25_param3_zero_branch` | [x] |
+| E26 | `envy` | `param4 == 0` — the guard that *skips* `result += param4 >> 2` | shift contribution omitted | `err_e26_param4_zero_branch` | [x] |
+| E27 | `envy` | `param4 < 0` → `param4 >> 2` right-shift of a negative `int` (impl-defined) | gcc emits an **arithmetic** shift (sign-extending) | `err_e27_negative_right_shift` | [x] |
+| E28 | `envy` | all four params at `INT_MIN` / `INT_MAX` boundaries (overflow in `+`, `*`) | UB in ISO C; must match gcc's wrapping | `err_e28_param_extremes` | [x] |
+| E29 | `envy` | `PROG_BASE_OFFSET` / `PROG_MULTIPLIER` rejected (comma/semicolon) → defaults `0100`/`012` used **and** warnings go to stderr | `base_offset == 64`, `multiplier == 10`, 2 stderr warnings | `err_e29_envy_with_rejected_env` | [x] |
+| E30 | `envy` | `strchr(buffer, ':')` / `strchr(colon_pos+1, ':')` NULL guards | unreachable in practice: `snprintf` always writes `"Result:%d:Complete"` (max 29 < 256), so both colons always exist and no truncation occurs | `err_e30_colons_always_present` | [x] |
+| E31 | `envy` | `result` exactly `0` (boundary of the `result < 0` test — `0` must **not** roll back) | no rollback; returns `0` | `err_e31_result_zero_boundary` | [x] |
+| E32 | `envy` | `result` exactly `-1` (one step past the boundary → rolls back) | rollback; returns `param1` | `err_e32_result_minus_one_boundary` | [x] |
+| E33 | all | out-of-range "enum" value across FFI: `ConfigFlags` byte 0 given all 256 bit patterns (values no valid named combination produces, e.g. `reserved = 1`) | no validation; bits are used as-is | `err_e33_out_of_range_flag_bits` | [x] |
+| E34 | `init_config_from_env`, `perform_operation`, `apply_bit_operations` | `flags == NULL` (all three consumers) | gcc simply performs the load/store → **SIGSEGV**. Tested for real in a forked child: the C and Rust termination signals must be equal. **This row found a genuine bug** — see below. | `err_e34_null_flags_pointer_faults_identically` | [x] |
+| E35 | `parse_env_numeric` | value is a very long string (255+ bytes, no `,`/`;`) — no length limit exists in C | no truncation, no rejection; `atoi` on the whole string | `err_e35_very_long_value` | [x] |
+| E36 | `envy` | `PROG_BASE_OFFSET` / `PROG_MULTIPLIER` set to `INT_MIN`/`INT_MAX` (oversized offsets) driving `result` overflow | UB in ISO C; must match gcc's wrapping | `err_e36_env_extremes` | [x] |
 
-| rows | symptom | root cause | fix |
-|------|---------|------------|-----|
-| 10, 14, 18 | passing a `NULL struct ConfigFlags*` killed the C library with **SIGSEGV** but the Rust library with **SIGABRT** (only in a `debug-assertions` build, so a release-only test run would have missed it) | the translation formed a Rust reference (`&*flags` / `&mut *flags`) from the caller's raw pointer. Reference creation — and even a plain `*p` deref — is instrumented with a null check by rustc when debug assertions are on; the resulting panic escaping an `extern "C"` function is turned into `abort()` | the bit-fields are now read/written through `core::ptr::read_volatile` / `write_volatile` on the allocation unit's byte 0 (`bf_get` / `bf_set` in `src/lib.rs`). No reference is ever formed, no check is inserted, and the single load/store faults exactly like the C's — verified identical (`signal(11)`) under **both** Rust profiles |
+## Notes on non-rejections (deliberate, do not "fix")
 
-Everything else matched byte-for-byte on the first run, including the `atoi`
-overflow results, the truncate-toward-zero division, the arithmetic right shift
-of a negative `param4`, the wrapped signed overflows and the exact warning text
-on `stderr`.
+* `parse_env_numeric` rejects `,` and `;` **only**. Every other character —
+  including `|`, `&`, newline, NUL-adjacent junk — is passed straight to `atoi`.
+* The comma check precedes the semicolon check, so a value containing both
+  produces *only* the "Invalid character" warning (row E4).
+* An env var set to `""` is **not** treated as unset: `parse_env_numeric`
+  returns `0` (E5) and `init_config_from_env` sets `optimize = 1` (E14).
+* `init_config_from_env` requires a literal `'1'` *character* for
+  verbose/debug, so `PROG_VERBOSE=true` is false but `PROG_VERBOSE=xx1xx` is
+  true (E12/E13).
+* `log_level` is hard-coded to `03` (== 3) by `init_config_from_env`; it is only
+  ever something else when a caller pokes `ConfigFlags` directly (E17/E33).
+
+## Resolution of the two rows originally marked "excluded"
+
+Rows **E11** (`parse_env_numeric(NULL, d)`) and **E34** (`flags == NULL`) were
+initially written off as "crashes both". That was too weak, so they are now
+covered by *real* differential tests instead: `fork_outcome()` in
+`tests/common/mod.rs` runs the call in a forked child and reports whether the
+child returned a value or died from a signal, and the tests assert the C and
+Rust outcomes are **equal** — the same signal, not merely "both failed".
+
+This immediately paid off. `init_config_from_env`, `perform_operation` and
+`apply_bit_operations` originally reached the bit-fields via
+`let flags = &mut *flags;` / `&*flags`. Forming a Rust reference from a
+caller-supplied pointer attaches a validity guarantee that a C caller does not
+provide, and in the **debug** profile (`debug_assertions` on) the null case
+aborted with **SIGABRT** where the C library takes **SIGSEGV**. The accessors
+were rewritten as raw-pointer read/write helpers (`cf_get`/`cf_set`/…) that
+never create a reference; both profiles now fault identically. See
+`VERIFICATION.md` bug #2.
+
+`E11`/`E34` are therefore **[x] tested**, not excluded:
+`err_e11_null_env_name_faults_identically`,
+`err_e34_null_flags_pointer_faults_identically`.

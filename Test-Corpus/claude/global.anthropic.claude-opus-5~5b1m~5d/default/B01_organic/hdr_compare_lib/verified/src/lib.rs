@@ -11,23 +11,6 @@
 
 use std::ffi::c_int;
 
-/// Loads one byte, exactly like the C's `h[i]` subscript.
-///
-/// This deliberately goes through [`core::ptr::read`] instead of writing `*p` directly.
-/// A plain raw-pointer dereference makes `rustc` emit a null-pointer *precondition* check
-/// whenever `-C debug-assertions=on` (the default for the `dev`/`test` profiles); that check
-/// panics with "null pointer dereference occurred", and a panic escaping an `extern "C"`
-/// function aborts the process with `SIGABRT`. The C has no such check: `h[i]` on an invalid
-/// pointer simply performs the load and the hardware raises `SIGSEGV`.
-///
-/// Going through `ptr::read` — which lowers to the same single `movb`, and whose safety
-/// contract for a 1-byte type carries no alignment requirement — keeps the Rust's observable
-/// behaviour on invalid pointers identical to the C's in *every* build profile.
-#[inline(always)]
-unsafe fn byte(p: *const u8, i: usize) -> u8 {
-    core::ptr::read(p.add(i))
-}
-
 /// Translation of:
 ///
 /// ```c
@@ -45,11 +28,11 @@ unsafe fn byte(p: *const u8, i: usize) -> u8 {
 #[inline]
 unsafe fn hdr_valid(h: *const u8) -> bool {
     // h[0] == 0xff
-    if byte(h, 0) != 0xff {
+    if *h.add(0) != 0xff {
         return false;
     }
 
-    let h1 = byte(h, 1);
+    let h1 = *h.add(1);
 
     // ((h[1] & 0xF0) == 0xf0 || (h[1] & 0xFE) == 0xe2)
     if !((h1 & 0xF0) == 0xf0 || (h1 & 0xFE) == 0xe2) {
@@ -61,7 +44,7 @@ unsafe fn hdr_valid(h: *const u8) -> bool {
         return false;
     }
 
-    let h2 = byte(h, 2);
+    let h2 = *h.add(2);
 
     // (((h[2]) >> 4) != 15)
     if (h2 >> 4) == 15 {
@@ -96,12 +79,12 @@ pub unsafe extern "C" fn hdr_compare(h1: *const u8, h2: *const u8) -> c_int {
     }
 
     // ((h1[1] ^ h2[1]) & 0xFE) == 0
-    if ((byte(h1, 1) ^ byte(h2, 1)) & 0xFE) != 0 {
+    if ((*h1.add(1) ^ *h2.add(1)) & 0xFE) != 0 {
         return 0;
     }
 
-    let a2 = byte(h1, 2);
-    let b2 = byte(h2, 2);
+    let a2 = *h1.add(2);
+    let b2 = *h2.add(2);
 
     // ((h1[2] ^ h2[2]) & 0x0C) == 0
     if ((a2 ^ b2) & 0x0C) != 0 {

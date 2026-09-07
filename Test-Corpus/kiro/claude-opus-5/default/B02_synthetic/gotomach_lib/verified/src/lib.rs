@@ -100,12 +100,6 @@ struct ProcessorState {
 ///     return false;
 /// }
 /// ```
-///
-/// `#[inline(never)]` mirrors the C build: `c_src/CMakeLists.txt` sets no
-/// optimisation level, so GCC emits a real `call is_valid_state`. Keeping it
-/// out-of-line stops LLVM from proving the branch away and guarantees the
-/// `-6` path stays present in the shared object.
-#[inline(never)]
 unsafe fn is_valid_state(state: *mut ProcessorState) -> bool {
     if (*state).status != 0 {
         return (*state).count < (*state).capacity;
@@ -118,11 +112,6 @@ unsafe fn is_valid_state(state: *mut ProcessorState) -> bool {
 ///     return flag;
 /// }
 /// ```
-///
-/// See `is_valid_state` for why this is `#[inline(never)]`: inlining would let
-/// LLVM constant-fold `check_char_flag(1)` to `true` and delete `gotomach`'s
-/// `-5` / `[ERROR] Invalid state status` branch, which the C `.so` retains.
-#[inline(never)]
 fn check_char_flag(flag: c_char) -> bool {
     flag != 0
 }
@@ -130,12 +119,6 @@ fn check_char_flag(flag: c_char) -> bool {
 /// ```c
 /// static ProcessorState* init_processor(size_t capacity, operation_fn op);
 /// ```
-///
-/// `#[inline(never)]`: the C `.so` performs a real `call init_processor`, and
-/// both of its `malloc` calls are observable. Inlining let LLVM scalarise the
-/// `ProcessorState` allocation away entirely, which changed the observable
-/// `malloc` call sequence and made the `-3` codes indistinguishable.
-#[inline(never)]
 unsafe fn init_processor(capacity: usize, op: operation_fn) -> *mut ProcessorState {
     let state = malloc(core::mem::size_of::<ProcessorState>()) as *mut ProcessorState;
     if state.is_null() {
@@ -160,7 +143,6 @@ unsafe fn init_processor(capacity: usize, op: operation_fn) -> *mut ProcessorSta
 /// ```c
 /// static void cleanup_processor(ProcessorState *state);
 /// ```
-#[inline(never)]
 unsafe fn cleanup_processor(state: *mut ProcessorState) {
     if !state.is_null() {
         if !(*state).results.is_null() {
@@ -309,28 +291,15 @@ pub unsafe extern "C" fn gotomach(
 
             let op = (*state).operation.unwrap_unchecked();
             let produced = op(current_value, 0, core::ptr::null_mut());
+            *temp_buffer.offset(i as isize) = produced;
 
-            // temp_buffer[i] = state->operation(current_value, 0, NULL);
-            //
-            // The C source stores into `temp_buffer[i]` and then re-reads that
-            // slot twice. Volatile accesses reproduce exactly that memory
-            // traffic; a plain store would be dead (the value is also in a
-            // register), and LLVM would then delete the whole `temp_buffer`
-            // allocation together with its NULL check and the `-4` branch.
-            let slot = temp_buffer.offset(i as isize);
-            core::ptr::write_volatile(slot, produced);
-
-            // if (temp_buffer[i] < threshold) {
-            //     state->results[state->count++] = temp_buffer[i];
-            // }
-            if core::ptr::read_volatile(slot) < threshold {
+            if produced < threshold {
                 let count = (*state).count;
-                *(*state).results.add(count) = core::ptr::read_volatile(slot);
+                *(*state).results.add(count) = produced;
                 (*state).count = count + 1;
             }
 
-            // current_value = temp_buffer[i] % 1000;
-            current_value = core::ptr::read_volatile(slot).wrapping_rem(1000);
+            current_value = produced.wrapping_rem(1000);
 
             if (*state).count >= UINT16_MAX as usize {
                 LOG_MSG!(WARNING, "Reached maximum count");

@@ -1,93 +1,68 @@
-# SYMBOLS.md — public symbol surface (Phase A)
+# SYMBOLS.md — public symbol parity (Phase A / Phase D)
 
-Derived mechanically from
+Source of truth: `nm -D --defined-only` on the C shared library
+`c_src/build/libharvest-work-3rdGDT.so` (built by CMake, no `CMAKE_BUILD_TYPE`,
+i.e. `-O0` **with `assert()` live** — the `.so` has an undefined reference to
+`__assert_fail`).
 
+Rust shared library: `translation/target/release/libpinflate_lib.so`
+(`crate-type = ["cdylib"]`).
+
+Regenerate / diff with:
+
+```sh
+./check_symbols.sh
 ```
-nm -D --defined-only c_src/build/libharvest-work-BA3r4V.so
-nm -D --defined-only translation/target/release/libpinflate_lib.so
-```
 
-The C library is built by CMake with no `CMAKE_BUILD_TYPE`, i.e. `gcc -O0` and
-**`NDEBUG` not defined** — the reference `.so` has an undefined reference to
-`__assert_fail`, so every `assert()` in `c_src/src/lib.c` is live and is part of
-the observable surface (see `ERRORS.md`).
+**Status: the symbol diff (C → Rust) is EMPTY.**  8 symbols exported by the C
+`.so`, all 8 exported by the Rust `.so` under the same names, all 8 resolvable
+through `dlsym`, all data symbols the same size.  Verified for the release
+cdylib, for `--no-default-features`, and for the debug cdylib
+(`./check_features.sh`).  Enforced by `tests/symbols.rs` (4 tests) as well as by
+`check_symbols.sh`.
 
-## Defined (exported) symbols
+## Exported (defined) symbols
 
-| # | symbol | type | size | in C `.so` | in Rust `.so` | notes |
-|---|--------|------|------|------------|---------------|-------|
-| 1 | `pinflate`            | `T` (text) | 0x29b / 0x95c | yes | yes | the only function with external linkage (`c_src/include/lib.h`) |
-| 2 | `cp_error_reason`     | `B` (bss)  | 8     | yes | yes | `const char *`, written by the 6 error paths |
-| 3 | `cp_fixed_table`      | `D` (data) | 0x140 | yes | yes | `uint8_t[288+32]`, mutable, read by `cp_fixed` |
-| 4 | `cp_permutation_order`| `D`        | 0x13  | yes | yes | `uint8_t[19]`, mutable, read by `cp_dynamic` |
-| 5 | `cp_len_extra_bits`   | `D`        | 0x1f  | yes | yes | `uint8_t[29+2]`, mutable, read by `cp_block` |
-| 6 | `cp_len_base`         | `D`        | 0x7c  | yes | yes | `uint32_t[29+2]`, mutable, read by `cp_block` |
-| 7 | `cp_dist_extra_bits`  | `D`        | 0x20  | yes | yes | `uint8_t[30+2]`, mutable, read by `cp_block` |
-| 8 | `cp_dist_base`        | `D`        | 0x80  | yes | yes | `uint32_t[30+2]`, mutable, read by `cp_block` |
+| # | symbol | C type | Rust definition | present in Rust `.so` |
+|---|--------|--------|-----------------|-----------------------|
+| 1 | `pinflate`             | `T` (text)  | `#[no_mangle] pub unsafe extern "C" fn pinflate` | yes |
+| 2 | `cp_error_reason`      | `B` (bss)   | `#[no_mangle] pub static mut cp_error_reason: *const c_char` | yes |
+| 3 | `cp_fixed_table`       | `D` (data)  | `#[no_mangle] pub static mut cp_fixed_table: [u8; 320]` | yes |
+| 4 | `cp_permutation_order` | `D` (data)  | `#[no_mangle] pub static mut cp_permutation_order: [u8; 19]` | yes |
+| 5 | `cp_len_extra_bits`    | `D` (data)  | `#[no_mangle] pub static mut cp_len_extra_bits: [u8; 31]` | yes |
+| 6 | `cp_len_base`          | `D` (data)  | `#[no_mangle] pub static mut cp_len_base: [u32; 31]` | yes |
+| 7 | `cp_dist_extra_bits`   | `D` (data)  | `#[no_mangle] pub static mut cp_dist_extra_bits: [u8; 32]` | yes |
+| 8 | `cp_dist_base`         | `D` (data)  | `#[no_mangle] pub static mut cp_dist_base: [u32; 32]` | yes |
 
-**Symbol diff: EMPTY.** Both `.so`s export exactly the same 8 names, with
-byte-identical sizes for all 7 data objects. Enforced by the automated test
-`tests/symbols.rs::symbol_parity` (runs `nm -D` on both libraries and diffs the
-name sets, and compares the sizes of the data objects).
+**Missing from Rust `.so`: none.** The symbol diff is empty (verified by
+`check_symbols.sh`, which is also asserted by the integration test
+`symbols::c_and_rust_export_the_same_symbols`).
 
-The exported *sizes* matter because all seven globals are writable from outside
-the library; `tests/differential.rs` mutates them through the `.so` exports and
-requires identical behaviour from both implementations.
+Symbol *addresses* differ between the two libraries (link order is not part of
+the ABI); the tests therefore compare symbol **contents**, not addresses.
+The one place where this is observable is an out-of-bounds read past the end of
+one of the tables — see the note at the bottom of `ERRORS.md`.
 
-## `static` (internal-linkage) C functions — intentionally NOT exported
+## Internal (`static`) C functions — translated, deliberately **not** exported
 
-These have internal linkage in C and therefore must **not** appear in `nm -D`.
-All are translated (private `fn`s in `src/lib.rs`) because `pinflate` needs them:
+These have internal linkage in C and so must *not* appear in `nm -D`.  All of
+them exist in the Rust translation as private `fn`s:
 
 `cp_make_pixel_a`, `cp_make_pixel`, `cp_would_overflow`, `cp_ptr`,
 `cp_peak_bits`, `cp_consume_bits`, `cp_read_bits`, `cp_rev16`, `cp_build`,
 `cp_stored`, `cp_fixed`, `cp_decode`, `cp_dynamic`, `cp_block`.
 
-`cp_make_pixel_a` / `cp_make_pixel` (and the `cp_pixel_t` / `cp_image_t` types)
-are dead code in the C translation unit; they are still translated so the file
-is complete, and they are `static` so they add no symbols.
+Types `cp_pixel_t`, `cp_image_t`, `cp_state_t` are translated as `#[repr(C)]`
+structs.  `cp_state_t`'s exact layout is *observable*: `cp_decode` reads
+`tree[-1]`, which aliases the struct member preceding `lit`/`dst`/`len`.  The
+Rust translation static-asserts every field offset and `size_of` against the
+values gcc produces (`size_of == 2464`).
 
-## Undefined symbols
+## Undefined (imported) symbols
 
-C `.so`: `__assert_fail`, `calloc`, `free`, `memcpy`, `memset` (+ the usual weak
-`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
-
-Rust `.so`: the same libc entry points (`__assert_fail`, `calloc`, `free`,
-`memcpy`, `memset`) plus the Rust standard library's own libc/libgcc imports
-(`_Unwind_*`, `abort`, `malloc`, `mmap64`, …). **0 missing/undefined non-libc
-symbols** — every undefined symbol in the Rust `.so` is provided by
-`libc.so.6`/`libgcc_s.so.1`, which is verified by the fact that both `.so`s
-`dlopen()` successfully in the differential tests.
-
-## Verification results
-
-```
-$ nm -D --defined-only c_src/build/libharvest-work-BA3r4V.so | awk '{print $NF}' | sort  \
-  > /tmp/c.txt
-$ nm -D --defined-only translation/target/release/libpinflate_lib.so | awk '{print $NF}' \
-  | sort > /tmp/r.txt
-$ diff /tmp/c.txt /tmp/r.txt      # -> no output, for both the debug and the
-                                  #    release cdylib
-```
-
-* 8 / 8 symbols present, identical names, identical kinds (`T` / `D` / `B`),
-  identical sizes for all seven data objects.
-* **0 missing symbols, 0 unresolved non-libc symbols** — `tests/symbols.rs`
-  additionally `dlopen`s both libraries with `RTLD_NOW`, which resolves every
-  relocation up front and therefore fails if any import is unsatisfied.
-* No Rust-only symbol shadows a C one: the Rust `.so` exports *exactly* the same
-  8 names and nothing else (the `static` C helpers stay private in both).
-* Nothing is stubbed: every symbol is backed by the translated implementation and
-  is exercised by `tests/differential.rs` (see `CONFIGS.md` rows 53-60 for the
-  seven data objects, which the tests mutate through the `.so` export and then
-  compare behaviour).
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-configuration is the default one (`cargo test`, `cargo test --release`,
-`cargo test --no-default-features`, `cargo test --all-features` are all the same
-build). `run_verification.sh` enumerates the feature powerset from `Cargo.toml`
-(which is empty) and additionally runs the whole suite in both `dev` and
-`release` profiles, because `[profile.release] panic = "abort"` and the
-optimiser are the only things that differ between configurations here.
+The C `.so` imports `__assert_fail`, `calloc`, `free`, `memcpy`, `memset`
+(plus the usual weak `__gmon_start__`, `__cxa_finalize`,
+`_ITM_*TMCloneTable`).  The Rust `.so` imports `__assert_fail`, `calloc`,
+`free` and open-codes `memcpy`/`memset` through `core::ptr` (compiler builtins),
+which is behaviourally identical.  There are **0 missing / unresolvable
+non-libc undefined symbols** in the Rust `.so`.

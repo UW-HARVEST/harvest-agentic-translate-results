@@ -1,91 +1,119 @@
 #!/usr/bin/env bash
-# Phase D driver: builds both libraries and runs the whole differential suite
-# under every feature combination and every Rust build profile.
+# Full verification run: builds the C .so and the Rust .so, then runs the
+# differential suite under every cargo feature combination declared in
+# Cargo.toml (plus --no-default-features and --all-features), and finally
+# diffs the exported symbol sets.
 #
-#   ./run_all.sh
-#
-set -uo pipefail
+# Usage:  cd translation && bash run_all.sh
+set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(dirname "$HERE")"
-CARGO_FLAGS="--offline"       # the sandbox has no crates.io access
-FAILED=0
+here="$(cd "$(dirname "$0")" && pwd)"
+root="$(dirname "$here")"
+cd "$root"
 
-step() { printf '\n=== %s ===\n' "$*"; }
-
-# --------------------------------------------------------------------------
-# 1. Build the C shared library
-# --------------------------------------------------------------------------
-step "building the C shared library"
-mkdir -p "$ROOT/c_src/build"
-( cd "$ROOT/c_src/build" \
+echo "=== 1. build the C shared library ==="
+mkdir -p c_src/build
+( cd c_src/build \
   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-  && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
-C_SO="$(ls "$ROOT"/c_src/build/*.so | head -n1)"
-echo "C   .so: $C_SO"
+  && cmake --build . )
+c_so="$(ls c_src/build/lib*.so | head -1)"
+echo "C  .so: $c_so"
 
-# --------------------------------------------------------------------------
-# 2. Enumerate feature combinations declared in Cargo.toml
-# --------------------------------------------------------------------------
-FEATURES="$(awk '
-  /^\[features\]/ {inf=1; next}
-  /^\[/           {inf=0}
-  inf && /=/      {split($0,a,"="); gsub(/[ \t"]/,"",a[1]); if (a[1] != "default") print a[1]}
-' "$HERE/Cargo.toml")"
+cd "$here"
 
-# Combination list: always the default build and the no-default-features build;
-# plus each declared feature on its own and all of them together.
-COMBOS=("<default>" "<none>")
-if [ -n "$FEATURES" ]; then
-  while read -r f; do [ -n "$f" ] && COMBOS+=("$f"); done <<< "$FEATURES"
-  COMBOS+=("$(echo "$FEATURES" | tr '\n' ',' | sed 's/,$//')")
-fi
-echo "feature combinations to verify: ${COMBOS[*]}"
+echo
+echo "=== 2. enumerate feature combinations ==="
+# Extract the feature names from the [features] table, if any.
+features="$(python3 - <<'PY'
+import re
+s = open("Cargo.toml").read()
+m = re.search(r'^\[features\]\s*$(.*?)(^\[|\Z)', s, re.M | re.S)
+names = []
+if m:
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        k = line.split('=')[0].strip().strip('"')
+        if k and k != 'default':
+            names.append(k)
+print(' '.join(names))
+PY
+)"
+echo "declared features: '${features}'"
 
-# --------------------------------------------------------------------------
-# 3. Build + test each combination, against both Rust build profiles
-# --------------------------------------------------------------------------
-for combo in "${COMBOS[@]}"; do
-  case "$combo" in
-    "<default>") fflags=() ;;
-    "<none>")    fflags=(--no-default-features) ;;
-    *)           fflags=(--no-default-features --features "$combo") ;;
-  esac
-
-  step "cargo check [$combo]"
-  cargo check $CARGO_FLAGS "${fflags[@]}" || { echo "CHECK FAILED [$combo]"; FAILED=1; continue; }
-
-  for profile in release debug; do
-    step "building the Rust cdylib [$combo / $profile]"
-    if [ "$profile" = release ]; then
-      cargo build $CARGO_FLAGS --release "${fflags[@]}" || { FAILED=1; continue; }
-    else
-      cargo build $CARGO_FLAGS "${fflags[@]}" || { FAILED=1; continue; }
-    fi
-    RUST_SO="$HERE/target/$profile/libenvy_lib.so"
-    [ -f "$RUST_SO" ] || { echo "missing $RUST_SO"; FAILED=1; continue; }
-
-    step "symbol diff [$combo / $profile]"
-    nm -D --defined-only "$C_SO"   | awk '$2=="T"{print $3}' | sort > "${TMPDIR:-/tmp}/c_syms.txt"
-    nm -D --defined-only "$RUST_SO" | awk '$2=="T"{print $3}' | sort > "${TMPDIR:-/tmp}/r_syms.txt"
-    missing="$(comm -23 "${TMPDIR:-/tmp}/c_syms.txt" "${TMPDIR:-/tmp}/r_syms.txt")"
-    if [ -n "$missing" ]; then
-      echo "SYMBOLS MISSING FROM THE RUST .so:"; echo "$missing"; FAILED=1
-    else
-      echo "symbol diff empty ($(wc -l < "${TMPDIR:-/tmp}/c_syms.txt") symbols)"
-    fi
-
-    step "differential tests [$combo / $profile]"
-    C_SO="$C_SO" RUST_SO="$RUST_SO" \
-      timeout 600 cargo test $CARGO_FLAGS "${fflags[@]}" -- --test-threads=1 \
-      || { echo "TESTS FAILED [$combo / $profile]"; FAILED=1; }
+combos=("default" "--no-default-features")
+if [ -n "${features// /}" ]; then
+  combos+=("--all-features")
+  # every non-empty subset of the declared features, on top of no-default
+  read -r -a farr <<< "$features"
+  n=${#farr[@]}
+  for ((mask=1; mask<(1<<n); mask++)); do
+    sel=""
+    for ((i=0; i<n; i++)); do
+      if (( mask & (1<<i) )); then sel="$sel,${farr[$i]}"; fi
+    done
+    combos+=("--no-default-features --features ${sel#,}")
   done
+fi
+
+echo
+echo "=== 3. cargo check + build + test per combination ==="
+fail=0
+for combo in "${combos[@]}"; do
+  if [ "$combo" = "default" ]; then flags=(); else read -r -a flags <<< "$combo"; fi
+  echo
+  echo "--- combination: $combo ---"
+  cargo check --release "${flags[@]}"
+  # The cdylib must be rebuilt for THIS combination before the tests dlopen it.
+  cargo build --release "${flags[@]}"
+  if timeout 600 cargo test --release "${flags[@]}"; then
+    echo "PASS: $combo"
+  else
+    echo "FAIL: $combo"
+    fail=1
+  fi
 done
 
-step "SUMMARY"
-if [ "$FAILED" -eq 0 ]; then
-  echo "ALL CONFIGURATIONS PASSED"
+echo
+echo "=== 3b. cross-check against a -O2 build of the SAME C source ==="
+# The C source is never modified; this only builds it a second time with
+# optimisation enabled (into translation/target, never into c_src/) to confirm
+# the Rust also matches gcc's codegen for the formally-UB arithmetic.
+cmake -S "$root/c_src" -B target/c_O2 \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build target/c_O2 >/dev/null
+o2_so="$PWD/target/c_O2/$(cd target/c_O2 && ls lib*.so | head -1)"
+cargo build --release
+if ENVY_C_SO="$o2_so" timeout 600 cargo test --release; then
+  echo "PASS: Rust release .so vs C -O2 .so"
 else
-  echo "FAILURES were reported above"
+  echo "FAIL: Rust release .so vs C -O2 .so"; fail=1
 fi
-exit "$FAILED"
+
+echo
+echo "=== 3c. cross-check the debug-profile Rust cdylib ==="
+# The release profile sets panic = "abort"; the debug profile keeps
+# panic = "unwind" AND enables debug_assertions, which is a genuinely different
+# build of the same translation.
+cargo build
+if ENVY_RUST_SO="$PWD/target/debug/libenvy_lib.so" timeout 600 cargo test --release; then
+  echo "PASS: C .so vs Rust debug .so"
+else
+  echo "FAIL: C .so vs Rust debug .so"; fail=1
+fi
+
+echo
+echo "=== 4. symbol parity (nm -D) ==="
+diff <(nm -D --defined-only "$root/$c_so"        | grep -v ' [aVWw] ' | awk '{print $NF}' | sort) \
+     <(nm -D --defined-only target/release/libenvy_lib.so | grep -v ' [aVWw] ' | awk '{print $NF}' | sort) \
+  && echo "symbol diff: EMPTY (C surface fully exported by Rust)" \
+  || { echo "symbol diff NOT EMPTY"; fail=1; }
+
+echo
+if [ "$fail" -eq 0 ]; then
+  echo "ALL VERIFICATION GATES PASSED"
+else
+  echo "VERIFICATION FAILED"
+fi
+exit "$fail"

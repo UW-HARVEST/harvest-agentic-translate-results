@@ -1,107 +1,83 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — configuration-surface table (Phase A, gates Phase B)
 
-## Public entry points
+## Mechanical derivation of the axes
 
-The whole public API, from `c_src/include/lib.h`:
+The whole public API is one entry point, `void update_frame_header(tflac *t)`.
+It is also the *lowest-level* entry point — there is no convenience wrapper and
+no other non-static function in the library, so "exercise the low-level entry
+points, not just the wrappers" collapses to: drive `update_frame_header`
+directly over its full input space.
 
-| entry point | kind |
-|-------------|------|
-| `void update_frame_header(tflac *t)` | the **only** exported function — it is simultaneously the lowest-level and the highest-level entry point; there is no convenience wrapper to hide behind |
+"Options" are not function arguments here; they are the **struct fields the C
+branches on**. Enumerated from the four `switch` statements and the nested
+`if`/`else if` chain in `c_src/src/lib.c`:
 
-There is no init/open/close, no allocator, no opaque handle. "Setting up state"
-means writing the input fields of `struct tflac` directly; the caller owns the
-struct. So the configuration surface is entirely the **input field space**.
+* **Axis BS — `cur_blocksize`** (first `switch`, bits 12–15). 13 explicit
+  `case`s + a 2-way `default` (`<= 256` vs `> 256`) ⇒ **15 classes**:
+  `192, 576, 1152, 2304, 4608, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+  default≤256, default>256`.
+* **Axis SR — `samplerate`** (second `switch`, bits 8–11). 11 explicit `case`s
+  + 6 `default` sub-classes ⇒ **17 classes**:
+  `882000, 176400, 192000, 8000, 16000, 22050, 24000, 32000, 44100, 48000,
+  96000`, then `%1000==0 && /1000<256`, `%1000==0 && /1000>=256` (silent),
+  `%1000!=0 && <65536`, `%1000!=0 && >=65536 && %10==0 && /10<65536`,
+  `%1000!=0 && >=65536 && %10==0 && /10>=65536` (silent),
+  `%1000!=0 && >=65536 && %10!=0` (silent).
+* **Axis CM — `channel_mode % 4`** (third `switch`, bits 4–7) ⇒ **4 classes**
+  `0/1/2/3`; plus the *unfolded* input range `channel_mode ∈ 0..=255` which the
+  `% 4` maps onto them (so `4`, `5`, `255` are real inputs, not errors).
+* **Axis CH — `channels`**, live **only when `CM == 0`**, via
+  `(channels - 1) << 4` ⇒ **5 shapes**: `0` (unsigned underflow),
+  `1` (empty/one), `2..=8` (typical FLAC), `9..=16` (fills the nibble),
+  `> 16` (bleeds into neighbouring fields), and `>= 0xF0000000` (`<< 4`
+  truncates mod 2^32).
+* **Axis BD — `bitdepth`** (fourth `switch`, bits 1–3). 6 explicit `case`s +
+  `default` (silent) ⇒ **7 classes**: `8, 12, 16, 20, 24, 32, default`.
+* **Axis IN — initial `frame_header` value.** The C *assigns* (`=`) the sync
+  word first and only then ORs, so a pre-existing `frame_header` must be fully
+  discarded. Two shapes: `0` and `0xFFFFFFFF` (pre-dirtied).
+* **Axis PAD — struct tail padding** (bytes 13–15, from `tflac_u8
+  channel_mode` at offset 12 followed by `tflac_u32` at 16): must be preserved
+  untouched. Two shapes: zeroed and `0xAA`-filled.
+* `#ifdef` axes: **none** in the C source. `[features]` in
+  `translation/Cargo.toml`: **none**. No `[[bin]]` driver ⇒ no stdout compare.
 
-## Runtime options / modes
+Full cross-product is 15×17×4(+CH 6)×7×2×2. The table below is that product
+**pruned to the combinations the code actually distinguishes**: each row pins
+the axis it targets and *randomizes every other axis* over its full class set
+(fixed-seed xorshift PRNG, `SEED = 0x5EED_1234_ABCD_F00D`, 4000 random draws
+per row unless noted), so every row is itself a cross-product sample rather
+than one hand-picked value. Row 0 is the exhaustive whole-space sweep.
 
-Grepped from the `switch` / `if` statements in `c_src/src/lib.c`:
+## Table
 
-| axis | field | values the C actually distinguishes |
-|------|-------|--------------------------------------|
-| **A** block size | `cur_blocksize` (`u32`) | 15 classes: the 13 enumerated cases `192, 576, 1152, 2304, 4608, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768`, plus `default && <= 256`, plus `default && > 256` |
-| **B** sample rate | `samplerate` (`u32`) | 17 classes: the 11 enumerated cases `882000, 176400, 192000, 8000, 16000, 22050, 24000, 32000, 44100, 48000, 96000`, plus 6 `default` sub-branches (see below) |
-| **C** channel mode | `channel_mode` (`u8`), reduced by `% 4` | 4 classes: `0` independent, `1` left/side, `2` side/right, `3` mid/side. Mode 0 additionally reads **`channels`**, so mode 0 is itself a sub-axis over `channels` |
-| **C'** channels | `channels` (`u32`) | only read when `channel_mode % 4 == 0`: `0` (underflow), `1..=8` (the FLAC-valid range, 8 distinct nibbles), `> 8` (spills out of the 4-bit field), `u32::MAX` (shifts bits off the top) |
-| **D** bit depth | `bitdepth` (`u32`) | 7 classes: `8, 12, 16, 20, 24, 32`, plus `default` (no bits) |
-
-`samplerate` `default` sub-branches (nested `if`/`else if` chain):
-
-| B-default sub-class | condition | nibble |
-|---------------------|-----------|--------|
-| B-d1 | `%1000 == 0 && /1000 < 256` | `0x0C` |
-| B-d2 | `%1000 == 0 && /1000 >= 256` | none |
-| B-d3 | `%1000 != 0 && < 65536` | `0x0D` |
-| B-d4 | `%1000 != 0 && >= 65536 && %10 == 0 && /10 < 65536` | `0x0E` |
-| B-d5 | `%1000 != 0 && >= 65536 && %10 == 0 && /10 >= 65536` | none |
-| B-d6 | `%1000 != 0 && >= 65536 && %10 != 0` | none |
-
-No `#ifdef`, no compile-time option, no global state, no byte-order or
-element-type axis (the only "format" is the fixed-layout `struct tflac`).
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table** and no optional
-dependencies, so the feature power-set is `{default} == {}` — one configuration.
-Verified by grep; Phase D re-runs the suite under `--no-default-features`
-anyway, which is the same code path.
-
-## Combination rows
-
-The four axes are independent (each writes a disjoint bit field of
-`frame_header`), *except* that A/C'/D bits can collide with the C' spill when
-`channels` is out of range — which is exactly the interaction worth crossing.
-The full cross product is 15 × 17 × (3 + 11) × 7 = 24 990 cells; the rows below
-prune that to the combinations the code actually distinguishes, and each row is
-driven with **many randomized inputs** (fixed seed) that sweep the other axes,
-so the cross product is covered stochastically on top of the structured rows.
-
-| # | entry point(s) | configuration (options set + input shape) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `update_frame_header` | A = each of the 13 enumerated `cur_blocksize` values × randomized B/C/C'/D | [x] |
-| 2 | `update_frame_header` | A = `default && <= 256` (randomized values in `0..=256` minus enumerated) × randomized B/C/C'/D | [x] |
-| 3 | `update_frame_header` | A = `default && > 256` (randomized values `257..=u32::MAX` minus enumerated) × randomized B/C/C'/D | [x] |
-| 4 | `update_frame_header` | B = each of the 11 enumerated `samplerate` values × randomized A/C/C'/D | [x] |
-| 5 | `update_frame_header` | B = B-d1 (`%1000==0`, `/1000<256`) randomized × randomized A/C/C'/D | [x] |
-| 6 | `update_frame_header` | B = B-d2 (`%1000==0`, `/1000>=256`) randomized × randomized A/C/C'/D | [x] |
-| 7 | `update_frame_header` | B = B-d3 (`%1000!=0`, `<65536`) randomized × randomized A/C/C'/D | [x] |
-| 8 | `update_frame_header` | B = B-d4 (`%1000!=0`, `>=65536`, `%10==0`, `/10<65536`) randomized × randomized A/C/C'/D | [x] |
-| 9 | `update_frame_header` | B = B-d5 (`%1000!=0`, `>=65536`, `%10==0`, `/10>=65536`) randomized × randomized A/C/C'/D | [x] |
-| 10 | `update_frame_header` | B = B-d6 (`%1000!=0`, `>=65536`, `%10!=0`) randomized × randomized A/C/C'/D | [x] |
-| 11 | `update_frame_header` | C = independent (`channel_mode % 4 == 0`) × C' = `channels` in `1..=8` × randomized A/B/D | [x] |
-| 12 | `update_frame_header` | C = independent × C' = `channels == 0` (underflow) × randomized A/B/D — interaction: the `0xFFFFFFF0` spill overwrites the A and D fields | [x] |
-| 13 | `update_frame_header` | C = independent × C' = `channels` in `9..=255` (spill past the 4-bit field) × randomized A/B/D | [x] |
-| 14 | `update_frame_header` | C = independent × C' = `channels` randomized over the whole `u32` range (incl. `u32::MAX`, shift-off-the-top) × randomized A/B/D | [x] |
-| 15 | `update_frame_header` | C = left/side (`channel_mode % 4 == 1`, i.e. `channel_mode ∈ {1,5,...,253}`) × randomized `channels` (must be ignored) × randomized A/B/D | [x] |
-| 16 | `update_frame_header` | C = side/right (`% 4 == 2`) × randomized `channels` × randomized A/B/D | [x] |
-| 17 | `update_frame_header` | C = mid/side (`% 4 == 3`) × randomized `channels` × randomized A/B/D | [x] |
-| 18 | `update_frame_header` | C = every one of the 256 possible `channel_mode` byte values × randomized A/B/C'/D | [x] |
-| 19 | `update_frame_header` | D = each of `8, 12, 16, 20, 24, 32` × randomized A/B/C/C' | [x] |
-| 20 | `update_frame_header` | D = `default` (randomized `bitdepth` avoiding the 6 valid values, incl. 0 and `u32::MAX`) × randomized A/B/C/C' | [x] |
-| 21 | `update_frame_header` | **all-realistic combination**: A ∈ enumerated, B ∈ enumerated, C ∈ 0..=3 with C' ∈ 1..=8, D ∈ valid — the full realistic cross product driven exhaustively (13 × 11 × 4 × 8 × 6) | [x] |
-| 22 | `update_frame_header` | **unconstrained fuzz**: all six struct fields drawn uniformly at random over their full integer ranges (incl. the pre-existing `frame_header` value, which the C must overwrite, never OR into) | [x] |
-| 23 | `update_frame_header` | **aliasing / repeat-call shape**: the same struct passed to the same `.so` twice in a row, and to C then Rust, to confirm the function is idempotent and does not read the incoming `frame_header` | [x] |
-| 24 | `update_frame_header` | **boundary sweep**: every value in `0..=1024` and each of `{n-1, n, n+1}` around all 13 A constants, 11 B constants and 6 D constants, applied to each axis in turn | [x] |
-
-## Result
-
-All 24 rows pass, in both the release and debug profiles and under every feature
-configuration (`--all-features`, default, `--no-default-features` — the crate has
-no `[features]` table, so that is the whole power set). No divergence was found
-on any valid-path row.
-
-Coverage beyond the table, in `tests/phase_d_parity.rs`:
-
-| test | coverage |
-|------|----------|
-| `d03_exhaustive_low_million_per_axis` | every value `0..=1_000_000` on each of the four `u32` axes |
-| `d04_full_u32_stride_per_axis` | whole `u32` domain per axis by prime stride 9973 (coprime with 1000 and 10, so it lands in all six `samplerate` sub-branches) |
-| `d05_channel_mode_exhaustive_cross` | all 256 `channel_mode` bytes × 8 blocksizes × 8 samplerates × 7 channel counts × 6 bitdepths |
-| `d06`–`d09` (`--ignored`) | **exhaustive over all 2^32 values** of `samplerate`, `cur_blocksize`, `channels` and `bitdepth` respectively |
-
-`d06`–`d09` together make ~17.2 billion differential comparisons and report zero
-divergences, which reduces the per-axis claim from "sampled" to "exhaustive".
-They are `#[ignore]`d because they take ~64 s wall clock; run them with:
-
-```
-cargo test --release --test phase_d_parity -- --ignored --nocapture
-```
+| 0 | `update_frame_header` | **Full-axis random sweep**: all of BS×SR×CM×CH×BD×IN×PAD drawn from their class sets, 200 000 draws, seeded | [x] |
+| 1 | `update_frame_header` | BS = each of the 13 exact `case` block sizes (192/576/1152/2304/4608/256/512/1024/2048/4096/8192/16384/32768); SR/CM/CH/BD/IN/PAD random | [x] |
+| 2 | `update_frame_header` | BS = `default` branch, `cur_blocksize <= 256` (random over `0..=256` minus 192,256); other axes random | [x] |
+| 3 | `update_frame_header` | BS = `default` branch, `cur_blocksize > 256` (random over `257..=u32::MAX` minus the exact cases); other axes random | [x] |
+| 4 | `update_frame_header` | SR = each of the 11 exact `case` sample rates (882000/176400/192000/8000/16000/22050/24000/32000/44100/48000/96000); other axes random | [x] |
+| 5 | `update_frame_header` | SR = `default`, `%1000==0 && /1000<256` → `0x0C` (random `k*1000`, `k<256`, incl. `0`); other axes random | [x] |
+| 6 | `update_frame_header` | SR = `default`, `%1000==0 && /1000>=256` → **no SR bits** (random `k*1000`, `256<=k`, no `u32` overflow); other axes random | [x] |
+| 7 | `update_frame_header` | SR = `default`, `%1000!=0 && <65536` → `0x0D`; other axes random | [x] |
+| 8 | `update_frame_header` | SR = `default`, `%1000!=0 && >=65536 && %10==0 && /10<65536` → `0x0E`; other axes random | [x] |
+| 9 | `update_frame_header` | SR = `default`, `%1000!=0 && >=65536 && %10==0 && /10>=65536` → **no SR bits**; other axes random | [x] |
+| 10 | `update_frame_header` | SR = `default`, `%1000!=0 && >=65536 && %10!=0` → **no SR bits**; other axes random | [x] |
+| 11 | `update_frame_header` | CM: `channel_mode % 4 == 0` (INDEPENDENT) × CH = `1` and CH = `2..=8`; other axes random | [x] |
+| 12 | `update_frame_header` | CM ≡ 0 × CH = `0` (underflow to `0xFFFFFFF0`); other axes random | [x] |
+| 13 | `update_frame_header` | CM ≡ 0 × CH = `9..=16` (fills the 4-bit nibble exactly); other axes random | [x] |
+| 14 | `update_frame_header` | CM ≡ 0 × CH = `17..=0xEFFFFFFF` (bits bleed into SR/BS/sync nibbles); other axes random | [x] |
+| 15 | `update_frame_header` | CM ≡ 0 × CH >= `0xF0000000` (`<< 4` truncates mod 2^32); other axes random | [x] |
+| 16 | `update_frame_header` | CM ≡ 1 (LEFT_SIDE) — `channel_mode ∈ {1,5,9,…,253}` random; `channels` random *and must be ignored*; other axes random | [x] |
+| 17 | `update_frame_header` | CM ≡ 2 (SIDE_RIGHT) — `channel_mode ∈ {2,6,…,254}` random; `channels` ignored; other axes random | [x] |
+| 18 | `update_frame_header` | CM ≡ 3 (MID_SIDE) — `channel_mode ∈ {3,7,…,255}` random; `channels` ignored; other axes random | [x] |
+| 19 | `update_frame_header` | CM: full `channel_mode` sweep `0..=255` exhaustive × random other axes (covers `4 == TFLAC_CHANNEL_MODE_COUNT` and every out-of-enum byte) | [x] |
+| 20 | `update_frame_header` | BD = each of `8, 12, 16, 20, 24, 32`; other axes random | [x] |
+| 21 | `update_frame_header` | BD = `default` (random from `{0,1,…}` excluding the 6 cases, incl. `u32::MAX`); other axes random | [x] |
+| 22 | `update_frame_header` | IN: `frame_header` pre-dirtied to random non-zero garbage (must be overwritten, not ORed into); other axes random | [x] |
+| 23 | `update_frame_header` | PAD: tail padding bytes 13–15 pre-filled `0xAA`/random; assert all 24 struct bytes match afterwards; other axes random | [x] |
+| 24 | `update_frame_header` | Aliasing / repeated invocation: call the same struct **twice in a row** on both libs (idempotence of the `=` then `|=` sequence); other axes random | [x] |
+| 25 | `update_frame_header` | Interaction focus: BS exact-case × SR exact-case × CM ≡ 0 × CH `>16` — the combination where an over-large channel count corrupts an otherwise perfectly-encoded header (cross-field interaction) | [x] |
+| 26 | `update_frame_header` | Boundary values on every axis simultaneously: BS/SR/CH/BD each drawn from `{0, 1, case-1, case, case+1, u32::MAX-1, u32::MAX}` sets, `channel_mode ∈ {0,1,2,3,4,255}` | [x] |
+| 27 | `update_frame_header` | Batch/array shape: 1, 2, and 1024 consecutive `tflac` structs in one contiguous allocation, processed element-by-element by both libs, whole buffer compared (catches stride/size ABI mismatch) | [x] |

@@ -18,8 +18,10 @@ unsafe extern "C" {
     fn strcmp(left: *const c_char, right: *const c_char) -> c_int;
     fn sprintf(dest: *mut c_char, format: *const c_char, ...) -> c_int;
     fn printf(format: *const c_char, ...) -> c_int;
+    fn raise(signal: c_int) -> c_int;
 }
 
+const SIGFPE: c_int = 8;
 const ADD: &[u8] = b"add\0";
 const SUBTRACT: &[u8] = b"subtract\0";
 const MULTIPLY: &[u8] = b"multiply\0";
@@ -29,6 +31,18 @@ const UNKNOWN: &[u8] = b"unknown\0";
 #[inline]
 fn c_ptr(value: &'static [u8]) -> *const c_char {
     value.as_ptr().cast()
+}
+
+#[inline]
+fn divide_nonzero_like_c(first: c_int, second: c_int) -> c_int {
+    if first == c_int::MIN && second == -1 {
+        unsafe {
+            raise(SIGFPE);
+        }
+        first.wrapping_div(second)
+    } else {
+        first / second
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -119,7 +133,11 @@ pub unsafe extern "C" fn perform_operation(
     } else if unsafe { strcmp(operation, c_ptr(MULTIPLY)) } == 0 {
         first * second
     } else if unsafe { strcmp(operation, c_ptr(DIVIDE)) } == 0 {
-        if second != 0 { first / second } else { 0 }
+        if second == 0 {
+            0
+        } else {
+            divide_nonzero_like_c(first, second)
+        }
     } else {
         0
     }
@@ -192,7 +210,7 @@ pub unsafe extern "C" fn buffapp(
     let intermediate3 = unsafe { perform_operation(intermediate1, intermediate2, operation3) };
 
     if intermediate3 != 0 {
-        result /= intermediate3;
+        result = divide_nonzero_like_c(result, intermediate3);
     } else {
         result = parameter1 + parameter2 + parameter3 + parameter4;
     }

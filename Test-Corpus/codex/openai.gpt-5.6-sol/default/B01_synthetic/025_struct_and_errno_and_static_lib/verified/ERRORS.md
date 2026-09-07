@@ -1,22 +1,31 @@
-# Error Surface
+# Error-surface table
 
-Derived mechanically from `c_src/src/driver.c:66-85`. `parse_val` is static,
-so its result is observed through the exported `driver` function.
+Mechanically derived from the four rejecting terms in
+`src/driver.c:70`:
+
+```c
+endp != str && errno == 0 && tmp >= INT_MIN && tmp <= INT_MAX
+```
+
+`parse_val` is private, so each rejection is observable through `driver`,
+which prints `An error occurred\n` and returns `void`.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `parse_val` via `driver` | `endp == str`: `strtol` consumes no characters (including `""`, whitespace-only, and nonnumeric input) | `parse_val` returns `false`; `driver` writes `An error occurred\n` | [x] |
-| 2 | `parse_val` via `driver` | `errno != 0` after `strtol` (decimal magnitude outside the C `long` range, including oversized digit strings) | `parse_val` returns `false`; `driver` writes `An error occurred\n` | [x] |
-| 3 | `parse_val` via `driver` | `tmp < INT_MIN` while conversion consumed input and `errno == 0` | `parse_val` returns `false`; `driver` writes `An error occurred\n` | [x] |
-| 4 | `parse_val` via `driver` | `tmp > INT_MAX` while conversion consumed input and `errno == 0` | `parse_val` returns `false`; `driver` writes `An error occurred\n` | [x] |
-| 5 | `driver` FFI boundary | `in == NULL`; the C source has no null check and passes null to `strtol` | Process termination behavior must match the C shared library | [x] |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `driver` / `parse_val` | `endp == str`: `strtol` consumes no decimal digits | stdout is exactly `An error occurred\n`; returns `void` | [x] |
+| 2 | `driver` / `parse_val` | `errno != 0`: decimal magnitude overflows or underflows C `long` | stdout is exactly `An error occurred\n`; returns `void` | [x] |
+| 3 | `driver` / `parse_val` | `tmp < INT_MIN` while the value remains representable as C `long` | stdout is exactly `An error occurred\n`; returns `void` | [x] |
+| 4 | `driver` / `parse_val` | `tmp > INT_MAX` while the value remains representable as C `long` | stdout is exactly `An error occurred\n`; returns `void` | [x] |
 
-Boundary applicability:
+## Generic ABI boundaries
 
-- Zero-length input is row 1.
-- Oversized input is row 2.
-- Values one below and above the documented `int` range are rows 3 and 4.
-- No public API accepts a separate length, so zero/oversized length arguments
-  are not applicable.
-- No public API accepts an enum, so out-of-range enum values are not applicable.
-- `run` accepts an `int` by value and has no error return or rejection branch.
+These are tested in Phase C even though they are not explicit rejection
+branches:
+
+| boundary | applicability / C behavior | status |
+|----------|----------------------------|--------|
+| Null `driver` pointer | Passed to `strtol`; on this platform both shared objects terminate by the same signal | [x] |
+| Zero length | No length parameter exists; the equivalent empty C string is covered by row 1 | [x] |
+| Oversized length | No length parameter exists; a 4096-digit numeric string is covered by row 2 | [x] |
+| One past documented range | No documented enum/range parameter; `INT_MIN - 1` and `INT_MAX + 1` are covered by rows 3-4 | [x] |
+| Out-of-range enum | No enum parameter exists in either exported function | [x] |

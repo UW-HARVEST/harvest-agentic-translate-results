@@ -1,37 +1,29 @@
 # Configuration Surface
 
-The public headers expose one entry point and no runtime options, modes, flags,
-pointers, element types, counts, formats, or byte-order settings. `Cargo.toml`
-declares no features. The meaningful valid-input axes arise from the signed C
-`div` operation used by `driver`:
+The public surface has one entry point, no runtime options, no flags, no
+compile-time Cargo features, and no C conditional branches. The meaningful
+valid input configurations are the sign, exactness, zero, and representable
+boundary classes distinguished by C signed integer division.
 
-- numerator shape: zero, positive, or negative;
-- denominator sign: positive or negative;
-- result shape for nonzero numerators: exact division or nonzero remainder;
-- C `int` boundaries, excluding the two rejection cases in `ERRORS.md`.
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `driver` | no options; zero numerator, nonzero denominator | [x] |
+| 2 | `driver` | no options; positive numerator and positive denominator, exact division | [x] |
+| 3 | `driver` | no options; positive numerator and positive denominator, nonzero remainder | [x] |
+| 4 | `driver` | no options; positive numerator and negative denominator, exact division | [x] |
+| 5 | `driver` | no options; positive numerator and negative denominator, nonzero remainder | [x] |
+| 6 | `driver` | no options; negative numerator and positive denominator, exact division | [x] |
+| 7 | `driver` | no options; negative numerator and positive denominator, nonzero remainder | [x] |
+| 8 | `driver` | no options; negative numerator and negative denominator, exact division | [x] |
+| 9 | `driver` | no options; negative numerator and negative denominator, nonzero remainder | [x] |
+| 10 | `driver` | no options; representable `int` boundary values (`INT_MIN`/`INT_MAX`) excluding `INT_MIN / -1` | [x] |
 
-Each row is exercised with many deterministic randomized inputs through both
-shared-library FFI exports. Exact output includes the complete bytes written by
-`printf`.
+Feature/build combinations to run:
 
-| # | entry point(s) | configuration (options set + input shape) | verified |
-|---|----------------|--------------------------------------------|----------|
-| 1 | `driver` | no options; `x == 0`, `y > 0` | [x] |
-| 2 | `driver` | no options; `x == 0`, `y < 0` | [x] |
-| 3 | `driver` | no options; `x > 0`, `y > 0`, exact division | [x] |
-| 4 | `driver` | no options; `x > 0`, `y > 0`, nonzero remainder | [x] |
-| 5 | `driver` | no options; `x > 0`, `y < 0`, exact division | [x] |
-| 6 | `driver` | no options; `x > 0`, `y < 0`, nonzero remainder | [x] |
-| 7 | `driver` | no options; `x < 0`, `y > 0`, exact division | [x] |
-| 8 | `driver` | no options; `x < 0`, `y > 0`, nonzero remainder | [x] |
-| 9 | `driver` | no options; `x < 0`, `y < 0`, exact division | [x] |
-| 10 | `driver` | no options; `x < 0`, `y < 0`, nonzero remainder | [x] |
-| 11 | `driver` | no options; valid `x` boundary values (`INT_MIN`, `INT_MAX`) | [x] |
-| 12 | `driver` | no options; valid `y` boundary values (`INT_MIN`, `INT_MAX`) | [x] |
+- default feature set (empty)
+- `--no-default-features` (also empty, independently exercised)
 
-Feature/build configurations:
+There is no binary target in either build definition.
 
-| # | Cargo feature configuration | verified |
-|---|-----------------------------|----------|
-| F1 | default (no features declared) | [x] |
-| F2 | `--no-default-features` (equivalent empty feature set) | [x] |
+Each row passes 128 fixed-seed randomized inputs through both shared-library
+FFI boundaries under both listed feature/build combinations.

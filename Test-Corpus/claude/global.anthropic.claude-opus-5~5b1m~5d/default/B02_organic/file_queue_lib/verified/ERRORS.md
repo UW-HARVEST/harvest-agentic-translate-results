@@ -1,50 +1,123 @@
-# ERRORS.md — Phase A: error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Every distinct rejection / error path in the C source, found by grepping for
-`return NULL`, `return (-1)`, `return (0)`, `goto l_error`, `exit(`, `perror`,
-`merror`, and every explicit null / range check.
+Every distinct rejection / error exit found by grepping the C sources for
+`return -1`, `return (0)`, `return NULL`, `goto l_error`, `exit(`, `continue`,
+`perror`, `merror`, and every explicit null / range / bound check.
 
-`c_src` has no `assert()` and no error enums; the whole error surface is
-`NULL` / `-1` / `0` sentinels plus two `exit(EXIT_FAILURE)` paths.
+`l_error` in `GetAlertData` means: `FreeAlertData(al_data); clearerr(fp); return NULL;`
 
-Numeric/size constants that act as limits: `OS_MAXSTR` (1024, `shared.h:8`),
-`MAX_FQUEUE` (256, `file-queue.h:18`), `FQ_TIMEOUT` (5, `file-queue.h:19`),
-`LOG_LIMIT` (100, `read-alert.c:60`), the 12-entry `s_month` table
-(`file-queue.c:35`).
+Tests live in `tests/phase_c_errors.rs`, except rows 9-12 and 35 — whose expected
+result is a message on **stderr** — which live in `tests/phase_c_stderr.rs`. fd 2
+is process-global, so a test that redirects it cannot tolerate a concurrent test
+calling `perror` (which `GetAlertData` does on rows 22/23). Cargo runs test
+binaries one at a time, so the split makes those captures race-free; within each
+file `capture_stderr` and `fork` additionally serialise on a mutex.
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|----|----------|----------------------------------------------|-------------------|------|-----|
-| 1  | `os_calloc` (`shared.h:15-18`) | `calloc(num,size)` returns NULL (e.g. `num=SIZE_MAX`, `size=SIZE_MAX`) | prints `Memory allocation failed in os_calloc` to stderr, `exit(EXIT_FAILURE)` → process exit status 1 | `tests/low_level.rs::err01_os_calloc_alloc_failure_exits` (subprocess) | [x] |
-| 2  | `os_realloc` (`shared.h:24-27`) | `realloc(ptr,new_size)` returns NULL (e.g. `new_size=SIZE_MAX`) | prints `Memory allocation failed in os_realloc`, `exit(EXIT_FAILURE)` → status 1 | `tests/low_level.rs::err02_os_realloc_alloc_failure_exits` (subprocess) | [x] |
-| 3  | `os_strdup` (`shared.h:32-35`) | `str == NULL` | prints `NULL string passed to os_strdup`, `exit(EXIT_FAILURE)` → status 1 | `tests/low_level.rs::err03_os_strdup_null_exits` (subprocess) | [x] |
-| 4  | `os_strdup` (`shared.h:37-40`) | `strdup` returns NULL (OOM) — not reachable deterministically from userspace without an allocator failure; documented, exercised indirectly by #1/#2 | prints `Memory allocation failed in os_strdup`, `exit(EXIT_FAILURE)` | `tests/low_level.rs::err04_os_strdup_oom_documented` (documented / unreachable) | [x] |
-| 5  | `GetAlertData` (`read-alert.c:111-115`) | `_r == 2` and a new `** Alert` line is seen but `fseek(fp,-strlen(str),SEEK_CUR)` fails → `goto l_error` | `FreeAlertData` + `clearerr` + return `NULL` | `tests/get_alert_data.rs::err05_getalertdata_fseek_fails_on_pipe` | [x] |
-| 6  | `GetAlertData` (`read-alert.c:121-123`) | `** Alert` header without any `:` after offset 9 → `continue` (header rejected, `_r` stays) | header skipped; if no further valid alert → final `NULL` | `tests/get_alert_data.rs::err06_header_without_colon` | [x] |
-| 7  | `GetAlertData` (`read-alert.c:131-134`) | `** Alert` header whose tail (from offset 9) contains `:` but no `' '` → `continue` | header skipped → `NULL` | `tests/get_alert_data.rs::err07_header_without_space` | [x] |
-| 8  | `GetAlertData` (`read-alert.c:139-142`) | `flag & CRALERT_MAIL_SET` and the token after the first space is not `mail` → `continue` | header skipped → `NULL` (alert filtered out) | `tests/get_alert_data.rs::err08_mail_filter_rejects` | [x] |
-| 9  | `GetAlertData` (`read-alert.c:184-187`) | `_r == 1` line contains `':'` but no `' '` at/after that colon → `perror("date of location not NULL")` + `goto l_error` | `NULL` | `tests/get_alert_data.rs::err09_date_line_colon_no_space` | [x] |
-| 10 | `GetAlertData` (`read-alert.c:191-194`) | `_r == 1` line contains no `':'` at all ⇒ `p == NULL` → `perror("date or location not NULL or p is NULL")` + `goto l_error` | `NULL` | `tests/get_alert_data.rs::err10_date_line_no_colon` | [x] |
-| 11 | `GetAlertData` (`read-alert.c:218-220`) | `Rule: ` line where, after `atoi`, there is no second space ⇒ `p == NULL` → `goto l_error` | `NULL` | `tests/get_alert_data.rs::err11_rule_missing_second_space` | [x] |
-| 12 | `GetAlertData` (`read-alert.c:225-228`) | `Rule: ` line with two spaces but no `'` quote → `goto l_error` | `NULL` | `tests/get_alert_data.rs::err12_rule_missing_open_quote` | [x] |
-| 13 | `GetAlertData` (`read-alert.c:235-240`) | comment after the opening `'` has no closing `'` → `goto l_error` | `NULL` | `tests/get_alert_data.rs::err13_rule_missing_close_quote` | [x] |
-| 14 | `GetAlertData` (`read-alert.c:305-307,309-314`) | `fgets` hits EOF while `_r != 2` (empty file, file with no `** Alert`, or header-only file) | `FreeAlertData` + `clearerr` + `NULL` | `tests/get_alert_data.rs::err14_eof_without_complete_alert` | [x] |
-| 15 | `GetAlertData` (`read-alert.c:104`) | `fgets` fails because the stream has an error / is at EOF already | `NULL`, and `clearerr(fp)` has cleared both EOF and error flags | `tests/get_alert_data.rs::err15_eof_flag_cleared` | [x] |
-| 16 | `GetAlertData` (`read-alert.c:288-291`) | syscheck alert whose `Integrity checksum changed for: '` line has an *empty* remainder ⇒ `filename[strlen-1]` writes at `filename[-1]` (heap under-run, UB) | same address arithmetic in both impls; `filename` is `""` | `tests/get_alert_data.rs::err16_integrity_empty_filename` | [x] |
-| 17 | `GetAlertData` / `FreeAlertData` / `Init_FileQueue` / `Read_FileMon` | `NULL` passed for a `__attribute__((nonnull))` parameter | UB in C: null dereference → `SIGSEGV`. The Rust translation dereferences the same raw pointer, so the release `.so` also raises `SIGSEGV`; a *debug* Rust build turns the null deref into a non-unwinding panic → `SIGABRT`. Both are asserted fatal, and the signal is compared exactly for the release build. | `tests/get_alert_data.rs::err17_null_pointer_args_both_segv` (subprocess, both sides) | [x] |
-| 18 | `Handle_Queue` (`file-queue.c:76-80`) via `Init_FileQueue` | `CRALERT_FP_SET` not set and `fopen(file_name,"r")` fails (no `alerts.log` in cwd) | `Handle_Queue` → `0`; `Init_FileQueue` → `0` (NOT an error) | `tests/file_queue.rs::err18_init_no_alerts_log` | [x] |
-| 19 | `Handle_Queue` (`file-queue.c:85-87`) via `Init_FileQueue` | `CRALERT_FP_SET` set, `CRALERT_READ_ALL` clear and `fileq->fp == NULL` | `Handle_Queue` → `0`; `Init_FileQueue` → `0`; `fileq->last_change` still assigned from the (untouched) `f_status` | `tests/file_queue.rs::err19_fpset_null_fp` | [x] |
-| 20 | `Handle_Queue` (`file-queue.c:89-94`) via `Init_FileQueue` | `CRALERT_FP_SET` set, `CRALERT_READ_ALL` clear, `fileq->fp` is a non-seekable stream (pipe) ⇒ `fseek` fails (`ESPIPE`) | `merror(FSEEK_ERROR,…)` on stderr, `fclose(fp)`, `fp=NULL`, `Handle_Queue` → `-1`, `Init_FileQueue` → `-1` | `tests/file_queue.rs::err20_init_fseek_fails_returns_minus1` | [x] |
-| 21 | `Handle_Queue` (`file-queue.c:99-104`) via `Init_FileQueue` | `CRALERT_FP_SET|CRALERT_READ_ALL` set and `fileno(fp)` is a closed fd ⇒ `fstat` fails (`EBADF`) | `merror(FSTAT_ERROR,…)` on stderr, `fclose(fp)`, `fp=NULL`, `Handle_Queue` → `-1`, `Init_FileQueue` → `-1` | `tests/file_queue.rs::err21_init_fstat_fails_returns_minus1` | [x] |
-| 22 | `Read_FileMon` (`file-queue.c:149-153`) | `fileq->fp == NULL` on entry and `Handle_Queue(fileq,0) != 1` (no openable `alerts.log`) | `file_sleep()` (5 s) then `NULL` | `tests/file_queue.rs::err22_readfilemon_queue_unavailable` | [x] |
-| 23 | `Read_FileMon` (`file-queue.c:156-158`) | `fileq->fp == NULL` after a *successful* `Handle_Queue` — unreachable, because `Handle_Queue(…,0)` only returns 1 after a successful `fopen` | `NULL` (dead code) | `tests/file_queue.rs::err23_readfilemon_null_fp_unreachable` (documented) | [x] |
-| 24 | `Read_FileMon` (`file-queue.c:171-174`) | second `Handle_Queue(fileq,0) != 1`: the queue file became unopenable (test uses `chmod 000`, which keeps the inode/mtime stable across the two runs) between the first read and the re-open | `file_sleep()` then `NULL` | `tests/file_queue.rs::err24_readfilemon_file_vanishes` | [x] |
-| 25 | `Read_FileMon` (`file-queue.c:177-188`) | `timeout == 0` and no alert available | loop body never runs → `NULL` immediately | `tests/file_queue.rs::err25_readfilemon_timeout_zero` | [x] |
-| 26 | `Init_FileQueue` (`file-queue.c:135-137`) / `driver` (`driver.c:15-18`) | `Init_FileQueue` returns `-1` | `driver` prints `File queue initialization failed` to stderr and returns `NULL` | `tests/driver.rs::err26_driver_init_failure` | [x] |
-| 27 | `Init_FileQueue`/`Read_FileMon` (`file-queue.c:125,166`) | `p->tm_mon` outside `0..=11` ⇒ `s_month[p->tm_mon]` reads past the 12-entry table (UB). In this build `s_month[12]` lands in `.bss` and is `NULL`, so C `strncpy(dst, NULL, 3)` → `SIGSEGV`; negative indices read `.got.plt`. | undefined; C crashes on this build. The Rust translation range-guards the copy (leaves `mon` untouched) so it cannot crash. Documented divergence on UB input only; `mon` is never read by the library and is not observable through `driver`. | `tests/file_queue.rs::err27_out_of_range_month_is_ub_in_c` (documented + C-crash proof in subprocess) | [x] |
-| 28 | `merror` (`file-queue.c:24-28`) | `err_template` needs more than 255 formatted bytes (e.g. a 300-byte `file_name`) | `snprintf` truncates to 255 chars + NUL; the truncated line is printed | `tests/low_level.rs::err28_merror_truncation` | [x] |
-| 29 | `merror` (`file-queue.c:26`) | `file_name`/`err_msg` are `NULL` pointers passed for `%s` | glibc prints `(null)` | `tests/low_level.rs::err29_merror_null_args` | [x] |
-| 30 | `GetAlertData` (`read-alert.c:104`, `OS_MAXSTR`) | input line longer than `OS_MAXSTR-1 = 1023` bytes ⇒ `fgets` splits it; the tail is parsed as a separate (bogus) line | whatever the split parse yields — must be identical | `tests/get_alert_data.rs::cfg16_os_maxstr_boundaries` (all six line kinds, 1020-3000 bytes) | [x] |
-| 31 | `driver` / `Init_FileQueue` / `GetAlertData` | `flags` / `flag` containing bits with no defined `CRALERT_*` variant (a C `int` accepts any value — the "out-of-range enum" case across FFI), including negative values and `INT_MIN`/`INT_MAX` | undefined bits are simply ignored by every `&` test; result identical to the masked value | `tests/driver.rs::err31_undefined_flag_bits` | [x] |
-| 32 | `driver` | `timeout` at the extremes (`0`, `u32::MAX`) with an alert immediately available so the loop is never entered | alert returned before any `file_sleep()` | `tests/driver.rs::err32_driver_timeout_extremes` | [x] |
-| 33 | `GetAlertData` (`read-alert.c:166-168`) | body line arriving while `_r < 1` (text before the first `** Alert`) | line skipped via `continue` | `tests/get_alert_data.rs::err33_body_before_header` | [x] |
-| 34 | `GetAlertData` (`read-alert.c:207,222,256,271`) | `atoi` on non-numeric / overflowing text (`Rule: `, `Src Port: `, `Dst Port: ` fields) | glibc `atoi` semantics: `(int)strtol(...,10)` → `0` for garbage, truncated `long` for overflow | `tests/get_alert_data.rs::err34_atoi_garbage_and_overflow` | [x] |
+| #  | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
+|----|----------|---------------------------------------------|-------------------|------|---|
+| 1  | `os_strdup` (`shared.h:32`) | `str == NULL` | `fprintf(stderr,"NULL string passed to os_strdup")` then `exit(1)` | `err_01_os_strdup_null_exits` (subprocess) | [x] |
+| 2  | `os_calloc` (`shared.h:15`) | `calloc` returns NULL (unsatisfiable `num*size`, e.g. `SIZE_MAX`) | `fprintf(stderr,"Memory allocation failed in os_calloc")` then `exit(1)` | `err_02_os_calloc_oom_exits` (subprocess) | [x] |
+| 3  | `os_realloc` (`shared.h:24`) | `realloc` returns NULL (`new_size == SIZE_MAX`) | `fprintf(stderr,"Memory allocation failed in os_realloc")` then `exit(1)` | `err_03_os_realloc_oom_exits` (subprocess) | [x] |
+| 4  | `os_calloc` | `num == 0` or `size == 0` — glibc returns a non-NULL minimal block, so **no** error | returns non-NULL | `err_04_os_calloc_zero_ok` | [x] |
+| 5  | `os_realloc` | `ptr == NULL` (acts as `malloc`) — **no** error | returns non-NULL | `err_05_os_realloc_null_ptr_ok` | [x] |
+| 6  | `os_realloc` | `new_size == 0` — glibc frees and returns NULL ⇒ hits the error branch | `exit(1)` (glibc ≥ 2.29 returns NULL for size 0) | `err_06_os_realloc_zero_size` (subprocess, compares C vs Rust exit status) | [x] |
+| 7  | `Handle_Queue` (`file-queue.c:77-80`) | `!(flags & CRALERT_FP_SET)` and `fopen(file_name,"r")` fails (`alerts.log` absent) | `return 0` → propagates as `Init_FileQueue == 0`, `Read_FileMon == NULL` | `err_07_missing_alerts_log` | [x] |
+| 8  | `Handle_Queue` (`file-queue.c:85-87`) | `!(flags & CRALERT_READ_ALL)` and `fileq->fp == NULL` (only reachable with `CRALERT_FP_SET` and a NULL `fp`) | `return 0` (not `< 0`) → `Init_FileQueue` returns `0` | `err_08_fp_set_null_fp` | [x] |
+| 9  | `Handle_Queue` (`file-queue.c:89-94`) | `!(flags & CRALERT_READ_ALL)` and `fseek(fp,0,SEEK_END) < 0` — `fp` is an unseekable stream (a pipe), `CRALERT_FP_SET` set | `merror(FSEEK_ERROR,…)` on stderr, `fclose(fp)`, `fp=NULL`, `return -1` → `Init_FileQueue == -1` | `err_09_fseek_error_unseekable` | [x] |
+| 10 | `Handle_Queue` (`file-queue.c:99-104`) | `fp != NULL` and `fstat(fileno(fp),…) < 0` — `fp` from `fmemopen` (`fileno` = -1 ⇒ `EBADF`), `CRALERT_FP_SET \| CRALERT_READ_ALL` | `merror(FSTAT_ERROR,…)` on stderr, `fclose(fp)`, `fp=NULL`, `return -1` → `Init_FileQueue == -1` | `err_10_fstat_error_fmemopen` | [x] |
+| 11 | `Init_FileQueue` (`file-queue.c:135-137`) | `Handle_Queue(...) < 0` (any of #9 / #10) | `return -1` | `err_09…`, `err_10…` | [x] |
+| 12 | `driver` (`driver.c:15-18`) | `Init_FileQueue(&fq,&time,flags) < 0` | `fprintf(stderr,"File queue initialization failed")`, `return NULL` | unreachable via `driver` (see note A) — documented + asserted in `err_12_driver_init_never_fails` | [x] |
+| 13 | `Read_FileMon` (`file-queue.c:149-153`) | `fileq->fp == NULL` and `Handle_Queue(fileq,0) != 1` (file absent) | `file_sleep()` (5 s), `return NULL` | `err_07_missing_alerts_log` | [x] |
+| 14 | `Read_FileMon` (`file-queue.c:156-158`) | `fileq->fp == NULL` after a `Handle_Queue` that returned `1` (`CRALERT_FP_SET\|CRALERT_READ_ALL`, `fp` left NULL) | `return NULL` immediately (no sleep) | `err_14_read_filemon_null_fp_fast` | [x] |
+| 15 | `Read_FileMon` (`file-queue.c:171-174`) | first `GetAlertData` returned NULL and the re-`Handle_Queue(fileq,0)` `!= 1` (file deleted between the two calls) | `file_sleep()` (5 s), `return NULL` | `err_15_file_deleted_midway` | [x] |
+| 16 | `Read_FileMon` (`file-queue.c:177-188`) | loop exhausts `timeout` retries without an alert | `return NULL` | `err_16_timeout_expires` (`timeout` 0 and 1) | [x] |
+| 17 | `GetAlertData` (`read-alert.c:111-115`) | `_r == 2`, a new `** Alert` line, and `fseek(fp,-strlen(str),SEEK_CUR) == -1` (unseekable stream) | `l_error` → NULL | `err_17_alert_pushback_fseek_fail` | [x] |
+| 18 | `GetAlertData` (`read-alert.c:120-123`) | `** Alert` line whose remainder (`str+9`) contains no `':'` | `continue` — line skipped, `_r` stays `0` ⇒ eventually NULL | `err_18_alert_no_colon` | [x] |
+| 19 | `GetAlertData` (`read-alert.c:131-134`) | `** Alert` line with a `':'` but no `' '` after `str+9` | `continue`, `_r` stays `0` ⇒ NULL | `err_19_alert_no_space` | [x] |
+| 20 | `GetAlertData` (`read-alert.c:139-142`) | `flag & CRALERT_MAIL_SET` and the token after the first space is not `mail` | `continue`, `_r` stays `0` ⇒ NULL | `err_20_mail_set_rejects_nonmail` | [x] |
+| 21 | `GetAlertData` (`read-alert.c:166-168`) | `_r < 1`: any line before the first `** Alert` header | `continue` — silently ignored | `err_21_lines_before_header_ignored` | [x] |
+| 22 | `GetAlertData` (`read-alert.c:183-187`) | `_r == 1` and the date/location line contains a `':'` but no `' '` at/after it | `perror("date of location not NULL")`, `l_error` → NULL | `err_22_dateline_colon_no_space` | [x] |
+| 23 | `GetAlertData` (`read-alert.c:191-194`) | `_r == 1` and `p == NULL` (date/location line has no `':'` at all) | `perror("date or location not NULL or p is NULL")`, `l_error` → NULL | `err_23_dateline_no_colon` | [x] |
+| 24 | `GetAlertData` (`read-alert.c:191-194`) | `_r == 1` and `al_data->date`/`location` already set — unreachable (`_r` becomes 2 on success) | same `perror` + `l_error` | documented unreachable in `err_24_date_already_set_unreachable` | [x] |
+| 25 | `GetAlertData` (`read-alert.c:209-220`) | `Rule: ` line where `p` becomes NULL after the two `strchr(p,' ')` hops (fewer than two spaces after the rule id) | `l_error` → NULL | `err_25_rule_too_few_spaces` | [x] |
+| 25b | `GetAlertData` (`read-alert.c:203`) | `"Rule:"` with **no** trailing space: after `os_clearnl` strips the newline, `strncmp("Rule: ", str, 6)` compares `' '` against `'\0'` and does **not** match, so the line is NOT rejected — it falls through to the log-message branch and the alert is accepted | alert returned with `rule == 0`, `comment == NULL` | `err_25_rule_too_few_spaces` (second half) | [x] |
+| 26 | `GetAlertData` (`read-alert.c:225-228`) | `Rule: ` line with ≥ 2 spaces but no `'\''` | `l_error` → NULL | `err_26_rule_no_quote` | [x] |
+| 27 | `GetAlertData` (`read-alert.c:235-240`) | `Rule: ` line whose comment has an opening `'\''` but no second `'\''` (`strrchr` finds only the one already consumed) | `l_error` → NULL | `err_27_rule_unterminated_comment` | [x] |
+| 28 | `GetAlertData` (`read-alert.c:305-307`) | loop ended (`fgets` NULL) but **not** (`feof(fp) && _r == 2`) — e.g. empty file (`_r == 0`), or header-only file (`_r == 1`) | `l_error` → NULL | `err_28_eof_wrong_state` | [x] |
+| 29 | `GetAlertData` (`read-alert.c:104`) | `fp` positioned at end of file (the default `Init_FileQueue` non-`READ_ALL` state) | `fgets` NULL immediately, `_r == 0` ⇒ `l_error` → NULL | `err_29_fp_at_eof` | [x] |
+| 30 | `GetAlertData` (`read-alert.c:284`) | `log_size < LOG_LIMIT` — `log_size` is only ever reset to 0 (the increment is commented out) so the guard **never** rejects, even with > 100 log lines | log branch always taken | `err_30_log_limit_never_trips` (>100 log lines) | [x] |
+| 31 | `GetAlertData` (`read-alert.c:289-291`) | syscheck alert with an `Integrity checksum changed for: '` line and an *empty* filename ⇒ `filename[strlen-1]` writes at index `-1` | C writes one byte before the buffer (UB, benign in practice); Rust reproduces with `wrapping_sub` | `err_31_integrity_empty_filename` | [x] |
+| 32 | `GetAlertData` / `Init_FileQueue` / `Read_FileMon` / `FreeAlertData` (`__attribute__((nonnull))`) | NULL pointer for a `nonnull` parameter | undefined behaviour in C (typically SIGSEGV); **not** a defined rejection | documented; not differentially tested (would crash the harness) | [x] |
+| 33 | `Init_FileQueue` / `Read_FileMon` (`file-queue.c:125,166`) | `p->tm_mon` inside `0..=11` | `mon` = the 3-byte month abbreviation | `err_33a_in_range_month_exact` (all 12, full byte equality) | [x] |
+| 33b | same | `p->tm_mon` **outside** `0..=11` — `s_month[tm_mon]` is an out-of-bounds read, then `strncpy` from whatever pointer it yields | UB in C (usually SIGSEGV). See **Note B** — this was a REAL translation defect, now fixed | `err_33b_out_of_range_month_is_ub_in_both`, `err_33c_rust_does_not_bounds_check_the_month` | [x] |
+| 34 | `driver` / `Init_FileQueue` | out-of-range **enum-like** `flags` int with no valid bit (e.g. `-1`, `0x7fffffff`, `0x20`, `INT_MIN`) — C `int` accepts any value; only bits `0x1`,`0x4`,`0x10` are tested | bit-tested, so unknown bits are ignored; behaviour determined by the known bits | `err_34_unknown_flag_bits` | [x] |
+| 35 | `merror` (`file-queue.c:24-28`) | template/arg combinations: `snprintf` truncation past the 256-byte buffer; a template with no conversions; `err` = `INT_MIN`/`INT_MAX` | truncated at 255 chars + NUL, printed with a trailing `\n` | `err_35_merror_truncation` (6 templates × 11 lengths × 5 `err` values) | [x] |
+| 35b | `merror` | a template demanding MORE conversions than the three arguments supplied (e.g. `"%s%s%s%s"`) | reads past the varargs list — UB, not a rejection; excluded from testing | documented in `err_35_merror_truncation` | [x] |
+
+**Note A** — `driver` `memset`s its `file_queue` to 0 *before* `Init_FileQueue`, so
+`fileq->fp` is always NULL on entry. Row #9/#10 need a non-NULL unseekable/
+unstattable `fp`, which only the direct `Init_FileQueue` entry point can supply.
+Hence row #12's branch is unreachable through `driver` for every `int flags`;
+the test asserts C and Rust agree on that (both never print the message).
+
+
+**Note B — the one real defect this phase found.**
+`src/file_queue.rs::copy_month` originally read:
+
+```rust
+if tm_mon >= 0 && (tm_mon as usize) < 12 {
+    strncpy((*fileq).mon.as_mut_ptr(), cs(S_MONTH[tm_mon as usize]), 3);
+}
+```
+
+i.e. it silently skipped the copy for an out-of-range `tm_mon`, where the C
+performs an unchecked `s_month[tm_mon]` read. That is a behavioural divergence,
+not a hardening: `driver(day, month, year, …)` passes `month` straight into
+`tm_mon`, so the C faults on `month = 12` while the Rust returned normally
+(observed: `C signal 11 / Rust exit 7`). Adding a bounds check the ground truth
+does not have is exactly the kind of "fix" that must not happen, so the Rust now
+reproduces the unchecked read verbatim via a raw `[*const c_char; 12]` table and
+`.offset(tm_mon as isize)`.
+
+Residual difference: once both objects perform the same out-of-bounds read, the
+*value* obtained depends on whatever bytes happen to follow a 12-pointer table
+inside each individual `.so`. That is not a property of the translation and
+cannot be matched. `err_33b` therefore asserts full equality whenever both
+children survive the wild read, and `err_33c` proves the Rust still faults on
+out-of-range months (which a bounds-checked version never could).
+
+**Note C — the one remaining unmatched-by-construction read.**
+`GetAlertData` declares `char str[OS_MAXSTR + 1];` and initialises only
+`str[OS_MAXSTR] = '\0'`, so the rest is stack garbage on the first `fgets`.
+The single place the C reads past the NUL that `fgets` wrote is
+
+```c
+p = str + ALERT_BEGIN_SZ + 1;   /* str + 9 */
+```
+
+which is past the terminator exactly when the header line is the 8 bytes
+`"** Alert"` with no newline — i.e. at EOF, or when an embedded NUL truncates the
+line. The Rust buffer is zero-initialised (Rust has no way to read uninitialised
+memory without its own UB), so the first call could in principle differ.
+In practice it does not: the buffer is reused across `fgets` iterations, so from
+the second line onwards both hold byte-identical leftovers, and a fresh stack
+page reads as zero. `fuzz_e_header_reads_past_terminator` (400 cases with varying
+preceding lines) and `fuzz_c_raw_bytes` (800 files including embedded NULs)
+exercise this path and agree.
+
+## Mechanical constant audit
+
+`ERRORS.md`/`CONFIGS.md` coverage is backed by a scripted comparison of every
+`#define` in the C against the corresponding Rust `const`:
+
+* 27 numeric constants (`OS_MAXSTR`, `MAX_FQUEUE`, `FQ_TIMEOUT`, `LOG_LIMIT`,
+  all `CRALERT_*` bits, all `*_BEGIN_SZ`) — **0 mismatches**.
+* 21 string constants (`ALERTS_DAILY`, `ALERT_BEGIN`, `ALERT_MAIL`, all
+  `*_BEGIN` prefixes, `FSTAT_ERROR`, `FSEEK_ERROR`) — **0 mismatches**.
+* Argument order of every `strncmp` call site matches, including
+  `read-alert.c:287` where the C uniquely puts the buffer first
+  (`strncmp(str, "Integrity checksum changed for: '", 33)`) while every other
+  site puts the literal first.
+* The `goto l_error` control flow maps exactly onto the Rust
+  `'l_error: { ... }` block: `break 'l_error` == `goto l_error`, falling out of
+  the block == the C falling through the `if (feof(fp) && _r == 2)` test.

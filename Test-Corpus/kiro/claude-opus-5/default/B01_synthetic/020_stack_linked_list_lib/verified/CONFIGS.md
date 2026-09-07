@@ -1,73 +1,75 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Configuration-surface table (Phase A → gates Phase B)
 
-## Entry points (complete, from the public header)
+Mechanically derived from the C source and public header, not from assumptions.
 
-`grep -n "^int\|^[a-z].*(" c_src/include/simplestruct.h` gives exactly one
-declaration:
+## Axes the C code actually branches on
 
-```c
-int smallestValue (struct ListNode *date);
-```
+**Runtime options / modes / flags:** **none.** The public header
+(`c_src/include/simplestruct.h`) declares exactly one function and no setters,
+context struct, option bitmask, or global configuration variable. There is no
+`#ifdef` in the library body other than the include guard. So the option axis is
+a single point.
 
-There are no convenience wrappers and no simplified one-shot API layered over a
-lower level: `smallestValue` **is** the lowest-level public entry point, and the
-full set of public entry points is `{ smallestValue }`. It is exercised directly
-in every row below.
+**Public entry points (full set, including the lowest level):**
+`smallestValue` is simultaneously the highest- and lowest-level entry point —
+there are no convenience wrappers layered over an internal API, and no `static`
+helpers in `simplestruct.c`. It is called directly in every row below (never
+through a wrapper), through the `.so` export.
 
-## Runtime options / modes / flags
+**Input shapes the code special-cases** (from the three branch points):
 
-**None.** The API takes no mode, flag, format, byte-order, or element-type
-parameter; there is no init/config struct, no global state, no setter, and no
-`#ifdef` in the source or header (`grep -nE '#if|#ifdef|#define'` finds only the
-`SIMPLESTRUCT_H_` include guard). The Rust `Cargo.toml` declares no `[features]`
-table, so the feature cross-product is the single default configuration.
+| axis | values, from the branch it comes from |
+|------|----------------------------------------|
+| `head` nullness — `if (head)` at `:27` | NULL / non-NULL (NULL case is `ERRORS.md` E1) |
+| list length — `while (head->next)` at `:29` | 0 (= NULL), 1 (loop body never runs), 2 (loop runs once), 3, many, very many |
+| position of the minimum — `if (head->value < smallest)` at `:31` | at head (never updated), at second node, interior, at tail, everywhere-equal |
+| strictness of `<` at `:31` | duplicate minima (first occurrence retained — `<` not `<=`); equal-adjacent values |
+| value distribution of the `int` field | all-positive, all-negative, mixed sign, all-zero, all-equal, monotone increasing, monotone decreasing, extremes (`INT_MIN`/`INT_MAX`), full random `i32` |
+| memory layout of the chain | contiguous (array-backed, ascending addresses), reversed/descending addresses, shuffled/non-contiguous individually-allocated nodes — confirms nothing depends on address order, only on `next` |
 
-Consequently the configuration surface is driven entirely by **input shape**.
+Rows below are the pruned cross-product: every combination the three C branch
+points actually distinguish. Every row is run against **many randomized inputs
+with a fixed seed** (deterministic SplitMix64 PRNG in the test file), except
+where the shape is exact by definition.
 
-## Axes the C actually branches on
+## Configuration-surface table
 
-| axis | source line | values the code distinguishes |
-|------|-------------|-------------------------------|
-| A — head nullness | `if (head)` @ 27 | NULL (→ ERRORS.md E1) / non-NULL |
-| B — list length | `while (head->next)` @ 29 | 1 (loop body never runs) / 2 / 3+ / very large |
-| C — position of the minimum | `if (...< smallest)` @ 31 | at head (branch never taken) / in the middle / at the tail (branch taken on the last iteration) |
-| D — multiplicity of the minimum | strict `<` @ 31 | unique / duplicated (tie ⇒ earliest occurrence kept, later equal values do **not** re-trigger) / all elements equal |
-| E — value domain | `int value` @ header 28; the `<` comparison @ 31 | small non-negative / all negative / mixed sign / contains `-1` / contains `INT_MIN` / contains `INT_MAX` / all zero |
-| F — ordering | governs how often the @31 branch fires | strictly ascending (branch never fires after seeding) / strictly descending (fires every iteration) / random |
+| # | entry point(s) | configuration (options set + input shape) | test | [ ] |
+|---|----------------|--------------------------------------------|------|-----|
+| C1 | `smallestValue` | len 1, random `i32` value — loop body never executes, returns head value | `cfg_c1_single_node` | [x] |
+| C2 | `smallestValue` | len 2, minimum at head (`v0 < v1`) — `<` never fires | `cfg_c2_len2_min_at_head` | [x] |
+| C3 | `smallestValue` | len 2, minimum at tail (`v1 < v0`) — `<` fires once | `cfg_c3_len2_min_at_tail` | [x] |
+| C4 | `smallestValue` | len 2, both values equal — `<` must *not* fire (strictness) | `cfg_c4_len2_equal` | [x] |
+| C5 | `smallestValue` | len 3, minimum in interior position | `cfg_c5_len3_min_interior` | [x] |
+| C6 | `smallestValue` | len 3..=8, minimum forced at head | `cfg_c6_min_at_head_various_len` | [x] |
+| C7 | `smallestValue` | len 3..=8, minimum forced at tail | `cfg_c7_min_at_tail_various_len` | [x] |
+| C8 | `smallestValue` | len 3..=64, minimum at a random interior index | `cfg_c8_min_random_interior` | [x] |
+| C9 | `smallestValue` | duplicate minima at several indices (first-occurrence retention under `<`) | `cfg_c9_duplicate_minima` | [x] |
+| C10 | `smallestValue` | all elements equal, len 1..=32 | `cfg_c10_all_equal` | [x] |
+| C11 | `smallestValue` | strictly increasing values (minimum at head, `<` never fires) | `cfg_c11_monotone_increasing` | [x] |
+| C12 | `smallestValue` | strictly decreasing values (`<` fires on every iteration) | `cfg_c12_monotone_decreasing` | [x] |
+| C13 | `smallestValue` | all-positive values, random len 1..=64 | `cfg_c13_all_positive` | [x] |
+| C14 | `smallestValue` | all-negative values, random len 1..=64 | `cfg_c14_all_negative` | [x] |
+| C15 | `smallestValue` | mixed-sign values incl. zeros, random len 1..=64 | `cfg_c15_mixed_sign` | [x] |
+| C16 | `smallestValue` | all zeros, random len 1..=32 | `cfg_c16_all_zero` | [x] |
+| C17 | `smallestValue` | unrestricted random `i32` (full 32-bit range), random len 1..=128 — the broad property-style fuzz | `cfg_c17_full_random_i32` | [x] |
+| C18 | `smallestValue` | values drawn from a boundary pool (`INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `INT_MAX-1`, `INT_MAX`) | `cfg_c18_boundary_value_pool` | [x] |
+| C19 | `smallestValue` | `INT_MIN` present exactly once at a random index | `cfg_c19_int_min_random_index` | [x] |
+| C20 | `smallestValue` | every value `INT_MAX` except one smaller value | `cfg_c20_all_int_max_but_one` | [x] |
+| C21 | `smallestValue` | nodes laid out contiguously in ascending memory order | `cfg_c21_layout_ascending` | [x] |
+| C22 | `smallestValue` | nodes chained in *descending* memory order (chain order ≠ address order) | `cfg_c22_layout_descending` | [x] |
+| C23 | `smallestValue` | nodes individually heap-allocated and chained in shuffled address order | `cfg_c23_layout_shuffled_boxes` | [x] |
+| C24 | `smallestValue` | long list, 100_000 nodes, random values (loop-count / no-stack-growth) | `cfg_c24_long_list` | [x] |
+| C25 | `smallestValue` | the *same* node graph passed to C and then Rust, and again in reverse call order — confirms neither implementation mutates the caller's list | `cfg_c25_no_mutation_of_input` | [x] |
 
-Axis A's NULL value belongs to the error surface and is tabulated in
-`ERRORS.md`; rows below are the **valid** (non-NULL) cross-product.
+## Binary / driver executable
 
-## Configuration table
+`c_src/CMakeLists.txt` contains only `add_library(SimpleList SHARED src/simplestruct.c)`
+— no `add_executable`. `translation/Cargo.toml` has only `[lib] crate-type = ["cdylib"]`
+and no `[[bin]]` / `src/main.rs`. **Neither side builds a binary**, so the
+"compare stdout byte-for-byte" gate is not applicable.
 
-One row per meaningful combination the C treats differently. Every row is run
-with many randomized inputs under a fixed seed (`SEED = 0x5EED_1EAF_D00D_F00D`,
-LCG in `tests/differential.rs`), not a single hand-picked value, and asserts the
-C and Rust `.so` exports return byte-identical `int`s.
+## Feature combinations
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C01 | `smallestValue` | len 1, random value over full `i32` range (loop never entered) | [x] |
-| C02 | `smallestValue` | len 2, min at head (branch @31 never taken) | [x] |
-| C03 | `smallestValue` | len 2, min at tail (branch @31 taken once) | [x] |
-| C04 | `smallestValue` | len 2, both values equal (tie; strict `<` keeps head) | [x] |
-| C05 | `smallestValue` | len 3–8, unique min at head | [x] |
-| C06 | `smallestValue` | len 3–8, unique min strictly in the middle | [x] |
-| C07 | `smallestValue` | len 3–8, unique min at tail | [x] |
-| C08 | `smallestValue` | len 3–8, min duplicated at two positions (tie across a distance) | [x] |
-| C09 | `smallestValue` | len 3–8, all elements equal | [x] |
-| C10 | `smallestValue` | len 3–64, strictly ascending (branch @31 never fires) | [x] |
-| C11 | `smallestValue` | len 3–64, strictly descending (branch @31 fires every iteration) | [x] |
-| C12 | `smallestValue` | len 1–64, uniform random values, all non-negative (`0..=i32::MAX`) | [x] |
-| C13 | `smallestValue` | len 1–64, uniform random values, all negative (`i32::MIN..0`) | [x] |
-| C14 | `smallestValue` | len 1–64, uniform random over the **full** `i32` range (mixed sign) | [x] |
-| C15 | `smallestValue` | len 1–64, values drawn from the narrow set `{-1, 0, 1}` (dense ties, and `-1` aliasing the E1 sentinel) | [x] |
-| C16 | `smallestValue` | len 2–64, `i32::MIN` planted at a random position (min is `INT_MIN`) | [x] |
-| C17 | `smallestValue` | len 2–64, all values `i32::MAX` except one smaller (no overflow in `<`) | [x] |
-| C18 | `smallestValue` | len 2–64, values from `{i32::MIN, i32::MAX}` only (extreme-only comparisons) | [x] |
-| C19 | `smallestValue` | len 1–64, all values `0` | [x] |
-| C20 | `smallestValue` | len 1–64, exactly one `-1` and the rest `> -1` (result `-1` must equal the NULL result of E1) | [x] |
-| C21 | `smallestValue` | len 100–1000, uniform random full-range (long-list traversal) | [x] |
-| C22 | `smallestValue` | len 100_000, uniform random full-range (oversized; iterative traversal, no stack growth) | [x] |
-| C23 | `smallestValue` | len 1–64, nodes allocated **non-contiguously** in shuffled memory order (traversal must follow `next`, not address order) | [x] |
-| C24 | `smallestValue` | len 3–64, traversal started from a **mid-list node** (caller passes an interior pointer — a valid sub-list, so only the tail suffix is scanned) | [x] |
+No `[features]` in `Cargo.toml` → the only combination is the default, which is
+identical to `--no-default-features`. Both were exercised.

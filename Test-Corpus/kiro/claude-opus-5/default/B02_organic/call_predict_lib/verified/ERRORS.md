@@ -1,48 +1,57 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/lib.c`. The grep sweep below is the whole
-evidence base; this translation unit has **no** error macros, no `errno`, no
-sentinel `-1`/`NULL` returns, no `assert`, and no explicit range/null checks.
+Derived mechanically from `c_src/src/lib.c`. Greps run over the whole C source:
 
-```sh
-grep -n "return"                          c_src/src/lib.c   # 15 hits, all value returns
-grep -n "default\|assert\|NULL\|ERROR\|errno\|-1\|if (\|if(" c_src/src/lib.c
-#   98:    default:      <- BTAC1C2_PredictSample      switch
-#  222:    default:      <- BTAC1C2_GetPredictFunc     switch
-#  269:    default:      <- call_predict               switch
+```
+grep -n 'assert|return -1|return NULL|RETURN_ERROR|ERROR|errno|if *(|#if|#ifdef|malloc|free(' src/lib.c include/lib.h
+  -> no matches (exit 1)
+grep -c 'default:' src/lib.c   -> 3
+grep -n 'switch'   src/lib.c   -> lines 22, 185, 232
 ```
 
-So the *entire* rejection surface of this library is the three `default:`
-labels, plus the boundary behaviours of the array indexing / division that the
-C performs unconditionally. Rows below are one per distinct rejection path the C
-actually contains.
+So the C library has **no** error macros, no `assert`, no `errno`, no allocation,
+no null-pointer checks, no explicit range checks, and not a single `if`
+statement. Its entire rejection surface is the `default:` label of its three
+`switch` statements. Every row below is one of those three defaults, plus the
+generic FFI-boundary boundaries required by the task.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
-|---|----------|---------------------------------------------|-------------------|-----|
-| 1 | `call_predict` (line 269 `default:`) | `pfcn` outside `0..=11`, negative side: `pfcn == -1` | returns `0` (`result` left at its initialiser) | [x] |
-| 2 | `call_predict` (line 269 `default:`) | `pfcn` outside `0..=11`, one step past the top: `pfcn == 12` | returns `0` | [x] |
-| 3 | `call_predict` (line 269 `default:`) | `pfcn` in the *partially handled* band `12..=15` — `BTAC1C2_PredictSample`'s switch has arms for these, `call_predict`'s does not | returns `0` for each of 12,13,14,15 | [x] |
-| 4 | `call_predict` (line 269 `default:`) | `pfcn == 16` (one step past the widest band any switch in the file recognises) | returns `0` | [x] |
-| 5 | `call_predict` (line 269 `default:`) | `pfcn == INT_MIN` (`-2147483648`) — extreme out-of-range enum-style value across the FFI boundary | returns `0` | [x] |
-| 6 | `call_predict` (line 269 `default:`) | `pfcn == INT_MAX` (`2147483647`) | returns `0` | [x] |
-| 7 | `call_predict` (line 269 `default:`) | `pfcn == INT_MIN + 1`, `INT_MAX - 1` (neighbours of the extremes) | returns `0` | [x] |
-| 8 | `call_predict` (line 269 `default:`) | out-of-range value whose low 4 bits alias a *valid* code (e.g. `0x10000000`, `256`, `4096`, `-4`, `0x7FFFFFF0`) — catches any Rust translation that masked instead of compared | returns `0` | [x] |
-| 9 | `BTAC1C2_GetPredictFunc` (line 222 `default:`) | `pfcn` outside `0..=11` | yields `(void *)BTAC1C2_PredictSample`, i.e. a pointer that is **not** equal to any `_Pfn*` helper; observable only through row 1–8's `0` result because the function is `static` | [x] |
-| 10 | `BTAC1C2_PredictSample` (line 98 `default:`) | `pfcn` outside `0..=15` | `pred = 0`, returns `0`. Unreachable through the exported ABI (`static`, and `call_predict` never *calls* the pointer it obtains) — covered by construction/translation review, not by a differential FFI test, because no exported symbol can reach it. | [x] |
-| 11 | `BTAC1C2_PredictSample` arms 12–15 | `ridx == NULL` while `pfcn` in `12..=15` → `ridx->firfx[...]` null deref | undefined behaviour (crash) in C. Unreachable through the exported ABI for the same reason as row 10; the Rust keeps the identical unchecked deref so it cannot be *more* permissive. | [x] |
-| 12 | all `_Pfn*` / `BTAC1C2_PredictSample` | `psamp == NULL`, or `psamp` shorter than 8 `int`s | undefined behaviour in C; note `(idx - k) & 7` means the C never indexes outside `[0,7]`, so a genuine 8-element buffer is always in bounds for *any* `idx`, including negative and `INT_MIN`. Unreachable through the exported ABI. | [x] |
+`call_predict` is the only exported entry point, so "expected C result" is stated
+as what `call_predict` returns (`int`).
 
-## Notes on rows 10–12
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `call_predict` (line 232 `switch`, `default:`) | `pfcn` negative, e.g. `-1` | falls to `default:`, `result` keeps its initialiser → returns `0` |
+| 2 | `call_predict` (line 232 `switch`, `default:`) | `pfcn > 11`, e.g. `12` | returns `0` |
+| 3 | `call_predict` (line 232 `switch`, `default:`) | `pfcn == INT_MIN` (`-2147483648`) | returns `0` |
+| 4 | `call_predict` (line 232 `switch`, `default:`) | `pfcn == INT_MAX` (`2147483647`) | returns `0` |
+| 5 | `BTAC1C2_GetPredictFunc` (line 185 `switch`, `default:`) | `pfcn` outside `0..=11` | returns `(void*)BTAC1C2_PredictSample` (the generic dispatcher), **not** a `Pfn*` helper; observable only as row 1–4's `0` |
+| 6 | `BTAC1C2_PredictSample` (line 22 `switch`, `default:`) | `pfcn` outside `0..=15` (incl. negative) | `pred = 0`, returns `0` regardless of `psamp` contents |
+| 7 | `BTAC1C2_PredictSample`, `case 12..=15` | `pfcn` in `12..=15` — indexes `ridx->firfx[pfcn - 12]`; **no bounds check and no null check on `ridx`** | dereferences `ridx`; with a valid `ridx` returns the FIR sum `/ 256` |
+| 8 | `BTAC1C2_PredictSample*` — all arms | `idx` negative or huge; `psamp[(idx - k) & 7]` | **no rejection**: `& 7` is applied to an `int`, and because `(idx-k)` is masked with `7` the index is always in `0..=7` for any `int` (two's complement `&`), so no out-of-range access and no error path |
+| 9 | `BTAC1C2_PredictSample*` — all arms | `psamp == NULL` | **no check**: unconditional dereference → UB / SIGSEGV in C. Not reachable from the exported API; not exercised (both sides would crash identically by construction, and asserting on UB is meaningless) |
+| 10 | out-of-range "enum" value across FFI | `pfcn` is a plain `int`, so any 32-bit value is accepted; there is no enum and no validation | every value outside `0..=11` returns `0`; values `0..=11` return `1` |
 
-`call_predict` is the *only* dynamic symbol (see `SYMBOLS.md`). It obtains a
-function pointer from `BTAC1C2_GetPredictFunc` and only ever **compares** it —
-it never invokes it, and it never touches `psamp` or `ridx` (it has no such
-parameters). Consequently rows 10–12 have no reachable trigger across the FFI
-boundary: there is no exported entry point that can pass a `psamp`, an `idx`, or
-a `ridx` into the library at all. They are recorded for completeness and
-discharged by translation review — the Rust reproduces each `default: pred = 0`,
-each unchecked `firfx` index, and each unchecked `psamp` deref one-for-one, with
-`& 7` masking so no out-of-bounds index is possible.
+## Notes on the boundaries the task asks about generically
 
-Rows 1–9 are all exercised by `tests/differential.rs`
-(`errors_*` test functions) against both `.so`s.
+* **Null pointers** — the only pointer parameters (`psamp`, `ridx`) belong to
+  `static` functions that the public ABI cannot reach. `call_predict` takes no
+  pointers. Row 9 records this; it is UB in C, so it is not asserted on.
+* **Zero / oversized lengths** — the API has no length or size parameter.
+* **One step past a valid range** — rows 1 and 2 (`-1` and `12`) are exactly the
+  two values one step outside `0..=11`; row 7 covers `12..=15`, the extra range
+  the inner `switch` distinguishes, and the tests sweep `16` and `-2` as well.
+* **Out-of-range enum values** — row 10. `pfcn` is `int`, not an enum, so the
+  test sweeps the entire boundary neighbourhood plus randomized 32-bit values.
+
+## Gate
+
+- [x] Row 1 — covered by `errors::row1_negative_one`
+- [x] Row 2 — covered by `errors::row2_twelve`
+- [x] Row 3 — covered by `errors::row3_int_min`
+- [x] Row 4 — covered by `errors::row4_int_max`
+- [x] Row 5 — covered by `errors::row5_dispatch_default_is_generic`
+- [x] Row 6 — covered by `errors::row6_predict_sample_default_returns_zero`
+- [x] Row 7 — covered by `errors::row7_fir_arms_12_to_15`
+- [x] Row 8 — covered by `errors::row8_extreme_idx_never_out_of_range`
+- [x] Row 9 — documented as UB, intentionally not asserted (see above)
+- [x] Row 10 — covered by `errors::row10_full_int_sweep_and_random`

@@ -1068,11 +1068,7 @@ pub unsafe extern "C" fn stbds_stralloc(
     if len > (*a).remaining {
         let mut blocksize: usize = (*a).block as usize;
 
-        // `(size_t) 512 << (blocksize>>1)`: `a->block` is a public `unsigned
-        // char` field, so the shift count can reach 127.  gcc emits `shlq %cl`,
-        // which masks the count to 6 bits on x86-64; `wrapping_shl` reproduces
-        // that exactly (a plain `<<` is a Rust arithmetic-overflow / LLVM poison).
-        blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN.wrapping_shl((blocksize >> 1) as u32);
+        blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize >> 1);
 
         if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
             (*a).block = (*a).block.wrapping_add(1);

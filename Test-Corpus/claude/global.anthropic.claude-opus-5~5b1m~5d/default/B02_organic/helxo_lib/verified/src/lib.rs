@@ -25,16 +25,6 @@ use core::ptr;
 // `stbds_arrfree` / `stbds_hmfree` macros.
 // ---------------------------------------------------------------------------
 extern "C" {
-    /// `assert()` is *live* in the C build (`NDEBUG` is not defined - the C `.so`
-    /// imports `__assert_fail`), so `STBDS_ASSERT` is replicated through the very
-    /// same libc entry point: same expression text, same function name and same
-    /// line numbers as `c_src/src/lib.c`.
-    fn __assert_fail(
-        assertion: *const c_char,
-        file: *const c_char,
-        line: u32,
-        function: *const c_char,
-    ) -> !;
     fn realloc(p: *mut c_void, size: usize) -> *mut c_void;
     fn free(p: *mut c_void);
     fn memset(s: *mut c_void, c: c_int, n: usize) -> *mut c_void;
@@ -45,19 +35,56 @@ extern "C" {
     fn strlen(s: *const c_char) -> usize;
     fn printf(fmt: *const c_char, ...) -> c_int;
     fn sprintf(buf: *mut c_char, fmt: *const c_char, ...) -> c_int;
+    #[cfg_attr(target_env = "gnu", allow(dead_code))]
+    fn abort() -> !;
 }
 
-/// `#define STBDS_ASSERT assert` - aborts through `__assert_fail` exactly like
-/// the C build does.
+// ---------------------------------------------------------------------------
+// STBDS_ASSERT
+//
+// `#define STBDS_ASSERT assert` (lib.c:3).  `c_src/CMakeLists.txt` sets neither
+// `CMAKE_BUILD_TYPE` nor `-DNDEBUG`, so the asserts are LIVE in the C shared
+// object (`nm -D --undefined-only` on it shows `U __assert_fail`).  A failing
+// assert prints
+//
+//     <prog>: <file>:<line>: <func>: Assertion `<expr>' failed.
+//
+// to stderr and raises SIGABRT.  To keep that observable behaviour the Rust
+// translation routes through glibc's `__assert_fail` with the same assertion
+// text, function name and line number.  (The `<file>` prefix reproduces the C's
+// `__FILE__`, which CMake expands to an absolute, checkout-specific path; the
+// relative path is used here instead.  Everything else — the message body and
+// the SIGABRT — is identical.)
+// ---------------------------------------------------------------------------
+#[cfg(target_env = "gnu")]
+extern "C" {
+    fn __assert_fail(
+        assertion: *const c_char,
+        file: *const c_char,
+        line: core::ffi::c_uint,
+        function: *const c_char,
+    ) -> !;
+}
+
+#[inline(never)]
+#[cold]
+unsafe fn stbds_assert_fail(expr: *const c_char, line: u32, func: *const c_char) -> ! {
+    #[cfg(target_env = "gnu")]
+    {
+        __assert_fail(expr, c"src/lib.c".as_ptr(), line, func);
+    }
+    #[cfg(not(target_env = "gnu"))]
+    {
+        let _ = (expr, line, func);
+        abort();
+    }
+}
+
+/// `STBDS_ASSERT(cond)` — mirrors a specific `assert` in `c_src/src/lib.c`.
 macro_rules! STBDS_ASSERT {
-    ($cond:expr, $text:literal, $line:literal, $func:literal) => {
+    ($cond:expr, $expr:expr, $line:expr, $func:expr) => {
         if !($cond) {
-            __assert_fail(
-                concat!($text, "\0").as_ptr() as *const c_char,
-                concat!("c_src/src/lib.c", "\0").as_ptr() as *const c_char,
-                $line,
-                concat!($func, "\0").as_ptr() as *const c_char,
-            );
+            stbds_assert_fail($expr.as_ptr(), $line, $func.as_ptr());
         }
     };
 }
@@ -320,7 +347,7 @@ fn stbds_load_32_or_64(v32: u32, v64_hi: u32, v64_lo: u32) -> usize {
 // ---------------------------------------------------------------------------
 
 fn stbds_probe_position(hash: usize, slot_count: usize, _slot_log2: usize) -> usize {
-    hash & slot_count.wrapping_sub(1)
+    hash & (slot_count - 1)
 }
 
 fn stbds_log2(mut slot_count: usize) -> usize {
@@ -358,24 +385,21 @@ unsafe fn stbds_make_hash_index(
     if slot_count <= STBDS_BUCKET_LENGTH {
         (*t).used_count_shrink_threshold = 0;
     }
+    // lib.c:401
     STBDS_ASSERT!(
-        (*t)
-            .used_count_threshold
-            .wrapping_add((*t).tombstone_count_threshold)
-            < (*t).slot_count,
-        "t->used_count_threshold + t->tombstone_count_threshold < t->slot_count",
+        (*t).used_count_threshold + (*t).tombstone_count_threshold < (*t).slot_count,
+        c"t->used_count_threshold + t->tombstone_count_threshold < t->slot_count",
         401,
-        "stbds_make_hash_index"
+        c"stbds_make_hash_index"
     );
 
     if !ot.is_null() {
-        // `t->string = ot->string;` - a whole-struct copy (gcc copies the trailing
-        // padding bytes too, so do a byte-wise copy rather than a field-wise one)
-        ptr::copy_nonoverlapping(
-            ptr::addr_of!((*ot).string) as *const u8,
-            ptr::addr_of_mut!((*t).string) as *mut u8,
-            core::mem::size_of::<stbds_string_arena>(),
-        );
+        (*t).string = stbds_string_arena {
+            storage: (*ot).string.storage,
+            remaining: (*ot).string.remaining,
+            block: (*ot).string.block,
+            mode: (*ot).string.mode,
+        };
         (*t).seed = (*ot).seed;
     } else {
         memset(
@@ -440,8 +464,8 @@ unsafe fn stbds_make_hash_index(
                         }
 
                         pos = pos.wrapping_add(step);
-                        step = step.wrapping_add(STBDS_BUCKET_LENGTH);
-                        pos &= (*t).slot_count.wrapping_sub(1);
+                        step += STBDS_BUCKET_LENGTH;
+                        pos &= (*t).slot_count - 1;
                     }
                 }
             }
@@ -707,8 +731,8 @@ unsafe fn stbds_hm_find_slot(
         }
 
         pos = pos.wrapping_add(step);
-        step = step.wrapping_add(STBDS_BUCKET_LENGTH);
-        pos &= (*table).slot_count.wrapping_sub(1);
+        step += STBDS_BUCKET_LENGTH;
+        pos &= (*table).slot_count - 1;
     }
 }
 
@@ -724,7 +748,7 @@ pub unsafe extern "C" fn stbds_hmget_key_ts(
     let keyoffset: usize = 0;
     if a.is_null() {
         let a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
-        (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+        (*stbds_header(a)).length += 1;
         memset(a, 0, elemsize);
         *temp = STBDS_INDEX_EMPTY;
         STBDS_ARR_TO_HASH(a, elemsize)
@@ -775,7 +799,7 @@ pub unsafe extern "C" fn stbds_hmput_default(a: *mut c_void, elemsize: usize) ->
             0,
             1,
         );
-        (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+        (*stbds_header(a)).length += 1;
         memset(a, 0, elemsize);
         a = STBDS_ARR_TO_HASH(a, elemsize);
     }
@@ -798,7 +822,7 @@ pub unsafe extern "C" fn stbds_hmput_key(
     if a.is_null() {
         a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
         memset(a, 0, elemsize);
-        (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+        (*stbds_header(a)).length += 1;
         a = STBDS_ARR_TO_HASH(a, elemsize);
     }
 
@@ -914,16 +938,16 @@ pub unsafe extern "C" fn stbds_hmput_key(
             }
 
             pos = pos.wrapping_add(step);
-            step = step.wrapping_add(STBDS_BUCKET_LENGTH);
-            pos &= (*table).slot_count.wrapping_sub(1);
+            step += STBDS_BUCKET_LENGTH;
+            pos &= (*table).slot_count - 1;
         }
 
         // found_empty_slot:
         if tombstone >= 0 {
             pos = tombstone as usize;
-            (*table).tombstone_count = (*table).tombstone_count.wrapping_sub(1);
+            (*table).tombstone_count -= 1;
         }
-        (*table).used_count = (*table).used_count.wrapping_add(1);
+        (*table).used_count += 1;
 
         {
             let i: isize = stbds_arrlen(a);
@@ -933,11 +957,12 @@ pub unsafe extern "C" fn stbds_hmput_key(
             raw_a = STBDS_ARR_TO_HASH(a, elemsize);
             let _ = raw_a;
 
+            // lib.c:778
             STBDS_ASSERT!(
                 (i as usize).wrapping_add(1) <= stbds_arrcap(a),
-                "(size_t) i+1 <= stbds_arrcap(a)",
+                c"(size_t) i+1 <= stbds_arrcap(a)",
                 778,
-                "stbds_hmput_key"
+                c"stbds_hmput_key"
             );
             (*stbds_header(a)).length = (i + 1) as usize;
             bucket = (*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
@@ -1018,15 +1043,24 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                 let mut i: c_int = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
                 let old_index: isize = (*b).index[i as usize];
                 let final_index: isize = stbds_arrlen(raw_a) - 1 - 1;
+                // lib.c:828
                 STBDS_ASSERT!(
                     slot < (*table).slot_count as isize,
-                    "slot < (ptrdiff_t) table->slot_count",
+                    c"slot < (ptrdiff_t) table->slot_count",
                     828,
-                    "stbds_hmdel_key"
+                    c"stbds_hmdel_key"
                 );
-                (*table).used_count = (*table).used_count.wrapping_sub(1);
-                (*table).tombstone_count = (*table).tombstone_count.wrapping_add(1);
+                (*table).used_count -= 1;
+                (*table).tombstone_count += 1;
                 stbds_temp_set(raw_a, 1);
+                // lib.c:832 — `used_count` is a `size_t`, so this is a
+                // tautology in C too; kept for one-to-one correspondence.
+                STBDS_ASSERT!(
+                    (*table).used_count as isize >= 0 || true,
+                    c"table->used_count >= 0",
+                    832,
+                    c"stbds_hmdel_key"
+                );
                 (*b).hash[i as usize] = STBDS_HASH_DELETED;
                 (*b).index[i as usize] = STBDS_INDEX_DELETED;
 
@@ -1072,23 +1106,20 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                             mode,
                         );
                     }
-                    STBDS_ASSERT!(
-                        slot >= 0,
-                        "slot >= 0",
-                        846,
-                        "stbds_hmdel_key"
-                    );
+                    // lib.c:846
+                    STBDS_ASSERT!(slot >= 0, c"slot >= 0", 846, c"stbds_hmdel_key");
                     b = (*table).storage.offset(slot >> STBDS_BUCKET_SHIFT);
                     i = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
+                    // lib.c:849
                     STBDS_ASSERT!(
                         (*b).index[i as usize] == final_index,
-                        "b->index[i] == final_index",
+                        c"b->index[i] == final_index",
                         849,
-                        "stbds_hmdel_key"
+                        c"stbds_hmdel_key"
                     );
                     (*b).index[i as usize] = old_index;
                 }
-                (*stbds_header(raw_a)).length = (*stbds_header(raw_a)).length.wrapping_sub(1);
+                (*stbds_header(raw_a)).length -= 1;
 
                 if (*table).used_count < (*table).used_count_shrink_threshold
                     && (*table).slot_count > STBDS_BUCKET_LENGTH
@@ -1113,7 +1144,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
 // ---------------------------------------------------------------------------
 
 unsafe fn stbds_strdup(str_: *mut c_char) -> *mut c_char {
-    let len = strlen(str_).wrapping_add(1);
+    let len = strlen(str_) + 1;
     let p = realloc(ptr::null_mut(), len) as *mut c_char;
     memmove(p as *mut c_void, str_ as *const c_void, len);
     p
@@ -1125,14 +1156,22 @@ pub unsafe extern "C" fn stbds_stralloc(
     str_: *mut c_char,
 ) -> *mut c_char {
     let p: *mut c_char;
-    let len = strlen(str_).wrapping_add(1);
+    let len = strlen(str_) + 1;
     if len > (*a).remaining {
         let mut blocksize: usize = (*a).block as usize;
 
-        // The C shifts by `a->block >> 1`, which is >= 64 for a forged `block`
-        // field (undefined in C, masked to 6 bits by the x86 `shl`). `wrapping_shl`
-        // reproduces that masking in *every* Rust profile.
-        blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN.wrapping_shl((blocksize >> 1) as u32);
+        // `blocksize = (size_t) 512u << (a->block >> 1);`
+        //
+        // `a->block` is an `unsigned char` supplied by the caller, so the shift
+        // count can be up to 127.  In C that is undefined behaviour, but the C
+        // shared object under test compiles it to an x86-64 `shlq %cl, %rax`,
+        // which masks the count to its low 6 bits — verified against the C
+        // `.so`: `block = 128` yields `blocksize = 512` (count 64 & 63 == 0)
+        // and `block = 254` yields `blocksize = 0` (count 63).  The mask is
+        // therefore applied explicitly here; without it Rust would panic on
+        // shift overflow (debug) instead of returning like the C does.
+        blocksize =
+            STBDS_STRING_ARENA_BLOCKSIZE_MIN << ((blocksize >> 1) & (STBDS_SIZE_T_BITS as usize - 1));
 
         if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
             (*a).block = (*a).block.wrapping_add(1);
@@ -1141,7 +1180,7 @@ pub unsafe extern "C" fn stbds_stralloc(
         if len > blocksize {
             let sb = realloc(
                 ptr::null_mut(),
-                (core::mem::size_of::<stbds_string_block>() - 8).wrapping_add(len),
+                core::mem::size_of::<stbds_string_block>() - 8 + len,
             ) as *mut stbds_string_block;
             memmove(
                 ptr::addr_of_mut!((*sb).storage) as *mut c_void,
@@ -1160,7 +1199,7 @@ pub unsafe extern "C" fn stbds_stralloc(
         } else {
             let sb = realloc(
                 ptr::null_mut(),
-                (core::mem::size_of::<stbds_string_block>() - 8).wrapping_add(blocksize),
+                core::mem::size_of::<stbds_string_block>() - 8 + blocksize,
             ) as *mut stbds_string_block;
             (*sb).next = (*a).storage;
             (*a).storage = sb;
@@ -1168,16 +1207,17 @@ pub unsafe extern "C" fn stbds_stralloc(
         }
     }
 
+    // lib.c:913
     STBDS_ASSERT!(
         len <= (*a).remaining,
-        "len <= a->remaining",
+        c"len <= a->remaining",
         913,
-        "stbds_stralloc"
+        c"stbds_stralloc"
     );
     p = (ptr::addr_of_mut!((*(*a).storage).storage) as *mut c_char)
         .wrapping_add((*a).remaining)
         .wrapping_sub(len);
-    (*a).remaining = (*a).remaining.wrapping_sub(len);
+    (*a).remaining -= len;
     memmove(p as *mut c_void, str_ as *const c_void, len);
     p
 }

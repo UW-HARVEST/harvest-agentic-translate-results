@@ -1,9 +1,9 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Derived from:
+Mechanically generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-lca2wP.so
+nm -D --defined-only ../c_src/build/libharvest-work-QTbeWq.so
 nm -D --defined-only target/release/libintput_lib.so
 ```
 
@@ -27,13 +27,3 @@ nm -D --defined-only target/release/libintput_lib.so
 | 16 | `strkey` | `strkey` | present |
 
 Missing C symbols in Rust: **0**.
-
-The undefined symbols in both shared objects are runtime/libc/compiler support
-symbols. There are no undefined symbols owned by this library.
-
-## Completion Gate
-
-- [x] `nm -D` reports zero C symbols missing from Rust and zero extra Rust symbols.
-- [x] Every `CONFIGS.md` row passes randomized differential testing.
-- [x] Every `ERRORS.md` row is covered by sentinel, invariant, or isolated abort testing.
-- [x] Default and `--no-default-features` builds/checks/tests pass; no optional features are declared.

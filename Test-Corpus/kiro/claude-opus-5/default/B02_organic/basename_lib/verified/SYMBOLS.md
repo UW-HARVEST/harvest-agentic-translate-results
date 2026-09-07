@@ -1,69 +1,45 @@
-# SYMBOLS.md — Public symbol surface
+# SYMBOLS.md — Public symbol parity (C `.so` vs Rust `.so`)
 
-Derived mechanically from `nm -D --defined-only` on both shared libraries.
-
-Commands used:
+Derived mechanically:
 
 ```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
+nm -D --defined-only c_src/build/libdriver.so             | awk '{print $3}' | sort -u > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort -u > /tmp/rs_syms.txt
+comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt   # missing from Rust
 ```
 
-## C `.so` exported symbols (`libdriver.so`, built from `c_src/src/lib.c`)
+## Translation units in `c_src`
 
-| # | symbol | type | present in Rust `.so`? | notes |
-|---|--------|------|------------------------|-------|
-| 1 | `tool_basename` | `T` (text, global) | YES (`T`) | Declared in `c_src/include/lib.h` as `char *tool_basename(char *path);` |
+| C source file | translated? | Rust location |
+|---|---|---|
+| `c_src/src/lib.c` | yes | `translation/src/lib.rs` |
 
-The C header `c_src/include/lib.h` contains exactly one declaration and no
-namespace/renaming macros, so there are no macro-generated linker names to
-account for. `c_src/src/lib.c` defines no other function and no global data;
-`s1`/`s2` are locals.
+`c_src/include/lib.h` declares exactly one entry point; there are no other
+`.c` files, so no module was skipped.
 
-## Rust `.so` exported symbols (`translation/target/release/libdriver.so`)
+## Exported (defined, global) symbols
 
-| # | symbol | type | in C `.so`? |
-|---|--------|------|-------------|
-| 1 | `tool_basename` | `T` | YES |
+| # | C symbol | type in C `.so` | exported by Rust `.so` | notes |
+|---|----------|-----------------|------------------------|-------|
+| 1 | `tool_basename` | `T` (global text) | **yes**, `T` | `#[unsafe(no_mangle)] pub unsafe extern "C"`. Header has no renaming macros, so the linker name is verbatim. |
 
-The Rust helper `strrchr` is a private `unsafe fn` (no `#[no_mangle]`), so it is
-correctly **not** exported — it is not part of the C surface either (the C code
-calls glibc's `strrchr`, which appears as an *undefined* import, not an export).
+The C `.so` exports **1** non-`libc` symbol. Weak/compiler-generated entries
+(`_init`, `_fini`, `__bss_start`, `_edata`, `_end`, `__gmon_start__`,
+`_ITM_*`, `__cxa_finalize`) are toolchain artifacts, not part of the library
+API, and are excluded on both sides.
 
-## Symbol diff
+## Diff result
 
-```
-C exports not in Rust:   (none)
-Rust exports not in C:   (none)
-```
+- Symbols in C `.so` missing from Rust `.so`: **0** (`comm -23` output empty).
+- Undefined symbols in the Rust `.so`: all resolve to `libc`/`libgcc_s`
+  (`memcpy`, `strlen`, `malloc`, `free`, `__errno_location`, `_Unwind_*`, …)
+  — pulled in by the Rust runtime, **0** non-libc undefined symbols.
 
-**Diff is EMPTY.** No symbol required a new `#[no_mangle]` wrapper, and no C
-source file was left untranslated (`c_src` contains exactly one `.c` file,
-`src/lib.c`, 22 lines, fully translated in `translation/src/lib.rs`).
+Nothing was stubbed. `tool_basename` is a real translation of the C body,
+including its private helper `strrchr` (re-implemented rather than delegated to
+libc so the pointer-comparison semantics are identical).
 
-## Undefined (imported) symbols
+## Verdict
 
-The Rust `.so` imports only libc / libgcc-unwind symbols — there are **0
-missing or undefined non-libc symbols**:
-
-`_ITM_*`, `_Unwind_*`, `__cxa_finalize`, `__cxa_thread_atexit_impl`,
-`__errno_location`, `__gmon_start__`, `__tls_get_addr`, `abort`, `bcmp`,
-`calloc`, `close`, `dl_iterate_phdr`, `free`, `fstat64`, `getcwd`, `getenv`,
-`gettid`, `lseek64`, `malloc`, `memcpy`, `memmove`, `memset`, `mmap64`,
-`munmap`, `open64`, `posix_memalign`, `pthread_key_*`, `pthread_setspecific`,
-`read`, `readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`,
-`syscall`, `write`, `writev`.
-
-(These come from the Rust standard library runtime — panic machinery, allocator,
-std::io — not from the translated logic.)
-
-The C `.so` imports `strrchr@GLIBC_2.2.5` plus the standard weak ELF symbols.
-The Rust version implements `strrchr` in-crate instead of importing it; this is
-an implementation detail with no effect on the exported ABI.
-
-## Build configurations
-
-`translation/Cargo.toml` has **no `[features]` section**, so there is exactly
-one feature combination (the default, which is empty). `cargo test
---no-default-features` is therefore equivalent to the default build; both are
-run in the test matrix script. `crate-type = ["cdylib"]`.
+- [x] `nm -D` shows **0** missing symbols in Rust.
+- [x] `nm -D` shows **0** undefined non-libc symbols in Rust.

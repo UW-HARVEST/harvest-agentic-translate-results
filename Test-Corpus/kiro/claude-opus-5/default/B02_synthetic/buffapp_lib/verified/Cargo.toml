@@ -11,28 +11,26 @@ name = "buffapp_lib"
 [dev-dependencies]
 libloading = "0.8"
 
-# All rows that compare `buffapp`'s stdout live in their own harness-free,
-# strictly sequential binary. `buffapp` writes with `printf`, so capturing it
-# means redirecting fd 1 -- which is process-global. Under libtest's default
-# thread pool, libtest's own progress lines land inside the capture window and
-# produce spurious "divergences". Owning `main()` removes the race entirely.
-[[test]]
-name = "stdout_diff"
-path = "tests/stdout_diff.rs"
-harness = false
-
-# The C code dereferences NULL on some inputs (e.g. `append_to_buffer(NULL, s)`
-# has no NULL guard) and relies on two's-complement wrapping. `-C
-# debug-assertions` makes rustc insert null/alignment checks on raw-pointer
-# dereferences, which turns those faults into panics -> SIGABRT instead of the
-# C's SIGSEGV. Disabling it keeps the dev build byte-for-byte faithful to the C,
-# matching the release build. All arithmetic here already uses explicit
-# `wrapping_*` operations, so no overflow checking is lost.
+# This crate intentionally reproduces the C source's undefined behaviour so the
+# observable results match byte-for-byte: the NULL dereferences the C never
+# guards (`append_to_buffer(NULL, ..)`, `perform_operation(.., NULL)`), the
+# 1-byte out-of-bounds write in `create_buffer(0)`, and signed integer
+# overflow. rustc's `-Cdebug-assertions` UB instrumentation turns those into
+# Rust panics ("null pointer dereference occurred"), which in a `cdylib`
+# becomes SIGABRT where the C raises SIGSEGV. Disabling the instrumentation in
+# the dev profile makes the debug artifact behave like the release artifact and
+# like the C. (`assert!`/`assert_eq!` in the tests are unaffected.)
 [profile.dev]
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
 debug-assertions = false
 overflow-checks = false
 
 [profile.release]
 panic = "abort"
+debug-assertions = false
+overflow-checks = false
 
 [workspace]

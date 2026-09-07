@@ -1,11 +1,19 @@
 # Configuration Surface
 
-The public dynamic surface contains two entry points. The C source has no
-runtime options, flags, modes, conditionals, switches, feature conditionals,
-or variable-size inputs. The only input-shape axis is the full set of 256
-possible `char` bit patterns.
+Mechanically derived from the public header, all global functions in
+`../c_src/src/driver.c`, and every `if`, `switch`, and preprocessor
+conditional in the C implementation. The implementation contains no runtime
+options, modes, flags, data-shape branches, or feature conditionals. On this
+platform, C `char` is signed and has an 8-bit object representation.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `printHexCharLine` | no options; one by-value `char`; all 256 bit patterns | [x] |
-| 2 | `driver` | no options; one by-value `char`; all 256 bit patterns, including wrapping `0x7f + 1` | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `printHexCharLine` | Direct low-level call; every one of the 256 possible `char` object representations, in fixed-seed randomized order | [x] |
+| 2 | `driver` | Composed public call (`char` increment followed by `printHexCharLine`); every one of the 256 possible `char` object representations, in fixed-seed randomized order | [x] |
+
+`driver` is the sole function declared in the public header.
+`printHexCharLine` is nevertheless part of the externally callable ABI
+because the C shared object exports it.
+
+Each row passed with its complete 256-value domain plus 4,096 additional
+fixed-seed randomized inputs, comparing captured stdout byte-for-byte.

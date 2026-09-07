@@ -80,25 +80,16 @@ const BUFFER_SLACK: usize = 1024;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bad(data: c_int) {
     let mut backing: [c_int; BUFFER_SLACK] = [0; BUFFER_SLACK];
+    let buffer = &mut backing[..BUFFER_LEN];
     if data >= 0 {
-        // buffer[data] = 1;  (unchecked in C, exactly as written there)
-        //
-        // The pointer is derived from `backing`, not from the 10-element view,
-        // so every offset in 0..BUFFER_SLACK is inside one allocation and keeps
-        // its provenance — the overrun is absorbed instead of being Rust-level
-        // UB that an optimizer could exploit. Offsets beyond the slack region
-        // are dropped; since only elements 0..BUFFER_LEN are ever read back the
-        // observable output is unchanged either way, and C itself has no defined
-        // behaviour that far out (see ERRORS.md row 9).
-        if (data as usize) < BUFFER_SLACK {
-            unsafe {
-                *backing.as_mut_ptr().add(data as usize) = 1;
-            }
+        // buffer[data] = 1;  (unchecked, exactly as in C)
+        unsafe {
+            *buffer.as_mut_ptr().offset(data as isize) = 1;
         }
         /* Print the array values */
         for i in 0..BUFFER_LEN {
             unsafe {
-                printIntLine(backing[i]);
+                printIntLine(buffer[i]);
             }
         }
     } else {

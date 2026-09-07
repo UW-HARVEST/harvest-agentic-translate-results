@@ -1,89 +1,89 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase A: error / rejection surface table
 
-## How this was derived
+## Mechanical derivation
 
-`c_src` was grepped mechanically for every rejection construct:
+Greps run over the whole C tree (`c_src/include/lib.h`, `c_src/src/lib.c`):
 
-```sh
-grep -nE 'return|assert|NULL|errno|ERROR|error|-1|if *\(|switch|\?|#if|exit|abort|goto' -r src include
-#   -> (NO MATCHES)
-grep -nE '\b(if|else|for|while|switch|case|do)\b' -r src include
-#   -> src/lib.c:8:    for (int i = 0; i < (int)stride * h; i += sizeof(cp_pixel_t)) {
-```
+| pattern | hits |
+|---|---|
+| `return` | 0 |
+| `return -1` / `return NULL` / `return 0` | 0 |
+| `RETURN_ERROR` / `GOTO` / `goto` | 0 |
+| `assert` / `NDEBUG` | 0 |
+| `errno` | 0 |
+| `if` / `switch` / `?:` | 0 |
+| `#ifdef` / `#if` | 0 |
+| `enum` | 0 |
+| `MIN` / `MAX` / `_MAX` / `_MIN` constants | 0 |
+| `NULL` checks | 0 |
+| explicit range checks | 0 |
 
-**There are zero explicit error paths.** `premultiply` returns `void`, has no
-`assert`, no null check, no range check, no error enum, no sentinel, and no
-`#ifdef`. Its only control flow is the single `for` loop on line 8.
+`premultiply` is declared `void` and contains **no** explicit rejection path: no
+error code, no sentinel return, no assertion, no null check, no bounds check.
+Consequently the "error surface" of this library consists entirely of *implicit*
+rejections — inputs for which the single loop bound `(int)stride * h` evaluates
+to `<= 0` and the function therefore performs **zero work and zero memory
+accesses** — plus the undefined-behaviour cases that both languages must handle
+the same way at the ABI level.
 
-Therefore an "error" in this API can manifest in exactly two observable ways,
-and the table below enumerates every distinct trigger for each:
-
-* **`NO-OP`** — the loop bound evaluates `<= 0`, so the body runs zero times,
-  `img->pix` is *never dereferenced*, and the pixel buffer is left byte-identical.
-  This is the C code's de-facto input rejection.
-* **`SIGSEGV`** — a null/invalid pointer is dereferenced. Undefined behaviour in
-  C; both libraries must fault identically.
-
-### The controlling arithmetic (line 6 + line 8)
+The rows below are derived from the only two expressions in the C that can
+"reject" work:
 
 ```c
-int stride = w * sizeof(cp_pixel_t);        // (A)
-for (int i = 0; i < (int)stride * h; i += sizeof(cp_pixel_t))
+int stride = w * sizeof(cp_pixel_t);            /* line 6  */
+for (int i = 0; i < (int)stride * h; i += sizeof(cp_pixel_t))   /* line 8 */
 ```
 
-* (A) `sizeof` is `size_t`, so `w` is **sign-extended to 64 bits**, multiplied by
-  4, then **truncated back to `int`** → `stride = wrap32(w * 4)`.
-* The bound `(int)stride * h` is a **32-bit `int` multiply** that wraps →
-  `limit = wrap32(stride * h)`.
-* `limit` is always a multiple of 4, so the iteration count is
-  `iters = if limit > 0 { limit / 4 } else { 0 }`.
-
-Note this bound counts **bytes** (`stride` bytes per row × `h` rows) and is
-stepped 4 bytes at a time, so for ordinary positive dimensions it visits exactly
-`w * h` pixels.
-
-### Not applicable
-
-* **Out-of-range enum values across FFI** — the API declares *no* enums
-  (`lib.h` has only `cp_pixel_t` and `cp_image_t`, both plain structs of
-  `uint8_t`/`int`). The closest analogue is an out-of-range *dimension*, which
-  rows 4–18 cover exhaustively, including `INT_MIN`/`INT_MAX`.
-* **Error codes / sentinels** — the function is `void`; there is no return value
-  to compare. Equivalence is asserted on the full post-call byte image of the
-  buffer plus surrounding canaries, and on fault signal for the crash rows.
+`sizeof` has type `size_t` (unsigned 64-bit on this target), so `w` is converted
+to `size_t` (sign-extended), multiplied by 4, and the `size_t` result is
+truncated back to `int` on assignment to `stride` — observationally identical to
+a wrapping 32-bit `w * 4`. `(int)stride * h` is a signed 32-bit multiply whose
+overflow wraps in practice on the build used here. `i += sizeof(...)` likewise
+promotes `i` to `size_t`, adds 4, and truncates back to `int`.
 
 ## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `premultiply` | `img == NULL` | deref of `img->w` faults → `SIGSEGV` | [x] |
-| 2 | `premultiply` | `img->pix == NULL`, `w > 0`, `h > 0` (`limit > 0`) | deref of `data[0]` faults → `SIGSEGV` | [x] |
-| 3 | `premultiply` | `img->pix` = wild non-null unmapped address, `w,h > 0` | faults → `SIGSEGV` | [x] |
-| 4 | `premultiply` | `w == 0`, `h > 0` (zero length) | `stride=0` → `limit=0` → `NO-OP` | [x] |
-| 5 | `premultiply` | `h == 0`, `w > 0` (zero length) | `limit=0` → `NO-OP` | [x] |
-| 6 | `premultiply` | `w == 0 && h == 0` | `limit=0` → `NO-OP` | [x] |
-| 7 | `premultiply` | `w == 0` or `h == 0` **with `pix == NULL`** | `NO-OP`, `pix` never dereferenced → must **not** fault | [x] |
-| 8 | `premultiply` | `w < 0`, `h > 0` | `limit < 0` → `NO-OP` | [x] |
-| 9 | `premultiply` | `w > 0`, `h < 0` | `limit < 0` → `NO-OP` | [x] |
-| 10 | `premultiply` | `w < 0` **and** `h < 0` | `limit > 0` → loop **RUNS** for `|w*h|` pixels (double-negative accepted) | [x] |
-| 11 | `premultiply` | `w ≡ 0 (mod 2^30)`, `w != 0`: `w ∈ {2^30, -2^30, INT_MIN}` | `stride` wraps to `0` → `limit=0` → `NO-OP` for *every* `h` | [x] |
-| 12 | `premultiply` | `w == ±2^29`, `h` **odd** | `stride` wraps to `INT_MIN`; `limit = INT_MIN < 0` → `NO-OP` | [x] |
-| 13 | `premultiply` | `w == ±2^29`, `h` **even** | `stride = INT_MIN`; `limit` wraps to `0` → `NO-OP` | [x] |
-| 14 | `premultiply` | `w == 2^29 + 1`, `h == 2` | `stride = INT_MIN+4`; `limit` wraps **positive** to `8` → **2 pixels processed** | [x] |
-| 15 | `premultiply` | `w == INT_MAX`, `h == 1` | `stride` wraps to `-4`; `limit = -4` → `NO-OP` | [x] |
-| 16 | `premultiply` | `w == INT_MAX`, `h == -1` | `stride = -4`; `limit = 4` → **1 pixel processed** | [x] |
-| 17 | `premultiply` | `w == INT_MAX`, `h == INT_MAX` (both oversized) | `stride = -4`, `limit = 4` → **1 pixel processed** | [x] |
-| 18 | `premultiply` | `w == 1`, `h == INT_MIN` | `limit` wraps to `0` → `NO-OP` | [x] |
-| 19 | `premultiply` | `w == 1`, `h == INT_MAX` (one past max row count) | `limit` wraps to `-4` → `NO-OP` | [x] |
-| 20 | `premultiply` | `w == INT_MIN`, `h == INT_MIN` | `stride = 0`, `limit = 0` → `NO-OP` | [x] |
-| 21 | `premultiply` | `w == 268435456` (`2^28`), `h == 4` | `stride = 2^30`; `limit` wraps to `0` → `NO-OP` | [x] |
-| 22 | `premultiply` | `w == 2^28 + 1`, `h == 4` | `limit` wraps positive to `16` → **4 pixels processed** | [x] |
-| 23 | `premultiply` | `img` non-null but **misaligned** `cp_image_t*` (odd address) | x86-64 tolerates unaligned `int` loads → behaves as aligned | [x] |
-| 24 | `premultiply` | `img->pix` **misaligned** (offset 1/2/3 from 4-byte boundary) | accessed via `uint8_t*`, so alignment is irrelevant → normal processing | [x] |
-| 25 | `premultiply` | write-extent check: `limit > 0` | bytes `>= limit` and the byte **before** `pix` are never written; **the alpha byte `data[i+3]` is never written** (only `+0/+1/+2` are stored) | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | differential test (`tests/phase_c_errors.rs`) | [x] |
+|---|----------|----------------------------------------------|-------------------|---|---|
+| 1 | `premultiply` | `img->w == 0` (any `h`, any `pix`, incl. `pix == NULL`) | `stride = 0` → bound `0` → loop body never runs; **no pixel written, no dereference of `pix`**; returns normally | `row01_w_zero` | [x] |
+| 2 | `premultiply` | `img->h == 0` (any `w`, any `pix`, incl. `pix == NULL`) | bound `stride * 0 == 0` → loop body never runs; **no write, no deref of `pix`**; returns normally | `row02_h_zero` | [x] |
+| 3 | `premultiply` | `img->w < 0`, `img->h > 0` (e.g. `w = -4, h = 3`) | `stride = 4*w < 0`, bound `stride*h < 0` → `0 < negative` false → **no iterations**, no deref; returns normally | `row03_negative_w_positive_h` | [x] |
+| 4 | `premultiply` | `img->h < 0`, `img->w > 0` (e.g. `w = 4, h = -3`) | bound `stride*h < 0` → **no iterations**, no deref; returns normally | `row04_positive_w_negative_h` | [x] |
+| 5 | `premultiply` | **both** `img->w < 0` **and** `img->h < 0` (e.g. `w = -1, h = -1`) | double negation makes the bound **positive**: bound `= (4*w)*h > 0` → the loop **does** run for `w*h` pixels starting at `pix[0]`, premultiplying them. Must be replicated, not "fixed" | `row05_both_negative_performs_work` | [x] |
+| 6 | `premultiply` | `img->w` such that `w * 4` overflows `int` (e.g. `w = 0x2000_0000` → `stride = 0`) | `stride` wraps to `0` → bound `0` → **no iterations** | `row06_stride_overflow_to_zero` | [x] |
+| 7 | `premultiply` | `img->w` such that `w * 4` wraps to a **negative** `stride` (e.g. `w = 0x1000_0000` → `stride = 0x4000_0000`; `w = 0x30000000` → `stride = 0xC0000000` = negative), with `h > 0` | bound negative → **no iterations** | `row07_stride_wraps_negative` | [x] |
+| 8 | `premultiply` | `stride * h` overflows to exactly `0` (e.g. `w = 0x10000`, `h = 0x4000` → `stride = 0x40000`, `stride*h = 2^32 → 0`) | **no iterations**, no deref of `pix` | `row08_bound_overflow_to_zero` | [x] |
+| 9 | `premultiply` | `stride * h` overflows to a **negative** value (e.g. `w = 1000, h = 1_000_000` → `4_000_000 * 1_000_000` wraps negative) | **no iterations**, no deref of `pix` | `row09_bound_overflow_negative` | [x] |
+| 10 | `premultiply` | `stride * h` overflows to a **small positive** value (e.g. `w = 0x10000`, `h = 0x4001` → wraps to `0x40000`) | loop runs for the **wrapped** (much smaller) count only | `row10_bound_overflow_small_positive` | [x] |
+| 11 | `premultiply` | `img->pix == NULL` **with** a zero bound (rows 1–4, 6–9) | safe: `pix` is never dereferenced; both implementations must return normally without faulting | `row11_null_pix_with_zero_bound` | [x] |
+| 12 | `premultiply` | `img->pix == NULL` **with** a positive bound (`w > 0, h > 0`) | C dereferences a null pointer → **SIGSEGV**. UB in both languages; parity asserted at the *process-signal* level (both must die with the same signal) | `row12_null_pix_with_positive_bound_same_signal` | [x] |
+| 13 | `premultiply` | `img == NULL` | C dereferences `img->w` immediately → **SIGSEGV**. UB in both languages; parity asserted at the *process-signal* level | `row13_null_img_same_signal` | [x] |
+| 14 | `premultiply` | `img->w`/`img->h` describe **more** pixels than the buffer holds (out-of-range index, e.g. `w = 8, h = 8` over a 4-pixel buffer) | C reads/writes past the end of the allocation. UB; behaviour is "walk `w*h` pixels regardless". Verified with a deliberately over-sized *padded* allocation so both implementations touch and must agree on the same in-bounds bytes | `row14_out_of_range_index` | [x] |
+| 15 | `premultiply` | `img->w == INT_MIN` (`stride = INT_MIN*4 = 0`) with any `h` | `stride` wraps to `0` → bound `0` → **no iterations** | `row15_w_int_min` | [x] |
+| 16 | `premultiply` | `img->h == INT_MIN` with `w > 0` | bound `stride * INT_MIN` wraps; for `stride` a multiple of 4 the product is `0` → **no iterations** | `row16_h_int_min` | [x] |
+| 17 | `premultiply` | out-of-range "enum"-like values across the FFI boundary | **N/A — the C API declares no enum type.** `cp_image_t` has only `int w`, `int h`, `cp_pixel_t *pix`; the entire `int` range for `w`/`h` is a legal FFI input and is covered by rows 1–10 and 15–16, plus randomized full-`i32`-range fuzzing in Phase C | `row17_no_enum_in_api_full_int_range_instead` | [x] |
 
-Rows 1–3 are verified in a forked child process, comparing the *fault signal*
-raised by the C `.so` against that raised by the Rust `.so`.
-Rows 4–25 are verified in-process by differential byte comparison of the
-buffer, its guard canaries, and (where relevant) the exact count of mutated
-pixels.
+### Non-error notes (documented so the table is provably exhaustive)
+
+* There is no allocation in `premultiply`, hence no allocation-failure path.
+* There is no I/O, hence no `errno` path.
+* Pixel *values* can never make the function fail: every channel is a `uint8_t`,
+  so `v/255.0f ∈ [0,1]`, `r*a*255.0f ∈ [0,255]`, and the `(uint8_t)` conversion
+  is always in range (never the UB out-of-range float→int conversion).
+  `a == 0` and `a == 255` are ordinary valid inputs, covered in `CONFIGS.md`.
+
+## Phase C status
+
+All 17 rows have a passing differential test. Additionally `generic_boundaries`
+sweeps the 32x32 cross-product of the interesting `w`/`h` values (`INT_MIN`,
+`INT_MIN+1`, +/-2^30, +/-2^16, 0, +/-1, 254..257, 2^29, 2^30, `INT_MAX-1`,
+`INT_MAX`, and one step past each) against both libraries -- with `pix = NULL`
+for every non-positive bound, and with a real padded buffer for every small
+positive (wrapped) bound.
+
+Run:
+
+```
+cargo test --test phase_c_errors      # 18 tests, all pass
+bash verify.sh                        # every profile x C optimization level
+```

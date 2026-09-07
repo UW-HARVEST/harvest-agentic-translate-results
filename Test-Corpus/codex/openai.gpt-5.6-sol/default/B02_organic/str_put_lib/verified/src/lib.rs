@@ -197,6 +197,9 @@ unsafe fn make_hash_index(slot_count: usize, old: *mut HashIndex) -> *mut HashIn
     if slot_count <= BUCKET_LENGTH {
         (*table).used_count_shrink_threshold = 0;
     }
+    assert!(
+        (*table).used_count_threshold + (*table).tombstone_count_threshold < (*table).slot_count
+    );
 
     if !old.is_null() {
         (*table).string = (*old).string;
@@ -689,6 +692,7 @@ pub unsafe extern "C" fn stbds_hmput_key(
         a = stbds_arrgrowf(a, elemsize, 1, 0);
     }
     raw_a = arr_to_hash(a, elemsize);
+    assert!((index as usize).wrapping_add(1) <= arr_cap(a));
     (*header(a)).length = (index + 1) as usize;
     let bucket = (*table).storage.add(pos >> BUCKET_SHIFT);
     (*bucket).hash[pos & BUCKET_MASK] = hash;
@@ -759,6 +763,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
     let old_index = (*bucket).index[bucket_index];
     let final_index = arr_len(raw_a) as isize - 2;
 
+    assert!(slot < (*table).slot_count as isize);
     (*table).used_count -= 1;
     (*table).tombstone_count += 1;
     (*header(raw_a)).temp = 1;
@@ -785,8 +790,10 @@ pub unsafe extern "C" fn stbds_hmdel_key(
             moved_item.add(keyoffset) as *mut c_void
         };
         slot = hm_find_slot(a, elemsize, moved_key, keysize, keyoffset, mode);
+        assert!(slot >= 0);
         bucket = (*table).storage.add((slot as usize) >> BUCKET_SHIFT);
         bucket_index = (slot as usize) & BUCKET_MASK;
+        assert_eq!((*bucket).index[bucket_index], final_index);
         (*bucket).index[bucket_index] = old_index;
     }
     (*header(raw_a)).length -= 1;
@@ -850,6 +857,7 @@ pub unsafe extern "C" fn stbds_stralloc(
         (*arena).remaining = blocksize;
     }
 
+    assert!(len <= (*arena).remaining);
     let destination = (ptr::addr_of_mut!((*(*arena).storage).storage) as *mut c_char)
         .add((*arena).remaining - len);
     (*arena).remaining -= len;
@@ -922,6 +930,9 @@ pub unsafe extern "C" fn str_put(num: c_int) {
     (*entry).key = key;
     (*entry).value = num;
     (*entry).key = (*(hash_table(raw_map))).temp_key;
+    assert_eq!(*(*entry).key, b'a' as c_char);
+    assert_eq!((*entry).key, key);
+    assert_eq!((*entry).value, num);
 
     let length = (*header(raw_map)).length - 1;
     for item_number in 0..length {

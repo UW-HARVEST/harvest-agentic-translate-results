@@ -1,78 +1,66 @@
-# SYMBOLS.md — exported-symbol surface
+# SYMBOLS.md — Phase A symbol map
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from `nm -D` on both shared libraries.
 
-```
-C   : c_src/build/libharvest-work-Qr4nQs.so
-Rust: translation/target/release/libsynth_pair_lib.so
-```
-
-## C `.so` — `nm -D --defined-only`
-
-| symbol | type | present in Rust `.so`? | note |
-|--------|------|------------------------|------|
-| `synth_pair` | `T` (global text) | **yes** (`T synth_pair`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn synth_pair` |
-
-## C `.so` — weak/undefined entries (toolchain-generated, NOT part of the API)
-
-These are emitted by GCC/glibc CRT glue, not by `src/lib.c`. They are *not*
-required of the Rust `.so` (Rust's own CRT glue provides the equivalents).
-
-| symbol | class |
-|--------|-------|
-| `_ITM_deregisterTMCloneTable` | `w` weak undefined (transactional-memory glue) |
-| `_ITM_registerTMCloneTable`   | `w` weak undefined (transactional-memory glue) |
-| `__cxa_finalize@GLIBC_2.2.5`  | `w` weak undefined (libc) |
-| `__gmon_start__`              | `w` weak undefined (profiling) |
-
-## Non-exported C symbols (verified: must NOT be exported)
-
-| symbol | C storage | reason |
-|--------|-----------|--------|
-| `mp3d_scale_pcm` | `static int16_t` | file-local (`t`, not in `.dynsym`); Rust keeps it a private `fn` |
-
-## Header surface (`c_src/include/lib.h`)
-
-| entity | kind | Rust counterpart |
-|--------|------|------------------|
-| `mp3d_sample_t` | `typedef int16_t` | `pub type mp3d_sample_t = i16` |
-| `synth_pair`    | `void (mp3d_sample_t*, int, const float*)` | `unsafe extern "C" fn(*mut i16, c_int, *const f32)` |
-
-No macros, no `#ifdef`-gated / namespace-renamed aliases, no additional C source
-files exist in `c_src/src/` (`src/lib.c` is the only translation unit listed in
-`CMakeLists.txt`), so no C module was left untranslated.
-
-## Diff result
+## C library
+`c_src/build/libharvest-work-INRZYd.so` (built from the single TU `c_src/src/lib.c`)
 
 ```
-$ comm -23 <(nm -D --defined-only c_so   | awk '{print $NF}' | sort) \
-           <(nm -D --defined-only rust_so| awk '{print $NF}' | sort)
-<empty>
-```
-
-**0 missing symbols. 0 undefined non-libc symbols in the Rust `.so`.**
-(Checked automatically by `tests/symbols.rs::symbol_parity_c_subset_of_rust`
-and `::no_unexpected_undefined_symbols`.)
-
-## Verified output
-
-```
-$ nm -D --defined-only <C .so>
+$ nm -D --defined-only c_src/build/libharvest-work-INRZYd.so | grep ' T '
 0000000000001160 T synth_pair
-
-$ nm -D --defined-only <Rust .so>
-0000000000011c80 T synth_pair
-
-$ nm -D --undefined-only <Rust .so> | grep -v '@GLIBC\|_ITM_\|__gmon_start__\|__cxa_'
-<empty>
 ```
 
-Checked automatically, for **every feature combination and both profiles**, by
-`./run_all_feature_combos.sh` (which runs the `comm -23` diff itself) and by
-`tests/symbols.rs`:
+## Rust library
+`translation/target/release/libsynth_pair_lib.so` (`crate-type = ["cdylib"]`)
 
-* `symbol_parity_c_subset_of_rust`
-* `symbol_diff_is_empty`
-* `no_unexpected_undefined_symbols`
-* `static_c_helper_is_not_exported`
-* `both_libraries_resolve_the_symbol_through_dlsym`
+```
+$ nm -D --defined-only translation/target/release/libsynth_pair_lib.so | awk '$2=="T"'
+00000000000116e0 T synth_pair
+```
+
+## Parity table
+
+| # | symbol | C `.so` | Rust `.so` | notes |
+|---|--------|---------|------------|-------|
+| 1 | `synth_pair` | `T` (global text) | `T` (global text, `#[unsafe(no_mangle)] pub unsafe extern "C"`) | OK — exact name match |
+
+### Symbols intentionally NOT exported
+
+| C symbol | linkage in C | required in Rust? |
+|----------|--------------|-------------------|
+| `mp3d_scale_pcm` | `static` (internal, not in `nm -D`) | No — private helper `fn mp3d_scale_pcm` in Rust; must not be exported |
+
+`mp3d_sample_t` is a `typedef` (`int16_t`), not a linker symbol.
+
+## Result
+
+* Missing-from-Rust symbols: **0**
+* Extra Rust exports that would collide with the C surface: **0**
+* Undefined non-libc symbols in the Rust `.so`: **0**
+  (`nm -D -u` on the Rust `.so` lists only libc/`libgcc` runtime imports.)
+
+**Phase A / D symbol gate: PASS (diff is empty).**
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no** `[features]` section, so the only
+configuration is the default (empty) feature set. `--no-default-features` and
+the default build are therefore the same code path; both are verified.
+
+---
+
+## Verified output of `./verify_all.sh`
+
+```
+-- C exported symbols:
+     synth_pair
+-- exported by C but MISSING from Rust:
+     (none)
+-- undefined (imported) non-libc symbols in the Rust .so:
+     (none)
+```
+
+The Rust `.so`'s only dynamic imports are libc/libgcc runtime entries
+(`_Unwind_*`, `__cxa_*`, `pthread_key_*`, `malloc`, `memcpy`, …), all resolved by
+the dynamic linker — confirmed in practice by the fact that every test
+successfully `dlopen`s the library and calls through it.

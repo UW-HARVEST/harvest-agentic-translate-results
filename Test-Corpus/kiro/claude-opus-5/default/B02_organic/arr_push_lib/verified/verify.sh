@@ -1,82 +1,108 @@
 #!/usr/bin/env bash
 # Phase D driver: symbol parity + every feature combination.
-# Usage: ./verify.sh          (run from translation/)
+#
+#   ./verify.sh
+#
+# Rebuilds the C .so and the Rust .so, diffs `nm -D`, then runs the whole
+# differential test suite under every feature combination declared in
+# Cargo.toml (plus --no-default-features and --all-features).
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-CSRC="$ROOT/../c_src"
-fail=0
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CRATE="$ROOT/translation"
+CBUILD="$ROOT/c_src/build"
+FAIL=0
 
-echo "=== 1. build the C shared library ==="
-mkdir -p "$CSRC/build"
-( cd "$CSRC/build" \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-  && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
-CSO="$(find "$CSRC/build" -name '*.so' | head -1)"
-echo "C  .so: $CSO"
+echo "=== 1. build C shared library ==============================="
+mkdir -p "$CBUILD"
+( cd "$CBUILD" && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+  && cmake --build . >/dev/null ) || { echo "C BUILD FAILED"; exit 1; }
+C_SO="$(ls "$CBUILD"/*.so | head -1)"
+echo "C   .so: $C_SO"
 
 echo
-echo "=== 2. enumerate feature combinations from Cargo.toml ==="
-# Every feature name declared under [features] (none for this crate).
-FEATS=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+ *=/{print $1}' "$ROOT/Cargo.toml")
-if [ -z "$FEATS" ]; then
-  echo "no [features] declared -> the only configurations are:"
-  COMBOS=("" "--no-default-features")
+echo "=== 2. enumerate feature combinations ======================="
+# Mechanically extract the [features] table from Cargo.toml.
+FEATURES=$(awk '
+  /^\[features\]/ {inf=1; next}
+  /^\[/           {inf=0}
+  inf && /^[A-Za-z0-9_-]+[[:space:]]*=/ {sub(/[[:space:]]*=.*/,""); print}
+' "$CRATE/Cargo.toml")
+
+COMBOS=()
+if [ -z "$FEATURES" ]; then
+  echo "Cargo.toml declares NO [features] table -> exactly one configuration."
+  COMBOS=("<default>" "<none>")
 else
-  echo "features: $FEATS"
-  COMBOS=("" "--no-default-features")
-  for f in $FEATS; do
-    COMBOS+=("--no-default-features --features $f")
+  FA=($FEATURES)
+  N=${#FA[@]}
+  echo "features: ${FA[*]}"
+  COMBOS=("<default>" "<none>")
+  # full power set
+  for ((mask=1; mask<(1<<N); mask++)); do
+    combo=""
+    for ((i=0; i<N; i++)); do
+      if (( mask & (1<<i) )); then combo="${combo:+$combo,}${FA[$i]}"; fi
+    done
+    COMBOS+=("$combo")
   done
-  COMBOS+=("--all-features")
+  COMBOS+=("<all>")
 fi
-for c in "${COMBOS[@]}"; do echo "  cargo <cmd> ${c:-<default>}"; done
+printf 'combination: %s\n' "${COMBOS[@]}"
 
 echo
-echo "=== 3. per-combination: check, build, symbol parity, tests ==="
-for PROFILE in "" "--release"; do
-  for COMBO in "${COMBOS[@]}"; do
-    tag="profile='${PROFILE:-debug}' features='${COMBO:-default}'"
-    echo
-    echo "--- $tag ---"
+echo "=== 3. per-combination build + symbol diff + tests =========="
+for combo in "${COMBOS[@]}"; do
+  case "$combo" in
+    "<default>") FLAGS=() ;;
+    "<none>")    FLAGS=(--no-default-features) ;;
+    "<all>")     FLAGS=(--all-features) ;;
+    *)           FLAGS=(--no-default-features --features "$combo") ;;
+  esac
 
-    timeout 600 cargo check $PROFILE $COMBO >/dev/null 2>&1 \
-      || { echo "  cargo check FAILED"; fail=1; continue; }
+  echo
+  echo "--- combination: $combo   flags: ${FLAGS[*]:-none} ---"
 
-    timeout 600 cargo build $PROFILE $COMBO >/dev/null 2>&1 \
-      || { echo "  cargo build FAILED"; fail=1; continue; }
+  ( cd "$CRATE" && timeout 600 cargo build --release "${FLAGS[@]}" 2>&1 | tail -3 ) \
+    || { echo "RUST BUILD FAILED for $combo"; FAIL=1; continue; }
 
-    if [ -z "$PROFILE" ]; then RSO="$ROOT/target/debug/libarr_push_lib.so";
-    else RSO="$ROOT/target/release/libarr_push_lib.so"; fi
+  R_SO="$CRATE/target/release/libarr_push_lib.so"
 
-    nm -D --defined-only "$CSO"  | awk '{print $3}' | sort > /tmp/csym.$$
-    nm -D --defined-only "$RSO"  | awk '{print $3}' | sort > /tmp/rsym.$$
-    missing=$(comm -23 /tmp/csym.$$ /tmp/rsym.$$)
-    extra=$(comm -13 /tmp/csym.$$ /tmp/rsym.$$)
-    echo "  symbols: C=$(wc -l < /tmp/csym.$$) Rust=$(wc -l < /tmp/rsym.$$)"
-    if [ -n "$missing" ]; then echo "  MISSING in Rust:"; echo "$missing" | sed 's/^/    /'; fail=1
-    else echo "  symbol diff: empty (OK)"; fi
-    [ -n "$extra" ] && { echo "  extra in Rust:"; echo "$extra" | sed 's/^/    /'; }
+  nm -D --defined-only "$C_SO" | awk '{print $3}' | sort -u > /tmp/c_syms.txt
+  nm -D --defined-only "$R_SO" | awk '{print $3}' | sort -u > /tmp/r_syms.txt
+  MISSING=$(comm -23 /tmp/c_syms.txt /tmp/r_syms.txt)
+  EXTRA=$(comm -13 /tmp/c_syms.txt /tmp/r_syms.txt)
+  echo "C exports: $(wc -l < /tmp/c_syms.txt)   Rust exports: $(wc -l < /tmp/r_syms.txt)"
+  if [ -n "$MISSING" ]; then echo "MISSING FROM RUST:"; echo "$MISSING"; FAIL=1;
+  else echo "symbol diff: EMPTY (0 missing)"; fi
+  if [ -n "$EXTRA" ]; then echo "EXTRA IN RUST:"; echo "$EXTRA"; FAIL=1; fi
 
-    # undefined symbols that are not libc / libgcc-unwind
-    nm -D --undefined-only "$RSO" | awk '{print $2}' | sed 's/@.*//' \
-      | grep -vE '^(_ITM_|__cxa_|__gmon_start__|__tls_get_addr|__errno_location|_Unwind_|abort|bcmp|calloc|close|dl_iterate_phdr|free|fstat64|getcwd|getenv|gettid|lseek64|malloc|memcpy|memmove|memset|mmap64|munmap|open64|posix_memalign|pthread_|read|readlink|realloc|realpath|stat64|statx|strlen|syscall|write|writev|memcmp|sprintf|strcmp|__assert_fail)' \
-      > /tmp/undef.$$
-    if [ -s /tmp/undef.$$ ]; then echo "  UNEXPECTED undefined non-libc symbols:"; sed 's/^/    /' /tmp/undef.$$; fail=1
-    else echo "  undefined non-libc symbols: none (OK)"; fi
+  # Undefined symbols must all come from libc or the Rust runtime.
+  # Prefix-matched runtime groups, then exact libc function names.
+  UNDEF=$(nm -D -u "$R_SO" | awk '{print $2}' | sed 's/@.*//' | sort -u \
+    | grep -vE '^(_ITM_|_Unwind_|__cxa_|__gmon_start__|__errno_location|__tls_get_addr|pthread_)' \
+    | grep -vE '^(abort|bcmp|calloc|close|dl_iterate_phdr|free|fstat64|getcwd|getenv|gettid|lseek64|malloc|memcpy|memmove|memset|memcmp|mmap64|munmap|open64|posix_memalign|read|readlink|realloc|realpath|sprintf|stat64|statx|strcmp|strlen|syscall|write|writev)$')
+  if [ -n "$UNDEF" ]; then echo "UNEXPECTED UNDEFINED SYMBOLS:"; echo "$UNDEF"; FAIL=1;
+  else echo "undefined non-libc symbols: 0"; fi
 
-    timeout 600 cargo test $PROFILE $COMBO > /tmp/test.$$ 2>&1
-    rc=$?
-    grep -E "^test result" /tmp/test.$$ | sed 's/^/  /'
-    if [ $rc -ne 0 ]; then
-      echo "  TESTS FAILED (exit $rc)"
-      grep -E "panicked|FAILED|signal" /tmp/test.$$ | head -20 | sed 's/^/    /'
-      fail=1
-    fi
-    rm -f /tmp/csym.$$ /tmp/rsym.$$ /tmp/undef.$$ /tmp/test.$$
-  done
+  ( cd "$CRATE" && timeout 900 cargo test --release "${FLAGS[@]}" --tests \
+      -- --test-threads=1 2>&1 | grep -E '^test result|^error|FAILED' ) \
+    || { echo "TESTS FAILED for $combo"; FAIL=1; }
 done
 
 echo
-if [ $fail -eq 0 ]; then echo "=== ALL PHASES PASSED ==="; else echo "=== FAILURES PRESENT ==="; fi
-exit $fail
+echo "=== 4. binary executables =================================="
+if grep -q 'add_executable' "$ROOT/c_src/CMakeLists.txt"; then
+  echo "C CMakeLists declares an executable -- stdout comparison REQUIRED"; FAIL=1
+else
+  echo "c_src/CMakeLists.txt: no add_executable -> library only, no driver binary."
+fi
+if [ -f "$CRATE/src/main.rs" ] || grep -q '^\[\[bin\]\]' "$CRATE/Cargo.toml"; then
+  echo "Rust crate declares a binary -- stdout comparison REQUIRED"; FAIL=1
+else
+  echo "translation/Cargo.toml: crate-type = cdylib+rlib, no [[bin]] and no src/main.rs."
+fi
+
+echo
+if [ "$FAIL" -eq 0 ]; then echo "=== ALL PHASE D CHECKS PASSED ==="; else echo "=== FAILURES PRESENT ==="; fi
+exit $FAIL

@@ -136,180 +136,6 @@ const C2_FLT_MAX: f32 = 3.402_823_466_385_288_598_117_041_834_845_169_25e+38_f32
 const C2_FLT_EPSILON: f32 = 1.192_092_895_507_812_5e-7_f32;
 
 // ---------------------------------------------------------------------------
-// x86-64 SSE scalar arithmetic, operand-order faithful
-// ---------------------------------------------------------------------------
-//
-// IEEE-754 does not specify WHICH input NaN a binary operation propagates, so
-// the answer is decided by the code the compiler emits.  On x86-64 the SSE
-// two-operand form `OPss dst, src` follows Intel SDM Table 4-7:
-//
-//     result = if dst is NaN { quiet(dst) } else if src is NaN { quiet(src) }
-//              else { dst OP src }
-//
-// i.e. the *first* (destination) operand wins.  GCC at the optimisation level
-// used by `c_src/CMakeLists.txt` does not always put the left-hand side of the
-// C expression in the destination register — e.g. `a.x*b.x + a.y*b.y` in
-// `c2Dot` compiles to `addss %xmm1,%xmm0` with `%xmm0 = a.y*b.y`, so the
-// SECOND product wins.  LLVM, meanwhile, is free to commute `fadd`/`fmul` and
-// in fact chooses differently between the `dev` and `release` profiles.
-//
-// The helpers below therefore make the NaN-selection EXPLICIT so the result no
-// longer depends on which operand the backend happens to place in `dst`.  Each
-// call site spells out the (dst, src) pair taken from `objdump -d` of the C
-// shared object.  When neither operand is a NaN the plain Rust operator is
-// used, which is bit-exact and order-independent (including `inf + -inf`,
-// which yields the x86 "real indefinite" QNaN `0xffc00000` either way).
-
-/// Set the quiet bit, exactly as an x86 SSE operation does when it propagates
-/// an incoming NaN. Already-quiet NaNs are returned unchanged.
-#[allow(dead_code)]
-#[inline(always)]
-fn ss_quiet(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() | 0x0040_0000)
-}
-
-// NOTE: expressing the NaN-selection rule as ordinary Rust
-//
-//     if dst.is_nan() { ss_quiet(dst) } else if src.is_nan() { ss_quiet(src) }
-//     else { dst + src }
-//
-// does NOT work: LLVM IR leaves NaN payload propagation unspecified, so
-// instcombine folds `select(isnan(x), x, fadd(x, y))` straight back into
-// `fadd(x, y)` and the carefully chosen operand order is lost again (verified
-// by disassembling the resulting `.so`).  The only way to pin the exact
-// instruction *and* its operand order is to emit it directly.
-
-/// `addss dst, src`
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn ss_add(dst: f32, src: f32) -> f32 {
-    let mut d = dst;
-    unsafe {
-        core::arch::asm!(
-            "addss {0}, {1}",
-            inout(xmm_reg) d,
-            in(xmm_reg) src,
-            options(pure, nomem, nostack, preserves_flags),
-        );
-    }
-    d
-}
-
-/// `subss dst, src`
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn ss_sub(dst: f32, src: f32) -> f32 {
-    let mut d = dst;
-    unsafe {
-        core::arch::asm!(
-            "subss {0}, {1}",
-            inout(xmm_reg) d,
-            in(xmm_reg) src,
-            options(pure, nomem, nostack, preserves_flags),
-        );
-    }
-    d
-}
-
-/// `mulss dst, src`
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn ss_mul(dst: f32, src: f32) -> f32 {
-    let mut d = dst;
-    unsafe {
-        core::arch::asm!(
-            "mulss {0}, {1}",
-            inout(xmm_reg) d,
-            in(xmm_reg) src,
-            options(pure, nomem, nostack, preserves_flags),
-        );
-    }
-    d
-}
-
-/// `divss dst, src`
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn ss_div(dst: f32, src: f32) -> f32 {
-    let mut d = dst;
-    unsafe {
-        core::arch::asm!(
-            "divss {0}, {1}",
-            inout(xmm_reg) d,
-            in(xmm_reg) src,
-            options(pure, nomem, nostack, preserves_flags),
-        );
-    }
-    d
-}
-
-/// `sqrtss dst, src` — what both `sqrtss` and glibc's `sqrtf` compute.
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn ss_sqrt(x: f32) -> f32 {
-    let mut d: f32;
-    unsafe {
-        core::arch::asm!(
-            "sqrtss {0}, {1}",
-            out(xmm_reg) d,
-            in(xmm_reg) x,
-            options(pure, nomem, nostack, preserves_flags),
-        );
-    }
-    d
-}
-
-// Portable fallbacks. These reproduce the x86 rule (Intel SDM Table 4-7) as
-// closely as the host allows; the differential tests only run on x86-64,
-// which is the platform the C shared object is built for.
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-fn ss_nan(dst: f32, src: f32) -> Option<f32> {
-    if dst.is_nan() {
-        Some(ss_quiet(dst))
-    } else if src.is_nan() {
-        Some(ss_quiet(src))
-    } else {
-        None
-    }
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-fn ss_add(dst: f32, src: f32) -> f32 {
-    ss_nan(dst, src).unwrap_or(dst + src)
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-fn ss_sub(dst: f32, src: f32) -> f32 {
-    ss_nan(dst, src).unwrap_or(dst - src)
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-fn ss_mul(dst: f32, src: f32) -> f32 {
-    ss_nan(dst, src).unwrap_or(dst * src)
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-fn ss_div(dst: f32, src: f32) -> f32 {
-    ss_nan(dst, src).unwrap_or(dst / src)
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-fn ss_sqrt(x: f32) -> f32 {
-    if x.is_nan() {
-        ss_quiet(x)
-    } else {
-        x.sqrt()
-    }
-}
-
-/// `xorps` against the sign mask — flips the sign bit without quieting.
-#[inline(always)]
-fn ss_neg(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() ^ 0x8000_0000)
-}
-
-// ---------------------------------------------------------------------------
 // Basic vector / rotation math
 // ---------------------------------------------------------------------------
 
@@ -323,9 +149,8 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
-    // gcc: `mulss -0xc(%rbp),%xmm0` with %xmm0 = a.x -> dst = a.x, src = b
-    a.x = ss_mul(a.x, b);
-    a.y = ss_mul(a.y, b);
+    a.x *= b;
+    a.y *= b;
     a
 }
 
@@ -352,18 +177,14 @@ pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
-    // gcc: `subss %xmm1,%xmm0` with %xmm0 = a.x, %xmm1 = b.x
-    a.x = ss_sub(a.x, b.x);
-    a.y = ss_sub(a.y, b.y);
+    a.x -= b.x;
+    a.y -= b.y;
     a
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    // gcc: mulss %xmm0,%xmm1  (dst = a.x, src = b.x)
-    //      mulss %xmm2,%xmm0  (dst = b.y, src = a.y)
-    //      addss %xmm1,%xmm0  (dst = b.y*a.y, src = a.x*b.x)
-    ss_add(ss_mul(b.y, a.y), ss_mul(a.x, b.x))
+    a.x * b.x + a.y * b.y
 }
 
 #[unsafe(no_mangle)]
@@ -426,10 +247,7 @@ pub extern "C" fn c2Len(a: c2v) -> f32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Det2(a: c2v, b: c2v) -> f32 {
-    // gcc: mulss %xmm1,%xmm0  (dst = b.y, src = a.x)
-    //      mulss %xmm2,%xmm1  (dst = b.x, src = a.y)
-    //      subss %xmm1,%xmm0  (dst = b.y*a.x, src = b.x*a.y)
-    ss_sub(ss_mul(b.y, a.x), ss_mul(b.x, a.y))
+    a.x * b.y - a.y * b.x
 }
 
 #[unsafe(no_mangle)]
@@ -448,23 +266,13 @@ pub unsafe extern "C" fn c2GJKSimplexMetric(s: *mut c2Simplex) -> f32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
-    // gcc, x component: mulss %xmm1,%xmm0 (dst = b.x, src = a.c)
-    //                   mulss %xmm2,%xmm1 (dst = b.y, src = a.s)
-    //                   subss %xmm1,%xmm0
-    // gcc, y component: mulss %xmm0,%xmm1 (dst = a.s, src = b.x)
-    //                   mulss %xmm2,%xmm0 (dst = b.y, src = a.c)
-    //                   addss %xmm0,%xmm3 (dst = a.s*b.x)
-    c2V(
-        ss_sub(ss_mul(b.x, a.c), ss_mul(b.y, a.s)),
-        ss_add(ss_mul(a.s, b.x), ss_mul(b.y, a.c)),
-    )
+    c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(mut a: c2v, b: c2v) -> c2v {
-    // gcc: `addss %xmm1,%xmm0` with %xmm0 = b.x, %xmm1 = a.x -> dst = b.x
-    a.x = ss_add(b.x, a.x);
-    a.y = ss_add(b.y, a.y);
+    a.x += b.x;
+    a.y += b.y;
     a
 }
 
@@ -496,8 +304,7 @@ pub unsafe extern "C" fn c22(s: *mut c2Simplex) {
     } else {
         (*verts.offset(0)).u = u;
         (*verts.offset(1)).u = v;
-        // gcc: `movss u,%xmm0; addss v,%xmm0` -> dst = u, src = v
-        (*s).div = ss_add(u, v);
+        (*s).div = u + v;
         (*s).count = 2;
     }
 }
@@ -515,10 +322,9 @@ pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
     let uCA = c2Dot(a, c2Sub(a, c));
     let vCA = c2Dot(c, c2Sub(c, a));
     let area = c2Det2(c2Sub(b, a), c2Sub(c, a));
-    // gcc: `movss area,%xmm1; mulss %xmm1,%xmm0` -> dst = det2(..), src = area
-    let uABC = ss_mul(c2Det2(b, c), area);
-    let vABC = ss_mul(c2Det2(c, a), area);
-    let wABC = ss_mul(c2Det2(a, b), area);
+    let uABC = c2Det2(b, c) * area;
+    let vABC = c2Det2(c, a) * area;
+    let wABC = c2Det2(a, b) * area;
     if vAB <= 0.0 && uCA <= 0.0 {
         (*verts.offset(0)).u = 1.0f32;
         (*s).div = 1.0f32;
@@ -536,42 +342,40 @@ pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
     } else if uAB > 0.0 && vAB > 0.0 && wABC <= 0.0 {
         (*verts.offset(0)).u = uAB;
         (*verts.offset(1)).u = vAB;
-        (*s).div = ss_add(uAB, vAB);
+        (*s).div = uAB + vAB;
         (*s).count = 2;
     } else if uBC > 0.0 && vBC > 0.0 && uABC <= 0.0 {
         *verts.offset(0) = *verts.offset(1);
         *verts.offset(1) = *verts.offset(2);
         (*verts.offset(0)).u = uBC;
         (*verts.offset(1)).u = vBC;
-        (*s).div = ss_add(uBC, vBC);
+        (*s).div = uBC + vBC;
         (*s).count = 2;
     } else if uCA > 0.0 && vCA > 0.0 && vABC <= 0.0 {
         *verts.offset(1) = *verts.offset(0);
         *verts.offset(0) = *verts.offset(2);
         (*verts.offset(0)).u = uCA;
         (*verts.offset(1)).u = vCA;
-        (*s).div = ss_add(uCA, vCA);
+        (*s).div = uCA + vCA;
         (*s).count = 2;
     } else {
         (*verts.offset(0)).u = uABC;
         (*verts.offset(1)).u = vABC;
         (*verts.offset(2)).u = wABC;
-        // gcc: `movss uABC; addss vABC; addss wABC` (left-associative)
-        (*s).div = ss_add(ss_add(uABC, vABC), wABC);
+        (*s).div = uABC + vABC + wABC;
         (*s).count = 3;
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Neg(a: c2v) -> c2v {
-    // gcc: `xorps` against the 0x80000000 constant (payload preserved)
-    c2V(ss_neg(a.x), ss_neg(a.y))
+    c2V(-a.x, -a.y)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Skew(a: c2v) -> c2v {
     let mut b = c2v { x: 0.0, y: 0.0 };
-    b.x = ss_neg(a.y);
+    b.x = -a.y;
     b.y = a.x;
     b
 }
@@ -580,7 +384,7 @@ pub extern "C" fn c2Skew(a: c2v) -> c2v {
 pub extern "C" fn c2CCW90(a: c2v) -> c2v {
     let mut b = c2v { x: 0.0, y: 0.0 };
     b.x = a.y;
-    b.y = ss_neg(a.x);
+    b.y = -a.x;
     b
 }
 
@@ -620,8 +424,7 @@ pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) {
     let verts = (*s).verts.as_mut_ptr();
-    // gcc: `movss 1.0f,%xmm0; divss %xmm1,%xmm0` -> dst = 1.0, src = div
-    let den = ss_div(1.0f32, (*s).div);
+    let den = 1.0f32 / (*s).div;
     match (*s).count {
         1 => {
             *a = (*verts.offset(0)).sA;
@@ -629,28 +432,28 @@ pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) 
         }
         2 => {
             *a = c2Add(
-                c2Mulvs((*verts.offset(0)).sA, ss_mul((*verts.offset(0)).u, den)),
-                c2Mulvs((*verts.offset(1)).sA, ss_mul((*verts.offset(1)).u, den)),
+                c2Mulvs((*verts.offset(0)).sA, den * (*verts.offset(0)).u),
+                c2Mulvs((*verts.offset(1)).sA, den * (*verts.offset(1)).u),
             );
             *b = c2Add(
-                c2Mulvs((*verts.offset(0)).sB, ss_mul((*verts.offset(0)).u, den)),
-                c2Mulvs((*verts.offset(1)).sB, ss_mul((*verts.offset(1)).u, den)),
+                c2Mulvs((*verts.offset(0)).sB, den * (*verts.offset(0)).u),
+                c2Mulvs((*verts.offset(1)).sB, den * (*verts.offset(1)).u),
             );
         }
         3 => {
             *a = c2Add(
                 c2Add(
-                    c2Mulvs((*verts.offset(0)).sA, ss_mul((*verts.offset(0)).u, den)),
-                    c2Mulvs((*verts.offset(1)).sA, ss_mul((*verts.offset(1)).u, den)),
+                    c2Mulvs((*verts.offset(0)).sA, den * (*verts.offset(0)).u),
+                    c2Mulvs((*verts.offset(1)).sA, den * (*verts.offset(1)).u),
                 ),
-                c2Mulvs((*verts.offset(2)).sA, ss_mul((*verts.offset(2)).u, den)),
+                c2Mulvs((*verts.offset(2)).sA, den * (*verts.offset(2)).u),
             );
             *b = c2Add(
                 c2Add(
-                    c2Mulvs((*verts.offset(0)).sB, ss_mul((*verts.offset(0)).u, den)),
-                    c2Mulvs((*verts.offset(1)).sB, ss_mul((*verts.offset(1)).u, den)),
+                    c2Mulvs((*verts.offset(0)).sB, den * (*verts.offset(0)).u),
+                    c2Mulvs((*verts.offset(1)).sB, den * (*verts.offset(1)).u),
                 ),
-                c2Mulvs((*verts.offset(2)).sB, ss_mul((*verts.offset(2)).u, den)),
+                c2Mulvs((*verts.offset(2)).sB, den * (*verts.offset(2)).u),
             );
         }
         _ => {
@@ -662,8 +465,7 @@ pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
-    // gcc: `divss -0xc(%rbp),%xmm0` with %xmm0 = 1.0f -> dst = 1.0, src = b
-    c2Mulvs(a, ss_div(1.0f32, b))
+    c2Mulvs(a, 1.0f32 / b)
 }
 
 #[unsafe(no_mangle)]
@@ -674,13 +476,12 @@ pub extern "C" fn c2Norm(a: c2v) -> c2v {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2L(s: *mut c2Simplex) -> c2v {
     let verts = (*s).verts.as_mut_ptr();
-    // gcc: `movss 1.0f,%xmm0; divss %xmm1,%xmm0` -> dst = 1.0, src = div
-    let den = ss_div(1.0f32, (*s).div);
+    let den = 1.0f32 / (*s).div;
     match (*s).count {
         1 => (*verts.offset(0)).p,
         2 => c2Add(
-            c2Mulvs((*verts.offset(0)).p, ss_mul((*verts.offset(0)).u, den)),
-            c2Mulvs((*verts.offset(1)).p, ss_mul((*verts.offset(1)).u, den)),
+            c2Mulvs((*verts.offset(0)).p, den * (*verts.offset(0)).u),
+            c2Mulvs((*verts.offset(1)).p, den * (*verts.offset(1)).u),
         ),
         _ => c2V(0.0, 0.0),
     }
@@ -688,17 +489,7 @@ pub unsafe extern "C" fn c2L(s: *mut c2Simplex) -> c2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
-    // gcc, x component: mulss %xmm0,%xmm1 (dst = a.c, src = b.x)
-    //                   mulss %xmm2,%xmm0 (dst = b.y, src = a.s)
-    //                   addss %xmm0,%xmm1 (dst = a.c*b.x)
-    // gcc, y component: xorps sign mask on a.s, then
-    //                   mulss %xmm0,%xmm1 (dst = -a.s, src = b.x)
-    //                   mulss %xmm2,%xmm0 (dst = b.y, src = a.c)
-    //                   addss %xmm0,%xmm3 (dst = (-a.s)*b.x)
-    c2V(
-        ss_add(ss_mul(a.c, b.x), ss_mul(b.y, a.s)),
-        ss_add(ss_mul(ss_neg(a.s), b.x), ss_mul(b.y, a.c)),
-    )
+    c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)
 }
 
 // ---------------------------------------------------------------------------
@@ -764,8 +555,7 @@ pub unsafe extern "C" fn c2GJK(
             let metric = c2GJKSimplexMetric(&mut s);
             let min_metric = if metric < metric_old { metric } else { metric_old };
             let max_metric = if metric > metric_old { metric } else { metric_old };
-            // gcc compiles `max_metric * 2.0f` as `addss %xmm0,%xmm0`
-            if !(min_metric < ss_add(max_metric, max_metric) && metric < -1.0e8f32) {
+            if !(min_metric < max_metric * 2.0f32 && metric < -1.0e8f32) {
                 cache_was_read = 1;
             }
         }
@@ -852,10 +642,8 @@ pub unsafe extern "C" fn c2GJK(
     } else if use_radius != 0 {
         let rA = pA.radius;
         let rB = pB.radius;
-        // gcc: `movss rA,%xmm1; addss rB,%xmm1` -> dst = rA, src = rB
-        if dist > ss_add(rA, rB) && dist > C2_FLT_EPSILON {
-            // gcc: `movss dist,%xmm0; subss %xmm1,%xmm0` -> dst = dist
-            dist = ss_sub(dist, ss_add(rA, rB));
+        if dist > rA + rB && dist > C2_FLT_EPSILON {
+            dist -= rA + rB;
             let n = c2Norm(c2Sub(b, a));
             a = c2Add(a, c2Mulvs(n, rA));
             b = c2Sub(b, c2Mulvs(n, rB));
@@ -956,9 +744,8 @@ pub extern "C" fn c2CapsuletoCapsule(A: c2Capsule, B: c2Capsule) -> c_int {
 pub extern "C" fn c2CircletoCircle(A: c2Circle, B: c2Circle) -> c_int {
     let c = c2Sub(B.p, A.p);
     let d2 = c2Dot(c, c);
-    // gcc: `movss A.r,%xmm1; movss B.r,%xmm0; addss %xmm1,%xmm0` -> dst = B.r
-    let mut r2 = ss_add(B.r, A.r);
-    r2 = ss_mul(r2, r2);
+    let mut r2 = A.r + B.r;
+    r2 = r2 * r2;
     (d2 < r2) as c_int
 }
 
@@ -967,7 +754,7 @@ pub extern "C" fn c2CircletoAABB(A: c2Circle, B: c2AABB) -> c_int {
     let L = c2Clampv(A.p, B.min, B.max);
     let ab = c2Sub(A.p, L);
     let d2 = c2Dot(ab, ab);
-    let r2 = ss_mul(A.r, A.r);
+    let r2 = A.r * A.r;
     (d2 < r2) as c_int
 }
 
@@ -982,17 +769,15 @@ pub extern "C" fn c2CircletoCapsule(A: c2Circle, B: c2Capsule) -> c_int {
     } else {
         let db = c2Dot(c2Sub(A.p, B.b), n);
         if db < 0.0 {
-            // gcc: `movss da,%xmm1; divss %xmm0,%xmm1` -> dst = da, src = dot(n,n)
-            let e = c2Sub(ap, c2Mulvs(n, ss_div(da, c2Dot(n, n))));
+            let e = c2Sub(ap, c2Mulvs(n, da / c2Dot(n, n)));
             d2 = c2Dot(e, e);
         } else {
             let bp = c2Sub(A.p, B.b);
             d2 = c2Dot(bp, bp);
         }
     }
-    // gcc: `movss A.r,%xmm1; movss B.r,%xmm0; addss %xmm1,%xmm0` -> dst = B.r
-    let r = ss_add(B.r, A.r);
-    (d2 < ss_mul(r, r)) as c_int
+    let r = A.r + B.r;
+    (d2 < r * r) as c_int
 }
 
 #[unsafe(no_mangle)]
@@ -1090,7 +875,5 @@ pub extern "C" fn reverse_collide(x: f32, y: f32, r: f32) -> c_int {
 
 #[inline]
 fn sqrtf(x: f32) -> f32 {
-    // `sqrtss` (and glibc's `sqrtf`, which uses it) return the incoming NaN
-    // with the quiet bit forced on, preserving sign and payload.
-    ss_sqrt(x)
+    x.sqrt()
 }

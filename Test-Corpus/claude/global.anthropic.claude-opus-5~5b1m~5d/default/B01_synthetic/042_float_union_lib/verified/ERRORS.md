@@ -1,85 +1,66 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — Phase A: error-surface table
 
-Derived mechanically from the C source, not from docs or assumptions.
+## Mechanical derivation
 
-## Mechanical grep for rejection constructs
-
-Every rejection idiom was grepped for across the entire C library
-(`src/driver.c`, `include/driver.h`), excluding the licence comment block:
+Every rejection/error construct was grepped out of the complete C source
+(`c_src/src/driver.c`, `c_src/include/driver.h`):
 
 ```
-$ grep -nE 'return|assert|RETURN_ERROR|NULL|errno|exit|abort|if|else|switch|case|while|for|\?|#ifdef|#if |goto|<|>|==|!=|&&|\|\|' src/driver.c include/driver.h
-src/driver.c:26:#include <stdint.h>
-src/driver.c:27:#include <stdio.h>
-include/driver.h:24:#ifndef DRIVER_H_
-include/driver.h:29:#endif //DRIVER_H_
+grep -nE 'return|assert|NULL|errno|exit|abort|if|switch|#if|#ifdef|==|!=|ERROR|-1' \
+    src/driver.c include/driver.h
 ```
 
-The only matches are two `#include` lines and the header's own include guard.
-Concretely, the C library contains:
+The only matches outside comments are `#include <stdint.h>`, `#include <stdio.h>`
+and the header's `#ifndef DRIVER_H_` / `#endif` include guard.
 
-* **0** `return` statements (`driver` returns `void`)
-* **0** error-return macros / sentinel returns (`return -1`, `return NULL`, …)
-* **0** `assert` / `abort` / `exit` calls
-* **0** error enums or status codes — the only entry point's return type is `void`
-* **0** `if` / `else` / `switch` / `?:` / loop branches
-* **0** range checks, null checks, or min/max constants
-* **0** pointer parameters anywhere in the API (the sole parameter is a `double`
-  passed by value), hence no null-pointer rejection is even expressible
-* **0** enum parameters, hence no out-of-range-enum path is expressible
-* **0** length/size/count parameters, hence no zero-length or oversized-length
-  path is expressible
+Counts across the whole library:
 
-## The error surface is EMPTY — and that is a finding, not an omission
+| construct | occurrences |
+|-----------|-------------|
+| `return` statements | 0 |
+| error-return macros (`RETURN_ERROR`-style) | 0 |
+| `return -1` / `return NULL` / error enums | 0 |
+| `assert` / `static_assert` | 0 |
+| explicit range / bounds checks | 0 |
+| null-pointer checks | 0 |
+| MIN/MAX constants | 0 |
+| `errno` writes, `exit`, `abort` | 0 |
+| `if` / `switch` / `?:` branches | 0 |
+| `#ifdef` feature branches (outside the include guard) | 0 |
 
-`void driver(double f)` is a **total function over its entire input domain**. Its
-parameter is a single `double` passed by value, so *every one of the 2^64
-possible bit patterns is a valid input*. There is no value of `f` that the C code
-rejects, no value that makes it return an error (it cannot: it returns `void`),
-and no value that makes it abort. It unconditionally executes one `printf` and
-returns.
+`driver` is `void`-returning, takes one by-value `double`, has **no pointer
+parameters, no enum parameters, no length/count parameters, and no failure
+mode**. Every `double` bit pattern is a valid input; the function is total.
 
-Therefore the error-surface table has **no rows for input rejection**. Writing
-invented rows here would be fiction. Instead, the table below enumerates the
-generic C-API boundaries the task calls out, and records, for each, what the C
-*actually* does — which in every case is "accepts it and prints", i.e. a
-**non-rejection**. Each row still gets a differential test: the assertion is that
-C and Rust agree on the *same non-rejection* (byte-identical output, no crash,
-no trap), which is the correct analogue of "same error code" for a total
-function. These are precisely the inputs that a happy-path test would miss.
+## The error-surface table
 
-| # | function | trigger (the exact invalid/boundary input or condition) | expected C result | test |
-|---|----------|---------------------------------------------------------|-------------------|------|
-| E1 | `driver` | Null pointer argument — **not expressible**: the sole parameter is `double` by value, there is no pointer in the ABI. Nearest analogue: the all-zero-bits argument, `f = +0.0`. | No rejection. Prints `0 0x0p+0 0.0000`. Returns `void`. | `err_e1_all_zero_bits_no_pointer_to_be_null` |
-| E2 | `driver` | Zero length — **not expressible**: no length/size/count parameter exists. Nearest analogue: `f = -0.0` (sign bit set, zero magnitude), the boundary value that distinguishes `%llx` from `%.4f` output. | No rejection. Prints `8000000000000000 -0x0p+0 -0.0000`. | `err_e2_negative_zero` |
-| E3 | `driver` | Oversized length — **not expressible**: no length parameter. Nearest analogue: the largest finite magnitude, `f = ±DBL_MAX` (`0x7fefffffffffffff` / `0xffefffffffffffff`), which makes `%.4f` emit a ~310-character digit string — the longest output the API can produce. | No rejection. Prints the full ~310-digit expansion; no truncation, no overflow. | `err_e3_dbl_max_longest_output` |
-| E4 | `driver` | One step past the valid range, high end: `f = nextafter(DBL_MAX, INF) = +INFINITY` (`0x7ff0000000000000`). The exponent field leaves the finite range. | No rejection. Prints `7ff0000000000000 inf inf`. | `err_e4_positive_infinity` |
-| E5 | `driver` | One step past the valid range, low end: `f = -INFINITY` (`0xfff0000000000000`). | No rejection. Prints `fff0000000000000 -inf -inf`. | `err_e5_negative_infinity` |
-| E6 | `driver` | Not-a-number, positive quiet NaN (`0x7ff8000000000000`) — a value with no meaningful numeric interpretation, the float analogue of "an enum value with no valid variant". | No rejection. Prints `7ff8000000000000 nan nan`. | `err_e6_quiet_nan_positive` |
-| E7 | `driver` | Negative quiet NaN (`0xfff8000000000000`) — sign bit set on a NaN; glibc spells this `-nan`, so the sign must survive the FFI boundary. | No rejection. Prints `fff8000000000000 -nan -nan`. | `err_e7_quiet_nan_negative` |
-| E8 | `driver` | **Signalling** NaN (`0x7ff0000000000001`) — mantissa MSB clear. Passing this across the FFI boundary must not quiet it (which would corrupt the `%llx` bit pattern) nor raise an invalid-operation trap. | No rejection. `%llx` prints the sNaN bits unmodified; `%a`/`%.4f` print `nan`. | `err_e8_signalling_nan` |
-| E9 | `driver` | NaN carrying an arbitrary payload (e.g. `0x7ff8deadbeefcafe`, `0xfffdeadbeefcafe`-class patterns) — the payload bits must be preserved verbatim by `%llx` even though `%a` collapses them all to `nan`. | No rejection. Payload appears in `%llx`; `%a`/`%.4f` print `nan`/`-nan`. | `err_e9_nan_payload_preserved` |
-| E10 | `driver` | Subnormal boundary: the smallest positive denormal `f = 5e-324` (`0x0000000000000001`), where the implicit mantissa bit is absent and glibc must switch to the `0x0.…p-1022` form for `%a`. | No rejection. Prints `1 0x0.0000000000001p-1022 0.0000`. | `err_e10_smallest_subnormal` |
-| E11 | `driver` | The normal/subnormal transition, one step *below* the smallest normal: `f = nextafter(DBL_MIN, 0) = 0x000fffffffffffff` (largest subnormal), versus `DBL_MIN = 0x0010000000000000`. Crossing this boundary changes the `%a` mantissa form. | No rejection. Both print their respective `%a` forms; formats differ across the boundary. | `err_e11_subnormal_normal_boundary` |
-| E12 | `driver` | `%.4f` underflow to zero with sign retention: a tiny negative value such as `f = -1e-300` rounds to `-0.0000`, not `0.0000`. A sign-dropping bug is invisible for positive inputs. | No rejection. Prints `-0.0000` for the `%.4f` field. | `err_e12_tiny_negative_signed_zero` |
-| E13 | `driver` | `%.4f` round-half-to-even ties, resolved off the *exact binary* value, not the decimal literal: e.g. `0.00005`, `0.00015`, `0.00025`, `2.5e-5`. Naive round-half-away implementations diverge here. | No rejection. glibc rounds using the exact binary expansion; ties go to even only when the binary value is an exact tie. | `err_e13_round_half_even_ties` |
-| E14 | `driver` | Every remaining bit pattern, including the ones no source-level `double` literal can name: swept by feeding raw `u64` bit patterns straight through the ABI (all exponent fields, both signs, random mantissas). No pattern is rejected by C. | No rejection for any of the 2^64 patterns; each produces exactly one line of output. | `err_e14_raw_bit_pattern_sweep` |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| — | `driver` | *(none — the C source contains zero rejection paths)* | n/a |
 
-## Notes on rows E1–E3
+There are **zero rows**: the C library rejects nothing. Recording a row here
+would mean inventing an error the C does not have.
 
-Rows E1, E2 and E3 are the task's mandated "null pointer / zero length /
-oversized length" boundaries. This API has **no pointer and no length parameter**,
-so those conditions cannot be constructed — the ABI provides no way to express
-them. Rather than skip the rows, each is mapped to the closest structurally
-analogous boundary in the domain that *does* exist (all-zero bits, signed zero,
-and maximum-magnitude/longest-output respectively) and tested there. This is
-recorded explicitly so the mapping is auditable rather than silently dropped.
+## Substitute error-path coverage (the generic-boundary gate)
 
-## Note on row E8 (signalling NaN)
+Because the table is empty, the Phase C obligation is redischarged against the
+*generic* boundaries the task requires for every C API, reinterpreted for this
+signature. Each is an input the C accepts and handles, so the assertion is
+"C and Rust produce **byte-identical stdout**", which is this API's analogue of
+"the same error code or sentinel" — a divergence here is exactly the
+happy-path-invisible class of bug the phase targets.
 
-E8 is the row that most resembles "an out-of-range enum value crossing the FFI
-boundary". A signalling NaN is a bit pattern the type system admits but that no
-arithmetic operation would produce, and a translation that let the value be
-loaded/stored through an x87 register, or that round-tripped it through any
-arithmetic, would silently quiet it (setting the mantissa MSB) and change the
-`%llx` output. The C never inspects the value, so the Rust must not either.
+| # | boundary class | concrete input(s) | test | status |
+|---|----------------|-------------------|------|--------|
+| E1 | null pointer | *not applicable* — `driver` has no pointer parameter. The format string is a private `const` in both implementations and is never caller-supplied. | `err_no_pointer_parameters` (documents + asserts the by-value ABI via a `*const c_void`-free call) | ✅ |
+| E2 | zero length | *not applicable* — no length/size/count parameter. Nearest analogue: the additive and multiplicative identities and zeroes. `+0.0`, `-0.0`, `1.0` | `err_zero_and_signed_zero` | ✅ |
+| E3 | oversized length | *not applicable* — no length parameter. Nearest analogue: magnitudes that make `%.4f` emit a maximal (~310-char) field. `DBL_MAX`, `-DBL_MAX`, `0x1.fffffffffffffp+1023`, `1e308` | `err_oversized_field_width` | ✅ |
+| E4 | one step past the valid range (upper) | `nextafter(DBL_MAX, +inf)` == `+inf`; `f64::INFINITY`; `f64::NEG_INFINITY` | `err_one_past_range_infinities` | ✅ |
+| E5 | one step past the valid range (lower / underflow) | `nextafter(0.0, 1.0)` == min subnormal `5e-324`; `-5e-324`; `nextafter(DBL_MIN, 0.0)` == max subnormal; `DBL_MIN` itself | `err_one_past_range_subnormals` | ✅ |
+| E6 | out-of-range enum value across the FFI boundary | *not applicable* — `driver` has no enum parameter. The exhaustive analogue for a `double` parameter is the *non-numeric* bit patterns that have no valid "variant": every NaN class. `+qNaN`, `-qNaN`, `+sNaN` (`0x7ff0000000000001`), `-sNaN`, NaN with a payload (`0x7ff8deadbeefcafe`), `0x7fffffffffffffff`, `0xffffffffffffffff` | `err_nan_variants_no_valid_variant` | ✅ |
+| E7 | exhaustive out-of-range sweep | all 2^11 exponent fields × representative mantissas, i.e. every IEEE-754 *class* (zero, subnormal, normal, inf, NaN) in both signs, built by reinterpreting raw `u64`s — including patterns no numeric literal can name | `err_all_ieee754_classes` | ✅ |
+| E8 | rounding-mode / tie boundary (silent-wrong-answer class) | `%.4f` half-way cases where round-half-to-even vs round-half-away diverge: `0.00005`, `0.00015`, `2.00005`, `1.0000500000000001`, `0.5/10000` neighbourhoods, and `nextafter` neighbours of each | `err_rounding_ties` | ✅ |
+| E9 | re-entrancy / interleaving with the caller's own C stdout | call `driver` many times in sequence and interleave with direct `printf` from the test, asserting the combined stream matches | `err_interleaved_with_caller_stdout` | ✅ |
+
+All nine boundary tests are differential (both `.so`s loaded with `libloading`,
+stdout captured per call and compared byte-for-byte).

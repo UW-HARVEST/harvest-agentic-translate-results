@@ -270,7 +270,14 @@ pub extern "C" fn SPX_treehash(
         let ctx_ptr = ctx;
         treehash_impl(
             core::slice::from_raw_parts_mut(root, SPX_N),
-            core::slice::from_raw_parts_mut(auth_path, (tree_height as usize) * SPX_N),
+            // The C writes `auth_path + heights[offset-1] * SPX_N` where
+            // `heights[offset-1]` can reach `tree_height` itself (the final
+            // collapse to the root, reachable e.g. for `tree_height == 0`, or
+            // for a `leaf_idx` outside `0..2^tree_height`). So the region the C
+            // can touch is `(tree_height + 1) * SPX_N`, not `tree_height *
+            // SPX_N` -- under-sizing the slice here made the Rust panic exactly
+            // where the C writes.
+            core::slice::from_raw_parts_mut(auth_path, (tree_height as usize + 1) * SPX_N),
             &*ctx,
             leaf_idx,
             idx_offset,

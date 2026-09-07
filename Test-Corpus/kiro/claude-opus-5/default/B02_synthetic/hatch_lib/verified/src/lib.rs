@@ -171,28 +171,15 @@ pub unsafe extern "C" fn shift_array_data(arr: *mut c_int, size: c_int, shift_by
 }
 
 /// `int process_pointer_data(int *ptr, int multiplier)`
-///
-/// `core::ptr::read` rather than `*ptr`: a plain deref makes rustc emit its
-/// injected null-dereference assertion whenever UB checks are on (debug
-/// profile), which turns the C's `SIGSEGV` on `ptr == NULL` into a Rust panic
-/// and `SIGABRT`. `ptr::read` is the same single aligned load with no added
-/// check, so the library faults identically to the C in every profile.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_pointer_data(ptr: *mut c_int, multiplier: c_int) -> c_int {
-    let value = unsafe { core::ptr::read(ptr) };
+    let value = unsafe { *ptr };
     value
         .wrapping_mul(multiplier)
         .wrapping_add(GLOBAL_ACCUMULATOR.get())
 }
 
 /// `int compute_with_dynamic_memory(int base, int count)`
-///
-/// Note `count * sizeof(int)` in the C converts `count` to `size_t` first, so a
-/// negative `count` becomes a huge request and `malloc` returns NULL; the loop
-/// guards then keep that NULL from ever being touched. `ptr::write`/`ptr::read`
-/// are used instead of `*p = v` / `*p` so that an actual allocation failure
-/// faults the same way the C does in every build profile (see
-/// `process_pointer_data`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn compute_with_dynamic_memory(base: c_int, count: c_int) -> c_int {
     let temp_array = unsafe {
@@ -202,7 +189,7 @@ pub unsafe extern "C" fn compute_with_dynamic_memory(base: c_int, count: c_int) 
     let mut i: c_int = 0;
     while i < count {
         unsafe {
-            core::ptr::write(temp_array.offset(i as isize), base.wrapping_add(i.wrapping_mul(3)));
+            *temp_array.offset(i as isize) = base.wrapping_add(i.wrapping_mul(3));
         }
         i = i.wrapping_add(1);
     }
@@ -210,7 +197,7 @@ pub unsafe extern "C" fn compute_with_dynamic_memory(base: c_int, count: c_int) 
     let mut sum: c_int = 0;
     let mut i: c_int = 0;
     while i < count {
-        sum = sum.wrapping_add(unsafe { core::ptr::read(temp_array.offset(i as isize)) });
+        sum = sum.wrapping_add(unsafe { *temp_array.offset(i as isize) });
         i = i.wrapping_add(1);
     }
 
@@ -258,12 +245,7 @@ pub unsafe extern "C" fn manipulate_records(
     let limit = num_records.wrapping_sub(shift);
     let mut i: c_int = 0;
     while i < limit {
-        // `ptr::read` of the field pointer rather than `(*p).value`, so a NULL
-        // `records` faults like the C instead of tripping rustc's injected
-        // null-dereference assertion (see `process_pointer_data`).
-        total = total.wrapping_add(unsafe {
-            core::ptr::read(&raw const (*records.offset(i as isize)).value)
-        });
+        total = total.wrapping_add(unsafe { (*records.offset(i as isize)).value });
         i = i.wrapping_add(1);
     }
 
@@ -302,14 +284,14 @@ pub unsafe extern "C" fn hatch(
     let dynamic_data =
         unsafe { malloc(10 * core::mem::size_of::<c_int>()) as *mut c_int };
     for i in 0..10i32 {
-        unsafe { core::ptr::write(dynamic_data.offset(i as isize), param1.wrapping_add(i)) };
+        unsafe { *dynamic_data.offset(i as isize) = param1.wrapping_add(i) };
     }
 
     result = result
         .wrapping_add(unsafe { process_pointer_data(dynamic_data.offset(5), param2) });
 
     unsafe { shift_array_data(dynamic_data, 10, 3) };
-    result = result.wrapping_add(unsafe { core::ptr::read(dynamic_data) });
+    result = result.wrapping_add(unsafe { *dynamic_data });
 
     unsafe { free(dynamic_data as *mut c_void) };
 
@@ -321,8 +303,8 @@ pub unsafe extern "C" fn hatch(
     for i in 0..5i32 {
         unsafe {
             let rec = records.offset(i as isize);
-            core::ptr::write(&raw mut (*rec).id, i);
-            core::ptr::write(&raw mut (*rec).value, param4.wrapping_add(i.wrapping_mul(10)));
+            (*rec).id = i;
+            (*rec).value = param4.wrapping_add(i.wrapping_mul(10));
             time(&raw mut (*rec).timestamp);
             snprintf(
                 (&raw mut (*rec).name) as *mut c_char,

@@ -25,20 +25,11 @@ use tables::{M_EXPONENT, M_MANTISSA, M_OFFSET};
 // libm bindings
 //
 // The C translation unit calls fabsf/fmodf/floorf from <math.h> (CMake links
-// `m`).  Bind to the very same symbols so rounding is bit-for-bit identical.
+// `m`).  `fabsf` and `floorf` are handled below without a libm call; `fmodf`
+// is declared as an extern and resolves to the `compiler_builtins` (musl-port)
+// implementation, which shares glibc's `(x*y)/(x*y)` special-case rule and is
+// exact on the finite path.
 // ---------------------------------------------------------------------------
-extern "C" {
-    fn fmodf(x: f32, y: f32) -> f32;
-    fn floorf(x: f32) -> f32;
-}
-
-/// GCC inlines `fabsf` as `andps` against `0x7fffffff`: it clears the sign bit
-/// and touches nothing else, so a signalling NaN stays signalling.  A libm
-/// *call* would be free to quiet it, hence the explicit bit operation.
-#[inline(always)]
-fn absf(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() & 0x7FFF_FFFF)
-}
 
 /// C's `(int)` cast from `float`, as compiled on x86-64 (`cvttss2si`):
 /// out-of-range values and NaN yield `0x80000000`.  Rust's `as` saturates
@@ -55,66 +46,72 @@ fn c_float_to_int(v: f32) -> c_int {
 // ---------------------------------------------------------------------------
 // Scalar SSE arithmetic with exact x86 NaN propagation.
 //
-// `ADDSS/SUBSS/MULSS/DIVSS src1, src2` return src1 quieted when src1 is NaN,
-// otherwise src2 quieted when src2 is NaN.  So when *both* operands can be
-// NaN the operand order decides which payload/sign survives, and GCC is free
-// to swap the operands of the commutative ops (and to rewrite `a - k*b` as
-// `a + (-k)*b`).  LLVM makes different choices, which showed up as differing
-// NaN payloads in `f9` and `f11`.
+// GCC at -O0 (the way `c_src/CMakeLists.txt` builds the library: no
+// `CMAKE_BUILD_TYPE`, hence no `-O`) emits one `ADDSS/SUBSS/MULSS/DIVSS` per
+// source-level operator, and the *first* source operand (the destination
+// register) is always the operator's left-hand side.  When both operands are
+// NaN the instruction returns src1 quieted, so that choice is observable.
 //
-// These helpers pin the selection down explicitly.  For non-NaN operands they
-// are plain IEEE-754 single-precision ops, i.e. the same instruction, so
-// nothing else changes.  `a` is src1, `b` is src2.
+// Writing these as plain Rust `+`/`-`/`*`//` is NOT sufficient: at -O
+// LLVM reassociates and re-materialises the NaN-selection logic, which changed
+// the surviving payload in `f9` (observed: C `0xffc58ed7` vs Rust
+// `0xffc00000`).  Inline asm pins the exact instruction and operand order and
+// is opaque to the optimiser.
+//
+// `a` is src1 (the destination), `b` is src2.
 // ---------------------------------------------------------------------------
 
-/// x86 quiets an incoming NaN by setting the mantissa MSB; the sign and the
-/// rest of the payload are passed through untouched.
-#[inline(always)]
-fn quiet(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() | 0x0040_0000)
+macro_rules! sse_binop {
+    ($name:ident, $mnemonic:literal, $fallback:tt) => {
+        #[cfg(target_arch = "x86_64")]
+        #[inline]
+        fn $name(a: f32, b: f32) -> f32 {
+            let mut x = a;
+            unsafe {
+                core::arch::asm!(
+                    concat!($mnemonic, " {x}, {b}"),
+                    x = inout(xmm_reg) x,
+                    b = in(xmm_reg) b,
+                    options(pure, nomem, nostack, preserves_flags),
+                );
+            }
+            x
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        #[inline]
+        fn $name(a: f32, b: f32) -> f32 {
+            let f: fn(f32, f32) -> f32 = $fallback;
+            f(a, b)
+        }
+    };
 }
 
-#[inline(always)]
-fn nan_src(a: f32, b: f32) -> Option<f32> {
-    if a.is_nan() {
-        Some(quiet(a))
-    } else if b.is_nan() {
-        Some(quiet(b))
-    } else {
-        None
-    }
+sse_binop!(addss, "addss", (|a, b| a + b));
+sse_binop!(subss, "subss", (|a, b| a - b));
+sse_binop!(mulss, "mulss", (|a, b| a * b));
+sse_binop!(divss, "divss", (|a, b| a / b));
+
+/// GCC compiles `fabsf(x)` inline as `ANDPS` with the `0x7fffffff` mask: it
+/// clears the sign bit and does NOT quiet a signalling NaN.
+#[inline]
+fn fabsf(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() & 0x7fff_ffff)
 }
 
-#[inline(always)]
-fn addss(a: f32, b: f32) -> f32 {
-    match nan_src(a, b) {
-        Some(n) => n,
-        None => a + b,
-    }
+extern "C" {
 }
 
-#[inline(always)]
-fn subss(a: f32, b: f32) -> f32 {
-    match nan_src(a, b) {
-        Some(n) => n,
-        None => a - b,
-    }
+/// `floorf` — the C calls glibc's, but in `f12` (its only caller) the result is
+/// consumed exclusively by `cvttss2si`, so only "is it NaN" and the exact
+/// integral value are observable, never the NaN payload.
+#[inline]
+fn floorf(x: f32) -> f32 {
+    x.floor()
 }
 
-#[inline(always)]
-fn mulss(a: f32, b: f32) -> f32 {
-    match nan_src(a, b) {
-        Some(n) => n,
-        None => a * b,
-    }
-}
-
-#[inline(always)]
-fn divss(a: f32, b: f32) -> f32 {
-    match nan_src(a, b) {
-        Some(n) => n,
-        None => a / b,
-    }
+extern "C" {
+    fn fmodf(x: f32, y: f32) -> f32;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,20 +180,19 @@ pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
     let mut a = a;
-    a.x -= b.x;
-    a.y -= b.y;
+    a.x = subss(a.x, b.x);
+    a.y = subss(a.y, b.y);
     a
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    // GCC (-O0, the CMake default) emits, verbatim:
-    //     xmm1 = a.x; xmm0 = b.x; mulss %xmm0,%xmm1   -> P1 = mulss(a.x, b.x)
-    //     xmm2 = a.y; xmm0 = b.y; mulss %xmm2,%xmm0   -> P2 = mulss(b.y, a.y)
-    //                             addss %xmm1,%xmm0   -> addss(P2, P1)
-    // i.e. the second product and the addend are both operand-swapped
-    // relative to the C source.  Only observable when two NaNs meet, but
-    // then the surviving payload depends on it (ADDSS/MULSS quiet src1 first).
+    // GCC -O0 emits (see `objdump -d` of c2Dot):
+    //   xmm1 = a.x; xmm0 = b.x; mulss %xmm0,%xmm1   -> P1 = mulss(a.x, b.x)
+    //   xmm2 = a.y; xmm0 = b.y; mulss %xmm2,%xmm0   -> P2 = mulss(b.y, a.y)
+    //   addss %xmm1,%xmm0                           -> addss(P2, P1)
+    // i.e. the second product has its operands swapped and it is the *first*
+    // source of the add, which decides the surviving NaN payload.
     addss(mulss(b.y, a.y), mulss(a.x, b.x))
 }
 
@@ -204,8 +200,9 @@ pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
 pub extern "C" fn c2CircletoCircle(A: c2Circle, B: c2Circle) -> c_int {
     let c = c2Sub(B.p, A.p);
     let d2 = c2Dot(c, c);
-    let mut r2 = A.r + B.r;
-    r2 = r2 * r2;
+    // GCC: xmm1 = A.r; xmm0 = B.r; addss %xmm1,%xmm0  -> addss(B.r, A.r)
+    let mut r2 = addss(B.r, A.r);
+    r2 = mulss(r2, r2);
     (d2 < r2) as c_int
 }
 
@@ -214,7 +211,7 @@ pub extern "C" fn c2CircletoAABB(A: c2Circle, B: c2AABB) -> c_int {
     let L = c2Clampv(A.p, B.min, B.max);
     let ab = c2Sub(A.p, L);
     let d2 = c2Dot(ab, ab);
-    let r2 = A.r * A.r;
+    let r2 = mulss(A.r, A.r);
     (d2 < r2) as c_int
 }
 
@@ -437,21 +434,15 @@ fn lm_sub2(a: lm_vec2, b: lm_vec2) -> lm_vec2 {
     lm_v2(subss(a.x, b.x), subss(a.y, b.y))
 }
 
-/// `static float lm_dot2(lm_vec2 a, lm_vec2 b)`
-///
-/// GCC compiles this byte-identically to `c2Dot`: the second `mulss` and the
-/// `addss` both have their operands swapped relative to the C source, so the
-/// surviving NaN payload is `mulss(b.y, a.y)`'s, not `mulss(a.x, b.x)`'s.
+/// `static float lm_dot2(lm_vec2 a, lm_vec2 b)` — identical codegen to `c2Dot`:
+/// `addss(mulss(b.y, a.y), mulss(a.x, b.x))`.
+#[inline]
 fn lm_dot2(a: lm_vec2, b: lm_vec2) -> f32 {
     addss(mulss(b.y, a.y), mulss(a.x, b.x))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn f9(p1: lm_vec2, p2: lm_vec2, p3: lm_vec2, p: lm_vec2) -> lm_vec2 {
-    // Operand order below is transcribed from the GCC -O0 disassembly of `f9`
-    // (see the `mulss`/`subss`/`divss` sequence at 0x1bed..0x1c5f).  For
-    // non-NaN inputs every line is plain IEEE-754 single precision, so the
-    // ordering is only observable through NaN payload selection.
     let v0 = lm_sub2(p3, p1);
     let v1 = lm_sub2(p2, p1);
     let v2 = lm_sub2(p, p1);
@@ -462,14 +453,15 @@ pub extern "C" fn f9(p1: lm_vec2, p2: lm_vec2, p3: lm_vec2, p: lm_vec2) -> lm_ve
     let dot11 = lm_dot2(v1, v1);
     let dot12 = lm_dot2(v1, v2);
 
-    // invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01)
+    // GCC -O0 keeps every product in source operand order here:
+    //   invDenom: mulss(dot00, dot11), mulss(dot01, dot01), subss, divss(1.0, .)
     let inv_denom = divss(1.0f32, subss(mulss(dot00, dot11), mulss(dot01, dot01)));
-    // u = (dot11 * dot02 - dot01 * dot12) * invDenom
+    //   u: mulss(dot11, dot02), mulss(dot01, dot12), subss, mulss(., invDenom)
     let u = mulss(
         subss(mulss(dot11, dot02), mulss(dot01, dot12)),
         inv_denom,
     );
-    // v = (dot00 * dot12 - dot01 * dot02) * invDenom
+    //   v: mulss(dot00, dot12), mulss(dot01, dot02), subss, mulss(., invDenom)
     let v = mulss(
         subss(mulss(dot00, dot12), mulss(dot01, dot02)),
         inv_denom,
@@ -509,22 +501,17 @@ pub unsafe extern "C" fn f11(dest: *mut f32, src: *const f32) {
         *dest.add(2) = l;
         return;
     }
-    // c = (1.0f - fabsf(2.0f * l - 1.0f)) * s
-    // GCC emits `2.0f * l` as `addss %xmm0,%xmm0` (l + l) and inlines `fabsf`
-    // as `andps` against 0x7fffffff, which clears the sign bit *without*
-    // quieting a signalling NaN.  `f32::abs` is the same bit operation.
-    let c = mulss(subss(1.0f32, absf(subss(addss(l, l), 1.0f32))), s);
-    // m = 1.0f * (l - 0.5f * c)   -- the `1.0f *` is a no-op and GCC drops it.
+    // GCC -O0 emits, in source operand order throughout:
+    //   c = mulss(subss(1.0, fabs(subss(addss(l,l), 1.0))), s)
+    //       note `2.0f * l` is emitted as `addss %xmm0,%xmm0`, i.e. l + l.
+    let c = mulss(subss(1.0f32, fabsf(subss(addss(l, l), 1.0f32))), s);
+    // m = subss(l, mulss(c, 0.5))   -- the `1.0f *` is a no-op and GCC drops it
     let m = subss(l, mulss(c, 0.5f32));
-    // x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2) - 1.0f))
-    // GCC emits this multiply with the operands swapped (src1 is the
-    // parenthesised term, src2 is `c`).
+    // x = mulss(subss(1.0, fabs(subss(fmodf(divss(h,60), 2), 1.0))), c)
     let x = mulss(
-        subss(1.0f32, absf(subss(fmodf(divss(h, 60.0f32), 2.0f32), 1.0f32))),
+        subss(1.0f32, fabsf(subss(fmodf(divss(h, 60.0f32), 2.0f32), 1.0f32))),
         c,
     );
-    // Every `dest[..] = <a> + m` below is `addss(src1 = <a>, src2 = m)` in the
-    // emitted code, i.e. exactly the source order.
     if h >= 0.0f32 && h < 60.0f32 {
         *dest.add(0) = addss(c, m);
         *dest.add(1) = addss(x, m);

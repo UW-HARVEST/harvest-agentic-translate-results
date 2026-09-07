@@ -1,102 +1,111 @@
-# CONFIGS.md — Phase A configuration-surface table
+# Phase A.3 — Configuration-surface table
 
-The mirror of `ERRORS.md`: every **valid** input configuration the C actually
-branches on. Derived mechanically from `c_src/src/lib.c` and
-`c_src/include/lib.h`.
+## Axes the C code actually branches on
 
-## Axes the C code actually distinguishes
+Derived from `c_src/src/lib.c` and `c_src/include/lib.h`.
 
-**A1 — `charinbuf` `mode` (`switch (mode)`, lib.c:100)**: `0`, `1`, `2`, `3`,
-`4` are five distinct code paths; everything else is `default`
-(that's an error row, see `ERRORS.md` #15).
+* **Cargo features / `#ifdef`s:** none. `c_src/src/lib.c` contains zero
+  `#if`/`#ifdef` conditionals, and `translation/Cargo.toml` declares no
+  `[features]` table. There is therefore exactly **one** build configuration;
+  `--no-default-features` and `--all-features` are the same build (verified in
+  Phase D).
+* **Runtime option/mode flag:** `charinbuf`'s `mode` parameter is the only
+  option selector — a 6-way `switch` (`0,1,2,3,4,default`). `value`, `opt1`,
+  `opt2` are data, and which of them is *read at all* depends on `mode`
+  (mode 0 reads `value`; mode 1/2/4 read none; mode 3 reads `value`, `opt1`,
+  `opt2`; default reads `mode`).
+* **Hidden state axis:** the file-scope `static int counter`. It persists across
+  calls, `charinbuf` unconditionally zeroes it on entry, and mode 3 leaves a
+  non-zero residue. So *call order* is a configuration axis in its own right.
+* **Input shapes:** pointer nullness; string emptiness; `char` signedness
+  (`0x00`, ASCII, `0x80..0xFF`); buffer length (0 / 1 / many); match position
+  (first / middle / last / absent); `size` vs. match offset (short / exact /
+  long); integer boundary values (`INT_MIN`, `-1`, `0`, `1`, `65535`, `65536`,
+  `INT_MAX`) and overflow-inducing operands for `+ - *`.
+* **Entry-point levels:** the low-level leaves (`increment_counter`,
+  `decrement_counter`, `multiply_counter`, `reset_counter`, `is_string_empty`,
+  `find_char_in_buffer`, `create_buffer`, `validate_uint16_range`), the
+  mid-level dispatcher (`apply_operation`, which takes a function pointer), and
+  the one-shot wrapper (`charinbuf`). All three levels are driven directly.
+* **Observable output:** return value **and** the bytes written to `stdout`
+  (only `charinbuf` prints). Both are compared for every `charinbuf` row.
 
-**A2 — `value` shape, mode 0 only** (feeds `validate_uint16_range`): in range
-`[0, 65535]` vs out of range. In-range sub-shapes the `printf`s make visible:
-`0`, `1`, `65535` (`%d` of the boundary), mid-range.
+## Configuration rows
 
-**A3 — `value`/`opt1`/`opt2` shape, mode 3 only**: three independent `int`s fed
-through `reset → increment → multiply → decrement(5)`. Sub-shapes the arithmetic
-distinguishes: zero, positive, negative, `INT_MIN`/`INT_MAX` (wrapping
-overflow), `opt2 == 0` (annihilates the counter), `opt2 == -1` (sign flip,
-`INT_MIN * -1` overflows).
+| #  | entry point(s) | configuration (options set + input shape) | [x] |
+|----|----------------|--------------------------------------------|-----|
+| 1  | `reset_counter` | direct call, randomized `value` over full `i32` incl. `INT_MIN`/`INT_MAX`/0 | [x] |
+| 2  | `increment_counter` | direct call from a known state; randomized addends incl. pairs that overflow `INT_MAX` | [x] |
+| 3  | `decrement_counter` | direct call from a known state; randomized subtrahends incl. pairs that underflow `INT_MIN` | [x] |
+| 4  | `multiply_counter` | direct call from a known state; randomized multiplicands incl. 0, -1, `INT_MIN`, overflowing products | [x] |
+| 5  | all four counter fns | long randomized *interleaved* sequence (state accumulates across ~2000 ops), asserting the return of every single step — catches state-divergence, not just per-call arithmetic | [x] |
+| 6  | counter fns after `charinbuf(3,..)` | state-coupling: mode 3 leaves a residue, then counter fns are called directly and must see the same residue in both libs | [x] |
+| 7  | `validate_uint16_range` | boundary sweep `-2..2`, `65533..65537`, `INT_MIN`, `INT_MAX` + randomized full-range `i32` | [x] |
+| 8  | `is_string_empty` | non-NULL, `*str != 0`: ASCII first byte | [x] |
+| 9  | `is_string_empty` | non-NULL, first byte in `0x80..=0xFF` (signed-`char` sign-extension shape) | [x] |
+| 10 | `is_string_empty` | non-NULL empty string `""` | [x] |
+| 11 | `is_string_empty` | randomized strings, len 0..32, arbitrary bytes incl. high bytes | [x] |
+| 12 | `create_buffer` | `""` (len 0 -> `malloc(1)`), result must be a NUL-terminated, `free`-able heap pointer | [x] |
+| 13 | `create_buffer` | len 1, short, and long (~4 KiB) strings; contents compared byte-for-byte incl. terminator | [x] |
+| 14 | `create_buffer` | randomized non-NUL byte content, len 0..512, incl. bytes `0x80..0xFF` | [x] |
+| 15 | `find_char_in_buffer` | target present, match at offset 0 | [x] |
+| 16 | `find_char_in_buffer` | target present, match in the middle | [x] |
+| 17 | `find_char_in_buffer` | target present, match at the last byte within `size` | [x] |
+| 18 | `find_char_in_buffer` | target present in the buffer but *beyond* `size` (short `size`) | [x] |
+| 19 | `find_char_in_buffer` | `size == 0` on a non-NULL buffer | [x] |
+| 20 | `find_char_in_buffer` | `target == '\0'` with `size` including / excluding the terminator | [x] |
+| 21 | `find_char_in_buffer` | `target` negative (`0x80..=0xFF` as signed `char`), buffer containing high bytes | [x] |
+| 22 | `find_char_in_buffer` | randomized haystack (len 0..256, arbitrary bytes) x randomized target x randomized `size <= len`; result compared as an *offset* so the two libs' different base addresses are handled | [x] |
+| 23 | `apply_operation` | `op` = each of the four counter fns *of the same library*, randomized `value`, from randomized prior state | [x] |
+| 24 | `apply_operation` | `op` = a callback defined in the *test* binary (pointer crossing FFI inward), incl. one returning `-1` | [x] |
+| 25 | `charinbuf` mode 0 | `value` valid in-range (0, 1, 65535, randomized `0..=65535`) — return + stdout | [x] |
+| 26 | `charinbuf` mode 0 | `value` out of range (`-1`, `65536`, `INT_MIN`, `INT_MAX`, randomized outside) — return + stdout | [x] |
+| 27 | `charinbuf` mode 1 | no data inputs read; randomized `value`/`opt1`/`opt2` must not change output — return + stdout | [x] |
+| 28 | `charinbuf` mode 2 | malloc/strlen/free path; randomized irrelevant args — return + stdout | [x] |
+| 29 | `charinbuf` mode 3 | function-pointer pipeline, `value`/`opt1`/`opt2` small non-overflowing — return + stdout | [x] |
+| 30 | `charinbuf` mode 3 | `opt2 == 0` (multiply collapses the counter to 0) and `opt1 == 0` — return + stdout | [x] |
+| 31 | `charinbuf` mode 3 | overflow shapes: `value`/`opt1`/`opt2` at `INT_MIN`/`INT_MAX`/`-1`, and randomized full-range triples (signed wrap-around must match GCC's) — return + stdout | [x] |
+| 32 | `charinbuf` mode 4 | memchr path, `'X'` found at its fixed offset; randomized irrelevant args — return + stdout | [x] |
+| 33 | `charinbuf` default | `mode` = `-1`, `5`, `6`, `INT_MIN`, `INT_MAX`, randomized outside `0..=4` (out-of-range enum-style ints) — return + stdout | [x] |
+| 34 | `charinbuf` | mode-sequence axis: randomized sequences of modes back-to-back in one process, comparing return + stdout at every step (the `counter = 0` reset on entry must scrub mode 3's residue) | [x] |
+| 35 | binary driver | none — `c_src/CMakeLists.txt` builds only `add_library(... SHARED)`; there is no executable target and `translation/Cargo.toml` declares only `crate-type = ["cdylib"]`. No stdout-of-binary comparison applies. | [x] |
+| 36 | `reset_counter` -> `charinbuf` (modes 0/1/2/4/default) -> `increment_counter` | the `counter = 0` on entry to `charinbuf` (lib.c:101) is executed for *every* mode, but modes 0/1/2/4/default never read the counter and mode 3 immediately overwrites it — so the reset is only observable by seeding the counter, calling a non-counter mode, and reading it back through a low-level entry point. Randomized seeds. | [x] |
 
-**A4 — `opt1`/`opt2` are ignored by modes 0, 1, 2, 4**, and `value` is ignored
-by modes 1, 2, 4. Passing junk in the ignored slots must not change the output —
-a real configuration to check, not an assumption.
+Rows 1-34 and 36 map one-to-one onto the identically numbered tests in
+`tests/phase_b_valid.rs` (`row01_…` … `row36b_…`). Each `charinbuf` row compares
+the return value **and** the exact stdout bytes; each row using randomized
+inputs uses a per-row fixed seed (`Rng::new(0xNNNN)`, SplitMix64) so failures
+reproduce.
 
-**A5 — counter state on entry**: `charinbuf` unconditionally does `counter = 0`
-(lib.c:98) *before* the `switch`, so pre-existing counter state must be
-discarded; and mode 3 leaves the counter at a computed value that the
-standalone mutators must then observe. Two directions to test.
+## Why row 36 exists
 
-**A6 — entry-point level.** `charinbuf` is the only header-declared
-("convenience") entry point; the other nine exports are the low-level API and
-must be driven directly:
-`increment_counter`, `decrement_counter`, `multiply_counter`, `reset_counter`
-(stateful `int → int`), `is_string_empty`, `find_char_in_buffer`,
-`create_buffer`, `validate_uint16_range`, `apply_operation`.
+Row 36 was added after mutation testing, not from reading the source: commenting
+out `counter = 0;` at the top of `charinbuf` (lib.c:101) left rows 1-35 all
+green. Modes 0/1/2/4/default never read the counter, and mode 3 overwrites it
+with `reset_counter` before reading, so the entry reset is only observable by
+seeding the counter through `reset_counter`, calling a *non-counter* mode, and
+reading the value back through a low-level entry point afterwards. This is the
+interaction-between-entry-points blind spot the configuration table is meant to
+close.
 
-**A7 — `is_string_empty` input shape**: non-NULL with `*str != 0`. Sub-shapes:
-ASCII, byte `0x01`, high-bit byte `0x80..0xFF` (signed `char`), embedded NUL
-after byte 0 (only byte 0 is read).
+## Non-vacuity evidence
 
-**A8 — `find_char_in_buffer` input shape**: match at offset 0 / interior /
-`size-1`; multiple occurrences (first wins); `target == '\0'` matching an
-embedded NUL; non-ASCII/negative `target`; buffer length 1; large buffer;
-`size` smaller than / equal to / larger than the first match offset.
+Byte comparison of an empty capture would pass trivially, so
+`d0_capture_harness_is_not_vacuous` (`tests/phase_d_parity.rs`) asserts the full
+expected stdout of all five modes as literal strings, and `diff_charinbuf`
+refuses an empty or newline-less capture.
 
-**A9 — `create_buffer` input shape**: empty string (`malloc(1)`), 1 byte,
-long string, string containing all byte values `0x01..0xFF`. Result must be
-`free()`-able and byte-identical, and the returned pointer must be distinct
-from the input.
+Beyond that, the suite was mutation-tested: 27 deliberate divergences were
+injected into `translation/src` one at a time, each rebuilt and run against the
+full suite. 24 were killed (including two that manifest as SIGSEGV inside the
+specific Phase C test that exercises the dropped NULL guard). The three
+survivors are semantics-preserving transformations, not gaps:
 
-**A10 — `apply_operation` callback identity**: `NULL` (error row) or each of the
-four exported mutators. Each library must be driven with **its own** function
-pointers, since each `.so` owns a separate `static counter`.
+| surviving mutation | why it cannot diverge |
+|--------------------|-----------------------|
+| `target as c_int` -> `(target as u8) as c_int` in `find_char_in_buffer` | `memchr` converts its `c` argument to `unsigned char`, so sign-extension and zero-extension of the same byte are indistinguishable |
+| `malloc(len + 1)` -> `malloc(len + 2)` in `create_buffer` | over-allocating by one byte changes no observable output (an *under*-allocation would, and is not equivalent) |
+| `Buffer length: %zu` -> `%d` in mode 2 | the length is always 23; on x86-64 little-endian `%d` reads the low 32 bits of the same argument slot and prints the same digits |
 
-**A11 — stdout vs return value**: every `charinbuf` mode writes to `stdout`
-through `printf`/`puts`. Both the return value **and** the exact stdout bytes
-are part of the observable contract, so every `charinbuf` row compares both.
-
-There are **no** compile-time options: `c_src/src/lib.c` contains no `#ifdef`
-outside its `#include`s, `CMakeLists.txt` sets no `target_compile_definitions`,
-and `translation/Cargo.toml` declares no `[features]`. Therefore the only
-feature combination is the default one (`cargo test`, plus the explicitly-empty
-`--no-default-features` run, which is byte-identical) — see Phase D.
-
-## Rows
-
-Every row is exercised with many randomized inputs (fixed-seed PRNG in
-`tests/common/mod.rs`, `ITERS` per row) unless the row is a fixed literal
-configuration, in which case the randomization goes into the *ignored* argument
-slots (axis A4).
-
-| #  | entry point(s) | configuration (options set + input shape) | test | [x] |
-|----|----------------|--------------------------------------------|------|-----|
-| 1  | `charinbuf` | mode 0, `value` random in `[0, 65535]`, `opt1`/`opt2` random junk (ignored) | `cfg_01_mode0_in_range` | [x] |
-| 2  | `charinbuf` | mode 0, `value` ∈ {`0`, `1`, `65534`, `65535`} boundary in-range | `cfg_02_mode0_boundaries` | [x] |
-| 3  | `charinbuf` | mode 0, `value` random over the whole `int32` range (mixes valid and invalid; checks the `%u` of `UINT16_MAX` too) | `cfg_03_mode0_full_int_range` | [x] |
-| 4  | `charinbuf` | mode 1, `value`/`opt1`/`opt2` random junk (all ignored); exercises both `is_string_empty` calls and `result = 0 + 10` | `cfg_04_mode1` | [x] |
-| 5  | `charinbuf` | mode 2, random junk args; `create_buffer` + `strlen` + `free`, `%s` and `%zu` output | `cfg_05_mode2` | [x] |
-| 6  | `charinbuf` | mode 3, `value`/`opt1`/`opt2` random over full `int32` (wrapping `reset/inc/mul/dec` chain) | `cfg_06_mode3_full_range` | [x] |
-| 7  | `charinbuf` | mode 3, structured shapes: `opt2 == 0`; `opt2 == -1`; `value == INT_MIN`; `value == INT_MAX`; `opt1 == INT_MAX`; all-zero; all combinations of {`INT_MIN`,`-1`,`0`,`1`,`INT_MAX`}³ | `cfg_07_mode3_overflow_grid` | [x] |
-| 8  | `charinbuf` | mode 4, random junk args; `create_buffer` + `memchr` hit at a known offset, `%c`/`%s`/`%d` output | `cfg_08_mode4` | [x] |
-| 9  | `charinbuf` | every mode `0..4` in a random *sequence*, so each call sees leftover counter/heap state from the previous one (axis A5, forward direction) | `cfg_09_mode_sequence` | [x] |
-| 10 | `reset_counter` + `charinbuf(3,…)` + `increment_counter` | counter pre-seeded to a random value, then mode 3, then read back via the low-level mutators (axis A5, both directions) | `cfg_10_counter_state_across_charinbuf` | [x] |
-| 11 | `increment_counter` | standalone, random `int32` values applied repeatedly to accumulating state | `cfg_11_increment` | [x] |
-| 12 | `decrement_counter` | standalone, random `int32` values applied repeatedly | `cfg_12_decrement` | [x] |
-| 13 | `multiply_counter` | standalone, random `int32` values incl. `0`, `-1`, `INT_MIN` | `cfg_13_multiply` | [x] |
-| 14 | `reset_counter` | standalone, random `int32` values incl. boundaries | `cfg_14_reset` | [x] |
-| 15 | all four mutators | random *interleaving* of the four ops (random op, random operand) over a long chain — the composed low-level pipeline, not one wrapper at a time | `cfg_15_mutator_random_pipeline` | [x] |
-| 16 | `validate_uint16_range` | random `int32` over the full range plus the exhaustive boundary set `{INT_MIN, -2, -1, 0, 1, 2, 65534, 65535, 65536, 65537, INT_MAX}` | `cfg_16_validate_full_range` | [x] |
-| 17 | `is_string_empty` | non-empty, first byte random `0x01..0xFF` (incl. high-bit/signed) | `cfg_17_is_string_empty_first_byte` | [x] |
-| 18 | `is_string_empty` | random-length random-content strings; empty; embedded NUL at byte 0 vs later | `cfg_18_is_string_empty_shapes` | [x] |
-| 19 | `find_char_in_buffer` | random buffer, `target` present, match at offset 0 / interior / `size-1`, `size` == buffer length | `cfg_19_find_char_hit_positions` | [x] |
-| 20 | `find_char_in_buffer` | random buffer + random `target` (may or may not be present) + random `size ≤ len`; compares the *offset* of the returned pointer, and that it points into the caller's buffer | `cfg_20_find_char_random` | [x] |
-| 21 | `find_char_in_buffer` | multiple occurrences of `target` (first-match semantics); `target == '\0'` with an embedded NUL; buffer of length 1 | `cfg_21_find_char_multi_and_nul` | [x] |
-| 22 | `create_buffer` | empty string, 1-byte, random-length random-content strings, and a string of every byte `0x01..0xFF`; compares returned bytes, `strlen`, non-NULL, `!= input`, and that `free()` succeeds | `cfg_22_create_buffer_shapes` | [x] |
-| 23 | `apply_operation` | each of the four mutators (that library's own pointer) with random `int32` operands, from a random starting counter | `cfg_23_apply_operation_each_op` | [x] |
-| 24 | `apply_operation` | random *sequence* of (random mutator, random operand) pairs — composed pipeline through the indirect-call entry point | `cfg_24_apply_operation_pipeline` | [x] |
-| 25 | `create_buffer` → `find_char_in_buffer` | output of one low-level entry point fed straight into the next (the pipeline `charinbuf` mode 4 builds internally, driven manually with random content and random targets) | `cfg_25_create_then_find_pipeline` | [x] |
-| 26 | `apply_operation` + foreign callback | `apply_operation` is a pure indirect call, so a caller may hand it *any* `int (*)(int)`: C's `apply_operation` is driven with the Rust `.so`'s mutator pointers and vice versa, for all four ops with random operands and random start values | `cfg_26_apply_operation_foreign_callback` | [x] |
-| 27 | `charinbuf` + counter mutators | the counter is perturbed to a random value *between* two identical `charinbuf` calls; because `charinbuf` zeroes it on entry, return value and stdout must be identical both times (argument-determinism of the convenience entry point across all modes incl. `default`) | `cfg_27_charinbuf_is_argument_determined` | [x] |
+The `src/` tree was restored and byte-compared against a pre-mutation backup
+after every mutant (`diff -r` clean).

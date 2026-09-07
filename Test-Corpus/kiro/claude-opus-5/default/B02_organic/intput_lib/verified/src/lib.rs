@@ -1002,13 +1002,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                     (*table).used_count -= 1;
                     (*table).tombstone_count += 1;
                     stbds_temp_set(raw_a, 1);
-                    // C: `STBDS_ASSERT(table->used_count >= 0)`. `used_count`
-                    // is a `size_t`, so this comparison is vacuously true and
-                    // can never fire — not even when the `--used_count` above
-                    // wrapped around to SIZE_MAX. Do NOT reinterpret it as a
-                    // signed comparison, or the Rust build would abort where
-                    // the C build carries on.
-                    stbds_assert!((*table).used_count >= usize::MIN);
+                    stbds_assert!((*table).used_count as isize >= 0);
                     (*b).hash[i] = STBDS_HASH_DELETED;
                     (*b).index[i] = STBDS_INDEX_DELETED;
 
@@ -1252,9 +1246,6 @@ unsafe fn intput_hmget(t: *mut intput_entry, k: c_int) -> (*mut intput_entry, c_
 }
 
 #[unsafe(no_mangle)]
-// The C original declares `intmap = NULL` and then immediately assigns
-// `intmap = NULL` again; the dead store is kept for fidelity.
-#[allow(unused_assignments)]
 pub unsafe extern "C" fn intput(num: c_int) {
     unsafe {
         let mut intmap: *mut intput_entry = ptr::null_mut();

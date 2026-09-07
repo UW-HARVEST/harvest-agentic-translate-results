@@ -1,69 +1,107 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — error / rejection surface table (Phase C gate)
 
-Derived mechanically from `c_src/src/lib.c` and `c_src/include/lib.h`.
+## Mechanical derivation
 
-## Mechanical grep result
-
-```sh
-grep -nE 'return|assert|NULL|errno|RETURN_ERROR|if|switch|<|>|\?|enum|#define|#if' \
-     src/lib.c include/lib.h
+```
+$ grep -rnE 'RETURN_ERROR|return *-1|return *NULL|assert|errno|ERROR|_ERR|if *\(|switch|\?|#ifdef|#if |goto|exit\(|abort\(' c_src/src c_src/include
+(no matches)
 ```
 
-Matches: only `src/lib.c:12 return 2 *` and the index expression on line 13,
-plus `#include <stdint.h>` in the header.
+`c_src/src/lib.c` contains **no** conditional, no `assert`, no error enum, no
+sentinel return, no range check, no null check, and no `#ifdef`. `hdr_bitrate`
+is a single unconditional `return` expression. There is therefore **no explicit
+error-return path to differential-test**, and no error code or sentinel value
+exists in this API — every input produces a normal `unsigned` return.
 
-Consequences, stated precisely:
+That makes the real rejection surface *implicit*: inputs the C accepts without
+complaint but that push the array subscript outside the declared bounds of
+`static const uint8_t halfrate[2][3][15]`. The compiled code
+(`objdump -d`) performs a flat, unchecked byte load:
 
-* There are **zero** error-return macros (`RETURN_ERROR`, `goto fail`, ...).
-* There are **zero** `return -1` / `return NULL` / error-enum returns — the
-  function has exactly **one** `return` statement and it is unconditional.
-* There are **zero** `assert`s (`assert.h` is not included).
-* There are **zero** explicit range checks, null checks, `if`, `switch`,
-  ternary, or `#ifdef` branches.
-* There are **zero** `#define`d MIN/MAX constants.
-* The return type is `unsigned`, which carries no reserved sentinel value; the
-  full range of the return is legitimate output.
+```
+lea rax,[rip+0xe8b]   # halfrate.0  (.rodata, addr 0x2000)
+add rax,rdx           # rdx = 45*i + 15*j + k   (sign-extended, may be negative)
+movzx eax,BYTE PTR [rax]
+add eax,eax           # result = 2 * byte
+```
 
-Therefore the C API **cannot reject any input**. Every 3-byte input produces a
-value. The "error surface" of this library is entirely *implicit*: the two index
-expressions can leave the declared bounds of `halfrate[2][3][15]`, and a null /
-under-length pointer is dereferenced without a check.
+with `i = !!(h[1] & 0x8)` ∈ {0,1}, `j = ((h[1] >> 1) & 3) - 1` ∈ {**-1**,0,1,2},
+`k = h[2] >> 4` ∈ 0..15. Flat offset range is therefore **-15 .. +90**, while
+the table is only bytes 0..89. Rows below are every distinct way that happens.
 
-Rows below are the distinct implicit rejection/failure conditions that actually
-exist in the C, each with the result the C build actually produces (measured
-against the built `.so`, not guessed). The Rust must reproduce each one
-identically.
+Verified byte layout of the C `.so` (this is the ground truth the Rust must
+reproduce):
 
-## Table
+* Table `halfrate.0` is at vaddr `0x2000`, the **first byte of a LOAD segment**.
+* vaddr `0x1ff0..0x1fff` (the 16 bytes read by negative offsets) are `00` — file
+  padding between `.fini` and `.rodata`, mapped as part of the R+E segment page.
+* vaddr `0x205a..0x205b` (the bytes read by offset 90) are `00` — `.rodata`
+  alignment padding before `.eh_frame_hdr`.
+
+So **every out-of-bounds read yields byte 0, hence return value 0.**
+
+## Rejection / edge-condition rows
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| E1 | `hdr_bitrate` | `h == NULL` — the only unchecked pointer deref (`h[1]`, `h[2]`); there is no null guard | Not an error return: the process faults. `SIGSEGV` (signal 11), no value returned. Rust must fault identically. |
-| E2 | `hdr_bitrate` | layer field `(h[1] >> 1) & 3 == 0` (the reserved MPEG layer value) makes the middle index `-1`, i.e. `j = -1`, out of the declared range `0..2`. Combined with `!!(h[1] & 0x8) == 0` this yields flat offsets `-15 .. 0`, i.e. reads *before* the table. | No error: reads the 15 bytes preceding `halfrate`. In this build `.rodata` begins at a page boundary (`0x2000`) so offsets `-15..-1` are zero page-padding ⇒ returns `0`. Offset `0` is `halfrate[0][0][0] == 0` ⇒ also `0`. |
-| E3 | `hdr_bitrate` | layer field `== 0` (`j = -1`) with version bit set (`h[1] & 0x8 != 0`, `i = 1`) ⇒ flat offsets `30 .. 45`. These are out of the *declared* subarray bounds but still inside the 90-byte table: they alias row `halfrate[0][2][*]` (and offset 45 aliases `halfrate[1][0][0]`). | No error: returns `2 * halfrate_flat[30 + k]`, i.e. the `halfrate[0][2]` row: `0,32,48,56,64,80,96,112,128,144,160,176,192,208,224,256` for `k = 0..15`. Must **not** be "fixed" to an error. |
-| E4 | `hdr_bitrate` | bitrate nibble `h[2] >> 4 == 15` (the MPEG "bad" bitrate index) makes the last index `15`, one past the declared `0..14`. | No error: reads the byte after the 15-byte row. For `(i,j)` other than `(1,2)` this aliases the first byte of the next row; every such byte is `0` ⇒ returns `0`. |
-| E5 | `hdr_bitrate` | maximal index combination: `i = 1`, `j = 2`, `k = 15` ⇒ flat offset `90`, one byte *past the end of the whole table* (table occupies `.rodata` `0x2000..0x205A`). | No error: reads `0x205A`, which is section alignment padding before `.eh_frame_hdr` ⇒ `0`. Returns `0`. |
-| E6 | `hdr_bitrate` | buffer shorter than 3 bytes (length 0, 1, or 2) — there is no length parameter and no length check, so `h[1]`/`h[2]` read past the end. | No error and no validation. The C reads exactly bytes `h[1]` and `h[2]` and nothing else; if those bytes are unmapped the process faults (`SIGSEGV`). With a 3-byte buffer the C never touches `h[0]` or `h[3]`. Rust must read exactly the same two bytes. |
-| E7 | `hdr_bitrate` | out-of-range "enum-like" field values crossing the FFI boundary: the version/layer/bitrate fields are bit-fields with no valid-variant validation, so *every* one of the 256 values of `h[1]` and 256 values of `h[2]` is a legal input, including the reserved/`bad`/`free` encodings (`layer = 0b00`, `bitrate = 0b1111`, `bitrate = 0b0000`). C performs no variant check. | No error for any of the 65 536 `(h[1], h[2])` combinations; each produces a defined `unsigned`. Rust must match all 65 536 byte-for-byte. |
+|---|----------|---------------------------------------------|-------------------|
+| 1 | `hdr_bitrate` | reserved layer bits `(h[1]>>1)&3 == 0` ⇒ `j = -1`, with `h[1]&0x8 == 0` (`i=0`) and `h[2]>>4` = 0..14 ⇒ flat offset **-15..-1**, i.e. read **before** the table | reads zero padding ⇒ returns **0** |
+| 2 | `hdr_bitrate` | reserved layer bits (`j = -1`), `i=0`, `h[2]>>4 == 15` ⇒ offset **0** — negative row index cancels, lands back **inside** the table at `halfrate[0][0][0]` | returns `2*0` = **0** |
+| 3 | `hdr_bitrate` | reserved layer bits (`j = -1`) with `h[1]&0x8 != 0` (`i=1`) ⇒ offsets **30..45**: silently **aliases a different row**, `halfrate[0][2][k]` for k=0..14, and `halfrate[1][0][0]` for k=15 | returns `2*halfrate_flat[30+k]` — i.e. **0,32,48,56,64,80,96,112,128,144,160,176,192,224,256,0** |
+| 4 | `hdr_bitrate` | "bad"/reserved bitrate nibble `h[2]>>4 == 15` with a *valid* layer, any `i`, where `(i,j) != (1,2)` ⇒ offset is the **first byte of the next row** (15, 30, 45, 60, 75) | returns `2*halfrate_flat[45i+15j+15]`, which is `2*0` = **0** in every such case (every row starts with 0) |
+| 5 | `hdr_bitrate` | `h[2]>>4 == 15` **and** `i=1, j=2` (`h[1]&0x8` set, layer bits `0b11`) ⇒ flat offset **90**, one byte **past** the 90-byte table | reads `.rodata` alignment padding ⇒ returns **0** |
+| 6 | `hdr_bitrate` | `h == NULL` | unconditional `h[1]` deref ⇒ **SIGSEGV**. No null check exists to differential-test a return value; the Rust must fault identically rather than returning a value. Covered by a *dedicated crash-parity subprocess test*, not by a return-value comparison. |
+| 7 | `hdr_bitrate` | buffer shorter than 3 bytes (length 0/1/2) | there is no length parameter, so nothing is checked: the C reads `h[1]`/`h[2]` unconditionally, past the end of the caller's buffer. Not a rejection; the Rust must read exactly the same two offsets and no others. Tested by a guard-page/offset-read test. |
+| 8 | `hdr_bitrate` | `h[0]` — never read by the C at all | must be **ignored**: result must be invariant under any value of `h[0]`. A Rust that read `h[0]` would be a divergence. |
+| 9 | `hdr_bitrate` | out-of-range "enum-like" ints across FFI: `h[1]`/`h[2]` are `uint8_t`, so **all 256 values of each are in-range for the type** and there is no invalid encoding to reject. The layer field's reserved value `0b00` (row 1/2/3) *is* this API's out-of-range-enum case. | no rejection path exists; result is whatever the flat load produces (rows 1–5) |
 
-## Verification gate
+## Notes on completeness
 
-Each row has a differential test in `translation/tests/differential.rs`:
+Rows 1–5 partition every out-of-declared-bounds subscript the function can
+produce; rows 6–8 are the generic C-API boundaries (null pointer, undersized
+buffer, unread input byte); row 9 records that the FFI enum-range class of bug
+collapses into the reserved-layer rows because both inputs are `uint8_t`.
 
-| row | test |
-|-----|------|
-| E1 | `e1_null_pointer_same_fault` (subprocess, compares termination signal) |
-| E2 | `e2_reserved_layer_negative_index_low_version` |
-| E3 | `e3_reserved_layer_negative_index_high_version` |
-| E4 | `e4_bad_bitrate_nibble_15` |
-| E5 | `e5_max_index_past_end_of_table` |
-| E6 | `e6_reads_exactly_three_bytes` (guard-page mmap: byte 3 onward unmapped) |
-| E7 | `e7_exhaustive_all_header_bytes` (all 65 536 `(h[1], h[2])`) |
+Since the total input space that affects the result is only
+`h[1]` × `h[2]` = 256 × 256 = **65 536** cases, Phase B/C do not sample — they
+**exhaustively** compare all 65 536, which covers every row above by
+construction, in addition to each row's own targeted test.
 
-- [x] E1 checked
-- [x] E2 checked
-- [x] E3 checked
-- [x] E4 checked
-- [x] E5 checked
-- [x] E6 checked
-- [x] E7 checked
+## Phase C status — every row has a passing differential test
+
+Tests live in `tests/phase_c_errors.rs` and reach both implementations only via
+`dlopen` + `hdr_bitrate` (`tests/common/mod.rs`). All 11 pass.
+
+| row | test | status |
+|-----|------|--------|
+| 1 | `errors_row1_reserved_layer_negative_offset` | [x] pass |
+| 2 | `errors_row2_reserved_layer_wraps_to_offset_zero` | [x] pass |
+| 3 | `errors_row3_reserved_layer_aliases_other_row` | [x] pass |
+| 4 | `errors_row4_bad_nibble_reads_next_row_first_byte` | [x] pass |
+| 5 | `errors_row5_offset_90_past_end_of_table` | [x] pass |
+| 6 | `errors_row6_null_pointer_crash_parity` (forked child, compares death signal) | [x] pass — both die with SIGSEGV(11) |
+| 7 | `errors_row7_reads_no_further_than_h2` (guard page after `h[2]`, all 65 536 pairs) | [x] pass |
+| 7 | `errors_row7b_undersized_buffer_crash_parity` (0/1/2 readable bytes) | [x] pass — identical fault behaviour |
+| 8 | `errors_row8_h0_never_read` | [x] pass |
+| 9 | `errors_row9_no_invalid_encoding_is_rejected` | [x] pass |
+| generic | `errors_boundary_one_past_each_field_range` (one step past each bit-field range) | [x] pass |
+
+## Robustness of the "OOB reads yield 0" ground truth
+
+The zero result for rows 1 and 5 comes from the C `.so`'s memory layout, so it
+was checked rather than assumed. `halfrate.0` is the only object in `.rodata`
+and sits at the first byte of a page-aligned LOAD segment, which makes the
+preceding bytes segment padding and the following bytes alignment padding:
+
+| C build | table vaddr | 15 bytes before | byte at +90 |
+|---------|-------------|-----------------|-------------|
+| `-O0` | `0x2000` | all `00` | `00` |
+| `-O1` | `0x2000` | all `00` | `00` |
+| `-O2` | `0x2000` | all `00` | `00` |
+| `-O3` | `0x2000` | all `00` | `00` |
+| `-Os` | `0x2000` | all `00` | `00` |
+
+The full differential suite (16 tests) was re-run against the C library built at
+each of those five optimization levels; 16/16 passed every time. Note this is a
+property of the current single-translation-unit library: were more `.rodata`
+ever linked ahead of the table, the C's own result for rows 1 and 5 would change
+(the reads are UB), and the Rust would need to change with it.

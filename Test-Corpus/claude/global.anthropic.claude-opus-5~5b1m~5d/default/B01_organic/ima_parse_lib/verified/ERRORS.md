@@ -1,88 +1,93 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — Phase A error-surface table
 
-Mechanically derived by grepping `c_src/src/lib.c` for **every** rejection /
-fault path.  There are no `assert`s, no `RETURN_ERROR`-style macros, no error
-enums and no NULL checks anywhere in the C source; the complete inventory is:
+Mechanically derived from every `return` with a non-zero value, every
+conditional rejection, and every implicit trap in `c_src/src/lib.c`.
+There are no `assert`s, no `RETURN_ERROR` macros, no error enums, no null
+checks and no min/max constants in the C source — the entire rejection surface
+is the three `return -N` statements plus the implicit traps noted below.
+
+`grep -n 'return\|assert\|NULL' c_src/src/lib.c` yields exactly:
 
 ```
-$ grep -n 'return\|assert\|NULL\|for (;;)' c_src/src/lib.c
- 78:    const struct caf_audio_description *desc = NULL;
- 79:    const struct caf_packet_table *pakt = NULL;
- 80:    const struct ima_block *blocks = NULL;
- 94:    for (;;) {
- 91:        return -1;
- 93:        return -2;
+78:    const struct caf_audio_description *desc = NULL;
+79:    const struct caf_packet_table *pakt = NULL;
+80:    const struct ima_block *blocks = NULL;
+91:        return -1;
+93:        return -2;
 122:        return -3;
 130:    return 0;
 ```
 
-Three explicit error returns (`-1`, `-2`, `-3`), one success (`0`), plus the
-implicit fault paths created by the *absence* of NULL/bounds checking (rows 4-7,
-10) and by the unbounded `for (;;)` chunk scan (rows 8-9).
+## Explicit rejections
 
-Rows 4-10 are real inputs that the C library "handles" by faulting or by never
-terminating, so the Rust must fault / not terminate **identically**.  They are
-verified by re-exec'ing the test binary as a child process (`crash_worker`),
-once against the C `.so` and once against the Rust `.so`, and comparing how the
-two children terminated (`WTERMSIG`, or "still running after the timeout").
-Rows 8 and 10 use an `mmap`'d buffer followed by a `PROT_NONE` guard page so the
-fault address is exact and deterministic rather than dependent on heap layout.
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|----------------------------------------------|-------------------|------|
+| 1 | `ima_parse` | `ima_btoh32(header->type) != 'caff'` — first 4 bytes of `data` are not the ASCII bytes `c a f f` (big-endian FourCC `0x63616666`). Covers: wrong magic, all-zero buffer, one-byte-off magic (`caFf`, `cafg`, `Caff`), byte-reversed magic (`ffac`). | returns `-1`, `*info` untouched | `err_row1_bad_magic` |
+| 2 | `ima_parse` | magic ok but `ima_btoh16(header->version) != 1` — bytes 4..5 (big-endian u16) are anything other than `0x0001`. Covers `0`, `2`, `0x0100` (LE-swapped 1), `0xFFFF`, and all 65 535 wrong values exhaustively. | returns `-2`, `*info` untouched | `err_row2_bad_version`, `err_row2_bad_version_exhaustive` |
+| 3 | `ima_parse` | header ok, chunk scan reached a `data` chunk, but `ima_btoh32(desc->format_id) != 'ima4'` (big-endian FourCC `0x696d6134`). Note the C checks this **after** the loop breaks, so it is reachable only once a `data` chunk was found. Covers: wrong FourCC, `0`, one-byte-off (`ima5`, `IMA4`), reversed (`4ami`). | returns `-3`, `*info` untouched | `err_row3_bad_format_id` |
 
-Tests live in `tests/phase_c_errors.rs`.
+## Implicit / structural traps (no explicit check in the C — documented, and the
+Rust must match where the behaviour is observable)
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|----|----------|---------------------------------------------|-------------------|------|-----|
-| 1  | `ima_parse` | `ima_btoh32(header->type) != 'ffac'` — the first 4 bytes of `data` are not ASCII `"caff"`.  Checked before anything else, so the rest of the file is irrelevant. | `return -1`, `*info` untouched | `err01_bad_magic` (12 curated), `cfg01_bad_magic_randomized` (20 000) | [x] |
-| 2  | `ima_parse` | magic OK **and** `ima_btoh16(header->version) != 1` — bytes 4..6 are not big-endian `0x0001` | `return -2`, `*info` untouched | `err02_bad_version` (9 curated), `cfg02_bad_version_randomized` (20 000) | [x] |
-| 3  | `ima_parse` | magic + version OK, a `desc` chunk was seen before the `data` chunk, but `ima_btoh32(desc->format_id) != '4ami'` — `desc+8..12` is not ASCII `"ima4"`.  Returns *before* `pakt` is dereferenced. | `return -3`, `*info` untouched | `err03_bad_format_id` (10 curated), `err03_bad_format_id_no_pakt` (2 000), `cfg17_bad_format_id_randomized` (20 000), `cfg24_bad_format_id_without_pakt` (3 000) | [x] |
-| 4  | `ima_parse` | magic + version OK and the `data` chunk is reached with **no preceding `desc` chunk** ⇒ `desc == NULL` ⇒ `desc->format_id` reads address `0x8` | SIGSEGV (NULL-relative read) | `err04_null_desc_segv` | [x] |
-| 5  | `ima_parse` | magic + version + `format_id` OK and the `data` chunk is reached with **no preceding `pakt` chunk** ⇒ `pakt == NULL` ⇒ `pakt->frame_count` reads address `0x8` | SIGSEGV (NULL-relative read) | `err05_null_pakt_segv` | [x] |
-| 6  | `ima_parse` | `data == NULL` (the buffer pointer is never checked) ⇒ `header->type` reads address `0x0` | SIGSEGV (NULL read) | `err06_null_data_segv` | [x] |
-| 7  | `ima_parse` | `info == NULL` with an otherwise fully valid buffer (the out-param is never checked) ⇒ `info->blocks = ...` **writes** address `0x0` | SIGSEGV (NULL write) | `err07_null_info_segv` | [x] |
-| 8  | `ima_parse` | magic + version OK but the buffer contains **no `data` chunk** — the `for (;;)` scan is unbounded and walks off the end of the mapping (all-zero tail ⇒ type 0, size 0 ⇒ a 16-byte stride, so it faults exactly at the guard page) | SIGSEGV (out-of-bounds read) | `err08_no_data_chunk_segv` | [x] |
-| 9  | `ima_parse` | a non-`data` chunk whose `size == -16` ⇒ `chunk = &chunk[1] + (-16) == chunk` ⇒ the scan never advances | **infinite loop** — never returns | `err09_self_referential_chunk_hangs` (both children must still be running after 3 s) | [x] |
-| 10 | `ima_parse` | truncated buffer: (a) `data` points at the first unreadable byte; (b) only the 4 magic bytes are readable and `header->version` is not; (c) the 8-byte header is readable but the first chunk header is not; (d) `data` is non-NULL but wholly unmapped (`0x1`) | SIGSEGV (out-of-bounds read) | `err10_truncated_header_segv` — cases `trunc_type`, `trunc_version`, `trunc_chunk`, `unmapped` | [x] |
+| # | function | trigger | expected C result | test |
+|---|----------|---------|-------------------|------|
+| 4 | `ima_parse` | `desc == NULL` at line 118 — a `data` chunk is found before any `desc` chunk. The C dereferences the NULL `desc`. | SIGSEGV (both C and Rust). Not differentially testable in-process; asserted identical by construction (same unguarded load). Verified out-of-process in `err_row4_null_desc_both_crash`. | `err_row4_null_desc_both_crash` |
+| 5 | `ima_parse` | `pakt == NULL` at line 125 — `desc` present with valid `ima4` format id, but no `pakt` chunk before the `data` chunk. | SIGSEGV in both. | `err_row5_null_pakt_both_crash` |
+| 6 | `ima_parse` | no `data` chunk anywhere: the `for (;;)` loop has **no termination condition** other than finding `data`, so it walks off the buffer forever (or until it faults). | infinite loop / SIGSEGV in both — by construction identical. Exercised out-of-process. | `err_row6_no_data_chunk_hangs` |
+| 7 | `ima_parse` | `chunk_size` is negative (`ima_btoh64` of the size field reinterpreted as `ima_s64_t`): `&chunk[1] + chunk_size` moves the cursor **backwards**. Not an error in the C — it is accepted and followed. | no rejection; cursor moves back by `-chunk_size`. Must match. | `cfg_row*_negative_chunk_size` |
+| 8 | `ima_parse` | `info == NULL` with an otherwise fully valid buffer: the C writes through it at line 123. | SIGSEGV in both. | `err_row8_null_info_both_crash` |
+| 9 | `ima_parse` | `data == NULL`: the C reads `header->type` at line 87. | SIGSEGV in both. | `err_row9_null_data_both_crash` |
+| 10 | `ima_parse` | zero-length / truncated `data` buffer (< 8 bytes): the C reads 8 bytes of header unconditionally. With a shorter-but-mapped buffer the read succeeds and the magic/version checks decide. | `-1` or `-2` per rows 1/2, identical in both. | `err_row10_truncated_buffer` |
+| 11 | `ima_parse` | `desc->sample_rate` bit pattern out of range for the `double -> unsigned long long` *value* conversion at line 127 (NaN, ±Inf, `>= 2^63`, negative, `< -1`). This is C UB; GCC emits `comisd 2^63 / jae / subsd / cvttsd2si / xor 1<<63`. The Rust must reproduce the same hardware result, including the `0x8000000000000000` "integer indefinite" value. | the exact 64-bit pattern produced by `cvttsd2si`, byte-swapped, reinterpreted as `double` (may be NaN — compared by bits). | `cfg_row*_sample_rate_*`, `err_row11_sample_rate_ub_matrix` |
 
-## Generic FFI-boundary cases (covered even though they are not distinct C branches)
+There are **no** other rejection paths: no range checks, no length checks, no
+enum parameters (the public API takes no enum), no min/max constants, and no
+`errno` use anywhere in `c_src/`.
 
-| #  | case | why it is exercised | expected | test | [x] |
-|----|------|---------------------|----------|------|-----|
-| 11 | `version` one step past the valid range (`0`, `1`, `2`) plus an **exhaustive** sweep of all 65 536 values | `== 1` is the only accepted value | `-2` for every value but `1` | `err11_version_boundaries`, `cfg03_version_exhaustive` | [x] |
-| 12 | `magic`: fully random 32-bit values (no filtering, so the valid value is occasionally hit) at all 8 alignments | any 4 bytes are a legal input | `0` iff exactly `"caff"`, else `-1` | `err12_magic_randomized` (20 000) | [x] |
-| 13 | `format_id`: fully random 32-bit values (unfiltered) at all 8 alignments | any 4 bytes are a legal input | `0` iff exactly `"ima4"`, else `-3` | `err13_format_id_randomized` (20 000) | [x] |
-| 14 | **out-of-range "enum" values across the FFI boundary**: `chunk->type` is an unconstrained `ima_u32_t` fed into an `if`/`else if` chain with exactly 3 recognised values; 1..4 chunks per file get completely arbitrary 32-bit types (C enums/`switch`es accept any `int`, so a value with no valid variant is a real input).  `desc`/`pakt` are emitted first so the unfiltered types stay non-faulting. | an unrecognised type must take the fall-through *skip* branch, not be mis-dispatched | identical skip behaviour; final `0`, with `info->size/frame_count/channel_count` unaffected | `err14_unknown_chunk_type_enum_fuzz` (20 000, ≈50 000 fuzzed types) | [x] |
-| 15 | oversized / negative lengths: `chunk->size` = `0`, `±1`, `i64::MIN`, `i64::MAX`, `-16`, `-32`, `u64::MAX`, `u64::MAX>>1`, `±2^62`, × all 8 alignments, plus randomized | the `data` chunk's length is copied verbatim into `info->size` as a `u64` (signed→unsigned reinterpretation) | identical `info->size` bits | `err15_chunk_size_extremes`, `cfg13_data_chunk_size_extremes` | [x] |
-| 16 | misaligned `data` pointer, offsets 0..7 | the C casts the buffer to `struct caf_*` with no alignment guarantee, so the Rust must use unaligned loads | identical results, no fault | `err16_misaligned_pointer`, `cfg16_misaligned_buffer` | [x] |
+## Enum / out-of-range-variant note
 
-## Divergence found and fixed during Phase C
+`int ima_parse(struct ima_info *info, const void *data)` — the public API has
+**no enum parameter**, so the "out-of-range enum value across FFI" class does
+not apply. The closest analogue is the FourCC/`version` discriminators, which
+*are* covered exhaustively (rows 1–3): every one of the 2^16 `version` values
+and a large randomized sweep of 32-bit `type`/`format_id` values are compared
+between C and Rust.
 
-`err06` / `err07` initially **failed in the `dev` profile only**: the C child died
-with `SIGSEGV` (11) while the Rust child died with `SIGABRT` (6).
+---
 
-Cause: rustc's optional Undefined-Behaviour instrumentation (the MIR null-check
-pass, plus the `assert_unsafe_precondition!` guards inside
-`core::ptr::read_unaligned`) is compiled in whenever `debug-assertions` is
-enabled, and it converts precisely the NULL loads/stores of rows 6 and 7 into a
-non-unwinding panic — `SIGABRT` instead of the C library's `SIGSEGV`.  The C
-library is built by CMake with no such instrumentation.
+## Phase C results (all rows checked off)
 
-Fix (in `translation/Cargo.toml`, with a matching comment in `src/lib.rs`):
+| # | test | status |
+|---|------|--------|
+| 1 | `err_row1_bad_magic` (13 hand-picked near-misses + 20 000 randomized types) | ✅ |
+| 2 | `err_row2_bad_version` + `err_row2_bad_version_exhaustive` (**all 65 536** values) | ✅ |
+| 3 | `err_row3_bad_format_id` (12 near-misses + 20 000 randomized) and `err_row3_bad_format_id_precedes_null_pakt` | ✅ |
+| 4 | `err_row4_null_desc_both_crash` (out-of-process, exact signal) | ✅ both SIGSEGV |
+| 5 | `err_row5_null_pakt_both_crash` (out-of-process, exact signal) | ✅ both SIGSEGV |
+| 6 | `err_row6_no_data_chunk_hangs` (out-of-process, `mmap` + `PROT_NONE` guard page ⇒ deterministic) and `err_row6_long_walk_terminates_identically` (262 000-iteration scan, in-process) | ✅ |
+| 7 | `cfg_row08_negative_chunk_size`, `cfg_row22_data_before_desc_via_backjump` | ✅ |
+| 8 | `err_row8_null_info_both_crash` | ✅ both SIGSEGV |
+| 9 | `err_row9_null_data_both_crash` | ✅ both SIGSEGV |
+| 10 | `err_row10_truncated_buffer` | ✅ |
+| 11 | `err_row11_sample_rate_ub_matrix` (2 018 values incl. NaN/±Inf/±2^63 boundaries) + `cfg_row11..15` | ✅ |
 
-```toml
-[profile.dev]
-debug-assertions = false
-overflow-checks = false
-```
+## Divergences found and fixed during Phase C
 
-This is load-bearing and is itself under test: re-enabling `debug-assertions`
-makes `err06_null_data_segv` and `err07_null_info_segv` fail again (verified).
-
-## Result
-
-```
-$ cargo test --release --test phase_c_errors
-test result: ok. 17 passed; 0 failed; 1 ignored   (the ignored one is the child-side `crash_worker`)
-```
-
-Every row above is checked off, under both the `dev` and `release` profiles and
-under all three Cargo feature configurations (see `verify.sh`).
+1. **`read_unaligned` / plain-deref UB checks (dev profile).** `src/lib.rs` used
+   `core::ptr::read_unaligned`, which carries a `debug_assertions`-gated
+   `assert_unsafe_precondition!` that panics with `null pointer dereference`
+   instead of faulting. With a NULL `data` or NULL `info` the C simply issues the
+   load/store and takes SIGSEGV, while the dev-profile Rust `.so` aborted
+   (SIGABRT) — a real, observable behavioural difference. Fixed two ways:
+   the loads now go through a `#[repr(C, packed)] struct Unaligned<T>` deref (no
+   added check, same unaligned machine load), and `[profile.dev]` sets
+   `debug-assertions = false` / `overflow-checks = false` so no profile inserts
+   checks the C does not have. Verified: `err_row8`/`err_row9` now report SIGSEGV
+   from both libraries in both profiles.
+2. **Test-harness artefact (not a translation bug).** The first version of the
+   row-6 test walked off the end of a plain `Vec`; whether the fault landed in an
+   unmapped page (SIGSEGV) or in the thread's stack guard page (which the Rust
+   *test harness'* own handler converts to `abort()`) depended purely on ASLR and
+   varied run-to-run for the **C** library too. Replaced with an `mmap`'d region
+   followed by an explicit `PROT_NONE` guard page, making the fault address —
+   and therefore the signal — deterministic for both libraries.

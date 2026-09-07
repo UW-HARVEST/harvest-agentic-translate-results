@@ -52,31 +52,10 @@ pub unsafe extern "C" fn printLine(line: *const c_char) {
 /// before being consumed by `%02x`, which then reinterprets it as `unsigned
 /// int`. For negative values this therefore prints eight hex digits
 /// (e.g. -2 => "fffffffe"). That behaviour is reproduced faithfully here.
-unsafe fn print_hex_char_line_impl(charHex: c_char) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn printHexCharLine(charHex: c_char) {
     let promoted: c_int = charHex as c_int;
     printf(b"%02x\n\0".as_ptr() as *const c_char, promoted);
-}
-
-/// Exported ABI wrapper for `void printHexCharLine(char charHex)`.
-///
-/// The parameter is declared as `c_int` rather than `c_char` **on purpose**.
-/// The x86-64 psABI leaves the upper 24 bits of an argument register holding a
-/// `char` unspecified, and the two toolchains resolve that differently:
-///
-/// * GCC's callee ignores them — it emits `mov %edi,%eax; mov %al,…;
-///   movsbl …,%eax`, i.e. it truncates the register to 8 bits and sign-extends,
-///   so the C library's observable behaviour is a pure function of the LOW BYTE.
-/// * Rust/LLVM tags an `extern "C" fn(c_char)` parameter `signext` and therefore
-///   *assumes* the caller already extended it. At `-O` the truncation is elided
-///   (`mov %edi,%esi`), so garbage in the upper bits leaks into the `%02x`
-///   output and diverges from C.
-///
-/// Taking the full register and truncating explicitly reproduces GCC's codegen
-/// byte-for-byte for all 2^32 possible register values, and is indistinguishable
-/// from `fn(c_char)` for any caller that does extend correctly.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn printHexCharLine(charHex: c_int) {
-    print_hex_char_line_impl(charHex as c_char)
 }
 
 /// void bad()
@@ -87,7 +66,7 @@ pub unsafe extern "C" fn bad() {
     if data as c_int > 0 {
         // char result = data * 2;  (int arithmetic, truncated back to char)
         let result: c_char = ((data as c_int) * 2) as c_char;
-        printHexCharLine(result as c_int);
+        printHexCharLine(result);
     }
 }
 
@@ -97,11 +76,16 @@ unsafe fn goodG2B() {
     data = 2;
     if data as c_int > 0 {
         let result: c_char = ((data as c_int) * 2) as c_char;
-        printHexCharLine(result as c_int);
+        printHexCharLine(result);
     }
 }
 
 /// static void goodB2G()
+///
+/// NOTE: the initial `data = ' '` is a dead store in the original C (it is
+/// immediately overwritten by `data = CHAR_MAX`). It is kept here so the
+/// translation mirrors the C statement-for-statement.
+#[allow(unused_assignments)]
 unsafe fn goodB2G() {
     let mut data: c_char;
     data = b' ' as c_char;
@@ -109,7 +93,7 @@ unsafe fn goodB2G() {
     if data as c_int > 0 {
         if (data as c_int) < (CHAR_MAX / 2) {
             let result: c_char = ((data as c_int) * 2) as c_char;
-            printHexCharLine(result as c_int);
+            printHexCharLine(result);
         } else {
             printLine(
                 b"data value is too large to perform arithmetic safely.\0".as_ptr()

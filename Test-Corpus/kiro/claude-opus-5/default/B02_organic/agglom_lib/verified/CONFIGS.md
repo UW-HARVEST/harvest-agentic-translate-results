@@ -1,142 +1,136 @@
 # CONFIGS.md — configuration surface table (valid inputs)
 
-Derived mechanically from the branch structure of `c_src/src/lib.c`. There are
-no runtime option structs, no `#ifdef`s, and no Cargo features — the library is
-a pure-function collection, so the "configuration" axes are:
+The library has **no** runtime option struct, no init/teardown, no global mode
+flag, no `#ifdef`, and no Cargo features (see `SYMBOLS.md`). Its "configuration"
+axes are therefore exactly the branch selectors the C code reads out of its
+arguments:
 
-* **entry-point level**: the low-level leaf helpers (`c2V`, `c2Maxv`, `c2Minv`,
-  `c2Clampv`, `c2Sub`, `c2Dot`), the mid-level shape tests
-  (`c2CircletoCircle`, `c2CircletoAABB`, `c2AABBtoAABB`), the dispatcher (`f2`),
-  the standalone kernels (`f3`, `f4`, `f5`, `f7`, `f9`, `f10`, `f11`, `f12`,
-  `f13`), and the one-shot convenience wrapper (`agglom`). All 20 are tested
-  directly through the `.so`, not only `agglom`.
-* **enum / mode axis**: `C2_TYPE` for `f2` (`typeA` × `typeB`).
-* **input-shape axis**: sign and magnitude classes, zero / negative-zero,
-  subnormal, `INT_MIN`, unsigned-wrap magnitudes, the six hue sectors, the six
-  `switch` arms, the half-float exponent classes, and NaN/inf.
+| axis | where it lives | distinct values the C branches on |
+|------|----------------|-----------------------------------|
+| `C2_TYPE typeA` / `typeB` | `f2`, two-level `switch` (lines 83–108) | `CIRCLE`(0) / `AABB`(1) → 4 valid dispatch pairs, each calling a *different* predicate; `AABB×CIRCLE` swaps the argument order |
+| sign quadrant of `(v1, v2)` + `INT_MIN`-ness of each | `f3` (lines 110–142) | 9 reachable arms, plus the `r >= 0` vs `r < 0` post-correction and the `v2 > 0` sign of the correction |
+| generator state, call count | `f4` / `cn_rnd_next` | state is **mutated in place**, so a single call and a 1000-call chain are different configurations |
+| low vs high half of the word | `f5` | high 16 bits are masked away (see `ERRORS.md` E22) |
+| `channels == 2` and `bitdepth == 32` | `f7` (lines 451–459) | 2×2 = 4 combinations, each activating a different subset of the three summed products |
+| triangle degeneracy | `f9` | non-degenerate / collinear / coincident (`invDenom` = ±inf) |
+| `h >> 10` (exponent row) | `f10` | 64 rows; `n = 0` (subnormal), `1..30`, `31` (inf/NaN), `32` (negative subnormal), `33..62`, `63` (negative inf/NaN) |
+| hue sector, `s == 0` | `f11` (7 arms) / `f12` (6 `switch` arms) | see rows below |
+| which channel is `max` | `f13` | `r`, `g`, `b`, plus `delta == 0` / `max == 0` |
+| float class of every scalar | all of the above | normal, `±0.0`, subnormal, `±inf`, quiet NaN, signalling NaN, negative |
 
-Every row is exercised with **many randomized inputs from a fixed seed**
-(`SplitMix64`, seed `0x243F6A8885A308D3`), not one hand-picked value, and both
-`.so`s are compared **bit-for-bit** (`to_bits()`), so NaN payload and `-0.0`
-differences are caught.
+Every row below is driven through **both** `.so`s via `libloading`, with the
+low-level entry points called directly (not only through `f2`/`agglom`), using
+many seeded-random inputs per row (`SEED = 0x9E3779B97F4A7C15`), and results
+compared **bit-for-bit** (`to_bits()`), not with a float tolerance.
+
+## Rows
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| **C1** | `c2V` | random finite f32 pairs (round-trip of both fields) | [x] |
-| **C2** | `c2V` | non-finite: ±0.0, ±inf, quiet/signalling NaN with varied payloads | [x] |
-| **C3** | `c2Maxv`, `c2Minv` | random finite pairs; both orderings (`a.x>b.x` and `a.x<b.x`) | [x] |
-| **C4** | `c2Maxv`, `c2Minv` | tie case `a == b`, and `+0.0` vs `-0.0` (compare is false → picks `b`) | [x] |
-| **C5** | `c2Maxv`, `c2Minv` | one operand NaN (compare false → picks `b` unconditionally), both NaN | [x] |
-| **C6** | `c2Clampv` | `a` inside `[lo,hi]`; `a` below `lo`; `a` above `hi`; inverted range `lo > hi` | [x] |
-| **C7** | `c2Clampv` | NaN in `a` / `lo` / `hi`; ±inf bounds | [x] |
-| **C8** | `c2Sub` | random finite pairs; `inf - inf` → NaN; NaN operands (src1 selection) | [x] |
-| **C9** | `c2Dot` | random finite pairs (checks the mul/add operand order for rounding) | [x] |
-| **C10** | `c2Dot` | operands where **both** products are NaN with different payloads — pins the `ADDSS` src1-vs-src2 NaN selection | [x] |
-| **C11** | `c2Dot` | overflow to ±inf (`3e38 * 3e38`), and `inf + (-inf)` → NaN | [x] |
-| **C12** | `c2CircletoCircle` | overlapping circles (`d2 < r2`) → 1 | [x] |
-| **C13** | `c2CircletoCircle` | disjoint circles → 0; exactly touching (`d2 == r2`, strict `<`) → 0 | [x] |
-| **C14** | `c2CircletoCircle` | negative radius (`A.r + B.r < 0`, squared so `r2 > 0`); zero radius | [x] |
-| **C15** | `c2CircletoCircle` | NaN / inf coordinates and radii | [x] |
-| **C16** | `c2CircletoAABB` | circle centre **inside** the box (`L == A.p` → `d2 == 0`) | [x] |
-| **C17** | `c2CircletoAABB` | centre outside on each of the 8 sides/corners (clamp active on x, y, both) | [x] |
-| **C18** | `c2CircletoAABB` | inverted box (`min > max`) — `c2Clampv` still runs, no validation | [x] |
-| **C19** | `c2CircletoAABB` | NaN in centre / radius / box bounds | [x] |
-| **C20** | `c2AABBtoAABB` | overlapping; disjoint on each of the 4 axes independently (`d0..d3`) | [x] |
-| **C21** | `c2AABBtoAABB` | edge-touching (`B.max.x == A.min.x`, strict `<` → still "collide") | [x] |
-| **C22** | `c2AABBtoAABB` | all-NaN box → all 4 compares false → returns `1` | [x] |
-| **C23** | `f2` | `typeA=CIRCLE(0)`, `typeB=CIRCLE(0)` → `c2CircletoCircle(*A, *B)`; random circles | [x] |
-| **C24** | `f2` | `typeA=CIRCLE(0)`, `typeB=AABB(1)` → `c2CircletoAABB(*A, *B)`; random circle+box | [x] |
-| **C25** | `f2` | `typeA=AABB(1)`, `typeB=CIRCLE(0)` → **argument-swapped** `c2CircletoAABB(*B, *A)`; verifies the swap | [x] |
-| **C26** | `f2` | `typeA=AABB(1)`, `typeB=AABB(1)` → `c2AABBtoAABB(*A, *B)`; random boxes | [x] |
-| **C27** | `f2` | aliasing: `A == B` (same pointer) for each of the 4 valid combinations | [x] |
-| **C28** | `f3` | `v1 >= 0, v2 > 0` (fast path `v1 / v2`) — random magnitudes incl. `1`, `INT_MAX` | [x] |
-| **C29** | `f3` | `v1 >= 0, v2 < 0` (`v2 != INT_MIN`) — negative-quotient correction path | [x] |
-| **C30** | `f3` | `v1 < 0` (`!= INT_MIN`), `v2 > 0` | [x] |
-| **C31** | `f3` | `v1 < 0` (`!= INT_MIN`), `v2 < 0` (`!= INT_MIN`) | [x] |
-| **C32** | `f3` | exact multiples (`r == 0`) vs inexact (`r != 0`) in every sign quadrant — selects the `q` vs `q ± 1` floor correction | [x] |
-| **C33** | `f3` | `|v1| < |v2|` (quotient 0, floor → `-1`) in every sign quadrant | [x] |
-| **C34** | `f3` | full random sweep over all four quadrants, cross-checked against the C | [x] |
-| **C35** | `f4` | random 128-bit states, **single** call (one `cn_rnd_next` step) | [x] |
-| **C36** | `f4` | random states, **long chains** (1000 successive calls on the same handle) — verifies the in-place state mutation, not just the return value | [x] |
-| **C37** | `f4` | boundary states: `{0,0}`, `{0,1}`, `{1,0}`, `{u64::MAX,u64::MAX}`, `{1<<63, 1}` | [x] |
-| **C38** | `f4` | the mutated `cn_rnd_t` is read back and compared byte-for-byte after each call | [x] |
-| **C39** | `f5` | random `u32` with only low 16 bits set (the "intended" domain) | [x] |
-| **C40** | `f5` | random full-width `u32` (high 16 bits are silently dropped) | [x] |
-| **C41** | `f5` | exhaustive over all 65536 low-16-bit values | [x] |
-| **C42** | `f7` | `channels == 2` (selects the 2nd **and** 3rd summand, zeroes the 1st), `bitdepth == 32` | [x] |
-| **C43** | `f7` | `channels == 2`, `bitdepth != 32` (the `bitdepth + 1` sub-term activates) | [x] |
-| **C44** | `f7` | `channels != 2` (1, 3, 8, …) — only the 1st summand; `bitdepth == 32` and `!= 32` | [x] |
-| **C45** | `f7` | `channels == 0` (the `channels * (channels != 2)` product is 0) | [x] |
-| **C46** | `f7` | realistic FLAC shapes: blocksize ∈ {1, 16, 4096, 65535}, bitdepth ∈ {8,16,24,32} × channels ∈ {1,2,8} | [x] |
-| **C47** | `f7` | unsigned-wrap magnitudes (`u32::MAX`, `1<<31`, `1<<16`) in each of the 3 args | [x] |
-| **C48** | `f9` | non-degenerate triangle, `p` **inside** → `u,v` in `[0,1]` | [x] |
-| **C49** | `f9` | `p` outside the triangle (negative / `>1` barycentrics) | [x] |
-| **C50** | `f9` | `p` exactly at `p1`, `p2`, `p3` (barycentric `(0,0)`, `(0,1)`, `(1,0)`) | [x] |
-| **C51** | `f9` | degenerate: `p1 == p2 == p3`, and collinear `p1,p2,p3` → `invDenom = ±inf` | [x] |
-| **C52** | `f9` | fully random f32 quadruples (16 random floats), incl. huge/tiny magnitudes → catches the mul/add operand-order and rounding differences | [x] |
-| **C53** | `f9` | NaN in any of the 8 coordinates — pins NaN payload through 5 dot products, a subtract, a divide and 4 multiplies | [x] |
-| **C54** | `f10` | **exhaustive** over all 65536 `uint16_t` inputs, compared bit-for-bit | [x] |
-| **C55** | `f10` | explicit sub-classes verified inside the exhaustive sweep: `n=0` (zero+subnormal half), `n=1..30` (normal), `n=31` (half inf/NaN), `n=32` (negative zero/subnormal), `n=33..62` (negative normal), `n=63` (negative inf/NaN) | [x] |
-| **C56** | `f11` | `s == 0` early-out (`+0.0` and `-0.0`), random `h`, `l` | [x] |
-| **C57** | `f11` | hue sector `[0,60)` — incl. `h == 0.0`, `h == -0.0` (which passes `h >= 0.0f`) | [x] |
-| **C58** | `f11` | hue sector `[60,120)` | [x] |
-| **C59** | `f11` | hue in `[120,180)` — falls through to the final `else` because of the `h < 120.0f && h < 180.0f` typo | [x] |
-| **C60** | `f11` | hue sector `[180,240)` | [x] |
-| **C61** | `f11` | hue sector `[240,300)` | [x] |
-| **C62** | `f11` | hue sector `[300,360)` | [x] |
-| **C63** | `f11` | `h < 0`, `h >= 360` (incl. huge `h` feeding `fmodf`) → final `else` | [x] |
-| **C64** | `f11` | `l` outside `[0,1]` and `s` outside `[0,1]` (no clamping in C) | [x] |
-| **C65** | `f11` | `h`/`s`/`l` NaN and ±inf | [x] |
-| **C66** | `f11` | fully random f32 triples over the whole f32 range | [x] |
-| **C67** | `f11` | `dest` aliases `src` (same buffer passed twice) — exercises the write-ordering | [x] |
-| **C68** | `f12` | `s == 0` early-out, random `h`, `v` | [x] |
-| **C69** | `f12` | `i == 0` (`h ∈ [0,60)`) | [x] |
-| **C70** | `f12` | `i == 1` (`h ∈ [60,120)`) | [x] |
-| **C71** | `f12` | `i == 2` (`h ∈ [120,180)`) | [x] |
-| **C72** | `f12` | `i == 3` (`h ∈ [180,240)`) | [x] |
-| **C73** | `f12` | `i == 4` (`h ∈ [240,300)`) | [x] |
-| **C74** | `f12` | `i == 5` and `i >= 6` and `i < 0` → `default:` arm | [x] |
-| **C75** | `f12` | `h` at the exact sector boundaries `0,60,120,180,240,300,360` and just below each (`nextafter`) | [x] |
-| **C76** | `f12` | `h` so large that `(int)floorf(h/60)` is out of `int` range (`1e30`, `-1e30`, `inf`) — the `cvttss2si` `INT_MIN` case | [x] |
-| **C77** | `f12` | `h`/`s`/`v` NaN | [x] |
-| **C78** | `f12` | fully random f32 triples over the whole f32 range | [x] |
-| **C79** | `f12` | `dest` aliases `src` | [x] |
-| **C80** | `f13` | `r` is the max (first `==` branch), with `g > b` and `g < b` (positive and negative hue before correction) | [x] |
-| **C81** | `f13` | `g` is the max (second branch) | [x] |
-| **C82** | `f13` | `b` is the max (final `else`) | [x] |
-| **C83** | `f13` | ties: `r == g == max`, `r == b == max`, `g == b == max` — the `==` chain order decides | [x] |
-| **C84** | `f13` | `delta == 0` (`r == g == b`), incl. all-zero and all-negative | [x] |
-| **C85** | `f13` | `max == 0` with `delta != 0` (all-negative input, e.g. `{-1,-2,0}`) | [x] |
-| **C86** | `f13` | `h < 0` before the `+= 360` correction (exercised by C80 with `g < b`) | [x] |
-| **C87** | `f13` | values outside `[0,1]`, and ±inf (`delta = inf - -inf`) | [x] |
-| **C88** | `f13` | NaN in any position — every `<`/`>`/`==` compare is false, selects specific branches | [x] |
-| **C89** | `f13` | fully random f32 triples over the whole f32 range | [x] |
-| **C90** | `f13` | `dest` aliases `src` | [x] |
-| **C91** | `agglom` | all 33 args random over the **full** bit range of their types (u32/u16/u64 uniform, f32 from random bits incl. NaN/inf/subnormal) | [x] |
-| **C92** | `agglom` | all 33 args "realistic": circles/boxes in `[-10,10]`, hue `[0,360)`, s/l/v `[0,1]`, blocksize/bitdepth/channels FLAC-legal | [x] |
-| **C93** | `agglom` | targeted: `f3_2 == 0`, `f3_1 == INT_MIN`, `f3_2 == INT_MIN` combinations | [x] |
-| **C94** | `agglom` | targeted: `f4` state `{0,0}`; `f10_1` sweeping the half inf/NaN encodings; `f7` args forcing `u32` wrap | [x] |
-| **C95** | `agglom` | targeted: each of `f11`/`f12`/`f13` sub-triples set to `s == 0` / NaN so the `isnan` filters fire (and confirm `±inf` is *not* filtered) | [x] |
-| **C96** | `agglom` | degenerate `f9` triangle inside `agglom` → `inf` propagates into the `f64` accumulator un-filtered | [x] |
-| **C97** | composed pipeline | `c2Sub` → `c2Dot` → compare, driven through `f2` with random data (the real consumer path, not per-wrapper) | [x] |
-| **C98** | composed pipeline | `c2Minv`/`c2Maxv` → `c2Clampv` → `c2Sub` → `c2Dot` chained across the FFI boundary, feeding each stage's C output into the next Rust call and vice-versa | [x] |
+| C1 | `c2V` | random `(x, y)` incl. `±0.0`, subnormals, `±inf`, NaN payloads — verifies the 8-byte-struct-in-`xmm0` return ABI | [x] |
+| C2 | `c2Maxv`, `c2Minv` | random pairs; plus every `±0.0` combination and NaN in either operand (the C uses `>`/`<` ternaries, so NaN always selects `b`) | [x] |
+| C3 | `c2Clampv` | random `(a, lo, hi)`; plus inverted range `lo > hi`, `lo == hi`, NaN in each of the three | [x] |
+| C4 | `c2Sub` | random pairs; plus `inf - inf`, `0 - 0`, NaN operands (payload survival order) | [x] |
+| C5 | `c2Dot` | random pairs; plus `0 * inf` (→ NaN), both-operand-NaN cases where operand order decides the surviving payload | [x] |
+| C6 | `c2CircletoCircle` (direct) | overlapping / disjoint / exactly touching (`d2 == r2`, strict `<` so → 0) / zero radius / negative radius / `r` such that `A.r + B.r` overflows to `inf` / NaN centre | [x] |
+| C7 | `c2CircletoAABB` (direct) | circle centre inside / outside / on each face / on each corner of the AABB; inverted AABB (`min > max`, which makes `c2Clampv` return `lo`); zero-area AABB; zero and negative radius; NaN in any field | [x] |
+| C8 | `c2AABBtoAABB` (direct) | fully overlapping / disjoint on each of the 4 sides / edge-touching (`B.max.x == A.min.x` → not `<` → overlap) / inverted boxes / NaN fields | [x] |
+| C9 | `f2`, `typeA=CIRCLE, typeB=CIRCLE` | reinterprets both pointers as `c2Circle`; random circles + the C6 shapes | [x] |
+| C10 | `f2`, `typeA=CIRCLE, typeB=AABB` | `A` is a `c2Circle` (12 B), `B` is a `c2AABB` (16 B); random + the C7 shapes | [x] |
+| C11 | `f2`, `typeA=AABB, typeB=CIRCLE` | **argument-swapping arm**: C calls `c2CircletoAABB(*(c2Circle*)B, *(c2AABB*)A)`, i.e. `A` is read as the AABB and `B` as the circle. Random + C7 shapes | [x] |
+| C12 | `f2`, `typeA=AABB, typeB=AABB` | both read as `c2AABB`; random + the C8 shapes | [x] |
+| C13 | `f3`, `v1 >= 0, v2 > 0` | plain truncating division arm (`return v1/v2` — no correction) | [x] |
+| C14 | `f3`, `v1 >= 0, v2 < 0, v2 != INT_MIN` | `q = -(v1/-v2), r = v1 % -v2` arm, incl. `r == 0` vs `r > 0` (`r>=0` always here → no correction) | [x] |
+| C15 | `f3`, `v1 < 0, v1 != INT_MIN, v2 > 0` | `q = -((-v1)/v2), r = -((-v1)%v2)` arm; exercises **both** `r == 0` (no correction) and `r < 0` (`q - 1`) | [x] |
+| C16 | `f3`, `v1 < 0, v1 != INT_MIN, v2 < 0, v2 != INT_MIN` | `q = (-v1)/(-v2), r = -((-v1)%(-v2))` arm; both `r == 0` and `r < 0` (`q + 1`) | [x] |
+| C17 | `f3`, exhaustive small grid | every `(v1, v2)` in `-40..=40` × `-40..=40` — covers all arms and both correction directions densely | [x] |
+| C18 | `f4`, single call | random 128-bit states incl. `{0,0}`, `{1,0}`, `{0,1}`, `{u64::MAX, u64::MAX}`; compares the returned `double` **and** the mutated `state[0]`/`state[1]` written back through the pointer | [x] |
+| C19 | `f4`, 1000-call chain | same generator advanced 1000 times from a random seed; every intermediate double and the final state compared — catches state-update-order bugs a single call cannot see | [x] |
+| C20 | `f5` | random `u32`; plus all 16 single-bit-in-low-half values, all 16 single-bit-in-high-half values (which must vanish), `0`, `0xFFFF`, `0xFFFF0000`, `0xFFFFFFFF` | [x] |
+| C21 | `f7`, `channels == 2, bitdepth == 32` | only the `(channels==2)` products contribute and `bitdepth != 32` is 0; random `blocksize` incl. `0`, `1`, `4096`, `65535`, `0xFFFFFFFF` | [x] |
+| C22 | `f7`, `channels == 2, bitdepth != 32` | the `bitdepth + 1` product activates; `bitdepth` ∈ {0,1,4,8,12,16,20,24,31,33,64,0xFFFFFFFF} × random `blocksize` | [x] |
+| C23 | `f7`, `channels != 2, bitdepth == 32` | only the `channels * (channels != 2)` product; `channels` ∈ {0,1,3,4,8,255,0xFFFFFFFF} | [x] |
+| C24 | `f7`, `channels != 2, bitdepth != 32` | same as C23 with the `bitdepth` axis free; includes the `channels == 0` degenerate and full random sweep over all three args (wrapping overflow) | [x] |
+| C25 | `f9`, non-degenerate | random triangles + random probe point, incl. probe inside, outside, and at each vertex | [x] |
+| C26 | `f9`, degenerate | `p1 == p2 == p3`; collinear `p1,p2,p3`; `p2 == p1`; zero-length `v0` or `v1` → `invDenom` is `±inf` and the result is NaN — exact NaN bit pattern compared | [x] |
+| C27 | `f9`, special floats | any component `±0.0`, subnormal, `±inf`, NaN — checks which NaN payload survives through the 5 dot products and 2 final multiplies | [x] |
+| C28 | `f10`, exhaustive | **all 65536** `uint16_t` inputs, bit-for-bit; covers every one of the 64 exponent rows, both `m__offset` values, and the inf/NaN rows `n == 31` / `n == 63` | [x] |
+| C29 | `f11`, `s == 0` | early-return arm; `l` random incl. `±inf`, NaN, subnormal; `h` random (must be ignored) | [x] |
+| C30 | `f11`, hue sector `0 <= h < 60` | random `h` in range × random `s != 0`, `l` | [x] |
+| C31 | `f11`, hue sector `60 <= h < 120` | random `h` in range × random `s != 0`, `l` | [x] |
+| C32 | `f11`, hue `120 <= h < 180` | the C's third arm is `h < 120 && h < 180`, so this range actually falls through to the **final `else`** (all three outputs `= m`). Verified against C rather than against the intent | [x] |
+| C33 | `f11`, hue sector `180 <= h < 240` | random `h` in range × random `s != 0`, `l` | [x] |
+| C34 | `f11`, hue sector `240 <= h < 300` | random `h` in range × random `s != 0`, `l` | [x] |
+| C35 | `f11`, hue sector `300 <= h < 360` | random `h` in range × random `s != 0`, `l` | [x] |
+| C36 | `f11`, `h` out of `[0,360)` / NaN | `h < 0`, `h >= 360`, `h = ±inf`, `h = NaN` → final `else`; also `h < 60` reached via **negative** `h`? (no: `h >= 0.0f` guards it) — verified | [x] |
+| C37 | `f11`, `l`/`s` extremes | `l` ∈ {0, 0.5, 1, -1, 2, inf, NaN}, `s` ∈ {tiny subnormal, 1, -1, inf, NaN} crossed with the C30–C35 sectors — drives `fabsf`/`fmodf` and the `c`/`m`/`x` NaN paths | [x] |
+| C38 | `f12`, `s == 0` | early-return arm; `v` random incl. specials | [x] |
+| C39 | `f12`, `i == 0..=4` | `h` chosen so `(int)floorf(h/60)` lands on each of 0,1,2,3,4 (one row per `switch` arm), × random `s != 0`, `v` | [x] |
+| C40 | `f12`, `switch default:` | `i` outside `0..=4`: `h >= 300`, `h` negative, `h` huge (`1e30`), `h = ±inf`, `h = NaN` (x86 `cvttss2si` → `INT_MIN`) | [x] |
+| C41 | `f12`, sector boundaries | `h` exactly `0, 60, 120, 180, 240, 300, 360`, and one ULP either side of each (`f = h/60 - i` is exactly 0 or nearly 1) | [x] |
+| C42 | `f13`, `max == r` | `r` strictly greatest, `delta != 0`; incl. the `h < 0` → `h += 360` correction (`g < b`) | [x] |
+| C43 | `f13`, `max == g` | `g` strictly greatest → `h = 2 + (b-r)/delta` | [x] |
+| C44 | `f13`, `max == b` | `b` strictly greatest → `h = 4 + (r-g)/delta` | [x] |
+| C45 | `f13`, ties | `r == g > b`, `g == b > r`, `r == b > g` — the C's `==` comparisons pick the *first* matching branch, so ties are branch-order-sensitive | [x] |
+| C46 | `f13`, `delta == 0` / `max == 0` | `r == g == b` (incl. all `0.0`, all `-0.0`, all `inf`, all `1.0`); and `max == 0` with negative channels | [x] |
+| C47 | `f13`, negative / special channels | mixed-sign, `±inf`, subnormal, NaN inputs — drives the `delta` NaN path (E16) and `inf - inf` | [x] |
+| C48 | `agglom`, full composition | all 33 arguments seeded-random over the full bit range (uniform random `u32`/`u64` bit patterns reinterpreted as floats, so NaN/inf/subnormal appear naturally); the `isnan` filters and `f32 → f64` widening are part of what is compared | [x] |
+| C49 | `agglom`, per-sub-function sweeps | 13 sub-sweeps: hold 32 of the 33 arguments at a fixed "tame" baseline and sweep the arguments belonging to one sub-function through that sub-function's C-table configurations — isolates which composed stage diverges | [x] |
+| C50 | `agglom`, all-zero / all-ones / extremes | every argument `0`; every integer argument `MAX`; every float argument `±inf`, NaN, `±0.0`, `FLT_MIN`, `FLT_MAX`; and the `f4` `{0,0}` degenerate state combined with each | [x] |
 
-## Feature combinations
+## Binary executable
 
-`translation/Cargo.toml` declares **no** `[features]` table and no optional
-dependencies, so the only build configuration is the default one. Verified
-mechanically:
+`c_src/CMakeLists.txt` contains a single `add_library(... SHARED src/lib.c)` and
+no `add_executable`. `translation/Cargo.toml` declares `crate-type = ["cdylib"]`
+and has no `[[bin]]` and no `src/main.rs`. **Neither side builds a driver
+binary**, so the "compare stdout byte-for-byte" gate is not applicable.
 
-```
-$ python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb')).get('features'))"
-None
-```
+## Row → test mapping (all rows checked off; `./verify.sh` re-runs everything)
 
-The full matrix is therefore `{default}` = `{--no-default-features}` =
-`{--all-features}`. All three are run by `phase_d.sh`, and because the crate
-has no features the only *real* remaining configuration axis is the build
-profile, so `phase_d.sh` also runs the whole matrix under **both** `debug` and
-`release` (6 runs total). That axis is not cosmetic: `debug` enables Rust's
-overflow checks, which would panic on any place the C relies on wrapping
-arithmetic (`f3`'s `INT_MIN` paths, `f7`'s `u32` products, `f10`'s table add)
-if those had been translated with plain operators instead of `wrapping_*`.
+| rows | test function | file |
+|------|---------------|------|
+| C1 | `c1_c2v` | `tests/phase_b_c2.rs` |
+| C2, C4, C5 | `c2_c4_c5_binary_vector_ops` | `tests/phase_b_c2.rs` |
+| C3 | `c3_c2clampv` | `tests/phase_b_c2.rs` |
+| C6, C9 | `c6_c9_circle_to_circle_direct_and_via_f2` | `tests/phase_b_c2.rs` |
+| C7, C10, C11 | `c7_c10_c11_circle_to_aabb_direct_and_both_f2_orders` | `tests/phase_b_c2.rs` |
+| C8, C12 | `c8_c12_aabb_to_aabb_direct_and_via_f2` | `tests/phase_b_c2.rs` |
+| C13–C16 | `c13_c16_f3_all_sign_quadrants` | `tests/phase_b_scalar.rs` |
+| C17 | `c17_f3_exhaustive_small_grid` | `tests/phase_b_scalar.rs` |
+| C18 | `c18_f4_single_call_value_and_mutated_state` | `tests/phase_b_scalar.rs` |
+| C19 | `c19_f4_thousand_call_chain` | `tests/phase_b_scalar.rs` |
+| C20 | `c20_f5_bit_reversal` | `tests/phase_b_scalar.rs` |
+| C21–C24 | `c21_c24_f7_all_four_flag_combinations` | `tests/phase_b_scalar.rs` |
+| C25 | `c25_f9_non_degenerate_triangles` | `tests/phase_b_f9_f10.rs` |
+| C26 | `c26_f9_degenerate_triangles` | `tests/phase_b_f9_f10.rs` |
+| C27 | `c27_f9_special_floats` | `tests/phase_b_f9_f10.rs` |
+| C28 | `c28_f10_exhaustive_all_65536_inputs` | `tests/phase_b_f9_f10.rs` |
+| C29–C37 | `c29_c37_f11_all_sectors_and_early_return` | `tests/phase_b_hsv.rs` |
+| C38–C41 | `c38_c41_f12_all_switch_arms_and_early_return` | `tests/phase_b_hsv.rs` |
+| C42–C47 | `c42_c47_f13_max_channel_selection_and_degenerates` | `tests/phase_b_hsv.rs` |
+| C48 | `c48_agglom_full_random_bit_space` | `tests/phase_b_agglom.rs` |
+| C49 | `c49_agglom_per_subfunction_sweeps` | `tests/phase_b_agglom.rs` |
+| C50 | `c50_agglom_all_zero_all_ones_and_extremes` | `tests/phase_b_agglom.rs` |
+
+## Divergences found and fixed while checking these rows
+
+All were x86 NaN-payload / operand-order bugs, found by comparing `to_bits()`
+rather than float values, and diagnosed from `objdump -d` of the C `.so` (CMake
+builds it at `-O0`, so GCC emits one SSE instruction per source operator and the
+*first* source operand — the one whose NaN payload survives — is always the
+operator's left-hand side).
+
+1. `c2Dot` / `lm_dot2` — GCC emits the second product as `mulss(b.y, a.y)` and
+   makes it the *first* source of the `addss`. The Rust had
+   `addss(mulss(a.x,b.x), mulss(a.y,b.y))`, which returned the wrong NaN
+   payload. Fixed to `addss(mulss(b.y, a.y), mulss(a.x, b.x))`.
+2. `c2CircletoCircle` — `A.r + B.r` is emitted as `addss(B.r, A.r)`.
+3. `f9` — five of the eight products in `invDenom`/`u`/`v` had swapped operands.
+4. `f11` — four of the `x + m` / `c + m` stores in the later hue sectors had
+   swapped operands (the original comments claimed "GCC swaps"; it does not).
+5. The `addss`/`subss`/`mulss`/`divss` helpers were written as
+   `if a.is_nan() {...} else if b.is_nan() {...} else { a op b }`. That is
+   correct at `-O0` but **LLVM restructures it at `-O`**: `f9` returned
+   `0xffc00000` instead of C's `0xffc58ed7` under `--release` while passing in
+   debug. Rewritten as inline `asm!` so the instruction and operand order are
+   opaque to the optimiser. Every row is now run in both profiles.

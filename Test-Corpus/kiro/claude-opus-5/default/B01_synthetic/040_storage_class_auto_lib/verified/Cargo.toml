@@ -8,11 +8,31 @@ name = "driver"
 crate-type = ["cdylib"]
 path = "src/lib.rs"
 
-[dev-dependencies]
-libloading = "0.8"
-libc = "0.2"
-
 [profile.release]
 panic = "abort"
 
 [workspace]
+
+[dev-dependencies]
+libloading = "0.8"
+
+# `harness = false`: `driver`'s only observable output is what it writes to file
+# descriptor 1, and the differential harness captures that by temporarily
+# redirecting fd 1. libtest's own progress output ("test foo ... ok") is written
+# to the same fd from its own thread, which would race with — and corrupt — the
+# capture. A sequential custom runner (see `tests/common/run_suite`) removes the
+# race entirely.
+[[test]]
+name = "valid_paths"
+path = "tests/valid_paths.rs"
+harness = false
+
+[[test]]
+name = "error_paths"
+path = "tests/error_paths.rs"
+harness = false
+
+[[test]]
+name = "symbols"
+path = "tests/symbols.rs"
+harness = false

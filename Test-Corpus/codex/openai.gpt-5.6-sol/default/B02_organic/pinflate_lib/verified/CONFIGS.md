@@ -1,38 +1,44 @@
-# Configuration surface
+# Configuration-surface table
 
-Derived from the public header, dynamic symbols, and every input-dependent
-branch in `../c_src/src/lib.c`. There are no Cargo features and no runtime
-options or enum parameters. `pinflate` is the only public callable entry
-point; all lower-level decoder functions are `static` and can only be driven
-through it.
+The public API consists only of `pinflate`. The rows below are the
+cross-product pruned to branches the C implementation actually distinguishes:
+block type, block sequencing/final-bit behavior, input address alignment and
+word/tail loading, stored-block byte alignment, Huffman table form, dynamic
+code-length repeat symbols, literal versus string output, distance-one versus
+general copying, output capacity, and empty/one/many output shapes.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | Seven exported C objects | Initial bytes and sizes of `cp_error_reason`, `cp_fixed_table`, `cp_permutation_order`, `cp_len_extra_bits`, `cp_len_base`, `cp_dist_extra_bits`, and `cp_dist_base`. | [x] |
-| 2 | `pinflate` / stored decoder | Input pointer aligned to 4 bytes; final stored block; empty, one-byte, and many-byte payloads; exact output capacity. | [x] |
-| 3 | `pinflate` / stored decoder | Input pointer offset 1 from 4-byte alignment; final stored block; empty, one-byte, and many-byte payloads; exact output capacity. | [x] |
-| 4 | `pinflate` / stored decoder | Input pointer offset 2 from 4-byte alignment; final stored block; empty, one-byte, and many-byte payloads; exact output capacity. | [x] |
-| 5 | `pinflate` / stored decoder | Input pointer offset 3 from 4-byte alignment; final stored block; empty, one-byte, and many-byte payloads; output capacity larger than the payload. | [x] |
-| 6 | `pinflate` / fixed decoder | Input pointer aligned to 4 bytes; final fixed block; empty, one-literal, and many-literal payloads; exact output capacity. | [x] |
-| 7 | `pinflate` / fixed decoder | Input pointer offset 1; final fixed block; randomized literal values and counts; output capacity larger than the payload. | [x] |
-| 8 | `pinflate` / fixed decoder | Input pointer offset 2; final fixed block; randomized literal values and counts; stream ends in a partial final input word. | [x] |
-| 9 | `pinflate` / fixed decoder | Input pointer offset 3; final fixed block; randomized literal values and counts; stream includes one or more full input words. | [x] |
-| 10 | `pinflate` / fixed decoder | Fixed match with backwards distance 1 (`memset` branch), covering base length 3, length 258, and symbols with nonzero extra length bits. | [x] |
-| 11 | `pinflate` / fixed decoder | Fixed match with backwards distance greater than 1 (byte-copy loop), covering base and extra-bit distance symbols and overlapping copies. | [x] |
-| 12 | `pinflate` / fixed decoder | Two or more fixed blocks, with `BFINAL == 0` followed by `BFINAL == 1`; empty and nonempty component blocks. | [x] |
-| 13 | `pinflate` / dynamic decoder | Input pointer aligned to 4 bytes; final dynamic block whose code-length stream uses direct lengths; randomized literals. | [x] |
-| 14 | `pinflate` / dynamic decoder | Input pointer offset 1; final dynamic block whose code-length stream uses direct lengths; randomized literals. | [x] |
-| 15 | `pinflate` / dynamic decoder | Input pointer offset 2; final dynamic block whose code-length stream uses direct lengths; randomized literals. | [x] |
-| 16 | `pinflate` / dynamic decoder | Input pointer offset 3; final dynamic block whose code-length stream uses direct lengths; randomized literals. | [x] |
-| 17 | `pinflate` / dynamic decoder | Input pointer aligned to 4 bytes; dynamic code-length symbols 16, 17, and 18 all used; randomized literals from the resulting tree. | [x] |
-| 18 | `pinflate` / dynamic decoder | Input pointer offset 1; dynamic code-length symbols 16, 17, and 18 all used; exact output capacity. | [x] |
-| 19 | `pinflate` / dynamic decoder | Input pointer offset 2; dynamic code-length symbols 16, 17, and 18 all used; larger output capacity. | [x] |
-| 20 | `pinflate` / dynamic decoder | Input pointer offset 3; dynamic code-length symbols 16, 17, and 18 all used; both full-word and final-partial-word refill paths. | [x] |
-| 21 | `pinflate` / dynamic decoder | Dynamic literal followed by distance-1 matches; base and nonzero-extra-bit length symbols. | [x] |
-| 22 | `pinflate` / dynamic decoder | Dynamic matches with distance greater than 1; base and nonzero-extra-bit distance symbols with overlapping copies. | [x] |
-| 23 | `pinflate` | Mixed nonfinal/final Huffman blocks (fixed then dynamic and dynamic then fixed), exercising state reuse across block types. | [x] |
-| 24 | `pinflate` | Valid streams whose byte length and input alignment make `last_bytes` each of 0, 1, 2, and 3, covering full-word refill and `final_word_available`. | [x] |
+| 1 | `pinflate` | final stored block (`BTYPE=0`), empty payload, exact zero output capacity | [x] |
+| 2 | `pinflate` | final stored block, one-byte payload, exact output capacity | [x] |
+| 3 | `pinflate` | final stored block, many-byte randomized payload, exact output capacity | [x] |
+| 4 | `pinflate` | final stored block, randomized payload, larger-than-needed output capacity | [x] |
+| 5 | `pinflate` | stored block entered with a non-byte-aligned bit count so `cp_stored` discards padding | [x] |
+| 6 | `pinflate` | fixed Huffman (`BTYPE=1`), empty output (end-of-block only) | [x] |
+| 7 | `pinflate` | fixed Huffman, randomized literal-only output | [x] |
+| 8 | `pinflate` | fixed Huffman, length/distance string with distance 1 (`memset` branch) | [x] |
+| 9 | `pinflate` | fixed Huffman, length/distance string with distance greater than 1 (byte-copy branch) | [x] |
+| 10 | `pinflate` | fixed Huffman, length and distance symbols requiring extra bits, including boundary bases | [x] |
+| 11 | `pinflate` | dynamic Huffman (`BTYPE=2`), direct code-length symbols (default switch arm) | [x] |
+| 12 | `pinflate` | dynamic Huffman code lengths using repeat symbol 16 | [x] |
+| 13 | `pinflate` | dynamic Huffman code lengths using zero-repeat symbol 17 | [x] |
+| 14 | `pinflate` | dynamic Huffman code lengths using long zero-repeat symbol 18 | [x] |
+| 15 | `pinflate` | dynamic Huffman payload with randomized literals and length/distance copies | [x] |
+| 16 | `pinflate` | multiple non-final/final compressed blocks, exercising the outer block loop | [x] |
+| 17 | `pinflate` | input pointer aligned to 4 bytes (`first_bytes=0`) | [x] |
+| 18 | `pinflate` | input pointer offset so `first_bytes=1` | [x] |
+| 19 | `pinflate` | input pointer offset so `first_bytes=2` | [x] |
+| 20 | `pinflate` | input pointer offset so `first_bytes=3` | [x] |
+| 21 | `pinflate` | post-prefix input has no trailing partial word (`last_bytes=0`) | [x] |
+| 22 | `pinflate` | post-prefix input has one trailing byte (`last_bytes=1`) | [x] |
+| 23 | `pinflate` | post-prefix input has two trailing bytes (`last_bytes=2`) | [x] |
+| 24 | `pinflate` | post-prefix input has three trailing bytes (`last_bytes=3`) | [x] |
 
-The stored decoder's `s->bits_left / 8 <= LEN` check rejects a nonfinal
-stored block when bytes for a following block remain. That C behavior belongs
-to error row 2 and is not treated as a valid multi-stored configuration.
+There are no runtime options, modes, flags, public low-level entry points,
+Cargo features, conditional C compilation branches, or executable drivers in
+this project.
+
+Rows 1–10 and 16–24 are exercised by
+`phase_b_stored_fixed_and_shape_rows`; rows 11–15 are exercised by
+`phase_b_dynamic_rows`. Each group calls both shared objects through
+`libloading`.

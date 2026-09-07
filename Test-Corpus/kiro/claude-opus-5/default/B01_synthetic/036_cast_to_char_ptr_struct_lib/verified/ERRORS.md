@@ -1,74 +1,86 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — error-surface table
 
-## How this table was derived
+Derived mechanically from the C source, not from docs or assumptions. The greps
+below were run over the **entire** `c_src` tree (`src/` + `include/`), which is
+two files totalling 75 lines.
 
-Mechanical grep of the entire C source for every rejection / error construct:
+## Mechanical derivation
 
 ```sh
-grep -n -E 'return|assert|NULL|errno|exit|abort|if *\(|switch|else|#if|<|>|<=|>=|==|!=|&&|\|\|' \
-     c_src/src/driver.c c_src/include/driver.h
+$ grep -n "return" -r c_src/src c_src/include
+(no matches)
+
+$ grep -nE "NULL|assert|errno|ERROR|error|-1|EXIT|abort|exit" -r c_src/src c_src/include
+(no matches)
+
+$ grep -nE "\bif\b|\bswitch\b|#if|#ifdef|\?|&&|\|\|" -r c_src/src c_src/include
+c_src/include/driver.h:24:#ifndef DRIVER_H_        <- include guard only
+
+$ grep -nE "enum|#define|MAX|MIN|const" -r c_src/src c_src/include
+c_src/include/driver.h:25:#define DRIVER_H_        <- include guard only
 ```
 
-The **only** match in `driver.c` is the loop condition on line 35:
+Findings:
 
-```c
-for (int i = 0; i < len; i++) {
-```
+* **0** `return` statements of any kind (both functions are `void` and fall off
+  the end).
+* **0** error-return macros, error enums, sentinel returns (`return -1`,
+  `return NULL`), `assert`s, `errno` uses, `abort`/`exit` calls.
+* **0** explicit range checks, null checks, min/max constants.
+* **0** runtime `if`/`switch`/ternary/short-circuit branches. The only
+  conditional in the whole library is the `for (i = 0; i < len; i++)` loop
+  bound inside `static print_hex`.
+* The public API is `void driver(int x)` — a single by-value `int`, no
+  pointers, no lengths, no enums, no flags.
 
-Findings, stated exactly as the source supports them:
+**Consequence:** the C library has *no rejection surface*. Every value of `int`
+is accepted and processed identically; `driver` cannot report failure because it
+returns `void`. The "expected C result" for an error-path test is therefore
+"no rejection: prints the 16-byte hex image and returns normally", and the
+differential assertion is that Rust produces the **byte-identical stdout** and
+likewise does not abort, panic, or diverge.
 
-* `RETURN_ERROR`-style macros: **none**.
-* `return <error>` statements: **none**. Both functions are `void`; neither
-  contains any `return` statement at all.
-* `return NULL`: **none** — no function returns a pointer.
-* error enums / status codes: **none** — the public header declares no enum,
-  no typedef, and no status type.
-* `assert` / `abort` / `exit` / `errno`: **none**.
-* explicit range checks: **none**.
-* null-pointer checks: **none**.
-* min/max constants: **none**.
-* `#ifdef`-gated behaviour: only the `DRIVER_H_` include guard, which has no
-  runtime effect.
+This table is the exhaustive enumeration of every condition that *could* be an
+error at the API boundary, including the generic C-API boundaries mandated even
+when absent from the source.
 
-So the count of *distinct rejection branches in the C* is **zero**: `driver`
-accepts the entire `int` domain, has no failure mode, and returns `void`, so it
-has no channel through which to report an error. Every 32-bit value of `floors`
-is a valid input.
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|---------------------------------------------|-------------------|
+| 1 | `driver` | `floors == 0` (zero / falsy boundary, and the value `{0}` already initialises the field to) | no error; prints `00000000` + `03000000` + `0000000000000040` |
+| 2 | `driver` | `floors == -1` (all-bits-set; classic error sentinel passed as data) | no error; prints `ffffffff03000000` `0000000000000040` |
+| 3 | `driver` | `floors == INT_MAX` (`2147483647`) — upper boundary of the parameter type | no error; prints `ffffff7f...` |
+| 4 | `driver` | `floors == INT_MIN` (`-2147483648`) — lower boundary of the parameter type | no error; prints `00000080...` |
+| 5 | `driver` | `floors == INT_MAX` **+1 step past the documented range**, i.e. the bit pattern `0x80000000` reinterpreted as `int` (`INT_MIN`) — there is no representable value one step past `INT_MAX`, so the wrap-around image is the "one past the end" case | no error; identical to row 4 (`00000080...`) |
+| 6 | `driver` | `floors == INT_MIN` **−1 step**, i.e. bit pattern `0x7fffffff` (`INT_MAX`) — no representable value below `INT_MIN`; wrap-around image | no error; identical to row 3 (`ffffff7f...`) |
+| 7 | `driver` | out-of-range **enum-style** value crossing the FFI boundary: the C prototype is `int`, so an arbitrary 32-bit int with no "valid variant" (e.g. `0x7f7f7f7f`, `0xdeadbeef`, `0xcafebabe`) is a legal input the C accepts. There is no enum in the source, so *every* int is out-of-range-of-nothing and must be handled identically | no error; prints the raw little-endian image of the value |
+| 8 | `driver` | **null pointer** boundary — N/A by construction: `driver` takes no pointer parameters, so no null can be passed. Verified by the header signature `void driver(int x);`. Covered as a negative/no-op row so the boundary is not silently skipped | not reachable through the public ABI; nothing to compare |
+| 9 | `driver` | **zero / oversized length** boundary — N/A by construction: `driver` takes no length parameter. The only length in the library is `sizeof(house_t)`, a compile-time constant passed to `static print_hex` | not reachable through the public ABI; nothing to compare |
+| 10 | `print_hex` (static) | `len <= 0` would skip the loop and print only `"\n"`; `len > sizeof(house_t)` would read out of bounds | **unreachable**: `print_hex` has internal linkage and its only call site passes the constant `sizeof(house_t)` (= 16). Not exported from the C `.so` (see `SYMBOLS.md`), so it cannot be driven from a differential test. Asserted indirectly: every `driver` call must emit exactly 16 hex byte-pairs + `\n` (33 bytes) |
+| 11 | `driver` | repeated / interleaved invocation (state corruption, stale buffer reuse across calls) — `house` is a fresh automatic `{0}`-initialised object each call, so there is no persistent state to corrupt | no error; each call independently prints its own 33-byte line |
 
-Because a table of zero rows cannot be tested, the rows below are the
-**boundary / degenerate-input surface** that the protocol mandates for any C
-API even when the source contains no explicit check. Each row states the
-condition, and the expected C result derived from reading the code — *not* from
-assuming an error occurs. "Expected C result" for a total function means
-"produces its normal 33-byte output and does not fail", and the differential
-test asserts C and Rust agree on exactly that.
+## Status
 
-## Error / boundary surface table
+All 11 rows have a passing differential test in
+`tests/differential.rs` (`phase_c_row_01` … `phase_c_row_11`). Rows 8, 9 and 10
+are unreachable through the exported ABI, so they are asserted as the structural
+invariants described above (header signature takes no pointer; no length
+parameter exists; every call emits exactly 33 bytes) rather than by passing an
+impossible argument.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|----------------------------------------------|-------------------|------|
-| 1 | `driver` | `floors == 0` (zero / degenerate value) | no rejection; prints `00000000` `03000000` `0000000000000040` + `\n` | `err_01_zero` |
-| 2 | `driver` | `floors == INT_MIN` (`-2147483648`, one step past the negative end of the signed range) | no rejection; prints `00000080…` | `err_02_int_min` |
-| 3 | `driver` | `floors == INT_MAX` (`2147483647`, the positive extreme) | no rejection; prints `ffffff7f…` | `err_03_int_max` |
-| 4 | `driver` | `floors == -1` (all-bits-set; would be a sentinel `-1` in an API that had one) | no rejection; prints `ffffffff…` | `err_04_minus_one` |
-| 5 | `driver` | out-of-range "enum" value: an `int` bit pattern that would be an invalid variant if the parameter were a C enum (`0x7FFFFFFF`, `0x80000000`, `0xDEADBEEF`, `0xFFFFFFFF` reinterpreted as `i32`) — C enums accept any `int`, so these are real inputs | no rejection; the raw 4 bytes are printed verbatim, no validation | `err_05_out_of_range_enum_values` |
-| 6 | `driver` | one step past each side of every "plausible range" boundary a caller might assume (`-1/0/1`, `0x7f/0x80/0x81`, `0x7fff/0x8000/0x8001`, `0x7fffff/0x800000/0x800001`, `0x7ffffffe/0x7fffffff`, `-0x7fffffff/-0x80000000`) | no rejection at any boundary; each prints its own little-endian bytes | `err_06_range_boundaries` |
-| 7 | `driver` | oversized / zero "length": the internal `len` argument to `print_hex` is hard-coded to `sizeof(house_t)`, so `len <= 0` and `len > 16` are **unreachable** from the public ABI. The public API exposes no length parameter to corrupt. | unreachable by construction; output length is invariantly 33 bytes for every input | `err_07_output_length_invariant` |
-| 8 | `driver` | null pointer arguments: the public ABI takes **no** pointer parameter, so there is no null to pass. `print_hex`'s pointer is always `&house`, an automatic object. | unreachable by construction | documented, not testable — asserted indirectly by row 7 |
-| 9 | `driver` | repeated / back-to-back invocation, and C-then-Rust interleaving in one process (stale state, shared `stdout` buffering) | each call is independent; `house` is a fresh automatic object every call, so output depends only on `floors` | `err_09_no_residual_state` |
-| 10 | `driver` | full-domain sweep of the low byte (`0x00..=0xFF`) — exercises `%02x` zero-padding, the one formatting decision in the code | values `< 0x10` print as two chars with a leading `0`, never one char | `err_10_hex_zero_padding` |
+Verified under every feature combination — `default`, `--no-default-features`,
+`--all-features` — via `./run_differential.sh`: `26 passed; 0 failed`.
 
-## Row status
+### Harness non-vacuity
 
-| row | status |
-|-----|--------|
-| 1 | [x] passing |
-| 2 | [x] passing |
-| 3 | [x] passing |
-| 4 | [x] passing |
-| 5 | [x] passing |
-| 6 | [x] passing |
-| 7 | [x] passing |
-| 8 | [x] unreachable by construction (documented; covered indirectly by row 7) |
-| 9 | [x] passing |
-| 10 | [x] passing |
+Because this table asserts "no error is reported", it would be satisfied
+trivially by a test that compares nothing. The harness was mutation-tested to
+prove otherwise: five bugs injected into `src/lib.rs` were each caught in all
+three feature combinations.
+
+| injected bug | detected |
+|--------------|----------|
+| `house.bedrooms = 3` → `4` | yes (3/3 combos) |
+| `%02x` → `%x` (drops zero padding) | yes (3/3 combos) |
+| `unsigned char` → `signed char` promotion | yes (3/3 combos) |
+| `house.bathrooms = 2.` → `2.5` | yes (3/3 combos) |
+| trailing `'\n'` → `'\r'` | yes (3/3 combos) |

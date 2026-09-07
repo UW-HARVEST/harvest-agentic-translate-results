@@ -1,149 +1,98 @@
-# CONFIGS.md — configuration surface (valid inputs)
+# CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from `c_src/src/lib.c`, `c_src/include/lib.h`,
-`c_src/CMakeLists.txt` and `translation/Cargo.toml`.
+Derived mechanically from the branches the C code actually takes.
 
-## Axes the C actually branches on
+## Axes the C code branches on
 
-**Runtime options / modes / flags:** *none.*
-`grep -c '#if\|#ifdef\|#ifndef' c_src/src/lib.c c_src/include/lib.h` → `0`.
-The header declares no flags, no context struct, no init function.
-`CMakeLists.txt` sets no `target_compile_definitions`.
+There are **no** runtime options, modes, flags, or `#ifdef`s: `grep -c
+'#if\|#ifdef\|#define' c_src/src/lib.c c_src/include/lib.h` finds none, and
+`merge_sort(a, b, size)` has no options parameter. The entire configuration
+surface is therefore *input shape*, on the following axes, each read off a real
+branch in the source:
 
-**Cargo feature combinations:** *none.*
-`translation/Cargo.toml` has no `[features]` section and no `[dependencies]`,
-and `src/lib.rs` contains no `cfg(feature = …)`. The default build is the only
-build, so "every feature combination" == the single default configuration.
-(Verified by script, see bottom of this file.)
+| axis | values the C distinguishes | branch that distinguishes them |
+|---|---|---|
+| **A. `size`** | `0`, `1` (base case) vs `>= 2` (recurses); even vs odd (`split = (lo+hi)/2` splits unevenly on odd runs); exact powers of two vs not; deep recursion | `lib.c:33` `if (hi - lo <= 1)`, `lib.c:35` `split = (lo + hi) / 2` |
+| **B. `sort_bits` ordering** | already ascending, already descending, all equal, few distinct values (many ties), fully random | `lib.c:7` `a->sort_bits <= b->sort_bits` |
+| **C. `sort_bits` magnitude** | non-negative only, negative only, mixed sign, `INT_MIN`/`INT_MAX` present | `lib.c:7` — signed compare |
+| **D. `texture_id`** | all equal, all distinct ascending, all distinct **descending while `sort_bits` tie** (probes the dead tiebreak), `0`/`u64::MAX` extremes | `lib.c:9` — the dead branch |
+| **E. run-exhaustion order** | left run exhausts first (`i >= split`), right run exhausts first (`j >= hi`), both alternate | `lib.c:19-21` `i < split && (j >= hi \|\| leq(...))` |
+| **F. scratch buffer `b`** | pre-zeroed, pre-filled with distinct garbage | `merge_sort` overwrites `b` via `memcpy`, then `b` is read *and* written by alternating recursion levels — `b`'s final contents are part of the output |
+| **G. struct padding** | padding zeroed, padding filled with non-zero garbage | the 16-byte `memcpy` and the 16-byte struct assignment both carry padding |
 
-**Public entry points:** exactly one, `merge_sort`. The three lower-level
-functions (`spritebatch_internal_sprite_less_than_or_equal`,
-`…_merge_sort_iteration`, `…_merge_sort_recurse`) are `static`, absent from
-`nm -D`, and therefore unreachable across the FFI boundary. They are driven
-*through* `merge_sort`, and the axes below are chosen specifically to reach each
-of their branches:
+## Entry points
 
-| lower-level branch | reached by |
-|---|---|
-| `recurse`: `hi - lo <= 1` early return | `size` 0 and 1; every leaf of every larger `size` |
-| `recurse`: odd vs. even `(lo + hi) / 2` split | odd and even `size`, and non-power-of-two `size` |
-| `recurse`: buffer role swap `a`↔`b` per level | `size` values whose recursion depth is odd vs. even — decides whether the sorted result lands in `a` or in `b`, so **both buffers must be compared** |
-| `iteration`: comparator `<=` true | ascending / duplicate `sort_bits` |
-| `iteration`: comparator false | descending `sort_bits` |
-| `iteration`: `j >= hi` short-circuit | right run exhausted first, i.e. `size >= 2` with descending data |
-| `iteration`: `i >= split` | left run exhausted first, i.e. ascending data |
-| `leq`: dead `texture_id` tiebreak | equal `sort_bits` with varying `texture_id` |
+`merge_sort` is the **only** public entry point (`SYMBOLS.md`); the three
+`spritebatch_internal_*` functions are `static` and unreachable through the
+`.so`. They are exercised transitively, and each row below names which internal
+path it drives. There is no convenience-wrapper / low-level split to worry
+about: `merge_sort` *is* the lowest-level exported call.
 
-**Input shape axes** (the only thing the code varies on):
-
-* `size` (`int`): `0`, `1`, `2`, `3`, `4`, `5`, `7`, `8`, `9`, `15`, `16`, `17`,
-  `31`, `32`, `33`, `63`, `64`, `100`, `127`, `128`, `129`, `1000`, `1024`, `4096`
-  — covers empty / one / many, powers of two, ±1 around powers of two, odd and
-  even, and both recursion-depth parities.
-* `sort_bits` (`int`) distribution: all-equal, two-valued, small range (heavy
-  duplicates), all-distinct random, already-ascending, already-descending,
-  extremes (`INT_MIN`, `INT_MAX`, `0`, `-1`) mixed in.
-* `texture_id` (`unsigned long long`) distribution: random, all-equal, extremes
-  (`0`, `u64::MAX`) — must be verified, not assumed irrelevant.
-* struct tail padding bytes: all-zero vs. random garbage (observable, since the
-  struct copy is 16 bytes wide).
-* scratch buffer `b` initial content: all-zero vs. random garbage.
-* observation: byte image of **`a` and `b`** after the call.
+There is no binary/driver target in `c_src/CMakeLists.txt` (only
+`add_library(... SHARED ...)`) and none in `translation/Cargo.toml` (`crate-type
+= ["cdylib"]`, no `[[bin]]`), so the "compare stdout of C and Rust binaries"
+requirement is **not applicable**.
 
 ## Configuration table
 
-One row per combination the C treats differently. Every row is exercised with
-many randomized inputs (fixed seed `0x5EED_C0FFEE`), not a single value, and
-compares the full 16-byte-per-element byte image of **both** output buffers.
+Every row is run with **many randomized inputs** (`RNG_SEED = 0x5EED_1234_ABCD_F00D`,
+a fixed-seed SplitMix64/xorshift so runs are reproducible), and asserts that
+**both** the sorted buffer `a` *and* the scratch buffer `b` are byte-identical
+between C and Rust — all `16 * size` bytes, padding included.
 
-| #  | entry point(s) | configuration (options set + input shape) | [ ] |
-|----|----------------|-------------------------------------------|-----|
-| 1  | `merge_sort` | `size = 0`; `a`/`b` filled with random bytes (incl. padding); assert **both buffers bit-identical to input** | [x] |
-| 2  | `merge_sort` | `size = 1`; random element, random padding, random `b` | [x] |
-| 3  | `merge_sort` | `size = 2`; all 2-element orderings (asc, desc, equal) × random `texture_id` | [x] |
-| 4  | `merge_sort` | `size = 3` (odd split `(0+3)/2 = 1`); random `sort_bits` over a 3-value range | [x] |
-| 5  | `merge_sort` | `size` ∈ {4, 8, 16, 32, 64, 128, 1024} (powers of two, even splits at every level); fully random `sort_bits`/`texture_id` | [x] |
-| 6  | `merge_sort` | `size` ∈ {5, 7, 9, 15, 17, 31, 33, 63, 100, 127, 129, 1000, 4096} (non-powers-of-two, mixed odd/even splits) ; fully random | [x] |
-| 7  | `merge_sort` | all `sort_bits` **equal**, `texture_id` all distinct random — exercises the dead tiebreak; C keeps input order, so `texture_id` must come out unsorted | [x] |
-| 8  | `merge_sort` | all `sort_bits` equal **and** all `texture_id` equal (total duplicates) | [x] |
-| 9  | `merge_sort` | `sort_bits` already strictly **ascending** (best case: `i >= split` path dominates) | [x] |
-| 10 | `merge_sort` | `sort_bits` already strictly **descending** (worst case: `j >= hi` short-circuit path dominates) | [x] |
-| 11 | `merge_sort` | `sort_bits` drawn from a **2-value** set (massive duplicates, stability-sensitive) | [x] |
-| 12 | `merge_sort` | `sort_bits` drawn from a **small range** (`0..4`), many runs of duplicates | [x] |
-| 13 | `merge_sort` | `sort_bits` = full-range random `i32` **including `INT_MIN`/`INT_MAX`** (comparator uses signed `<=`; catches any unsigned mix-up) | [x] |
-| 14 | `merge_sort` | `sort_bits` ∈ {`INT_MIN`, `INT_MAX`} only — maximal-distance signed pairs | [x] |
-| 15 | `merge_sort` | `texture_id` ∈ {`0`, `u64::MAX`} with random `sort_bits` (u64 boundary values) | [x] |
-| 16 | `merge_sort` | struct **tail padding filled with random garbage**, `sort_bits`/`texture_id` random — verifies the 16-byte (not 12-byte) copy | [x] |
-| 17 | `merge_sort` | scratch buffer `b` pre-filled with random garbage, `size` odd and even — verifies `b`'s final content matches C exactly (incl. which buffer the sorted result lands in) | [x] |
-| 18 | `merge_sort` | `size = 4096`, `sort_bits` all equal + padding garbage + `b` garbage (all axes at once, deep recursion) | [x] |
-| 19 | `merge_sort` | **fuzz sweep**: 400 iterations, `size` uniform in `0..=256`, every field and every padding byte uniformly random, `b` random | [x] |
-| 20 | `merge_sort` | **repeated invocation** on the same buffers (call `merge_sort` three times in a row on the already-sorted result) — checks idempotence matches C, incl. `b`'s state | [x] |
-| 21 | `merge_sort` | **`a == b`** (aliased buffers): `memcpy` with `src == dst`, and every `b[k] = a[i]` reads and writes the same array | [x] |
-| 22 | `merge_sort` | **overlapping** `a` and `b` at every whole-element offset `1..=n` (the only overlap reachable for a 16-byte-slot pointer) | [x] |
-| 23 | `merge_sort` | **both pointers misaligned** by 1,2,3,4,5,7 bytes — the C's `mov`-based accesses tolerate this, so the Rust must too | [x] |
-| 24 | `merge_sort` | **exactly one** pointer misaligned (`a` only, then `b` only) | [x] |
-| 25 | `merge_sort` | `size` **smaller** than the real allocation, for every `size in 0..=n` — the untouched tail of both buffers must match | [x] |
-| 26 | `merge_sort` | `size` **larger** than the caller's logical length but inside the real allocation (17…128 over a 128-element store) — out-of-logical-range indexing must match | [x] |
-| 27 | `merge_sort` | exhaustive `size` sweep `0..=512` against one fixed 512-element allocation | [x] |
-| 28 | `merge_sort` | `size` = 65535 / 65536 / 65537 / 131071 / 131072 — deepest affordable recursion (17 levels), exercising the midpoint arithmetic at every level | [x] |
+| # | entry point(s) | configuration (options set + input shape) | internal path driven | [x] |
+|---|---|---|---|---|
+| 1 | `merge_sort` | `size = 0`; `b` garbage-filled | base case only, no merge | [x] |
+| 2 | `merge_sort` | `size = 1`; `b` garbage-filled | base case only, `memcpy` of 1 elem | [x] |
+| 3 | `merge_sort` | `size = 2`; random `sort_bits` | one `iteration`, both runs length 1 | [x] |
+| 4 | `merge_sort` | `size = 3` (odd → uneven split 1/2) | nested recursion, uneven runs | [x] |
+| 5 | `merge_sort` | `size = 4` (power of two, even splits) | balanced recursion | [x] |
+| 6 | `merge_sort` | `size = 5,6,7` (odd/even non-power-of-two) | uneven splits at several levels | [x] |
+| 7 | `merge_sort` | `size = 8, 16, 32, 64, 128, 256` (powers of two) | fully balanced, buffer roles alternate cleanly | [x] |
+| 8 | `merge_sort` | `size = 9, 17, 33, 63, 65, 127, 129, 255, 257` (±1 off powers of two) | worst-case uneven splits / deepest ragged recursion | [x] |
+| 9 | `merge_sort` | `size = 1000`, random | deep recursion (~10 levels) | [x] |
+| 10 | `merge_sort` | `size = 4096`, random | deep recursion (12 levels), large `memcpy` | [x] |
+| 11 | `merge_sort` | random `size` in `1..=512`, random data (200 iterations) | broad property sweep over axes A+B | [x] |
+| 12 | `merge_sort` | already **ascending** `sort_bits` (sorted input), sizes 2..=64 | `leq` always true → left run always taken until exhausted (axis E: left-exhausts-first) | [x] |
+| 13 | `merge_sort` | already **descending** `sort_bits` (reverse sorted), sizes 2..=64 | `leq` false on first compare → right run drains first (axis E: right-exhausts-first) | [x] |
+| 14 | `merge_sort` | **all `sort_bits` equal**, distinct `texture_id`s ascending | every compare hits `lib.c:7` true; probes stability + dead branch (axis B+D) | [x] |
+| 15 | `merge_sort` | **all `sort_bits` equal**, `texture_id`s **descending** | the exact input the dead `texture_id` tiebreak would have reordered; C must leave order as-is (axis D) | [x] |
+| 16 | `merge_sort` | few distinct `sort_bits` (2 / 3 / 5 buckets) → **many ties**, random `texture_id` | heavy tie traffic through `lib.c:7`/`lib.c:9` (axis B+D) | [x] |
+| 17 | `merge_sort` | `sort_bits` **all negative** | signed compare on negatives (axis C) | [x] |
+| 18 | `merge_sort` | `sort_bits` **mixed sign**, full `i32` range random | signed compare across zero (axis C) | [x] |
+| 19 | `merge_sort` | `sort_bits` drawn only from `{INT_MIN, -1, 0, 1, INT_MAX}` | signed boundary values, guaranteed ties (axis C) | [x] |
+| 20 | `merge_sort` | `texture_id` drawn only from `{0, 1, u64::MAX/2, u64::MAX-1, u64::MAX}`, `sort_bits` all equal | unsigned extremes in the dead branch (axis D) | [x] |
+| 21 | `merge_sort` | scratch `b` **pre-zeroed** vs `b` **pre-filled with a distinct pattern**, same `a`; sizes 0..=32 | `b`'s final contents differ only where the algorithm writes; catches any missing write (axis F) | [x] |
+| 22 | `merge_sort` | struct **padding bytes non-zero** (0xAA pattern) in `a`, `b` padding 0x55; sizes 1..=32 | 16-byte copy must carry padding through both `memcpy` and struct assignment (axis G) | [x] |
+| 23 | `merge_sort` | padding zeroed everywhere (baseline control for row 22) | same, padding must stay zero | [x] |
+| 24 | `merge_sort` | **repeated / idempotent** invocation: call `merge_sort` twice on the same buffers | second call re-`memcpy`s the already-sorted `a`; both libs must agree on both buffers after each call | [x] |
+| 25 | `merge_sort` | full cross-product sweep: every `size` in `0..=80` × each of the 6 data shapes (ascending, descending, all-equal, few-buckets, random, boundary-values), padding garbage on | pruned cross-product of axes A×B×C×G — the interaction sweep | [x] |
+| 26 | `merge_sort` | `a` and `b` **adjacent in one allocation** (`b` immediately follows `a`), sizes 1..=64 | non-overlapping but contiguous; catches an off-by-one write past `size` in either buffer (axes A+F) | [x] |
 
-## Feature-combination enumeration (script-verified)
+## Verification record
 
-```sh
-$ ./run_all_configs.sh
-== declared features: 0 (none)
-```
+All 26 rows pass. Every row is exercised through `libloading` against both
+`.so`s — the Rust side is always reached via its `#[no_mangle] extern "C"`
+export, never as a direct Rust call.
 
-No `[features]` ⇒ one feature configuration. `run_all_configs.sh` nevertheless
-enumerates the feature powerset mechanically from `Cargo.toml` and runs the full
-suite for each, and additionally runs **both build profiles**, because the two
-profiles are genuinely different code paths for this translation: the `dev`
-profile enables `debug_assertions`, which turns on Rust's UB precondition checks
-(pointer alignment, `copy_nonoverlapping` non-overlap) and integer overflow
-checks. Configurations covered:
+* `tests/phase_b_valid_paths.rs` — 26 tests, one per row, all passing in both
+  `cargo test` (debug) and `cargo test --release`.
+* Fixed RNG seed `0x5EED_1234_ABCD_F00D`, so every reported input is
+  reproducible.
+* Each row asserts **both** output buffers byte-for-byte over all `16 * size`
+  bytes, padding included — not just the sorted array.
+* Also re-run green against the C compiled at `-O0`, `-O1`, `-O2`, `-O3` and
+  `-Os` (via `HARVEST_C_SO=<path> cargo test --release`), which confirms the
+  16-byte struct copy is what gcc emits at every optimisation level, not an
+  artefact of the unoptimised default CMake build.
 
-| configuration | Rust `.so` under test | result |
-|---|---|---|
-| `--release --no-default-features` | `target/release/libmerge_sort_lib.so` | 44/44 pass |
-| `--no-default-features` (dev) | `target/debug/libmerge_sort_lib.so` | 44/44 pass |
-| `--release` (default features) | `target/release/libmerge_sort_lib.so` | 44/44 pass |
-| (dev, default features) | `target/debug/libmerge_sort_lib.so` | 44/44 pass |
+### Suite adequacy (`./mutation_check.sh`)
 
-## Divergence found and fixed
-
-The dev-profile run is what exposed the one real defect in the translation. The
-original Rust formed `&*ptr` references to sprites and used
-`core::ptr::copy_nonoverlapping`, which imposes alignment / non-overlap / non-null
-preconditions **that the C does not have** — the C just issues `mov`s and plain
-address arithmetic. Rows 21–24 aborted the dev build with
-
-```
-misaligned pointer dereference: address must be a multiple of 0x8
-unsafe precondition(s) violated: ptr::copy_nonoverlapping requires that both
-pointer arguments are aligned and non-null and the specified memory ranges do
-not overlap
-```
-
-i.e. the translation was relying on latent UB that merely happened to work with
-optimizations on. `src/lib.rs` was rewritten to mirror gcc's codegen exactly:
-unaligned field loads instead of references, a two-`u64` load-then-store sprite
-copy instead of `copy_nonoverlapping`, `wrapping_offset` instead of `offset`, and
-a direct call to libc `memcpy` for the bulk copy. All 28 rows then pass in both
-profiles.
-
-## Harness discrimination (mutation-tested)
-
-To confirm the rows above are load-bearing rather than vacuously passing, five
-mutations were injected into `src/lib.rs` and the suite re-run. Failures per
-suite:
-
-| mutation | valid_paths | error_paths | blind_spots |
-|---|---|---|---|
-| comparator `<=` → `<` (makes the dead `texture_id` tiebreak live) | 12 | 4 | 3 |
-| `copy_sprite` copies 12 bytes instead of 16 (drops padding) | 16 | 9 | 5 |
-| `sort_bits` compared as `u32` instead of `i32` | 14 | 8 | 3 |
-| negative `size` clamped instead of wrapping to a ~2**64 length | 0 | 1 | 0 |
-| `recurse` merges into the wrong buffer | 16 | 9 | 4 |
-
-A no-op control mutation produced 0 failures. `src/lib.rs` was restored and
-rebuilt after each mutation (verified with `diff`).
+Passing tests only prove something if the tests can fail. 26 single-edit mutants
+were injected into `translation/src/lib.rs`, one per branch and boundary in the
+C algorithm (comparison direction and signedness, struct-copy width, both merge
+loop bounds, the `j >= hi` short-circuit, both index increments, the recursion
+base case, the split computation, the buffer-role alternation, and the entry
+`memcpy`). **All 26 were killed.** The script refuses mutations that only touch
+comments, which is how two initially "surviving" mutants turned out to be
+no-ops rather than blind spots.

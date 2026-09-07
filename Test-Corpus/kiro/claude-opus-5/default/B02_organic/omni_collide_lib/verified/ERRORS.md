@@ -1,122 +1,177 @@
-# ERRORS.md — error / rejection surface table
+# ERRORS.md — error / rejection surface table (Phase C gate)
 
-Derived mechanically from `c_src/src/lib.c` by grepping every `switch` with no
-`default:`, every `default:` arm, every `return 0` / `return 1` guard, every
-NULL check (`if (!ptr)`, `if (ptr)`), every comparison against a limit constant
-(`FLT_MAX`, `FLT_EPSILON`, `-1.0e8f`, `iter < 20`, `2.0f`), and every division
-that can divide by zero. The library has **no** error enum, no `assert`, no
-`RETURN_ERROR` macro and no `errno` use: failures are expressed as sentinel
-return values (`0`, `(0,0)`, `0.0f`) or as "leave the output untouched".
+This library has **no error enum, no `RETURN_ERROR` macro, no `assert`, no
+`errno` use, and no negative sentinel**. Derived mechanically:
 
-Legend for the *expected C result* column: values were read off the C source and
-then confirmed against the compiled C `.so` by the differential tests in
-`tests/errors.rs`.
+```sh
+grep -n "return 0\|return NULL\|return -1\|default:\|assert" c_src/src/lib.c
+grep -n "if (!\|if (out\|if (iterations)\|if (cache)" c_src/src/lib.c
+```
 
-| # | function | trigger (exact invalid input/condition) | expected C result |
-|---|----------|------------------------------------------|-------------------|
-| 1 | `c2Collided` | `typeA` not in {0,1,2} (outer `switch` `default:`) | returns `0`, neither shape dereferenced |
-| 2 | `c2Collided` | `typeA == C2_TYPE_CIRCLE`, `typeB` not in {0,1,2} (`default:`) | returns `0` |
-| 3 | `c2Collided` | `typeA == C2_TYPE_AABB`, `typeB` not in {0,1,2} (`default:`) | returns `0` |
-| 4 | `c2Collided` | `typeA == C2_TYPE_CAPSULE`, `typeB` not in {0,1,2} (`default:`) | returns `0` |
-| 5 | `c2Collided` | `A`/`B` NULL but type valid — C dereferences unconditionally | segfault (UB); NOT exercised, documented only |
-| 6 | `omni_collide` | `type_a` not in {0,1,2} | returns `0` (reaches `c2Collided` outer `default:`) |
-| 7 | `omni_collide` | `type_b` not in {0,1,2}, `type_a` valid | returns `0` (inner `default:`) |
-| 8 | `omni_collide` | both types out of range (incl. negative, `INT_MIN`, `INT_MAX`) | returns `0` |
-| 9 | `ptr_from_parts` | `typ` not in {0,1,2}: `switch` has no `default:` and control falls off the end of a non-`void` function | **UB** — indeterminate return value. Rust returns NULL. Observationally equivalent because every caller (`omni_collide`→`c2Collided`) hits a `default: return 0` before dereferencing. Compared only for the three valid `typ` values; row 6/7/8 cover the invalid ones end-to-end. |
-| 10 | `c2MakeProxy` | `type` not in {0,1,2}: `switch` has no `default:` | `*p` left completely untouched (caller sees uninitialised/prior contents). Tested by pre-filling `*p` with a known pattern and asserting both C and Rust leave all 72 bytes unchanged. |
-| 11 | `c2GJK` | `typeA`/`typeB` out of range → proxy never filled | C reads an uninitialised stack `c2Proxy`, hands the garbage `count` to `c2Support` and walks off `verts[8]`: **verified to SIGSEGV**. Unexercisable UB; `tests/errors.rs::row11_gjk_bad_enum_documented_ub` asserts the reachable half instead (`c2MakeProxy` leaves the proxy byte-identical, and rows 1-8 show the public entry points reject the type before `c2GJK` is reached). |
-| 12 | `c2GJK` | `ax_ptr == NULL` | substitutes `c2xIdentity()` |
-| 13 | `c2GJK` | `bx_ptr == NULL` | substitutes `c2xIdentity()` |
-| 14 | `c2GJK` | `outA == NULL` | no write performed, no crash |
-| 15 | `c2GJK` | `outB == NULL` | no write performed, no crash |
-| 16 | `c2GJK` | `iterations == NULL` | no write performed, no crash |
-| 17 | `c2GJK` | `cache == NULL` | cache read and cache write-back both skipped |
-| 18 | `c2GJK` | `cache != NULL` but `cache->count == 0` (`cache_was_good` false) | cache ignored on entry, simplex re-seeded from vertex 0; cache still written back on exit |
-| 19 | `c2GJK` | cached simplex rejected: `min_metric < max_metric*2.0f && metric < -1.0e8f` (needs `metric < -1e8`, i.e. a huge negative determinant) | `cache_was_read` stays 0 → simplex re-seeded |
-| 20 | `c2GJK` | cached simplex accepted (the common case, since `metric < -1e8f` is almost never true) | `cache_was_read = 1`, warm start from cached indices |
-| 21 | `c2GJK` | `cache->iA[i]` / `cache->iB[i]` **within** the proxy's `count` range — C does no bounds check, so any index is accepted | warm start from those vertices; compared bit-for-bit across randomized caches. Indices ≥ `count` read an *uninitialised* `c2Proxy.verts[]` slot in the C (**UB**, the Rust zero-initialises), so they are documented and not compared. |
-| 22 | `c2GJK` | `cache->count` negative | loop body never runs, `s.count` set negative → `c2GJKSimplexMetric` `default:`→0, `c2L`/`c2D`/`c2Witness` `default:` arms |
-| 23 | `c2GJK` | `cache->count > 3` | writes past `c2Simplex`'s 4 `c2sv` slots / reads past `iA[3]` (**UB**, stack corruption). Documented, not exercised. |
-| 24 | `c2GJK` | `cache->div == 0` on a warm start | `1.0f/0.0f = +inf` inside `c2Witness`/`c2L` → `inf`/`NaN` outputs; both libs must agree bitwise |
-| 25 | `c2GJK` | GJK does not terminate early: loop guard `iter < 20` exhausted | **Verified unreachable** for this library: the largest proxy has 4 vertices, so the simplex converges or hits a duplicate support point almost immediately. A dedicated hunt over ~1.4M randomized configurations (all 9 type pairs × non-unit transforms × warm caches × 5 magnitude scales × both `use_radius`) observed a maximum of **3** iterations. `*iterations` is nevertheless compared bit-for-bit on every single `c2GJK` call in the suite. |
-| 26 | `c2GJK` | `d1 > d0` (no progress) | `break` out of the loop |
-| 27 | `c2GJK` | `c2Dot(d,d) < FLT_EPSILON*FLT_EPSILON` (search direction degenerate, e.g. identical shapes) | `break` |
-| 28 | `c2GJK` | duplicate support point (`iA==saveA[i] && iB==saveB[i]`) | `break` |
-| 29 | `c2GJK` | `s.count == 3` after `c23` (origin enclosed → overlap) | `hit = 1`, `a = b`, returns `dist = 0.0f` |
-| 30 | `c2GJK` | `use_radius != 0` and `!(dist > rA+rB && dist > FLT_EPSILON)` | `a = b = midpoint(a,b)`, returns `0.0f` |
-| 31 | `c2GJK` | `use_radius != 0`, shrink performed, and `a.x==b.x && a.y==b.y` afterwards | `dist` forced to `0.0f` |
-| 32 | `c2GJK` | `use_radius == 0` | raw core distance returned, radii ignored |
-| 33 | `c2GJK` | `use_radius` a non-1 truthy int (e.g. `2`, `-1`, `INT_MIN`) | treated as true (`if (use_radius)`) |
-| 34 | `c2Support` | `count <= 0` (0, negative) | `verts[0]` still read, loop skipped, returns `0` |
-| 35 | `c2Support` | `d == (0,0)` — all dots equal, strict `>` never fires | returns `0` |
-| 36 | `c2Support` | all dots are `NaN` — `dot > dmax` false for NaN | returns `0` |
-| 37 | `c2Witness` | `s->count` not in {1,2,3} (0, negative, ≥4) — `default:` | `*a = *b = (0,0)` |
-| 38 | `c2Witness` | `s->div == 0` | `den = +inf` → `inf`/`NaN` components, must match bitwise |
-| 39 | `c2D` | `s->count == 3` or any other value — `case 3: default:` | returns `(0,0)` |
-| 40 | `c2D` | `s->count == 2` and `c2Det2(ab, -a) == 0` (collinear with origin) — strict `> 0` fails | returns `c2CCW90(ab)` not `c2Skew(ab)` |
-| 41 | `c2L` | `s->count` not in {1,2} — `default:` | returns `(0,0)` |
-| 42 | `c2L` | `s->div == 0` with `count` 2 | `den = inf` → `inf`/`NaN`, must match bitwise |
-| 43 | `c2GJKSimplexMetric` | `s->count` not 2 or 3 (`default:` falls into `case 1:`) | returns `0.0f` |
-| 44 | `c2Div` | `b == 0` | `1.0f/0 = inf`; `inf * 0 = NaN`, `inf * x = ±inf` |
-| 45 | `c2Norm` | `a == (0,0)` → `c2Len == 0` | `(NaN, NaN)` |
-| 46 | `c2Norm` | `a` contains `inf` → `c2Len == inf` | `(NaN, NaN)` or `(0,±0)` per component; must match bitwise |
-| 47 | `c2Len` | `c2Dot(a,a) < 0` impossible, but overflow to `+inf` for huge components | `sqrtf(inf) = inf` |
-| 48 | `c2Len` | component `NaN` | `sqrtf(NaN) = NaN` |
-| 49 | `c2CircletoCircle` | negative radii (`A.r + B.r < 0`) — `r2 = r2*r2` squares away the sign | behaves like the positive-sum radius |
-| 50 | `c2CircletoAABB` | inverted AABB (`min > max`): `c2Clampv` = `max(lo, min(a, hi))` yields `lo` | still returns a well-defined 0/1 |
-| 51 | `c2CircletoAABB` | `A.r < 0` — `r2 = A.r*A.r` positive | negative radius behaves like `|A.r|` |
-| 52 | `c2CircletoCapsule` | degenerate capsule `B.a == B.b` → `n == (0,0)`, `da == 0` so `da < 0` false, `db == 0` so `db < 0` false → distance to `B.b` | well-defined |
-| 53 | `c2CircletoCapsule` | `da >= 0 && db < 0` with `c2Dot(n,n) == 0` | `da/0` → `NaN`/`inf` propagation, must match |
-| 54 | `c2AABBtoAABB` | `NaN` coordinates — all four `<` comparisons false | returns `1` (reports overlap) |
-| 55 | `c2AABBtoCapsule` / `c2CapsuletoCapsule` | `c2GJK` returns `NaN` — `if (NaN)` is true | returns `0` (no collision) |
-| 56 | `c2AABBtoCapsule` / `c2CapsuletoCapsule` | `c2GJK` returns exactly `-0.0f` — `if (-0.0f)` is false, so the wrapper would report a collision | **Verified unreachable**: `dist` is either `c2Len(...)` (never negative zero), an explicit `0.0f`, or `dist - (rA+rB)` guarded by `dist > rA+rB` (strictly positive). A 180k-case scan over all type pairs with `use_radius=1` never produced `-0.0f`. |
-| 57 | all `c2v` math | `±inf`, `NaN`, subnormal and `±0.0` inputs | IEEE-754 result, bit-for-bit identical (incl. `NaN` payload and sign of zero) |
-| 58 | `c2Maxv` / `c2Minv` | `NaN` operand — ternary `a.x > b.x ? a.x : b.x` picks `b.x` for `NaN` | `NaN`-asymmetric; must not be replaced by `f32::max`/`min` |
-| 59 | `c2Clampv` | `lo > hi` | `max(lo, min(a,hi))` == `lo` |
-| 60 | `c2GJK` | `A`/`B` NULL with a valid type | C dereferences → segfault (UB); documented, not exercised |
+Every rejection is one of:
 
-## Status
+* a `switch` with **no matching case** — falls out of the `switch` leaving the
+  out-parameter untouched, or hits an explicit `default: return 0`;
+* a **predicate returning 0** (`return d2 < r2` etc. → the "no collision"
+  answer, which is this API's only failure signal);
+* a **null-pointer guard** that substitutes a default instead of erroring;
+* a **loop / convergence bail-out** (`break`) that terminates the algorithm;
+* in one case, **undefined behaviour** (`ptr_from_parts` falls off the end of a
+  non-void function).
 
-Every row below is covered by a differential test in `tests/errors.rs` (with
-help from `tests/configs.rs` for the rows that are also valid-path
-configurations). All of them pass.
+One row per distinct rejection branch in the C source. Line numbers refer to
+`c_src/src/lib.c`.
+
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `c2MakeProxy` (L107) | `type` matches none of the 3 cases (e.g. `3`, `-1`, `INT_MAX`) — switch has **no `default:`** | Returns without writing `*p`; `p->radius/count/verts` keep their prior (in C: indeterminate) contents. **No crash, no error code.** | [x] |
+| 2 | `c2GJKSimplexMetric` (L157-159) | `s->count` is not 2 and not 3 (`0`, `1`, `4`, negative, huge) — `default:` falls through to `case 1:` | returns `0.0f` | [x] |
+| 3 | `c2D` (L288) | `s->count == 3` **or** any other value (`case 3: default:` share a body) | returns `c2V(0,0)` | [x] |
+| 4 | `c2Witness` (L327) | `s->count` not in {1,2,3} (`0`, `4`, negative) — `default:` | writes `*a = c2V(0,0)`, `*b = c2V(0,0)` | [x] |
+| 5 | `c2L` (L349) | `s->count` not in {1,2} — `default:` | returns `c2V(0,0)` | [x] |
+| 6 | `c2Support` (L299-307) | `count <= 0` — `verts[0]` is read **before** the loop guard, so `count==0` still dereferences index 0 and the loop body never runs | returns `0` | [x] |
+| 7 | `c2Support` | all dots equal / `d` is the zero vector — strict `>` never fires | returns `0` (first index wins ties) | [x] |
+| 8 | `c2Support` | `d` contains NaN → every `dot > dmax` comparison is false | returns `0` | [x] |
+| 9 | `c2GJK` (L363) | `ax_ptr == NULL` | substitutes `c2xIdentity()`; **not an error** | [x] |
+| 10 | `c2GJK` (L367) | `bx_ptr == NULL` | substitutes `c2xIdentity()`; **not an error** | [x] |
+| 11 | `c2GJK` (L505) | `outA == NULL` | skips the store; return value still valid | [x] |
+| 12 | `c2GJK` (L507) | `outB == NULL` | skips the store | [x] |
+| 13 | `c2GJK` (L509) | `iterations == NULL` | skips the store | [x] |
+| 14 | `c2GJK` (L378/495) | `cache == NULL` | skips both the warm-start read **and** the write-back | [x] |
+| 15 | `c2GJK` (L379) | `cache != NULL` but `cache->count == 0` (`cache_was_good` false) | cold start: simplex reset to vertex 0, `count=1`, `div=1` | [x] |
+| 16 | `c2GJK` (L400) | warm cache whose metric fails `!(min_metric < max_metric*2 && metric < -1e8)` | `cache_was_read = 1`, the cached simplex is **kept** (note: the guard is `metric < -1.0e8f`, so for any ordinary metric the condition is false and the cache is *always* accepted — replicate, do not "fix") | [x] |
+| 17 | `c2GJK` (L420) | iteration budget exhausted: `iter == 20` | loop exits; witness computed from whatever simplex exists; `*iterations == 20`. **MEASURED: structurally unreachable.** `tests/iter_cap_search.rs` drove 300 000 randomized calls across all 9 type pairs, both `use_radius` values, wild transforms and warm caches: the highest `iterations` ever reported is **4**. With proxies of at most 4 vertices GJK cannot need more, so the `20` cap is dead code. What IS verified is that C and Rust agree on `iterations` exactly on every call, and that it never exceeds 20. | [x] |
+| 18 | `c2GJK` (L440) | `d1 > d0` — objective stopped decreasing | `break` before adding a vertex | [x] |
+| 19 | `c2GJK` (L446) | `c2Dot(d,d) < FLT_EPSILON*FLT_EPSILON` — search direction degenerate | `break` | [x] |
+| 20 | `c2GJK` (L466-473) | duplicate support point (`iA==saveA[i] && iB==saveB[i]`) | `break` without incrementing `s.count` | [x] |
+| 21 | `c2GJK` (L430) | `s.count` reaches 3 after `c23` | `hit = 1`, `break`, then `a = b` and `dist = 0` | [x] |
+| 22 | `c2GJK` (L481) | `use_radius != 0` and **not** (`dist > rA+rB && dist > FLT_EPSILON`) — i.e. shapes closer than the radius sum | collapses both witnesses to the midpoint `0.5*(a+b)` and forces `dist = 0` | [x] |
+| 23 | `c2GJK` (L485-487) | `use_radius != 0`, `dist > rA+rB`, but after shrinking `a.x==b.x && a.y==b.y` | `dist = 0` | [x] |
+| 24 | `c2GJK` (L478) | `use_radius == 0` | radius is **ignored entirely**; raw core distance returned | [x] |
+| 25 | `c2GJK` | `cache->count > 3` or `cache->iA[i]` out of `[0, proxy.count)` — **the C bounds-checks nothing** | Split by what is actually defined (see "Rows deliberately NOT asserted as value-equal" below): **(a)** `count` in `1..=3` with indices below the proxy's initialised vertex count → fully defined, asserted bit-for-bit. **(b)** index ≥ proxy vertex count → the C reads uninitialised `c2Proxy.verts[]` stack bytes (measured: only 23 of 57 probes happened to agree). **(c)** `count > 3` → the C writes past `int saveA[3]` *and* past the 4-slot `c2sv a,b,c,d` simplex, corrupting its own frame; both builds SIGSEGV, at a threshold that moves between runs (observed 5 and 7) because it depends on stack layout. | [x] |
+| 26 | `c2AABBtoCapsule` (L524) | `c2GJK(...)` returns non-zero (shapes apart) | returns `0` | [x] |
+| 27 | `c2CapsuletoCapsule` (L530) | `c2GJK(...)` returns non-zero | returns `0` | [x] |
+| 28 | `c2CircletoCircle` | `d2 >= r2` where `r2 = (A.r+B.r)^2` — note **`<`, so exactly touching is a miss** | returns `0` | [x] |
+| 29 | `c2CircletoAABB` | `d2 >= A.r*A.r` after clamping — again strict `<` | returns `0` | [x] |
+| 30 | `c2CircletoCapsule` | `d2 >= (A.r+B.r)^2` on the `da < 0` (before-`a`) branch | returns `0` | [x] |
+| 31 | `c2CircletoCapsule` | same rejection on the `db < 0` (mid-segment) branch, which divides by `c2Dot(n,n)` → **`n == 0` (degenerate capsule `a==b`) yields NaN/inf** | returns `0` (NaN `<` compare is false) | [x] |
+| 32 | `c2CircletoCapsule` | same rejection on the `db >= 0` (after-`b`) branch | returns `0` | [x] |
+| 33 | `c2AABBtoAABB` | separated on **+x**: `B.max.x < A.min.x` | returns `0` | [x] |
+| 34 | `c2AABBtoAABB` | separated on **-x**: `A.max.x < B.min.x` | returns `0` | [x] |
+| 35 | `c2AABBtoAABB` | separated on **+y**: `B.max.y < A.min.y` | returns `0` | [x] |
+| 36 | `c2AABBtoAABB` | separated on **-y**: `A.max.y < B.min.y` | returns `0` | [x] |
+| 37 | `c2Collided` (L581-582) | `typeA == C2_TYPE_CIRCLE`, `typeB` out of range | `default: return 0` | [x] |
+| 38 | `c2Collided` (L593-594) | `typeA == C2_TYPE_AABB`, `typeB` out of range | `default: return 0` | [x] |
+| 39 | `c2Collided` (L605-606) | `typeA == C2_TYPE_CAPSULE`, `typeB` out of range | `default: return 0` | [x] |
+| 40 | `c2Collided` (L609-610) | `typeA` out of range (any `typeB`) | `default: return 0` — **B is never dereferenced**, so a null/garbage `B` is safe here | [x] |
+| 41 | `ptr_from_parts` (L614-641) | `typ` out of range — the `switch` has **no `default:` and the function falls off the end of a non-`void` function** | **Undefined behaviour.** With gcc `-O0` the return register holds leftover garbage. Rust returns `NULL`. Untestable as a value comparison; what *is* testable is that the pointer is never dereferenced by the only consumer (`omni_collide` → `c2Collided` row 37-40 returns 0 first), so `omni_collide` agrees. See row 42. | [x] |
+| 42 | `omni_collide` | `type_a` and/or `type_b` out of range (`3`, `-1`, `4`, `INT_MAX`, `INT_MIN`) | `ptr_from_parts` returns an indeterminate pointer (row 41) which `c2Collided` discards via its `default:` → **`omni_collide` returns `0`** deterministically in both C and Rust | [x] |
+| 43 | `c2Div` / `c2Norm` | `b == 0` / `c2Len(a) == 0` (zero vector) | `1.0f/0.0f = +inf` → components become `inf`, `-inf` or `NaN` (`0*inf`). No guard, no error. | [x] |
+| 44 | `c2Witness` (L312) | `s->div == 0` | `den = 1/0 = inf`; witnesses become `inf`/`NaN` | [x] |
+| 45 | `c2L` (L340) | `s->div == 0` | `den = inf`; for `count==2` result is `inf`/`NaN`; for `count==1` `den` is unused | [x] |
+| 46 | `c2BBVerts` | called with an **inverted** AABB (`min > max`) | writes the 4 corners unchanged; no validation | [x] |
+| 47 | all | any `float` argument is `NaN` / `±inf` / subnormal / `±0.0` | propagates through IEEE-754 arithmetic; every `<`/`>` against NaN is false. No checks anywhere. | [x] |
+
+## Explicit magic constants in the C (all replicated verbatim in Rust)
+
+| constant | C spelling | use |
+|---|---|---|
+| `FLT_MAX` | `3.40282346638528859811704183484516925e+38F` | initial `d0`, `d1` |
+| `FLT_EPSILON` | `1.19209289550781250000000000000000000e-7F` | direction-degeneracy and `dist` thresholds |
+| `-1.0e8f` | literal | cache-metric acceptance guard |
+| `2.0f` | literal | cache-metric acceptance guard |
+| `0.5f` | literal | witness-midpoint collapse |
+| `20` | `while (iter < 20)` | GJK iteration cap |
+| `3` | `int iA[3]`, `int iB[3]`, `saveA[3]`, `saveB[3]` | max cached / saved simplex vertices |
+| `4` | `c2sv a, b, c, d` | simplex vertex slots |
+| `8` | `c2v verts[8]` | proxy vertex slots (only 1/2/4 ever used) |
+
+## Rows deliberately NOT asserted as value-equal
+
+Three inputs are undefined behaviour in the C. For each, the test suite asserts
+the part that IS defined and *measures* the rest rather than assuming it.
+
+| row | why it is UB | how it is handled |
+|---|---|---|
+| 41 | `ptr_from_parts` falls off the end of a non-`void` function for an unknown `typ` — no `return` statement. | The pointer value is not compared. `errors_phase_c.rs::err_rows41_42_*` asserts neither build crashes and that the only consumer (`omni_collide`, row 42) returns a deterministic `0` on both. |
+| 25(b) | An index ≥ the proxy's initialised vertex count reads uninitialised `c2Proxy.verts[]` stack bytes (the C's `c2Proxy pA;` is not zero-initialised). | `level3_gjk.rs::row64_out_of_count_cache_index_is_ub` asserts in-count indices agree bit-for-bit and reports the out-of-count agreement rate (23/57) instead of asserting it. |
+| 25(c) / CONFIGS 74 | `cache->count > 3` writes past `saveA[3]` and past the 4-slot simplex; an out-of-range `C2_TYPE` passed straight to `c2GJK` leaves `c2Proxy.count` uninitialised so `c2Support` walks arbitrary memory. Both can segfault. | `probe_ub_isolated.rs` runs **each library in a forked child** so a crash is data, not a dead test binary. It asserts the crash thresholds match and that the Rust never crashes where the C survives. |
+
+## The one tolerated difference: NaN payload bits
+
+`eq_f32` in the test harness is bit-exact — `+0.0 != -0.0`, `+inf != -inf`, NaN
+never equals a number — with a single tolerance: **two NaNs compare equal even
+if their payload/sign bits differ.**
+
+Root cause: gcc `-O0` and LLVM choose *opposite* SSE operand orders for the same
+C expression. For `a.x += b.x` gcc emits `addss %xmm1,%xmm0` with `b.x` in
+`xmm0` (computing `b + a`, so `b` is `src1`); LLVM emits `addps %xmm1,%xmm0`
+(computing `a + b`, so `a` is `src1`). x86 returns `src1` when **both** operands
+are NaN, so the two builds propagate a different input NaN. It also shows up
+with internally generated NaNs: `0.0 * inf` raises invalid-operation and yields
+the x86 "QNaN indefinite" `0xffc00000`, which then meets a propagated
+`0x7fc00000` in the following add inside `c2Dot` / `c2Det2` / `c2Mulrv`.
+
+It is not fixable from Rust source: LLVM canonicalizes commutative `fadd`/`fmul`
+operand order and *merges* `b + a` with `a + b` into a single function — verified
+by compiling both spellings and observing `nm` report two names at one address.
+Matching gcc `-O0` would need per-expression inline assembly, and would then
+stop matching a C build at any other optimization level.
+
+It is also unobservable in anything the library decides: every `<` / `>` in
+`c_src/src/lib.c` is false when either side is NaN, whatever the payload.
+`tests/nan_payload.rs` asserts this directly — with arbitrary NaN payloads and
+signaling NaNs on the input, **every `int` result** (including `omni_collide`
+across all 9 type pairs × 30 000 iterations) and every non-NaN float result is
+bit-identical, and `is_nan()` agreement is exact.
+
+## Defect found and fixed during Phase C
+
+`c2GJK` in the Rust indexed `saveA[i as usize]` / `saveB[i as usize]` with a
+plain array index. A caller-supplied `cache->count > 3` therefore tripped a Rust
+bounds check and **aborted the process**, where the C silently scribbles past
+`int saveA[3]` and keeps running. The Rust now skips the out-of-range stores
+(and reads them back through `get()`), so it does not abort; for every `count`
+the library can itself produce — `1..=3`, since the write-back never reports
+more — the behaviour is unchanged. See the comment at `src/lib.rs` in the
+`while iter < 20` loop.
+
+## Row → test mapping (Phase C gate)
+
+All 47 rows are checked off above. Each is covered by a named test in
+`translation/tests/`; run `cargo test --release` to verify.
 
 | rows | test |
-|------|------|
-| 1-4 | `rows1_4_c2Collided_bad_enums` |
-| 6-8 | `rows6_8_omni_collide_bad_enums` |
-| 9 | `row9_ptr_from_parts_bad_enum` (+ `configs.rs::row78_ptr_from_parts_valid`) |
-| 10 | `row10_c2MakeProxy_bad_enum` |
-| 11 | `row11_gjk_bad_enum_documented_ub` |
-| 12-18 | `rows12_17_gjk_null_arguments` |
-| 19-22, 24 | `rows19_22_24_gjk_crafted_caches` |
-| 25-33 | `rows25_33_gjk_loop_exits_and_use_radius` |
-| 34-36 | `rows34_36_c2Support_degenerate` |
-| 37-43 | `rows37_43_simplex_out_of_range_counts` |
-| 44-48 | `rows44_48_float_edge_cases` |
-| 49-56 | `rows49_56_boolean_predicate_edges` |
-| 57 | `rows44_48_float_edge_cases` + every `configs.rs` row (wild-float generator) |
-| 58-59 | `rows58_59_minmax_clamp_nan_asymmetry` |
+|---|---|
+| 1 | `errors_phase_c.rs::err_row01_makeproxy_no_default_writes_nothing` |
+| 2 | `errors_phase_c.rs::err_row02_simplex_metric_default_is_zero` |
+| 3 | `errors_phase_c.rs::err_row03_c2D_default_is_zero_vector` |
+| 4 | `errors_phase_c.rs::err_row04_witness_default_writes_zero_vectors` |
+| 5 | `errors_phase_c.rs::err_row05_c2L_default_is_zero_vector` |
+| 6, 7, 8 | `errors_phase_c.rs::err_rows06_08_support_returns_zero` |
+| 9, 10 | `errors_phase_c.rs::err_rows09_10_null_transforms_equal_identity` |
+| 11, 12, 13 | `errors_phase_c.rs::err_rows11_13_null_out_params_skip_stores` |
+| 14 | `errors_phase_c.rs::err_row14_null_cache_matches_cold_cache` |
+| 15 | `errors_phase_c.rs::err_row15_zero_count_cache_forces_cold_start` |
+| 16 | `errors_phase_c.rs::err_row16_cache_metric_guard_both_outcomes` |
+| 17, 18, 19, 20, 21 | `errors_phase_c.rs::err_rows17_21_gjk_loop_bailouts`, `iter_cap_search.rs::search_max_gjk_iterations` |
+| 22, 23, 24 | `errors_phase_c.rs::err_rows22_24_use_radius_block` |
+| 25 | `errors_phase_c.rs::err_row25_unchecked_cache_indices` (defined part), `level3_gjk.rs::row64_out_of_count_cache_index_is_ub` + `probe_ub_isolated.rs` (UB parts) |
+| 26, 27 | `errors_phase_c.rs::err_rows26_27_gjk_backed_predicates_return_zero` |
+| 28, 29 | `errors_phase_c.rs::err_rows28_29_strict_less_than_rejects_exact_touch` |
+| 30, 31, 32 | `errors_phase_c.rs::err_rows30_32_circle_to_capsule_rejections` |
+| 33, 34, 35, 36 | `errors_phase_c.rs::err_rows33_36_aabb_separating_axes` |
+| 37, 38, 39, 40 | `errors_phase_c.rs::err_rows37_40_collided_default_arms` |
+| 41, 42 | `errors_phase_c.rs::err_rows41_42_ptr_from_parts_ub_and_omni_collide`, `level5_dispatch.rs::row91_*` |
+| 43 | `errors_phase_c.rs::err_row43_div_by_zero_unguarded` |
+| 44, 45 | `errors_phase_c.rs::err_rows44_45_zero_div_in_witness_and_L` |
+| 46 | `errors_phase_c.rs::err_row46_bbverts_no_validation` |
+| 47 | `errors_phase_c.rs::err_row47_no_input_validation_anywhere`, `nan_payload.rs` |
 
-## Rows intentionally not executed
+Generic boundaries required by Phase C beyond the table:
 
-Rows 5, 23 and 60 describe genuine C undefined behaviour (NULL dereference,
-out-of-bounds stack writes). Running them crashes or corrupts the test process
-rather than producing a comparable result, so they are documented here and
-skipped. Row 11 was attempted and confirmed to SIGSEGV inside the C library, so
-it is handled the same way. Rows 9 and 21 are UB in the C but partially
-reachable; the reachable part is compared and the equivalence argument for the
-rest is recorded in the row.
-
-## A note on NaN payloads
-
-IEEE-754 leaves NaN payload propagation implementation-defined, and on x86-64 an
-`addss`/`mulss` with two NaN operands returns the payload held in the
-*destination* register. gcc `-O0` and LLVM pick different destination registers
-for several expressions in this library, which surfaced as differing NaN
-sign bits. `src/lib.rs` therefore performs every scalar float operation through
-the `fp` module, which pins the destination operand with inline `asm!` to
-exactly the instruction gcc emits (verified against `objdump -d` of the C
-`.so`). All exported functions are also `#[inline(never)]` so that, as in the
-`-O0` C build, each helper's arithmetic happens exactly once in one fixed form
-rather than being re-scheduled per call site.
+| boundary | test |
+|---|---|
+| null pointers where the C does not dereference | `errors_phase_c.rs::generic_null_pointer_boundary` |
+| out-of-range enum values (one past each end of `0..=2`, plus `i32::MIN`/`i32::MAX`) | `errors_phase_c.rs::generic_out_of_range_enum_boundary` |
+| zero / oversized lengths and counts | `errors_phase_c.rs::generic_zero_and_oversized_counts` |

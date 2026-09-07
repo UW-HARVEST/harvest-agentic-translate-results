@@ -1,74 +1,41 @@
-# SYMBOLS.md — Phase A: public symbol surface
+# SYMBOLS.md — Phase A: exported-symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-## Build commands
+* C   `.so`: `c_src/build/libharvest-work-VpWgci.so`
+* Rust`.so`: `translation/target/release/libhdr_bitrate_lib.so`
 
-```
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-kHnqEC.so   (name = parent dir name, see CMakeLists.txt)
+## C `.so` defined symbols (`nm -D | grep -v ' U '`)
 
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libhdr_bitrate_lib.so
-```
+| symbol | type | in C `.so` | in Rust `.so` | notes |
+|--------|------|-----------|---------------|-------|
+| `hdr_bitrate`                 | `T` (global text) | yes | yes | the only real API symbol; declared in `c_src/include/lib.h` |
+| `_ITM_deregisterTMCloneTable` | `w` (weak undef)  | yes | yes | toolchain/CRT artifact, not library API |
+| `_ITM_registerTMCloneTable`   | `w` (weak undef)  | yes | yes | toolchain/CRT artifact |
+| `__cxa_finalize@GLIBC_2.2.5`  | `w` (weak undef)  | yes | yes | libc |
+| `__gmon_start__`              | `w` (weak undef)  | yes | yes | toolchain/CRT artifact |
 
-## Complete C source inventory
+## Rust-only symbols
 
-The library is a single translation unit. Nothing was skipped by the translation:
+The Rust `.so` additionally carries the weak libc references
+`__cxa_thread_atexit_impl@GLIBC_2.18`, `gettid@GLIBC_2.30`,
+`statx@GLIBC_2.28`. These are weak *undefined* imports pulled in by the Rust
+standard library, not exported API, so they do not affect parity.
 
-| C file | lines | contents |
-|--------|------:|----------|
-| `c_src/include/lib.h` | 3 | `#include <stdint.h>` + the single prototype |
-| `c_src/src/lib.c`     | 14 | `hdr_bitrate` + its `static const` table |
+## Missing-symbol analysis
 
-`c_src/build/CMakeFiles/**/CMakeCCompilerId.c` is CMake compiler-probe scratch,
-not part of the library (it is not listed in `add_library`).
+The whole C library is one translation unit (`c_src/src/lib.c`, 14 lines) with a
+single external definition. Nothing is macro-generated, nothing is `static`
+and exported, and no C source file went untranslated.
 
-## Defined (exported) dynamic symbols
+**Symbol diff (C-defined symbols absent from the Rust `.so`): EMPTY.**
 
-`nm -D --defined-only`:
+Verification command (must print nothing):
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `hdr_bitrate` | `T` (0x10f9) | `T` | **present in both** |
-
-Symbol diff (`comm -23` of the two sorted defined-symbol name lists): **empty**.
-
-Total: C exports 1 symbol, Rust exports 1 symbol, 0 missing.
-
-No implementation had to be added and no C module had to be translated: the
-single C translation unit yields exactly one public symbol, and the Rust
-`#[no_mangle] pub unsafe extern "C" fn hdr_bitrate` wrapper exports it under the
-identical name. There are no macro-generated symbols in this library.
-
-## Undefined symbols
-
-The Rust `.so` must not require any non-libc symbol that the C `.so` does not.
-
-C `.so` undefined (all weak, toolchain-injected):
-
-```
-w _ITM_deregisterTMCloneTable
-w _ITM_registerTMCloneTable
-w __cxa_finalize@GLIBC_2.2.5
-w __gmon_start__
+```sh
+comm -23 \
+  <(nm -D c_src/build/libharvest-work-VpWgci.so   | grep -v ' U ' | awk '{print $NF}' | sort -u) \
+  <(nm -D translation/target/release/libhdr_bitrate_lib.so | grep -v ' U ' | awk '{print $NF}' | sort -u)
 ```
 
-Rust `.so` undefined: the same weak toolchain symbols plus libc/`libgcc`
-imports pulled in by the Rust runtime (`memcpy`, `__libc_start_main`-family,
-unwinder helpers, …). All are libc/toolchain-provided, so there are **0 missing
-or undefined non-libc symbols**. This is asserted programmatically by
-`tests/symbol_parity.rs`.
-
-## ABI
-
-| item | C | Rust |
-|------|---|------|
-| name | `hdr_bitrate` | `hdr_bitrate` |
-| signature | `unsigned hdr_bitrate(const uint8_t *h)` | `unsafe extern "C" fn(*const c_uchar) -> c_uint` |
-| calling convention | SysV C | `extern "C"` |
-| return width | `unsigned` (32-bit) | `c_uint` (32-bit) |
-| bytes of `*h` read | `h[1]`, `h[2]` only | `h[1]`, `h[2]` only |
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.

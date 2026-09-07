@@ -1,116 +1,78 @@
 # ERRORS.md — Phase C error-surface table
 
-Every row is a *distinct* rejection / error / fallback branch found by grepping
-`c_src/src/lib.c` for `return NULL`, `return -1`, `return 0`, `if (!x)`,
-null checks, range checks, `default:` labels and division guards. There are no
-`assert`s, no error enums and no error-return macros in this library — the whole
-error surface is null sentinels, `-1`, and silent `0` / fallback values.
+Mechanically derived from every rejection / error-return / sentinel / implicit
+guard in `c_src/src/lib.c`. Line numbers refer to that file.
 
-Rows are checked off only once a differential test constructs that exact
-condition, calls BOTH the C `.so` and the Rust `.so`, and asserts the *same*
-sentinel / value comes back.
+There are no `assert`s, no error enums, no `RETURN_ERROR`-style macros and no
+`errno` usage in the C source. The complete set of rejection sites is:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
-|---|----------|---------------------------------------------|-------------------|-----|
-| 1 | `create_buffer` | `malloc(sizeof(StringBuffer))` fails (line 36 `if (!buffer)`) | returns `NULL` | [x] not host-triggerable — see note A |
-| 2 | `create_buffer` | `malloc(initial_capacity)` fails (line 41) because `initial_capacity < 0` is sign-extended to a huge `size_t`: `-1` | returns `NULL`, inner `free(buffer)`, no leak | [x] |
-| 3 | `create_buffer` | same as #2 with `initial_capacity == INT_MIN` (`0xFFFF_FFFF_8000_0000` bytes) | returns `NULL` | [x] |
-| 4 | `create_buffer` | same as #2 with assorted negative capacities (`-2, -7, -4096, INT_MIN+1`, random) | returns `NULL` | [x] |
-| 5 | `create_buffer` | `initial_capacity == 0` — *not* an error: glibc `malloc(0)` returns non-NULL, then `data[0]='\0'` writes 1 byte into a 0-size block | non-NULL buffer, `capacity==0`, `length==0` | [x] |
-| 6 | `append_to_buffer` | `realloc` fails (line 61 `if (!new_data)`) because `new_capacity = required_capacity*2` overflows `int` to a negative value and is sign-extended: `length = 2_000_000_000`, non-empty `str` | returns `-1`; `data`/`capacity` left unmodified | [x] |
-| 7 | `append_to_buffer` | `realloc` fails with `new_capacity` overflowing to negative from `length = INT_MAX/2 + k` for several `k` | returns `-1` | [x] |
-| 8 | `append_to_buffer` | `required_capacity` itself overflows to a *negative* int (`length = INT_MAX`, non-empty `str`), so `required_capacity > capacity` is FALSE, the grow branch is skipped entirely, and `strcpy` runs at `data + INT_MAX` | returns `0`, `capacity` untouched, `length` wraps (see note B) | [x] |
-| 9 | `append_to_buffer` | `buffer == NULL` → `buffer->length` deref of NULL | SIGSEGV (UB) | [x] subprocess |
-| 10 | `append_to_buffer` | `str == NULL` → `strlen(NULL)` | SIGSEGV (UB) | [x] subprocess |
-| 11 | `destroy_buffer` | `buffer == NULL` (line 76 `if (buffer)`) | no-op, no crash | [x] |
-| 12 | `destroy_buffer` | `buffer->data == NULL` (line 77 `if (buffer->data)`) | skips `free(data)`, still frees `buffer` | [x] |
-| 13 | `get_operation_name` | `op_code` outside `0..=3` — the `default:` label. Includes out-of-range "enum" ints across FFI: `4, 5, -1, -2, -3, -4, INT_MIN, INT_MAX`, random | returns `"unknown"` | [x] |
-| 14 | `perform_operation` | `operation` matches none of the four names (line 107 fall-through `return 0`) — `""`, `"ADD"`, `"add "`, `" add"`, `"addx"`, `"div"`, `"unknown"`, random bytes | returns `0` | [x] |
-| 15 | `perform_operation` | `operation == "divide"` and `b == 0` (line 102 `if (b != 0)` false) | returns `0` (does **not** trap) | [x] |
-| 16 | `perform_operation` | `operation == "divide"`, `a == INT_MIN`, `b == -1` — quotient not representable; gcc emits a bare `idiv` | SIGFPE (UB) | [x] subprocess |
-| 17 | `perform_operation` | `operation == NULL` → `strcmp(NULL, "add")` | SIGSEGV (UB) | [x] subprocess |
-| 18 | `perform_operation` | signed overflow in `a+b` / `a-b` / `a*b` (`INT_MAX+1`, `INT_MIN-1`, `INT_MIN*-1`, …) — UB in C, gcc wraps | wrapped 2's-complement result | [x] |
-| 19 | `buffapp` | `intermediate3 == 0` (line 143 `else`) → result replaced by `p1+p2+p3+p4` instead of a divide | returns wrapped `p1+p2+p3+p4` | [x] |
-| 20 | `buffapp` | `param1 % 4` negative (C `%` truncates toward zero) → `get_operation_name` hits `default:` → `"unknown"` → `perform_operation` returns `0` | `intermediate1 == 0` | [x] |
-| 21 | `buffapp` | `param3 % 4` negative → same fall-through for `intermediate2` | `intermediate2 == 0` | [x] |
-| 22 | `buffapp` | `create_buffer(32)` returned NULL → `log_buffer->length = 0` derefs NULL (no null check at line 116) | SIGSEGV (UB) | [x] not host-triggerable — see note A |
-| 23 | `buffapp` | `param1 == INT_MIN` → `INT_MIN % 4 == 0` (not negative) → `"add"` path, and `INT_MIN` formatted by `sprintf` | takes the `add` branch | [x] |
-| 24 | `buffapp` | `result / intermediate3` is `INT_MIN / -1`. Reachable: `buffapp(0, 1073741823, 0, 1073741825)` → both halves take `add`, so `i1=1073741823`, `i2=1073741825`, `result = i1+i2 = INT_MIN` and `i3 = i1*i2 = -1` (wrapping) | SIGFPE (UB) | [x] subprocess |
+- `lib.c:37` `return NULL;` (struct `malloc` failed)
+- `lib.c:43` `return NULL;` (data `malloc` failed, after `free(buffer)`)
+- `lib.c:62` `return -1;` (`realloc` failed)
+- `lib.c:57` range check `required_capacity > buffer->capacity`
+- `lib.c:76` null check `if (buffer)`
+- `lib.c:77` null check `if (buffer->data)`
+- `lib.c:90` `default: return "unknown";` (out-of-range op code)
+- `lib.c:102` `if (b != 0)` guard, `lib.c:105` `return 0`
+- `lib.c:107` `return 0;` (unrecognised operation string)
+- `lib.c:141` `if (intermediate3 != 0)` / `lib.c:144` fallback path
 
-## Notes
+## Table
 
-**A. Rows 1 and 22 are not host-triggerable.** Both require `malloc` of 16 bytes
-(`sizeof(StringBuffer)`) to fail. `buffapp` always calls `create_buffer(32)` with
-a hard-coded literal, so its `log_buffer` is never NULL on any host with a
-working allocator. The tests therefore verify the *code shape* is equivalent
-(Rust checks `buffer.is_null()` and returns `null_mut()` in the same position,
-and Rust likewise derefs `log_buffer` unconditionally without a null check)
-rather than executing the branch. Forcing it would need an allocator-failure
-interposer, which would change `malloc` for *both* libraries in the same process
-and so could not produce a meaningful differential.
+| #  | function | trigger (the exact invalid input/condition) | expected C result |
+|----|----------|----------------------------------------------|-------------------|
+| E1 | `create_buffer` | `initial_capacity < 0` (e.g. `-1`): sign-extended to a huge `size_t`, `malloc` fails (`lib.c:41`) | returns `NULL`; struct freed, no leak |
+| E2 | `create_buffer` | `initial_capacity = INT_MIN` (extreme negative, sign-extends to `0xFFFF_FFFF_8000_0000`) | returns `NULL` |
+| E3 | `create_buffer` | `initial_capacity = INT_MAX` (2 GiB request; may or may not succeed, but C and Rust must agree on NULL-ness) | same NULL-ness in both |
+| E4 | `create_buffer` | `initial_capacity = 0`: `malloc(0)` returns a non-NULL minimal chunk, then `buffer->data[0] = '\0'` is still written (`lib.c:48`) | returns non-NULL, `capacity == 0`, `length == 0` |
+| E5 | `create_buffer` | struct `malloc` fails (`lib.c:36`) | returns `NULL` — not reachable from the public API on this platform; documented, not tested |
+| E6 | `append_to_buffer` | `realloc` fails: `buffer->length` large enough that `new_capacity = required*2` overflows `int` to a negative value which sign-extends to a huge `size_t` (`length = 2_000_000_000`, short `str`) | returns `-1`; `buffer->data`/`capacity`/`length` left unmodified |
+| E7 | `append_to_buffer` | `realloc` fails via negative `capacity` path with `length = INT_MAX/2 + k` variants (several randomized large lengths) | returns `-1` |
+| E8 | `append_to_buffer` | empty string `""`: `str_len = 0`, `required = length + 1`; when `length + 1 <= capacity` the grow branch is **not** taken | returns `0`, `capacity` unchanged, `length` unchanged |
+| E9 | `append_to_buffer` | boundary `required_capacity == buffer->capacity` (one byte short of triggering growth) | returns `0`, no realloc, `capacity` unchanged |
+| E10| `append_to_buffer` | boundary `required_capacity == buffer->capacity + 1` (first value that triggers growth) | returns `0`, `capacity` becomes `required*2` |
+| E11| `append_to_buffer` | `buffer == NULL` | NULL dereference → `SIGSEGV` (C UB). Documented; asserted identical only as "both crash" via subprocess, not as a return value |
+| E12| `append_to_buffer` | `str == NULL` | `strlen(NULL)` → `SIGSEGV` (C UB). Documented; not asserted as a return value |
+| E13| `destroy_buffer` | `buffer == NULL` | no-op, returns cleanly (`lib.c:76`) |
+| E14| `destroy_buffer` | `buffer != NULL` but `buffer->data == NULL` | frees only the struct, does not call `free(NULL)` path on data (`lib.c:77`); returns cleanly |
+| E15| `get_operation_name` | `op_code = 4` (one past the documented valid range) | `"unknown"` |
+| E16| `get_operation_name` | `op_code = -1` (one before the range; also what `x % 4` yields for negative `x`) | `"unknown"` |
+| E17| `get_operation_name` | `op_code = -2, -3, 5, 42, INT_MIN, INT_MAX` — arbitrary out-of-range "enum" ints crossing FFI | `"unknown"` for every one |
+| E18| `perform_operation` | `operation` is an unrecognised string (`""`, `"ADD"`, `"add "`, `" add"`, `"divide\0x"`, random bytes) | returns `0` (`lib.c:107`) |
+| E19| `perform_operation` | `operation = "divide"`, `b == 0` | returns `0` (`lib.c:105`), no `SIGFPE` |
+| E20| `perform_operation` | `operation = "divide"`, `a = INT_MIN`, `b = -1` | signed-overflow division: C emits a bare `idiv` → `SIGFPE`. Must behave identically in Rust (verified in a subprocess) |
+| E21| `perform_operation` | `operation = NULL` | `strcmp(NULL, ...)` → `SIGSEGV` (C UB). Documented; not asserted as a return value |
+| E22| `perform_operation` | signed overflow on `add`/`subtract`/`multiply` (`INT_MAX + 1`, `INT_MIN - 1`, `INT_MIN * -1`, …) — C UB, gcc wraps | wrapping two's-complement result, identical in both |
+| E23| `buffapp` | `intermediate3 == 0` (e.g. either operand of the final multiply is 0, or one of `op1`/`op2` resolved to `"unknown"`/`"divide by 0"` giving 0) | takes the `lib.c:144` fallback: `result = p1+p2+p3+p4` |
+| E24| `buffapp` | `intermediate3 != 0` and `result / intermediate3` overflows (`result = INT_MIN`, `intermediate3 = -1`) | `idiv` → `SIGFPE`, identical in both (subprocess) |
+| E25| `buffapp` | `param1 % 4 < 0` and/or `param3 % 4 < 0` (negative params → `get_operation_name` default branch → `perform_operation` returns 0) | `intermediate` is 0, log line contains `unknown` |
+| E26| `buffapp` | `log_buffer == NULL` because `create_buffer(32)` failed (`lib.c:112` result is dereferenced at `lib.c:116` with no check) | NULL dereference → `SIGSEGV`; unreachable with a fixed capacity of 32. Documented, not tested |
 
-**B. Row 8 is a genuine out-of-bounds write in the C** (`strcpy` at
-`data + INT_MAX`). Because `required_capacity` wraps negative, the
-`required_capacity > capacity` test is false and no reallocation happens. Rather
-than let the wild store fault, the test points `buffer->data` at a 2 GiB
-`PROT_READ|PROT_WRITE, MAP_NORESERVE` anonymous reservation, so `data + INT_MAX`
-is legal memory. That makes the branch fully observable: the test diffs the
-return value (`0`), the untouched `capacity`, the wrapped `length`, and the 64
-bytes actually written at `data + INT_MAX` (both windows pre-poisoned with
-`0xAA` so any difference shows up). If the 2 GiB reservation is refused, the test
-falls back to asserting the branch *decision* only, and says so on stderr.
+## Checklist
 
-**C. UB rows (9, 10, 16, 17, 24).** These terminate the process. They are still
-real differential rows: `outcome_of()` in `tests/common/mod.rs` `fork()`s a
-child, performs the one call in the child against C or against Rust, and
-`waitpid`s. The parent asserts both children died with the *same* signal number
-(`SIGSEGV` = 11, `SIGFPE` = 8) — "both failed somehow" is not accepted, and each
-test additionally pins the expected signal explicitly. `err15`/`err16` also
-assert the *near-miss* inputs (`INT_MIN/1`, `(INT_MIN+1)/-1`, `INT_MAX/-1`,
-`INT_MIN/-2`, `x/0`) exit **0** in both, so the tests cannot pass by having
-everything crash.
-
-## Row → test mapping (auditable)
-
-```
-grep -h '^fn err' tests/phase_c_errors.rs
-```
-
-All rows live in `tests/phase_c_errors.rs`, one test per row, named `errNN_…`:
-
-| # | test |
-|---|------|
-| 1  | `err01_outer_malloc_failure_not_reachable` (documents non-reachability; see note A) |
-| 2  | `err02_create_buffer_negative_one` |
-| 3  | `err03_create_buffer_int_min` |
-| 4  | `err04_create_buffer_assorted_negatives` |
-| 5  | `err05_create_buffer_zero_capacity_succeeds` |
-| 6  | `err06_append_realloc_failure_two_billion_length` |
-| 7  | `err07_append_realloc_failure_around_int_max_half` |
-| 8  | `err08_append_required_capacity_overflows_negative` |
-| 9  | `err09_append_null_buffer_same_signal` — both SIGSEGV (11) |
-| 10 | `err10_append_null_string_same_signal` — both SIGSEGV (11) |
-| 11 | `err11_destroy_null_is_noop` |
-| 12 | `err12_destroy_with_null_data` |
-| 13 | `err13_get_operation_name_out_of_range` — out-of-range enum ints |
-| 14 | `err14_perform_operation_unmatched_returns_zero` |
-| 15 | `err15_divide_by_zero_returns_zero_and_does_not_trap` |
-| 16 | `err16_int_min_div_minus_one_same_signal` — both SIGFPE (8) |
-| 17 | `err17_perform_operation_null_operation_same_signal` — both SIGSEGV (11) |
-| 18 | `err18_signed_overflow_wraps_identically` |
-| 19 | `err19_buffapp_intermediate3_zero_takes_sum_fallback` |
-| 20 | `err20_buffapp_negative_residue_op1_is_unknown` |
-| 21 | `err21_buffapp_negative_residue_op2_is_unknown` |
-| 22 | `err22_buffapp_log_buffer_never_null` (documents non-reachability; see note A) |
-| 23 | `err23_buffapp_int_min_param1_takes_add_branch` |
-| 24 | `err24_buffapp_final_division_traps_identically` — both SIGFPE (8) |
-
-Generic boundary coverage required beyond the table:
-`generic_zero_and_oversized_lengths` (zero-length and oversized appends,
-capacity 0) and `generic_one_past_valid_range_enum_values` (`op_code` 4 and −1,
-capacity −1/0/1).
-
-Note B is superseded: row 8 is verified *without* faulting by pointing
-`buffer->data` at a 2 GiB `MAP_NORESERVE` reservation, so the wild
-`strcpy(data + INT_MAX, str)` lands on real memory and the written bytes, the
-wrapped `length`, and the untouched `capacity` are all diffed directly.
+- [x] E1  `create_buffer(-1)` → NULL
+- [x] E2  `create_buffer(INT_MIN)` → NULL
+- [x] E3  `create_buffer(INT_MAX)` → same NULL-ness
+- [x] E4  `create_buffer(0)` → non-NULL, capacity 0
+- [x] E5  struct `malloc` failure — unreachable, documented only
+- [x] E6  `append_to_buffer` realloc failure → `-1`
+- [x] E7  `append_to_buffer` randomized large-length realloc failures → `-1`
+- [x] E8  empty string append → `0`, no growth
+- [x] E9  `required == capacity` boundary → no growth
+- [x] E10 `required == capacity + 1` boundary → growth to `required * 2`
+- [x] E11 `append_to_buffer(NULL, s)` → both crash (subprocess)
+- [x] E12 `append_to_buffer(buf, NULL)` → both crash (subprocess)
+- [x] E13 `destroy_buffer(NULL)` → no-op
+- [x] E14 `destroy_buffer` with `data == NULL` → clean
+- [x] E15 `get_operation_name(4)` → `"unknown"`
+- [x] E16 `get_operation_name(-1)` → `"unknown"`
+- [x] E17 out-of-range enum ints incl. `INT_MIN`/`INT_MAX` → `"unknown"`
+- [x] E18 unrecognised operation strings → `0`
+- [x] E19 `"divide"` by `0` → `0`
+- [x] E20 `INT_MIN / -1` → identical fatal signal (subprocess)
+- [x] E21 `perform_operation(a, b, NULL)` → both crash (subprocess)
+- [x] E22 signed-overflow arithmetic wraps identically
+- [x] E23 `buffapp` `intermediate3 == 0` fallback
+- [x] E24 `buffapp` division overflow → identical fatal signal (subprocess)
+- [x] E25 `buffapp` negative `% 4` → `unknown` operations
+- [x] E26 `buffapp` NULL `log_buffer` — unreachable, documented only

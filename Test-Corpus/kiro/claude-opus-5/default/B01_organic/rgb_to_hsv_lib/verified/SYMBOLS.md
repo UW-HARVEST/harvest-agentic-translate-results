@@ -1,49 +1,67 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public symbol surface (Phase A)
 
 Derived mechanically from `nm -D` on both shared objects.
 
 Build commands used:
 
 ```
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-5xJDIq.so
+cd c_src && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libharvest-work-TGRcUc.so
 
 cd translation && cargo build --release
 # -> translation/target/release/librgb_to_hsv_lib.so
 ```
 
-## C `.so` — defined dynamic symbols (`nm -D --defined-only`)
+## C source inventory
 
-| # | symbol | type | present in Rust `.so`? | notes |
-|---|--------|------|------------------------|-------|
-| 1 | `rgb_to_hsv` | `T` (global text) | YES (`T rgb_to_hsv`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn rgb_to_hsv` in `src/lib.rs` |
+The whole C library is a single translation unit:
 
-That is the complete list. `c_src/CMakeLists.txt` compiles exactly one
-translation unit (`src/lib.c`), and `c_src/include/lib.h` declares exactly one
-function, so there is no untranslated C module. Nothing is stubbed.
+| C file | public declarations |
+|--------|---------------------|
+| `c_src/src/lib.c` | `rgb_to_hsv` (the only function defined in the file) |
+| `c_src/include/lib.h` | `void rgb_to_hsv(float *dest, const float *src);` (the entire header, 1 line) |
 
-## Symbol diff
+No other `.c`/`.h` files exist, so no C module was skipped by the translation.
 
-```
-comm -23 <(nm -D --defined-only C.so   | awk '{print $NF}' | sort -u) \
-         <(nm -D --defined-only RUST.so| awk '{print $NF}' | sort -u)
-```
+## Defined dynamic symbols (`nm -D --defined-only`)
 
-Result: **EMPTY** — 0 symbols exported by the C `.so` are missing from the Rust `.so`.
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `rgb_to_hsv` | `T` | `T` | PRESENT in both — exact name match |
 
-## Undefined symbols in the Rust `.so`
+C `.so` defined-symbol count: 1
+Rust `.so` defined-symbol count: 1
+Symbol diff (C \ Rust): **empty**
 
-`nm -D --undefined-only` on the Rust `.so` lists only libc / libgcc-unwind
-imports pulled in by the Rust runtime (`malloc`, `memcpy`, `_Unwind_*`,
-`pthread_key_*`, `dl_iterate_phdr`, `abort`, …). There are **0 undefined
-non-libc symbols** — i.e. no dangling references to untranslated code.
+The Rust side exports it via `#[unsafe(no_mangle)] pub unsafe extern "C" fn rgb_to_hsv`,
+so the export wrapper itself is what the differential tests exercise (they always
+`libloading::Library::get` the symbol out of `librgb_to_hsv_lib.so`; no Rust
+function is ever called directly).
 
-Extra symbols the Rust `.so` exports beyond the C set are Rust-internal
-(`_ZN…` / `_R…` mangled std items and `__rust_*` allocator shims). Extra
-symbols are permitted; the gate is that no C symbol is missing.
+## Undefined dynamic symbols
 
-## Gate status
+C `.so`: only weak toolchain/libc symbols
+(`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+`__cxa_finalize@GLIBC_2.2.5`, `__gmon_start__`).
 
-- [x] `nm -D` shows 0 missing symbols in the Rust `.so` relative to the C `.so`.
-- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.
+Rust `.so`: only libc + libgcc-unwind symbols
+(`memcpy`, `malloc`, `free`, `abort`, `_Unwind_*`, `pthread_key_*`, `mmap64`, …)
+pulled in by the Rust standard library / panic runtime.
+
+**0 missing / undefined non-libc symbols on the Rust side.**
+
+## Feature combinations
+
+`translation/Cargo.toml` declares no `[features]` table, so there is exactly one
+build configuration. `--no-default-features` and `--all-features` are therefore
+identical to the default build; both are still exercised in the test matrix
+script (`run_all.sh`) for completeness.
+
+## Binary targets
+
+Neither project builds an executable driver: `c_src/CMakeLists.txt` contains only
+`add_library(... SHARED src/lib.c)` (no `add_executable`), and
+`translation/Cargo.toml` declares only `[lib] crate-type = ["cdylib"]`
+(no `[[bin]]`, no `src/main.rs`). The "compare binary stdout" clause of the
+completion gate is therefore not applicable.

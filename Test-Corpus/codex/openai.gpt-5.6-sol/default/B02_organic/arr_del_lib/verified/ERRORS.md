@@ -1,31 +1,38 @@
-# Error Surface
+# Error surface
 
-The C API has no error enum and performs no allocation-failure recovery. Inputs
-outside the pointer/size contracts have C undefined behavior and therefore no C
-result to reproduce. The rows below are every defined rejection/sentinel branch
-reachable through an exported function. Internal `STBDS_ASSERT` sites check
-implementation invariants after allocation/probing; none is an input-rejection
-contract.
+The C library has no error enum and no `RETURN_ERROR` macro. It mostly uses
+sentinels for absent data and `assert` for internal data-structure invariants.
+Rows below are mechanically derived from every sentinel-return branch, null
+rejection/no-op, explicit mode boundary, and assertion in `src/lib.c`.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Test |
-|---|----------|----------------------------------------------|-------------------|------|
-| 1 | `stbds_hmfree_func` | `a == NULL` | Return normally without changing state | [x] |
-| 2 | `stbds_hmget_key_ts` | `a == NULL` | Allocate the zero default entry, return the hash-view pointer, and write `-1` to `temp` | [x] |
-| 3 | `stbds_hmget_key_ts` | Map has no hash table | Return the same map pointer and write `-1` to `temp` | [x] |
-| 4 | `stbds_hmget_key_ts` | Key is absent and probing reaches an empty slot | Return the same map pointer and write `-1` to `temp` | [x] |
-| 5 | `stbds_hmget_key` | Key is absent (including a map with no table) | Return the map pointer and store `-1` in the array header `temp` field | [x] |
-| 6 | `stbds_hmdel_key` | `a == NULL` | Return `NULL` | [x] |
-| 7 | `stbds_hmdel_key` | Map has no hash table | Return the same map pointer with header `temp == 0` | [x] |
-| 8 | `stbds_hmdel_key` | Key is absent and probing reaches an empty slot | Return the same map pointer with header `temp == 0` | [x] |
-| 9 | `stbds_arrgrowf` | `a == NULL`, `addlen == 0`, and `min_cap == 0` | Return `NULL` without allocating | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `stbds_hmfree_func` | `a == NULL` | return normally without doing anything | [x] |
+| 2 | `stbds_hmget_key_ts` | `a == NULL` | allocate a one-element zero default record, set `*temp = -1`, return the public hash pointer | [x] |
+| 3 | `stbds_hmget_key_ts` | backing array exists but `hash_table == NULL` | set `*temp = -1`, return `a` unchanged | [x] |
+| 4 | `stbds_hmget_key_ts` | hash table exists but key is absent (`stbds_hm_find_slot < 0`) | set `*temp = -1`, return `a` unchanged | [x] |
+| 5 | `stbds_hmget_key` | key is absent | return the same pointer and store `-1` in the backing header's `temp` field | [x] |
+| 6 | `stbds_hmdel_key` | `a == NULL` | return `NULL` | [x] |
+| 7 | `stbds_hmdel_key` | backing array exists but `hash_table == NULL` | set header `temp = 0`, return `a` unchanged | [x] |
+| 8 | `stbds_hmdel_key` | hash table exists but key is absent | set header `temp = 0`, return `a` unchanged | [x] |
+| 9 | hash-map mode boundary | `mode < STBDS_HM_STRING` (including negative/out-of-range enum values) | treat key as binary bytes | [x] |
+| 10 | hash-map mode boundary | `mode >= STBDS_HM_STRING` (including out-of-range enum values) | treat key as a NUL-terminated string | [x] |
+| 11 | `stbds_shmode_func` / insertion switch | mode is outside `STBDS_SH_NONE..STBDS_SH_ARENA` after conversion to `unsigned char` | use the insertion switch's `default` branch and copy `keysize` bytes | [x] |
+| 12 | `stbds_make_hash_index` | `used_count_threshold + tombstone_count_threshold >= slot_count` | assertion failure/abort (internal invariant; not reachable for the library's generated power-of-two slot counts) | [x] |
+| 13 | `stbds_hmput_key` | growth returns capacity smaller than `i + 1` | assertion failure/abort (allocation/internal invariant) | [x] |
+| 14 | `stbds_hmdel_key` | located slot is outside `table->slot_count` | assertion failure/abort (corrupt internal table) | [x] |
+| 15 | `stbds_hmdel_key` | decrement would make `used_count` invalid | assertion failure/abort (the C field is unsigned, so the literal check is tautological after normal operations) | [x] |
+| 16 | `stbds_hmdel_key` | moving the final entry cannot find that entry's hash slot | assertion failure/abort (corrupt internal table) | [x] |
+| 17 | `stbds_hmdel_key` | moved entry's hash slot does not point at `final_index` | assertion failure/abort (corrupt internal table) | [x] |
+| 18 | `stbds_stralloc` | post-allocation `len > a->remaining` | assertion failure/abort (allocation/internal invariant) | [x] |
 
-## Mechanically Reviewed Non-Rejections
+Public calls requiring non-null storage (`stbds_arrfreef`, nonzero-length
+`stbds_hash_bytes`, `stbds_hash_string`, `stbds_stralloc`, and
+`stbds_strreset`) perform no C validation. Passing null there is undefined
+behavior rather than a defined rejection result, so no portable error sentinel
+exists to compare.
 
-- `return -1` at C lines 610 and 621 are the two probe-loop paths represented
-  by rows 4, 5, and 8 at the exported boundary.
-- `STBDS_ASSERT` occurs at lines 401, 777, 828, 833, 847, 850, and 913. These
-  assert generated table/capacity/probe/arena invariants, not rejected caller
-  values.
-- `STBDS_STRING_ARENA_BLOCKSIZE_MIN` is 512 and
-  `STBDS_STRING_ARENA_BLOCKSIZE_MAX` is 1,048,576. Their valid boundary
-  branches are covered in `CONFIGS.md`.
+Rows 12-18 are internal invariants rather than constructible public-input
+states. The randomized operations exercise each invariant site without either
+implementation rejecting valid state; forcing those conditions would require
+allocator failure or deliberate corruption.

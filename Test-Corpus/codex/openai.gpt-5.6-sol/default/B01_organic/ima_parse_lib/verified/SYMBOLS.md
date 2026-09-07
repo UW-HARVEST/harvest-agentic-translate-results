@@ -1,18 +1,26 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Source library: `../c_src/build/libharvest-work-cstVVS.so`
+Source library:
+`../c_src/build/libharvest-work-uc2QuJ.so`
 
-Inventory command:
+Rust library:
+`target/release/libima_parse_lib.so`
+
+The public API list is the set of globally defined dynamic symbols reported by
+`nm -D --defined-only`. Undefined C runtime/toolchain symbols are not library
+API symbols.
+
+| C symbol | C type | Rust type | Status |
+|----------|--------|-----------|--------|
+| `ima_parse` | `T` | `T` | [x] exact export present |
+
+Normalized symbol diff:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-cstVVS.so
+(empty)
 ```
 
-| C symbol | C type | Rust symbol | Status |
-|----------|--------|-------------|--------|
-| `ima_parse` | `T` | `ima_parse` | [x] present |
-
-The C shared object has one defined public dynamic symbol. The Rust shared
-object exports the same symbol from `target/release/libima_parse_lib.so`.
-There are zero missing or undefined C API symbols. The Rust toolchain's normal
-GLIBC and GCC runtime imports all resolve under `ldd -r`.
+The C library also has the usual weak undefined toolchain hooks
+`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
+and `__gmon_start__`; these are imports, not definitions supplied by this
+library.

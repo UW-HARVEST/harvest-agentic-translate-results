@@ -1,84 +1,151 @@
-# CONFIGS.md — configuration-surface table (Phase B gate)
+# CONFIGS.md — Phase A: configuration-surface table
 
-## Mechanical derivation of the axes
+Derived mechanically from `c_src/include/lib.h` (the public API) and every
+branch in `c_src/src/lib.c`.
 
-The library has **no runtime options, no modes, no flags, no `#ifdef`, no
-`enum`, no build features** — grepped for and confirmed absent (see
-`ERRORS.md`). `translation/Cargo.toml` declares no `[features]` table, so the
-Cargo feature cross-product is the single default configuration.
+## Public entry points (the FULL set)
 
-The only public entry point is `tritanopia` (`c_src/include/lib.h:7`); it is also
-the *lowest-level* entry point, because every other function in the library is
-file-local `static` and therefore not reachable by an external caller. There is
-no convenience-wrapper / low-level split to worry about.
+`nm -D` on the C `.so` lists exactly one exported function, and `lib.h` declares
+exactly one prototype:
 
-So the configuration surface is entirely **input shape**: which of the C's
-value-dependent branches each of the three channels takes. Those branches were
-enumerated from the source and their boundaries measured with an instrumented
-build of the real C code (`/tmp/probe.c`, which `#include`s the same logic):
-
-```
-A1 removeGamma: linear for bytes 0..10, pow for 11..255
-A2 R: post-matrix min=-0.127398863 at (0,0,255)  max=1.12739885 at (255,255,0)
-      applyLinear=1796020  applyPow=14981196  negative=1666521  denormOutOfRange=1814886
-A2 G: post-matrix min=-4.48600011e-11 at (255,0,0) max=1 at (0,255,255)
-      applyLinear=88320    applyPow=16688896  negative=255      denormOutOfRange=0
-A2 B: post-matrix min=0 at (0,0,0)             max=1 at (0,255,255)
-      applyLinear=88320    applyPow=16688896  negative=0        denormOutOfRange=0
-```
-
-### The axes
-
-| axis | source site | values it can take |
+| entry point | signature | exported? |
 |---|---|---|
-| **X1** `cbRemoveGammaRGB` branch, per channel | `lib.c:11` `RGB.x > 0.04045` | `linear` (byte ≤ 10) / `pow` (byte ≥ 11) — boundary **10 / 11**, measured above |
-| **X2** `cbApplyGammaRGB` branch, per channel | `lib.c:35` `RGB.x > 0.0031308…` | `linear` / `pow`; both reachable on all three channels |
-| **X3** `cbDenorm` conversion range, per channel | `lib.c:28` `(unsigned char)(x*255.f+0.5f)` | `in range [0,256)` / `negative → wraps` / `≥ 256 → wraps`; the out-of-range states are reachable **only on the red channel** (1 814 886 of 16 777 216 inputs) |
-| **X4** sign of the red row | `lib.c:50` `R + 0.1274*G − 0.1274*B` | `G > B` (pushes red up, can exceed 1.0) / `G == B` (red unchanged) / `G < B` (drives red down, can go negative) |
-| **X5** channel-symmetry / aliasing shape | `Tritanopia` reads all three inputs into locals *before* writing any pointee (`lib.c:48-53`) | `R=G=B` (grey axis) / two equal / all distinct; plus the pure primaries and secondaries where two channels are 0 |
-| **X6** per-channel extremes | `cbNorm` `byte/255.f` | `0`, `1`, `10`, `11`, `127`, `128`, `254`, `255` |
+| `tritanopia` | `cb_rgb_255 tritanopia(cb_rgb_255 RGB)` | **yes** |
+| `cbNorm` | `static cb_rgb cbNorm(cb_rgb_255)` | no — `static`, absent from `nm -D` |
+| `cbRemoveGammaRGB` | `static cb_rgb cbRemoveGammaRGB(cb_rgb)` | no — `static` |
+| `Tritanopia` | `static void Tritanopia(float*, float*, float*)` | no — `static` |
+| `cbApplyGammaRGB` | `static cb_rgb cbApplyGammaRGB(cb_rgb)` | no — `static` |
+| `cbDenorm` | `static cb_rgb_255 cbDenorm(cb_rgb)` | no — `static` |
 
-X1–X6 are *per-channel*, so a "configuration" is a point in the 3-channel
-cross-product. The full cross-product **is** the 2^24 input domain, and the
-domain is small enough to enumerate, so row R0 below is an exhaustive sweep that
-subsumes every other row. The remaining rows exist because the task requires one
-row per meaningful combination with randomized inputs, and because a targeted
-failing row localises a bug far better than "somewhere in 16.7 M inputs".
+The five lowest-level stages are `static` in the C, so they are **not reachable
+through either `.so`** and cannot be called differentially without adding
+exports the C `.so` does not have (which would break the Phase D symbol diff).
+They are instead driven *indirectly but exhaustively*: the rows below pin each
+stage's branch by choosing inputs that force it, and row C31 covers the entire
+2^24 input domain, which visits every reachable state of every stage.
 
-## Configuration table
+## Axes the C actually branches on
 
-Every row calls **both** `.so`s through `libloading` and compares the three
-returned bytes exactly. Rows R1–R16 use a fixed-seed (`0x5EED_C0DE_1234_5678`)
-xorshift generator with **≥ 4096 randomized inputs each** (R0 uses all of them).
+There are **no runtime options, modes, flags, globals, setters, or `#ifdef`s** —
+`grep -nE "if *\(|switch|#ifdef|#if |static [^c(]" src` finds no mutable state
+and no conditional compilation. The only axes are input-shape axes:
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| R0 | `tritanopia` | **EXHAUSTIVE**: all 2^24 = 16 777 216 `(R,G,B)` byte triples. Subsumes every axis combination below, including all X1×X2×X3×X4×X5 interactions. | [x] |
-| R1 | `tritanopia` | X1 = `linear` on **all three** channels (every channel ≤ 10) — the pre-gamma linear regime | [x] |
-| R2 | `tritanopia` | X1 = `pow` on **all three** channels (every channel ≥ 11) — the pre-gamma power regime | [x] |
-| R3 | `tritanopia` | X1 mixed: R `linear`, G/B `pow` (R ≤ 10, G,B ≥ 11) | [x] |
-| R4 | `tritanopia` | X1 mixed: G `linear`, R/B `pow` | [x] |
-| R5 | `tritanopia` | X1 mixed: B `linear`, R/G `pow` | [x] |
-| R6 | `tritanopia` | X1 boundary sweep: each channel drawn from `{9,10,11,12}` — straddles the measured 10/11 threshold in all 64 combinations | [x] |
-| R7 | `tritanopia` | X4 = `G > B` with X3 overflow: `G` large, `B` small ⇒ red row exceeds 1.0 ⇒ `cbDenorm` converts ≥ 256 and **wraps** | [x] |
-| R8 | `tritanopia` | X4 = `G < B` with X3 negative: `B` large, `G` small, `R` small ⇒ red row negative ⇒ `cbDenorm` converts a negative float and **wraps** | [x] |
-| R9 | `tritanopia` | X4 = `G == B` (red row reduces to `R` plus the tiny coefficient difference `0.12739886310880 − 0.12739886341072`, which is *not* exactly zero — a value-dependent 1-ulp trap) | [x] |
-| R10 | `tritanopia` | X2 = `linear` on the red output (post-matrix red ≤ 0.0031308…): small `R`, `G ≈ B` | [x] |
-| R11 | `tritanopia` | X2 = `linear` on green **and** blue outputs (both `G` and `B` small) while red takes `pow` | [x] |
-| R12 | `tritanopia` | X5 = grey axis `R = G = B`, all 256 values | [x] |
-| R13 | `tritanopia` | X5 = two channels equal (`R=G`, `G=B`, `R=B`), randomized | [x] |
-| R14 | `tritanopia` | X5 = one channel 0, the other two randomized (the three coordinate planes of the RGB cube) | [x] |
-| R15 | `tritanopia` | X5 = one channel 255, the other two randomized (the three far faces of the cube) | [x] |
-| R16 | `tritanopia` | X6 = all 8^3 = 512 combinations of the extreme/boundary set `{0,1,10,11,127,128,254,255}`, including all 8 corners of the cube | [x] |
-| R17 | `tritanopia` | ABI shape: the same 3-byte struct passed with **non-zero junk in the unused high bytes** of the argument eightbyte, across randomized inputs (see `ERRORS.md` E6) | [x] |
-| R18 | `tritanopia` | Repeatability / statelessness: the same input called many times, interleaved between the two `.so`s, in a shuffled order — the C keeps no state, so order must not matter | [x] |
+**Axis 1 — `cbRemoveGammaRGB` branch, independently per channel.**
+`RGB.c > 0.04045` where `RGB.c = byte/255.f`. `10/255 = 0.039216 <= 0.04045`
+and `11/255 = 0.043137 > 0.04045`, so the split is exactly at the byte value:
+* `L` = linear branch `c / 12.92`  <=> byte in `0..=10`
+* `P` = `pow((c + 0.055)/1.055, 2.4)` branch  <=> byte in `11..=255`
 
-**All 19 rows are checked off** by passing differential tests in
-`tests/differential.rs`.
+**Axis 2 — `cbApplyGammaRGB` branch, independently per channel.**
+`x > 0.00313080495356037151702786377709` on the *post-matrix* linear value:
+* `l` = linear branch `x * 12.92` (this is also the branch every **negative**
+  value takes — `pow` is never called with a negative base)
+* `p` = `1.055 * pow(x, 0.4166666666) - 0.055`
+
+**Axis 3 — `cbDenorm` float->`unsigned char` conversion domain**, per channel,
+on `y = x * 255.f + 0.5f`:
+* `in` = `0 <= y < 256` (ordinary truncation)
+* `neg` = `y < 0` -> `cvttss2si` to `i32` then wrap to 8 bits
+* `ovf` = `y >= 256` -> truncate to `i32` then wrap to 8 bits
+
+Reachability, from the matrix rows in `Tritanopia`:
+`R' = R + 0.1274*(G - B)` can leave `[0,1]` on **both** sides, so R hits all
+three of `in`/`neg`/`ovf`. `G'` and `B'` are both `~0.8739*G + 0.1260*B` with
+`R` coefficients of `-4.486e-11` / `3.1113e-10`, so they stay in `[0,1]` and
+only ever hit `in`.
+
+**Axis 4 — argument/return ABI shape.** `cb_rgb_255` is 3 bytes / align 1, so
+under x86-64 SysV it is a single INTEGER-class eightbyte passed and returned in
+one register; the 4th byte is unspecified padding.
+
+## The table
+
+Every row is exercised with **many randomized inputs at a fixed seed**
+(`SEED = 0x5EED_1234_ABCD_F00D`, SplitMix64), both libraries loaded via
+`libloading` from their `.so`, results compared field-by-field.
+
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `tritanopia` | Axis1 `LLL` — all three channels in `0..=10`, all take the linear de-gamma branch | [x] |
+| C2 | `tritanopia` | Axis1 `LLP` — R,G linear; B `>=11` uses `pow` | [x] |
+| C3 | `tritanopia` | Axis1 `LPL` | [x] |
+| C4 | `tritanopia` | Axis1 `LPP` | [x] |
+| C5 | `tritanopia` | Axis1 `PLL` | [x] |
+| C6 | `tritanopia` | Axis1 `PLP` | [x] |
+| C7 | `tritanopia` | Axis1 `PPL` | [x] |
+| C8 | `tritanopia` | Axis1 `PPP` — all three `>=11`, all take the `pow` de-gamma branch | [x] |
+| C9 | `tritanopia` | Axis1 boundary sweep: every channel pinned to each of `{0,1,10,11,254,255}` while the others are randomized (exact threshold crossing `10 -> 11`) | [x] |
+| C10 | `tritanopia` | Axis2 `R'=l, G'=l, B'=l` — post-matrix R,G,B all `<=` apply-gamma threshold (near-black inputs) | [x] |
+| C11 | `tritanopia` | Axis2 `R'=l, G'=p, B'=p` — R' pushed to/below threshold (incl. negative) while G',B' are large: `R` small, `B > G` | [x] |
+| C12 | `tritanopia` | Axis2 `R'=p, G'=l, B'=l` — R' above threshold while G',B' at/below it: `R` large, `G=B=0` | [x] |
+| C13 | `tritanopia` | Axis2 `R'=p, G'=p, B'=p` — all above threshold (ordinary mid/bright colours) | [x] |
+| C14 | `tritanopia` | Axis2 `G'` and `B'` branch **differ** — needs `0.8739*G+0.1260*B` within ~1e-9 of the threshold; probed by a targeted search plus the exhaustive row (recorded as reachable-or-not, not assumed) | [x] |
+| C15 | `tritanopia` | Axis3 R=`neg` — red channel driven below 0 so `y < 0` and the cast wraps: `R` small, `B >> G` (e.g. `{0,0,255}`) | [x] |
+| C16 | `tritanopia` | Axis3 R=`ovf` — red channel driven above 1 so `y >= 256` and the cast wraps: `R` large, `G >> B` (e.g. `{255,255,0}`) | [x] |
+| C17 | `tritanopia` | Axis3 R=`in`, G=`in`, B=`in` — no wrap anywhere (the "happy" domain) | [x] |
+| C18 | `tritanopia` | Axis3 boundary: `y` within 1 ULP of `0.0`, of `256.0`, and of `-1.0` — a targeted search over all 2^24 inputs picks the extreme achievers of each | [x] |
+| C19 | `tritanopia` | Axis1xAxis3 cross: `LLL` inputs that still wrap (all channels `<=10`, `B > G`) | [x] |
+| C20 | `tritanopia` | Axis1xAxis3 cross: `PPP` inputs that still wrap | [x] |
+| C21 | `tritanopia` | shape: `R = G = B` (pure grays), all 256 of them | [x] |
+| C22 | `tritanopia` | shape: single channel hot, other two zero — all 3x256 | [x] |
+| C23 | `tritanopia` | shape: single channel zero, other two `255` — all 3x256 | [x] |
+| C24 | `tritanopia` | shape: the 8 corners of the cube `{0,255}^3` | [x] |
+| C25 | `tritanopia` | shape: `G == B` exactly (R' reduces to `R`, the `0.1274` terms cancel — a genuinely distinct arithmetic path) | [x] |
+| C26 | `tritanopia` | shape: `G` and `B` differ by exactly 1 (smallest non-cancelling difference) | [x] |
+| C27 | `tritanopia` | Axis4: 4th argument byte set to `0x00`, `0xFF`, and random garbage — the padding must not affect the result | [x] |
+| C28 | `tritanopia` | Axis4: result read as a raw 3-byte struct vs. as three separate field loads (return-register padding must not be compared) | [x] |
+| C29 | `tritanopia` | repeated/idempotent invocation: feeding a result back in 8 times (catches state leaking between calls; the C is pure so all 8 rounds must agree) | [x] |
+| C30 | `tritanopia` | uniformly random inputs over the whole cube, 200,000 draws at the fixed seed | [x] |
+| C31 | `tritanopia` | **EXHAUSTIVE**: all 2^24 = 16,777,216 possible inputs, byte-compared. Supersedes every row above and is the definitive valid-path proof. | [x] |
 
 ## Feature combinations
 
-| combo | command | status |
-|---|---|---|
-| default (the only one) | `cargo test --release` | pass |
-| `--no-default-features` (identical, no features declared) | `cargo test --release --no-default-features` | pass |
+`translation/Cargo.toml` has no `[features]` table, so the only combinations are
+the default build and `--no-default-features` (identical). Both are run by
+`check_all_features.sh`; there is no third code path to cover.
+
+## Results
+
+All 31 rows checked off. Command used:
+
+```
+cd translation && ./check_all_features.sh
+```
+
+Output (both feature invocations x both cargo profiles):
+
+```
+[OK] symbol diff EMPTY for <default>
+[OK] symbol diff EMPTY for --no-default-features
+[OK] cargo test <default> <debug>               — 40 test(s) passed
+[OK] cargo test <default> --release             — 40 test(s) passed
+[OK] cargo test --no-default-features <debug>   — 40 test(s) passed
+[OK] cargo test --no-default-features --release — 40 test(s) passed
+ALL PHASE D CHECKS PASSED
+```
+
+Row C31 reports `all 16777216 inputs byte-identical between the C and Rust .so`,
+and C31b reports the same through the raw `u32` ABI view. Since 2^24 is the
+*entire* input domain of the exported API, this is exhaustive proof rather than
+a sample, and it subsumes rows C1-C30.
+
+C14 was measured, not assumed: a full scan of the cube found **no** input where
+`G'` and `B'` take different re-gamma branches, so that configuration is
+unreachable. The closest approach found was `{79, 3, 37}` (gap 2.33e-6 against a
+3.13e-3 threshold); it is tested explicitly so the row is not vacuous.
+
+## Negative control (proof the suite can fail)
+
+To confirm the harness genuinely compares two different binaries, the Rust cast
+was temporarily mutated from C's truncate-then-wrap to Rust's native saturating
+`as u8`:
+
+```diff
+-        (value as i32) as c_uchar
++        value as c_uchar  // MUTANT: saturating
+```
+
+19 tests failed immediately, including `c15_cast_negative_wrap`,
+`c16_cast_overflow_wrap`, `c30_uniform_random` and the exhaustive rows. The
+mutation was then reverted and `src/lib.rs` verified byte-identical to the
+original. This rules out a vacuously-passing suite.

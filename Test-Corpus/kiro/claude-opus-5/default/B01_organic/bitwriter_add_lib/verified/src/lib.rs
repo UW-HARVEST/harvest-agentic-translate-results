@@ -98,62 +98,62 @@ pub unsafe extern "C" fn bitwriter_add(
     // int r;  -- declared but never used in the C source.
     let _r: c_int;
 
-    // The C code accesses `bw->...` directly through the caller-supplied
-    // pointer. We deliberately do NOT form a `&mut tflac_bitwriter` here:
-    // creating a Rust reference from a raw pointer asserts non-null and
-    // aligned, and rustc's debug-mode UB checks turn a NULL `bw` into a panic
-    // (which, escaping an `extern "C"` fn, aborts with SIGABRT). The C has no
-    // null check and simply faults with SIGSEGV. Using raw place expressions
-    // reproduces the C behaviour identically in every profile, and also avoids
-    // claiming the `noalias` guarantee that the C pointer does not carry.
+    // NOTE: deliberately NEVER form a Rust reference (`&mut *bw`) from this raw
+    // pointer. Doing so makes the compiler emit a null/alignment debug
+    // assertion, which turns a NULL `bw` into a panic -> `abort()` (SIGABRT).
+    // The C has no null check and simply faults (SIGSEGV) on the first access,
+    // which is `bw->tot`. Using raw-pointer places `(*bw).field` reproduces the
+    // C fault behaviour exactly, in every build profile.
 
     // val <<= ((8 * sizeof(tflac_uint)) - bits);
     //   `8 * sizeof(...)` is size_t, so the subtraction is done in u64.
     val = c_shl_u64(val, TFLAC_UINT_BITS.wrapping_sub(bits as u64));
 
-    // bw->tot += bits;
-    unsafe { (*bw).tot = (*bw).tot.wrapping_add(bits) };
+    unsafe {
+        // bw->tot += bits;
+        (*bw).tot = (*bw).tot.wrapping_add(bits);
 
-    // int i = 0;
-    let mut i: c_int = 0;
+        // int i = 0;
+        let mut i: c_int = 0;
 
-    // while ((bw->bits + bits >= (8 * sizeof(tflac_uint))) && i < 100) {
-    //   `bw->bits + bits` is computed in tflac_u32 (wrapping), then widened
-    //   to size_t for the comparison against 64.
-    while (unsafe { (*bw).bits }.wrapping_add(bits) as u64) >= TFLAC_UINT_BITS && i < 100 {
-        // b = (8 * sizeof(tflac_uint)) - bw->bits - 1;
-        //   Computed in u64, then truncated on assignment to tflac_u32.
-        b = TFLAC_UINT_BITS
-            .wrapping_sub(unsafe { (*bw).bits } as u64)
-            .wrapping_sub(1) as tflac_u32;
+        // while ((bw->bits + bits >= (8 * sizeof(tflac_uint))) && i < 100) {
+        //   `bw->bits + bits` is computed in tflac_u32 (wrapping), then widened
+        //   to size_t for the comparison against 64.
+        while ((*bw).bits.wrapping_add(bits) as u64) >= TFLAC_UINT_BITS && i < 100 {
+            // b = (8 * sizeof(tflac_uint)) - bw->bits - 1;
+            //   Computed in u64, then truncated on assignment to tflac_u32.
+            b = TFLAC_UINT_BITS
+                .wrapping_sub((*bw).bits as u64)
+                .wrapping_sub(1) as tflac_u32;
 
-        // b = b > bits ? bits : b;
-        b = if b > bits { bits } else { b };
+            // b = b > bits ? bits : b;
+            b = if b > bits { bits } else { b };
+
+            // bw->val |= (val >> bw->bits);
+            (*bw).val |= c_shr_u64(val, (*bw).bits as u64);
+
+            // bw->bits += b;
+            (*bw).bits = (*bw).bits.wrapping_add(b);
+
+            // bw->val &= mask;
+            (*bw).val &= MASK;
+
+            // val <<= b;
+            val = c_shl_u64(val, b as u64);
+
+            // bits -= b;
+            bits = bits.wrapping_sub(b);
+
+            // i++;
+            i = i.wrapping_add(1);
+        }
 
         // bw->val |= (val >> bw->bits);
-        unsafe { (*bw).val |= c_shr_u64(val, (*bw).bits as u64) };
+        (*bw).val |= c_shr_u64(val, (*bw).bits as u64);
 
-        // bw->bits += b;
-        unsafe { (*bw).bits = (*bw).bits.wrapping_add(b) };
-
-        // bw->val &= mask;
-        unsafe { (*bw).val &= MASK };
-
-        // val <<= b;
-        val = c_shl_u64(val, b as u64);
-
-        // bits -= b;
-        bits = bits.wrapping_sub(b);
-
-        // i++;
-        i = i.wrapping_add(1);
+        // bw->bits += bits;
+        (*bw).bits = (*bw).bits.wrapping_add(bits);
     }
-
-    // bw->val |= (val >> bw->bits);
-    unsafe { (*bw).val |= c_shr_u64(val, (*bw).bits as u64) };
-
-    // bw->bits += bits;
-    unsafe { (*bw).bits = (*bw).bits.wrapping_add(bits) };
 
     // return 0;
     0

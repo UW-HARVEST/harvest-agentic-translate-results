@@ -1,77 +1,77 @@
-# CONFIGS.md — Phase A: configuration-surface table (valid inputs)
+# CONFIGS.md — Phase A: configuration-surface table
 
-Mechanically derived from the C source, not from assumptions.
+Mechanically derived from the complete C source. The library is one function:
+
+```c
+void driver(int x) {
+    for (int i = 0, j = 0; i < x; i++, j += 2) {
+        printf("%d %d\n", i, j);
+    }
+}
+```
 
 ## Axes the C code actually branches on
 
-The whole library is one function with one loop, so the branch inventory is
-short and complete:
+Enumerated by grepping the public header and every `if` / `switch` / `#ifdef`
+/ loop guard in the C sources:
 
-1. **Public entry points** — `nm -D` + `c_src/include/driver.h` give exactly one:
-   `void driver(int x)`. There is no convenience/one-shot wrapper layer over a
-   lower-level API; `driver` *is* the lowest level exported. Nothing is hidden
-   behind a simplified facade.
-2. **Runtime options / modes / flags** — none. There is no init function, no
-   context/handle struct, no setter, no global/static configuration variable, no
-   environment lookup, and no `#ifdef` in the compiled source (the only `#if` in
-   the tree is the header's include guard). `Cargo.toml` likewise declares **no
-   `[features]`**, so there is exactly one feature combination: the default.
-3. **Control-flow branch** — `i < x`, the loop guard. Taken/not-taken splits the
-   input domain into `x <= 0` (zero iterations, in `ERRORS.md`) and `x >= 1`
-   (`x` iterations).
-4. **Loop-carried state shapes** — `i` steps by 1 from 0; `j` steps by 2 from 0,
-   so `j == 2*i` for every iteration. The two counters cross `%d` decimal-width
-   boundaries at *different* values of `i` (`i` at 10, 100, 1000…; `j` at 5, 50,
-   500…). Each such crossing is a distinct output shape produced by `printf`'s
-   `%d` conversion, so it is a real input-shape axis.
-5. **Output volume / stdio buffering** — `printf` to `stdout`. Once total output
-   exceeds the stdio buffer (4096 bytes when stdout is a file, as under test)
-   the library performs real `write(2)` flushes mid-loop. Small (< 1 buffer),
-   buffer-boundary-straddling, and multi-flush volumes are distinct shapes.
-6. **Call multiplicity / residual state** — one call vs. many calls vs. C and
-   Rust calls interleaved, and calls made from a non-main thread. The C function
-   has no `static` storage, so every call must be independent; that invariant is
-   itself something to verify differentially.
+| axis | values the C distinguishes | evidence |
+|------|---------------------------|----------|
+| A. runtime options / modes / flags | **none** — no globals, no setters, no option struct, no env lookup, no `#ifdef` other than the header include guard | `grep -nE 'static\|extern\|getenv\|#if' c_src/src/driver.c` finds nothing |
+| B. sign of `x` (the only branch) | `x <= 0` → 0 iterations; `x > 0` → `x` iterations | loop guard `i < x` |
+| C. iteration count / input shape | 0 (empty), 1 (one), 2, small many, larger many | `i < x` is the only shape driver |
+| D. printed field width of `i` | 1-digit, 2-digit, 3-digit, 4+-digit — changes the byte layout of `"%d %d\n"` | `printf("%d %d\n", i, j)` |
+| E. printed field width of `j = 2*i` | `j` crosses each decimal decade one step ahead of `i` (e.g. `i=5 → j=10`, `i=50 → j=100`), so `j`'s width differs from `i`'s within the same run | `j += 2` |
+| F. output volume vs. stdio buffering | output smaller than one `stdout` buffer vs. output spanning many buffer flushes (multi-KB) | both sides call the same libc `printf`; buffering is observable in ordering/flush behaviour |
+| G. call sequencing / statefulness | single call vs. many successive calls (no state is carried; must be identical) | no `static` storage exists |
+| H. entry points | **one**: `driver` — the lowest-level and only public symbol; there is no convenience wrapper and no lower layer | `driver.h` declares exactly one function |
 
-Everything is exercised through the exported `driver` symbol of BOTH `.so`s,
-loaded with `libloading`. Each measurement runs in a `fork()`ed child whose
-private fd 1 points at a scratch file, so the captured bytes are exactly what
-the library wrote (the test harness's own progress output cannot leak in). Both
-the stdout bytes **and** the child's termination status are compared, so a panic
-or abort in the Rust build is detected rather than silently matching.
+Axes A (options) and H (multiple entry points) are empty/singleton by
+construction, so the configuration cross-product reduces to B × C × D × E × F × G
+over the `int` domain of `x`.
 
-Note: the Rust `.so` is tested in **both** `release` and `debug` builds where
-both are present, because `panic = "abort"` and overflow-check settings differ
-between profiles and could in principle change behaviour on the arithmetic.
+## Untestable boundary (documented, intentionally not a row)
 
-## Configuration table
+`j = 2*i` overflows `int` once `i > INT_MAX/2` (`x > 1073741823`). In C that is
+signed-overflow UB; reaching it requires >10^9 `printf` calls, so it cannot be
+executed within the task's time bounds. The Rust translation uses
+`wrapping_add`, matching the wrap-around that the C compiler emits in practice.
+No row asserts on it.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `driver` | `x = 1` — minimum accepted count, exactly one iteration; only `i == j == 0` printed | [x] |
-| C2 | `driver` | `x = 2` — two iterations, first `j != i` (`j = 2`) | [x] |
-| C3 | `driver` | `x = 3, 4` — both counters still single-digit for every line | [x] |
-| C4 | `driver` | `x = 5, 6, 7` — `j` crosses 1→2 decimal digits (`j = 10` at `i = 5`) while `i` is still 1 digit: asymmetric field widths | [x] |
-| C5 | `driver` | `x = 9, 10, 11` — `i` crosses 1→2 decimal digits | [x] |
-| C6 | `driver` | `x = 49, 50, 51` — `j` crosses 2→3 digits (`j = 100` at `i = 50`) | [x] |
-| C7 | `driver` | `x = 99, 100, 101` — `i` crosses 2→3 digits | [x] |
-| C8 | `driver` | `x = 499, 500, 501` — `j` crosses 3→4 digits | [x] |
-| C9 | `driver` | `x = 999, 1000, 1001` — `i` crosses 3→4 digits; output first exceeds the 4096-byte stdio buffer, forcing mid-loop `write(2)` | [x] |
-| C10 | `driver` | `x = 4999, 5000, 5001` — `j` crosses 4→5 digits | [x] |
-| C11 | `driver` | `x = 9999, 10000, 10001` — `i` crosses 4→5 digits; multi-flush output (~100 KB) | [x] |
-| C12 | `driver` | randomised `x` in `1..=9` (many seeded draws) — dense coverage of the all-single-digit regime | [x] |
-| C13 | `driver` | randomised `x` in `1..=100` (many seeded draws) | [x] |
-| C14 | `driver` | randomised `x` in `1..=2000` (many seeded draws) — straddles the stdio buffer boundary at random offsets | [x] |
-| C15 | `driver` | randomised `x` in `2000..=20000` (many seeded draws) — multi-flush volumes at random offsets | [x] |
-| C16 | `driver` | `x = 65536` and `x = 100000` — large single call, ~1.2 MB of output, hundreds of buffer flushes | [x] |
-| C17 | `driver` | randomised `x` in `100000..=200000` (seeded) — largest practically comparable volume | [x] |
-| C18 | `driver` | same `x` invoked repeatedly (10x, `x = 37`) — verifies no residual/static state and byte-identical repeats in both libs | [x] |
-| C19 | `driver` | interleaved call sequence C→Rust→C→Rust with *varying* `x` (seeded), each step compared — verifies neither library leaks state across calls or across the other library's calls | [x] |
-| C20 | `driver` | `x` = valid count called from a **non-main thread** (no TLS/thread-affine state; both libs) | [x] |
-| C21 | `driver` | mixed valid/invalid sequence: `x <= 0` interleaved with `x >= 1` (seeded) — the accepting and rejecting halves of the guard in one session | [x] |
-| C22 | `driver` | powers-of-two and off-by-one shapes `x = 2^k` and `2^k ± 1` for `k = 1..=14` — exhaustive width/carry boundary sweep | [x] |
-| C23 | `driver` | every `x` in `1..=300` exhaustively (not sampled) — full small-domain coverage, guarantees no single value in the dense regime diverges | [x] |
+## Configuration-surface table
 
-All 23 rows are exercised against the release Rust `.so` and, when present, the
-debug Rust `.so`, in the single (default) feature configuration — the crate
-defines no Cargo features.
+Every row is exercised by a differential test that loads **both** `.so` files
+via `libloading`, calls `driver` through the FFI export, captures the raw
+`stdout` bytes of each, and asserts they are byte-identical. Rows marked
+"randomized" use many seeded-random values (fixed seed → reproducible), not a
+single hand-picked value.
+
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|-------------------------------------------|------|-----|
+| 1 | `driver` | B:`x<=0` / C:empty — `x == 0`, zero iterations, empty output | `cfg_row01_zero_iterations` | [x] |
+| 2 | `driver` | B:`x<=0` / C:empty — randomized negative `x` over `INT_MIN..0`, zero iterations | `cfg_row02_random_negative` | [x] |
+| 3 | `driver` | B:`x>0` / C:one — `x == 1`, single line, D:1-digit `i`, E:1-digit `j` | `cfg_row03_single_iteration` | [x] |
+| 4 | `driver` | B:`x>0` / C:two — `x == 2`, D:1-digit, E:1-digit | `cfg_row04_two_iterations` | [x] |
+| 5 | `driver` | B:`x>0` / C:many, D:1-digit only, E:`j` crosses into 2 digits (`x == 6` ⇒ `j` reaches 10) | `cfg_row05_j_width_crosses_first` | [x] |
+| 6 | `driver` | B:`x>0` / C:many, D:`i` crosses 1→2 digits, E:`j` crosses 1→2→3 digits (`x == 60`) | `cfg_row06_i_and_j_cross_decades` | [x] |
+| 7 | `driver` | B:`x>0` / C:many, D:`i` reaches 3 digits, E:`j` reaches 4 digits (`x == 600`) | `cfg_row07_three_and_four_digits` | [x] |
+| 8 | `driver` | B:`x>0` / C:many, D/E: exact decade boundaries `x ∈ {5,6,9,10,11,49,50,51,99,100,101,499,500,501,999,1000,1001,4999,5000,5001}` | `cfg_row08_decade_boundaries` | [x] |
+| 9 | `driver` | B:`x>0` / C:many — randomized `x` in `1..=64` (small counts, all widths ≤ 3) | `cfg_row09_random_small` | [x] |
+| 10 | `driver` | B:`x>0` / C:many — randomized `x` in `1..=5000`, F:output spans many stdio buffer flushes (tens of KB) | `cfg_row10_random_large_buffered` | [x] |
+| 11 | `driver` | G:call sequencing — randomized *sequence* of calls mixing `x<=0` and `x>0`, all captured in one stdout stream (checks no residual state and identical flush ordering) | `cfg_row11_random_call_sequences` | [x] |
+| 12 | `driver` | F:largest bounded volume — `x == 20000` (≈200 KB of output, many buffer refills) | `cfg_row12_large_volume` | [x] |
+| 13 | `driver` | B/D/E: full-range randomized `x` over the entire `c_int` domain, clamped to a bounded number of iterations for positives (mixes accepted and zero-iteration inputs drawn from the real input space) | `cfg_row13_random_full_int_domain` | [x] |
+
+## Binary executable
+
+`c_src/CMakeLists.txt` defines only `add_library(driver SHARED src/driver.c)`;
+there is no `add_executable`, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. **The project builds no binary
+driver**, so the "compare C and Rust binary stdout" gate is not applicable.
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+buildable configuration is the default one (equivalently
+`--no-default-features`). Both were exercised; see the run log in the final
+report.

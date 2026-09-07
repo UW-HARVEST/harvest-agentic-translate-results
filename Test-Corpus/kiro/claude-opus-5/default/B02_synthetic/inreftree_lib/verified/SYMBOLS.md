@@ -2,70 +2,74 @@
 
 Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-- C `.so`:    `c_src/build/libharvest-work-2K08Z7.so`
+- C  `.so`: `c_src/build/libharvest-work-O7jLg0.so` (built with
+  `cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .`)
 - Rust `.so`: `translation/target/release/libinreftree_lib.so`
+  (`cd translation && cargo build --release`)
 
-The C build (`c_src/CMakeLists.txt`) compiles exactly one translation unit,
-`src/lib.c`, into a shared library. No symbol visibility attributes are used, so
-every non-`static` function and file-scope object becomes a dynamic symbol.
-There are no `static` definitions in `lib.c`, therefore all 13 definitions are
-exported. There are no `#ifdef` / feature toggles in either tree, and
-`translation/Cargo.toml` declares **no `[features]` table**, so there is exactly
-one build configuration to verify.
+The whole C library is a single translation unit (`c_src/src/lib.c`, 197 lines);
+`CMakeLists.txt` compiles only that file, so there is no un-translated module.
+Every non-`static` definition in `lib.c` therefore appears in the dynamic symbol
+table, not just the one function declared in `include/lib.h` (`inreftree`).
 
-## Symbol table (13 symbols: 11 functions `T`, 2 data objects `B`)
+## Symbol parity table
 
-| # | symbol | kind | C decl | in C `.so` | in Rust `.so` | notes |
-|---|--------|------|--------|-----------|--------------|-------|
-| 1 | `add_op` | `T` func | `int add_op(int,int,int,int)` | yes | yes | — |
-| 2 | `multiply_op` | `T` func | `int multiply_op(int,int,int,int)` | yes | yes | — |
-| 3 | `subtract_op` | `T` func | `int subtract_op(int,int,int,int)` | yes | yes | — |
-| 4 | `divide_op` | `T` func | `int divide_op(int,int,int,int)` | yes | yes | guards `b==0`; `INT_MIN/-1` faults |
-| 5 | `modulo_op` | `T` func | `int modulo_op(int,int,int,int)` | yes | yes | guards `b==0`; `INT_MIN%-1` faults |
-| 6 | `find_node_by_id` | `T` func | `TreeNode* find_node_by_id(int)` | yes | yes | returns interior pointer into `node_table` |
-| 7 | `add_tree_node` | `T` func | `int add_tree_node(int,int,int,const char*)` | yes | yes | — |
-| 8 | `calculate_tree_sum` | `T` func | `int calculate_tree_sum(int)` | yes | yes | recursive |
-| 9 | `parse_operation` | `T` func | `Operation parse_operation(const char*)` | yes | yes | `Operation` is `int`-sized at the ABI |
-| 10 | `get_operation_func` | `T` func | `OperationFunc get_operation_func(Operation)` | yes | yes | returns a function pointer |
-| 11 | `inreftree` | `T` func | `int inreftree(int,int,int,int)` | yes | yes | the only symbol in `include/lib.h` |
-| 12 | `node_table` | `B` data | `TreeNode node_table[50]` | yes | yes | 50 * 52 = 2600 bytes |
-| 13 | `node_count` | `B` data | `int node_count` | yes | yes | 4 bytes |
+| # | symbol | type | C `.so` | Rust `.so` | notes |
+|---|--------|------|---------|------------|-------|
+| 1 | `add_op` | `T` func | yes | yes | `int(int,int,int,int)` |
+| 2 | `multiply_op` | `T` func | yes | yes | `int(int,int,int,int)` |
+| 3 | `subtract_op` | `T` func | yes | yes | `int(int,int,int,int)` |
+| 4 | `divide_op` | `T` func | yes | yes | `int(int,int,int,int)` |
+| 5 | `modulo_op` | `T` func | yes | yes | `int(int,int,int,int)` |
+| 6 | `find_node_by_id` | `T` func | yes | yes | `TreeNode*(int)` |
+| 7 | `add_tree_node` | `T` func | yes | yes | `int(int,int,int,const char*)` |
+| 8 | `calculate_tree_sum` | `T` func | yes | yes | `int(int)`, recursive |
+| 9 | `parse_operation` | `T` func | yes | yes | `Operation(const char*)`, ABI `int` |
+| 10 | `get_operation_func` | `T` func | yes | yes | `OperationFunc(Operation)`, returns fn ptr |
+| 11 | `inreftree` | `T` func | yes | yes | `int(int,int,int,int)`; only header-declared entry point |
+| 12 | `node_table` | `B` data | yes | yes | `TreeNode[50]`, 2600 bytes (`0x4060..0x4a88`) |
+| 13 | `node_count` | `B` data | yes | yes | `int` |
 
-## Symbol diff result
+**Missing from Rust `.so`: none (0 of 13).**
+**Extra non-libc symbols in Rust `.so`: none.**
+
+## Undefined-symbol check
+
+`nm -D -u` on the Rust `.so` lists only libc / libgcc-unwind imports
+(`malloc`, `memcpy`, `strlen`, `_Unwind_*`, `__cxa_finalize`, …). There are
+**0 undefined non-libc symbols**, so nothing is referenced but un-translated.
+
+## `TreeNode` layout agreement
+
+The C struct is 5 × `int` + `char[32]` = 52 bytes, align 4. The C `.so` places
+`node_table` at `0x4060` and `node_count` at `0x4a88`; the 2600-byte gap
+confirms `50 * 52`. The Rust `#[repr(C)] TreeNode` reproduces this, so tests may
+read/write `node_table` through the exported data symbol in either library with
+the same offsets.
+
+## `.rodata` string-literal layout (needed for a UB corner)
+
+`inreftree` evaluates `op_string[tree_sum % 4]`. C's `%` truncates toward zero,
+so a negative `tree_sum` yields a **negative index** that reads the bytes
+preceding the `"+*-%"` literal. `objdump -s -j .rodata` on the C `.so` shows the
+literal block, in emission order:
 
 ```
-$ diff <(nm -D --defined-only c_src/build/libharvest-work-2K08Z7.so   | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/libinreftree_lib.so | awk '{print $3}' | sort)
-<empty>
+2018  root\0left\0right\0left-left\0+*-%\0
 ```
 
-**0 symbols missing from the Rust `.so`.** No `#[no_mangle]` wrapper had to be
-added and no C source module was left untranslated — `lib.c` is the only C
-translation unit and every one of its definitions has a real Rust
-implementation (no stubs, no `unimplemented!()`).
+`"+*-%"` sits at offset **26** within that block. The Rust translation embeds the
+same 31-byte block (`RODATA_LITERALS`) with `OP_STRING_OFFSET = 26`, so indices
+`-3..=3` (byte offsets 23..=29) read identical bytes in both libraries:
 
-The check is automated by `translation/check_symbols.sh` and asserted from the
-test suite in `tests/phase_d_symbols.rs`.
+| `tree_sum % 4` | byte offset | C byte | Rust byte |
+|---|---|---|---|
+| -3 | 23 | `'f'` | `'f'` |
+| -2 | 24 | `'t'` | `'t'` |
+| -1 | 25 | `'\0'` | `'\0'` |
+| 0 | 26 | `'+'` | `'+'` |
+| 1 | 27 | `'*'` | `'*'` |
+| 2 | 28 | `'-'` | `'-'` |
+| 3 | 29 | `'%'` | `'%'` |
 
-Verified for the release `.so` (the build the task specifies) and for the debug
-`.so`; both export the same 13 names.
-
-## Undefined (imported) symbols
-
-The Rust `.so` imports only libc/`std` runtime symbols
-(`memcpy`, `__libc_start_main`-family, unwinder/`pthread` stubs, etc.). It
-imports **no** symbol that the C library would have had to provide, i.e. there
-are 0 missing/undefined non-libc symbols.
-
-## ABI notes that the tests rely on
-
-- `Operation` is a C enum with values 1..5, all representable in `int`, so it is
-  passed and returned as `int`. `get_operation_func` therefore accepts *any*
-  `int`, including values with no valid variant (see `ERRORS.md` rows 12–13).
-- `TreeNode` is `5 * int + char[32]` = **52 bytes**, alignment 4. Confirmed from
-  the C `.so`: `node_table` at `0x4060`, `node_count` at `0x4a88`;
-  `0x4a88 - 0x4060 = 0xa28 = 2600 = 50 * 52`.
-- Data-object *ordering* differs between the two libraries (C: `node_table` then
-  `node_count`; Rust: `node_count` then `node_table`). This is only observable
-  by reading `node_table[50]`, which is out of bounds in both languages; see
-  `CONFIGS.md` row 34 for how the tests stay inside the defined range.
+Verified byte-for-byte by Phase B test `configs_row_16_negative_tree_sum_modulus`.

@@ -1,38 +1,21 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
+Source: `nm -D --defined-only ../c_src/build/libdriver.so`, restricted to the
+library's externally callable API functions.
 
-Inventory command:
+| C symbol | Rust export | Status |
+|----------|-------------|--------|
+| `bad` | `bad` | [x] |
+| `driver` | `driver` | [x] |
+| `good` | `good` | [x] |
+| `printIntPtrLine` | `printIntPtrLine` | [x] |
+
+Phase D symbol-diff command:
 
 ```sh
-nm -D --defined-only ../c_src/build/libdriver.so
+comm -23 \
+  <(nm -D --defined-only ../c_src/build/libdriver.so | awk '$2 ~ /^[TW]$/ {print $3}' | sort -u) \
+  <(nm -D --defined-only target/release/libdriver.so | awk '$2 ~ /^[TW]$/ {print $3}' | sort -u)
 ```
 
-| # | C symbol | Type | Rust export |
-|---|----------|------|-------------|
-| 1 | `bad` | `T` | present |
-| 2 | `driver` | `T` | present |
-| 3 | `good` | `T` | present |
-| 4 | `printIntPtrLine` | `T` | present |
-
-The complete C `nm -D` output also contains these undefined or weak runtime
-dependencies; they are not definitions exported by this library:
-
-| Symbol | C type |
-|--------|--------|
-| `_ITM_deregisterTMCloneTable` | `w` |
-| `_ITM_registerTMCloneTable` | `w` |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` |
-| `__gmon_start__` | `w` |
-| `printf@GLIBC_2.2.5` | `U` |
-
-Current defined-symbol difference:
-
-```text
-(empty)
-```
-
-## Completion Gate
-
-- [x] Every C-defined dynamic symbol is defined by the Rust shared object.
-- [x] `ldd -r` reports no unresolved symbols in the Rust shared object.
+Final result: 4 C API symbols, 4 matching Rust exports, 0 missing.

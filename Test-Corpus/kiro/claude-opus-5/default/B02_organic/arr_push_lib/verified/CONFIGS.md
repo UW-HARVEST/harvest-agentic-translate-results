@@ -1,90 +1,109 @@
-# CONFIGS.md — configuration surface table (valid inputs)
+# CONFIGS.md — configuration / valid-input surface table
 
-Mechanically derived from the axes `c_src/src/lib.c` actually branches on.
+Derived mechanically from the branch conditions in `c_src/src/lib.c`. The axes
+below are exactly the things the C code tests on:
 
-## Axes the C code distinguishes
+**Axis M — `mode` argument** (`stbds_hmget_key`, `stbds_hmget_key_ts`,
+`stbds_hmput_key`, `stbds_hmdel_key`). Branched on at lines 560, 590, 707,
+713, 732, 836, 842:
+`mode < 1` → binary (`memcmp`); `mode >= 1` → string (`strcmp`);
+`mode == 1` *exactly* gates the strdup-free and the delete re-find.
 
-| axis | values the C treats differently | where |
-|------|---------------------------------|-------|
-| `mode` (int param of `hmget_key`/`hmget_key_ts`/`hmput_key`/`hmdel_key`) | `mode < 1` (binary: `memcmp` + `stbds_hash_bytes`); `mode == 1` (string: `strcmp` + `stbds_hash_string`, and the *only* value that enables strdup-free / char\*\* re-lookup in `hmdel_key`); `mode >= 2` (string compare/hash but **not** `mode == 1`) | `stbds_is_key_equal` L561, `hmput_key` L686/728, `hm_find_slot` L603, `hmdel_key` L838/843 |
-| `table->string.mode` (set by `stbds_shmode_func`, or implicitly by `hmput_key`) | `STBDS_SH_NONE(0)`/default → `memcpy` key by value; `STBDS_SH_DEFAULT(1)` → store caller pointer; `STBDS_SH_STRDUP(2)` → `stbds_strdup`; `STBDS_SH_ARENA(3)` → `stbds_stralloc`; out-of-range → `default` arm | `hmput_key` L786 switch, `hmfree_func` L575, `hmdel_key` L838 |
-| `elemsize` | any; drives `HASH_TO_ARR`/`ARR_TO_HASH` offset and element stride. `elemsize < sizeof(char*)` in string modes overlaps neighbouring elements | everywhere |
-| `keysize` | `0`, `1..7`, `8`, `>8` — feeds `stbds_hash_bytes` (the siphash 8-byte-block loop + the 7-case fall-through tail) and `memcmp` | `siphash_bytes` L520/533 |
-| `keyoffset` | `0` (all `hmput_key`/`hmget_key*` paths hard-code 0) vs. caller-supplied non-zero (only `hmdel_key` takes it) | `hmdel_key` param, `is_key_equal` |
-| `seed` | default `0x31415926`; any value via `stbds_rand_seed`. Also the *per-table* seed advances via the LCG `seed = seed*a + b` on every fresh `stbds_make_hash_index(_, NULL)` — so table identity depends on global call order | `stbds_rand_seed` L327, `make_hash_index` L410 |
-| byte values | bytes with the high bit set change `stbds_hash_bytes` (the `d[3] << 24` / `d[7] << 24` `int` expressions sign-extend into the upper 32 bits of `size_t`) | `siphash_bytes` L521/522, L537 |
-| `slot_count` | `8` (initial, and `used_count_shrink_threshold == 0`); `16`, `32`, `64`, … after growth; shrink back at `used_count < slot_count>>2` | `make_hash_index` L392-400, `hmput_key` L703, `hmdel_key` L855 |
-| table lifecycle state | no table (`hash_table == NULL`); table below `used_count_threshold`; at/over threshold (grow ×2); with tombstones below `tombstone_count_threshold`; over it (rebuild); below `used_count_shrink_threshold` (shrink ÷2) | `hmput_key` L700, `hmdel_key` L855/858 |
-| array state (`stbds_arrgrowf`) | `a == NULL` (fresh: length/hash_table/temp initialised) vs `a != NULL` (only capacity written); `min_cap <= cap` (no-op early return); `min_cap < 2*cap`; `min_cap < 4` | `arrgrowf` L275-300 |
-| string length (`stbds_hash_string`) | `0`, `1`, … — the rotate/add loop is per byte | `hash_string` L478 |
-| arena state (`stbds_stralloc`) | `len <= remaining` (bump-allocate from the current block); `len > remaining` with `len <= blocksize` (fresh block, LIFO push); `len > remaining` with `len > blocksize` (dedicated oversized block, spliced *behind* head, or becomes head with `remaining = 0`); `a->block` 0..255 driving `512 << (block>>1)` and the `< 1<<20` cap | `stralloc` L898-921 |
-| `arr_push(num)` | `num <= 0` (no-op); `num` in `1..50` (one iteration, inner loop 0 times); `num > 50` (multiple realloc/grow/free cycles, exercising `arrgrowf` `a != NULL` path repeatedly) | `arr_push` L945 |
-| `strkey(n)` | `n >= 0`, `n < 0`, `n == INT_MIN`, `n == INT_MAX` — `sprintf("test_%d")` | `strkey` L940 |
+**Axis S — `table->string.mode`** (`switch` at line 790, and line 576, 836).
+Set either by `stbds_hmput_key` (`0` or `STBDS_SH_DEFAULT`) or explicitly by
+`stbds_shmode_func`: `STBDS_SH_NONE=0`, `STBDS_SH_DEFAULT=1`,
+`STBDS_SH_STRDUP=2`, `STBDS_SH_ARENA=3`, out-of-range → `default:` memcpy.
 
-## Rows (each = one differential test, randomised inputs, fixed seed)
+**Axis E — `elemsize` / `keysize` / `keyoffset`.** `elemsize` scales every
+pointer step; `keysize` selects the siphash length path; `keyoffset` is `0`
+from every macro but is a real parameter of `stbds_hmdel_key`.
 
-Legend for "entry point(s)": `L` = called directly as a low-level export;
-`M` = driven through the caller-side re-implementation of the C macro
-(`hmput`/`hmget`/`hmdel`/`shput`/`shget`/`shdel`/`arrput`/…), i.e. the full
-composed pipeline a real consumer runs.
+**Axis L — hash input length** (`stbds_hash_bytes`): `0`, `1..7` (each of the
+seven `switch` fall-through arms), `8` (one whole word, empty tail), `9..15`,
+`16`, `>16`, and lengths whose 4th/8th byte has the high bit set (sign-extension
+path).
 
-| # | entry point(s) | configuration (options set + input shape) | test (`tests/phase_b.rs`) | [x] |
-|---|----------------|--------------------------------------------|---------------------------|-----|
-| 1 | `stbds_hash_bytes` (L) | `len = 0`, random seeds | `row01_hash_bytes_len0` | [x] |
-| 2 | `stbds_hash_bytes` (L) | `len = 1..7` (every tail `case` of the fall-through switch), random bytes incl. high-bit | `row02_hash_bytes_tail_1_to_7` | [x] |
-| 3 | `stbds_hash_bytes` (L) | `len = 8` exactly (one block, empty tail `case 0`) | `row03_hash_bytes_len8` | [x] |
-| 4 | `stbds_hash_bytes` (L) | `len = 9..64` (block loop + every tail remainder), random bytes | `row04_hash_bytes_9_to_64` | [x] |
-| 5 | `stbds_hash_bytes` (L) | `len` 1..64 with **all bytes ≥ 0x80** (forces the `d[3]<<24` / `d[7]<<24` sign-extension paths) | `row05_hash_bytes_high_bit / row05b_hash_unaligned_buffers` | [x] |
-| 6 | `stbds_hash_bytes` (L) | large `len` (256..4096), random seed | `row06_hash_bytes_large` | [x] |
-| 7 | `stbds_hash_string` (L) | empty string; length 1..64 random ASCII; bytes ≥ 0x80 (`(unsigned char)*str`); random seeds incl. 0 and `SIZE_MAX` | `row07_hash_string / row05b_hash_unaligned_buffers` | [x] |
-| 8 | `stbds_rand_seed` + `stbds_shmode_func` (L) | seed set explicitly, then a fresh table — checks the global LCG advance `seed*a+b` is byte-identical (compare `table->seed` observed through hashing behaviour) | `row08_rand_seed_lcg_lockstep` | [x] |
-| 9 | `stbds_arrgrowf` (L) | `a = NULL`, `addlen = 0`, `min_cap = 0` → early-return `NULL` | `row09_arrgrowf_null_noop` | [x] |
-| 10 | `stbds_arrgrowf` (L) | `a = NULL`, random `elemsize ∈ {1,2,4,8,16,24,32}`, random `addlen`/`min_cap` → header `length/capacity/hash_table/temp` compared field-by-field | `row10_arrgrowf_fresh_random` | [x] |
-| 11 | `stbds_arrgrowf` (L) | `a != NULL`, repeated growth (`min_cap < 2*cap` doubling path, and `min_cap >= 2*cap` explicit path), capacity sequence compared | `row11_arrgrowf_repeated_growth` | [x] |
-| 12 | `stbds_arrgrowf` (L) | `a != NULL`, `min_cap <= cap` → early return, header untouched | `row12_arrgrowf_early_return` | [x] |
-| 13 | `stbds_arrgrowf` + `stbds_arrfreef` (L) | grow then free, no leak/crash; repeated 1000× | `row13_arrgrowf_grow_free_cycles` | [x] |
-| 14 | `arrput` pipeline (M) | `stbds_arrmaybegrow`+`length++` loop for 0..500 elements of `elemsize = 4`; full element payload compared | `row14_arrput_pipeline` | [x] |
-| 15 | `arrput`/`arrdel`/`arrins`/`arrdelswap`/`arrpop`/`arrsetlen`/`arrsetcap` pipeline (M) | randomised op stream, `elemsize = 4` and `= 16`, contents + header compared after each op | `row15_array_op_stream` | [x] |
-| 16 | `arr_push` (L) | `num = 0`, `1`, `49`, `50`, `51`, `100`, `1000`, `5000` (no observable output; verified to not abort and to leave the process usable) | `row16_arr_push` | [x] |
-| 17 | `strkey` (L) | `n = 0, 1, -1, 42, -42, INT_MAX, INT_MIN`, plus randoms — returned C string compared byte-for-byte | `row17_strkey` | [x] |
-| 18 | `stbds_hmput_default` (L) | `a = NULL`, random `elemsize`; header + zeroed payload compared | `row18_hmput_default_from_null` | [x] |
-| 19 | `stbds_hmput_default` (L) | `a` from a previous `hmput_default` (length already 1 → no-op path) | `row19_hmput_default_idempotent` | [x] |
-| 20 | `stbds_hmput_default` (L) | `a` whose `length == 0` (forced) → regrow path | `row20_hmput_default_zero_length` | [x] |
-| 21 | `hmput` pipeline (M), `mode = STBDS_HM_BINARY` | `keysize = 4`, `elemsize = 8` (`{int key; int value;}`), 1 insert | `row21_bin_single_insert` | [x] |
-| 22 | `hmput`+`hmget` pipeline (M), `mode = BINARY` | `keysize = 4`, `elemsize = 8`, N = 1, 2, 6 (below `used_count_threshold` for 8 slots), random keys | `row22_bin_below_threshold` | [x] |
-| 23 | `hmput`+`hmget` pipeline (M), `mode = BINARY` | N = 7..64 → crosses `used_count_threshold` → grow to 16/32/64/128 slots; every key looked up, `temp` index compared | `row23_bin_crosses_growth` | [x] |
-| 24 | `hmput`+`hmget` pipeline (M), `mode = BINARY` | N = 300 random keys with duplicates (update-existing path L742), values overwritten | `row24_bin_with_duplicates` | [x] |
-| 25 | `hmput`+`hmget` pipeline (M), `mode = BINARY` | `keysize = 8`, `elemsize = 16` (`{size_t key; size_t value;}`) | `row25_bin_keysize8_elem16` | [x] |
-| 26 | `hmput`+`hmget` pipeline (M), `mode = BINARY` | `keysize = 8`, `elemsize = 24`, keys are a 2-`int` struct (`stbds_struct2`-shaped) | `row26_bin_keysize8_elem24` | [x] |
-| 27 | `hmput`+`hmget` pipeline (M), `mode = BINARY` | `keysize = 1` and `= 3` (odd sizes, exercise siphash tail inside the map) | `row27_bin_odd_keysizes` | [x] |
-| 28 | `hmput`+`hmdel`+`hmget` pipeline (M), `mode = BINARY` | randomised insert/delete/lookup stream, 2000 ops — exercises tombstones, `tombstone_count_threshold` rebuild, `used_count_shrink_threshold` shrink, and the last-element-moves-into-hole swap | `row28_bin_insert_delete_stream` | [x] |
-| 29 | `hmdel` pipeline (M), `mode = BINARY` | delete the **last** element (`old_index == final_index`, no memmove/re-lookup) | `row29_bin_delete_last` | [x] |
-| 30 | `hmdel` pipeline (M), `mode = BINARY` | delete a **middle** element (`old_index != final_index` → memmove + re-lookup + `b->index[i] = old_index`) | `row30_bin_delete_middle` | [x] |
-| 31 | `hmdel` pipeline (M), `mode = BINARY` | delete a key never inserted → `temp == 0`, length unchanged | `row31_bin_delete_absent` | [x] |
-| 32 | `hmdel` then re-insert (M), `mode = BINARY` | insert into a reclaimed tombstone (`tombstone >= 0` path L768, `--tombstone_count`) | `row32_bin_tombstone_reuse` | [x] |
-| 33 | `hmget_key_ts` (L), `mode = BINARY` | explicit `temp` out-param instead of the header field; hit and miss; `a == NULL` first call | `row33_hmget_key_ts` | [x] |
-| 34 | `hmget_key` vs `hmget_key_ts` (L) | same table, both APIs, header `temp` vs out-param compared | `row34_hmget_key_vs_ts` | [x] |
-| 35 | `shput`+`shget` pipeline (M), `mode = STBDS_HM_STRING`, `string.mode = SH_DEFAULT` (implicit) | `elemsize = 16` (`{char *key; int value;}`), N = 1..64 keys from `strkey`, keys stored **by pointer** | `row35_str_sh_default_implicit / row35c_temp_key` | [x] |
-| 36 | `shput`+`shget` pipeline (M), `mode = STRING`, `string.mode = SH_STRDUP` via `stbds_shmode_func(elemsize, 2)` | keys duplicated with `stbds_strdup`; stored pointer differs from input; `temp_key` written | `row36_str_sh_strdup` | [x] |
-| 37 | `shput`+`shget` pipeline (M), `mode = STRING`, `string.mode = SH_ARENA` via `stbds_shmode_func(elemsize, 3)` | keys allocated in the arena; short keys (bump path) and long keys (> blocksize dedicated block); `a->block` growth | `row37_str_sh_arena / row37b_str_sh_arena_long_keys` | [x] |
-| 38 | `shput`+`shdel` pipeline (M), `mode = STRING`, `SH_STRDUP` | delete frees the strdup'd key (`hmdel_key` L838), then re-lookup misses | `row38_str_strdup_delete` | [x] |
-| 39 | `shput`+`shdel` pipeline (M), `mode = STRING`, `SH_ARENA` | delete does **not** free (arena owns), re-lookup misses | `row39_str_arena_delete` | [x] |
-| 40 | `shput`+`shdel` pipeline (M), `mode = STRING`, `SH_DEFAULT` | delete of middle element → `char**` re-lookup path (L843 `mode == STBDS_HM_STRING` true) | `row40_str_default_delete` | [x] |
-| 41 | randomised string-map op stream (M), `mode = STRING`, each of `SH_DEFAULT`/`SH_STRDUP`/`SH_ARENA` | 1000 ops, keys drawn from a pool with collisions; length + every element compared | `row41_str_op_stream` | [x] |
-| 42 | `stbds_shmode_func` (L) | `mode = 0,1,2,3` and out-of-range `4, 255, 256, -1, INT_MAX, INT_MIN` (stored as `(unsigned char)mode`); resulting header + `string.mode` compared | `row42_shmode_func_all_modes` | [x] |
-| 43 | `stbds_hmput_key` (L), `mode = 2` and `mode = INT_MAX` | out-of-range mode: string hash/compare but **not** `mode == 1` — key slot treated as `char*` by `is_key_equal`, `string.mode = SH_DEFAULT` | `row43_mode_out_of_range_positive` | [x] |
-| 44 | `stbds_hmput_key`/`hmget_key` (L), `mode = -1` / `INT_MIN` | negative mode → binary path (`mode >= 1` false) | `row44_mode_negative_is_binary` | [x] |
-| 45 | `stbds_hmdel_key` (L), non-zero `keyoffset` | binary mode with `keyoffset = 4` inside a 16-byte element | `row45_hmdel_keyoffset_nonzero` | [x] |
-| 46 | `stbds_hmfree_func` (L) | table with `string.mode = SH_NONE` / `SH_DEFAULT` / `SH_STRDUP` / `SH_ARENA`; free after N inserts; and `a == NULL` | `row46_hmfree_func_all_modes` | [x] |
-| 47 | `stbds_stralloc` (L) | fresh zeroed arena, `len ∈ 1..64` repeatedly until a new block is needed; returned bytes + arena fields (`remaining`, `block`, `storage != NULL`) compared | `row47_stralloc_bump_path` | [x] |
-| 48 | `stbds_stralloc` (L) | first string longer than `512` (i.e. `len > blocksize` on a fresh arena, `a->storage == NULL` → becomes head with `remaining = 0`) | `row48_stralloc_oversized_first` | [x] |
-| 49 | `stbds_stralloc` (L) | oversized string **after** a normal block exists (`a->storage != NULL` → spliced behind head, `remaining` untouched) | `row49_stralloc_oversized_after_block` | [x] |
-| 50 | `stbds_stralloc` (L) | drive `a->block` from 0 up through the `blocksize < 1<<20` cap (blocksizes 512, 512, 1024, 1024, …, 1<<20) and past it | `row50_stralloc_block_counter_sweep` | [x] |
-| 51 | `stbds_stralloc` + `stbds_strreset` (L) | allocate a multi-block chain, reset, verify arena is fully zeroed and reusable; also `strreset` on an already-zero arena | `row51_strreset_chain_and_empty` | [x] |
-| 52 | full stress, mixed (M) | interleaved binary map + string map + dynamic array + arena operations under one fixed-seed op stream (5000 ops), all four data structures live simultaneously; every byte of every structure compared | `row52_mixed_stress` | [x] |
-| 53 | `stbds_rand_seed` (L) determinism | set the same seed on both libraries before each row so the per-table `seed` LCG stays in lock-step; verified by rows 22-41 producing identical `temp` indices and identical element order | `row08_rand_seed_lcg_lockstep + rows 22-41 (all seeded)` | [x] |
+**Axis T — table size / population state:** empty (no table), 8 slots, grown to
+16/32/64 (`used_count >= slot_count - slot_count/4`), tombstoned
+(`tombstone_count > slot_count/8 + slot_count/16`), shrunk
+(`used_count < slot_count/4`).
 
-All 53 rows pass, with randomized inputs (fixed seeds) per row, under every
-profile (debug + release) and every feature configuration (default and
-`--no-default-features`; the crate declares no features). Reproduce with
-`./verify.sh`.
+**Axis A — array state** (`stbds_arrgrowf`): `a == NULL` vs existing; `addlen`
+`0`/`1`/`n`; `min_cap` below cap (no-op), between, and above `2*cap`.
+
+**Axis R — global seed** (`stbds_rand_seed`) — mutates `stbds_hash_seed`, which
+is consumed and then advanced by every fresh `stbds_make_hash_index`. Both
+libraries must produce the same seed *sequence*.
+
+**Axis B — arena block growth** (`stbds_stralloc`): `block` 0..24,
+`len <= blocksize` vs `len > blocksize`, `storage == NULL` vs not.
+
+Every row is driven with **many randomized inputs** (fixed seed `0x5EED_1234`,
+`SplitMix64`) unless the row is inherently a single shape.
+
+| # | entry point(s) | configuration (options + input shape) | test | ✔ |
+|---|----------------|----------------------------------------|------|---|
+| 1 | `stbds_rand_seed` + `stbds_hash_bytes` | L = 0, random seeds | `cfg_01_hash_bytes_len0` | [x] |
+| 2 | `stbds_hash_bytes` | L = 1..7 (all tail arms), random bytes × random seeds | `cfg_02_hash_bytes_tail_arms` | [x] |
+| 3 | `stbds_hash_bytes` | L = 8 exactly (one word, empty tail) | `cfg_03_hash_bytes_len8` | [x] |
+| 4 | `stbds_hash_bytes` | L = 9..15 (one word + each tail arm) | `cfg_04_hash_bytes_word_plus_tail` | [x] |
+| 5 | `stbds_hash_bytes` | L = 16, 24, 32, 64, 65, 127, 128 (multi-word) | `cfg_05_hash_bytes_multiword` | [x] |
+| 6 | `stbds_hash_bytes` | L = 1..64, bytes forced `>= 0x80` at every position (sign-extension) | `cfg_06_hash_bytes_high_bit` | [x] |
+| 7 | `stbds_hash_bytes` | seed = 0, 1, `usize::MAX`, `0x31415926` (default), random | `cfg_07_hash_bytes_seeds` | [x] |
+| 8 | `stbds_hash_string` | len 0..64 ASCII, random seeds | `cfg_08_hash_string_ascii` | [x] |
+| 9 | `stbds_hash_string` | bytes 0x80..0xFF (unsigned-char promotion) | `cfg_09_hash_string_high_bytes` | [x] |
+| 10 | `stbds_hash_string` | seed = 0, 1, `usize::MAX`, random; long strings (256 B) | `cfg_10_hash_string_seeds` | [x] |
+| 11 | `stbds_rand_seed` | seed set, then N fresh tables created → the whole LCG seed *sequence* must match | `cfg_11_seed_sequence` | [x] |
+| 12 | `stbds_arrgrowf` | A: `a==NULL`, random `elemsize` ∈ {1,2,4,8,16,32}, `addlen`∈{0,1,7}, `min_cap`∈{0,1,4,5,100} | `cfg_12_arrgrowf_fresh` | [x] |
+| 13 | `stbds_arrgrowf` | A: existing array, `min_cap <= cap` → no-op path | `cfg_13_arrgrowf_noop` | [x] |
+| 14 | `stbds_arrgrowf` | A: existing array, `min_cap` in `(cap, 2*cap)` → doubling path | `cfg_14_arrgrowf_double` | [x] |
+| 15 | `stbds_arrgrowf` | A: existing array, `min_cap > 2*cap` → exact path | `cfg_15_arrgrowf_exact` | [x] |
+| 16 | `stbds_arrgrowf` | repeated append-one growth (0→1→…→2000 elements): full capacity *sequence* | `cfg_16_arrgrowf_growth_sequence` | [x] |
+| 17 | `stbds_arrgrowf` + `stbds_arrfreef` | grow then free, repeated; header fields after each grow | `cfg_17_arrgrow_free_cycle` | [x] |
+| 18 | `arr_push` (driver-style entry point) | `num` = 0,1,2,49,50,51,100,499,500,1000,5000 | `cfg_18_arr_push_range` | [x] |
+| 19 | `strkey` | `n` = 0,1,9,10,99,100,`INT_MAX`, random, negatives | `cfg_19_strkey` | [x] |
+| 20 | `stbds_hmput_default` | fresh (`a == NULL`), elemsize ∈ {8,16,32} | `cfg_20_put_default_fresh` | [x] |
+| 21 | `stbds_hmput_default` | called twice (second time `length == 1` → no-op) | `cfg_21_put_default_idempotent` | [x] |
+| 22 | `stbds_hmput_key` M=0 (binary) S=0 | keysize 4, elemsize 8, 1 insert | `cfg_22_bin_single` | [x] |
+| 23 | `stbds_hmput_key` M=0 S=0 | keysize 4, elemsize 8, 6 inserts (fills 8-slot table to threshold) | `cfg_23_bin_to_threshold` | [x] |
+| 24 | `stbds_hmput_key` M=0 S=0 | keysize 4, elemsize 8, 200 random inserts → 3 table growths | `cfg_24_bin_many_grow` | [x] |
+| 25 | `stbds_hmput_key` M=0 S=0 | keysize 8 (`ptrdiff_t`-sized key), elemsize 16 | `cfg_25_bin_keysize8` | [x] |
+| 26 | `stbds_hmput_key` M=0 S=0 | keysize 16 (two-word key, `stbds_struct2` shape), elemsize 32 | `cfg_26_bin_keysize16` | [x] |
+| 27 | `stbds_hmput_key` M=0 S=0 | keysize 1, 2, 3, 5, 7 (odd key widths → tail arms inside the map) | `cfg_27_bin_odd_keysizes` | [x] |
+| 28 | `stbds_hmput_key` M=0 S=0 | duplicate keys interleaved with new ones (update path) | `cfg_28_bin_duplicates` | [x] |
+| 29 | `stbds_hmget_key` M=0 | lookups: all present keys + all absent keys, after growth | `cfg_29_bin_get_all` | [x] |
+| 30 | `stbds_hmget_key_ts` M=0 | same as #29 but through the `temp`-out variant (does not touch `header->temp`) | `cfg_30_bin_get_ts` | [x] |
+| 31 | `stbds_hmdel_key` M=0 S=0 keyoffset 0 | delete present, delete absent, delete-last, delete-first | `cfg_31_bin_del_basic` | [x] |
+| 32 | `stbds_hmdel_key` M=0 | random put/get/del storm, 4000 ops → hits shrink + tombstone rebuild | `cfg_32_bin_storm` | [x] |
+| 33 | `stbds_hmdel_key` M=0 | `keyoffset != 0` (key not at element offset 0) | `cfg_33_bin_keyoffset` | [x] |
+| 34 | `stbds_hmfree_func` M=0 S=0 | free a populated binary map | `cfg_34_bin_free` | [x] |
+| 35 | `stbds_hmput_key` M=1 (string) S=1 (`SH_DEFAULT`, implicit) | caller-owned key pointers, 1 insert | `cfg_35_str_default_single` | [x] |
+| 36 | `stbds_hmput_key` M=1 S=1 | 200 random `strkey`-style keys → growth; `temp_key` written each time | `cfg_36_str_default_many` | [x] |
+| 37 | `stbds_hmput_key` M=1 S=1 | duplicate string keys (update path sets `temp_key` from the *stored* pointer) | `cfg_37_str_default_dup` | [x] |
+| 38 | `stbds_hmget_key` M=1 S=1 | present + absent string lookups | `cfg_38_str_default_get` | [x] |
+| 39 | `stbds_hmdel_key` M=1 S=1 | delete present/absent/last, with swap-and-refind through `strcmp` | `cfg_39_str_default_del` | [x] |
+| 40 | `stbds_shmode_func(S=2 STRDUP)` + `hmput_key` M=1 | keys copied with `stbds_strdup`; 200 inserts | `cfg_40_str_strdup_many` | [x] |
+| 41 | `stbds_shmode_func(S=2)` + `hmdel_key` M=1 | delete frees the strdup'd key (`mode == 1` branch) | `cfg_41_str_strdup_del` | [x] |
+| 42 | `stbds_shmode_func(S=2)` + `hmfree_func` | free walks `i=1..length` freeing each strdup'd key | `cfg_42_str_strdup_free` | [x] |
+| 43 | `stbds_shmode_func(S=3 ARENA)` + `hmput_key` M=1 | keys copied into the string arena; short keys only (block 0 → 512) | `cfg_43_str_arena_short` | [x] |
+| 44 | `stbds_shmode_func(S=3)` + `hmput_key` M=1 | enough keys to force several arena blocks (block 0→1→2…) | `cfg_44_str_arena_multiblock` | [x] |
+| 45 | `stbds_shmode_func(S=3)` + `hmput_key` M=1 | one key longer than the current blocksize → oversized-block splice path | `cfg_45_str_arena_oversized` | [x] |
+| 46 | `stbds_shmode_func(S=3)` + `hmfree_func` | `strreset` walks and frees the whole block chain | `cfg_46_str_arena_free` | [x] |
+| 47 | `stbds_shmode_func(S=0 NONE)` + `hmput_key` M=0 | explicit table with `string.mode = 0` → `default:` memcpy branch | `cfg_47_shmode_none_binary` | [x] |
+| 48 | `stbds_shmode_func(S=4)` (out of enum range) + `hmput_key` M=1 | `switch` falls to `default:` → `memcpy(key, keysize)` even though M says string | `cfg_48_shmode_four` | [x] |
+| 49 | `stbds_shmode_func` | `mode` = 0,1,2,3,4,127,255,256,-1,`INT_MAX`,`INT_MIN` → `(unsigned char)` truncation | `cfg_49_shmode_truncation` | [x] |
+| 50 | `stbds_hmput_key` M=2 / M=7 / `INT_MAX` | `mode > 1` → string path everywhere in put/get | `cfg_50_mode_gt_one` | [x] |
+| 51 | `stbds_hmput_key` M=-1 / `INT_MIN` | `mode < 1` → binary path everywhere | `cfg_51_mode_negative` | [x] |
+| 52 | `stbds_stralloc` | B: fresh arena, random short strings until several blocks | `cfg_52_stralloc_blocks` | [x] |
+| 53 | `stbds_stralloc` | B: strings of length 511/512/513 around the first block boundary | `cfg_53_stralloc_boundary` | [x] |
+| 54 | `stbds_stralloc` | B: `len > blocksize` on a *fresh* arena (`storage == NULL`) → `remaining = 0` | `cfg_54_stralloc_oversized_fresh` | [x] |
+| 55 | `stbds_stralloc` | B: `len > blocksize` on a *populated* arena → splice after head | `cfg_55_stralloc_oversized_spliced` | [x] |
+| 56 | `stbds_stralloc` | B: `block` driven to saturation (`>= 1<<20`) | `cfg_56_stralloc_saturate` | [x] |
+| 57 | `stbds_strreset` | populated chain (many blocks) then reset, then reuse | `cfg_57_strreset_reuse` | [x] |
+| 58 | full pipeline, M=0 S=0 | interleaved `put`/`get`/`get_ts`/`del`/`arrgrowf` on the *same* map, 4000 randomized ops, elemsize 8 keysize 4 | `cfg_58_pipeline_binary` | [x] |
+| 59 | full pipeline, M=1 S=1 | same but string keys with caller-owned storage | `cfg_59_pipeline_str_default` | [x] |
+| 60 | full pipeline, M=1 S=2 | same but STRDUP arena-free semantics | `cfg_60_pipeline_strdup` | [x] |
+| 61 | full pipeline, M=1 S=3 | same but ARENA | `cfg_61_pipeline_arena` | [x] |
+| 62 | full pipeline, mixed elemsize | elemsize ∈ {8,16,24,32,64} × keysize ∈ {1,2,4,8,16} cross-product, 200 ops each | `cfg_62_pipeline_elemsize_cross` | [x] |
+| 63 | `stbds_rand_seed` interaction | reseed *between* table creations inside one pipeline | `cfg_63_reseed_midstream` | [x] |
+| 64 | `stbds_arrgrowf` + `stbds_hmput_key` + `stbds_hmdel_key` | plain-array growth interleaved with map operations on the same heap, 1500 randomized ops (the allocators must be driven in the same order by both libraries) | `cfg_31b_mixed_array_and_map` | [x] |

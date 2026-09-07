@@ -1,102 +1,98 @@
-# CONFIGS.md — Configuration-surface table (Phase A / gate for Phase B)
+# CONFIGS.md — Configuration-surface table (valid inputs)
 
-Mirror of `ERRORS.md` for **valid** inputs. Rows are the cross-product of the
-axes the C actually branches on, pruned to the combinations `c_src/src/lib.c`
-treats differently.
+Axes the C code actually branches on, derived from `c_src/src/lib.c`:
 
-## Axes the C code branches on
+**A. Runtime options / modes**
+* `complexmode`'s `mode` argument — a `switch` with `case 1..4` + `default`
+  (line 115). This is the only "mode" selector in the library.
+* `permissions` bitmask. Inside `complexmode` it is hard-wired to `0644`, but
+  the low-level entry points `check_permissions(perms, required)` and
+  `safe_add(a, b, perms)` take it from the caller, so the whole permission
+  lattice is reachable from outside: `READ_PERM 0400`, `WRITE_PERM 0200`,
+  `EXEC_PERM 0100`, and the derived masks `0600` (`safe_add`'s requirement) and
+  `0100` (mode 4's test).
 
-**A1 — Cargo/`#ifdef` build options.** None. `translation/Cargo.toml` has no
-`[features]` table and `lib.c` contains no `#ifdef`/`#if` around any code, so
-there is exactly one build configuration. (`check_features.sh` enumerates the
-feature list from `Cargo.toml` and re-runs the suite for every combination it
-finds, which is the single default one.)
+**B. Input shapes**
+* integer operand magnitude/sign: zero, small positive, small negative, values
+  that make `a+b` / `a*b` overflow `int`, `INT_MIN`, `INT_MAX`.
+* `copy_and_sum` element count: `0`, `1`, `3` (what `complexmode` mode 3 uses),
+  many, negative; plus the pointer being non-NULL vs NULL.
+* string shape for `create_result_string` / `compare_operations`: empty, short,
+  long enough to make `snprintf` truncate at 64 bytes, embedded `%`
+  format-specifier characters, high bytes ≥ 0x80, and the equal / less /
+  greater orderings for `strcmp`.
 
-**A2 — the `mode` selector of `complexmode` (`lib.c:115`).** A 5-way `switch`:
-`1` addition, `2` multiplication, `3` array sum, `4` complex, `default` reject.
+**C. Entry points** — all seven exported symbols, low-level first. The tests
+call `check_permissions`, `safe_add`, `create_result_string`,
+`multiply_with_log`, `copy_and_sum`, `compare_operations` **directly** through
+the `.so`, not only through the `complexmode` convenience wrapper.
 
-**A3 — the permission bitmask.** `check_permissions(perms, required)` is
-`(perms & required) == required`. The distinguished `required` values in the
-source are `READ_PERM|WRITE_PERM == 0600` (`lib.c:52`) and `0100` (`lib.c:154`),
-and the distinguished `perms` value is the hard-coded `0644` in `complexmode`
-(`lib.c:103`). `perms` reaches `safe_add`/`check_permissions` freely from
-outside, so the axis is: `required` = 0 / single bit / multi-bit / negative,
-crossed with `perms` = superset / subset / disjoint / partial overlap.
-Note `0644 & 0100 == 0 != 0100`, so inside `complexmode` mode 4 the
-`value1*value2+value3` branch is **dead** and only `value1+value2+value3` runs;
-the multiply branch is reachable only by calling `check_permissions` directly.
+There are no `#ifdef` compile-time branches and no cargo features, so there is a
+single build configuration.
 
-**A4 — `count` shape for `copy_and_sum` (`lib.c:67`).** `0` / `1` / `3` (the
-value `complexmode` hard-codes) / many; plus the value-dependent `int`
-accumulator, which wraps.
-
-**A5 — string shape for `create_result_string` / `compare_operations`.** empty /
-short / exactly-fits / truncating (>63 formatted bytes) / bytes `>= 0x80`
-(`strcmp` unsigned-char comparison) / common prefix / first-byte difference /
-long.
-
-**A6 — integer value shape.** `0` / small / `INT_MAX` / `INT_MIN` / values whose
-`a+b` or `a*b` overflows `int` (C UB; GCC and the Rust `wrapping_*` translation
-must agree on two's-complement wraparound) / mixed signs.
-
-**A7 — entry-point level.** All 7 exported functions are driven directly, not
-just the `complexmode` one-shot wrapper: `check_permissions`, `safe_add`,
-`create_result_string`, `multiply_with_log`, `copy_and_sum`,
-`compare_operations`, `complexmode`.
-
-**A8 — observable channels.** Return value, `stdout` bytes, the heap buffer
-returned through `char*` / `char**` out-params, and (for `complexmode` mode 2)
-the ordering of the printed lines. Every row compares **all** applicable
-channels byte-for-byte.
-
-**A9 — build profile.** `debug_assertions` changes rustc's *generated code*
-(raw-pointer null-check instrumentation, overflow checks), so `cargo test` and
-`cargo test --release` are genuinely distinct configurations. Each test binary
-loads the cdylib from its OWN profile directory (guarded by `d7_...` in
-`tests/phase_d_symbols.rs`), and `check_features.sh` runs every row under both.
-This axis is what exposed the one real divergence found -- see `FINDINGS.md`.
-
-## Rows
+Every row is driven with many randomized inputs from a fixed-seed xorshift PRNG
+(seed `0x2024_0C0D_E5EE_D001`), plus the hand-picked boundary values listed, and
+both the return value **and** the captured `stdout` bytes are compared.
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `check_permissions` | `required == 0`, randomized `perms` over the full `i32` range (always-accept boundary) | [x] |
-| C2 | `check_permissions` | `required` = a single bit (`READ_PERM` 0400, `WRITE_PERM` 0200, `EXEC_PERM` 0100), `perms` randomized — accept and reject both hit | [x] |
-| C3 | `check_permissions` | `required` = multi-bit `0600` / `0700` / `0644`, `perms` = exact superset, exact equal, partial overlap, disjoint | [x] |
-| C4 | `check_permissions` | `required` and/or `perms` negative (sign bit set, `-1`, `INT_MIN`), randomized | [x] |
-| C5 | `check_permissions` | exhaustive sweep of all 512 × 512 low-9-bit `perms`×`required` pairs (the whole permission-bit space the macros describe) | [x] |
-| C6 | `safe_add` | `perms` grants both `0400\|0200` → returns `a + b`; `a`,`b` randomized small | [x] |
-| C7 | `safe_add` | `perms` grants both; `a`,`b` chosen so `a + b` overflows `int` (positive and negative overflow, `INT_MAX`+1, `INT_MIN`-1) | [x] |
-| C8 | `safe_add` | `perms` missing exactly one of the two bits (0400-only, 0200-only) → reject path + message | [x] |
-| C9 | `safe_add` | `perms` fully randomized over `i32` (both paths interleaved, message/`stdout` ordering checked) | [x] |
-| C10 | `create_result_string` | `op` = `""` (empty), `val` = 0 / ±small — shortest formatted output | [x] |
-| C11 | `create_result_string` | `op` = short ASCII, `val` = randomized full `i32` incl. `INT_MIN`/`INT_MAX` (widest `%d` output) | [x] |
-| C12 | `create_result_string` | `op` length swept `0..=80` so the formatted string crosses the 63-byte `snprintf` truncation boundary from both sides | [x] |
-| C13 | `create_result_string` | `op` containing bytes `>= 0x80` / embedded punctuation / `%` characters (must be treated as data, not format) | [x] |
-| C14 | `multiply_with_log` | valid out-param, `a`,`b` randomized small → returns `a*b` and writes `Operation: multiply, Value: <a*b>` | [x] |
-| C15 | `multiply_with_log` | valid out-param, `a*b` overflows `int` (incl. `INT_MIN * -1`, `INT_MAX * 2`, two large randoms) — the product is computed twice in the C, both must wrap identically | [x] |
-| C16 | `multiply_with_log` | `a` or `b` == 0 → product 0, and negative products (message must carry the `-` sign) | [x] |
-| C17 | `copy_and_sum` | `count == 0`, non-NULL `src` (`malloc(0)`, empty loop) | [x] |
-| C18 | `copy_and_sum` | `count == 1`, randomized element incl. `INT_MIN`/`INT_MAX` | [x] |
-| C19 | `copy_and_sum` | `count == 3` (the shape `complexmode` mode 3 uses), randomized elements | [x] |
-| C20 | `copy_and_sum` | `count` = many (2, 4, 5, 8, 17, 64, 255, 1000, 65536, 1048576), randomized elements, plus `count` < buffer length so only a prefix is summed | [x] |
-| C21 | `copy_and_sum` | `count` many with elements chosen so the running `int` sum overflows mid-loop and wraps repeatedly | [x] |
-| C22 | `compare_operations` | equal strings (incl. `""` vs `""`), so `strcmp == 0` | [x] |
-| C23 | `compare_operations` | differ at first byte, both orders (sign of result) | [x] |
-| C24 | `compare_operations` | one is a proper prefix of the other, both orders | [x] |
-| C25 | `compare_operations` | differ only at a late byte; long (256-byte) strings — exercises the vectorized libc path | [x] |
-| C26 | `compare_operations` | bytes `>= 0x80` vs `< 0x80` at the differing position — `strcmp` must compare as *unsigned* char | [x] |
-| C27 | `compare_operations` | fully randomized byte strings, randomized lengths `0..=32` | [x] |
-| C28 | `complexmode` | `mode == 1`, `value1`/`value2` randomized small; `value3` randomized but unused | [x] |
-| C29 | `complexmode` | `mode == 1`, `value1 + value2` overflows (`INT_MAX`/`INT_MIN` corners) | [x] |
-| C30 | `complexmode` | `mode == 2`, randomized small values → `Mode 2: Operation: multiply, Value: N` then `Operation performed: multiplication` | [x] |
-| C31 | `complexmode` | `mode == 2`, `value1 * value2` overflows; and `value1 * value2 == 0` (the `strcmp(log,"") == 0` gate must still be false because the message is non-empty) | [x] |
-| C32 | `complexmode` | `mode == 3`, randomized `value1..value3`; sum-overflow corners | [x] |
-| C33 | `complexmode` | `mode == 4`, randomized values — verifies the *dead* multiply branch is not taken (`0644 & 0100 == 0`) so the result is `v1+v2+v3`, incl. overflow corners | [x] |
-| C34 | `complexmode` | all four valid modes crossed with the value shapes `{all zero, all INT_MAX, all INT_MIN, mixed sign, randomized}` | [x] |
-| C35 | `complexmode` | randomized `mode` over the full `i32` range crossed with randomized values — valid and `default` arms interleaved, checking the `Operation performed:` suffix line appears for 1–4 and is suppressed for `default` | [x] |
-| C36 | pipeline: `create_result_string` → `compare_operations` → `copy_and_sum` | compose the low-level entry points the way `complexmode` does, but with caller-chosen data: build two strings with `create_result_string`, compare them with `compare_operations`, and sum a buffer with `copy_and_sum`, asserting every intermediate matches | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `check_permissions` | `required == 0` (vacuously satisfied for every `perms`, including `perms == 0` and negative `perms`) | [x] |
+| 2 | `check_permissions` | single-bit `required` ∈ {`0400`,`0200`,`0100`} × `perms` covering set/clear of that bit | [x] |
+| 3 | `check_permissions` | multi-bit `required` (`0600`, `0644`, `0777`) × `perms` with all / some / none of the bits set | [x] |
+| 4 | `check_permissions` | full random 32-bit `perms` × `required`, incl. negative values and `INT_MIN`/`INT_MAX` as raw bit patterns | [x] |
+| 5 | `safe_add` | `perms` grants `0600` (e.g. `0600`,`0644`,`0777`,`-1`) → returns `a+b`, random `a`,`b` | [x] |
+| 6 | `safe_add` | `perms` grants `0600` × operands that overflow `int` (`INT_MAX`+1, `INT_MIN`-1, `INT_MAX`+`INT_MAX`) | [x] |
+| 7 | `safe_add` | `perms` missing `0400` only, missing `0200` only, missing both → prints rejection, returns `0` | [x] |
+| 8 | `create_result_string` | short ASCII `op` × random `val` (positive, negative, `0`, `INT_MIN`, `INT_MAX`) — compare the 64-byte returned buffer contents | [x] |
+| 9 | `create_result_string` | empty `op` (`""`) | [x] |
+| 10 | `create_result_string` | `op` long enough that `snprintf` truncates at the 64-byte limit (boundary: `op` lengths that land the NUL exactly at 62/63/64 and beyond) | [x] |
+| 11 | `create_result_string` | `op` containing `%d`/`%s`/`%%` (passed as data, not format) and bytes ≥ 0x80 | [x] |
+| 12 | `multiply_with_log` | random `a`,`b` → check return value **and** the out-parameter string bytes | [x] |
+| 13 | `multiply_with_log` | operands whose product overflows `int` (`INT_MAX*2`, `INT_MIN*-1`, `65536*65536`) and products that are `0` or negative | [x] |
+| 14 | `copy_and_sum` | `count == 0` with a valid pointer | [x] |
+| 15 | `copy_and_sum` | `count == 1` | [x] |
+| 16 | `copy_and_sum` | `count == 3` (the shape `complexmode` mode 3 uses) with random values | [x] |
+| 17 | `copy_and_sum` | `count` large (16, 64, 1024) with random values, incl. values whose running sum overflows `int` | [x] |
+| 18 | `copy_and_sum` | all elements `INT_MAX` / all `INT_MIN` (guaranteed accumulator wraparound) | [x] |
+| 19 | `compare_operations` | equal strings (identical bytes, incl. both empty) → `0` | [x] |
+| 20 | `compare_operations` | unequal strings differing at the first byte / a middle byte / by length (prefix), both orderings — raw `strcmp` value must match | [x] |
+| 21 | `compare_operations` | strings differing only in a byte ≥ 0x80 (glibc `strcmp` compares as `unsigned char`) | [x] |
+| 22 | `compare_operations` | random byte strings of random lengths from the fixed-seed PRNG | [x] |
+| 23 | `complexmode` | `mode == 1` (addition), random `value1`,`value2`; `value3` ignored | [x] |
+| 24 | `complexmode` | `mode == 1` with `value1+value2` overflowing `int` | [x] |
+| 25 | `complexmode` | `mode == 2` (multiplication + log), random `value1`,`value2` — the printed `Mode 2: Operation: multiply, Value: N` line is part of the diff | [x] |
+| 26 | `complexmode` | `mode == 2` with `value1*value2` overflowing `int`, and with a product of `0` / negative (changes the printed digit string) | [x] |
+| 27 | `complexmode` | `mode == 3` (array sum of all three values), random values | [x] |
+| 28 | `complexmode` | `mode == 3` with a sum that overflows `int` | [x] |
+| 29 | `complexmode` | `mode == 4` (complex): `permissions=0644` lacks `0100`, so the `else` branch `v1+v2+v3` is taken — random values | [x] |
+| 30 | `complexmode` | `mode == 4` with values that overflow in the `else` branch | [x] |
+| 31 | `complexmode` | every mode × the extreme operand triple (`INT_MIN`,`INT_MAX`,`0`) permutations | [x] |
+| 32 | `complexmode` | full random sweep: random `mode` in `[-8, 12]` × random operand triples (covers valid modes and the `default` arm interleaved, exercising the trailing `Operation performed:` line for each `operation` string) | [x] |
 
-| C37 | `create_result_string` + `compare_operations` + `multiply_with_log`, MIXED across the two `.so`s | cross-library interop: a heap buffer minted by ONE library is read, `strcmp`'d and `free`d by the OTHER. Only passes if the translation forwards to the same libc `malloc`/`free` instead of using Rust's own allocator, i.e. it checks that ownership is genuinely interchangeable across the FFI boundary | [x] |
+## Row → test mapping
 
-All 37 rows are checked off — see `tests/phase_b_configs.rs`.
+Every row is covered by the identically-numbered test in
+`tests/phase_b_valid.rs` (`row01_…` … `row32_…`), each of which compares both
+the return value and the captured stdout of the C `.so` and the Rust `.so`.
+Volume per row is set by `CTORUST_N` (default 400; verified at 8000).
+
+`tests/bulk_sweep.rs` additionally re-covers all seven entry points as batched
+property sweeps (`CTORUST_BULK`, default 100 000 inputs per entry point;
+verified at 1 000 000, ~14 M compared calls) where an entire batch of calls
+runs under one stdout redirection and the concatenated output must match
+byte-for-byte.
+
+`tests/harness_selftest.rs` is the negative control: it proves `capture` really
+records the loaded library's stdout, that `diff` / `diff_batch` / `diff_oom`
+actually fail on a return-value, stdout-only, or out-parameter divergence, and
+that the two `.so` files are distinct objects with distinct symbol addresses —
+so a passing row above is not a vacuous pass.
+
+## Build configurations
+
+`Cargo.toml` has no `[features]` table, so the feature axis is a single point.
+The axis that does vary for the shipped artifact is the cargo profile, because
+`[profile.release]` sets `panic = "abort"`. `run_matrix.sh` runs `cargo check`,
+`cargo build`, the `nm -D` symbol diff and the whole test suite for
+`{dev, release} × {default, --no-default-features, --all-features}` — all six
+combinations pass.

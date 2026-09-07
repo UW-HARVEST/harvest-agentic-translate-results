@@ -1,66 +1,72 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Mechanically derived by grepping the entire C source for every rejection
-mechanism. The search covered:
+Derived mechanically from `c_src/src/lib.c` (376 lines) and
+`c_src/include/lib.h` (3 lines).
+
+## Mechanical grep results
 
 ```
-grep -nE "RETURN_ERROR|return -1|return NULL|assert|errno|if *\(|switch|\
-#ifdef|#if |exit\(|abort\(|NULL" c_src/src/lib.c c_src/include/lib.h
+$ grep -nE 'RETURN_ERROR|return -1|return NULL|assert|errno|abort|exit\(|if *\(|switch|\?:' c_src/src/lib.c
+(no matches)
 ```
 
-**Result: zero matches.** `c_src/src/lib.c` contains no `if`, no `switch`, no
-`assert`, no `return NULL`, no error enum, no sentinel return, no `errno` use,
-no range check, no null check, and no preprocessor conditional. There is no
-`#define`d min/max constant.
+The entire C source contains exactly **one** `return` statement
+(`return out.flt;` at line 375) and **zero** branches, asserts, error macros,
+error enums, null checks, range checks, or sentinel returns.
 
-## Why the error surface is genuinely empty (not merely un-grepped)
+## The complete error surface
 
-`half2float` is a **total function** over its entire declared domain. The
-argument is `uint16_t`, so all 65 536 possible inputs are valid and every one
-of them takes the exact same straight-line path:
+`half2float` has a **total function** signature over its input domain:
 
-```c
-int n = h >> 10;                                              /* n ∈ 0..=63  */
-out.num = m__mantissa[(h & 0x3ff) + m__offset[n]] + m__exponent[n];
-return out.flt;
-```
+- The only parameter is `uint16_t h`. Every one of the 2^16 = 65536 possible
+  `uint16_t` values is a *valid* input; there is no reserved/invalid encoding.
+- There are no pointer parameters, so no null-pointer rejection path exists.
+- There are no length/size parameters, so no zero-length or oversized-length
+  rejection path exists.
+- There are no enum parameters, so there is no out-of-range-enum path.
+- The return type is `float`, which carries no error sentinel: every one of the
+  65536 inputs maps to a returned `float` bit pattern, including NaN and Inf
+  patterns, which are *results*, not errors.
 
-The two index expressions are provably in bounds for every input:
+Index safety is structural rather than checked: `n = h >> 10` is in `0..=63`
+for any `uint16_t`, and `(h & 0x3ff) + m__offset[n]` is at most
+`0x3ff + 0x400 == 2047`, always in bounds of the 2048-entry mantissa table.
+The C performs no bounds check because none can fail.
 
-| expression | range over all `uint16_t h` | table size | in bounds? |
-|------------|------------------------------|------------|-----------|
-| `n = h >> 10` | `0 .. 63` (a 16-bit value shifted right 10 keeps 6 bits) | `m__offset[64]`, `m__exponent[64]` | yes, always |
-| `(h & 0x3ff) + m__offset[n]` | `0 .. 1023` + `{0x0000, 0x0400}` = `0 .. 2047` | `m__mantissa[2048]` | yes, always |
-
-So there is no input the C can reject, and therefore no error code, sentinel or
-crash to match. There are **no rows** in the error-surface table:
+## Error-surface table
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|----------------------------------------------|-------------------|
-| — | — | *(none — the C source contains no rejection path)* | — |
+| — | `half2float` | *(none — see analysis above)* | *(n/a)* |
 
-## Generic boundary cases still tested (Phase C)
+**The error-surface table is empty: 0 rows.** There is no rejection path in the
+C to differentially test, because the C rejects nothing.
 
-Even with an empty table, Phase C exercises the generic boundaries that every C
-API has, so that the *absence* of an error path is itself verified to be
-faithfully reproduced rather than assumed. Each is a differential test asserting
-C and Rust return **bit-identical** results:
+## Boundary conditions covered anyway (Phase C generic boundaries)
 
-| # | boundary class | concrete input(s) | status |
-|---|----------------|-------------------|--------|
-| B1 | minimum value of the domain | `h = 0x0000` (+0.0) | [x] |
-| B2 | maximum value of the domain | `h = 0xFFFF` (negative NaN) | [x] |
-| B3 | every value one step past each internal region edge | `h ∈ {0x03FF, 0x0400, 0x7BFF, 0x7C00, 0x7C01, 0x7FFF, 0x8000, 0x83FF, 0x8400, 0xFBFF, 0xFC00, 0xFC01}` | [x] |
-| B4 | **exhaustive**: the entire input domain | all 65 536 values of `h`, compared bit-for-bit | [x] |
-| B5 | out-of-range value passed across the FFI boundary — the analogue of an invalid enum: caller declares the callee as taking a *wider* integer (`uint32_t`/`uint64_t`) and passes a value whose high bits are set, so the incoming register holds bits outside `uint16_t` | `0x1_0000`, `0xDEAD_0000 \| h`, `0xFFFF_FFFF`, and 64-bit `0xFFFF_FFFF_FFFF_0000 \| h` | [x] |
-| B6 | no pointer arguments exist, so there is no null-pointer or length boundary to test | n/a — signature is `float(uint16_t)`, by inspection of `lib.h` | n/a |
+Even though no row exists, the generic C-API boundaries that *can* apply to a
+`uint16_t`-in / `float`-out function are covered by the exhaustive test in
+`tests/differential.rs::exhaustive_all_65536_inputs`, which includes:
 
-Note on B5: the x86-64 SysV ABI leaves the high bits of a register holding a
-narrow argument unspecified, so a caller that lies about the prototype is
-outside the contract. The test pins down that C and Rust nevertheless agree,
-i.e. both narrow the incoming register to 16 bits identically, so no divergence
-is reachable even from a mis-declared caller.
+| condition | input | test |
+|-----------|-------|------|
+| minimum value | `h = 0x0000` | covered (exhaustive + `boundary_values`) |
+| maximum value | `h = 0xFFFF` | covered (exhaustive + `boundary_values`) |
+| one past largest subnormal | `h = 0x0400` | covered |
+| largest subnormal | `h = 0x03FF` | covered |
+| exponent-field boundaries | every `h` with `h >> 10` = 0,31,32,63 | covered |
+| `+Inf` / `-Inf` encodings | `0x7C00`, `0xFC00` | covered |
+| every NaN encoding | `0x7C01..0x7FFF`, `0xFC01..0xFFFF` | covered |
+| negative zero | `0x8000` | covered |
+| the `n == 31` / `n == 63` table quirk (`0x47800000`/`0xc7800000` exponent) | all `h >> 10 == 31` or `63` | covered |
+| out-of-range "enum"-like widening across FFI | `uint16_t` has no invalid bit pattern; all 65536 passed | covered |
 
-Note on B4: because the domain is only 65 536 values wide, Phase C's exhaustive
-sweep is a *complete* proof of behavioural equivalence — it leaves no untested
-input, so no error path can hide in an unvisited corner of the domain.
+Because the input domain is only 65536 values wide, the exhaustive test is a
+*complete* proof of behavioural equivalence — stronger than any sampled
+error-path test could be.
+
+## Completeness
+
+- [x] Every distinct rejection in the C source is enumerated (there are none).
+- [x] Generic boundaries (min, max, one-past-range, all special encodings)
+      are differentially tested against both `.so`s.

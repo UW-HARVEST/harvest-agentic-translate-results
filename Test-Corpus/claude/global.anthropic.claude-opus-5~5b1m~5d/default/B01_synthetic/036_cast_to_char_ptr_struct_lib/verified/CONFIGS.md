@@ -1,90 +1,103 @@
 # CONFIGS.md — Phase B configuration-surface table
 
-Mechanically derived from `c_src/include/driver.h` (the full public API) and
-`c_src/src/driver.c` (the branches the code actually takes).
+## Axes derived mechanically from the C source
 
-## Axes the C code actually distinguishes
+### Public entry points (`c_src/include/driver.h`)
 
-**Public entry points (complete set, from the header):**
+```
+void driver(int x);
+```
 
-| entry point | signature | exported? |
-|---|---|---|
-| `driver` | `void driver(int x)` | YES — the only public symbol |
-| `print_hex` | `static void print_hex(unsigned char *p, int len)` | NO (`static`, file-local; absent from `nm -D` on both `.so`s) |
+Exactly ONE public entry point. There is no convenience/one-shot wrapper vs.
+low-level split — `driver` *is* the lowest level exported entry point.
+The only lower-level routine, `print_hex(unsigned char *, int)`, is `static`
+(file-local, not in `nm -D`) and so is not callable by any consumer; it is
+reached only through `driver`, always with `p = &house` and
+`len = sizeof(house_t)`.
 
-There are no other entry points — no init/teardown, no "convenience wrapper vs
-low-level" split. `driver` *is* the lowest-level exported entry point, and it is
-tested directly below.
+### Runtime options / modes / flags
 
-**Runtime options / modes / flags:** NONE. The library has no configuration
-struct, no setters, no globals, no environment lookups, and no `#ifdef` in either
-file. `grep -c 'ifdef\|ifndef\|#if' src/driver.c` finds only the header's include
-guard. So there is no option cross-product to enumerate.
+```
+$ grep -nE '#if|#ifdef|#define|switch|extern|static [^v]|global|set_|_config|flag|mode|option' c_src/src/driver.c
+c_src/src/driver.c:34:static void print_hex(unsigned char *p, int len) {
+```
 
-**State:** NONE. `driver` is a pure function of its `int` argument plus two
-hard-coded constants (`bedrooms = 3`, `bathrooms = 2.`); `house` is a fresh stack
-local each call. Therefore call ORDER and call COUNT are additional axes worth
-exercising (to prove there is no hidden static state and that the shared `stdout`
-FILE stream is used identically).
+**None.** There are no `#ifdef`s, no compile-time feature macros, no global
+variables, no setters, no option/mode/flag parameters, and no initialisation
+function. The library is fully stateless: `house` is a local, and the only
+observable effect is `printf` to `stdout`.
 
-**Input shapes the code is sensitive to:** the only input is one `int`. It lands
-in `house.floors` at offset 0 and is emitted as 4 little-endian bytes by the
-`%02x` loop. The shapes that matter are therefore *bit patterns* of that `int`:
+Correspondingly, `translation/Cargo.toml` declares **no `[features]` table**,
+so the only feature combination is the default (empty) one:
 
-- sign (bit 31) — exercises signed→unsigned reinterpretation
-- per-byte high bit (`0x80` in any byte) — exercises the `unsigned char` vs
-  `signed char` promotion in `printf("%02x", p[i])`; a `signed char` bug prints
-  `ffffff80` instead of `80`
-- bytes `< 0x10` — exercises the `%02x` zero-padding
-- byte value `0x00` in interior positions
-- extremes: `INT_MIN`, `INT_MAX`, `0`, `-1`
-- value colliding with the `bedrooms` constant (`3`)
+```
+$ grep -A5 '\[features\]' translation/Cargo.toml   # -> no match
+```
 
-**Fixed output shape (constant across all inputs, still asserted):** bytes 4..7 =
-`bedrooms` = 3 → `03000000`; bytes 8..15 = `bathrooms` = 2.0 as IEEE-754
-little-endian double → `0000000000000040`; total length `sizeof(house_t)` = 16 →
-32 hex chars + `\n` = 33 bytes. `house_t house = {0}` zero-initialises the whole
-object *including padding*; on the LP64 target the struct has NO interior or
-trailing padding (4 + 4 + 8 = 16 == sizeof), so there are no
-indeterminate padding bytes — but the tests verify the length and every byte
-anyway, which would catch a layout/padding divergence.
+### Input shapes the code distinguishes
+
+The single input is an `int` copied verbatim into `house.floors`, whose 4
+bytes are then hex-dumped. The code has no value-dependent branch, so the
+"shapes" that matter are the ones that change the *bytes* of the output:
+
+* sign: zero / positive / negative
+* magnitude: single-hex-digit (`< 16`, exercises the `%02x` zero-pad),
+  one-byte, two-byte, three-byte, full four-byte
+* byte-order-sensitive values (`0x01020304`, `0x000000ff`, `0xff000000`) — the
+  dump reveals the platform's little-endian layout
+* embedded zero bytes (`0x00FF00FF`, `1 << 8`, `1 << 16`, `1 << 24`)
+* boundaries: `INT_MIN`, `INT_MIN + 1`, `-1`, `0`, `1`, `INT_MAX - 1`, `INT_MAX`
+* powers of two and their neighbours (every single-bit position `1 << k`,
+  `k = 0..31`, plus `(1<<k) - 1` and `-(1<<k)`)
+* call count: one call vs. many calls in sequence (statelessness)
+
+### Fixed (non-varying) shape facts that the output depends on
+
+* `sizeof(house_t) == 16` on LP64: `int floors` @0, `int bedrooms` @4,
+  `double bathrooms` @8 — **no padding** anywhere, so `{0}` leaves no
+  indeterminate padding bytes and the dump is fully deterministic.
+* `house.bedrooms` is always `3` → bytes 4..8 always `03000000`.
+* `house.bathrooms` is always `2.0` → IEEE-754 `0x4000000000000000`, bytes
+  8..16 always `0000000000000040`.
+* Output is always exactly `2*16` hex chars + `'\n'` = **33 bytes**.
 
 ## Configuration table
 
-One row per meaningful combination of (entry point × input shape × call
-pattern) that the C treats distinctly. Every row is driven through BOTH `.so`s
-via `libloading` and compared byte-for-byte on captured `stdout`.
+Every row is driven through the `.so` exports of BOTH libraries and the
+captured `stdout` is compared byte-for-byte. Rows marked *(random)* use a
+seeded (`0xD3C0DE15EA5E`) xorshift64* generator, 512+ values per row, so the
+row is only checked off once it passes across all randomized inputs.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C1 | `driver` | no options (none exist); `x = 0` — all-zero bit pattern | [x] |
-| C2 | `driver` | `x = 1` — minimal positive, single low bit | [x] |
-| C3 | `driver` | `x = 3` — collides with the hard-coded `bedrooms` constant | [x] |
-| C4 | `driver` | `x = 2` — collides with the integral value of the `bathrooms` constant | [x] |
-| C5 | `driver` | `x` in `1..=255` — exhaustive single-byte range (byte 0 varies, bytes 1-3 zero); covers `%02x` zero-padding for every low nibble/high nibble | [x] |
-| C6 | `driver` | `x` in `256..=65535`, randomized — two significant bytes | [x] |
-| C7 | `driver` | `x` in `0x10000..=0xFFFFFF`, randomized — three significant bytes | [x] |
-| C8 | `driver` | `x = INT_MAX` (`0x7FFFFFFF`) — max positive, four significant bytes | [x] |
-| C9 | `driver` | `x = INT_MIN` (`0x80000000`) — sign bit only; high-bit byte in position 3 | [x] |
-| C10 | `driver` | `x = -1` (`0xFFFFFFFF`) — all bits set; high bit in every byte | [x] |
-| C11 | `driver` | `x` = each single-bit value `1 << k` for `k` in `0..=31` — walking-ones, isolates every bit position incl. the sign bit | [x] |
-| C12 | `driver` | `x` = each `!(1 << k)` for `k` in `0..=31` — walking-zeros complement | [x] |
-| C13 | `driver` | `x` = each byte-aligned high-bit pattern: `0x80`, `0x8000`, `0x800000`, `0x80000000`, `0x80808080`, `0xFF00FF00`, `0x00FF00FF` (as `i32`) — the `unsigned char` promotion axis (`signed char` bug ⇒ `ffffff80`) | [x] |
-| C14 | `driver` | `x` = byte patterns with every byte `< 0x10`: `0x01020304`, `0x0F0F0F0F`, `0x00010203`, `0x0A0B0C0D` — `%02x` padding axis | [x] |
-| C15 | `driver` | `x` = interior-zero patterns: `0xFF0000FF`, `0x00FFFF00`, `0xFF00FF00`, `0x000000FF`, `0xFF000000` | [x] |
-| C16 | `driver` | `x` = negative non-extreme values, randomized in `INT_MIN..0` | [x] |
-| C17 | `driver` | `x` = uniform random `i32` over the full 32-bit range, 4096 samples, fixed seed | [x] |
-| C18 | `driver` | `x` = full exhaustive sweep of the 256 possible values of each individual byte position (`b`, `b<<8`, `b<<16`, `b<<24` for all `b` in `0..=255`) — proves per-byte hex formatting at every offset | [x] |
-| C19 | `driver` | call COUNT axis: single call in isolation (statelessness baseline) | [x] |
-| C20 | `driver` | call COUNT axis: many sequential calls in one capture window, same value repeated 64× — proves no hidden static state accumulates and the `stdout` FILE stream is reused identically | [x] |
-| C21 | `driver` | call COUNT/ORDER axis: many sequential calls in one capture window with *distinct* values — proves output ordering and per-call independence | [x] |
-| C22 | `driver` | interleaving axis: C and Rust calls alternated within a SINGLE capture window on the SHARED libc `stdout` FILE — proves both `.so`s use the same stream with the same buffering, so line interleaving is byte-identical | [x] |
-| C23 | `driver` (structural) | output-shape invariants held across ALL of the above: exactly 33 bytes per call, 32 lowercase hex digits + `\n`, bytes 4..7 == `03000000`, bytes 8..15 == `0000000000000040` (IEEE-754 2.0 LE), and `sizeof(house_t) == 16` with no padding divergence | [x] |
-| C24 | `print_hex` | not reachable: `static`, absent from `nm -D` on both `.so`s — asserted structurally (symbol lookup must FAIL on both) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|-------------------------------------------|------|-----|
+| C1 | `driver` | no options (none exist); `floors == 0` — the falsy / all-zero shape | `cfg_c1_zero` | [x] |
+| C2 | `driver` | `floors == 1` — smallest positive; exercises `%02x` zero padding | `cfg_c2_one` | [x] |
+| C3 | `driver` | `floors` in `1..16` — every single-hex-digit value, `%02x` pad path | `cfg_c3_single_hex_digit` | [x] |
+| C4 | `driver` | `floors` in `0..256` — every one-byte value (low byte varies, high 3 bytes zero) | `cfg_c4_all_single_byte_values` | [x] |
+| C5 | `driver` | `floors == 1 << k` for every `k` in `0..31` — every single-bit position, incl. the sign bit | `cfg_c5_every_single_bit` | [x] |
+| C6 | `driver` | `floors == (1 << k) - 1` and `-(1 << k)` for `k` in `0..31` — bit-run boundaries on both signs | `cfg_c6_bit_run_boundaries` | [x] |
+| C7 | `driver` | byte-order probes: `0x01020304`, `0x000000ff`, `0x0000ff00`, `0x00ff0000`, `0xff000000` (as `int`) — pins little-endian byte layout | `cfg_c7_byte_order_probes` | [x] |
+| C8 | `driver` | embedded NUL bytes: `0x00FF00FF`, `0xFF00FF00`, `256`, `65536`, `1<<24` | `cfg_c8_embedded_zero_bytes` | [x] |
+| C9 | `driver` | negative values, small magnitude: `-1 ..= -256` — two's-complement high-byte fill | `cfg_c9_small_negatives` | [x] |
+| C10 | `driver` | extremes: `INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `INT_MAX-1`, `INT_MAX` | `cfg_c10_extremes` | [x] |
+| C11 | `driver` | *(random)* full-range uniform random `i32` — 4096 values, seeded | `cfg_c11_random_full_range` | [x] |
+| C12 | `driver` | *(random)* random values biased to the extremes (near `INT_MIN`/`INT_MAX`/0) — 1024 values, seeded | `cfg_c12_random_near_boundaries` | [x] |
+| C13 | `driver` | *(random)* random values with random bytes forced to `0x00` / `0xff` — 1024 values, seeded | `cfg_c13_random_sparse_bytes` | [x] |
+| C14 | `driver` | many calls in sequence with *different* inputs (statelessness / no carry-over across calls); interleaved C-then-Rust and Rust-then-C orders | `cfg_c14_many_calls_stateless` | [x] |
+| C15 | `driver` | many calls in sequence with the *same* input repeated (idempotence, no accumulation) | `cfg_c15_repeated_same_input` | [x] |
+| C16 | `driver` (via the private `print_hex`) | structural invariants of every dump: length is always 33 bytes, bytes 4..8 always `03000000` (`bedrooms == 3`), bytes 8..16 always `0000000000000040` (`bathrooms == 2.0`), all chars lowercase hex | `cfg_c16_struct_layout_invariants` | [x] |
+| C17 | `driver` | a *single* whole-process stream: all inputs dumped by C in one go vs. all by Rust in one go, compared as one blob (catches per-call buffering/flush differences) | `cfg_c17_bulk_stream_equivalence` | [x] |
+| C18 | binary/driver executable | **N/A** — `c_src/CMakeLists.txt` declares only `add_library(driver SHARED ...)`; there is no `add_executable`, and `translation/Cargo.toml` has `crate-type = ["cdylib"]` with no `[[bin]]`. No binary stdout comparison applies. | documented | [x] |
 
 ## Feature combinations
 
-`Cargo.toml` has **no `[features]` table**, so the complete feature space is the
-single default (empty) configuration. `--no-default-features` builds identical
-code. All rows above therefore hold under every feature combination that exists;
-verified mechanically by `check_features.sh`.
+`translation/Cargo.toml` has no `[features]` section and no optional
+dependencies, so the complete set of feature combinations is:
+
+| combo | command |
+|-------|---------|
+| default (= empty) | `cargo test --release` |
+| explicit no-default | `cargo test --release --no-default-features` |
+| all features (= empty) | `cargo test --release --all-features` |
+
+All three are run by `run_all_features.sh` and must pass.

@@ -1,77 +1,69 @@
-# SYMBOLS.md — Symbol parity: C `.so` vs Rust `.so`
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
-
-```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-```
-
-## C source inventory (ground truth)
-
-`c_src/` contains exactly one translation unit and one header:
-
-| file | lines |
-|------|-------|
-| `c_src/src/driver.c` | 66 |
-| `c_src/include/driver.h` | 29 |
-
-There is no second module, so there is no un-translated C source. All five
-functions defined in `driver.c` are accounted for in `translation/src/lib.rs`.
-
-## Exported (dynamic, defined) symbols
-
-| # | symbol | C `.so` | Rust `.so` | C linkage | status |
-|---|--------|---------|------------|-----------|--------|
-| 1 | `printLine` | `T` | `T` | extern (`void printLine(const char *)`) | MATCH |
-| 2 | `bad`       | `T` | `T` | extern (`void bad(void)`)               | MATCH |
-| 3 | `good`      | `T` | `T` | extern (`void good(void)`)              | MATCH |
-| 4 | `driver`    | `T` | `T` | extern (`void driver(void)`), declared in `driver.h` | MATCH |
-
-**Symbol diff (C exports not present in Rust): EMPTY.**
+Derived mechanically from `nm -D` on both shared objects.
 
 ```
-$ comm -23 c.syms rust.syms
-(no output)
+C:    c_src/build/libdriver.so          (cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+Rust: translation/target/release/libdriver.so   (cargo build --release)
 ```
 
-## Deliberately NOT exported (internal linkage in C)
+## C source inventory (`c_src/src/driver.c`)
 
-These are `static` in `driver.c`, so they appear as local `t` symbols in the C
-`.so` and are absent from `nm -D`. The Rust translation keeps them private
-(plain `fn`, no `#[no_mangle]`), which reproduces the C linkage exactly.
-Exporting them would be a parity *failure*, not a fix.
+Every function definition in the single C translation unit, with its linkage:
 
-| symbol | C `nm` class | Rust |
-|--------|--------------|------|
-| `helperBad`  | `t` (local) | private `fn helperBad` (`#[allow(dead_code)]`) |
-| `helperGood` | `t` (local) | private `fn helperGood` |
+| C function | linkage | exported? | Rust counterpart |
+|---|---|---|---|
+| `void printLine(const char *line)` | external | yes | `printLine` (`#[unsafe(no_mangle)] pub unsafe extern "C"`) |
+| `static void helperBad(void)` | **internal (`static`)** | no | `helperBad` (private `fn`, `#[allow(dead_code)]`) |
+| `void bad(void)` | external | yes | `bad` (`#[unsafe(no_mangle)] pub extern "C"`) |
+| `static void helperGood(void)` | **internal (`static`)** | no | `helperGood` (private `fn`) |
+| `void good(void)` | external | yes | `good` (`#[unsafe(no_mangle)] pub extern "C"`) |
+| `void driver(void)` | external | yes | `driver` (`#[unsafe(no_mangle)] pub extern "C"`) |
 
-Note: `helperBad` is dead code in the C too — `bad()` never calls it. That is
-reproduced faithfully; see `CONFIGS.md` row 12.
+There is no other C source file, no header-defined `static inline`, no macro that
+generates symbols, and no `#ifdef`-gated code. `include/driver.h` declares only
+`void driver(void)`. The remaining three externals (`printLine`, `bad`, `good`)
+are not declared in the public header but *are* in the C `.so`'s dynamic symbol
+table, so they are part of the verified surface.
 
-## Undefined symbols
+## Defined dynamic symbols (`nm -D --defined-only`)
 
-The C `.so` imports only `puts` (GCC rewrites `printf("%s\n", s)` into
-`puts(s)`), plus the standard weak ELF/glibc stubs.
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|-----------|--------|
+| 1 | `bad`       | `T` | `T` | MATCH |
+| 2 | `driver`    | `T` | `T` | MATCH |
+| 3 | `good`      | `T` | `T` | MATCH |
+| 4 | `printLine` | `T` | `T` | MATCH |
 
-The Rust `.so` imports `puts` as well — LLVM applies the identical
-`printf("%s\n", s)` → `puts(s)` transformation to the `c_printf` call in
-`printLine`. The remaining Rust imports are all libc / libgcc unwinder symbols
-pulled in by the Rust standard library (`malloc`, `memcpy`, `write`,
-`_Unwind_*`, `pthread_key_*`, …).
+**C defined symbols: 4. Rust defined symbols: 4. Missing from Rust: 0. Extra in Rust: 0.**
+
+Negative parity (must *not* be exported, because the C marks them `static`):
+
+| symbol | C `.so` | Rust `.so` | status |
+|---|---|---|---|
+| `helperBad`  | absent | absent | MATCH |
+| `helperGood` | absent | absent | MATCH |
+
+## Undefined / imported symbols
+
+The C `.so` imports exactly one non-weak libc symbol:
+
+```
+U puts@GLIBC_2.2.5
+```
+
+`printf("%s\n", line)` is rewritten by the compiler into `puts(line)`. The Rust
+`.so` declares `printf` but LLVM applies the identical transformation, so it too
+imports `puts@GLIBC_2.2.5` and never imports `printf`. The Rust `.so`
+additionally imports libc/`libgcc` symbols pulled in by `std` (`malloc`, `memcpy`,
+`_Unwind_*`, …); all are libc / unwinder symbols, not untranslated library
+symbols.
 
 **Non-libc undefined symbols in the Rust `.so`: 0.**
 
-Every undefined symbol resolves against `libc.so.6`, `libgcc_s.so.1`, or
-`ld-linux-x86-64.so.2`, all of which are listed as `NEEDED`.
+## Completion checklist
 
-## Note on `SONAME`
-
-The C `.so` carries `SONAME = libdriver.so`; the Rust `cdylib` carries no
-`SONAME`. Both files are also *named* `libdriver.so`. Because the differential
-tests `dlopen` both objects into a single process, the test suite asserts (in
-`test_00_both_libraries_are_distinct_objects`) that the two handles resolve
-`driver` to different addresses, guarding against the loader silently aliasing
-the second `dlopen` to the first object — which would make every comparison
-trivially self-consistent and worthless.
+- [x] `nm -D` shows 0 missing non-libc symbols in the Rust `.so`.
+- [x] `nm -D` shows 0 symbols exported by C but absent in Rust.
+- [x] `static` C helpers remain unexported in Rust.
+- [x] No C source file was left untranslated (the project has exactly one `.c`).

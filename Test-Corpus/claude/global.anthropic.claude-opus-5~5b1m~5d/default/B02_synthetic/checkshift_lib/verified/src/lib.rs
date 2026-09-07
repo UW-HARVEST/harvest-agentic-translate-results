@@ -99,53 +99,6 @@ pub struct ComputeState {
 /// typedef int (*operation_func)(int, int);
 pub type OperationFunc = Option<unsafe extern "C" fn(c_int, c_int) -> c_int>;
 
-// ---------------------------------------------------------------------------
-// Unaligned-safe `ComputeState` field access.
-//
-// `init_state` and `apply_operation` take a caller-supplied `ComputeState*`,
-// which C code is free to point at an arbitrary (possibly misaligned) address --
-// a byte buffer, a packed struct, an offset into a larger allocation. gcc
-// compiles `state->accumulator` to a plain x86 load that works regardless of
-// alignment, so the C accepts such pointers.
-//
-// Rust's `(*state).accumulator` is a normal aligned access: it is UB on a
-// misaligned pointer and, with `debug_assertions` on, the "misaligned pointer
-// dereference" check ABORTS the process (SIGABRT) instead of returning a value.
-// That is a hard behavioural divergence from the C for the same input, so every
-// field access below goes through `read_unaligned` / `write_unaligned` on a raw
-// field pointer, matching gcc's codegen on every alignment.
-// ---------------------------------------------------------------------------
-
-#[inline]
-unsafe fn get_accumulator(state: *const ComputeState) -> c_int {
-    unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*state).accumulator)) }
-}
-
-#[inline]
-unsafe fn set_accumulator(state: *mut ComputeState, value: c_int) {
-    unsafe { core::ptr::write_unaligned(core::ptr::addr_of_mut!((*state).accumulator), value) }
-}
-
-#[inline]
-unsafe fn get_operation_count(state: *const ComputeState) -> c_int {
-    unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*state).operation_count)) }
-}
-
-#[inline]
-unsafe fn set_operation_count(state: *mut ComputeState, value: c_int) {
-    unsafe { core::ptr::write_unaligned(core::ptr::addr_of_mut!((*state).operation_count), value) }
-}
-
-#[inline]
-unsafe fn get_checksum(state: *const ComputeState) -> c_uint {
-    unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*state).checksum)) }
-}
-
-#[inline]
-unsafe fn set_checksum(state: *mut ComputeState, value: c_uint) {
-    unsafe { core::ptr::write_unaligned(core::ptr::addr_of_mut!((*state).checksum), value) }
-}
-
 // static int static_multiplier = 3;
 const STATIC_MULTIPLIER: c_int = 3;
 // static int static_addend = 100;
@@ -310,7 +263,7 @@ pub unsafe extern "C" fn init_state(state: *mut ComputeState, initial_value: c_i
 
         printf!(
             "State initialized with accumulator = %d\n",
-            get_accumulator(state)
+            (*state).accumulator
         );
     }
 }
@@ -338,11 +291,8 @@ pub unsafe extern "C" fn apply_operation(
     };
 
     unsafe {
-        // state->accumulator = func(state->accumulator, value);
-        let acc = func(get_accumulator(state), value);
-        set_accumulator(state, acc);
-        // state->operation_count++;
-        set_operation_count(state, get_operation_count(state).wrapping_add(1));
+        (*state).accumulator = func((*state).accumulator, value);
+        (*state).operation_count = (*state).operation_count.wrapping_add(1);
     }
 }
 
@@ -365,20 +315,12 @@ pub unsafe extern "C" fn checkshift(
         param4
     );
 
-    // ComputeState* state = (ComputeState*)malloc(sizeof(ComputeState));
-    //
-    // The `black_box` is load-bearing, not decoration. LLVM recognises the libc
-    // `malloc`/`free` pair and, because the pointer does not otherwise escape,
-    // is free to elide the allocation entirely (it did: the optimised `.so`
-    // contained no `malloc` call at all). That deletes the observable
-    // `malloc(sizeof(ComputeState))` request AND makes the NULL check below
-    // dead code, so the C's allocation-failure branch -- print the diagnostic
-    // and `return -1` -- became unreachable in Rust while remaining reachable
-    // in C. Forcing the pointer to escape keeps the real call, and with it the
-    // failure path, exactly as the C has it.
-    let state =
-        core::hint::black_box(unsafe { malloc(core::mem::size_of::<ComputeState>()) })
-            as *mut ComputeState;
+    // `core::hint::black_box` keeps LLVM from applying its built-in knowledge
+    // that `malloc` "returns non-null", which would otherwise delete the
+    // `state == NULL` branch below entirely (the C compiler keeps it, so the
+    // allocation-failure path must stay reachable here too).
+    let state = core::hint::black_box(unsafe { malloc(core::mem::size_of::<ComputeState>()) })
+        as *mut ComputeState;
 
     if state.is_null() {
         printf!("Error: Failed to allocate memory for state\n");
@@ -402,15 +344,15 @@ pub unsafe extern "C" fn checkshift(
 
     printf!("\n--- Operation 3: XOR ---\n");
     let xor_result = unsafe {
-        execute_operation(xor_op, get_accumulator(state), param4, cstr!("XOR"))
+        execute_operation(xor_op, (*state).accumulator, param4, cstr!("XOR"))
     };
 
     printf!("\n--- Operation 4: Shift ---\n");
     let shift_result = unsafe { execute_operation(shift_op, xor_result, param2, cstr!("SHIFT")) };
 
     unsafe {
-        set_checksum(state, compute_checksum(params.as_mut_ptr(), 4));
-        printf!("\nComputed checksum: 0x%04X\n", get_checksum(state));
+        (*state).checksum = compute_checksum(params.as_mut_ptr(), 4);
+        printf!("\nComputed checksum: 0x%04X\n", (*state).checksum);
     }
 
     // int final_result = (state->accumulator + shift_result) ^ state->checksum;
@@ -419,12 +361,12 @@ pub unsafe extern "C" fn checkshift(
     // is then converted back to `int` (a plain bit-pattern reinterpretation on
     // every mainstream target).
     let final_result = unsafe {
-        ((get_accumulator(state).wrapping_add(shift_result) as c_uint) ^ get_checksum(state)) as c_int
+        (((*state).accumulator.wrapping_add(shift_result) as c_uint) ^ (*state).checksum) as c_int
     };
 
     unsafe {
-        printf!("\nFinal accumulator: %d\n", get_accumulator(state));
-        printf!("Operation count: %d\n", get_operation_count(state));
+        printf!("\nFinal accumulator: %d\n", (*state).accumulator);
+        printf!("Operation count: %d\n", (*state).operation_count);
     }
     printf!("Final result: %d\n", final_result);
 

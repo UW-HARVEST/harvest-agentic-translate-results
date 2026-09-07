@@ -1,90 +1,88 @@
-# CONFIGS.md — Configuration / valid-input surface table (Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-## How the axes were derived
+## Mechanical derivation of the axes
 
-The C body is four statements; every axis below comes from one of them:
+The whole public API is one entry point (`c_src/include/sieve.h`):
 
 ```c
-void sieve(int val) {
-    while (1) {
-        printf("%d\n", val);        /* axis: %d rendering of val  */
-        if (val % 10 == 9) {        /* axis: truncated remainder  */
-            break;                  /* axis: exit taken / not     */
-        }
-        val++;                      /* axis: increment / overflow */
-    }
-}
+void sieve(int start);
 ```
 
-### Runtime options / modes / flags
+There is **no** init/config/teardown function, **no** options struct, **no**
+global or `static` variable, **no** environment variable read, and **no**
+`#ifdef` in the implementation, so there are **zero runtime option/mode/flag
+axes**. `grep -nE 'if|switch|case|#if|static|extern|global' c_src/src/sieve.c`
+finds exactly one branch and nothing else:
 
-**None.** Grep for `#define`, `#ifdef`, `switch`, setters, globals, statics,
-env-var reads: zero hits (only the `SIEVE_H_` include guard). The library has
-no configuration object, no init function, no mode flag, and no hidden state.
-The *entire* configuration space is the single `int` argument. Likewise
-`translation/Cargo.toml` declares no `[features]`, so there is exactly one
-build configuration.
+```
+src/sieve.c:35:        if (val % 10 == 9) {
+```
 
-### Full set of public entry points
+`sieve` is simultaneously the lowest-level and the only entry point — there is no
+convenience wrapper to hide behind, so "exercise the low-level entry points
+directly" is satisfied by calling `sieve` itself through each `.so`'s exported
+symbol via `libloading`.
 
-`include/sieve.h` exposes exactly one, and it is simultaneously the
-highest- and lowest-level entry point (there is no convenience wrapper layer
-to hide behind):
+The axes the C code therefore actually distinguishes are all **input shape**
+axes of the single `int` argument, read straight off the two operations the body
+performs (`printf("%d\n", val)` and `val % 10 == 9` / `val++`):
 
-| entry point | signature |
-|-------------|-----------|
-| `sieve` | `void sieve(int val)` |
+* **A1 — last base-10 digit** of `val`: `printf`/`%` make the digit `9` special.
+  Values `0..8` in the last digit continue the loop; `9` breaks. 10 distinct
+  cases.
+* **A2 — sign**: C's `%` truncates toward zero, so for `val < 0` the residue is
+  in `{0,-1,..,-9}` and `== 9` is *unreachable*; the sign axis changes the
+  termination condition qualitatively. 3 cases (negative / zero / positive).
+* **A3 — magnitude / iteration count**: 1 iteration (already ends in 9), 2–10
+  iterations (positive), and `|val| + 10` iterations (negative → "many"),
+  which also drives the `printf` field width (1 digit … 10 digits + `-` sign)
+  and crosses `printf`'s internal 4096-byte stdout buffer boundary many times.
+* **A4 — representational boundaries**: `INT_MIN`, `INT_MAX`, `INT_MAX-8`
+  (last value that terminates without overflow), and the 8-wide overflow window
+  `[INT_MAX-7, INT_MAX]`.
+* **A5 — call multiplicity**: one call vs. many calls in sequence (the composed
+  pipeline: the library is stateless, so N calls must equal the concatenation of
+  N single-call outputs — a per-call test cannot catch a state leak, this can).
+* **A6 — stdout destination / buffering**: regular file (fully buffered, 4096 B)
+  vs. pipe vs. closed fd. `printf` behaves differently in each and the C code
+  ignores `printf`'s return value.
 
-### Input-shape axes the code actually distinguishes
+Every row below is a combination of A1–A6 that the C code treats differently.
+Each row is exercised with **many randomized inputs drawn from that row's class
+using a fixed seed** (SplitMix64, seed `0x5EEDC0DE_5IEVE01` truncated), not one
+hand-picked value, and C vs Rust stdout is compared **byte-for-byte**.
 
-| axis | distinct cases the C branches on / renders differently |
-|------|--------------------------------------------------------|
-| A. sign of `val` | negative (`%` yields ≤ 0 ⇒ exit test can never fire) · zero · positive |
-| B. `val % 10` (truncated) | `9` (immediate exit) · `0..8` (positive: 1–9 more iterations) · `-9..-1` and `0` (negative: never exits) |
-| C. iteration count | 1 (already ends in 9) · 2..10 (positive) · `10 - val` (negative, unbounded in magnitude) |
-| D. `%d` field width / digit count | 1 digit · 2 · 3 · 10 digits · with `-` sign · `INT_MIN` (`-2147483648`) |
-| E. decimal carry during the run | run stays within one digit count (`3→9`) vs. crosses a power of ten (`-1→0`, `98→99`, `999999998→999999999`) |
-| F. proximity to `INT_MAX` | terminates below the wrap (`≤ 2147483639`) vs. overflow-wrap region (`≥ 2147483640`, see ERRORS.md rows 5–6) |
-| G. call multiplicity | 0 calls · 1 call · many calls in sequence (state independence) |
-| H. stdout destination / buffering | regular file (fully buffered) · pipe (block buffered) · closed fd |
+## Configuration-surface table
 
-Rows below are the pruned cross-product: one row per combination the C code
-treats differently. Every row is exercised with **many randomized inputs
-drawn from a fixed-seed PCG-XSH-RR generator** (except rows pinned to one
-specific boundary value), and both libraries are called through their `.so`
-exports via `libloading`, in a child process whose fd 1 is a file, so the
-compared artifact is the raw byte stream.
+| # | entry point(s) | configuration (options set + input shape) | random inputs / row | [x] |
+|---|----------------|--------------------------------------------|---------------------|-----|
+| 1 | `sieve` | A1=9, A2=positive, A3=1 iteration, single digit: `val == 9` exactly (smallest immediate-break) | fixed + 1 | [x] |
+| 2 | `sieve` | A1=9, A2=positive, A3=1 iteration, small multi-digit: `val ∈ {19,29,...,999}` ending in 9 | 200 | [x] |
+| 3 | `sieve` | A1=9, A2=positive, A3=1 iteration, large: `val` ending in 9, `val ∈ [10^6, 10^9]` (7–10 digit field width) | 200 | [x] |
+| 4 | `sieve` | A1∈{0..8}, A2=positive, A3=2..10 iterations, single digit: `val ∈ [0,8]` — all 9 values exhaustively | 9 (exhaustive) | [x] |
+| 5 | `sieve` | A1∈{0..8}, A2=positive, A3=2..10 iterations, small: `val ∈ [10, 9999]` not ending in 9 (crosses a 10-boundary, e.g. 999→…, digit-width change mid-run) | 300 | [x] |
+| 6 | `sieve` | A1∈{0..8}, A2=positive, A3=2..10 iterations, large: `val ∈ [10^6, 2·10^9]` not ending in 9 (9–10 digit width, near-max but non-overflowing) | 300 | [x] |
+| 7 | `sieve` | A1 anything, A2=positive, A3 spans a **power-of-10 digit-width change** during the run: `val ∈ {8,98,998,9998,...,999999998}` and `val = 10^k - 2` | 10 (exhaustive) | [x] |
+| 8 | `sieve` | A2=zero: `val == 0` (10 iterations, `0..9`) | 1 (exhaustive) | [x] |
+| 9 | `sieve` | A2=negative, A1=−9 (the "looks like it ends in 9 but C's `%` says −9" case): `val ∈ {−9,−19,…,−9999}` | 200 | [x] |
+| 10 | `sieve` | A2=negative, A1∈{0,−1..−8}, A3=small many-iteration: `val ∈ [−999, −1]` (output crosses the `-`→no-`-` sign transition and 0) | 300 | [x] |
+| 11 | `sieve` | A2=negative, A3=**very** many iterations: `val ∈ [−200000, −50000]` (≈ 50k–200k lines, > 1 MiB, crosses `printf`'s 4096-byte buffer hundreds of times) | 20 | [x] |
+| 12 | `sieve` | A4 boundary: `val == INT_MAX − 8 == 2147483639` (largest value that terminates; 1 iteration, 10-digit field) | 1 (exhaustive) | [x] |
+| 13 | `sieve` | A4 boundary: `val ∈ [INT_MAX−7, INT_MAX]` — the 8-value signed-overflow window; unbounded output, compared as a 256 KiB stdout prefix in a forked child | 8 (exhaustive) | [x] |
+| 14 | `sieve` | A4 boundary: `val ∈ {INT_MIN, INT_MIN+1, INT_MIN+2, INT_MIN+3}` (11-char `-2147483648` field, unbounded output, 256 KiB prefix) | 4 (exhaustive) | [x] |
+| 15 | `sieve` | A3/A4 fully unconstrained: `val` = uniformly random `int32` over the whole 2^32 domain, restricted to the non-overflowing/terminating classes by construction (random `val` then clamped so the run is bounded) | 500 | [x] |
+| 16 | `sieve` | A5=many calls: 50 randomized `val`s invoked **back to back on the same loaded `.so` handle**, output concatenated (statelessness / no leak between calls, composed pipeline) | 50 per repetition × 10 | [x] |
+| 17 | `sieve` | A5=interleaved C/Rust calls on the **same process stdout** (C call, Rust call, C call, …) — verifies neither library perturbs the shared `FILE *stdout` buffer state the other depends on | 40 | [x] |
+| 18 | `sieve` | A6=stdout is a **pipe** (line/full buffering differs from a regular file) rather than a temp file, moderate output | 30 | [x] |
+| 19 | `sieve` | A6=stdout is a **closed fd** (every `printf` fails, return value ignored by C) — must still terminate with no output | 5 | [x] |
+| 20 | `sieve` | A1×A2 cross-product sweep: for every last digit `d ∈ 0..9` and every sign, a randomized `val` with that exact residue class (`val % 10 == ±d`) — the pruned cross product of the two qualitative axes | 10 digits × 2 signs × 25 | [x] |
 
-## The table
+| 21 | `sieve` | Exhaustive cross-check: **every** value in `[-3000, 3000]` (all signs, all last digits, all carry patterns for small magnitudes) — 6001 consecutive inputs, ≈9M output lines | 6001 (exhaustive) | [x] |
+| 22 | `sieve` | Exhaustive cross-check: **every** value in `[INT_MAX-2008, INT_MAX-8]` — the dense band running right up to the overflow boundary at 10-digit field width | 2001 (exhaustive) | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| 1 | `sieve` | A=positive, B=9, C=1 — immediate exit on the *first* iteration; `val = 9` | `cfg_01_single_digit_nine` | [x] |
-| 2 | `sieve` | A=zero, B=0, C=10, E=crosses no power of ten; `val = 0` | `cfg_02_zero` | [x] |
-| 3 | `sieve` | A=positive, B=1..8, C=2..9, D=1 digit; every `val ∈ 1..8` | `cfg_03_all_single_digit_starts` | [x] |
-| 4 | `sieve` | A=positive, D=2 digits, B = each of `0..9`; exhaustive `val ∈ 10..99` (covers every remainder class at a 2-digit width) | `cfg_04_two_digit_exhaustive` | [x] |
-| 5 | `sieve` | A=positive, B=each of `0..9` at large width; randomized `val ∈ [10^3, 10^9]`, 400 samples | `cfg_05_random_positive_wide` | [x] |
-| 6 | `sieve` | A=positive, E=**crosses a power-of-ten boundary mid-run** (digit count grows during the loop); pinned `val ∈ {8, 98, 998, 9998, 99999998, 999999998, 2147483638}` plus randomized `10^k - 2` | `cfg_06_positive_carry_across_power_of_ten` | [x] |
-| 7 | `sieve` | A=positive, F=highest value that still terminates without overflow; `val = 2147483639` (C=1) | `cfg_07_max_terminating_value` | [x] |
-| 8 | `sieve` | A=positive, F=just below the wrap region, C=2..10, D=10 digits; exhaustive `val ∈ [2147483630, 2147483639]` | `cfg_08_top_of_range_exhaustive` | [x] |
-| 9 | `sieve` | A=negative, B=`-9`, D=1 digit + sign; `val = -9` (never exits early, runs to +9) | `cfg_09_negative_nine` | [x] |
-| 10 | `sieve` | A=negative, B=each of `-9..-1`; exhaustive `val ∈ [-9, -1]`, i.e. every negative remainder class at 1 digit | `cfg_10_negative_single_digit_exhaustive` | [x] |
-| 11 | `sieve` | A=negative, B=0 (negative multiple of ten); pinned `val ∈ {-10, -20, -100, -1000, -10000}` | `cfg_11_negative_multiples_of_ten` | [x] |
-| 12 | `sieve` | A=negative, D=2–4 digits + sign, E=crosses `-1 → 0` sign transition; exhaustive `val ∈ [-300, -1]` | `cfg_12_negative_exhaustive_small` | [x] |
-| 13 | `sieve` | A=negative, randomized magnitude; `val ∈ [-5000, -1]`, 200 samples (long runs, sign flip, multi-width) | `cfg_13_random_negative` | [x] |
-| 14 | `sieve` | A=negative, large magnitude ⇒ ~10^5–10^6 iterations, exercising sustained `printf` buffering across many buffer flushes; pinned `val ∈ {-99999, -100000, -123457}` | `cfg_14_large_negative_long_run` | [x] |
-| 15 | `sieve` | A=negative, D=**7-digit** negative, C≈10^6 iterations (≈8 MiB of output, ≈2000 stdio buffer refills); `val = -1000000` | `cfg_15_million_line_run` | [x] |
-| 16 | `sieve` | G=0 calls — library loaded, symbol resolved, never invoked (checks no ctor/dtor side effects on stdout) | `cfg_16_zero_calls` | [x] |
-| 17 | `sieve` | G=many calls in one process, mixed signs and widths interleaved; 300 randomized `val ∈ [-200, 200]` in one batch (verifies no cross-call state and identical concatenated stream) | `cfg_17_many_interleaved_calls` | [x] |
-| 18 | `sieve` | H=stdout is a **pipe** (block-buffered, different libc flush granularity than a file) with a mixed batch of values | `cfg_18_stdout_is_a_pipe` | [x] |
-| 19 | `sieve` | Full contiguous sweep of the low range, every remainder class × sign × width transition together: exhaustive `val ∈ [-64, 64]` in a single batch | `cfg_19_contiguous_sweep` | [x] |
-| 20 | `sieve` | Hostile/extreme valid bit patterns reinterpreted as `int`: `0x7FFFFFF7` (=2147483639), `0x0`, `0x1`, `0xFFFFFFFF` (=-1), `0xFFFFFFF7` (=-9), `0x80000000` handled in ERRORS row 7 | `cfg_20_extreme_bit_patterns` | [x] |
-| 21 | `sieve` | Randomized whole-`int` domain, restricted to the sub-domain that provably terminates in bounded time (`val ∈ [-3000, 2147483639]`), 600 samples — the broad property-style fuzz row | `cfg_21_broad_random_fuzz` | [x] |
-| 22 | `sieve` | G=**concurrent** callers: 2, 4, 8 and 16 threads calling `sieve` simultaneously with randomized mixed-sign values. The C function has no static/global state, so the *multiset* of emitted lines must equal the sequential reference (line order across threads is inherently nondeterministic). | `cfg_22_concurrent_callers` | [x] |
+## Feature combinations
 
-## Deliberately excluded from Phase B (covered in ERRORS.md instead)
-
-`val ≥ 2147483640` (signed-overflow wrap) and `val ≤ -3001` down to `INT_MIN`
-produce 10^4–10^9 lines; the extremes (`INT_MAX`, `INT_MIN`) are covered as
-bounded **prefix** comparisons in `ERRORS.md` rows 5–7 rather than as
-run-to-completion valid-path rows.
+`Cargo.toml` has no `[features]` table, so the only combination is the default
+(empty) feature set; `check_features.sh` enumerates the feature list
+mechanically from `Cargo.toml`, confirms it is empty, and runs the full suite
+under `--no-default-features` and under `--all-features` as well.

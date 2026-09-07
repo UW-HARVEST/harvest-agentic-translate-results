@@ -1,103 +1,101 @@
-# CONFIGS.md — configuration surface table (Phase B gate)
+# CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from the branch points the C actually takes. Sources of
-truth: the two public headers plus every `if` / `else if` / ternary in
-`file-queue.c`, `read-alert.c`, `driver.c`.
+## Axes, derived mechanically from the C source
 
-## The axes the C branches on
+### Public entry points (all 9 exported symbols, lowest-level first)
 
-### Axis 1 — public entry points (ALL of them, lowest level first)
+`os_calloc`, `os_realloc`, `os_strdup` (`shared.h`) →
+`merror`, `FreeAlertData` → `GetAlertData` (`read-alert.c`) →
+`Init_FileQueue`, `Read_FileMon` (`file-queue.c`) → `driver` (`driver.c`).
 
-| level | symbol | header |
-|-------|--------|--------|
-| 0 | `os_calloc`, `os_realloc`, `os_strdup` | `shared.h` |
-| 0 | `merror` | (no prototype; external linkage in `file-queue.c`) |
-| 1 | `GetAlertData(int flag, FILE *fp)` | `read-alert.h` |
-| 1 | `FreeAlertData(alert_data *)` | `read-alert.h` |
-| 2 | `Init_FileQueue(file_queue *, const struct tm *, int flags)` | `file-queue.h` |
-| 2 | `Read_FileMon(file_queue *, const struct tm *, unsigned timeout)` | `file-queue.h` |
-| 3 | `driver(int day, int month, int year, unsigned timeout, int flags)` | (one-shot convenience wrapper) |
+### Runtime option axis — the `flags` / `flag` bitmask (`read-alert.h`)
 
-The `static` helpers `file_sleep`, `GetFile_Queue`, `Handle_Queue` are reached
-only through levels 2–3, so levels 2–3 must be driven directly rather than only
-through `driver`.
+| bit | macro | value | code that branches on it |
+|-----|-------|-------|--------------------------|
+| 0 | `CRALERT_MAIL_SET`    | 0x001 | `GetAlertData`: requires the token after the alert id to be `mail`, else `continue` |
+| 1 | `CRALERT_EXEC_SET`    | 0x002 | **never branched on** — must still round-trip through `fileq->flags` |
+| 2 | `CRALERT_READ_ALL`    | 0x004 | `Handle_Queue`: skips the `fseek(fp,0,SEEK_END)` |
+| 3 | `CRALERT_READ_FAILED` | 0x008 | **never branched on** |
+| 4 | `CRALERT_FP_SET`      | 0x010 | `Handle_Queue`: skips close+`fopen`; `GetFile_Queue`: file name becomes `"<stdin>"` instead of `"alerts.log"` |
+| — | undefined bits        | e.g. 0xFFFF, -1 | no validation anywhere; C `int` accepts any value |
 
-### Axis 2 — runtime flags (`read-alert.h`) and what each toggles
+### Input-shape axes
 
-| bit | name | branches it controls |
-|-----|------|----------------------|
-| `0x001` | `CRALERT_MAIL_SET` | `read-alert.c:139` — alert header must start with `mail` after the first space, else the header is dropped |
-| `0x002` | `CRALERT_EXEC_SET` | **never tested** anywhere in the C → inert; must stay inert in Rust |
-| `0x004` | `CRALERT_READ_ALL` | `file-queue.c:82` — skip the `fseek(fp,0,SEEK_END)`, i.e. read from offset 0 instead of from EOF |
-| `0x008` | `CRALERT_READ_FAILED` | **never tested** → inert |
-| `0x010` | `CRALERT_FP_SET` | `file-queue.c:57` (`file_name` becomes `"<stdin>"` instead of `"alerts.log"`), `file-queue.c:66` (skip `fclose`/`fopen`, adopt the caller's `fp`), `file-queue.c:114` (skip `fileq->fp = NULL`) |
+* **alert-stream shape** (`GetAlertData`): empty / no-header / one alert /
+  many alerts / alert with every field / syscheck alert / truncated alert.
+* **line shape**: trailing newline vs bare EOF, CRLF, `> OS_MAXSTR-1` (1023)
+  bytes so `fgets` splits it, blank lines, leading spaces after `-`.
+* **field shape**: `Rule:`, `Src IP:`, `Src Port:`, `Dst IP:`, `Dst Port:`,
+  `User:` present / absent / **repeated** (repeat exercises the
+  `os_free` + `os_strdup` re-assignment paths).
+* **numeric shape** (`atoi`): 0, 1, negative, `INT_MAX`, `INT_MAX+1`
+  (overflow), non-numeric, leading `+`/spaces — for `rule`, `level`,
+  `srcport`, `dstport`.
+* **stream kind**: seekable regular file vs non-seekable pipe; stream
+  pre-positioned mid-file vs at offset 0.
+* **file system shape** (`Init_FileQueue`/`Read_FileMon`/`driver`):
+  `alerts.log` present / absent / empty / directory-only.
+* **`struct tm` shape**: `tm_mon` 0..11 (all twelve → all `s_month` entries),
+  `tm_mday`/`tm_year` = 0, 1, −1, `INT_MAX`, `INT_MIN`.
+* **`timeout`**: 0 (no retry loop) vs 1 (one retry — costs one 5 s
+  `file_sleep`); larger values are the same loop and are avoided for runtime.
 
-Interaction that matters: `Read_FileMon` calls `Handle_Queue(fileq, **0**)`, not
-`fileq->flags`. So a queue opened with `FP_SET` and/or `READ_ALL` is re-handled
-with those bits *cleared* on the recovery path — while `file_name` still holds
-whatever `GetFile_Queue` derived from `fileq->flags`. That asymmetry is a real
-configuration axis and is exercised below.
+## Rows — one per combination the C actually distinguishes
 
-### Axis 3 — input shapes `read-alert.c` special-cases
+| # | entry point(s) | configuration (options set + input shape) | pass / test |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `os_calloc` | randomized `num`×`size` incl. 0×0, 1×n, n×1, large; zero-fill + returned-pointer validity | [x] `row01_os_calloc` |
+| 2 | `os_realloc` | `ptr=NULL` grow-from-nothing, then randomized shrink/grow chains preserving contents | [x] `row02_os_realloc` |
+| 3 | `os_strdup` | randomized byte strings: empty, 1 byte, 1 KiB, high-bit bytes, embedded spaces | [x] `row03_os_strdup` |
+| 4 | `merror` | `FSEEK_ERROR`/`FSTAT_ERROR` templates × randomized file names/errnos, incl. names long enough to hit the 256-byte `snprintf` truncation | [x] `row04_merror` |
+| 5 | `FreeAlertData` | struct with all pointers NULL; struct with every pointer set; struct with a mixed subset — via a `GetAlertData` result and via a hand-built heap struct | [x] `row05_free_alert_data` |
+| 6 | `GetAlertData` | `flag=0`, one minimal complete alert (header + date/location + `Rule:`), seekable file, trailing newline | [x] `row06_minimal_alert` |
+| 7 | `GetAlertData` | `flag=0`, one alert with **every** field: `Rule:`, `Src IP:`, `Src Port:`, `Dst IP:`, `Dst Port:`, `User:` + free-form log lines | [x] `row07_all_fields` |
+| 8 | `GetAlertData` | `flag=0`, **multiple** alerts in one file → exercises the `_r==2` + `fseek(-strlen)` push-back; iterate `GetAlertData` until NULL and compare the whole sequence + `ftell` after each call | [x] `row08_multiple_alerts` |
+| 9 | `GetAlertData` | `flag=0`, repeated `Rule:`/`Src IP:`/`Dst IP:`/`User:`/`Src Port:`/`Dst Port:` lines inside one alert (last-wins + `os_free` re-assignment) | [x] `row09_repeated_fields` |
+| 10 | `GetAlertData` | `flag=0`, group field containing `syscheck` + `Integrity checksum changed for: '<path>'` next line → `filename` extraction | [x] `row10_syscheck_filename` |
+| 11 | `GetAlertData` | `flag=0`, group contains `syscheck` but the next line does **not** match the 33-byte prefix → `issyscheck` reset, `filename` stays NULL | [x] `row11_syscheck_reset` |
+| 12 | `GetAlertData` | `flag=0`, group **without** `syscheck` + an `Integrity checksum changed for: '…'` line → `filename` must stay NULL | [x] `row12_no_syscheck_group` |
+| 13 | `GetAlertData` | `flag=CRALERT_MAIL_SET`, header token **is** `mail` → alert accepted | [x] `row13_14_mail_flag` |
+| 14 | `GetAlertData` | `flag=CRALERT_MAIL_SET`, header token is **not** `mail` → header skipped | [x] `row13_14_mail_flag` |
+| 15 | `GetAlertData` | `flag` = each of `CRALERT_EXEC_SET`, `CRALERT_READ_ALL`, `CRALERT_READ_FAILED`, `CRALERT_FP_SET` alone and `0x1F` together, on the same alert → only the MAIL bit may change the result | [x] `row15_each_flag_bit` |
+| 16 | `GetAlertData` | `flag` = randomized undefined-bit patterns (incl. `-1`, `INT_MIN`, `INT_MAX`) on the same alert | [x] `row16_undefined_flag_bits` |
+| 17 | `GetAlertData` | `flag=0`, no trailing newline before EOF (`feof && _r==2` success path) | [x] `row17_no_trailing_newline` |
+| 18 | `GetAlertData` | `flag=0`, CRLF line endings (`\r` retained by `os_clearnl`) | [x] `row18_crlf` |
+| 19 | `GetAlertData` | `flag=0`, a line > 1023 bytes → `fgets` splits it mid-alert | [x] `row19_oversized_lines` |
+| 20 | `GetAlertData` | `flag=0`, blank lines / whitespace-only lines interleaved in the alert body | [x] `row20_blank_lines` |
+| 21 | `GetAlertData` | `flag=0`, randomized `rule`/`level`/`srcport`/`dstport` numerics incl. overflow and non-numeric text | [x] `row21_numeric_shapes` |
+| 22 | `GetAlertData` | `flag=0`, randomized fully-synthetic alert streams (property test, fixed seed): random field sets, orders, counts, group names, alert-id shapes | [x] `row22_random_streams` |
+| 23 | `GetAlertData` | `flag=0`, stream pre-positioned mid-file via `fseek` before the call | [x] `row23_preseeked_stream` |
+| 24 | `GetAlertData` | `flag=0`, **non-seekable** pipe holding one complete alert (succeeds — no push-back needed) | [x] `row24_pipe_single_alert` |
+| 25 | `Init_FileQueue` | `flags=0`, `alerts.log` present → opens + seeks to END + `fstat`; compare the entire 440-byte `file_queue` (minus the `FILE*`) and `last_change`/`f_status` | [x] `row25_init_default_flags` |
+| 26 | `Init_FileQueue` | `flags=CRALERT_READ_ALL`, `alerts.log` present → no seek-to-end, offset stays 0 | [x] `row26_init_read_all` |
+| 27 | `Init_FileQueue` | `flags=CRALERT_FP_SET` with a caller-supplied `fp` → `fp` preserved, `file_name=="<stdin>"`, seek-to-END applied | [x] `row27_init_fp_set` |
+| 28 | `Init_FileQueue` | `flags=CRALERT_FP_SET|CRALERT_READ_ALL` → `fp` preserved, no seek | [x] `row28_init_fp_set_read_all` |
+| 29 | `Init_FileQueue` | `flags` = `CRALERT_MAIL_SET`, `CRALERT_EXEC_SET`, `CRALERT_READ_FAILED`, `0x1F`, and randomized undefined bit patterns | [x] `row29_init_flag_matrix` |
+| 30 | `Init_FileQueue` | all twelve `tm_mon` values 0..11 → `mon[4]` must equal `Jan`..`Dec` (`strncpy(...,3)` leaves `mon[3]` from the memset) | [x] `row30_init_all_months` |
+| 31 | `Init_FileQueue` | randomized `tm_mday`/`tm_year` incl. 0, −1, `INT_MAX`, `INT_MIN` (`year = tm_year + 1900` overflow) | [x] `row31_init_tm_extremes` |
+| 32 | `Init_FileQueue` | pre-dirtied `file_queue` (non-zero garbage) → checks the `memset`/field-reset behaviour, incl. `flags=0` then `flags=flags` | [x] `row32_init_dirty_struct` |
+| 33 | `Read_FileMon` | after `Init_FileQueue(flags=CRALERT_READ_ALL)` on a file with one alert, `timeout=0` → returns that alert; compare all fields + resulting `file_queue` | [x] `row33_read_filemon_single` |
+| 34 | `Read_FileMon` | after `Init_FileQueue(flags=CRALERT_READ_ALL)` on a file with **many** alerts, `timeout=0`, called repeatedly → whole sequence compared | [x] `row34_read_filemon_sequence` |
+| 35 | `Read_FileMon` | after `Init_FileQueue(flags=CRALERT_READ_ALL|CRALERT_MAIL_SET)` on mixed mail/non-mail alerts, `timeout=0` | [x] `row35_read_filemon_mail_filter` |
+| 36 | `Read_FileMon` | `flags=CRALERT_FP_SET|CRALERT_READ_ALL` with a caller `fp` on a temp file containing alerts, `timeout=0` | [x] `row36_read_filemon_fp_set` |
+| 37 | `Read_FileMon` | `tm` supplied to `Read_FileMon` **differs** from the one given to `Init_FileQueue` (day/mon/year re-stamped on the NULL path) | [x] `row37_read_filemon_different_tm` |
+| 38 | `Read_FileMon` | `timeout=1` on an exhausted queue → one retry, one `file_sleep` (5 s), NULL | [x] `row38_read_filemon_timeout_one` |
+| 39 | `driver` | `flags=CRALERT_READ_ALL`, `timeout=0`, `alerts.log` with one full alert → returns the alert | [x] `row39_driver_single_alert` |
+| 40 | `driver` | `flags=CRALERT_READ_ALL|CRALERT_MAIL_SET`, `timeout=0`, mail and non-mail alerts | [x] `row40_driver_mail_filter` |
+| 41 | `driver` | `flags=0`, `timeout=0` (seek-to-END → nothing to read → NULL) | [x] `row41_driver_seek_to_end` |
+| 42 | `driver` | `flags=CRALERT_READ_ALL`, `timeout=0`, randomized `day`/`month`(0..11)/`year` (property test, fixed seed) | [x] `row42_driver_random_dates` |
+| 43 | `driver` | `flags` = randomized full-bitmask patterns incl. `CRALERT_FP_SET` and undefined bits, `timeout=0` | [x] `row43_driver_flag_masks` |
+| 44 | `driver` | `flags=CRALERT_READ_ALL`, `timeout=0`, randomized whole alert files (property test, fixed seed) — end-to-end pipeline | [x] `row44_driver_random_files` |
+| 45 | pipeline | `Init_FileQueue` → `Read_FileMon` → `FreeAlertData` driven directly (not via `driver`), across the flag matrix, with the `file_queue` compared after **every** step | [x] `row45_pipeline_matrix` |
+| 46 | `Read_FileMon` | the `while (i < timeout)` retry loop **succeeding**: first `GetAlertData` fails, the re-`Handle_Queue` succeeds, the loop's first attempt fails, then a complete alert is appended while the library is inside `file_sleep` so a later iteration returns it | [x] `row46_read_filemon_retry_loop_succeeds` |
+| 47 | fuzz | mutation + random-byte differential fuzzing over `GetAlertData`, `Init_FileQueue`+`Read_FileMon` and `driver`: bit flips, byte splices, truncation, line duplication/removal, random flag words, and inputs straddling the 1023-byte `fgets` boundary (fixed seeds; each test asserts it is not vacuously comparing NULL against NULL) | [x] `fuzz_random_bytes + fuzz_prefixed_lines + fuzz_mutated_valid_alerts + fuzz_fgets_boundary + fuzz_driver_end_to_end + fuzz_filequeue_pipeline` |
 
-`_r` state machine (0 → 1 → 2), plus per-line prefix dispatch on
-`** Alert` / `Rule: ` / `Src IP: ` / `Src Port: ` / `Dst IP: ` / `Dst Port: ` /
-`User: ` / else-log, plus the `syscheck` sub-mode
-(`Integrity checksum changed for: '`), plus line-length (`OS_MAXSTR` = 1024) and
-trailing-newline presence.
+## Binary executable
 
-### Axis 4 — `struct tm` fields consumed
-
-`tm_mday` (copied to `fileq->day`), `tm_mon` (index into `s_month[12]`),
-`tm_year` (`+1900` into `fileq->year`). No other field is read.
-
-### Axis 5 — `timeout`
-
-Only reached when the *first* `GetAlertData` returns NULL; each iteration costs a
-5 s `select`. Tested at `0` and `1`.
-
-### Axis 6 — build features
-
-`Cargo.toml` has no `[features]` table ⇒ exactly one configuration. Enumerated
-mechanically by `scripts/check_features.sh`.
-
----
-
-## Configuration rows
-
-Each row is driven with **many randomized inputs** (fixed seed `0x5EED_1234`,
-xorshift64* PRNG in `tests/common/mod.rs`) unless the row is inherently a single
-shape. `[x]` = passes across all randomized inputs for that row.
-
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| C01 | `os_calloc`, `os_realloc`, `os_strdup` | randomized sizes/strings incl. `num=0`, `size=0`, empty string, 1 byte, 4 KiB, embedded high bytes; `os_realloc` grow **and** shrink from a live pointer | `cfg_shared.rs::c01_alloc_helpers` | [x] |
-| C02 | `Init_FileQueue` | `tm_mon` = 0..11 (all 12 `s_month` entries) × flags `READ_ALL` (so init succeeds), checking `fileq->mon[0..4]`, `day`, `year`, `file_name`, `flags`, `last_change` | `cfg_shapes.rs::c02_all_months` | [x] |
-| C03 | `Init_FileQueue` | randomized `tm_mday`/`tm_year` incl. `INT_MIN`, `INT_MAX`, `-1900`, `0`, `INT_MAX-1900` (year overflow wraps in C) | `cfg_shapes.rs::c03_day_year_extremes` | [x] |
-| C04 | `Init_FileQueue` | flags = 0 (no bits): `alerts.log` present ⇒ `fopen` + `fseek(END)` + `fstat`, `file_name=="alerts.log"`, `last_change==st_mtime`, returns 0 | `cfg_queue.rs::c04_init_default` | [x] |
-| C05 | `Init_FileQueue` | flags = `READ_ALL`: no seek to end, so `fp` is left at offset 0 | `cfg_queue.rs::c05_init_read_all` | [x] |
-| C06 | `Init_FileQueue` | flags = `FP_SET` with a caller-supplied seekable `fp`: `file_name=="<stdin>"`, no reopen, seek-to-end still happens | `cfg_queue.rs::c06_init_fp_set` | [x] |
-| C07 | `Init_FileQueue` | flags = `FP_SET\|READ_ALL` with caller-supplied `fp`: no reopen **and** no seek ⇒ offset preserved exactly as the caller left it (randomized starting offsets) | `cfg_queue.rs::c07_init_fp_set_read_all` | [x] |
-| C08 | `Init_FileQueue` | flags = `FP_SET\|READ_ALL` with `fp == NULL`: `fstat` skipped, `last_change` taken from the (zeroed) `f_status`, returns 0 | `cfg_queue.rs::c08_init_fp_set_null_fp_read_all` | [x] |
-| C09 | `Init_FileQueue` | inert bits only (`EXEC_SET`, `READ_FAILED`) and randomized ints containing them ⇒ must behave exactly like the same value with those bits cleared | `cfg_queue.rs::c09_inert_bits` | [x] |
-| C10 | `Init_FileQueue` + `Read_FileMon` | full pipeline, flags = `READ_ALL`, `alerts.log` holding 1 complete alert ⇒ alert returned from the *first* `GetAlertData`, no sleep | `cfg_queue.rs::c10_pipeline_read_all_one_alert` | [x] |
-| C11 | `Init_FileQueue` + `Read_FileMon` | full pipeline, flags = `READ_ALL`, `alerts.log` holding **many** alerts ⇒ repeated `Read_FileMon` walks them one at a time via the `fseek`-back, until the stream is exhausted | `cfg_queue.rs::c11_pipeline_many_alerts` | [x] |
-| C12 | `Init_FileQueue` + `Read_FileMon` | flags = 0 (seek-to-end): first `GetAlertData` sees EOF, recovery reopens+reseeks to end, `timeout=0` ⇒ NULL with no sleep. Also `timeout=1` ⇒ exactly one 5 s sleep | `cfg_queue.rs::c12_pipeline_seek_end` | [x] |
-| C13 | `driver` | `day`/`month`/`year`/`timeout`/`flags` randomized over the *valid* month domain, `flags` = `READ_ALL` (+ random inert bits), randomized alert files ⇒ identical `alert_data` | `cfg_driver.rs::c13_driver_read_all` | [x] |
-| C14 | `GetAlertData` | line-length shapes: exactly 1023 / 1024 / 1025 bytes, 64 KiB single line, no trailing newline at EOF, `\r\n`, NUL-free binary bytes | `cfg_shapes.rs::c14_oversized_line` | [x] |
-| C15 | `GetAlertData` | `flag = 0`, minimal well-formed alert (`** Alert 1234.5: something` + date/location + `Rule: `) | `cfg_alert.rs::c15_minimal_alert` | [x] |
-| C16 | `GetAlertData` | `flag = 0`, alert exercising **every** field prefix: `Rule: `, `Src IP: `, `Src Port: `, `Dst IP: `, `Dst Port: `, `User: `, plus free-form log lines | `cfg_alert.rs::c16_all_fields` | [x] |
-| C17 | `GetAlertData` | `flag = 0`, field prefixes in **randomized order**, randomized presence/absence, randomized duplicate prefixes (each duplicate `os_free`s and replaces the previous value) | `cfg_alert.rs::c17_random_field_orders` | [x] |
-| C18 | `GetAlertData` | `flag = 0`, `Src Port: ` / `Dst Port: ` / `Rule: ` numeric shapes fed to `atoi`: empty, `+`/`-`, leading spaces, `2147483647`, `2147483648`, `-2147483649`, `999999999999`, hex-looking, trailing junk | `cfg_alert.rs::c18_atoi_shapes` | [x] |
-| C19 | `GetAlertData` | `flag = 0`, alertid shapes: `strstr(p,":")` at various offsets incl. offset 0 (`z == 0` ⇒ empty alertid), colon as last char, multiple colons | `cfg_alert.rs::c19_alertid_shapes` | [x] |
-| C20 | `GetAlertData` | `flag = 0`, group parsing: `-` present/absent, 0..N leading spaces after `-`, group containing `syscheck` as substring vs not, group with trailing newline vs at EOF | `cfg_alert.rs::c20_group_shapes` | [x] |
-| C21 | `GetAlertData` | `flag = 0`, `group` contains `syscheck` **and** the next non-prefix line is `Integrity checksum changed for: '<path>'` ⇒ `filename` set and its last byte stripped. Randomized paths incl. 1-char and long paths | `cfg_alert.rs::c21_syscheck_filename` | [x] |
-| C22 | `GetAlertData` | `flag = 0`, group contains `syscheck` but the first log line is **not** the integrity prefix ⇒ `issyscheck` reset to 0, `filename` stays NULL even if a later line matches | `cfg_alert.rs::c22_syscheck_one_shot` | [x] |
-| C23 | `GetAlertData` | `flag = CRALERT_MAIL_SET`, header token **is** `mail` ⇒ accepted | `cfg_alert.rs::c23_mail_accepted` | [x] |
-| C24 | `GetAlertData` | `flag = CRALERT_MAIL_SET`, mixture of `mail` and non-`mail` headers in one file ⇒ only `mail` alerts are picked up, and the `_r` state machine's position after the skipped headers matches | `cfg_alert.rs::c24_mail_mixed` | [x] |
-| C25 | `GetAlertData` | `flag` = every value in `0x00..0x1F` (full cross-product of the five documented bits) × 6 representative file shapes | `cfg_alert.rs::c25_flag_cross_product` | [x] |
-| C26 | `GetAlertData` | called repeatedly on the same `FILE*` until NULL, over randomized multi-alert files ⇒ the whole `fseek`-back sequence and final `ftell`/`feof` match | `cfg_alert.rs::c26_sequential_drain` | [x] |
-| C27 | `GetAlertData` | `fp` opened in `"r"` at a randomized non-zero starting offset (possibly mid-line) | `cfg_alert.rs::c27_random_start_offset` | [x] |
-| C28 | `GetAlertData` | fully randomized fuzz corpus: lines drawn from a weighted alphabet of every recognised prefix, malformed variants, blank lines and random bytes; 400 files × random `flag` | `cfg_alert.rs::c28_fuzz_corpus` | [x] |
-| C29 | `FreeAlertData` | a fully populated `alert_data` (all 9 owned pointers non-NULL), a fully NULL one, and randomized partial mixes ⇒ no crash, and the struct is scrubbed identically before the final `free` | `cfg_shared.rs::c29_free_alert_data` | [x] |
-| C30 | `merror` | both format templates (`FSTAT_ERROR`, `FSEEK_ERROR`) plus randomized `file_name` / `err` / `err_msg`, including a `file_name` long enough to truncate the 256-byte `snprintf` buffer | `cfg_shared.rs::c30_merror` | [x] |
+`c_src/CMakeLists.txt` builds **only** `add_library(driver SHARED ...)` — there
+is no `add_executable`, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. There is therefore **no driver
+binary** whose stdout could be compared; the `.so`-level differential tests are
+the complete surface.

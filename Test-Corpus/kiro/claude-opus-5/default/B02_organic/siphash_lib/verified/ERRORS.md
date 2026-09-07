@@ -1,58 +1,64 @@
-# ERRORS.md — error / rejection surface table (Phase C gate)
+# ERRORS.md — Phase C error-surface table
 
-## Mechanical derivation
-
-Grep of the ENTIRE C source (`c_src/src/lib.c`, `c_src/include/lib.h`) for every
-rejection construct:
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h` by grepping
+for every rejection construct:
 
 ```
-$ grep -n -E 'RETURN_ERROR|return -1|return NULL|assert|errno|exit\(|abort\(|
-              [A-Z_]*ERROR|if *\(|switch|#if|else|NULL' src/lib.c include/lib.h
-src/lib.c:48:  switch (len - i) {
-src/lib.c:107:  return v0 ^ v1 ^ v2 ^ v3;
-src/lib.c:111:  return stbds_siphash_bytes(p, len, seed);
+grep -nE 'return|assert|NULL|errno|exit\(|abort|if *\(|switch|#if|-1|<=|>=|== *0|!= *0' src/lib.c include/lib.h
 ```
 
-**Result: this library has NO error-reporting surface.**
+Full result set (4 hits, none of which is a rejection):
 
-- 0 error-return macros, 0 `return -1`, 0 `return NULL`, 0 error enums.
-- 0 `assert` / `abort` / `exit` / `errno` use.
-- 0 explicit range checks, 0 null-pointer checks, 0 min/max constants.
-- 0 `#if`/`#ifdef` conditional compilation.
-- Both public functions are total on their declared types: `stbds_hash_bytes`
-  returns a `size_t` hash for every input (no sentinel value is reserved), and
-  `siphash` returns `void`.
+| line | text | classification |
+|------|------|----------------|
+| 18 | `for (i = 0; i + sizeof(size_t) <= len;` | loop bound, not a check |
+| 48 | `switch (len - i) {` | tail dispatch, `case 0..7`, **no `default:`** |
+| 107 | `return v0 ^ v1 ^ v2 ^ v3;` | success return (hash value) |
+| 111 | `return stbds_siphash_bytes(p, len, seed);` | success return (pass-through) |
 
-Because the surface is empty, the table below is populated with (a) the ONE
-implicit branch the C actually contains — the `switch (len - i)` fall-through
-chain, whose `case 0:`/absent-`default:` arms are the C's only "reject and do
-nothing" paths — and (b) the generic FFI boundaries mandated by Phase C
-(null pointers, zero/oversized lengths, one-past-range values, out-of-range
-enum-style integers). "Expected C result" is therefore *defined behaviour to be
-matched*, not an error code.
+## Findings
 
-## Table
+The C library has **no error surface**:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|---------------------------------------------|-------------------|--------|
-| E1 | `stbds_hash_bytes` | `len == 0` with `p == NULL` — the `for` loop body never runs (`0 + 8 <= 0` false) and `switch (0 - 0)` takes `case 0: break;`, so `p` is never dereferenced. No rejection, no crash. | Returns the hash of the empty message: `data = 0 << 56 = 0`, finalisation only. A specific `size_t`, NOT an error sentinel. | [x] |
-| E2 | `stbds_hash_bytes` | `len == 0` with a valid non-NULL `p` | Same value as E1 — `p` is unread; result is independent of the pointer. | [x] |
-| E3 | `stbds_hash_bytes` | `len == 0`, `p == NULL`, varying `seed` (incl. `0`, `1`, `SIZE_MAX`, `SIZE_MAX/2`) | Seed still mixes into `v0..v3`, so the result varies with `seed`; no seed value is rejected. | [x] |
-| E4 | `stbds_hash_bytes` | `switch (len - i)` **`case 0`** arm: `len` an exact multiple of `sizeof(size_t)` (8, 16, 24, …). Tail switch adds nothing beyond `len << 56`. | Hash computed with an all-zero tail contribution except the length byte. | [x] |
-| E5 | `stbds_hash_bytes` | `switch (len - i)` arms **`case 1`..`case 7`**: every non-zero remainder `len % 8 ∈ {1..7}` — 7 distinct fall-through entry points, each reading a different count of tail bytes past the last full 8-byte block. | Each arm ORs its own byte set into `data`; a distinct hash per arm. Reads exactly `len` bytes, never more. | [x] |
-| E6 | `stbds_hash_bytes` | `switch (len - i)` has **no `default:`** — but `len - i` is provably in `0..=7` after the loop, so the no-arm path is unreachable. Documented as unreachable; no test can construct it without an out-of-bounds `len`. | Unreachable in C. | [x] (n/a, proven unreachable) |
-| E7 | `stbds_hash_bytes` | `len == 1` with a 1-byte-only allocation (one step past a zero-length buffer): must read `d[0]` and **must not** read `d[1..7]`. | Reads exactly 1 byte. Verified with a guard-page / exact-size heap buffer so any over-read faults. | [x] |
-| E8 | `stbds_hash_bytes` | `len == 7`, exact-size buffer — the widest tail arm; must not read the 8th byte. | Reads exactly 7 bytes. | [x] |
-| E9 | `stbds_hash_bytes` | `len == 8`, exact-size buffer — one step past the tail-only regime, first full-block iteration; must not read a 9th byte. | Reads exactly 8 bytes. | [x] |
-| E10 | `stbds_hash_bytes` | Signed-overflow UB path: tail byte `d[3] >= 0x80` in `case 4`, where `d[3] << 24` overflows `int` and the negative `int` is sign-extended into `size_t`, setting the whole upper 32 bits of `data`. | The compiler's actual (wrapping) result; Rust must reproduce the sign extension, not the "clean" value. | [x] |
-| E11 | `stbds_hash_bytes` | Signed-overflow UB path in the main loop: `d[3] >= 0x80` and/or `d[7] >= 0x80` in `data = d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24)`. | Same as E10, in the full-block path. | [x] |
-| E12 | `siphash` | Out-of-range / extreme `int` argument passed across FFI: `INT_MIN`, `INT_MAX`, `-1`, `0`. `init` has no valid-range check; the C enum-style "any int is accepted" case. `z++` at `INT_MAX` is signed-overflow UB. | No rejection. `mem[i] = (unsigned char) z` with wrapping `z`; prints 64 lines. | [x] |
-| E13 | `siphash` | `init` values that make `mem[]` bytes cross the `>= 0x80` boundary (i.e. drive E10/E11 through the public entry point), e.g. `init = 0x7A`, `0x80`, `0xF9`, `250`. | No rejection; specific printed table. | [x] |
-| E14 | `stbds_hash_bytes` | Oversized `len` (`len > buffer size`, e.g. `SIZE_MAX`): the C performs no bounds check and will read out of bounds / fault. | Genuinely undefined / faulting in C — **not testable** without invoking a segfault. Documented, deliberately not exercised. | [x] (n/a, C is UB) |
+* 0 error-return macros (`RETURN_ERROR`, `return -1`, `return NULL`, error enums)
+* 0 `assert` / `abort` / `exit`
+* 0 explicit range checks, null checks, or min/max constants
+* 0 `#ifdef` configuration branches
+* 0 enum parameters (so no out-of-range-enum class of input exists)
+* Both public functions are **total** on their declared parameter types:
+  `stbds_hash_bytes` always returns a `size_t` hash, `siphash` always returns
+  `void` after printing exactly 64 lines.
 
-## Summary
+Therefore the table rows below are the *generic C-API boundaries* the task
+requires to be covered even when absent from the source, plus every branch the
+tail `switch` distinguishes. "Expected C result" is defined as *whatever the C
+`.so` does*, and each row's test asserts Rust reproduces it bit-for-bit — the
+row is not a claim that C rejects the input.
 
-14 rows. 12 are exercised by differential tests in
-`tests/differential.rs`; E6 and E14 are proven-unreachable / genuine-UB and are
-documented rather than tested (constructing them would crash the C reference,
-which cannot produce a comparable result).
+## Error / boundary table
+
+| # | function | trigger (exact invalid input/condition) | expected C result | [x] |
+|---|----------|------------------------------------------|-------------------|-----|
+| E1 | `stbds_hash_bytes` | `p == NULL`, `len == 0` | No dereference occurs (main loop body never runs since `0 + 8 <= 0` is false; tail `switch (0-0)` takes `case 0: break`). Returns the well-defined constant hash of the empty input. Must not crash. | [x] |
+| E2 | `stbds_hash_bytes` | `len == 0` on a valid non-null `p` | Identical value to E1 — the pointer is never read. | [x] |
+| E3 | `stbds_hash_bytes` | `len == 0`, `p` = one-past-the-end pointer of a buffer | Same constant as E1/E2, no read. | [x] |
+| E4 | `stbds_hash_bytes` | `len` one step past the buffer's valid range is **not** rejected — C has no length validation. Tested as: `len == n` for a buffer of exactly `n` bytes (the maximal legal length) to pin the boundary that the next value would cross. | Reads exactly `len` bytes and hashes them; no rejection, no truncation. | [x] |
+| E5 | `stbds_hash_bytes` | `len - i == 0`, i.e. `len % 8 == 0` and `len > 0` (tail `switch` `case 0`) | `data` = `len << 56` only; no tail bytes mixed in. | [x] |
+| E6 | `stbds_hash_bytes` | tail `switch` `case 1` (`len % 8 == 1`) | falls through to `case 0: break`; `data |= d[0]`. | [x] |
+| E7 | `stbds_hash_bytes` | tail `switch` `case 2` | `data |= (d[1] << 8)` then falls through case 1. | [x] |
+| E8 | `stbds_hash_bytes` | tail `switch` `case 3` | `data |= (d[2] << 16)` then falls through. | [x] |
+| E9 | `stbds_hash_bytes` | tail `switch` `case 4` with `d[3] >= 0x80` | `(d[3] << 24)` is a **signed-`int` overflow** whose result is negative; converting to `size_t` sign-extends, setting the whole upper 32 bits of `data`. Rust must reproduce, not "fix". | [x] |
+| E10 | `stbds_hash_bytes` | tail `switch` `case 4` with `d[3] < 0x80` | no sign extension; only bits 24..31 set. | [x] |
+| E11 | `stbds_hash_bytes` | tail `switch` `case 5` | `data |= ((size_t)d[4] << 16) << 16` (net shift 32). | [x] |
+| E12 | `stbds_hash_bytes` | tail `switch` `case 6` | `data |= ((size_t)d[5] << 20) << 20` (net shift **40**, not 48). | [x] |
+| E13 | `stbds_hash_bytes` | tail `switch` `case 7` | `data |= ((size_t)d[6] << 24) << 24` (net shift 48). | [x] |
+| E14 | `stbds_hash_bytes` | main-loop `d[3] >= 0x80` (signed overflow in the *body*, line 20) | low word sign-extends → upper 32 bits of `data` all set before the high word is OR'd in. | [x] |
+| E15 | `stbds_hash_bytes` | main-loop `d[7] >= 0x80` (line 21) | the sign-extended `int` is `<< 16 << 16`, so the extension bits shift out — upper bits come only from the byte value. Different outcome from E14 despite the same construct. | [x] |
+| E16 | `stbds_hash_bytes` | `len == SIZE_MAX` style oversized length — cannot be executed safely (C would read out of bounds and segfault). Covered instead at the largest length the loop arithmetic still distinguishes: `len` values where `len << 56` aliases (`len` and `len + 256` produce the same `data` seed contribution). | `data`'s top byte is `len & 0xff` only; higher bits of `len` never reach the hash. | [x] |
+| E17 | `stbds_hash_bytes` | `seed` = 0, `SIZE_MAX`, and arbitrary values | The seed **cancels out**: each `v` is `^ seed` (or `^ ~seed`) twice (lines 10-13 then 14-17), so the hash is independent of `seed`. Both C and Rust must return the same value for *all* seeds at fixed data. | [x] |
+| E18 | `siphash` | `init` negative (e.g. `INT_MIN`, `-1`) | `int z = init; mem[i] = z;` truncates to `unsigned char` — implementation-defined narrowing, no rejection. 64 lines printed. | [x] |
+| E19 | `siphash` | `init == INT_MAX` — `z++` **signed overflow** after the first iteration | C (gcc, `-fwrapv`-less) wraps to `INT_MIN`; the low byte sequence continues `0xff, 0x00, 0x01, ...`. Rust uses `wrapping_add` to match. | [x] |
+| E20 | `siphash` | `init` = 0 and 255 (byte-boundary wrap of the `mem` fill) | 64 lines of 8 `0x%02x` values; byte-identical stdout. | [x] |
+
+All 20 rows have a passing differential test in
+`translation/tests/differential.rs` (see `phase_c_*` tests).

@@ -1,92 +1,146 @@
-# CONFIGS.md — Configuration / valid-input surface table
+# CONFIGS.md — configuration surface table (valid inputs)
 
-Derived mechanically from `c_src/include/driver.h` + `c_src/src/driver.c`.
+Derived mechanically from `c_src/include/driver.h` and `c_src/src/driver.c`.
 
 ## Axes the C code actually branches on
 
-There is **no runtime option, mode, flag, global, or `#ifdef`** in this library
-(`grep -c '#if\|#ifdef\|static .*=\|extern .*;' src/driver.c` finds no
-configuration state; the only `#ifndef` is the header include guard). The library
-is pure and stateless. Therefore the configuration axes are entirely
-*input-shape* axes:
+**Runtime options / modes / flags.** There are none in the classic sense: the
+library has no init function, no context struct, no setter, no global state, no
+`#ifdef` in either the header or the `.c` file (`grep -c '#if' src/driver.c` →
+only the header guard in `driver.h`). The *only* "configuration" a caller can
+apply is the **integer argument value**, which selects which branch each
+function takes.
 
-| axis | values the C distinguishes | evidence |
-|------|---------------------------|----------|
-| A. entry point | `printLine`, `printIntLine`, `bad`, `good`, `driver` (all 5 exported symbols — **including the low-level ones**, not only the `driver` one-shot wrapper) | `nm -D` |
-| B. pointer validity (`printLine`) | NULL / non-NULL | `if (line != NULL)` :31 |
-| C. byte-string shape (`printLine`) | empty / 1 byte / ASCII / embedded `%` / embedded `\n` / high (non-UTF-8) bytes / very long | `printf("%s\n", line)` :33 |
-| D. `int` value shape (`printIntLine`) | 0 / positive / negative / `INT_MIN` / `INT_MAX` | `printf("%d\n", n)` :39 |
-| E. index sign (`bad`, `goodB2G`) | `data >= 0` vs `data < 0` | :46, :85 |
-| F. index magnitude (`goodB2G` only) | `data < 10` vs `data >= 10` | :85 (`bad` has **no** upper guard) |
-| G. index position within buffer | first (`0`), interior (`1..8`), last (`9`) — each selects a *different* element of the 10-line dump, so each is a distinct output shape | `buffer[data] = 1` + `for(i=0;i<10;i++)` |
-| H. index one past / far past the end (`bad` only) | `10`, `11..`, i.e. the unchecked overflow | missing upper guard at :46 |
-| I. composition (`good`) | `goodG2B()` (fixed `data = 7`) always runs, **then** `goodB2G(data)` | :102–103 |
-| J. composition (`driver`) | cross product of `goodData` × `badData` through the full 6-print pipeline | :106–114 |
+```
+$ grep -n 'if\|switch\|#ifdef\|#if' c_src/src/driver.c
+31:    if(line != NULL)
+46:    if (data >= 0)
+66:    if (data >= 0)
+85:    if (data >= 0 && data < (10))
+```
 
-## Table — one row per combination the C treats differently
+Four `if`s, no `switch`, no preprocessor conditionals. So the branch axes are:
 
-| # | entry point(s) | configuration (options set + input shape) | randomized? | [x] |
-|---|----------------|------------------------------------------|-------------|-----|
-| 1 | `printLine` | non-NULL, 1-byte ASCII string | 256 random single bytes (non-zero) | [x] |
-| 2 | `printLine` | non-NULL, empty string `""` | fixed (degenerate) | [x] |
-| 3 | `printLine` | non-NULL, random printable ASCII, len 1..200 | 200 seeded random strings | [x] |
-| 4 | `printLine` | non-NULL, contains `printf` specifiers (`%s`, `%d`, `%n`, `%%`) | 100 seeded random specifier soups | [x] |
-| 5 | `printLine` | non-NULL, contains embedded `\n`, `\r`, `\t` | 100 seeded random | [x] |
-| 6 | `printLine` | non-NULL, arbitrary non-NUL bytes 0x01..0xFF (non-UTF-8) | 200 seeded random byte strings | [x] |
-| 7 | `printLine` | non-NULL, very long (4 KiB .. 64 KiB) | 8 seeded random lengths | [x] |
-| 8 | `printLine` | NULL | fixed (covered again in ERRORS row 1) | [x] |
-| 9 | `printIntLine` | `data == 0` | fixed | [x] |
-| 10 | `printIntLine` | `data > 0`, full 31-bit range | 500 seeded random positives | [x] |
-| 11 | `printIntLine` | `data < 0`, full range | 500 seeded random negatives | [x] |
-| 12 | `printIntLine` | `INT_MIN`, `INT_MAX`, `-1`, `1` | fixed boundaries | [x] |
-| 13 | `bad` | `data == 0` — write to first element | fixed | [x] |
-| 14 | `bad` | `data` interior in-bounds `1..=8` | all 8 values | [x] |
-| 15 | `bad` | `data == 9` — write to last element | fixed | [x] |
-| 16 | `bad` | `data` in `0..=9`, randomized | 300 seeded random in-range | [x] |
-| 17 | `bad` | `data < 0` (negative branch) | 300 seeded random negatives + `INT_MIN` | [x] |
-| 18 | `bad` | `data == 10` — one past end, unchecked write (CWE-121); lands in frame padding | fixed | [x] |
-| 19 | `bad` | `data == 11` — last overflow slot still inside `bad`'s own frame; aliases the loop counter `i` at `-0x4(%rbp)` | fixed, batched + isolated | [x] |
-| 19b | `bad` | `data >= 12` — the write leaves `bad`'s frame and hits the caller's saved `rbp` / return address. **Not status-comparable**: measured crash indices differ in both directions and vary with call depth. Compared for identical *printed output* instead, over `12..=400`, plus `{1e5, 1e6, 1e8, INT_MAX}` where both must die. See `UB.md`. | `tests/phase_b_ub.rs`, 389 indices | [x] |
-| 20 | `good` | `data == 0` (goodG2B dump + goodB2G writes elem 0) | fixed | [x] |
-| 21 | `good` | `data == 7` (goodB2G index coincides with goodG2B's fixed index) | fixed | [x] |
-| 22 | `good` | `data == 9` (last in-bounds) | fixed | [x] |
-| 23 | `good` | `data` in `0..=9`, randomized (both dumps emitted, 20 lines) | 300 seeded random in-range | [x] |
-| 24 | `good` | `data == 10` (rejected by upper guard) | fixed | [x] |
-| 25 | `good` | `data >= 10` randomized incl. `INT_MAX` (rejected) | 300 seeded random | [x] |
-| 26 | `good` | `data < 0` randomized incl. `INT_MIN` (rejected) | 300 seeded random | [x] |
-| 27 | `driver` | both in range: `goodData ∈ 0..=9`, `badData ∈ 0..=9` | 200 seeded random pairs (+ full 10×10 grid) | [x] |
-| 28 | `driver` | `goodData` in range, `badData` negative | 100 seeded random pairs | [x] |
-| 29 | `driver` | `goodData` in range, `badData` in `10..=11` (overflow that stays inside `bad`'s own frame, reached through the composed pipeline) | 103 pairs, isolated | [x] |
-| 29b | `driver` | `goodData` in range, `badData >= 12` | `tests/phase_b_ub.rs` `ub_03`, prefix-compared, `12..=200` | [x] |
-| 30 | `driver` | `goodData` out of range (`<0`), `badData` in range | 100 seeded random pairs | [x] |
-| 31 | `driver` | `goodData` out of range (`>=10`), `badData` in range | 100 seeded random pairs | [x] |
-| 32 | `driver` | both out of range (all 4 sign/magnitude quadrants; `badData` restricted to its comparable domain `INT_MIN..=11`) | 200 seeded random pairs, isolated | [x] |
-| 33 | `driver` | boundary pairs: `{-1,0,9,10}` × `{-1,0,9,10}` | full 4×4 grid | [x] |
-| 34 | all 5 entry points | **sequenced in one process** — repeated interleaved calls, to prove statelessness / no hidden global is mutated between calls | 400 seeded random ops | [x] |
+- A1 `printLine`: `line == NULL` vs `line != NULL`
+- A2 `bad`: `data >= 0` vs `data < 0`; and, *within* the taken branch, whether
+  `data` is `< 10` (in bounds) or `>= 10` (unchecked OOB write)
+- A3 `goodG2B`: constant `data = 7` — statically one path only (no axis, but it
+  is unconditionally executed by every `good` / `driver` call, so its ten
+  output lines prefix every `good` result)
+- A4 `goodB2G`: `data >= 0 && data < 10` vs otherwise (two distinct ways to
+  fail: negative, or `>= 10`)
 
-## Result
+**Input shapes.**
 
-All rows pass. Test files:
+- S1 pointer shape for `printLine`: NULL / empty `""` / short ASCII / string
+  containing `%` conversion specifiers / string containing embedded `\n` /
+  string containing non-ASCII bytes (0x80–0xFF) / very long (64 KiB) /
+  1-byte-at-end-of-page (no trailing readable page)
+- S2 `int` shape: `0`, `1..8` (interior), `9` (max valid index), `10`, `11`
+  (defined OOB), `>= 12` (UB), `-1`, `INT_MIN`, `INT_MAX`, arbitrary random
+  `i32` bit patterns
+- S3 buffer/element shape: fixed by the source — `int buffer[10]`, element type
+  `int` (4 bytes), count 10, printed with `%d`, one value per line. Not
+  caller-configurable, but the *position* of the written `1` within the ten
+  printed lines is the value-dependent output shape (index 0 = first line,
+  index 9 = last line, index >= 10 = no `1` at all).
 
-| rows | file | tests |
-|------|------|-------|
-| 1–34 | `tests/phase_b_configs.rs` | 35 |
-| 19b, 29b | `tests/phase_b_ub.rs` | 4 |
+**Full set of public entry points** (from `nm -D`, not just the header — the
+header only declares `driver`, but four more symbols are exported and are
+therefore part of the real ABI):
 
-Every row is compared for **byte-identical stdout and identical exit status**,
-except rows 19b / 29b, where the C's behaviour is caller-frame corruption; those
-compare printed output only. See `UB.md` for the derivation and measurements.
+- `printLine(const char*)` — lowest level
+- `printIntLine(int)` — lowest level
+- `bad(int)` — mid level, calls both of the above
+- `good(int)` — mid level, calls the two `static` helpers
+- `driver(int, int)` — top level convenience wrapper, calls `good` then `bad`
+
+Tests exercise all five directly via their `.so` exports; `driver` is *not*
+used as the only entry point.
+
+## Configuration table
+
+Every row is a differential test: same configuration through the C `.so` and
+the Rust `.so`, stdout captured at the fd level, compared byte-for-byte.
+"random" rows use a fixed-seed xorshift PRNG (seed `0x2025_0905_D8_1EA7`) with
+the stated iteration count, so they are reproducible.
+
+| # | entry point(s) | configuration (options set + input shape) | test | ✔ |
+|---|----------------|-------------------------------------------|------|---|
+| 1 | `printLine` | NULL pointer (A1 false branch) | `cfg01` | [x] |
+| 2 | `printLine` | empty string `""` (0 bytes + newline) | `cfg02` | [x] |
+| 3 | `printLine` | short ASCII, no specials (`"hello"`) | `cfg03` | [x] |
+| 4 | `printLine` | string containing `%` specifiers (`"%s %d %n %%"`) — must be verbatim, not formatted | `cfg04` | [x] |
+| 5 | `printLine` | string containing embedded newlines and tabs | `cfg05` | [x] |
+| 6 | `printLine` | string containing high bytes 0x80–0xFF (non-UTF-8) | `cfg06` | [x] |
+| 7 | `printLine` | 64 KiB string (oversized, exceeds any internal buffer) | `cfg07` | [x] |
+| 8 | `printLine` | 1024 randomized byte strings, random length 0..=255, random non-NUL bytes | `cfg08` | [x] |
+| 9 | `printIntLine` | `0` | `cfg09` | [x] |
+| 10 | `printIntLine` | each of `1`, `-1`, `9`, `10`, `INT_MAX`, `INT_MIN` (boundary sweep) | `cfg10` | [x] |
+| 11 | `printIntLine` | 4096 randomized `i32` bit patterns (full domain) | `cfg11` | [x] |
+| 12 | `bad` | `data == 0` — write to first element (A2 true, in bounds, boundary low) | `cfg12` | [x] |
+| 13 | `bad` | `data` in `1..=8` — every interior index, exhaustive | `cfg13` | [x] |
+| 14 | `bad` | `data == 9` — last valid index (boundary high) | `cfg14` | [x] |
+| 15 | `bad` | `data == 10` and `11` — A2 true branch **with** unchecked OOB write, still deterministic (stack padding / loop counter slot) | `cfg15` | [x] |
+| 16 | `bad` | `data < 0` — A2 false branch: `-1`, `-2`, `-10`, `INT_MIN`, plus 512 random negatives | `cfg16` | [x] |
+| 17 | `good` | `data == 0` — goodG2B(7) block then goodB2G in-bounds at index 0 | `cfg17` | [x] |
+| 18 | `good` | `data` in `1..=8` exhaustive — A4 true branch, every interior index | `cfg18` | [x] |
+| 19 | `good` | `data == 9` — A4 true branch, boundary high | `cfg19` | [x] |
+| 20 | `good` | `data == 10`, `11`, `100`, `INT_MAX` — A4 false via second conjunct | `cfg20` | [x] |
+| 21 | `good` | `data == -1`, `INT_MIN` — A4 false via first conjunct | `cfg21` | [x] |
+| 22 | `good` | 4096 randomized `i32` bit patterns (full domain, all A4 paths mixed) | `cfg22` | [x] |
+| 23 | `driver` | `goodData` valid × `badData` valid: full cross-product `0..=9 × 0..=9` (100 combos) | `cfg23` | [x] |
+| 24 | `driver` | `goodData` valid (`0..=9`) × `badData` defined-OOB (`10`, `11`) | `cfg24` | [x] |
+| 25 | `driver` | `goodData` valid × `badData` negative (`-1`, `INT_MIN`) | `cfg25` | [x] |
+| 26 | `driver` | `goodData` invalid (`-1`, `INT_MIN`, `10`, `INT_MAX`) × `badData` valid (`0`, `7`, `9`) | `cfg26` | [x] |
+| 27 | `driver` | `goodData` invalid × `badData` invalid-but-defined (cross-product) | `cfg27` | [x] |
+| 28 | `driver` | 2048 randomized `(goodData, badData)` pairs, `goodData` full `i32` domain, `badData` drawn from the defined domain `INT_MIN..=11` | `cfg28` | [x] |
+| 29 | composed pipeline | `printLine`, `printIntLine`, `bad`, `good`, `driver` called in a randomized *interleaved sequence* (256 calls) against one continuous stdout capture — checks composed output/ordering/flushing, not just per-call output | `cfg29` | [x] |
+| 30 | all five | repeated invocation (idempotence / no residual state): the same call issued 3× in a row must produce exactly 3 identical copies in both libraries | `cfg30` | [x] |
+
+**Excluded, deliberately:** `bad(data)` for `data >= 12`. The C code overwrites
+its saved `%rbp` (index 12) and return address (index 14) and is genuinely
+undefined; see ERRORS.md row 9. No differential assertion is possible.
 
 ## Feature combinations
 
-`Cargo.toml` has no `[features]` table → the only combination is the default
-build (asserted by `tests/phase_d_symbols.rs::parity_05_manifest_declares_no_features`,
-so the claim cannot silently rot). Both cargo profiles are nevertheless run,
-because `release` sets `panic = "abort"` and full optimisation, which changes the
-Rust `.so`'s own frame layout:
+`translation/Cargo.toml` declares no `[features]` table and no optional
+dependencies:
 
 ```
-$ ./verify.sh          # dev + release x every feature combination
+$ grep -n 'feature' translation/Cargo.toml
+(no matches)
 ```
 
-See `SYMBOLS.md`.
+The only configuration is therefore the single default (empty) feature set.
+`--no-default-features` is equivalent to the default here and is still run by
+`run_all_features.sh` for completeness.
+
+## Extra: exhaustive brute-force sweeps
+
+Beyond the randomized per-row sweeps above, `tests/stress_exhaustive.rs`
+(`#[ignore]`d because it is slow; run with
+`cargo test --test stress_exhaustive -- --ignored`) walks the interesting
+domains *exhaustively* rather than by sampling:
+
+| sweep | domain covered | result |
+|-------|----------------|--------|
+| `stress_bad_exhaustive_window` | every `data` in `-2000..=11` + `INT_MIN`-region | pass |
+| `stress_good_exhaustive_window` | every `data` in `-2000..=2000` + `INT_MIN`/`INT_MAX` | pass |
+| `stress_driver_exhaustive_cross_product` | full `-30..=30 x -30..=11` cross-product (2 501 combos) | pass |
+| `stress_print_line_exhaustive_lengths` | every length `0..=300` | pass |
+| `stress_print_int_line_exhaustive_window` | every value `-5000..=5000` + every `%d` width/decade boundary | pass |
+
+## Status
+
+All 31 rows (cfg00–cfg30) pass, in **both** the `debug` and `release`
+profiles, and under both the default and the empty feature set. Verified with
+`./run_all_features.sh`:
+
+```
+PASS  cargo test  --no-default-features
+PASS  cargo test  <default features>
+PASS  cargo test --release --no-default-features
+PASS  cargo test --release <default features>
+OVERALL: ALL CONFIGURATIONS PASS
+```

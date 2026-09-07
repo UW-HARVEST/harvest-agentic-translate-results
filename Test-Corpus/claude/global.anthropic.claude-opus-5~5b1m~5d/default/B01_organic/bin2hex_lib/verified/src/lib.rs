@@ -16,26 +16,10 @@
 //! constant-time-ish (branch free) nibble-to-ASCII conversion performed with
 //! wrapping `unsigned int` arithmetic, the exact order of the validation
 //! checks, and the `abort()` call on invalid arguments.
-//!
-//! ## Why the memory accesses go through `ptr::read` / `ptr::write`
-//!
-//! `bin2hex` performs no null checks, so C reaches the hardware with a null
-//! `hex` or `bin` and the process dies from `SIGSEGV`. A Rust place expression
-//! (`*p` / `*p = v`) is compiled with an inserted null-pointer assertion
-//! whenever `-C debug-assertions` is on (the default `dev` profile), which turns
-//! that same input into a `SIGABRT` ("null pointer dereference occurred") and so
-//! *diverges from C in debug builds*. `core::ptr::read` / `core::ptr::write`
-//! lower to a plain load/store with no inserted check, reproducing the C
-//! failure mode (`SIGSEGV`) under every profile.
-//!
-//! For the same reason the address arithmetic uses `<*T>::wrapping_add` rather
-//! than `add`: it computes the identical address without asserting that the
-//! offset stays in bounds, so out-of-range `bin_len` values fault exactly where
-//! the C code faults instead of tripping a Rust-level check.
 
 #![allow(non_snake_case)]
 
-use core::ffi::{c_char, c_int, c_uchar, c_uint};
+use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
 unsafe extern "C" {
     /// libc's `abort()`, as used by `src/lib.c` via `<stdlib.h>`.
@@ -43,6 +27,43 @@ unsafe extern "C" {
     /// Using the real libc `abort` (rather than a Rust-level panic) keeps the
     /// observable behaviour identical: the process dies from `SIGABRT`.
     fn abort() -> !;
+
+    /// libc's `memcpy`, used to perform the individual byte load/store the way
+    /// C does — see [`load_u8`] / [`store_u8`] for why.
+    fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+}
+
+/// Reads one byte from `p` exactly the way C's `bin[i]` does.
+///
+/// A plain Rust deref (`*p`) would be equivalent in release builds, but when
+/// the crate is compiled with `debug_assertions` (e.g. `cargo build` without
+/// `--release`, or `-C debug-assertions=on`) rustc injects a
+/// null/alignment "language UB" precondition check in front of every deref.
+/// That check calls `panic_nounwind` and the process dies from `SIGABRT`,
+/// whereas the C code — which performs no null check whatsoever — dies from
+/// `SIGSEGV`. Routing the access through libc `memcpy` carries no rustc-side
+/// precondition check, so the observable behaviour on a null/invalid pointer
+/// is the same hardware fault as C's in *every* build profile.
+#[inline(always)]
+unsafe fn load_u8(p: *const u8) -> u8 {
+    let mut v: u8 = 0;
+    unsafe {
+        memcpy(
+            (&mut v) as *mut u8 as *mut c_void,
+            p as *const c_void,
+            1usize,
+        );
+    }
+    v
+}
+
+/// Writes one byte to `p` exactly the way C's `hex[...] = ...` does.
+/// See [`load_u8`] for why this does not use a plain Rust deref.
+#[inline(always)]
+unsafe fn store_u8(p: *mut u8, v: u8) {
+    unsafe {
+        memcpy(p as *mut c_void, (&v) as *const u8 as *const c_void, 1usize);
+    }
 }
 
 /// `SIZE_MAX` as spelled literally in the C source
@@ -101,27 +122,33 @@ pub unsafe extern "C" fn bin2hex(
         unsafe { abort() };
     }
 
+    // `hex` is `char *` in C; work on it as raw bytes. `wrapping_add` is used
+    // for every pointer offset so that the address arithmetic carries no
+    // rustc-injected overflow/in-bounds precondition check either — C's `hex[n]`
+    // has none, and any such check would turn a `SIGSEGV` into a `SIGABRT`.
+    let hex_bytes = hex as *mut u8;
+
     while i < bin_len {
         // c = bin[i] & 0xf;  b = bin[i] >> 4;   (uint8_t promoted to int)
-        let byte = unsafe { core::ptr::read(bin.wrapping_add(i)) } as c_int;
+        let byte = unsafe { load_u8(bin.wrapping_add(i)) } as c_int;
         let c: c_int = byte & 0xf;
         let b: c_int = byte >> 4;
         // x = lo_nibble_char << 8 | hi_nibble_char;
         let mut x: c_uint = ((nibble_to_hex(c) as c_uint) << 8) | (nibble_to_hex(b) as c_uint);
         // hex[i * 2U] = (char)x;  -> the high nibble's character
-        unsafe { core::ptr::write(hex.wrapping_add(i.wrapping_mul(2usize)), x as u8 as c_char) };
+        unsafe { store_u8(hex_bytes.wrapping_add(i.wrapping_mul(2usize)), x as u8) };
         x >>= 8;
         // hex[i * 2U + 1U] = (char)x;  -> the low nibble's character
         unsafe {
-            core::ptr::write(
-                hex.wrapping_add(i.wrapping_mul(2usize).wrapping_add(1usize)),
-                x as u8 as c_char,
+            store_u8(
+                hex_bytes.wrapping_add(i.wrapping_mul(2usize).wrapping_add(1usize)),
+                x as u8,
             )
         };
         i = i.wrapping_add(1usize);
     }
     // hex[i * 2U] = 0U;
-    unsafe { core::ptr::write(hex.wrapping_add(i.wrapping_mul(2usize)), 0) };
+    unsafe { store_u8(hex_bytes.wrapping_add(i.wrapping_mul(2usize)), 0u8) };
 
     hex
 }

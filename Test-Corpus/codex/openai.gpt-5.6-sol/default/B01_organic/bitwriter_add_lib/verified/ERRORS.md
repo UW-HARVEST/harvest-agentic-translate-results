@@ -1,23 +1,24 @@
-# Error Surface
+# Error surface
 
-Mechanical searches covered `RETURN_ERROR`, negative and null returns,
-`assert`, null checks, range checks, comparison branches, and min/max tokens
-in `../c_src/include` and `../c_src/src`.
+Mechanical searches covered `c_src/include/` and `c_src/src/` for error-return
+macros, `return -1`, `return NULL`, enums, assertions, null checks, explicit
+`if`/`switch` checks, and min/max constants.
 
-The C API contains no explicit rejection or error branch. `bitwriter_add`
-unconditionally returns `0`; therefore the mechanically derived table has no
-rows.
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
-|---|----------|---------------------------------------------|-------------------|----------|
+There are no defined rejection branches in the C source. `bitwriter_add`
+unconditionally returns `0` after dereferencing `bw`. The header documents no
+valid range for `bits`.
 
-Generic FFI boundary behavior (null `bw`, zero `bits`, and values beyond the
-64-bit width) is covered separately by the differential tests. There are no
-length parameters or enum parameters in this API.
+## Generic ABI boundary coverage
 
-- [x] Null `bw`: C and Rust terminate with the same process status.
-- [x] Zero width: C and Rust return and mutate state identically.
-- [x] Widths above 64 and out-of-range `bw.bits`: C and Rust return and mutate
-  state identically.
-- [x] Oversized lengths: not applicable; the API has no length parameter.
-- [x] Out-of-range enums: not applicable; the API has no enum parameter.
+These are required boundary probes, not rows in the mechanically derived error
+table because the C implementation does not reject them:
+
+- [x] null `bw` pointer: matching external-process termination
+- [x] zero `bits`: matching return value and all struct bytes
+- [x] `bits == 65` (one past the 64-bit value width): matching observed ABI behavior
+- [x] `bits == UINT32_MAX`: matching observed ABI behavior
+- [x] out-of-range enum: not applicable; the public API has no enum parameter
+- [x] zero/oversized buffer length: not applicable; `len` is state only and is not read

@@ -1,74 +1,73 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Mechanically derived from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared libraries.
 
-## Build commands
+## C shared library
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-dfq9xw.so   (name = parent dir name, per CMakeLists.txt)
+`c_src/build/libharvest-work-Q7Powp.so`
 
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libhex2bin_lib.so   ([lib] name = "hex2bin_lib", cdylib)
+```
+$ nm -D --defined-only libharvest-work-Q7Powp.so
+0000000000001109 T hex2bin
 ```
 
-## C `.so` — defined dynamic symbols (`nm -D --defined-only`)
+## Rust shared library
 
-| # | symbol | type | source of definition |
-|---|--------|------|----------------------|
-| 1 | `hex2bin` | `T` (global text) | `c_src/src/lib.c:5`, declared `c_src/include/lib.h:4` |
+`translation/target/release/libhex2bin_lib.so`
 
-That is the complete list. `c_src/CMakeLists.txt` compiles exactly one
-translation unit (`src/lib.c`), which defines exactly one non-static function.
-There are no macro-generated symbols, no global/static data symbols, no
-constructors/destructors and no versioned aliases.
-
-## C `.so` — undefined symbols (`nm -D -u`)
-
-| symbol | kind | note |
-|--------|------|------|
-| `strchr@GLIBC_2.2.5` | `U` libc | used by the `ignore` handling |
-| `_ITM_deregisterTMCloneTable` | `w` weak toolchain | not a library symbol |
-| `_ITM_registerTMCloneTable` | `w` weak toolchain | not a library symbol |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` weak libc | not a library symbol |
-| `__gmon_start__` | `w` weak toolchain | not a library symbol |
-
-All of these are libc/toolchain, so none needs a Rust counterpart. `strchr` is
-reimplemented inside the Rust crate as the private helper `strchr_found`
-(`translation/src/lib.rs`), preserving the C-standard behaviour that the
-terminating NUL of the search string is part of the string.
-
-## Rust `.so` — defined dynamic symbols
-
-| # | symbol | type | source |
-|---|--------|------|--------|
-| 1 | `hex2bin` | `T` (global text) | `translation/src/lib.rs`, `#[unsafe(no_mangle)] pub unsafe extern "C" fn hex2bin` |
-
-## Symbol diff — MUST be empty
-
-```sh
-comm -23 <(nm -D --defined-only c_src/build/libharvest-work-dfq9xw.so   | awk '{print $3}' | sort -u) \
-         <(nm -D --defined-only translation/target/release/libhex2bin_lib.so | awk '{print $3}' | sort -u)
+```
+$ nm -D --defined-only libhex2bin_lib.so | grep -v ' [wWvV] '
+00000000000116c0 T hex2bin
 ```
 
-Result: **empty** — every symbol exported by the C `.so` is exported by the Rust
-`.so` under the exact same name.
+## Parity table
 
-* Missing symbols whose implementation exists but is unexported: **none**.
-* Missing symbols whose C source was never translated: **none** — `src/lib.c` is
-  the only C source file and its single function is fully translated (no stubs,
-  no `unimplemented!()` anywhere in the crate).
+| # | C symbol | type | present in Rust `.so`? | notes |
+|---|----------|------|------------------------|-------|
+| 1 | `hex2bin` | `T` (global text) | YES — `T hex2bin` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn hex2bin` in `src/lib.rs` |
 
-Undefined non-libc symbols in the Rust `.so`: **none** (only the standard
-`libc`/`libgcc_s`/`ld-linux` imports that any Rust cdylib pulls in).
+**Missing symbols: 0.**
+
+The C translation unit (`c_src/src/lib.c`) contains exactly one function and
+`c_src/include/lib.h` declares exactly that one function, so the whole C
+library surface is a single symbol. No C module was skipped by the
+translation; there is nothing to add and nothing to stub.
+
+## Undefined (imported) symbols
+
+The C `.so` imports exactly one non-weak symbol, `strchr@GLIBC_2.2.5`:
+
+```
+$ nm -D --undefined-only libharvest-work-Q7Powp.so
+  w _ITM_deregisterTMCloneTable
+  w _ITM_registerTMCloneTable
+  w __cxa_finalize@GLIBC_2.2.5
+  w __gmon_start__
+  U strchr@GLIBC_2.2.5
+```
+
+The Rust `.so` re-implements the `strchr()`-found predicate internally
+(`strchr_found` in `src/lib.rs`), so it does not import `strchr` for this
+purpose. Its `nm -D --undefined-only` output is entirely **libc** entries
+(`malloc`, `memcpy`, `strlen`, `read`, `mmap64`, …) plus the **libgcc
+unwinder** (`_Unwind_*`) and glibc TLS/atexit hooks that the Rust standard
+library pulls into every `cdylib`. None of them is a project symbol.
+
+**0 missing/undefined non-libc symbols in the Rust `.so`.** Verified by the
+`--- symbol parity ---` step of `run-tests.sh`, which diffs the two symbol
+lists and requires the diff to be empty.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, therefore the only
-possible feature configuration is the default (empty) one. The automation loop in
-`check_features.sh` enumerates the feature list from `Cargo.toml` and confirms
-that `--no-default-features` and the default build are the only two
-configurations, and that both compile and pass the full test suite.
+`translation/Cargo.toml` declares **no `[features]` section**, therefore the
+only build configuration is the default one. `cargo test
+--no-default-features` is equivalent to the default build. There are no
+`#[cfg(feature = ...)]` gates in `src/lib.rs` and no `#ifdef` gates in
+`c_src/src/lib.c`.
+
+## Binary executable
+
+`c_src/CMakeLists.txt` only contains `add_library(... SHARED src/lib.c)` — no
+`add_executable`. `translation/Cargo.toml` has only a `[lib]` target with
+`crate-type = ["cdylib"]` — no `[[bin]]`. Therefore the "compare C and Rust
+binary stdout" gate is **not applicable** to this project.

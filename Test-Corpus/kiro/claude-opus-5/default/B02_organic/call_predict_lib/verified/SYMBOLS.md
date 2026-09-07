@@ -1,74 +1,74 @@
-# SYMBOLS.md — dynamic-symbol surface parity
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-## Commands used
+* C `.so`:    `c_src/build/libharvest-work-cPQcWe.so`
+* Rust `.so`: `translation/target/release/libcall_predict_lib.so`
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libharvest-work-IN8iuS.so
+## Defined (exported) symbols
 
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libcall_predict_lib.so
-```
+`nm -D --defined-only` output:
 
-## C `.so` defined dynamic symbols
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `call_predict` | `T` | `T` | OK — exported by both |
 
-```
-00000000000024c8 T call_predict
-```
+**C exported symbol count (non-weak, defined): 1**
+**Missing from Rust `.so`: 0**
 
-## C `.so` undefined dynamic symbols (all weak libc/toolchain, not translatable)
+## Weak / compiler-generated entries present in the C `.so`
 
-```
-w _ITM_deregisterTMCloneTable
-w _ITM_registerTMCloneTable
-w __cxa_finalize@GLIBC_2.2.5
-w __gmon_start__
-```
+These are emitted by the toolchain (crtstuff / glibc), not by `src/lib.c`, and are
+not part of the library's API surface. Both objects carry them:
 
-## Rust `.so` defined dynamic symbols
+| symbol | C | Rust |
+|--------|---|------|
+| `_ITM_deregisterTMCloneTable` | `w` | `w` |
+| `_ITM_registerTMCloneTable` | `w` | `w` |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | `w` |
+| `__gmon_start__` | `w` | `w` |
 
-```
-00000000000116a0 T call_predict
-```
+## Symbols in the C source that are NOT exported
 
-## Parity table
+All of these are `static` in `c_src/src/lib.c`, so the C compiler gives them
+internal linkage and they do not appear in `.dynsym`. The Rust translation
+mirrors this by leaving them private (no `#[no_mangle]`):
 
-| # | C symbol | present in Rust `.so` | notes |
-|---|----------|-----------------------|-------|
-| 1 | `call_predict` | YES (`#[unsafe(no_mangle)] pub extern "C" fn`) | only exported entry point of the library |
+`BTAC1C2_PredictSample`, `BTAC1C2_PredictSample_Pfn0` … `BTAC1C2_PredictSample_Pfn11`,
+`BTAC1C2_GetPredictFunc`.
 
-**Symbol diff (C defined − Rust defined): EMPTY.**
+`c_src/include/lib.h` declares `int get_predict_func(int pfcn);`, but **no such
+function is defined anywhere in the C sources**. It is therefore absent from the
+C `.so` (`nm -D` confirms) and is correctly absent from the Rust `.so` too.
+Adding it to Rust would be a fabricated symbol, which is worse than parity.
 
-## Symbols intentionally NOT exported
+## Undefined (imported) symbols in the Rust `.so`
 
-* `get_predict_func` — declared in the public header `c_src/include/lib.h`
-  (`int get_predict_func(int pfcn);`) but **never defined anywhere in the C
-  sources**. It does not appear in `nm -D` on the C `.so`, so it is not part of
-  the ABI. Exporting it from Rust would *add* a symbol the C does not have, and
-  any body would be a fabrication. Correctly absent.
-* `BTAC1C2_PredictSample`, `BTAC1C2_PredictSample_Pfn0` … `_Pfn11`,
-  `BTAC1C2_GetPredictFunc` — all declared `static` in `c_src/src/lib.c`, hence
-  internal linkage and absent from the dynamic symbol table. They are
-  nevertheless fully translated in `translation/src/lib.rs` (as private
-  `unsafe extern "C" fn` items) because `call_predict` observes their
-  *addresses*; no module or function of the C source was skipped.
+`nm -D -u` on the Rust `.so` lists only libc / libgcc-unwind imports:
 
-## Completeness check of the translation vs. the C source
+`_Unwind_*` (libgcc), `__cxa_thread_atexit_impl`, `__errno_location`,
+`__tls_get_addr`, `abort`, `bcmp`, `calloc`, `close`, `dl_iterate_phdr`, `free`,
+`fstat64`, `getcwd`, `getenv`, `gettid`, `lseek64`, `malloc`, `memcpy`,
+`memmove`, `memset`, `mmap64`, `munmap`, `open64`, `posix_memalign`,
+`pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, `read`,
+`readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`, `syscall`,
+`write`, `writev`.
 
-Every top-level definition in `c_src/src/lib.c` has a Rust counterpart:
+**Non-libc undefined symbols: 0.**
 
-| C definition | kind | Rust counterpart |
-|---|---|---|
-| `btac1c_u16` / `btac1c_s16` / `btac1c_byte` | typedef | `type btac1c_u16/_s16/_byte` |
-| `struct btac1c_idxstate_s` | struct | `#[repr(C)] pub struct btac1c_idxstate` |
-| `BTAC1C2_PredictSample` | static fn | `BTAC1C2_PredictSample` |
-| `BTAC1C2_PredictSample_Pfn0..11` | static fn ×12 | `BTAC1C2_PredictSample_Pfn0..11` |
-| `BTAC1C2_GetPredictFunc` | static fn | `BTAC1C2_GetPredictFunc` |
-| `call_predict` | exported fn | `call_predict` |
+## Feature combinations
 
-Nothing missing, nothing stubbed, no `unimplemented!()`.
+`translation/Cargo.toml` declares an optional, non-default feature
+`test_internals`, used only to expose the `static` C helpers for differential
+testing (see `CONFIGS.md`). The default build's exported surface is byte-for-byte
+the single `call_predict` symbol above.
+
+| feature combo | exported symbols |
+|---|---|
+| (default / `--no-default-features`) | `call_predict` — exact parity with C |
+| `--features test_internals` | `call_predict` + `rsw_predict_sample`, `rsw_pfn0` … `rsw_pfn11` (test scaffolding only) |
+
+## Gate
+
+- [x] `nm -D` shows 0 missing symbols in the Rust `.so` relative to the C `.so`.
+- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.

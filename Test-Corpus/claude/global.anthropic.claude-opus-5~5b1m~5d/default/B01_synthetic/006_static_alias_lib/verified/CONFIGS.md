@@ -1,86 +1,70 @@
-# CONFIGS.md — Configuration surface for VALID inputs (Phase A)
+# CONFIGS.md — Phase B configuration-surface table
 
-Mechanically derived from the C source, not from assumptions.
+Derived mechanically from the branches the C actually takes.
 
-## Axes the C code actually branches on
+## Axes the C code distinguishes
 
-**Public entry points** (`c_src/include/staticalias.h` — the complete API):
+Public entry points (`c_src/include/staticalias.h`), lowest level first:
 
-* `int *static_alias(int *outer)` — the **lowest-level** entry point. Tested
-  directly, not only through `driver`.
-* `void driver(int initial_value, int iterations)` — the convenience/one-shot
-  wrapper that composes `static_alias` in a loop and formats with `printf`.
+* `int *static_alias(int *outer)` — the **low-level** entry point; owns the
+  `static int inner = 1;` and the single `if (*outer >= inner)`.
+* `void driver(int initial_value, int iterations)` — the **composed wrapper**;
+  loops `iterations` times over `static_alias`, feeding each call's *returned*
+  pointer back in as the next call's argument, and `printf("%d\n", *running_sum)`
+  after each call.
 
-**Runtime options / modes / flags:** there are **none**. No `#ifdef` in the
-sources, no global config, no setters, no `enum`/`struct` parameters, and
-`Cargo.toml` declares no `[features]`. The only "mode" the library has is the
-value of its hidden persistent state.
+There are **no runtime options, modes or flags** (no setters, no globals in the
+header, no `#ifdef` in the source outside the header guard, no `switch`), so the
+option axis is empty. The axes the code does branch on are:
 
-**Hidden persistent state (the real configuration axis):**
-`static int inner = 1` inside `static_alias`. It survives across calls and
-across `driver` invocations, so *every* call's behaviour is a function of
-(argument, current `inner`). It is reachable/observable because the `if` arm
-returns `&inner`, so a test can both read and *set* it. Distinguished states:
-`1` (fresh, as loaded), `0`, positive, negative, `INT_MAX`, `INT_MIN`.
+| axis | values the C distinguishes | where |
+|------|---------------------------|-------|
+| **A** branch | `*outer >= inner` (then: mutate `inner`, return `&inner`) / `*outer < inner` (else: mutate `*outer`, return `outer`) | `staticalias.c:30` |
+| **B** alias shape | `outer` → caller-owned `int` / `outer` == `&inner` (the static's own address, obtainable only from a previous return) | `staticalias.c:32,35` |
+| **C** static state | fresh library load (`inner == 1`) / `inner` already advanced by earlier calls (persistent across calls **and** across entry points) | `staticalias.c:29` |
+| **D** value shape | `INT_MIN`, negative, `0`, `1` (== the initial `inner`), `== inner` exactly, small positive, large positive, `INT_MAX` | operands of `>=`, `+=` |
+| **E** call count | 1 / 2 / many (state accumulates; the branch *flips* once `*outer` catches up to `inner`) | caller-driven |
+| **F** `iterations` | `0`, `1`, `2`, small, large | `staticalias.c:45` |
+| **G** returned identity | `&inner` (same address every time) vs the caller's own pointer | `staticalias.c:32,35` |
+| **H** entry-point interleaving | `static_alias` only / `driver` only / `static_alias` then `driver` / `driver` then `static_alias` / interleaved | shared `inner` |
 
-**Branches taken on those axes** (`staticalias.c`):
+Build configurations: `Cargo.toml` has no `[features]`, so there is exactly one.
 
-* L30 `if (*outer >= inner)` → arm A: `inner += *outer; return &inner`
-  (returned pointer is the library's static, *not* the caller's).
-* L33 `else` → arm B: `*outer += inner; return outer`
-  (returned pointer **is** the caller's pointer; caller's memory was written).
-* L45 `for (i = 0; i < iterations; i++)` → zero-trip vs 1 vs many.
-* L46 the returned pointer is fed back as the next `outer` ⇒ aliasing
-  `outer == &inner` once arm A is taken, which pins the loop into arm A forever
-  (self-doubling).
-* L47 `printf("%d\n", *running_sum)` ⇒ exact stdout byte stream is part of the
-  observable output, including negative values and stdio buffering.
+## Rows
 
-**Input shapes special-cased:** signed comparison relation (`>`, `==`, `<`);
-sign of the operands; boundary magnitudes (`INT_MIN`, `INT_MIN+1`, `-1`, `0`,
-`1`, `INT_MAX-1`, `INT_MAX`); whether the addition overflows; pointer aliasing
-(`outer` is the caller's own variable vs `outer == &inner`); call-sequence
-length (empty / one / many); pointer identity of the result (`ret == outer` vs
-`ret == &inner`) and its stability across calls.
+Each row is checked off only after **many randomized inputs** (fixed seed,
+`SplitMix64`) pass for it, comparing the C `.so` and the Rust `.so`. For
+`static_alias` every call compares three observables: the **returned pointer's
+identity class** (is it the argument, or the library's static?), the **`int` at
+the returned pointer**, and **`*outer` after the call**. For `driver` the whole
+**stdout byte stream** is compared (fd-1 redirection + `fflush`).
 
-## Configuration table
-
-Every row is exercised with **many randomized inputs** (fixed seed
-`0x5A71C_A11A5` — a deterministic SplitMix64 in the test file) unless the row is
-by definition a single exhaustive/edge combination; both `.so`s are driven
-through `libloading` in the identical configuration and compared byte-for-byte
-(returned value, returned pointer *identity*, the caller's `*outer` after the
-call, the resulting `inner`, and — for `driver` — the captured stdout bytes).
+Every row that needs a virgin `inner` gets a **private copy of both `.so` files**
+so `dlopen` produces a fresh data segment.
 
 | # | entry point(s) | configuration (options set + input shape) | ✅ |
-|---|----------------|--------------------------------------------|----|
-| 1 | `static_alias` | fresh state (`inner == 1` as loaded), single call, `*outer` random ⇒ mixes arms A and B | [x] |
-| 2 | `static_alias` | `inner` preset random, `*outer > inner` (strict) ⇒ arm A; assert result pointer `== &inner` (`!= outer`), `inner` updated, `*outer` untouched | [x] |
-| 3 | `static_alias` | `inner` preset random, `*outer == inner` (the `>=` equality boundary) ⇒ arm A | [x] |
-| 4 | `static_alias` | `inner` preset random, `*outer < inner` ⇒ arm B; assert result pointer `== outer`, `*outer` updated, `inner` untouched | [x] |
-| 5 | `static_alias` | `*outer == inner - 1` and `*outer == inner + 1` (one step either side of the branch boundary), randomized `inner` | [x] |
-| 6 | `static_alias` | `inner == 0`, randomized `*outer` (both arms, sign-dependent) | [x] |
-| 7 | `static_alias` | `inner` negative, `*outer` negative (arm A/B by relation, negative accumulation) | [x] |
-| 8 | `static_alias` | `inner` positive, `*outer` negative ⇒ arm B, `*outer` moves toward positive | [x] |
-| 9 | `static_alias` | `inner` negative, `*outer` positive ⇒ arm A | [x] |
-| 10 | `static_alias` | `inner == INT_MAX` / `INT_MIN`, `*outer` random ⇒ arm A/B with wrap-around | [x] |
-| 11 | `static_alias` | `*outer == INT_MAX` / `INT_MIN` / `0` / `1` / `-1`, `inner` random | [x] |
-| 12 | `static_alias` | exhaustive cross-product of the 8 boundary values `{INT_MIN, INT_MIN+1, -1, 0, 1, 2, INT_MAX-1, INT_MAX}` for `inner` × the same 8 for `*outer` (64 combinations) | [x] |
-| 13 | `static_alias` | **self-aliasing**: feed the returned `&inner` back in, repeatedly (5..40 randomized repeats) ⇒ pinned in arm A, doubling with wrap | [x] |
-| 14 | `static_alias` | **persistence across calls**: long randomized call sequence (256 calls) on independent caller variables, state carried between them; every step compared | [x] |
-| 15 | `static_alias` | pointer-identity/stability: `&inner` returned by different calls is the same address; arm B returns exactly the caller's pointer | [x] |
-| 16 | `static_alias` | two distinct caller variables used alternately, so arm B writes to different memory each time while `inner` is unchanged | [x] |
-| 17 | `driver` | fresh state, `iterations == 0` ⇒ zero-trip loop, empty stdout, `inner` untouched | [x] |
-| 18 | `driver` | fresh state, `iterations == 1`, randomized `initial_value` ⇒ single line of stdout | [x] |
-| 19 | `driver` | fresh state, `iterations == 2` and `3`, randomized `initial_value` ⇒ first-iteration arm decides whether iteration 2 is self-aliasing (doubling) or another arm-B creep | [x] |
-| 20 | `driver` | fresh state, randomized `initial_value >= 1` (arm A first) × randomized `iterations` in `1..=64` ⇒ immediate lock into doubling + overflow wrap | [x] |
-| 21 | `driver` | fresh state, `initial_value` in `[0, inner)` and negative (arm B first) × randomized `iterations` ⇒ creep-then-lock path | [x] |
-| 22 | `driver` | `inner` preset (positive / negative / `0` / `INT_MAX` / `INT_MIN`) × randomized `initial_value` × randomized `iterations` ⇒ the full state × input cross-product | [x] |
-| 23 | `driver` | `initial_value` at boundaries `INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `INT_MAX-1`, `INT_MAX` × `iterations` in `{1,2,3,7,33,64}` × presets | [x] |
-| 24 | `driver` | many iterations (`128`, `1000`, `4096`) ⇒ long stdout stream, repeated wrap-around, stdio buffering across a large write | [x] |
-| 25 | `driver` | **two consecutive `driver` calls** with no state reset in between (state carry-over between wrapper invocations), randomized args | [x] |
-| 26 | `driver` + `static_alias` | **interleaved** low-level and wrapper calls on the same shared `inner` (randomized 64-step program mixing both entry points) | [x] |
-| 27 | `driver` | caller's argument copy: same `initial_value` passed twice in a row must not be mutated in the caller (by-value parameter), verified against C | [x] |
-| 28 | (data segment) | the **as-loaded** state: the `static int inner = 1;` initialiser read out of both freshly `dlopen`ed libraries, plus the fresh-state behaviour it implies. Added after mutation testing showed every other row presets `inner` and so could not catch a wrong initialiser. | [x] |
-
-Rows 1–28 are covered by `translation/tests/valid_paths.rs`.
+|---|----------------|-------------------------------------------|----|
+| 1 | `static_alias` | fresh state, single call, `*outer` randomized over the full `i32` range (axes A both, D all, E=1) | [x] |
+| 2 | `static_alias` | fresh state, single call, `*outer == 1` — exact `== inner` boundary, then-branch (A=then, D=`==inner`) | [x] |
+| 3 | `static_alias` | fresh state, single call, `*outer == 0` — one below `inner`, else-branch (A=else, D=0) | [x] |
+| 4 | `static_alias` | fresh state, single call, `*outer` random **negative** ⇒ always else-branch, returns own pointer (A=else, B=caller, G=arg) | [x] |
+| 5 | `static_alias` | fresh state, single call, `*outer` random **large positive** ⇒ then-branch, returns static (A=then, G=static) | [x] |
+| 6 | `static_alias` | fresh state, single call, `*outer` ∈ {`INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `2`, `INT_MAX-1`, `INT_MAX`} exhaustively (D extremes) | [x] |
+| 7 | `static_alias` | fresh state, **2 calls**, 2nd call re-passes the *returned* pointer (B: may become `&inner`; the self-alias shape) (E=2, B both) | [x] |
+| 8 | `static_alias` | fresh state, **many (64) calls**, always re-feeding the returned pointer — reproduces `driver`'s chain by hand at the low level (C advanced, E=many, G alternating) | [x] |
+| 9 | `static_alias` | fresh state, **many (64) calls**, always passing a *fresh caller-owned* `int` with a new random value each call, so `inner` advances while `*outer` does not (C advanced, B=caller) | [x] |
+| 10 | `static_alias` | fresh state, many calls alternating between the returned pointer and a fresh random caller-owned `int` (B alternating, H n/a) | [x] |
+| 11 | `static_alias` | state deliberately advanced first (one big positive call ⇒ large `inner`), then random `*outer` ⇒ else-branch dominates (C advanced, A=else) | [x] |
+| 12 | `static_alias` | **returned-pointer identity stability**: `&inner` returned by call *n* equals `&inner` returned by call *m*, and differs from any caller pointer (G) | [x] |
+| 13 | `driver` | fresh state, `iterations == 0`, random `initial_value` ⇒ empty stdout (F=0) | [x] |
+| 14 | `driver` | fresh state, `iterations == 1`, random `initial_value` (F=1, A both depending on value) | [x] |
+| 15 | `driver` | fresh state, `iterations == 2`, random `initial_value` — first call may take else-branch, second then-branch (F=2, the branch flip) | [x] |
+| 16 | `driver` | fresh state, random `initial_value` **≥ 1** (then-branch first ⇒ `running_sum` becomes `&inner` and stays there, doubling), `iterations` ∈ 1..24 (A=then, G=static, overflow reached) | [x] |
+| 17 | `driver` | fresh state, random `initial_value` **< 1** (else-branch first ⇒ `running_sum` stays on the stack slot and climbs by `inner` until it catches up, then flips) (A=else→then) | [x] |
+| 18 | `driver` | fresh state, `initial_value` = small negative with `iterations` large enough to cross the flip point several times (F=large, E=many) | [x] |
+| 19 | `driver` | fresh state, `initial_value` ∈ {`INT_MIN`, `-1`, `0`, `1`, `INT_MAX`} × `iterations` ∈ {1,2,3,8,40} — cross-product of the extremes (D extremes × F) | [x] |
+| 20 | mixed: `static_alias` → `driver` | fresh state, N random `static_alias` calls advance `inner`, *then* `driver` runs on that non-virgin state (H, C advanced) | [x] |
+| 21 | mixed: `driver` → `static_alias` | fresh state, `driver` advances `inner`, then random `static_alias` calls observe the carried-over state (H, C advanced) | [x] |
+| 22 | mixed: interleaved | fresh state, randomized interleaving of `static_alias` calls and `driver` calls, comparing pointer class, values **and** stdout at every step (H full) | [x] |
+| 23 | `driver` | fresh state, `iterations` large (4096) ⇒ long stdout stream, checks buffering/flush parity of the `printf` path (F=large) | [x] |
+| 24 | both | **state persistence within one load**: two consecutive `driver` calls on the same handle — the 2nd starts from the `inner` the 1st left (C) | [x] |

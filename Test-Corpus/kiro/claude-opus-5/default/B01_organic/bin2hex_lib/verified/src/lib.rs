@@ -67,27 +67,19 @@ pub unsafe extern "C" fn bin2hex(
         std::process::abort();
     }
 
-    // Past the guard above we know `hex_maxlen > bin_len * 2`, so a caller that
-    // honours the contract has room for `bin_len * 2 + 1` bytes.
+    // Past the guard above we know `hex_maxlen > bin_len * 2`, so writing
+    // `bin_len * 2 + 1` bytes stays inside the caller's buffer.
     //
-    // The accesses below deliberately use raw pointer arithmetic rather than
-    // `slice::from_raw_parts{,_mut}`, because a slice cannot faithfully model
-    // what the C does:
-    //
-    //   * a slice is limited to `isize::MAX` bytes, but the C guard happily
-    //     accepts `bin_len` up to `9223372036854775806`, for which
-    //     `bin_len * 2 + 1` exceeds `isize::MAX`. Building a slice there is UB
-    //     and trips a `debug_assert` inside `from_raw_parts`, whereas the C
-    //     simply indexes and (for any real allocation) faults;
-    //   * a slice must not be built from a NULL pointer even at length zero,
-    //     while the C never dereferences `hex`/`bin` when the corresponding
-    //     length is zero.
-    //
-    // `wrapping_add` is used instead of `add` for the same reason: `add`
-    // carries an address-computation-overflow precondition that C pointer
-    // arithmetic does not have.
+    // The accesses below deliberately go through `core::ptr::read`/`write`
+    // rather than through slices (`slice::from_raw_parts`) or the `*p` deref
+    // operator. Both of those carry debug-assertion precondition checks that
+    // turn a null buffer pointer into a *panic/abort* (SIGABRT), whereas the C
+    // -- which performs no null check at all -- dies with SIGSEGV. Matching the
+    // C's exact faulting behaviour in every build profile therefore requires
+    // the unchecked `ptr::read`/`ptr::write` forms.
     while i < bin_len {
-        let byte = unsafe { *bin.wrapping_add(i) };
+        // The C reads `bin[i]` once and derives both nibbles from it.
+        let byte = unsafe { core::ptr::read(bin.add(i)) };
 
         // c = bin[i] & 0xf;  b = bin[i] >> 4;  (both `int` after promotion)
         let c = (byte & 0xf) as i32;
@@ -97,16 +89,16 @@ pub unsafe extern "C" fn bin2hex(
         let mut x: u32 = (c_nibble_to_hex(c) as u32) << 8 | c_nibble_to_hex(b) as u32;
 
         // hex[i * 2U] = (char)x;  -> low byte, i.e. the high nibble's digit
-        unsafe { *hex.wrapping_add(i * 2) = x as u8 as c_char };
+        unsafe { core::ptr::write(hex.add(i * 2), x as u8 as c_char) };
         x >>= 8;
         // hex[i * 2U + 1U] = (char)x;  -> the low nibble's digit
-        unsafe { *hex.wrapping_add(i * 2 + 1) = x as u8 as c_char };
+        unsafe { core::ptr::write(hex.add(i * 2 + 1), x as u8 as c_char) };
 
         i += 1;
     }
 
     // hex[i * 2U] = 0U;
-    unsafe { *hex.wrapping_add(i * 2) = 0 };
+    unsafe { core::ptr::write(hex.add(i * 2), 0) };
 
     hex
 }

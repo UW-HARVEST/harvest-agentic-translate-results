@@ -1,123 +1,133 @@
 # CONFIGS.md — Phase B valid-path configuration surface table
 
-Derived mechanically from `c_src/src/lib.c`. The decisive property of this library is
-that it is **stateful**: three file-scope `static` variables (`accumulator = 0`,
-`multiplier = 1`, `operation_count = 0`) are mutated by every operation and are then
-**branched on** by `findrep`. So the "runtime options" of this API are not flags passed
-by the caller — they are the *reachable states of those three statics*, which the caller
-selects by choosing a **call sequence**. A row is therefore
-`(entry point) × (pre-seeded static state) × (input shape)`.
+Mechanically derived from the branches `c_src/src/lib.c` actually takes.
 
-## Axis 1 — Public entry points (all 8, low-level ones included)
+## The axes the C branches on
 
+This library has **no runtime option/flag setters and no `#ifdef`**. Its
+"configuration" is entirely (a) *which entry point* is called, (b) *the shape
+of the integer/string argument*, and (c) **the hidden `static` state left over
+from previous calls** — which is the real configuration axis, since three
+`static` variables persist for the lifetime of the loaded `.so`.
+
+**Axis 1 — entry point** (all 8 exported symbols, including the four
+lowest-level `operation_func` targets that `findrep` dispatches through; these
+are tested *directly*, not only via the `findrep` wrapper):
 `add_to_accumulator`, `multiply_with_multiplier`, `subtract_from_accumulator`,
-`divide_multiplier` (the four `operations[]` table members, callable directly),
-`process_octal_string`, `find_and_replace_char`, `validate_and_normalize` (leaf helpers),
-`findrep` (the composed pipeline, and the only function in `include/lib.h`).
+`divide_multiplier`, `process_octal_string`, `find_and_replace_char`,
+`validate_and_normalize`, `findrep`.
 
-## Axis 2 — State-dependent branches the C actually takes
+**Axis 2 — `validate_and_normalize` value bucket** (`lib.c:81-87`), which is
+applied to each of `findrep`'s four params:
+`Z` = 0 · `N` = negative · `L` = `0 < v < 0100` (lower-clamped to 64) ·
+`P` = `0100 <= v <= 0777` (passthrough) · `U` = `v > 0777` (clamped to 511).
 
-| C line | branch condition | state axis it reads |
-|--------|------------------|---------------------|
-| L132 | `active_params >= mode_add` (`>= 1`) | input shape |
-| L137 | `active_params >= mode_multiply` (`>= 2`) | input shape |
-| L142 | `accumulator > 0150` (`> 104`) | `accumulator` |
-| L157 | `has_accumulator && has_multiplier` | `accumulator != 0`, `multiplier != 0` |
-| L161 | `multiplier > 0100` (`> 64`) | `multiplier` |
-| L169 | `!result_exists` (`result == 0`) | computed result |
-| L54 | `b != 0` | input shape |
-| L81/82/84 | `value > 0`, `< 0100`, `> 0777` | input shape |
-| L69/L126 | `memchr` hit vs. miss | input shape |
+**Axis 3 — `active_params` bucket** (`lib.c:107`, compared against `mode_add=01`
+and `mode_multiply=02`; `mode_subtract=03`/`mode_divide=04` are dead constants):
+`0` (no dispatch) · `1` (add only) · `2..4` (add + multiply).
 
-## Axis 3 — Input shapes `validate_and_normalize` special-cases
+**Axis 4 — hidden-state guards**: `accumulator > 0150` (`lib.c:142`),
+`multiplier > 0100` (`lib.c:161`), `both_active = accumulator && multiplier`
+(`lib.c:155`), and the `result == 0` sentinel (`lib.c:169`).
 
-`INT_MIN` · negative · `0` · `1..63` (clamped up to 64) · `63` · `64` · `65..510` ·
-`511` · `512..` (clamped down to 511) · `INT_MAX`
+**Axis 5 — call-sequence length**: fresh library (`accumulator=0, multiplier=1,
+operation_count=0`) vs. state accumulated over 2, 3, … N prior calls. Every
+`operation_func` mutates state, so the Nth call's return value depends on all
+N-1 before it. Randomized long sequences are the only way to cover this.
 
-## Configuration table
+**Axis 6 — string shape** for `find_and_replace_char` / `process_octal_string`:
+empty · 1 byte · many bytes · match at index 0 / middle / last · no match ·
+repeated matches · high-bit (non-ASCII) bytes · byte values needing
+`unsigned char` narrowing.
 
-`ap` = `active_params`. "fresh" = statics at their initial values
-(`accumulator=0, multiplier=1, operation_count=0`), obtained by `dlopen`ing a *fresh
-private copy* of each `.so` so the two libraries always start in lockstep.
+## Configuration rows
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `validate_and_normalize` | `value = 0` (identity path, `is_nonzero == 0`) | [x] |
-| 2 | `validate_and_normalize` | `value` random in `1..=63` → clamps up to 64 | [x] |
-| 3 | `validate_and_normalize` | `value` random in `64..=511` → identity | [x] |
-| 4 | `validate_and_normalize` | `value` random in `512..=INT_MAX` → clamps to 511 | [x] |
-| 5 | `validate_and_normalize` | `value` random in `INT_MIN..=-1` → identity (never clamped) | [x] |
-| 6 | `validate_and_normalize` | exact boundaries `{INT_MIN,-1,0,1,63,64,65,510,511,512,INT_MAX}` | [x] |
-| 7 | `validate_and_normalize` | full-range random `i32`, 20 000 draws | [x] |
-| 8 | `add_to_accumulator` | fresh state, random `(a,b)` — accumulates over 500 calls, state carried | [x] |
-| 9 | `add_to_accumulator` | operands forcing signed overflow (`INT_MAX + INT_MAX`, `INT_MIN + INT_MIN`) | [x] |
-| 10 | `multiply_with_multiplier` | fresh state, random `(a,b)` — `multiplier` wraps quickly, 500 calls | [x] |
-| 11 | `multiply_with_multiplier` | `(a,b)` where `a*b == 0` → drives `multiplier` to 0 permanently (kills L157/L161) | [x] |
-| 12 | `multiply_with_multiplier` | overflow shapes `(INT_MIN,1)`, `(INT_MAX,INT_MAX)`, `(-1,INT_MIN)` | [x] |
-| 13 | `subtract_from_accumulator` | fresh state, random `(a,b)`, 500 calls, state carried | [x] |
-| 14 | `subtract_from_accumulator` | `a-b` overflow shapes (`INT_MIN - INT_MAX`) | [x] |
-| 15 | `divide_multiplier` | `b != 0`, `multiplier` positive → truncation toward zero | [x] |
-| 16 | `divide_multiplier` | `b != 0`, `multiplier` negative → C truncation toward zero, not floor | [x] |
-| 17 | `divide_multiplier` | `b` negative, sign-mixed dividend/divisor | [x] |
-| 18 | `divide_multiplier` | `b == 0` guard taken, `operation_count` still bumped (see ERRORS #1) | [x] |
-| 19 | `divide_multiplier` | interleaved with `multiply_with_multiplier` so `multiplier` cycles sign | [x] |
-| 20 | `process_octal_string` | `octal_val = 0` → `"Octal: 00, Decimal: 0"` (literal `0` prefix + `%o` of 0) | [x] |
-| 21 | `process_octal_string` | `octal_val = 0123` (83), the value `findrep` actually uses | [x] |
-| 22 | `process_octal_string` | random positive `octal_val`, 2 000 draws, full 100-byte dest compared | [x] |
-| 23 | `process_octal_string` | negative `octal_val` → `%o` as `unsigned`, `%d` as signed | [x] |
-| 24 | `process_octal_string` | `INT_MIN`, `INT_MAX`, `-1`, `1`, `7`, `8`, `0777`, `0100` | [x] |
-| 25 | `process_octal_string` | dest pre-filled with `0xAA` sentinel — verifies exact NUL placement and that no byte past the terminator is touched | [x] |
-| 26 | `find_and_replace_char` | hit at index 0 | [x] |
-| 27 | `find_and_replace_char` | hit mid-string / at last character | [x] |
-| 28 | `find_and_replace_char` | miss (ERRORS #12) | [x] |
-| 29 | `find_and_replace_char` | empty string (ERRORS #13) | [x] |
-| 30 | `find_and_replace_char` | multiple occurrences → only first replaced (ERRORS #17) | [x] |
-| 31 | `find_and_replace_char` | `search_char` full `i32` range incl. `>255`/negative/low-byte-0 (ERRORS #14–16) | [x] |
-| 32 | `find_and_replace_char` | random byte strings (incl. high-bit `0x80..0xFF` bytes) × random `search_char`, 5 000 draws | [x] |
-| 33 | `find_and_replace_char` | string already containing `'X'` | [x] |
-| 34 | `findrep` | fresh state, `ap = 0` (`0,0,0,0`) — both op blocks skipped, sentinel path | [x] |
-| 35 | `findrep` | fresh state, `ap = 1` — add block only (each of the 4 positions) | [x] |
-| 36 | `findrep` | fresh state, `ap = 2` — add + multiply blocks (all 6 position pairs) | [x] |
-| 37 | `findrep` | fresh state, `ap = 3` (all 4 position triples) | [x] |
-| 38 | `findrep` | fresh state, `ap = 4` | [x] |
-| 39 | `findrep` | fresh state, params drawn from the `validate_and_normalize` shape classes (clamp-up / identity / clamp-down / negative / zero) — full cross-product | [x] |
-| 40 | `findrep` | fresh state, params chosen so `accumulator > 104` on the **first** call → L142 subtract block fires | [x] |
-| 41 | `findrep` | fresh state, params chosen so `accumulator <= 104` → L142 skipped | [x] |
-| 42 | `findrep` | state where `multiplier > 64` → L161 divide fires | [x] |
-| 43 | `findrep` | state where `multiplier == 0` → `both_active == 0`, L158 skipped (ERRORS #26) | [x] |
-| 44 | `findrep` | state where `accumulator == 0` but `multiplier != 0` (ERRORS #25) | [x] |
-| 45 | `findrep` | **repeated calls, state carried**: same params called 1..50 times in a row — every later call sees a different `accumulator`/`multiplier`/`operation_count` and takes different branches | [x] |
-| 46 | `findrep` | **mixed sequence**: low-level ops pre-seed the statics, then `findrep` runs (composed-pipeline coverage that per-function tests cannot reach) | [x] |
-| 47 | `findrep` | boundary params `{INT_MIN,-1,0,1,63,64,511,512,INT_MAX}` cross-product over all 4 slots | [x] |
-| 48 | `findrep` | randomized fuzz: 20 000 calls, random params, state never reset — deep state divergence detector | [x] |
-| 49 | all 8 | randomized **interleaving** of every entry point (random op, random args), 20 000 steps on one shared library instance, comparing every return value and every buffer | [x] |
-| 50 | `findrep` | result-forced-to-zero search: params hunted so the computed `result` is exactly 0 → sentinel `0777` (ERRORS #28) | [x] |
+Each row is checked off only after passing **many randomized inputs** with a
+fixed seed (deterministic xorshift64*, `harness::Rng` in `tests/harness/mod.rs`).
+Row tests live in `tests/phase_b_valid.rs`.
 
-## Feature combinations
+| #  | entry point(s) | configuration (options set + input shape) | test | [ ] |
+|----|----------------|--------------------------------------------|------|-----|
+| 1  | `validate_and_normalize` | bucket `Z`: `v == 0` | `cfg_01_normalize_bucket_z` | [x] |
+| 2  | `validate_and_normalize` | bucket `N`: randomized `v < 0` incl. `INT_MIN`, `-1` | `cfg_02_normalize_bucket_n` | [x] |
+| 3  | `validate_and_normalize` | bucket `L`: randomized `1 <= v <= 63` (exhaustive) | `cfg_03_normalize_bucket_l` | [x] |
+| 4  | `validate_and_normalize` | bucket `P`: exhaustive `64 <= v <= 511` | `cfg_04_normalize_bucket_p` | [x] |
+| 5  | `validate_and_normalize` | bucket `U`: randomized `v >= 512` incl. `INT_MAX` | `cfg_05_normalize_bucket_u` | [x] |
+| 6  | `validate_and_normalize` | full-range randomized sweep across all buckets | `cfg_06_normalize_random_sweep` | [x] |
+| 7  | `add_to_accumulator` | fresh state, one call, randomized `(a,b)` full `i32` range | `cfg_07_add_single_fresh` | [x] |
+| 8  | `add_to_accumulator` | long randomized call sequence — accumulates state, drives `accumulator` through both signs and past `0150` | `cfg_08_add_sequence` | [x] |
+| 9  | `subtract_from_accumulator` | fresh state, one call, randomized `(a,b)` | `cfg_09_sub_single_fresh` | [x] |
+| 10 | `subtract_from_accumulator` | long randomized sequence (state-dependent) | `cfg_10_sub_sequence` | [x] |
+| 11 | `add_to_accumulator` + `subtract_from_accumulator` | interleaved randomized sequence — both mutate the *same* static | `cfg_11_add_sub_interleaved` | [x] |
+| 12 | `multiply_with_multiplier` | fresh state, one call, randomized `(a,b)` — includes wrapping products | `cfg_12_mul_single_fresh` | [x] |
+| 13 | `multiply_with_multiplier` | long randomized sequence — `multiplier` saturates to 0 or wraps chaotically | `cfg_13_mul_sequence` | [x] |
+| 14 | `multiply_with_multiplier` | operands constrained small (`-3..3`) so `multiplier` stays meaningful and crosses `0100` in both directions | `cfg_14_mul_small_operands` | [x] |
+| 15 | `divide_multiplier` | fresh state, randomized `b != 0` (`a` is ignored by the C) | `cfg_15_div_single_fresh` | [x] |
+| 16 | `divide_multiplier` | long randomized sequence with `b != 0`, positive and negative divisors | `cfg_16_div_sequence` | [x] |
+| 17 | `multiply_with_multiplier` + `divide_multiplier` | interleaved randomized sequence — both mutate `multiplier`; checks truncation-toward-zero composes identically | `cfg_17_mul_div_interleaved` | [x] |
+| 18 | all four `operation_func` targets | fully randomized interleaving of all 4, long sequence — the exact composed pipeline `findrep` builds, driven at the lowest level | `cfg_18_all_ops_interleaved` | [x] |
+| 19 | `process_octal_string` | `octal_val == 0`, `1`, `7`, `8`, `0123` (the literal `findrep` uses), `0777` | `cfg_19_octal_small_values` | [x] |
+| 20 | `process_octal_string` | randomized positive `octal_val` over full `i32` range | `cfg_20_octal_random_positive` | [x] |
+| 21 | `process_octal_string` | randomized negative `octal_val` — `%o` unsigned vs `%d` signed | `cfg_21_octal_random_negative` | [x] |
+| 22 | `process_octal_string` | extremes `INT_MAX`, `INT_MIN`, `-1`, and each power-of-two boundary where the octal digit count changes | `cfg_22_octal_length_boundaries` | [x] |
+| 23 | `find_and_replace_char` | match at index 0 | `cfg_23_replace_at_start` | [x] |
+| 24 | `find_and_replace_char` | match at the last byte before the NUL | `cfg_24_replace_at_end` | [x] |
+| 25 | `find_and_replace_char` | match in the middle; also the `'O'` / `"Octal: ..."` pairing `findrep` uses | `cfg_25_replace_middle_and_findrep_case` | [x] |
+| 26 | `find_and_replace_char` | 1-byte string, matching and non-matching | `cfg_26_replace_single_byte` | [x] |
+| 27 | `find_and_replace_char` | randomized byte strings × randomized `search_char` over the full `i32` range (covers narrowing, high-bit bytes, no-match) — whole buffer compared incl. bytes past the NUL | `cfg_27_replace_randomized` | [x] |
+| 28 | `find_and_replace_char` | strings containing embedded high-bit bytes `0x80..0xFF`, searched for both as positive and as negative `int` | `cfg_28_replace_high_bit_bytes` | [x] |
+| 29 | `findrep` | `active_params == 0`: `(0,0,0,0)` on a fresh library | `cfg_29_findrep_active_0` | [x] |
+| 30 | `findrep` | `active_params == 1`: each of the 4 single-nonzero positions, fresh library each time | `cfg_30_findrep_active_1_each_position` | [x] |
+| 31 | `findrep` | `active_params == 2`: all 6 position pairs | `cfg_31_findrep_active_2_all_pairs` | [x] |
+| 32 | `findrep` | `active_params == 3`: all 4 position triples | `cfg_32_findrep_active_3_all_triples` | [x] |
+| 33 | `findrep` | `active_params == 4`: all params nonzero | `cfg_33_findrep_active_4` | [x] |
+| 34 | `findrep` | full cross-product of the 5 value buckets `{Z,N,L,P,U}` over 4 params = 625 bucket combinations, one randomized representative each | `cfg_34_findrep_bucket_cross_product` | [x] |
+| 35 | `findrep` | `accumulator > 0150` guard TRUE — params chosen so the add pushes `accumulator` past 104 | `cfg_35_findrep_accumulator_guard_true` | [x] |
+| 36 | `findrep` | `multiplier > 0100` guard TRUE — reached after a multiply that leaves `multiplier > 64` | `cfg_36_findrep_multiplier_guard_true` | [x] |
+| 37 | `findrep` | `both_active` TRUE (both statics nonzero) vs FALSE | `cfg_37_findrep_both_active` | [x] |
+| 38 | `findrep` | repeated identical calls on the SAME loaded library — return value must drift identically as state accumulates (10 iterations) | `cfg_38_findrep_repeated_same_args` | [x] |
+| 39 | `findrep` | long randomized call sequence (200 calls, full `i32` params) on one loaded library — the deepest state-dependence test | `cfg_39_findrep_long_random_sequence` | [x] |
+| 40 | `findrep` | randomized params restricted to small values `-4..4`, long sequence — keeps `multiplier` from latching to 0 so the divide branch stays live | `cfg_40_findrep_small_params_sequence` | [x] |
+| 41 | `findrep` + all `operation_func` targets | randomized sequence mixing `findrep` calls with direct low-level operation calls, so `findrep` observes state it did not create itself | `cfg_41_mixed_findrep_and_direct_ops` | [x] |
+| 42 | `findrep` + `validate_and_normalize` + `process_octal_string` + `find_and_replace_char` | randomized sequence mixing the stateless helpers in between stateful calls, confirming they do not perturb the statics | `cfg_42_stateless_helpers_do_not_perturb_state` | [x] |
+| 43 | `findrep` | params at exact bucket boundaries `{0, 1, 63, 64, 511, 512, INT_MIN, INT_MAX}` cross-product sample | `cfg_43_findrep_boundary_params` | [x] |
+| 44 | `findrep` | `INT_MIN`/`INT_MAX` params driving `accumulator`/`multiplier` overflow inside the dispatched ops | `cfg_44_findrep_overflow_params` | [x] |
 
-`Cargo.toml` has no `[features]` table, so the cross-product of features is the single
-default configuration. Phase D re-runs the whole suite under `--no-default-features` and
-`--all-features` to confirm they are identical builds.
+## Verification results
 
-## Verification status
+All 44 rows pass across randomized inputs, in **every** build configuration.
+This crate declares no `[features]` and no `[[bin]]`/`src/bin` target, so the
+configuration set is:
 
-All 50 rows pass. Test files, all driving both `.so` files through `libloading`:
+| profile | feature combo | phase B | stress | phase C | phase D |
+|---------|---------------|---------|--------|---------|---------|
+| debug   | default (`--features=`)  | 44/44 | 6/6 | 36/36 | 3/3 |
+| debug   | `--no-default-features`   | 44/44 | 6/6 | 36/36 | 3/3 |
+| release | default (`--features=`)  | 44/44 | 6/6 | 36/36 | 3/3 |
+| release | `--no-default-features`   | 44/44 | 6/6 | 36/36 | 3/3 |
 
-| file | rows covered | tests |
-|------|--------------|-------|
-| `tests/smoke.rs`            | harness self-check + pristine-static-state proof | 3 |
-| `tests/leaf_functions.rs`   | 1–7, 20–33 + capacity boundaries                 | 26 |
-| `tests/stateful_ops.rs`     | 8–19, 49 (arithmetic subset)                     | 14 |
-| `tests/findrep.rs`          | 34–48, 50 + branch-coverage audit                | 23 |
-| `tests/all_entry_points.rs` | 49 (full 8-entry-point interleaving)             | 3 |
-| `tests/crash.rs`            | fatal paths (ERRORS 3, 18, 19)                   | 6 |
+Both profiles are exercised because the Rust `.so` genuinely differs between
+them: `release` sets `panic = "abort"`, and `debug` enables integer-overflow
+checks (which pass only because every arithmetic op in the translation uses the
+`wrapping_*` family, matching the C's two's-complement wraparound).
 
-`tests/findrep.rs` additionally runs an INDEPENDENT third implementation of the C
-control flow, so each call is checked three ways (C vs Rust vs model), and
-`branch_coverage_audit` asserts that all six `findrep` branches were observed both
-taken and not taken — this is what keeps the suite from being vacuously green.
+Reproduce with `bash .scratch/all_configs.sh`.
 
-Because `dlopen` de-duplicates by `(dev, ino)`, every test loads a **fresh private
-copy** of each `.so`, so the three mutable statics start at
-(`accumulator=0, multiplier=1, operation_count=0`) on both sides and stay in lockstep.
-`tests/smoke.rs::fresh_pair_resets_hidden_static_state` proves this actually works.
+There is **no driver binary**, so the "compare C and Rust stdout" gate does not
+apply; the C `CMakeLists.txt` builds only `add_library(... SHARED src/lib.c)`.
+
+## Beyond the rows
+
+`tests/phase_bc_stress.rs` adds 6 configuration-independent probes with
+different seeds and exhaustive grids, so a divergence that the per-row inputs
+happen to miss still surfaces:
+
+* `validate_and_normalize` exhaustive over `-2048..=2048` plus every
+  power-of-two neighbourhood across the full `i32` range;
+* `process_octal_string` exhaustive over `-4096..=4096`, every power-of-two
+  neighbourhood, and 20 000 random values, comparing the full 64-byte buffer;
+* `find_and_replace_char` over the complete 255 × 261 (byte × search_char)
+  matrix including negative and `>255` search chars;
+* `findrep` exhaustive over the dense `[-2,2]^4` grid on fresh state;
+* six independent 3 000-call mixed sequences over all eight entry points;
+* three independent 2 000-call bucket-combination sequences in differing orders.

@@ -1,115 +1,64 @@
-# SYMBOLS.md — Public symbol surface (Phase A)
+# SYMBOLS.md — Phase A symbol surface
 
-## Source of truth
+Derived mechanically from `nm -D` on both shared objects.
 
-The C library is built by `c_src/CMakeLists.txt`, which derives the project (and
-therefore library) name from the **parent directory name** of `c_src`:
+* C  `.so`: `c_src/build/libharvest-work-58LIFt.so`
+* Rust `.so`: `translation/target/release/libdiv_euclid_lib.so`
 
-```cmake
-cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH parent)
-cmake_path(GET parent FILENAME project_name)
-project(${project_name})
-add_library(${project_name} SHARED src/lib.c)
-```
+## C source inventory (completeness check)
 
-In this checkout that yields `c_src/build/libharvest-work-qEO2oO.so`. Tests must
-therefore **glob** `c_src/build/lib*.so` rather than hard-code the name.
+The whole C library is exactly two files:
 
-The Rust crate is `crate-type = ["cdylib"]`, `name = "div_euclid_lib"`, producing
-`translation/target/{debug,release}/libdiv_euclid_lib.so`.
+| file | contents |
+|------|----------|
+| `c_src/include/lib.h` | 1 line: `int div_euclid(int v1, int v2);` |
+| `c_src/src/lib.c`     | 32 lines: the single definition of `div_euclid` |
 
-C compile flags actually used (from `build/CMakeFiles/*.dir/flags.make`):
-`C_FLAGS = -fPIC` — i.e. **no `-O` flag, so the C reference is built at `-O0`**.
-This matters: `src/lib.c` contains one signed-overflow path (see `ERRORS.md`
-row 8) whose observable result is the `-O0` two's-complement wrap.
+`c_src/CMakeLists.txt` builds only `src/lib.c` into one `SHARED` library, and no
+executable/driver target. There is therefore **no untranslated C module** — the
+Rust crate covers 100% of the C source (`translation/src/lib.rs`, one function).
 
-## Complete C translation unit inventory
+## Defined (exported) dynamic symbols
 
-| C source file | translated to | status |
-|---------------|---------------|--------|
-| `c_src/src/lib.c` (33 lines, 1 function) | `translation/src/lib.rs` | complete |
-| `c_src/include/lib.h` (1 declaration) | n/a (header) | complete |
+`nm -D --defined-only`:
 
-There is exactly **one** C source file and **one** public function. No module was
-skipped, so no additional translation work was required for symbol parity.
+| # | symbol | in C `.so` | in Rust `.so` | status |
+|---|--------|-----------|---------------|--------|
+| 1 | `div_euclid` | `T` (0x10f9) | `T` (0x11690) | **MATCH** |
 
-## `nm -D --defined-only` comparison
+Symbol diff (`comm -23` of the two sorted defined-symbol name lists): **empty**.
+Reverse diff (Rust-only extra exports): **empty** — the Rust `cdylib` exports no
+extra public symbols (`div_euclid` is the only `#[no_mangle] pub extern "C"` item).
 
-### C `.so`
+## Undefined symbols
 
-```
-00000000000010f9 T div_euclid
-```
+Both objects import only libc / runtime symbols; no non-libc symbol is
+undefined in either.
 
-### Rust `.so` (non-`_`-prefixed, i.e. excluding Rust/`std` internals)
+C `.so` undefined: `_ITM_deregisterTMCloneTable` (w), `_ITM_registerTMCloneTable`
+(w), `__cxa_finalize@GLIBC_2.2.5` (w), `__gmon_start__` (w) — all weak.
 
-```
-div_euclid
-```
+Rust `.so` undefined: the same weak entries plus the standard Rust-std libc /
+unwinder imports pulled in by `libstd` (`_Unwind_*@GCC_*`, `__errno_location`,
+`__tls_get_addr`, `abort`, `bcmp`, `calloc`, `close`, `dl_iterate_phdr`, `free`,
+`fstat64`, `getcwd`, `getenv`, `gettid`, `lseek64`, `malloc`, `memcpy`,
+`memmove`, `memset`, `mmap64`, `munmap`, `open64`, `posix_memalign`,
+`pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, `read`,
+`readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`, `syscall`,
+`write`, `writev`, `__cxa_thread_atexit_impl`).
 
-### Symbol parity table
+**0 missing / undefined non-libc symbols in the Rust `.so`.**
 
-| # | symbol | C `.so` | Rust `.so` | declared in `include/lib.h` | resolution |
-|---|--------|---------|------------|-----------------------------|------------|
-| 1 | `div_euclid` | `T` (global text) | `T` (global text) | yes — `int div_euclid(int v1, int v2);` | already exported via `#[unsafe(no_mangle)] pub extern "C"` |
+## Feature combinations
 
-**Missing symbols: 0.** **Extra non-internal Rust symbols: 0.**
+`translation/Cargo.toml` declares **no `[features]` section**, so the only build
+configuration is the default one (`--no-default-features` is equivalent). The
+Phase D "every feature combination" requirement is satisfied by the single
+configuration; this is verified by the automated sweep in
+`tests/feature_sweep.sh`.
 
-There are no macro-generated symbols, no exported globals/data symbols, and no
-exported `static` helpers in the C (`nm` shows a single `T` entry), so the diff
-is empty by construction.
+## Completion
 
-## Undefined-symbol audit (`nm -D --undefined-only`)
-
-The C `.so` imports only weak CRT hooks
-(`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`).
-
-The Rust `.so` imports those same weak CRT hooks plus **libc and libgcc-unwind
-symbols only** (`malloc`, `free`, `memcpy`, `memset`, `abort`, `mmap64`,
-`dl_iterate_phdr`, `_Unwind_*`, `pthread_key_*`, …). These come from Rust's
-`std`/panic-runtime, not from untranslated C code.
-
-**0 missing/undefined non-libc symbols in the Rust `.so`.**
-
-## Feature configurations
-
-`translation/Cargo.toml` has **no `[features]` section**, so the crate has
-exactly one feature configuration (empty default). Phase D's "every feature
-combination" therefore reduces to:
-
-| # | invocation | meaning |
-|---|------------|---------|
-| 1 | `cargo test --offline` | default (= no features) |
-| 2 | `cargo test --offline --no-default-features` | identical set (no default feature list exists) |
-| 3 | `cargo test --offline --all-features` | identical set (no features declared) |
-
-All three are still run explicitly by `run_all.sh` to prove the symbol set and
-the differential results are invariant.
-
-> Note: `cargo` must be invoked with `--offline` in this sandbox
-> (crates.io index is unreachable); `libloading 0.8.9` and `cfg-if 1.0.4` are
-> present in the local registry cache.
-
-## Verified result
-
-`run_all.sh` recomputes the diff for each of the 6 configurations
-(dev/release x default/`--no-default-features`/`--all-features`) and reports:
-
-```
-symbol diff: EMPTY (1 C symbol(s) all present in Rust)
-undefined symbols: libc/unwind only
-```
-
-for every one of them. This is also enforced as a test
-(`tests/phase_d_symbols.rs`), so it cannot silently regress:
-
-* `phase_d_every_c_symbol_is_exported_by_rust` — `nm -D --defined-only` set
-  difference (C minus Rust) must be empty;
-* `phase_d_rust_has_no_untranslated_undefined_symbols` — every undefined symbol
-  in the Rust `.so` must be libc/libgcc-unwind;
-* `phase_d_rust_so_is_loadable_and_symbol_is_callable_via_dlsym` — the
-  `#[no_mangle]` wrapper is reachable exactly as an external C caller reaches
-  it.
-
-**0 symbols missing. No C source was left untranslated; no stubs were added.**
+- [x] Every C-exported symbol is exported by the Rust `.so` with the exact same name.
+- [x] `nm -D` symbol diff is empty in both directions.
+- [x] No stubs / `unimplemented!()` / `todo!()` anywhere in `translation/src`.

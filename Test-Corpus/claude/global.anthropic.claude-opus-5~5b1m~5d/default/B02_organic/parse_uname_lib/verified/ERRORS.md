@@ -1,85 +1,108 @@
-# ERRORS.md — Error / rejection surface table (Phase A)
+# ERRORS.md — Phase A: error / rejection surface table
 
-Mechanically grepped from `c_src/src/lib.c`. There are **no** `assert`s, no error
-enums, and no `RETURN_ERROR`-style macros in this library. Every rejection path
-is one of:
+Mechanically derived by grepping `c_src/src/lib.c` for every `return`,
+sentinel, guard, and range check. There are no `assert`s, no error enums, and
+no `RETURN_ERROR`-style macros in this library; rejection is expressed
+entirely as **NULL returns**, **`0` returns**, and **early `return;`**.
 
-* an early `return` guarding a null pointer (`lib.c:36-38`, `lib.c:64-65`),
-* `return 0` after a failed `regcomp` (`lib.c:40-43`),
-* `return !result` collapsing a non-zero `regexec` status to `0` (`lib.c:45-47`),
-* a "not found" sentinel: `get_os_arch` returns the initial `NULL` (`lib.c:19,29`),
-  `strstr` returning `NULL` skipping an entire block (`lib.c:68,98,102,109,135,142`),
-* an unchecked out-of-bounds write, `*(p + strlen(p) - 1) = '\0'` with
-  `strlen(p) == 0` (`lib.c:72,106,113,131`) — a *quirk*, not a guard, but it is a
-  distinct observable behaviour on invalid/degenerate input and must be matched.
-
-`grep`-verified inventory of every `return` and every implicit-skip check:
+Grep evidence:
 
 ```
-lib.c:19   char * os_arch = NULL;            <- sentinel initialiser
-lib.c:23   if (strstr(os_header, ARCHS[i]))  <- no null check on os_header
-lib.c:29   return os_arch;                   <- NULL == "not found"
-lib.c:36   if (!(pattern && string)) {
-lib.c:37       return 0;
-lib.c:40   if (regcomp(&regex, pattern, REG_EXTENDED)) {
-lib.c:41       fprintf(stderr, "Couldn't compile regular expression '%s'\n", pattern);
-lib.c:42       return 0;
-lib.c:45   result = regexec(...);
-lib.c:47   return !result;                   <- REG_NOMATCH -> 0
-lib.c:64   if (!osd)
-lib.c:65       return;                        <- silent no-op
-lib.c:68   if (str_tmp = strstr(uname, " [Ver: "), str_tmp)
-lib.c:72   *(str_tmp + strlen(str_tmp) - 1) = '\0';
-lib.c:75   if (w_regexec("^([0-9]+)\\.*", ...))
-lib.c:82   if (w_regexec("^[0-9]+\\.([0-9]+)\\.*", ...))
-lib.c:89   if (w_regexec("^[0-9]+\\.[0-9]+\\.([0-9]+(\\.[0-9]+)*)\\.*", ...))
-lib.c:98   if (str_tmp = strstr(uname, " ["), str_tmp)
-lib.c:102  if (str_tmp = strstr(osd->os_name, ": "), str_tmp)
-lib.c:106  *(osd->os_version + strlen(osd->os_version) - 1) = '\0';
-lib.c:109  if (str_tmp = strstr(osd->os_version, " ("), str_tmp)
-lib.c:113  *(osd->os_codename + strlen(osd->os_codename) - 1) = '\0';
-lib.c:131  *(osd->os_name + strlen(osd->os_name) - 1) = '\0';
-lib.c:135  if (str_tmp = strstr(osd->os_name, "|"), str_tmp)
-lib.c:142  if (str_tmp = get_os_arch(uname), str_tmp)
+$ grep -n 'return\|if (!' c_src/src/lib.c
+29:    return os_arch;                 # NULL when no arch matched
+37:        return 0;                   # !(pattern && string)
+42:        return 0;                   # regcomp failed  (+ fprintf to stderr)
+47:    return !result;                 # 0 when regexec did not match
+65:        return;                     # !osd
 ```
+
+Every `if (str_tmp = strstr(...), str_tmp)` is additionally a *silent*
+rejection path: when the separator is absent the corresponding output field is
+left **untouched** (i.e. whatever the caller pre-set, NULL for a zeroed
+`os_data`). Those are rows 8–15.
 
 ## Table
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test | ok |
-|----|----------|----------------------------------------------|-------------------|------|----|
-| E1  | `w_regexec` | `pattern == NULL`, `string` valid (`lib.c:36`) | returns `0`; `pmatch` untouched | `e1_pattern_null` | [x] |
-| E2  | `w_regexec` | `string == NULL`, `pattern` valid (`lib.c:36`) | returns `0`; `pmatch` untouched | `e2_string_null` | [x] |
-| E3  | `w_regexec` | `pattern == NULL && string == NULL` (`lib.c:36`) | returns `0`; `pmatch` untouched | `e3_both_null` | [x] |
-| E4  | `w_regexec` | `regcomp` fails — unbalanced `(` / `[`, bad `{n,m}`, trailing `\`, bare `*`, `[z-a]`, unmatched `)` (`lib.c:40`) | writes `Couldn't compile regular expression '<pat>'\n` to `stderr`, returns `0`; `pmatch` untouched | `e4_regcomp_failure_matrix` | [x] |
-| E5  | `w_regexec` | valid pattern that does not match `string` → `regexec` returns `REG_NOMATCH` (1) (`lib.c:45,47`) | returns `0` | `e5_nomatch` | [x] |
-| E6  | `w_regexec` | `nmatch == 0` (with non-null `pmatch`) | `pmatch` left completely untouched; return value still 0/1 by match | `e6_nmatch_zero` | [x] |
-| E7  | `w_regexec` | `nmatch == 0` **and** `pmatch == NULL` | no write, return value by match | `e7_nmatch_zero_pmatch_null` | [x] |
-| E8  | `w_regexec` | `nmatch` larger than the number of groups (e.g. `nmatch=8` on a 1-group pattern) | surplus entries set to `{-1,-1}` | `e8_nmatch_oversized` | [x] |
-| E9  | `w_regexec` | group present in pattern but **not participating** in the match (e.g. `^(a)?b` vs `"b"`) | matched group entry is `{-1,-1}`, return `1` | `e9_nonparticipating_group` | [x] |
-| E10 | `w_regexec` | empty pattern `""` (valid ERE, matches everything) | returns `1`, `match[0] == {0,0}` | `e10_empty_pattern` | [x] |
-| E11 | `w_regexec` | empty subject `""` | return by whether the pattern matches the empty string | `e11_empty_subject` | [x] |
-| E12 | `get_os_arch` | no architecture substring anywhere in `os_header` (`lib.c:19,29`) | returns `NULL` | `e12_arch_not_found` | [x] |
-| E13 | `get_os_arch` | empty string `""` | returns `NULL` | `e13_arch_empty` | [x] |
-| E14 | `parse_uname_string` | `osd == NULL` (`lib.c:64-65`) | silent `return`, no write anywhere, `uname` buffer unmodified | `e14_osd_null` | [x] |
-| E15 | `parse_uname_string` | neither `" [Ver: "` nor `" ["` present (`lib.c:68,98` both fail) | only `os_arch` may be set; every other field stays as the caller left it (**never zeroed**) | `e15_no_bracket_at_all` | [x] |
-| E16 | `parse_uname_string` | `" ["` present, but no `": "` after it (`lib.c:102` fails) → `lib.c:131` else-branch | `os_name` = text after `" ["` with its last byte chopped; `os_version`/`os_major`/`os_minor`/`os_codename` untouched | `e16_bracket_without_colon` | [x] |
-| E17 | `parse_uname_string` | `" ["` at the very end → text after it is `""` → `lib.c:131` runs with `strlen==0` | writes `'\0'` to `os_name[-1]` (heap-metadata high byte, already 0 → benign); `os_name` stays `""` | `e17_empty_os_name_underflow` | [x] |
-| E18 | `parse_uname_string` | `": "` at the very end → `os_version == ""` → `lib.c:106` runs with `strlen==0` | writes `'\0'` to `os_version[-1]`; `os_version` stays `""` | `e18_empty_os_version_underflow` | [x] |
-| E19 | `parse_uname_string` | `" ("` at the very end of version → `os_codename == ""` → `lib.c:113` with `strlen==0` | writes `'\0'` to `os_codename[-1]`; `os_codename` stays `""` | `e19_empty_os_codename_underflow` | [x] |
-| E20 | `parse_uname_string` | `uname` ends exactly with `" [Ver: "` → `str_tmp == ""` → `lib.c:72` with `strlen==0` | writes `'\0'` **into the caller's `uname` buffer** at the byte before, i.e. over the trailing space of `" [Ver: "` | `e20_empty_ver_underflow_caller_buffer` | [x] |
-| E21 | `parse_uname_string` | `" [Ver: "` path, version text is non-numeric (`"abc]"`) → all three `w_regexec` at `lib.c:75,82,89` return 0 | `os_major`/`os_minor`/`os_build` untouched; `os_version`/`os_platform`/`os_name` still set | `e21_ver_nonnumeric` | [x] |
-| E22 | `parse_uname_string` | `" [Ver: "` path, only a major (`"10]"`) → `lib.c:82,89` fail | `os_major="10"`, `os_minor`/`os_build` untouched | `e22_ver_major_only` | [x] |
-| E23 | `parse_uname_string` | `" [Ver: "` path, major.minor only (`"10.0]"`) → `lib.c:89` fails | `os_build` untouched | `e23_ver_major_minor_only` | [x] |
-| E24 | `parse_uname_string` | non-`Ver` path, version text non-numeric → `lib.c:117,124` fail | `os_major`/`os_minor` untouched | `e24_nonver_nonnumeric` | [x] |
-| E25 | `parse_uname_string` | empty `uname` (`""`) | both `strstr` fail, `get_os_arch("")` → `NULL`; nothing is written to `osd` at all | `e25_uname_empty` | [x] |
-| E26 | `parse_uname_string` | `os_name` has no `"|"` (`lib.c:135` fails) | `os_platform` untouched (stays whatever the caller had) | `e26_no_pipe` | [x] |
-| E27 | `parse_uname_string` | `"|"` is the last byte of `os_name` → `os_platform = strdup("")` | `os_platform == ""` (no trim is applied here) | `e27_trailing_pipe` | [x] |
-| E28 | `w_regexec` | pattern uses BRE-only syntax invalid under `REG_EXTENDED` (`\(`…`\)` mismatch, `\{`) | same accept/reject decision + same return as C | `e28_bre_vs_ere` | [x] |
-| E29 | `get_os_arch` / `parse_uname_string` | `os_header` / `uname == NULL` — **no null guard exists** in the C (`lib.c:23`, `lib.c:68`) | undefined behaviour: `strstr(NULL, …)` faults. Both libraries call the *same* libc `strstr` with the same argument, so behaviour is identical by construction. Asserted out-of-process. | `e29_null_uname_both_fault` | [x] |
-| E30 | `w_regexec` | `nmatch > 0` with `pmatch == NULL` | undefined behaviour in glibc `regexec` (writes through the null `pmatch`); identical by construction — same libc call. Documented, not executed. | (documented) | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `get_os_arch` | `os_header` contains none of the 12 ARCHS (e.g. `"Linux ppc64le 5.4"`) | returns `NULL` (`os_arch` stays `NULL`, loop falls through `ARCHS[12]==NULL`) |
+| 2 | `get_os_arch` | `os_header` is the empty string `""` | returns `NULL` |
+| 3 | `w_regexec` | `pattern == NULL` (string non-NULL) | returns `0`, `pmatch` untouched, nothing printed |
+| 4 | `w_regexec` | `string == NULL` (pattern non-NULL) | returns `0`, `pmatch` untouched, nothing printed |
+| 5 | `w_regexec` | `pattern == NULL && string == NULL` | returns `0` |
+| 6 | `w_regexec` | `pattern` is not a valid POSIX ERE, so `regcomp` != 0 (e.g. `"["`, `"("`, `"a{2,1}"`, `"*"`, `"a\\"`, `"(|"`, `"[z-a]"`) | returns `0`; writes `Couldn't compile regular expression '<pattern>'\n` to **stderr**; `regfree` NOT called |
+| 7 | `w_regexec` | valid pattern that does not match `string` (`regexec` returns `REG_NOMATCH`) | returns `0` (`!result` where `result != 0`); `pmatch` contents are unspecified/left by regexec |
+| 8 | `w_regexec` | `nmatch == 0` (with any `pmatch`, incl. NULL) | `regexec` writes nothing; return value is still `1` on match / `0` on no-match |
+| 9 | `parse_uname_string` | `osd == NULL` | returns immediately, no writes, `uname` **not** mutated (not even the `strstr` truncation) |
+| 10 | `parse_uname_string` | `uname` contains neither `" [Ver: "` nor `" ["` (e.g. `"Linux x86_64"`) | takes the `else` branch, inner `if` fails: `os_name/os_version/os_major/os_minor/os_codename/os_platform/os_build` all left untouched; ONLY `os_arch` is set (or left NULL per row 1) |
+| 11 | `parse_uname_string` | Windows branch, version text has no leading digits (e.g. `"W [Ver: abc]"`) | all three `w_regexec` calls return 0 ⇒ `os_major`, `os_minor`, `os_build` left `NULL`; `os_name`, `os_version`, `os_platform="windows"` still set; **`os_arch` never set** (Windows branch skips `get_os_arch`) |
+| 12 | `parse_uname_string` | Windows branch, only a major present (e.g. `"W [Ver: 10]"`) | `os_major="10"`; minor & build regexes fail ⇒ `os_minor`/`os_build` stay `NULL` |
+| 13 | `parse_uname_string` | Windows branch, major+minor only (e.g. `"W [Ver: 10.0]"`) | `os_major`,`os_minor` set; `os_build` stays `NULL` |
+| 14 | `parse_uname_string` | Unix branch, no `": "` after `" ["` (e.g. `"Linux [ubuntu]"`) | `else` at line 130-132: `*(os_name+strlen(os_name)-1)='\0'`; `os_version`/`os_major`/`os_minor`/`os_codename` stay `NULL` |
+| 15 | `parse_uname_string` | Unix branch, `os_version` has no `" ("` (e.g. `"Linux [ubuntu: 20.04]"`) | `os_codename` stays `NULL` |
+| 16 | `parse_uname_string` | Unix branch, `os_name` has no `"|"` (e.g. `"Linux [ubuntu: 20.04]"`) | `os_platform` stays `NULL` |
+| 17 | `parse_uname_string` | Unix branch, `os_version` has no leading digits (e.g. `"L [name: notaversion]"`) | `os_major`/`os_minor` stay `NULL` |
+| 18 | `parse_uname_string` | Unix branch, `os_version` major only (e.g. `"L [n: 7]"`) | `os_major="7"`, `os_minor` `NULL` |
+| 19 | `parse_uname_string` | `os_uname` field | **never** written by any code path — always left as the caller set it, in every branch |
+| 20 | `parse_uname_string` | Windows branch never sets `os_arch`/`os_codename` even when `uname` contains an arch string (e.g. `"W x86_64 [Ver: 10.0.1]"`) | `os_arch == NULL`, `os_codename == NULL` |
+| 21 | `parse_uname_string` | Underflow write: Windows branch with empty version, `"W [Ver: "` ⇒ `strlen(str_tmp)==0` ⇒ `*(str_tmp-1)='\0'` | writes the NUL one byte *before* `str_tmp`, i.e. **inside** the caller's `uname` buffer (the `' '` of `" [Ver: "`); then all regexes fail, `os_version=""`, `os_platform="windows"` |
+| 22 | `parse_uname_string` | Underflow write: Unix branch `"Linux ["` ⇒ `os_name=strdup("")` ⇒ `*(os_name-1)='\0'` | out-of-bounds write 1 byte before a heap block (heap-metadata corruption). Same UB must be reproduced by Rust byte-for-byte |
+| 23 | `parse_uname_string` | Underflow write: Unix branch `"L [n: "` ⇒ `os_version=strdup("")` ⇒ `*(os_version-1)='\0'` | same 1-byte heap underflow |
+| 24 | `parse_uname_string` | Underflow write: Unix branch `"L [n: 1.2 ()"` ⇒ codename becomes `""` ⇒ `*(os_codename-1)='\0'` | same 1-byte heap underflow |
+| 25 | `parse_uname_string`/`dup_match` | regex matched overall but group 1 did not participate ⇒ `match[1] = {-1,-1}` ⇒ `match_size = 0`, `malloc(1)`, `snprintf(dst,1,"%.*s",0, base-1)` | allocates a 1-byte `""` string (not NULL). Reachable pattern-wise only for the build regex's optional group; must match C exactly |
+| 26 | `parse_uname_string` | `uname == NULL` with non-NULL `osd` | **not checked by C** ⇒ `strstr(NULL, ...)` segfaults. Rust must be identically unchecked (verified by symmetric crash in a forked child) |
+| 27 | `get_os_arch` | `os_header == NULL` | **not checked** ⇒ `strstr(NULL,...)` segfaults; Rust identical |
+| 28 | `w_regexec` | `pmatch == NULL` with `nmatch > 0` and a matching pattern | **not checked** ⇒ `regexec` writes to NULL / segfaults; Rust identical |
+| 29 | `w_regexec` | oversized `nmatch` (e.g. `SIZE_MAX`, or `64` with a 2-element `pmatch`) | **not checked** ⇒ `regexec` writes `min(nmatch, re_nsub+1)` entries; buffer overrun beyond `re_nsub+1` does NOT occur, so a large `nmatch` with a big enough buffer is well-defined and must agree |
+| 30 | `parse_uname_string` | `" [Ver: "` present **and** `" ["` present (`" [Ver: "` wins, since it is tested first) | Windows branch taken; the `" ["` / arch logic is never reached |
 
-Out-of-range enum values: this library's public API has **no enum parameters**
-(`os_data` is all `char *`; `nmatch` is `size_t`; `w_regexec` has no flags
-parameter — `REG_EXTENDED`/`eflags=0` are hard-coded at `lib.c:40,45`). The
-nearest equivalent — an arbitrary `int` where a small domain is expected — is
-`nmatch`, covered by E6/E7/E8 plus the huge-`nmatch` sweep in Phase B (`b_*`).
+---
+
+## Verification status — every row has a passing differential test
+
+Run with `cargo test --offline --release --test phase_c_errors` (34/34 pass;
+also re-run for the debug profile and every feature combination by
+`./check_features.sh`).
+
+| # | covering test in `tests/phase_c_errors.rs` | [x] |
+|---|--------------------------------------------|-----|
+| 1 | `err01_get_os_arch_no_match_returns_null` | [x] |
+| 2 | `err02_get_os_arch_empty_returns_null` | [x] |
+| 3 | `err03_w_regexec_null_pattern` | [x] |
+| 4 | `err04_w_regexec_null_string` | [x] |
+| 5 | `err05_w_regexec_both_null` | [x] |
+| 6 | `err06_w_regexec_regcomp_failure_return_value` + `err06b_..._stderr_message` (stderr compared verbatim in child processes) | [x] |
+| 7 | `err07_w_regexec_no_match_returns_zero` | [x] |
+| 8 | `err08_w_regexec_nmatch_zero` | [x] |
+| 9 | `err09_parse_null_osd` | [x] |
+| 10 | `err10_no_separator_only_arch_set` | [x] |
+| 11 | `err11_windows_non_numeric_version` | [x] |
+| 12 | `err12_windows_major_only` | [x] |
+| 13 | `err13_windows_major_minor_only` | [x] |
+| 14 | `err14_unix_no_colon` | [x] |
+| 15 | `err15_unix_no_codename` | [x] |
+| 16 | `err16_unix_no_pipe_platform` | [x] |
+| 17 | `err17_unix_non_numeric_version` | [x] |
+| 18 | `err18_unix_major_only` | [x] |
+| 19 | `err19_os_uname_never_written` | [x] |
+| 20 | `err20_windows_never_sets_arch_or_codename` | [x] |
+| 21 | `err21_windows_empty_version_underflow_in_buffer` | [x] |
+| 22 | `err22_heap_underflow_os_name` (isolated child + in-process field compare) | [x] |
+| 23 | `err23_heap_underflow_os_version` | [x] |
+| 24 | `err24_heap_underflow_os_codename` | [x] |
+| 25 | `err25_non_participating_group_yields_empty_string` | [x] |
+| 26 | `err26_parse_null_uname_crash_parity` (both fault with the same signal) | [x] |
+| 27 | `err27_get_os_arch_null_crash_parity` | [x] |
+| 28 | `err28_regexec_null_pmatch_crash_parity` | [x] |
+| 29 | `err29_oversized_nmatch` + `err29b_oversized_nmatch_stdout_parity` (`SIZE_MAX`) | [x] |
+| 30 | `err30_ver_marker_takes_precedence` | [x] |
+| — | generic boundaries: NULL pointers, zero/oversized lengths, one-past-range `nmatch`, every single byte value 1..=255 as a uname, embedded NULs, empty patterns → `generic_boundaries_sweep` | [x] |
+
+### Note on out-of-range enum values
+
+The public surface (`include/lib.h` + the two extra exported functions)
+contains **no enum parameters** — the only non-pointer arguments are
+`size_t nmatch` (covered by rows 8, 28, 29 and the boundary sweep). The
+`regmatch_t` values crossing the boundary are plain `int`s and are seeded with
+the out-of-band pattern `{0x5A5A5A5A, 0x3C3C3C3C}` before every call so that
+"slot left untouched" is observable and compared.

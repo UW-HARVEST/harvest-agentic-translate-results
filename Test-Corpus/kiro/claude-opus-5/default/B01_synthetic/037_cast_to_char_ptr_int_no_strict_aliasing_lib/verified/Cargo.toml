@@ -8,16 +8,18 @@ name = "driver"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
+[dev-dependencies]
+libloading = "0.8"
+
+# `harness = false`: the differential tests capture the process's stdout at the
+# file-descriptor level (both libraries write through libc's `FILE *stdout`).
+# The built-in libtest harness writes its own progress text to fd 1 from other
+# threads, which would land inside a capture window. A hand-rolled sequential
+# runner guarantees no concurrent writer to fd 1.
 [[test]]
 name = "differential"
 path = "tests/differential.rs"
-# libtest cannot be used: capturing the library's stdout requires redirecting
-# fd 1 (process-global), which collides with libtest's own parallel progress
-# output on fd 1. The test file provides its own serial runner.
 harness = false
-
-[dev-dependencies]
-libloading = "0.8"
 
 [profile.release]
 panic = "abort"

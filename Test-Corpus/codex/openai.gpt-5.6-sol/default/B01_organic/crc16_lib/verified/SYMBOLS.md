@@ -1,20 +1,22 @@
 # Dynamic Symbol Surface
 
-Reference library: `../c_src/build/libharvest-work-9jqAfK.so`
+Source library:
+`../c_src/build/libharvest-work-9JQpsO.so`
 
-The table is the complete output surface of `nm -D` on the C shared library.
-`UND` entries are compiler/runtime imports, not library-owned exports.
+Rust library:
+`target/release/libcrc16_lib.so`
 
-| C symbol | C type | Rust type | Status |
-|----------|--------|-----------|--------|
-| `_ITM_deregisterTMCloneTable` | weak `UND` | weak `UND` | present |
-| `_ITM_registerTMCloneTable` | weak `UND` | weak `UND` | present |
-| `__cxa_finalize@GLIBC_2.2.5` | weak `UND` | weak `UND` | present |
-| `__gmon_start__` | weak `UND` | weak `UND` | present |
-| `crc16` | global defined function (`T`) | global defined function (`T`) | present |
+Mechanically extracted with:
 
-## Library-Owned Export Gate
+```text
+nm -D --defined-only <library> | awk '$2 ~ /^[TDBRWSV]$/ { print $3 }' | sort -u
+```
 
-- [x] `crc16`
-- [x] Zero C-defined dynamic symbols missing from Rust
-- [x] Zero undefined non-libc library symbols in Rust
+| C symbol | C type | Rust symbol present | Rust type |
+|----------|--------|---------------------|-----------|
+| `crc16` | `T` | yes | `T` |
+
+Missing C symbols in Rust: **0**
+
+The remaining undefined dynamic symbols in each shared object are platform
+runtime/libc/loader dependencies rather than library API symbols.

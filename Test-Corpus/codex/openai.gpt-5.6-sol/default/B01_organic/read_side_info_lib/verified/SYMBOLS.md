@@ -1,11 +1,21 @@
 # Dynamic symbol surface
 
-Source: `nm -D --defined-only ../c_src/build/libharvest-work-B6YCD0.so`.
+Built reference:
+`../c_src/build/libharvest-work-N3dP5u.so`
 
-| C symbol | Rust symbol | Status |
-|----------|-------------|--------|
-| `read_side_info` | `read_side_info` | [x] |
+Built translation:
+`target/release/libread_side_info_lib.so`
 
-Missing C symbols in the Rust shared library: **0**.
+Source command:
 
-There are no macro-generated public symbols and `get_bits` is `static` in C.
+```text
+nm -D --defined-only <library>
+```
+
+| C address | type | symbol | Rust address | status |
+|-----------|------|--------|--------------|--------|
+| `00000000000011d1` | `T` | `read_side_info` | `0000000000011b80` | present |
+
+Missing C symbols in Rust: **0**
+
+- [x] Final Phase D symbol comparison repeated after all fixes.

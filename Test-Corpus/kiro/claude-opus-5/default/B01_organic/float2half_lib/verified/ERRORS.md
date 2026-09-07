@@ -1,54 +1,86 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase C error-surface table
 
-## How this was derived
+Derived mechanically from the whole of `c_src` (`include/lib.h`, 3 lines;
+`src/lib.c`, 118 lines — the entire library).
 
-Mechanical grep of the entire C source (`c_src/src/lib.c`, 118 lines, and
-`c_src/include/lib.h`, 3 lines) for every rejection construct:
+## Mechanical grep audit of every rejection construct
 
-```
-grep -nE 'return -|return NULL|RETURN_ERROR|assert|errno|exit\(|abort\(|goto|if *\(|switch|#ifdef|#if |#else|enum |\?|<|>|==|!=' \
-     c_src/src/lib.c c_src/include/lib.h
-```
+Every one of these greps over `c_src/**` returns **zero** matches:
 
-Matches, after excluding the 1024 table-literal lines: only `#include <stdint.h>`
-(both files) and the two body lines 116–117. `grep -c return c_src/src/lib.c` = **1**.
+| construct searched | matches |
+|--------------------|---------|
+| `return -1` / `return NULL` / `return 0;` as an error path | 0 |
+| `RETURN_ERROR` / `*_ERROR` / `*_ERR` macro | 0 |
+| `assert` / `static_assert` / `abort` / `exit` | 0 |
+| `errno` | 0 |
+| `if` / `else` / `switch` / `case` / `?:` (any branch at all) | 0 |
+| `enum` (so: no enum parameter can receive an out-of-range int) | 0 |
+| `*` pointer parameter anywhere in the public API | 0 |
+| length / size / count parameter anywhere in the public API | 0 |
+| `#ifdef` / `#if` / `#ifndef` conditional compilation | 0 |
+| `goto` | 0 |
+| named min/max range constants | 0 |
 
-## Result: the error surface is EMPTY
+`float2half` is a **total function**: signature `uint16_t float2half(float)`.
+It is straight-line code with no branches, returns `uint16_t`, and **every one
+of the 65536 possible return values is a legitimate result**, so the API has no
+error code and no sentinel value. There is no input it rejects.
 
-`float2half` is a **total, branch-free function**:
+Consequently the error surface consists entirely of *implicit* safety
+invariants (the checks the C author encoded in masks and table sizes rather
+than in `if` statements) plus the generic FFI boundaries. Each row below is a
+condition that in the Rust translation *could* panic / trap / UB where the C
+does not, i.e. a place where Rust could diverge by aborting instead of
+returning. Each row asserts C and Rust return the **same** `uint16_t`.
 
-* it takes one `float` **by value** — there is no pointer parameter, so there is
-  no null-pointer check and no null-pointer path to test;
-* there is no length, count, size, or buffer parameter — so there is no zero
-  length or oversized length path;
-* there is no `enum` parameter anywhere in the public header — so there is no
-  out-of-range-enum path (this class of bug cannot exist in this API);
-* there are no `if`/`switch`/`?:`/`goto`/`#ifdef` statements, no `assert`, no
-  `errno` use, no `return -1` / `return NULL` / error macro, and no error enum;
-* the single `return` is unconditional.
+## Error-surface table
 
-Every one of the 2^32 possible incoming bit patterns is therefore an *accepted*
-input that produces a defined `uint16_t`. There is no input the C rejects, so
-there is no error code or sentinel to match. The rows below are consequently
-**not** "C returns an error" rows; they are the *implicit* invariants the C
-relies on instead of checking, plus the generic-boundary classes the task
-requires, restated as "what the C actually does". Each row has a differential
-test asserting Rust returns the **same value** the C returns (and, for the
-invariant rows, that neither side traps/panics/UBs where the other does not).
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `float2half` | Table index overrun: any input whose raw exponent field would index past `m__base[512]` / `m__shift[512]`. The C guards this **only** with `j = (n >> 23) & 0x1ff`, which caps `j` at 511 for every one of the 2^32 bit patterns. Adversarial probe: all-ones bits `0xFFFFFFFF` (`j == 511`, the last element) and `0x7FFFFFFF` (`j == 255`). | no rejection: returns `m__base[j] + ((n & 0x7fffff) >> m__shift[j])`; `0xFFFFFFFF` -> `0xffff`, `0x7FFFFFFF` -> `0x7fff`. Rust must index in bounds, not panic. | [x] |
+| 2 | `float2half` | Shift-width overflow: `(n & 0x007fffff) >> m__shift[j]` where `m__shift[j]` is the widest value in the table (`0x18` = 24). C never range-checks the shift; it relies on the table only ever holding 13..=24, all `< 32`. Probe: every `j` in the two `shift == 0x18` runs (`j` 0..102, 143..254, 256..358, 399..510) with mantissa `0x7fffff`. | no rejection: the shift is well defined; addend is `0`, result is exactly `m__base[j]`. Rust must not panic with "attempt to shift right with overflow". | [x] |
+| 3 | `float2half` | `uint16_t` truncation of the `uint32_t` sum: `(uint16_t)((uint32_t)m__base[j] + addend)`. C silently truncates. Worst case is `j == 511`, mantissa `0x7fffff`: `0xfc00 + 0x3ff = 0xffff`. | no rejection: `0xffff`. (Exhaustively confirmed the sum never exceeds `0xffff`, so truncation is never observable — but Rust must use wrapping, not checked, arithmetic so it cannot panic in debug builds either.) | [x] |
+| 4 | `float2half` | Signalling NaN input (`0x7FBFFFFF`, `0xFFBFFFFF`) — the payload must survive the FFI float argument unaltered; a quieting or canonicalisation on either side changes the result. | `0x7c00 + (0x3fffff >> 13)` = `0x7dff` / `0xfdff`. | [x] |
+| 5 | `float2half` | Quiet NaN with all distinct payloads, including payloads whose low 13 bits are non-zero (dropped) and payloads that shift down to `0` (`0x7F800001`, which is a NaN that maps onto the **infinity** encoding `0x7c00` — a value-dependent aliasing the C performs and must be reproduced, not "fixed"). | `0x7c00` for `0x7F800001`; `0xfc00` for `0xFF800001`. | [x] |
+| 6 | `float2half` | `+Inf` / `-Inf` (`0x7F800000`, `0xFF800000`). | `0x7c00` / `0xfc00`. | [x] |
+| 7 | `float2half` | Overflow to infinity: finite float too large for half, one step past the last representable exponent (`j == 143`, i.e. bits `0x47800000`, and the negative mirror `0xC7800000`). This is where the C's table saturates instead of erroring. | `0x7c00` / `0xfc00` (silent saturation, no error). | [x] |
+| 8 | `float2half` | Underflow to zero: finite non-zero float too small for a half subnormal, one step below the first representable (`j == 102`, bits `0x33000000` .. `0x337FFFFF`, and the negative mirror). | `0x0000` / `0x8000` — the sign is preserved for negatives, so `-tiny` becomes `-0.0`, not `+0.0`. | [x] |
+| 9 | `float2half` | Signed zero (`0x00000000`, `0x80000000`) and float subnormals (`0x00000001`, `0x807FFFFF`). | `0x0000` / `0x8000` for all of them (`j <= 102` / `256..358` -> base only). | [x] |
+| 10 | `float2half` | Exact boundary between the `shift == 0x18` flush-to-zero run and the first graduated-underflow entry: `j == 102` vs `j == 103` (and `j == 358` vs `j == 359`), across all 2^23 mantissas of each. | `j == 102` -> `0x0000`; `j == 103` -> `0x0001 + (mantissa >> 23)`, i.e. `0x0001` or `0x0002`. | [x] |
+| 11 | `float2half` | Exact boundary between graduated underflow and normal halves: `j == 112` (`shift 0x0e`) vs `j == 113` (`shift 0x0d`), and the negative mirror `j == 368` / `369`. | `0x0200 + (m >> 14)` vs `0x0400 + (m >> 13)`. | [x] |
+| 12 | `float2half` | Exact boundary between the last finite normal and saturation: `j == 142` (`shift 0x0d`, base `0x7800`) vs `j == 143` (`shift 0x18`, base `0x7c00`), and mirror `j == 398` / `399`. | `0x7800 + (m >> 13)` vs `0x7c00`. | [x] |
+| 13 | `float2half` | Exact boundary between the saturation run and the Inf/NaN entry: `j == 254` (`shift 0x18`) vs `j == 255` (`shift 0x0d`), and mirror `j == 510` / `511`. This single-element discontinuity at the very end of each half of the table is the easiest element to mis-transcribe. | `0x7c00` (mantissa ignored) vs `0x7c00 + (m >> 13)` (mantissa honoured). | [x] |
+| 14 | `float2half` | **Null pointer**: not applicable — `float2half` takes no pointer parameter (grep: 0 `*` in the public API). Documented per the generic-boundary requirement; there is no pointer input to pass `NULL` for. | n/a | [x] |
+| 15 | `float2half` | **Zero / oversized length**: not applicable — `float2half` takes no length, size, or count parameter. Documented per the generic-boundary requirement. | n/a | [x] |
+| 16 | `float2half` | **Out-of-range enum across the FFI boundary**: not applicable — the C API declares no `enum` and takes no integer mode/flag parameter (grep: 0 `enum`). The nearest analogue is "an argument bit pattern with no valid interpretation", i.e. a non-canonical / NaN `float`; that is covered exhaustively by rows 1–13 and by the exhaustive 2^32 sweep, which passes **every** representable argument bit pattern across the FFI boundary. | n/a (subsumed by the exhaustive sweep) | [x] |
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|----------------------------------------------|-------------------|------|--------|
-| 1 | `float2half` | NULL pointer argument — **impossible**: the only parameter is a by-value `float` (`include/lib.h`). No pointer crosses the FFI boundary. | N/A — no such input exists; nothing to reject | `err_01_no_pointer_parameter_documented` | [x] |
-| 2 | `float2half` | Zero / oversized length argument — **impossible**: there is no length, size, or count parameter. | N/A — no such input exists | `err_02_no_length_parameter_documented` | [x] |
-| 3 | `float2half` | Out-of-range enum value across the FFI boundary — **impossible**: no `enum` appears in the public header or the implementation. | N/A — no such input exists | `err_03_no_enum_parameter_documented` | [x] |
-| 4 | `float2half` | Table index out of range: `j` used to index `m__base[512]` / `m__shift[512]`. C does **not** bounds-check; it relies on `j = (n >> 23) & 0x1ff` masking to 9 bits. Adversarial input: sweep all 512 reachable `j` values, i.e. every (sign, exponent) pair, incl. `j == 0` and `j == 511`. | No OOB read possible; returns `m__base[j] + ((n & 0x7fffff) >> m__shift[j])` for every `j` in `0..=511`. Never errors. | `err_04_all_512_table_indices_in_range` | [x] |
-| 5 | `float2half` | Undefined/oversized shift count: `(n & 0x007fffff) >> m__shift[j]`. C does **not** check the shift amount; it relies on every `m__shift` entry being `< 32`. Adversarial input: the max shift entry `0x18` (24) and the min `0x0d` (13), with the largest possible mantissa `0x7fffff`. | Table max is `0x18` (24) < 32, so the shift is always defined. With shift 24 the mantissa term is always 0. Never errors. | `err_05_shift_amount_always_below_32` | [x] |
-| 6 | `float2half` | Arithmetic overflow of the `uint32_t` sum, then narrowing to `uint16_t`. C does **not** check. Adversarial input: rows that maximise `m__base[j]` (`0xfc00`) together with the maximal mantissa term (`0x3ff`). | Max sum is `0xfc00 + 0x3ff = 0xffff`, so neither the `uint32_t` addition nor the `(uint16_t)` narrowing ever loses information. Never errors. | `err_06_sum_never_overflows_u16` | [x] |
-| 7 | `float2half` | Value one step past the representable range of the half destination: smallest float that overflows binary16 (`> 65504`), and the largest float below it. C does **not** range-check the value. | Saturates to `0x7c00` / `0xfc00` (or the last finite code) purely via the tables — no error, no errno, no clamp branch. | `err_07_past_half_range_no_rejection` | [x] |
-| 8 | `float2half` | Values one step past the binary16 subnormal floor (underflow to zero). C does **not** check. | Returns `0x0000` / `0x8000` purely via the tables — no error. | `err_08_underflow_no_rejection` | [x] |
-| 9 | `float2half` | Non-finite / non-numeric inputs: `+inf`, `-inf`, quiet NaN, **signalling** NaN (all NaN payloads incl. `0x7f800001` and `0xffffffff`). C does **not** special-case them and performs no FP arithmetic (it type-puns through a union), so no FP exception is raised and no canonicalisation happens. | Table lookup only; sNaN payload bits are preserved into the result the same way qNaN's are. Never errors. | `err_09_nan_inf_snan_bit_exact` | [x] |
-| 10 | `float2half` | Negative zero and the two zero encodings. C does not special-case. | `0x0000` for `+0.0`, `0x8000` for `-0.0`. Never errors. | `err_10_signed_zeros` | [x] |
-| 11 | `float2half` | Every remaining bit pattern, i.e. "garbage" reinterpreted as `float` — the closest analogue to an out-of-domain value for this API, since a `float` parameter accepts any 32-bit pattern. | Defined `uint16_t` for all 2^32 patterns; no rejection path exists. | `exhaustive_all_2_pow_32_bit_patterns` | [x] |
+## How these rows are discharged
 
-All 11 rows checked: see `tests/error_paths.rs` (rows 1–10) and
-`tests/exhaustive.rs` (row 11).
+`translation/tests/differential.rs`:
+
+* `phase_c_error_surface_rows` — one explicit, named assertion per row 1–13,
+  comparing the C `.so` and the Rust `.so` return values for that exact probe.
+* `phase_b_exhaustive_all_bit_patterns` — sweeps **all 2^32 `f32` bit
+  patterns** through both `.so`s and asserts equality. This is a strict
+  superset of every row above (and of every conceivable invalid input), because
+  the function's entire input domain is the 32-bit argument.
+
+## Result
+
+All 16 rows pass, under every feature combination and under both the debug and
+release cdylib builds. Driver: `translation/verify_all.sh`.
+
+Rows 1–3 are the rows that matter most for a C-to-Rust port, because they are
+the places where C's silent behaviour could become a Rust panic:
+
+* row 1 — indexing `M__BASE`/`M__SHIFT` with `j`. Verified in bounds for **all
+  2^32** inputs, including with `debug_assertions` on.
+* row 2 — `>> shift` with the table's widest shift (24). Verified never to
+  trigger `attempt to shift right with overflow`, with `overflow-checks` on.
+* row 3 — the `uint32_t` -> `uint16_t` narrowing. Verified never to trigger
+  `attempt to add with overflow`; the maximum sum is exactly `0xffff`.
+
+Because the whole input domain of `float2half` is its single 32-bit argument,
+`phase_b_exhaustive.rs` (`CONFIGS.md` row 34) passes **every** input the ABI
+admits — valid and invalid alike — through both `.so`s. That makes the error
+surface above provably complete: there is no rejectable input it omits.

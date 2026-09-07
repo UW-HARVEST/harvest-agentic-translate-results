@@ -1,48 +1,65 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Exported-symbol parity
 
 Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Commands used:
+- C `.so`:    `c_src/build/libharvest-work-c7k0pt.so`
+- Rust `.so`: `translation/target/release/libmd5_digest_lib.so`
+
+## C source inventory (completeness check)
+
+The whole library is a single translation unit; `CMakeLists.txt` compiles
+exactly `src/lib.c`, and `include/lib.h` is the only public header.
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-srn5eJ.so
-nm -D --defined-only translation/target/release/libmd5_digest_lib.so
+c_src/CMakeLists.txt   -> add_library(<proj> SHARED src/lib.c)
+c_src/include/lib.h    -> 14 lines: 2 typedefs, 1 struct, 1 function decl
+c_src/src/lib.c        -> 21 lines: 1 function definition
 ```
 
-## C `.so` exported (defined, dynamic) symbols
+There are no other `.c` files, no `#ifdef`-gated alternate implementations, no
+name-mangling / namespace macros, and no macro-generated symbol families. So
+the source-level name is the final linker name, and no C module was skipped by
+the translation.
 
-| # | symbol | type | present in Rust `.so`? | action |
-|---|--------|------|------------------------|--------|
-| 1 | `md5_digest` | `T` (text/global func) | YES (`T md5_digest`) | none — already exported via `#[unsafe(no_mangle)] pub unsafe extern "C"` |
+## Symbol table
 
-Total C defined dynamic symbols: **1**
-Total missing from Rust `.so`: **0**
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `md5_digest` | `T` (defined, global text) | `T` (defined, global text) | MATCH |
 
-## Source-level completeness cross-check
+## Diff
 
-The C tree contains exactly two files (`find c_src -name '*.c' -o -name '*.h'`,
-excluding `build/`):
+```
+$ nm -D --defined-only <c.so>   | awk '{print $3}' | sort > /tmp/c.syms
+$ nm -D --defined-only <rust.so>| awk '$2=="T"{print $3}' | sort > /tmp/r.syms
+$ comm -23 /tmp/c.syms /tmp/r.syms      # in C, missing from Rust
+<empty>
+```
 
-* `c_src/include/lib.h` — typedefs `tflac_u8`, `tflac_u32`; `struct tflac_md5`;
-  one function declaration.
-* `c_src/src/lib.c` — one function definition, `md5_digest`.
+**Missing from Rust: 0.** No `#[no_mangle]` wrapper needed to be added and no
+untranslated C module was found.
 
-There are no additional translation units, no `#define`-generated symbol names,
-no macro-expanded function families, and no namespace-renaming macros in the
-header, so the source-level name `md5_digest` is also the final linker symbol.
-No C module was skipped by the translation; nothing needed to be translated in
-this phase.
+## Undefined-symbol audit of the Rust `.so`
 
-`tflac_u8`, `tflac_u32`, and `struct tflac_md5` are type-level constructs and
-emit no linker symbols in either language; they are ABI contract only (checked
-in Phase B via `size_of`/field-offset-sensitive differential calls).
+`nm -D --undefined-only` on the Rust `.so` lists only:
 
-## Undefined-symbol check
+- glibc imports (`memcpy`, `malloc`, `free`, `abort`, `write`, `mmap64`, ...)
+- `_Unwind_*` from `libgcc` (panic machinery)
+- weak optional hooks (`__gmon_start__`, `_ITM_*`, `__cxa_finalize`, `statx`,
+  `gettid`, `__cxa_thread_atexit_impl`)
 
-The Rust `.so` imports only libc / libgcc-unwind symbols
-(`memcpy`, `malloc`, `_Unwind_*`, `pthread_key_*`, …) pulled in by the Rust
-runtime. Zero undefined **non-libc** symbols, i.e. no unresolved references to
-library code that failed to get translated.
+**0 missing/undefined non-libc symbols.**
 
-Completion gate item: **`nm -D` shows 0 missing / 0 undefined non-libc symbols
-in Rust — PASS.**
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` section**, therefore the
+only build configuration is the default one (which is also
+`--no-default-features`). Verified:
+
+```
+$ grep -c '\[features\]' translation/Cargo.toml
+0
+```
+
+Both `cargo test` and `cargo test --no-default-features` are run in Phase D and
+exercise the identical code path; there is no other combination to enumerate.

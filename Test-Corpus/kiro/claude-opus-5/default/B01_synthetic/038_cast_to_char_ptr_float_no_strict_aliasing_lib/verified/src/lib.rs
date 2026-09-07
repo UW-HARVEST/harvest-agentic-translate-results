@@ -1,7 +1,6 @@
-// Rust translation of c_src/src/driver.c
+// Rust translation of c_src/ (MIT Lincoln Laboratory `driver` library).
 //
-// Original copyright notice from the C source is reproduced below, as the
-// translation is a derivative work.
+// Original copyright notice from the C sources:
 //
 // Copyright 2025 MIT Lincoln Laboratory
 // Permission is hereby granted, free of charge,
@@ -26,66 +25,60 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use core::ffi::{c_char, c_int, c_uchar};
+use std::ffi::{c_char, c_int};
 
-// The C code writes with `printf`/`putchar` from libc's stdio. We bind to the
-// very same functions rather than using Rust's `std::io::stdout`, so that the
-// bytes written, the destination FILE stream, and stdio's buffering/flush
-// semantics (including flush-at-exit via `atexit`) are identical to the C
-// library's. Mixing Rust's own stdout buffer with libc's would risk reordered
-// or lost output when a host process also uses stdio.
+// The C code emits its output with `printf`, i.e. through libc's `stdout`
+// stream. We bind to libc `printf` directly rather than using Rust's
+// `std::io::stdout`, so that buffering, flush-at-exit behaviour and any
+// interleaving with output produced by other C code in the same process are
+// bit-for-bit identical to the original library.
 unsafe extern "C" {
-    fn printf(format: *const c_char, ...) -> c_int;
-    fn putchar(c: c_int) -> c_int;
+    fn printf(fmt: *const c_char, ...) -> c_int;
 }
 
-/// `static void print_hex(unsigned char *p, int len)`
+/// Translation of the `static void print_hex(unsigned char *p, int len)` helper
+/// in `c_src/src/driver.c`.
 ///
-/// Not part of the public ABI (it is `static` in C), so it is a private Rust
-/// function here and is deliberately not exported.
-///
-/// # Safety
-/// `p` must point to at least `len` readable bytes when `len > 0`.
-unsafe fn print_hex(p: *const c_uchar, len: c_int) {
-    // `for (int i = 0; i < len; i++)`: a non-positive `len` iterates zero times.
+/// The C original has internal linkage, so this stays private to the crate and
+/// is deliberately *not* exported from the shared object.
+fn print_hex(p: *const u8, len: c_int) {
+    // `for (int i = 0; i < len; i++) printf("%02x", p[i]);`
+    //
+    // `len` is a signed int in C; a non-positive `len` simply produces no
+    // iterations, which `0..len` reproduces.
     let mut i: c_int = 0;
     while i < len {
-        // `printf("%02x", p[i])`: the `unsigned char` argument is promoted to
-        // `int` by the default argument promotions, so pass a `c_int` here.
+        // C promotes the `unsigned char` lvalue `p[i]` to `int` for the
+        // variadic call, so pass a `c_int` here.
         let byte = unsafe { *p.offset(i as isize) };
         unsafe {
             printf(c"%02x".as_ptr(), byte as c_int);
         }
         i += 1;
     }
-    // `printf("\n")` in the C source; emitting the single byte directly is
-    // byte-for-byte equivalent (and is what the C compiler itself lowers this
-    // call to).
+
+    // `printf("\n");`
     unsafe {
-        putchar(b'\n' as c_int);
+        printf(c"\n".as_ptr());
     }
 }
 
-/// `void driver(float x)` from include/driver.h
+/// Translation of `void driver(float x)` from `c_src/src/driver.c`.
 ///
-/// Reinterprets the object representation of `x` as `sizeof(float)` bytes and
-/// prints them in order as lowercase hex, followed by a newline. The byte order
-/// is therefore the target's native endianness, matching the C `memcpy`.
-///
-/// The parameter MUST be `f32`, not an integer type: `float` is passed in a
-/// vector register (`%xmm0` on x86-64 SysV) while an `int` is passed in a
-/// general-purpose register (`%edi`). Declaring it as an integer compiles and
-/// exports the right symbol name but silently reads the wrong register, so
-/// every caller receives garbage.
+/// Copies the object representation of `x` into a local buffer and prints it as
+/// lowercase, zero-padded, two-digit hex bytes followed by a newline. The bytes
+/// are emitted in the target's native order, exactly as the C `memcpy` of the
+/// `float` does (little-endian on x86-64 / AArch64).
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(x: f32) {
-    // `char raw[sizeof(x)]; memcpy(raw, &x, sizeof(x));`
+    // char raw[sizeof(x)];
+    // memcpy(raw, &x, sizeof(x));
     //
-    // `to_ne_bytes` is exactly this reinterpretation of the float's object
-    // representation: no NaN canonicalisation and no byte reordering.
-    let raw: [u8; core::mem::size_of::<f32>()] = x.to_ne_bytes();
-    // `print_hex((unsigned char *)raw, sizeof(raw))`
-    unsafe {
-        print_hex(raw.as_ptr() as *const c_uchar, raw.len() as c_int);
-    }
+    // `f32::to_ne_bytes` is exactly a reinterpretation of the float's object
+    // representation, matching the C `memcpy`: no NaN canonicalisation and no
+    // byte reordering takes place.
+    let raw: [u8; std::mem::size_of::<f32>()] = x.to_ne_bytes();
+
+    // print_hex((unsigned char *)raw, sizeof(raw));
+    print_hex(raw.as_ptr(), raw.len() as c_int);
 }

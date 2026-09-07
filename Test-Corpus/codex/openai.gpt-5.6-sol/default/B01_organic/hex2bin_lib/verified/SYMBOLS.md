@@ -1,25 +1,32 @@
 # Dynamic Symbol Surface
 
-Reference library:
-`../c_src/build/libharvest-work-PcBVYE.so`
+Derived from:
 
-Rust library:
-`target/release/libhex2bin_lib.so`
-
-The public API list is the mechanically extracted set from:
-
-```sh
-nm -D --defined-only ../c_src/build/libharvest-work-PcBVYE.so
+```text
+nm -D ../c_src/build/libharvest-work-apqsdJ.so
+nm -D target/release/libhex2bin_lib.so
 ```
+
+## Public C library exports
 
 | C symbol | C type | Rust export | Status |
 |----------|--------|-------------|--------|
-| `hex2bin` | `T` | `hex2bin` | [x] |
+| `hex2bin` | `T` (defined global function) | `hex2bin` | [x] present |
 
-The C library also has one strong dynamic import, `strchr@GLIBC_2.2.5`, plus
-the standard weak toolchain imports. It has no other defined dynamic symbols.
-The Rust library's additional undefined symbols are libc, libgcc unwinding,
-pthread, and Rust runtime dependencies; there are no undefined project
-symbols.
+The C shared object has no other defined global/weak public symbols.
 
-Completion criterion: [x] zero C-defined dynamic symbols missing from Rust.
+## C shared-object runtime imports
+
+These entries also appear in `nm -D`, but are undefined toolchain/libc
+dependencies rather than public symbols implemented by this library:
+
+| Symbol | `nm` type | Classification |
+|--------|-----------|----------------|
+| `_ITM_deregisterTMCloneTable` | `w` | optional toolchain runtime |
+| `_ITM_registerTMCloneTable` | `w` | optional toolchain runtime |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | libc/toolchain runtime |
+| `__gmon_start__` | `w` | optional toolchain runtime |
+| `strchr@GLIBC_2.2.5` | `U` | libc dependency |
+
+The Rust shared object may have a different set of undefined runtime imports;
+those are not library API exports. The exact defined-export diff is empty.

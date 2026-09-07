@@ -1,18 +1,23 @@
 # Dynamic Symbol Surface
 
-Derived from:
+Generated from:
 
 ```text
 nm -D --defined-only ../c_src/build/libhello.so
+nm -D --defined-only target/release/libhello.so
 ```
 
-| C symbol | Type | Rust export | Status |
-|----------|------|-------------|--------|
-| `helloworld` | `T` | `helloworld` | [x] Present |
+| C symbol | C type | Rust type | Rust export present |
+|----------|--------|-----------|---------------------|
+| `helloworld` | `T` | `T` | [x] |
 
-The C shared library exports one defined public symbol. The Rust shared library
-exports the same symbol with the exact name. The C library has no undefined
-non-libc symbols.
+The full C `nm -D` output also contains undefined/weak runtime entries
+(`puts@GLIBC_2.2.5`, `_ITM_deregisterTMCloneTable`,
+`_ITM_registerTMCloneTable`, `__cxa_finalize@GLIBC_2.2.5`, and
+`__gmon_start__`). They are libc/toolchain imports rather than library exports
+and are therefore outside export-name parity.
 
-- [x] `nm -D` shows 0 C symbols missing from the Rust shared library.
-- [x] Rust has 0 undefined non-libc symbols required by the C API.
+Final sorted export diff: zero missing and zero extra symbols. `ldd -r` reports
+no unresolved relocations for the Rust shared library.
+
+Completion: [x] zero C-defined dynamic symbols are missing from Rust.

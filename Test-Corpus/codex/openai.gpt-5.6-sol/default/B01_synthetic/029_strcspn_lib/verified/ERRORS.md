@@ -1,22 +1,22 @@
-# Error Surface
+# Error surface
 
-Mechanical searches of `src/driver.c` and `include/driver.h` found no error
-returns, error macros, assertions, enums, range checks, null checks, length
-arguments, or min/max constants. `driver` returns `void` and delegates directly
-to `strcspn` and `printf`.
+The complete C source was mechanically searched for error-return statements,
+error macros/enums, assertions, null checks, range checks, and min/max
+constants. It contains none. `driver` returns `void` and performs no input
+validation before passing both pointers to libc `strcspn`.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
+|---|----------|----------------------------------------------|-------------------|--------|
 
-The API nevertheless has two generic pointer boundaries. C does not reject
-either input: passing one to `strcspn` is undefined behavior. The differential
-tests isolate these calls in child processes and compare the observed process
-result on the test platform.
+There are therefore no C-defined rejection rows to check off. The generic FFI
+boundary audit still covers null pointers in isolated subprocesses because C
+does not reject them and dereferencing them has undefined behavior. Zero and
+oversized explicit lengths, enums, and documented numeric ranges are not
+applicable: this API has only two NUL-terminated string pointers.
 
-| # | function | generic boundary | observed C result | tested |
-|---|----------|------------------|-------------------|:---:|
-| B1 | `driver` | `s1 == NULL`, `s2` points to a valid C string | process termination result matches Rust | [x] |
-| B2 | `driver` | `s1` points to a valid C string, `s2 == NULL` | process termination result matches Rust | [x] |
+Generic FFI boundary audit:
 
-Zero and oversized explicit lengths and out-of-range enum values are not
-applicable because the public API has neither lengths nor enums.
+- [x] null `s1`: C and Rust terminate with the same process signal
+- [x] null `s2`: C and Rust terminate with the same process signal
+- [x] zero/oversized explicit lengths: not applicable (no length parameters)
+- [x] out-of-range enums/numeric values: not applicable (no enum or numeric parameters)

@@ -1,28 +1,37 @@
-# Error Surface
+# Error surface
 
-Mechanical searches covered `return`, `RETURN_ERROR`, `ERROR`, `assert`,
-`NULL`, `if`, `switch`, `case`, and min/max or relational checks in
-`include/lib.h` and `src/lib.c`.
+Mechanical search covered `c_src/src/lib.c` and `c_src/include/lib.h` for
+error returns, `assert`, `if`, `switch`, null checks, range checks, enums, and
+min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Tested |
-|---|----------|----------------------------------------------|-------------------|--------|
+The C source has no explicit rejection or error path, so the required
+error-surface table has zero rows:
 
-There are no explicit rejection branches, error returns, assertions, range
-checks, null checks, enums, or documented min/max constraints in the C API.
-`premultiply` returns `void`.
+| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
+|---|---|---|---|---|
 
-Generic FFI boundaries:
+The public function returns `void` and unconditionally dereferences `img`.
+Consequently, invalid pointers are undefined behavior rather than a returned
+error code or sentinel.
 
-| # | function | boundary | expected C result | Tested |
-|---|----------|----------|-------------------|--------|
-| G1 | `premultiply` | `img == NULL` | process terminates with `SIGSEGV` on the test platform | [x] |
-| G2 | `premultiply` | `img->pix == NULL` and the computed byte extent is positive | process terminates with `SIGSEGV` on the test platform | [x] |
-| G3 | `premultiply` | zero width or zero height, with a null pixel pointer | returns normally without dereferencing `pix` | [x] |
-| G4 | `premultiply` | oversized width `w == INT_MAX`, with zero height and a null pixel pointer | returns normally without dereferencing `pix` | [x] |
+## Generic FFI boundary obligations
 
-Because `sizeof(cp_pixel_t)` has unsigned type, the width multiplication is
-unsigned and its conversion to `int` is implementation-defined when the value
-does not fit; G4 verifies the actual GCC/platform result. Inputs for which the
-later signed `stride * h` multiplication overflows have undefined behavior
-rather than a defined rejection. There are no enum parameters or documented
-valid ranges with a defined one-past result.
+These are required even though they are not explicit C rejection branches:
+
+| # | boundary case | expected C behavior | tested |
+|---|---|---|---|
+| G1 | `img == NULL` | Process terminates from invalid dereference; no error sentinel exists | [x] |
+| G2 | `img->pix == NULL` with a positive pixel count | Process terminates from invalid dereference; no error sentinel exists | [x] |
+| G3 | zero pixel count (`w == 0` or `h == 0`) | Returns normally without reading `pix` | [x] |
+| G4 | negative loop bound (exactly one of `w`, `h` is negative) | Returns normally without reading `pix` | [x] |
+| G5 | oversized but non-overflowing dimensions with zero height (`w == INT_MAX / 4`, `h == 0`) | Returns normally without reading `pix` | [x] |
+| G6 | out-of-range enum value | Not applicable: the public API has no enum parameter | [x] |
+| G7 | one step past documented valid range | Not applicable: the C header documents no numeric range | [x] |
+
+Dimension combinations whose signed `int` multiplications overflow are C
+undefined behavior and therefore do not have a stable ground-truth result to
+compare.
+
+G1 and G2 are compared in isolated subprocesses, including the exact
+termination signal. G3 through G5 are differential FFI calls. G6 and G7 are
+closed by mechanical inspection of the complete public header.

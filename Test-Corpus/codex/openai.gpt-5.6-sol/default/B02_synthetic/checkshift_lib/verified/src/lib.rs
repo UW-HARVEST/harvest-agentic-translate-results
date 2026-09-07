@@ -20,6 +20,18 @@ unsafe extern "C" {
     fn free(ptr: *mut c_void);
 }
 
+#[inline(never)]
+unsafe fn allocate_compute_state() -> *mut ComputeState {
+    unsafe { malloc(size_of::<ComputeState>()) }.cast()
+}
+
+#[inline(never)]
+unsafe fn free_compute_state(state: *mut ComputeState) {
+    unsafe {
+        free(state.cast::<c_void>());
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn multiply_with_static(a: c_int, b: c_int) -> c_int {
     a.wrapping_mul(b).wrapping_mul(3)
@@ -172,8 +184,7 @@ pub unsafe extern "C" fn checkshift(
         );
     }
 
-    let malloc_fn = std::hint::black_box(malloc as unsafe extern "C" fn(usize) -> *mut c_void);
-    let state = unsafe { malloc_fn(size_of::<ComputeState>()) }.cast::<ComputeState>();
+    let state = unsafe { allocate_compute_state() };
     if state.is_null() {
         unsafe {
             printf(c"Error: Failed to allocate memory for state\n".as_ptr());
@@ -229,7 +240,7 @@ pub unsafe extern "C" fn checkshift(
         printf(c"\nFinal accumulator: %d\n".as_ptr(), accumulator);
         printf(c"Operation count: %d\n".as_ptr(), operation_count);
         printf(c"Final result: %d\n".as_ptr(), final_result);
-        free(state.cast::<c_void>());
+        free_compute_state(state);
         printf(c"=== Ending foo function ===\n\n".as_ptr());
     }
 

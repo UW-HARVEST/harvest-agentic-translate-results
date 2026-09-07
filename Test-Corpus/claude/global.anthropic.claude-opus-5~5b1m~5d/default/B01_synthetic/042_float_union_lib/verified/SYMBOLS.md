@@ -1,90 +1,90 @@
-# SYMBOLS.md — Phase A symbol surface map
+# SYMBOLS.md — Phase A: public symbol surface
 
-Derived mechanically from `nm -D` on both shared libraries.
+Derived mechanically from `nm -D --defined-only` on both shared libraries.
 
-Build commands used:
+## Build commands used
 
 ```
-cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libdriver.so
+
 cd translation && cargo build --release
+# -> translation/target/release/libdriver.so
 ```
 
-Artifacts:
+## C source inventory (completeness check)
 
-* C:    `c_src/build/libdriver.so`
-* Rust: `translation/target/release/libdriver.so`
+The entire C library is two files:
 
-## Translation-unit inventory (completeness check)
+| file | contents |
+|------|----------|
+| `c_src/include/driver.h` | one declaration: `void driver(double f);` |
+| `c_src/src/driver.c` | `typedef union { uint64_t x; double f; } raw_double_t;` (file-local) and the definition of `driver` |
 
-The whole C library is three files. Every one is accounted for in the Rust crate,
-so there is no skipped module:
+`c_src/CMakeLists.txt` lists exactly one source file (`src/driver.c`) in the
+`driver` SHARED target. There is **no** untranslated module: the Rust crate's
+`src/lib.rs` covers 100% of the C translation units. `raw_double_t` is a
+translation-unit-local typedef, so it contributes no linker symbol; it is
+nevertheless mirrored in Rust as a `#[repr(C)] union` for fidelity.
 
-| C source file | contents | translated in |
-|---|---|---|
-| `c_src/CMakeLists.txt` | build only: `add_library(driver SHARED src/driver.c)` | `translation/Cargo.toml` (`crate-type = ["cdylib"]`) |
-| `c_src/include/driver.h` | one declaration: `void driver(double f);` | `src/lib.rs` — `pub extern "C" fn driver(f: f64)` |
-| `c_src/src/driver.c` | `union raw_double_t` + `driver()` body | `src/lib.rs` — `union raw_double_t` + `driver()` |
+## C `.so` exported symbols (`nm -D --defined-only`)
 
-`src/driver.c` is the only compiled translation unit, and it defines exactly one
-external function. There are no additional `.c` files, no macro-generated symbol
-families (no `#define`-based namespace prefixing anywhere in the header), and no
-exported globals or data symbols. So the expected exported surface is a single
-symbol.
+Filtering out the linker/loader-synthesised entries that CMake/GCC always emits
+(`_init`, `_fini`, `__bss_start`, `_edata`, `_end`) leaves the library's real
+public ABI:
 
-## Exported (defined) dynamic symbols
+| # | symbol | type | signature |
+|---|--------|------|-----------|
+| 1 | `driver` | `T` (global text) | `void driver(double)` |
 
-`nm -D --defined-only` on each library:
-
-| # | symbol | C `.so` | Rust `.so` | type | status |
-|---|--------|---------|------------|------|--------|
-| 1 | `driver` | `T` (0x1109) | `T` (0x116d0) | `void driver(double)` | **MATCH** |
-
-Counts: C exports 1 defined dynamic symbol; Rust exports 1 defined dynamic
-symbol.
-
-### Symbol diff
+Raw output:
 
 ```
-$ diff <(nm -D --defined-only c_src/build/libdriver.so        | awk '{print $NF}' | sort -u) \
-       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort -u)
-(no output)
+0000000000001109 T driver
 ```
 
-**The symbol diff is EMPTY in both directions.** No symbol is missing from the
-Rust `.so`, and the Rust `.so` exports no extra public symbol either (the crate
-is a `cdylib`, so Rust's own generic/monomorphised items and the std allocator
-shims stay local and are not published as dynamic exports). Nothing needed a
-`#[no_mangle]` wrapper to be added, and no C source file was left untranslated,
-so no stubbing was required or performed.
+No preprocessor namespace/renaming macros exist in the header, so the linker
+name is plainly `driver` — there are no macro-generated symbols to mirror.
 
-## Undefined (imported) symbols
+## Rust `.so` exported symbols
 
-The C library imports exactly one real function, `printf@GLIBC_2.2.5`, plus the
-four standard weak CRT/ITM hooks (`_ITM_deregisterTMCloneTable`,
-`_ITM_registerTMCloneTable`, `__cxa_finalize`, `__gmon_start__`).
+Raw output, with Rust-mangled (`_ZN…`) internal std symbols filtered out:
 
-The Rust library imports that same `printf@GLIBC_2.2.5` — this is deliberate and
-is the crux of the translation: the Rust `driver` formats by calling the *same*
-libc `printf`, so `%a` / `%.4f` rounding, non-finite spellings, locale handling,
-and `stdout` buffering are identical by construction rather than by
-re-implementation.
+```
+00000000000116d0 T driver
+```
 
-The Rust library additionally imports symbols pulled in by the Rust standard
-library (`_Unwind_*` from libgcc, and libc/pthread entries such as `malloc`,
-`free`, `memcpy`, `write`, `dl_iterate_phdr`, `pthread_key_create`, …). These
-are all resolved by libc / libgcc_s, which are already in the process image.
+`driver` is exported via `#[unsafe(no_mangle)] pub extern "C" fn driver(f: f64)`.
 
-**0 missing non-libc symbols in the Rust `.so`** — i.e. every undefined symbol
-in the Rust library resolves against the platform C runtime, and none refers to
-a Rust-side item that failed to be emitted. Verified with `ldd -r`, which
-reports no unresolved symbols for either library.
+## Parity table
 
-## Cargo feature combinations
+| # | symbol | in C `.so` | in Rust `.so` | status |
+|---|--------|-----------|--------------|--------|
+| 1 | `driver` | yes | yes | ✅ match |
 
-`translation/Cargo.toml` declares **no `[features]` table** and no optional
-dependencies, so the only build configuration is the default one. There is
-correspondingly no `#[cfg(feature = ...)]` in `src/lib.rs`. The
-`--no-default-features` build is byte-identical to the default build, and both
-were exercised (see `tests/`). Debug and release profiles were both tested,
-which matters here because `[profile.release] panic = "abort"` applies to
-release only.
+**Missing from Rust: none.** No stubs, no `unimplemented!()`, no faked exports.
+
+## Undefined (imported) symbols in the Rust `.so`
+
+`nm -D --undefined-only` on the Rust `.so` resolves entirely against libc /
+libgcc / the Rust std that is statically linked into the `cdylib`:
+`printf` (the same libc entry point the C library calls), plus the usual
+`memcpy`, `__libc_start_main`-family, pthread and unwind imports std pulls in.
+
+**0 missing/undefined non-libc symbols.** ✅
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+feature configuration is the empty default set. `--no-default-features` and
+`--all-features` are therefore identical to the default build; Phases B and C
+are still re-run under each spelling to prove it (see `run_all.sh`).
+
+## Binary targets
+
+Neither project builds an executable driver: `CMakeLists.txt` declares only
+`add_library(driver SHARED …)` and the crate has no `[[bin]]` / `src/main.rs`.
+The "compare C and Rust binary stdout" gate is therefore vacuous — but note
+that `driver`'s entire observable effect *is* stdout, so every Phase B/C test
+compares captured stdout byte-for-byte anyway.

@@ -1,53 +1,87 @@
 #!/usr/bin/env bash
-# Harness self-check: each mutation below is a plausible mistranslation of
-# c_src/src/sieve.c. The differential suite MUST fail for every one of them.
-# (A suite that passes a mutated translation is vacuous.)
-set -u
+# Validates that the differential suite has real detection power: inject a
+# plausible mistranslation into src/lib.rs, confirm the suite FAILS, restore.
+#
+# A suite that passes is only meaningful if it would also fail when the Rust
+# diverges from the C, so this is run as part of verification.
+set -uo pipefail
 cd "$(dirname "$0")"
-# Pristine snapshot of the *current* sources; restored on every exit path.
-ORIG=$(mktemp)
-cp src/lib.rs "$ORIG"
-trap 'cp "$ORIG" src/lib.rs; rm -f "$ORIG"' EXIT
 
-declare -a NAME FROM TO
-add() { NAME+=("$1"); FROM+=("$2"); TO+=("$3"); }
+BACKUP=".lib.rs.orig"
+cp src/lib.rs "$BACKUP"
+restore() { cp "$BACKUP" src/lib.rs; cargo --offline build -q 2>/dev/null; }
+trap restore EXIT
 
-add "wrong terminator digit (9 -> 8)"        'val % 10 == 9'          'val % 10 == 8'
-add "euclidean instead of truncated modulo" 'val % 10 == 9'          'val.rem_euclid(10) == 9'
-add "also break on negative -9"             'val % 10 == 9'          'val % 10 == 9 || val % 10 == -9'
-add "off-by-one increment (+2)"             'val.wrapping_add(1)'    'val.wrapping_add(2)'
-add "saturating instead of wrapping add"    'val.wrapping_add(1)'    'val.saturating_add(1)'
-add "check before print (do/while -> while)" 'printf(b"%d\n\0"'      'if val % 10 == 9 { return } printf(b"%d\n\0"'
-add "wrong newline (CRLF)"                  '%d\n\0'                 '%d\r\n\0'
-add "unsigned formatting (%u)"              '%d\n\0'                 '%u\n\0'
-add "long formatting (%ld)"                 '%d\n\0'                 '%ld\n\0'
-
-fail=0
-for i in "${!NAME[@]}"; do
-  cp "$ORIG" src/lib.rs
-  python3 - "${FROM[$i]}" "${TO[$i]}" <<'PY'
+mutate() { python3 -c "
 import sys
-frm, to = sys.argv[1], sys.argv[2]
-p = 'src/lib.rs'
-s = open(p).read()
-body = s.split('pub extern "C" fn sieve', 1)
-assert frm in body[1], f'mutation pattern not found in fn body: {frm!r}'
-body[1] = body[1].replace(frm, to, 1)
-open(p, 'w').write('pub extern "C" fn sieve'.join(body))
-PY
-  if [ $? -ne 0 ]; then echo "SKIP  ${NAME[$i]} (pattern not found)"; fail=1; continue; fi
+s=open('src/lib.rs').read()
+old,new=sys.argv[1],sys.argv[2]
+assert old in s, 'pattern not found: '+old
+open('src/lib.rs','w').write(s.replace(old,new,1))
+" "$1" "$2"; }
 
-  out=$(timeout 600 cargo test --offline 2>&1)
-  if echo "$out" | grep -qE '^test result: FAILED|error\[|error:'; then
-    n=$(echo "$out" | grep -cE '\.\.\. FAILED')
-    echo "CAUGHT  ${NAME[$i]}  ($n failing tests)"
-  else
-    echo "MISSED  ${NAME[$i]}  <-- differential suite is blind to this!"
-    fail=1
-  fi
-done
+overall=0
+check() {
+    local name="$1" old="$2" new="$3"
+    cp "$BACKUP" src/lib.rs
+    mutate "$old" "$new" || { echo "SKIP $name (pattern missing)"; return; }
+    if ! cargo --offline build -q 2>/dev/null; then
+        echo "SKIP       $name  (mutant does not compile -- not a valid mutant)"
+        cp "$BACKUP" src/lib.rs
+        return
+    fi
+    local out rc failed
+    out=$(timeout 400 cargo --offline test --tests -- --test-threads=1 2>&1)
+    rc=$?
+    failed=$(printf '%s' "$out" | grep -cE '^test .* FAILED$')
+    # The suite "detects" the mutant iff it does not pass: an assertion failure,
+    # a watchdog abort on a non-terminating loop, or a timeout all count.
+    if [[ $rc -ne 0 ]]; then
+        local why="$failed assertion failure(s)"
+        [[ "$failed" -eq 0 ]] && why="non-zero exit (watchdog/abort/timeout)"
+        if printf '%s' "$out" | grep -q 'WATCHDOG'; then
+            why="$why + watchdog fired"
+        fi
+        echo "DETECTED   $name  [$why]"
+    else
+        echo "*** MISSED $name  -- the suite cannot detect this divergence!"
+        overall=1
+    fi
+    cp "$BACKUP" src/lib.rs
+}
 
-cp "$ORIG" src/lib.rs
-echo
-if [ "$fail" -eq 0 ]; then echo "all mutations caught"; else echo "SOME MUTATIONS MISSED"; fi
-exit $fail
+echo "mutation detection check (each mutant applied to a pristine lib.rs)"
+echo "------------------------------------------------------------------"
+check "Euclidean modulo instead of C truncated modulo" \
+      'if val % 10 == 9 {' 'if val.rem_euclid(10) == 9 {'
+check "abs() before the modulo test" \
+      'if val % 10 == 9 {' 'if val.abs() % 10 == 9 {'
+check "checked/panicking increment instead of wrapping" \
+      'val = val.wrapping_add(1);' 'val = val + 1;'
+check "saturating increment instead of wrapping" \
+      'val = val.wrapping_add(1);' 'val = val.saturating_add(1);'
+check "off-by-one: compare against 8 instead of 9" \
+      'if val % 10 == 9 {' 'if val % 10 == 8 {'
+check "print before/after swapped (break before print)" \
+      'printf(b"%d\n\0".as_ptr() as *const std::ffi::c_char, val);' \
+      'if val % 10 == 9 { return; } printf(b"%d\n\0".as_ptr() as *const std::ffi::c_char, val);'
+check "wrong format: no newline" \
+      'b"%d\n\0"' 'b"%d \0"'
+check "wrong format: unsigned %u instead of %d" \
+      'b"%d\n\0"' 'b"%u\n\0"'
+check "increment by 2" \
+      'val = val.wrapping_add(1);' 'val = val.wrapping_add(2);'
+check "off-by-one start value (pre-increment)" \
+      'let mut val = val;' 'let mut val = val.wrapping_add(1);'
+check "modulo 100 instead of modulo 10" \
+      'if val % 10 == 9 {' 'if val % 100 == 9 {'
+check "test the condition on the already-incremented value" \
+      'if val % 10 == 9 {' 'if val.wrapping_add(1) % 10 == 9 {'
+
+echo "------------------------------------------------------------------"
+if [[ $overall -eq 0 ]]; then
+    echo "ALL MUTANTS DETECTED"
+else
+    echo "SOME MUTANTS SURVIVED"
+fi
+exit $overall

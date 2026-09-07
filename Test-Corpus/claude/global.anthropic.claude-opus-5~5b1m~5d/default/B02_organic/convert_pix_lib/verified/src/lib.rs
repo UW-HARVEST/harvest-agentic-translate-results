@@ -203,123 +203,6 @@ pub static mut cp_dist_base: [u32; 30 + 2] = [
     2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 0, 0,
 ];
 
-// ---------------------------------------------------------------------------
-// Reproduction of the C object's `.data` image
-//
-// `cp_block` indexes `cp_len_extra_bits` / `cp_len_base` with `symbol - 257`
-// and `cp_dist_extra_bits` / `cp_dist_base` with `distance_symbol`, and the C
-// range-checks NEITHER.  Both indices come out of `cp_decode`, which returns
-// `(key >> 4) & 0xFFF`, so they can be far past the end of the arrays.
-//
-// The out-of-bounds case IS reachable: `cp_decode` reads `tree[-1]` whenever it
-// is handed an empty tree (`hi == 0`), and a dynamic block may legally declare
-// `HDIST` distance codes and give all of them code length 0, leaving
-// `s->ndst == 0`.  `s->dst[-1]` is then `s->lit[287]`, a well-formed entry whose
-// symbol field is `287`, so `cp_dist_extra_bits[287]` / `cp_dist_base[287]` get
-// read — 255 entries past the end.
-//
-// The C therefore reads whatever the linker placed next in `.data`.  From
-// `readelf -SW` / `readelf -sW` on the reference object (`.data` at 0x5040,
-// size 0x2a0; `.bss` at 0x52e0, size 0x10) that image is:
-//
-//     +0x000  cp_fixed_table          320 bytes
-//     +0x140  cp_permutation_order     19 bytes  (+13 bytes padding)
-//     +0x160  cp_len_extra_bits        31 bytes  (+1  byte  padding)
-//     +0x180  cp_len_base             124 bytes  (+4  bytes padding)
-//     +0x200  cp_dist_extra_bits       32 bytes
-//     +0x220  cp_dist_base            128 bytes   -> `.data` ends at +0x2a0
-//     +0x2a0  `.bss`: libc's `completed.0` guard byte, 0 while the library is
-//             in use, plus 7 bytes of padding
-//     +0x2a8  `.bss`: cp_error_reason (an 8-byte pointer)
-//     +0x2b0  remainder of the last mapped page: zero
-//
-// Rust gives its statics a different order and no padding, so the reads have to
-// go through this translation layer instead of through plain indexing.
-// ---------------------------------------------------------------------------
-
-const CPD_FIXED: isize = 0x000;
-const CPD_PERM: isize = 0x140;
-const CPD_LEN_EXTRA: isize = 0x160;
-const CPD_LEN_BASE: isize = 0x180;
-const CPD_DIST_EXTRA: isize = 0x200;
-const CPD_DIST_BASE: isize = 0x220;
-const CPD_ERROR_REASON: isize = 0x2a8;
-
-/// One byte of the C's `.data`/`.bss` image, `off` bytes past `cp_fixed_table`.
-///
-/// Offsets that fall in inter-object padding, in `.bss` holes, or past the end
-/// of `.bss` read as zero — exactly what the C sees, because the rest of the
-/// final mapped page of the data segment is zero-filled by the loader.
-///
-/// Offsets outside the C's mapped data segment (below `-0x1040` or above
-/// `+0xfc0`) would fault in the C.  They are unreachable here: `cp_decode`
-/// returns at most `4095` and, as argued above, at most `287` in the only
-/// out-of-bounds situation that exists, so the largest offset ever produced is
-/// `CPD_DIST_BASE + 4 * 287 + 3 = 0x69f`.
-unsafe fn cp_data_byte(off: isize) -> u8 {
-    if off >= CPD_FIXED && off < CPD_FIXED + 320 {
-        *((&raw const cp_fixed_table) as *const u8).offset(off - CPD_FIXED)
-    } else if off >= CPD_PERM && off < CPD_PERM + 19 {
-        *((&raw const cp_permutation_order) as *const u8).offset(off - CPD_PERM)
-    } else if off >= CPD_LEN_EXTRA && off < CPD_LEN_EXTRA + 31 {
-        *((&raw const cp_len_extra_bits) as *const u8).offset(off - CPD_LEN_EXTRA)
-    } else if off >= CPD_LEN_BASE && off < CPD_LEN_BASE + 124 {
-        *((&raw const cp_len_base) as *const u8).offset(off - CPD_LEN_BASE)
-    } else if off >= CPD_DIST_EXTRA && off < CPD_DIST_EXTRA + 32 {
-        *((&raw const cp_dist_extra_bits) as *const u8).offset(off - CPD_DIST_EXTRA)
-    } else if off >= CPD_DIST_BASE && off < CPD_DIST_BASE + 128 {
-        *((&raw const cp_dist_base) as *const u8).offset(off - CPD_DIST_BASE)
-    } else if off >= CPD_ERROR_REASON && off < CPD_ERROR_REASON + 8 {
-        *((&raw const cp_error_reason) as *const u8).offset(off - CPD_ERROR_REASON)
-    } else {
-        0
-    }
-}
-
-/// A little-endian `uint32_t` read out of the same image.
-unsafe fn cp_data_u32(off: isize) -> u32 {
-    (cp_data_byte(off) as u32)
-        | ((cp_data_byte(off + 1) as u32) << 8)
-        | ((cp_data_byte(off + 2) as u32) << 16)
-        | ((cp_data_byte(off + 3) as u32) << 24)
-}
-
-/// `cp_len_extra_bits[i]`, including out-of-bounds `i`.
-unsafe fn cp_len_extra_at(i: c_int) -> u8 {
-    if (i as u32) < 31 {
-        *((&raw const cp_len_extra_bits) as *const u8).offset(i as isize)
-    } else {
-        cp_data_byte(CPD_LEN_EXTRA + i as isize)
-    }
-}
-
-/// `cp_len_base[i]`, including out-of-bounds `i`.
-unsafe fn cp_len_base_at(i: c_int) -> u32 {
-    if (i as u32) < 31 {
-        *((&raw const cp_len_base) as *const u32).offset(i as isize)
-    } else {
-        cp_data_u32(CPD_LEN_BASE + (i as isize) * 4)
-    }
-}
-
-/// `cp_dist_extra_bits[i]`, including out-of-bounds `i`.
-unsafe fn cp_dist_extra_at(i: c_int) -> u8 {
-    if (i as u32) < 32 {
-        *((&raw const cp_dist_extra_bits) as *const u8).offset(i as isize)
-    } else {
-        cp_data_byte(CPD_DIST_EXTRA + i as isize)
-    }
-}
-
-/// `cp_dist_base[i]`, including out-of-bounds `i`.
-unsafe fn cp_dist_base_at(i: c_int) -> u32 {
-    if (i as u32) < 32 {
-        *((&raw const cp_dist_base) as *const u32).offset(i as isize)
-    } else {
-        cp_data_u32(CPD_DIST_BASE + (i as isize) * 4)
-    }
-}
-
 // --- error strings (byte-for-byte identical to the C literals) -------------
 
 const ERR_STORED_COMPLEMENT: &[u8] =
@@ -553,236 +436,75 @@ unsafe fn cp_decode(s: *mut cp_state_t, tree: *mut u32, hi: c_int) -> c_int {
     ((key >> 4) & 0xFFF) as c_int
 }
 
-// ---------------------------------------------------------------------------
-// `cp_dynamic`'s stack frame
-//
-// The run-length loop
-//
-//     for (int n = 0; n < nlit + ndst;) { ... for (int i = 11 + …; i; --i, ++n)
-//                                                 lens[n] = 0; ... }
-//
-// tests `n < nlit + ndst` only *between* symbols, while one symbol 16/17/18
-// writes 3..=138 entries.  The final run can therefore write up to 137 bytes
-// past the end of `uint8_t lens[288 + 32]` — and the bytes it lands on are the
-// *other locals of the same frame*, several of which the code reads afterwards.
-//
-// `objdump -d` on the reference object pins the (-O0, no NDEBUG) frame down
-// exactly.  Offsets below are relative to the start of this array, which stands
-// in for `%rbp-0x190`:
-//
-//     0x008  spilled `s` argument        (%rbp-0x188) — `lens[-1]` is its top
-//                                        byte, always 0 on x86-64 userspace
-//     0x010  uint8_t lens[288 + 32]      (%rbp-0x180)
-//     0x150  uint8_t lenlens[19]         (%rbp-0x040)  dead after the first build
-//     0x16c  int sym                     (%rbp-0x024)  reassigned each pass
-//     0x170  int nlen                    (%rbp-0x020)  dead after the HCLEN loop
-//     0x174  int ndst                    (%rbp-0x01c)  READ after the loop
-//     0x178  int nlit                    (%rbp-0x018)  READ after the loop
-//     0x17c  int i  (symbol 18 counter)  (%rbp-0x014)
-//     0x180  int i  (symbol 17 counter)  (%rbp-0x010)
-//     0x184  int i  (symbol 16 counter)  (%rbp-0x00c)
-//     0x188  int n                       (%rbp-0x008)  the loop variable itself
-//     0x18c  int i  (HCLEN counter)      (%rbp-0x004)
-//     0x190  saved %rbp                  (%rbp+0x000)
-//     0x198  return address              (%rbp+0x008)
-//
-// Modelling the frame explicitly (instead of using Rust locals) is what makes
-// the overshoot reproduce the C: zeroing `ndst`/`nlit` changes the trees that
-// get built, and zeroing `n` restarts the loop at a lower index.
-//
-// LIMITATION: an overshoot that reaches `lens[384]` corrupts the saved frame
-// pointer and then the return address, so the C dies with SIGSEGV somewhere
-// after `cp_dynamic` returns.  That is not reproducible here; see the note at
-// the bottom of `ERRORS.md`.
-// ---------------------------------------------------------------------------
-
-const DF_S: usize = 0x008;
-const DF_LENS: usize = 0x010;
-const DF_LENLENS: usize = 0x150;
-const DF_SYM: usize = 0x16c;
-const DF_NLEN: usize = 0x170;
-const DF_NDST: usize = 0x174;
-const DF_NLIT: usize = 0x178;
-const DF_I18: usize = 0x17c;
-const DF_I17: usize = 0x180;
-const DF_I16: usize = 0x184;
-const DF_N: usize = 0x188;
-const DF_I: usize = 0x18c;
-/// One past the largest `lens` index the loop can reach
-/// (`nlit + ndst - 1 + 138 = 456`), rounded up.
-const DF_SIZE: usize = 0x400;
-
-struct DynFrame {
-    b: [u8; DF_SIZE],
-}
-
-impl DynFrame {
-    fn new() -> DynFrame {
-        // The C leaves the frame uninitialised apart from `lenlens = {0}`, but
-        // the only byte it ever reads without writing first is `lens[-1]`
-        // (see `DF_S`), so zeroing is faithful.
-        DynFrame { b: [0u8; DF_SIZE] }
-    }
-
-    #[inline]
-    fn get_i32(&self, off: usize) -> c_int {
-        unsafe { (self.b.as_ptr().add(off) as *const c_int).read_unaligned() }
-    }
-
-    #[inline]
-    fn set_i32(&mut self, off: usize, v: c_int) {
-        unsafe { (self.b.as_mut_ptr().add(off) as *mut c_int).write_unaligned(v) }
-    }
-
-    /// Byte offset of `lens[i]`, clamped so a runaway index cannot become
-    /// Rust-level UB.  Clamping is unreachable for every input the C can
-    /// survive: the bytes the overshoot writes are code lengths (`<= 18`), which
-    /// only ever shrink `nlit`/`ndst`, so `n` stays below `457`.
-    #[inline]
-    fn lens_off(i: c_int) -> usize {
-        let off = DF_LENS as isize + i as isize;
-        if off < 0 {
-            0
-        } else if (off as usize) >= DF_SIZE {
-            DF_SIZE - 1
-        } else {
-            off as usize
-        }
-    }
-
-    #[inline]
-    fn lens_get(&self, i: c_int) -> u8 {
-        self.b[Self::lens_off(i)]
-    }
-
-    #[inline]
-    fn lens_set(&mut self, i: c_int, v: u8) {
-        let o = Self::lens_off(i);
-        self.b[o] = v;
-    }
-
-    #[inline]
-    fn lens_ptr(&mut self) -> *mut u8 {
-        unsafe { self.b.as_mut_ptr().add(DF_LENS) }
-    }
-}
-
 unsafe fn cp_dynamic(s: *mut cp_state_t) -> c_int {
-    let mut fr = DynFrame::new();
-    // the spilled `s` argument; `lens[-1]` is its most significant byte
-    (fr.b.as_mut_ptr().add(DF_S) as *mut u64).write_unaligned(s as u64);
-
-    // `uint8_t lenlens[19] = {0};` — already zero
-
+    // `uint8_t lenlens[19] = {0};`  (over-sized so that a tampered
+    // cp_permutation_order cannot turn into Rust-level UB)
+    let mut lenlens = [0u8; 256];
     let nlit: c_int = 257i32.wrapping_add(cp_read_bits(s, 5) as c_int);
-    fr.set_i32(DF_NLIT, nlit);
     let ndst: c_int = 1i32.wrapping_add(cp_read_bits(s, 5) as c_int);
-    fr.set_i32(DF_NDST, ndst);
     let nlen: c_int = 4i32.wrapping_add(cp_read_bits(s, 4) as c_int);
-    fr.set_i32(DF_NLEN, nlen);
-
     let perm = (&raw mut cp_permutation_order) as *mut u8;
-    fr.set_i32(DF_I, 0);
-    // `for (int i = 0; i < nlen; ++i)
-    //      lenlens[cp_permutation_order[i]] = (uint8_t)cp_read_bits(s, 3);`
-    //
-    // gcc calls `cp_read_bits` first, then reloads `i` for the index, then
-    // stores, then does a read-modify-write `++i`.  Every access to `i` and
-    // `nlen` therefore has to go through the frame: `cp_permutation_order` is an
-    // exported writable global with no range check on its entries, so an entry
-    // `> 18` makes the store land on `cp_dynamic`'s own locals — including `i`
-    // itself, which then continues from the value that was just stored.
-    while fr.get_i32(DF_I) < fr.get_i32(DF_NLEN) {
-        let v = cp_read_bits(s, 3) as u8;
-        let i = fr.get_i32(DF_I);
+    let mut i: c_int = 0;
+    while i < nlen {
         let slot = *perm.wrapping_offset(i as isize) as usize;
-        let off = DF_LENLENS + slot;
-        if off < DF_SIZE {
-            fr.b[off] = v;
-        }
-        fr.set_i32(DF_I, fr.get_i32(DF_I).wrapping_add(1));
+        lenlens[slot] = cp_read_bits(s, 3) as u8;
+        i += 1;
     }
     (*s).nlen = cp_build(
         ptr::null_mut(),
         (&raw mut (*s).len) as *mut u32,
-        unsafe { fr.b.as_ptr().add(DF_LENLENS) },
+        lenlens.as_ptr(),
         19,
     ) as u32;
 
-    fr.set_i32(DF_N, 0);
-    while fr.get_i32(DF_N) < fr.get_i32(DF_NLIT).wrapping_add(fr.get_i32(DF_NDST)) {
+    // `uint8_t lens[288 + 32];`  The C code can run `n` past the end of this
+    // array (RLE codes overshoot `nlit + ndst`), and `lens[n - 1]` with n == 0
+    // reads one byte before it.  Pad both sides so the reproduction stays
+    // within a live allocation.
+    let mut lens_storage = [0u8; 1 + (288 + 32) + 512];
+    let lens = lens_storage.as_mut_ptr().wrapping_add(1);
+
+    let mut n: c_int = 0;
+    while n < nlit.wrapping_add(ndst) {
         let sym = cp_decode(s, (&raw mut (*s).len) as *mut u32, (*s).nlen as c_int);
-        fr.set_i32(DF_SYM, sym);
-        match fr.get_i32(DF_SYM) {
+        match sym {
             16 => {
-                // `for (int i = 3 + cp_read_bits(s, 2); i; --i, ++n)
-                //      lens[n] = lens[n - 1];`
-                fr.set_i32(DF_I16, 3i32.wrapping_add(cp_read_bits(s, 2) as c_int));
-                while fr.get_i32(DF_I16) != 0 {
-                    let n = fr.get_i32(DF_N);
-                    let v = fr.lens_get(n.wrapping_sub(1));
-                    let n2 = fr.get_i32(DF_N); // the C reloads `n` for the store
-                    fr.lens_set(n2, v);
-                    fr.set_i32(DF_I16, fr.get_i32(DF_I16).wrapping_sub(1));
-                    fr.set_i32(DF_N, fr.get_i32(DF_N).wrapping_add(1));
+                let mut i: c_int = 3i32.wrapping_add(cp_read_bits(s, 2) as c_int);
+                while i != 0 {
+                    *lens.wrapping_offset(n as isize) =
+                        *lens.wrapping_offset((n.wrapping_sub(1)) as isize);
+                    i = i.wrapping_sub(1);
+                    n = n.wrapping_add(1);
                 }
             }
             17 => {
-                // `for (int i = 3 + cp_read_bits(s, 3); i; --i, ++n) lens[n] = 0;`
-                fr.set_i32(DF_I17, 3i32.wrapping_add(cp_read_bits(s, 3) as c_int));
-                while fr.get_i32(DF_I17) != 0 {
-                    let n = fr.get_i32(DF_N);
-                    fr.lens_set(n, 0);
-                    fr.set_i32(DF_I17, fr.get_i32(DF_I17).wrapping_sub(1));
-                    fr.set_i32(DF_N, fr.get_i32(DF_N).wrapping_add(1));
+                let mut i: c_int = 3i32.wrapping_add(cp_read_bits(s, 3) as c_int);
+                while i != 0 {
+                    *lens.wrapping_offset(n as isize) = 0;
+                    i = i.wrapping_sub(1);
+                    n = n.wrapping_add(1);
                 }
             }
             18 => {
-                // `for (int i = 11 + cp_read_bits(s, 7); i; --i, ++n) lens[n] = 0;`
-                fr.set_i32(DF_I18, 11i32.wrapping_add(cp_read_bits(s, 7) as c_int));
-                while fr.get_i32(DF_I18) != 0 {
-                    let n = fr.get_i32(DF_N);
-                    fr.lens_set(n, 0);
-                    fr.set_i32(DF_I18, fr.get_i32(DF_I18).wrapping_sub(1));
-                    fr.set_i32(DF_N, fr.get_i32(DF_N).wrapping_add(1));
+                let mut i: c_int = 11i32.wrapping_add(cp_read_bits(s, 7) as c_int);
+                while i != 0 {
+                    *lens.wrapping_offset(n as isize) = 0;
+                    i = i.wrapping_sub(1);
+                    n = n.wrapping_add(1);
                 }
             }
             _ => {
-                // `lens[n++] = (uint8_t)sym;`  gcc bumps `n` *before* storing,
-                // which matters when the store lands on `n` itself.
-                let n = fr.get_i32(DF_N);
-                fr.set_i32(DF_N, n.wrapping_add(1));
-                let v = fr.get_i32(DF_SYM) as u8;
-                fr.lens_set(n, v);
+                *lens.wrapping_offset(n as isize) = sym as u8;
+                n = n.wrapping_add(1);
             }
         }
     }
-
-    let nlit_v = fr.get_i32(DF_NLIT);
-    let ndst_v = fr.get_i32(DF_NDST);
-    // Keep `cp_build`'s reads inside the emulated frame.  Unreachable for any
-    // input the C survives (see `lens_off`), so this never alters behaviour.
-    let build_nlit = if nlit_v < 0 {
-        0
-    } else if nlit_v > 320 {
-        320
-    } else {
-        nlit_v
-    };
-    let build_ndst = if ndst_v < 0 {
-        0
-    } else if ndst_v > 320 - build_nlit {
-        320 - build_nlit
-    } else {
-        ndst_v
-    };
-    let lens = fr.lens_ptr();
-    (*s).nlit = cp_build(s, (&raw mut (*s).lit) as *mut u32, lens, build_nlit) as u32;
+    (*s).nlit = cp_build(s, (&raw mut (*s).lit) as *mut u32, lens, nlit) as u32;
     (*s).ndst = cp_build(
         ptr::null_mut(),
         (&raw mut (*s).dst) as *mut u32,
-        lens.wrapping_offset(build_nlit as isize),
-        build_ndst,
+        lens.wrapping_offset(nlit as isize),
+        ndst,
     ) as u32;
     1
 }
@@ -799,12 +521,17 @@ unsafe fn cp_block(s: *mut cp_state_t) -> c_int {
             (*s).out = (*s).out.wrapping_add(1);
         } else if symbol > 256 {
             symbol = symbol.wrapping_sub(257);
-            let length = cp_read_bits(s, cp_len_extra_at(symbol) as c_int)
-                .wrapping_add(cp_len_base_at(symbol)) as c_int;
+            let len_extra = (&raw mut cp_len_extra_bits) as *mut u8;
+            let len_base = (&raw mut cp_len_base) as *mut u32;
+            let length = cp_read_bits(s, *len_extra.wrapping_offset(symbol as isize) as c_int)
+                .wrapping_add(*len_base.wrapping_offset(symbol as isize)) as c_int;
             let distance_symbol = cp_decode(s, (&raw mut (*s).dst) as *mut u32, (*s).ndst as c_int);
-            let backwards_distance = cp_read_bits(s, cp_dist_extra_at(distance_symbol) as c_int)
-                .wrapping_add(cp_dist_base_at(distance_symbol))
-                as c_int;
+            let dist_extra = (&raw mut cp_dist_extra_bits) as *mut u8;
+            let dist_base = (&raw mut cp_dist_base) as *mut u32;
+            let backwards_distance =
+                cp_read_bits(s, *dist_extra.wrapping_offset(distance_symbol as isize) as c_int)
+                    .wrapping_add(*dist_base.wrapping_offset(distance_symbol as isize))
+                    as c_int;
             if !((*s).out.wrapping_offset(-(backwards_distance as isize)) >= (*s).begin) {
                 cp_error_reason = ERR_BAD_DISTANCE.as_ptr() as *const c_char;
                 return 0;
@@ -926,7 +653,7 @@ pub unsafe extern "C" fn cp_inflate(
     result
 }
 
-fn cp_paeth(a: u8, b: u8, c: u8) -> u8 {
+pub fn cp_paeth(a: u8, b: u8, c: u8) -> u8 {
     let p: c_int = a as c_int + b as c_int - c as c_int;
     let pa: c_int = (p - a as c_int).wrapping_abs();
     let pb: c_int = (p - b as c_int).wrapping_abs();
@@ -942,19 +669,19 @@ fn cp_paeth(a: u8, b: u8, c: u8) -> u8 {
 
 /// `typedef struct cp_raw_png_t { const uint8_t *p; const uint8_t *end; } cp_raw_png_t;`
 #[repr(C)]
-struct cp_raw_png_t {
-    p: *const u8,
-    end: *const u8,
+pub struct cp_raw_png_t {
+    pub p: *const u8,
+    pub end: *const u8,
 }
 
-unsafe fn cp_make32(s: *const u8) -> u32 {
+pub unsafe fn cp_make32(s: *const u8) -> u32 {
     ((*s.wrapping_offset(0) as u32) << 24)
         | ((*s.wrapping_offset(1) as u32) << 16)
         | ((*s.wrapping_offset(2) as u32) << 8)
         | (*s.wrapping_offset(3) as u32)
 }
 
-unsafe fn cp_memcmp4(a: *const u8, b: *const u8) -> bool {
+pub unsafe fn cp_memcmp4(a: *const u8, b: *const u8) -> bool {
     // memcmp(start + 4, chunk, 4) == 0
     let mut i = 0isize;
     while i < 4 {
@@ -966,7 +693,7 @@ unsafe fn cp_memcmp4(a: *const u8, b: *const u8) -> bool {
     true
 }
 
-unsafe fn cp_chunk(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) -> *const u8 {
+pub unsafe fn cp_chunk(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) -> *const u8 {
     let len = cp_make32((*png).p);
     let start = (*png).p;
     if cp_memcmp4(start.wrapping_offset(4), chunk as *const u8) && len >= minlen {
@@ -979,11 +706,13 @@ unsafe fn cp_chunk(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) ->
     ptr::null()
 }
 
-unsafe fn cp_find(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) -> *const u8 {
+pub unsafe fn cp_find(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) -> *const u8 {
     while (*png).p < (*png).end {
         let len = cp_make32((*png).p);
         let start = (*png).p;
-        (*png).p = (*png).p.wrapping_offset(len.wrapping_add(12) as c_int as isize);
+        // `png->p += len + 12;` — the addend has type uint32_t here (no `int`
+        // variable as in cp_chunk), so it is zero-extended, not sign-extended.
+        (*png).p = (*png).p.wrapping_offset(len.wrapping_add(12) as isize);
         if cp_memcmp4(start.wrapping_offset(4), chunk as *const u8)
             && len >= minlen
             && (*png).p <= (*png).end
@@ -994,7 +723,7 @@ unsafe fn cp_find(png: *mut cp_raw_png_t, chunk: *const c_char, minlen: u32) -> 
     ptr::null()
 }
 
-unsafe fn cp_unfilter(w: c_int, h: c_int, bpp: c_int, raw: *mut u8) -> c_int {
+pub unsafe fn cp_unfilter(w: c_int, h: c_int, bpp: c_int, raw: *mut u8) -> c_int {
     let len: c_int = w.wrapping_mul(bpp);
     let mut raw = raw;
     let prev: *mut u8;

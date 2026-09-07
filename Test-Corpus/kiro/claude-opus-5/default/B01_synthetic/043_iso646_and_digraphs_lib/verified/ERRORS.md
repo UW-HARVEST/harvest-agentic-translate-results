@@ -2,83 +2,100 @@
 
 ## Mechanical derivation
 
-Every rejection path in a C library shows up as one of: an error-return macro, a
-`return` of a sentinel, an error enum, an `assert`, an explicit range/null check,
-or a min/max constant. Grepping the entire compiled C surface for all of them:
+Every non-comment line of the entire C library (`c_src/src/driver.c`, after
+resolving digraphs `%:`→`#`, `<%`→`{`, `%>`→`}`):
 
-```sh
-cd c_src
-grep -nE 'return|assert|NULL|errno|exit\(|abort|if|switch|while|for|else|goto|#if|%:if|ERROR|error|<|>|MIN|MAX|limits' -r src include
+```c
+#include "driver.h"
+#include <stdio.h>
+#include <iso646.h>
+
+void driver(int x, int y) {
+    int result = x | ~y;   /* x bitor compl y */
+    printf("%d", result);
+    puts("");
+}
 ```
 
-The only hits are the include guard (`%:ifndef DRIVER_H_` / `%:endif`), the two
-`%:include` lines, and the two brace digraphs of `driver`'s own body. Full list
-of hits:
+Greps run over `c_src/` for every rejection mechanism:
 
-```
-src/driver.c:26:%:include <stdio.h>
-src/driver.c:27:%:include <iso646.h>
-src/driver.c:29:void driver(int x, int y) <%
-src/driver.c:33:%>
-include/driver.h:24:%:ifndef DRIVER_H_
-include/driver.h:29:%:endif //DRIVER_H_
-```
+| searched for | matches in C source |
+|---|---|
+| `return` (any) | 0 |
+| `return -1` / `return NULL` / `RETURN_ERROR` / error macros | 0 |
+| `assert` | 0 |
+| `errno` | 0 |
+| `exit(` / `abort` | 0 |
+| `if` / `switch` / `goto` / loops | 0 |
+| relational / range checks (`<`, `>`, `<=`, `>=`) | 0 |
+| null-pointer checks | 0 (the API takes no pointers) |
+| min/max constants (`INT_MAX`, `LIMIT`, `MAX_`, `MIN_`) | 0 |
+| error enums / status types | 0 (`driver` returns `void`) |
 
-Consequently, in the compiled library:
-
-* error-return macros (`RETURN_ERROR`, …): **0**
-* `return` statements of any kind: **0** (`driver` returns `void`)
-* error enums / status codes: **0**
-* `assert` / `abort` / `exit`: **0**
-* explicit range checks, null checks, `if`/`switch`/loops: **0**
-* min/max or `<limits.h>` constants: **0**
-* pointer parameters (hence null-pointer rejections): **0**
-* length/size/count parameters (hence zero/oversized-length rejections): **0**
-* enum parameters (hence out-of-range-enum rejections): **0**
-
-`driver` accepts two `int` parameters. Every one of the 2^32 bit patterns of a
-32-bit `int` is a valid argument, `x | ~y` is total over them (bitwise ops on
-`int` cannot overflow or trap), and `printf`/`puts` are total over the resulting
-`int`. **The C library has an empty rejection surface: there is no input it
-errors on.**
+**Result: the C library has an EMPTY intrinsic error surface.** `driver` is
+`void`, takes two by-value `int`s, performs a total (never-trapping) bitwise
+expression, and unconditionally prints. There is no input it rejects and no
+channel (return value, out-param, errno, enum) through which it could report
+one. Consequently the rows below are the *generic FFI boundaries every C API
+has*, as required by Phase C: extremes, one-step-past-range values, degenerate
+values, and out-of-range "enum-like" integers. For each, the correct C
+behaviour is **no rejection** — and the differential test asserts that the Rust
+also does not reject, i.e. both print the identical bytes and both return
+normally (no panic, no abort, no trap).
 
 ## Table
 
-Rows 1–6 are the *derived* rows: because the C rejects nothing, the "expected C
-result" for every row is "no rejection — prints `x | ~y` then `\n`". These rows
-therefore assert the *absence* of a rejection, differentially: for each row the
-Rust must also not reject, and must emit the same bytes. Rows 7–10 are the
-generic FFI boundary probes Phase C mandates even when absent from the source.
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `driver` | `x = 0, y = 0` — degenerate all-zero input | no error; `~0 = -1`, `0 \| -1 = -1`; prints `-1\n`; returns void |
+| 2 | `driver` | `x = 0, y = -1` — the only pair whose result is `0` (falsy/sentinel-looking value) | no error; prints `0\n` |
+| 3 | `driver` | `x = INT_MIN (-2147483648)`, `y = 0` — extreme low `x`, sign bit set | no error; prints `-1\n` |
+| 4 | `driver` | `x = INT_MAX (2147483647)`, `y = 0` — extreme high `x` | no error; prints `-1\n` |
+| 5 | `driver` | `y = INT_MIN` — `~INT_MIN = INT_MAX`, complement of the extreme low value | no error; prints `x \| 0x7FFFFFFF` |
+| 6 | `driver` | `y = INT_MAX` — `~INT_MAX = INT_MIN`, complement produces the sign bit | no error; prints `x \| INT_MIN` (always negative) |
+| 7 | `driver` | `x = 0, y = INT_MAX` — result is exactly `INT_MIN`, a magnitude with no positive `int` counterpart (the classic negation-overflow trap for `%d` formatting) | no error; prints `-2147483648\n` (11 bytes + newline) |
+| 8 | `driver` | `x = INT_MIN, y = INT_MIN` — both operands extreme low | no error; `INT_MIN \| INT_MAX = -1`; prints `-1\n` |
+| 9 | `driver` | `x = INT_MAX, y = INT_MAX` — both operands extreme high | no error; `INT_MAX \| INT_MIN = -1`; prints `-1\n` |
+| 10 | `driver` | one step past the top of the signed range: caller passes `0x80000000` as an unsigned 32-bit bit pattern (wraps to `INT_MIN` across the FFI boundary) | no error; identical to row 3's `x`; prints per `x \| ~y` |
+| 11 | `driver` | one step past the bottom: caller passes `0x7FFFFFFF + 1` computed by wrapping arithmetic | no error; same as row 10 |
+| 12 | `driver` | out-of-range "enum-like" integers: values that would have no valid variant if the parameters were enums — `x`/`y` ∈ {`-2147483648`, `-1000000`, `-2`, `3`, `42`, `255`, `256`, `65536`, `2147483647`} in all 81 combinations. C enums accept any `int`, so these are real inputs. | no error for any combination; each prints `x \| ~y` then newline |
+| 13 | `driver` | sign-bit-only operands: `x = 0x80000000`, `y = 0x80000000` (single high bit) | no error; prints `-1\n` |
+| 14 | `driver` | single-bit sweep: `x = 1<<i`, `y = 1<<j` for all `i, j` in `0..32` (includes `1<<31` = `INT_MIN`) — 1024 combinations, every bit position including the sign bit | no error for any pair; prints `x \| ~y` |
+| 15 | `driver` | repeated invocation without intervening flush (state/buffer reuse across many back-to-back calls) | no error; outputs concatenate in call order, one line each |
+| 16 | `driver` | *no* null-pointer row is possible — `driver` accepts no pointer arguments (verified: 0 `*` parameters in `driver.h`); the nearest analogue is passing the null bit pattern `0` for both scalars, i.e. row 1 | n/a |
+| 17 | `driver` | *no* length/size row is possible — `driver` accepts no buffer or length argument, so "zero length" and "oversized length" are inexpressible; the nearest analogues are rows 1–2 (zero) and rows 3–4 (extreme magnitude) | n/a |
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result |
-|----|----------|----------------------------------------------|-------------------|
-| 1  | `driver` | `x = INT_MIN` (`-2147483648`), the smallest representable argument — one step below is not representable | no rejection; prints `-1` for `y=0`, i.e. `x \| ~y`, then `\n` |
-| 2  | `driver` | `y = INT_MIN`, smallest representable second argument (`~y` = `INT_MAX`) | no rejection; prints `x \| INT_MAX`, then `\n` |
-| 3  | `driver` | `x = INT_MAX` (`2147483647`), the largest representable argument — one step above is not representable | no rejection; prints `x \| ~y`, then `\n` |
-| 4  | `driver` | `y = INT_MAX`, largest representable second argument (`~y` = `INT_MIN`, sign bit forced on) | no rejection; prints a negative `x \| INT_MIN`, then `\n` |
-| 5  | `driver` | `x = y = 0` — the "empty"/zero argument case | no rejection; prints `-1` then `\n` (`0 \| ~0` = `-1`) |
-| 6  | `driver` | `y = -1` so `~y = 0`, and `x = 0`: the only argument pair yielding `0` | no rejection; prints `0` then `\n` |
-| 7  | `driver` | out-of-`int`-range value passed across the FFI boundary: caller declares the parameter `int64_t`/`i64` and passes `INT_MAX + 1`, `INT_MIN - 1`, `0x1_0000_0000`, `0xFFFF_FFFF_FFFF_FFFF` — the SysV AMD64 ABI leaves the upper 32 bits of the register unspecified for an `int` parameter | no rejection; callee reads only the low 32 bits, so the result equals `driver((int)x, (int)y)`; Rust must truncate identically |
-| 8  | `driver` | wrong-arity / extra-argument call across the FFI boundary (caller passes 4 args to the 2-arg `extern "C"` symbol) | no rejection; extra register arguments are ignored, output identical to the 2-arg call |
-| 9  | `driver` | out-of-range "enum-like" `int` value — an `int` argument with no meaningful interpretation, e.g. every bit set (`0xFFFFFFFF` = `-1`) or a lone sign bit; C enums/ints accept any `int`, so these must not be rejected | no rejection; prints `x \| ~y` for those bit patterns, then `\n` |
-| 10 | `driver` | repeated / high-volume invocation with no re-initialisation (no init/teardown API exists to misuse; calling `driver` "before init" or "after teardown" is therefore always legal) | no rejection on any call; each call appends `<x\|~y>\n` to `stdout` in order |
+Rows 16 and 17 are recorded explicitly so the absence of null-pointer and
+length checks is documented as a *derived fact about the C API's signature*,
+not as an untested gap.
 
-Rows explicitly **not** applicable (documented so the absence is deliberate, not
-an oversight): null-pointer arguments, zero-length buffers, oversized lengths,
-unterminated strings, invalid handles/contexts, unaligned pointers, and named
-enum constants — the API has no pointer, length, handle, or enum parameter.
+## Verification status
 
-## Status
+Every row has a passing differential test in `tests/phase_c_errors.rs`, each
+run individually and confirmed green (`cargo test --test phase_c_errors errNN_`):
 
-| # | test | result |
-|---|------|--------|
-| 1 | `err_row01_x_int_min` | [x] pass |
-| 2 | `err_row02_y_int_min` | [x] pass |
-| 3 | `err_row03_x_int_max` | [x] pass |
-| 4 | `err_row04_y_int_max` | [x] pass |
-| 5 | `err_row05_both_zero` | [x] pass |
-| 6 | `err_row06_result_zero` | [x] pass |
-| 7 | `err_row07_out_of_int_range_ffi` | [x] pass |
-| 8 | `err_row08_extra_ffi_arguments` | [x] pass |
-| 9 | `err_row09_out_of_range_enum_like_ints` | [x] pass |
-| 10 | `err_row10_repeated_invocation_no_init` | [x] pass |
+| row | test | status |
+|-----|------|--------|
+| 1 | `err01_both_zero` | [x] |
+| 2 | `err02_result_zero_sentinel` | [x] |
+| 3 | `err03_x_int_min` | [x] |
+| 4 | `err04_x_int_max` | [x] |
+| 5 | `err05_y_int_min` | [x] |
+| 6 | `err06_y_int_max` | [x] |
+| 7 | `err07_result_int_min_unnegatable` | [x] |
+| 8 | `err08_both_int_min` | [x] |
+| 9 | `err09_both_int_max` | [x] |
+| 10 | `err10_one_past_int_max_bit_pattern` | [x] |
+| 11 | `err11_wrapped_out_of_range` | [x] |
+| 12 | `err12_out_of_range_enum_like_values` | [x] |
+| 13 | `err13_sign_bit_only` | [x] |
+| 14 | `err14_single_bit_sweep_no_rejection` | [x] |
+| 15 | `err15_repeated_invocation_state` | [x] |
+| 16 | `err16_no_pointer_parameters_exist` | [x] |
+| 17 | `err17_no_length_parameters_exist` | [x] |
+
+Because the C exposes no error channel, "same error/rejection" is asserted as
+"same non-rejection": identical stdout bytes plus a normal return from both
+libraries. Rows 16 and 17 additionally assert, from `driver.h` and `driver.c`
+themselves, that no pointer/length parameter and no check statement exists, so
+these tests fail loudly if the C ever grows a real error path.

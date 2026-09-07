@@ -1,57 +1,58 @@
-# ERRORS.md — error / rejection surface of the C code
+# ERRORS.md — error / rejection surface table
 
-Derived mechanically from `c_src/src/{mdcore.c,mdmain.c,mdmacros.h}`. The greps
-that produced it, and what they found:
+Derived mechanically from the C source, not from docs. The grep used:
 
 ```
-grep -nE 'return'                          -> mdcore.c:28,29,30,44,51,57  mdmain.c:31,47  mdmacros.h:99
-grep -nE 'assert|abort|exit\(|errno|NULL|perror|strerror'   -> (no matches)
-grep -nE 'RETURN_ERROR|ERROR|ERR_|_ERR|fail|invalid'        -> (no matches)
-grep -nE 'if *\(|switch|default:|case '    -> mdmain.c:29  mdmacros.h:77,83-91
-grep -nE 'MAX|MIN|LIMIT'                   -> (license text only)
+grep -nE 'return -1|return NULL|assert|RETURN_ERROR|errno|exit\(|abort|stderr|return [0-9]|default:|if *\(|switch *\(' c_src/src/*.c c_src/src/*.h
 ```
 
-So the library has **no error enum, no error-return macro, no sentinel return, no
-`assert`, no null check and no numeric range check**. Every public function
-returns `int` and every parameter is a by-value `int`; there is no pointer
-parameter anywhere, so there is no null-pointer rejection to reproduce. The
-complete rejection surface is the 12 rows below.
+Findings: this library has **no error enum, no `RETURN_ERROR` macro, no `assert`,
+no null checks, and no `return -1` / `return NULL` anywhere**. The complete
+rejection surface is:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|---------------------------------------------|-------------------|------|
-| 1 | `use_generated(n)` → `accum_<OP>(n)` → `DISPATCH_REP` (`mdmacros.h:91`, `default: break;`) | `n == 7` — the one value for which `REP7` exists but the `switch` has no `case` | no step applied: returns `INIT_FOR(OP)` (`0` for add/sub, `1` for mul), prints `gen.acc=<INIT>\n`. Not an error return — silent no-op. | [x] `errors::row01_use_generated_seven` |
-| 2 | same | `n` any value `> 7` (`8`, `9`, `100`, `1000`) | same silent `INIT_FOR(OP)` | [x] `errors::row02_use_generated_above_range` |
-| 3 | same | `n == INT_MAX` (`2147483647`) — one step past the widest positive selector | same silent `INIT_FOR(OP)` | [x] `errors::row03_use_generated_int_max` |
-| 4 | same | `n < 0` (`-1`, `-2`, `-7`, random negatives) — the `switch` selector is a signed `int`, so negatives reach `default:` | same silent `INIT_FOR(OP)` | [x] `errors::row04_use_generated_negative` |
-| 5 | same | `n == INT_MIN` (`-2147483648`) — extreme negative selector; `-n` would overflow | same silent `INIT_FOR(OP)` | [x] `errors::row05_use_generated_int_min` |
-| 6 | same | `n == 6` vs `n == 7` boundary pair — last accepted `case` immediately followed by the first rejected value | `6` → `REP6` result (`15`/`-15`/`720`); `7` → `INIT_FOR(OP)`. The two must differ for add/sub/mul alike. | [x] `errors::row06_use_generated_boundary_6_7` |
-| 7 | `main` (`mdmain.c:29-32`) | `argc < 3`, i.e. fewer than two operands: `driver`, `driver A` | `fprintf(stderr, "usage: %s A B\n", argv[0])`, **exit status 2**, nothing on stdout | [x] `driver_cli::row07_argc_too_small` |
-| 8 | `main` | `argc > 3` — extra trailing operands (`driver 1 2 3 4`) | *accepted*, not rejected: `argv[3..]` ignored, identical output to `driver 1 2`, exit 0 | [x] `driver_cli::row08_extra_args_ignored` |
-| 9 | `atoi` at `mdmain.c:33-34` | operand with no digits at all (`""`, `"abc"`, `"+"`, `"-"`, `"--3"`, `"0x10"` → stops at `x`) | no diagnostic; `atoi` yields `0` (or the prefix it could parse) and execution continues | [x] `driver_cli::row09_non_numeric_operands` |
-| 10 | `atoi` at `mdmain.c:33-34` | operand outside `int` range (`"2147483648"`, `"-2147483649"`, `"99999999999999999999999"`) | no diagnostic; glibc `atoi` is `(int)strtol(...)`, so the value saturates at `LONG_MAX`/`LONG_MIN` and is then truncated to the low 32 bits | [x] `driver_cli::row10_out_of_range_operands` |
-| 11 | `op_add`/`op_sub`/`op_mul`, and `STEP_*` inside `REP<n>` | signed-overflow operands (`INT_MAX + 1`, `INT_MIN - 1`, `INT_MAX * INT_MAX`) — UB in ISO C, but the reference build is gcc `-O2` two's complement without `-ftrapv` | wraps modulo 2^32; no trap, no diagnostic. Rust must use `wrapping_*`, not `checked_*`/panicking arithmetic. | [x] `errors::row11_overflow_wraps` |
-| 12 | build-time rejection, `CHOOSE_REP` (`mdmacros.h:73-74`) / `INIT_FOR` (`:59`) / `OP_FN` (`:45`) | `-DREPEAT=8` (no `REP8`) or `-DOP=div` (no `INIT_div`/`STEP_div`/`op_div`) | **compile error**, no binary produced. Confirmed: `-DREPEAT=8` → `error: 'add' undeclared`; `-DOP=div` → `error: 'INIT_div' undeclared`. Mirrored in Rust by `Cargo.toml` only offering features `add`/`sub`/`mul` and `0`..`7`. | [x] `build_surface::row12_out_of_range_build_config` |
+1. one explicit argument-count rejection in `main` (`mdmain.c:29-32`),
+2. one *silent* rejection inside the macro-generated accumulator — the
+   `default: break;` arm of `DISPATCH_REP` (`mdmacros.h:91`), reached through the
+   public `use_generated`,
+3. `atoi`'s own no-digits / out-of-range behaviour, which `main` feeds into every
+   subsequent computation.
 
-## Generic FFI boundary cases (not in the table, covered anyway)
+Because `op_*`, `helper_call`, `helper_ptr` take plain `int` by value and never
+dereference anything, **no input value is rejected** by them — that is itself a
+claim under test (rows 11-14): a Rust translation that panics on overflow where C
+wraps would be a divergence.
 
-| case | applicability here | covered by |
-|------|--------------------|-----------|
-| null pointer arguments | **not applicable** — no public function takes a pointer | — |
-| zero / oversized lengths | **not applicable** — no length or size parameter, no buffer | — |
-| out-of-range enum value across FFI | **no enum in the API**. The structural equivalent is the `int n` selector of `DISPATCH_REP`'s `switch`, whose valid set is `{0,…,6}`; every `int` outside it is a live input the C accepts and silently maps to `default:`. Covered exhaustively for `n ∈ -16..=16` plus `INT_MIN`/`INT_MAX` plus randomized `i32`. | rows 1–6, `errors::row_all_i32_selector_sweep` |
-| one step past a documented valid range | `n = 7` (past the `switch`), `REPEAT = 8` (past `REP7`), `INT_MAX`/`INT_MIN` operands | rows 1, 3, 5, 6, 11, 12 |
-| writable global function pointer `G_OP` | `G_OP` is non-`const` in C, so a caller can overwrite it; setting it to `NULL` and calling segfaults in **both** implementations (matching UB, not a matchable return value). Not asserted; what *is* asserted is that the loaded value dispatches to the same `op_<OP>` in both, and that overwriting it with a caller-supplied `extern "C"` pointer is honoured identically. | `configs::row_g_op_rebind` |
+| # | function | trigger (exact invalid input/condition) | expected C result | ✓ |
+|---|----------|------------------------------------------|-------------------|---|
+| 1 | `main` (driver) | `argc < 3` — no args at all (`argc == 1`) | `fprintf(stderr, "usage: %s A B\n", argv[0])`; exit status **2**; **stdout empty** | [x] |
+| 2 | `main` (driver) | `argc < 3` — exactly one arg (`argc == 2`) | same as row 1: usage on stderr, exit **2**, stdout empty | [x] |
+| 3 | `main` (driver) | `argc >= 3` but arg 1 has no digits (`"abc"`) | *not* rejected: `atoi` returns `0`, run proceeds with `a == 0`, exit **0** | [x] |
+| 4 | `main` (driver) | `argc >= 3` but arg 2 is empty string `""` | *not* rejected: `atoi("") == 0`, exit **0** | [x] |
+| 5 | `main` (driver) | arg is `"12abc"` / `"  -7x"` / `"+9"` / `"--3"` / `"0x10"` | `atoi` parses the longest valid prefix (`12`, `-7`, `9`, `0`, `0`); never rejected | [x] |
+| 6 | `main` (driver) | arg overflows `int` on the **positive** side (`"99999999999"`, `"9223372036854775808"`) | glibc `atoi` = `(int)strtol(...)`; `strtol` clamps to `LONG_MAX` ⇒ `(int)0x7FFFFFFFFFFFFFFF == -1` | [x] |
+| 7 | `main` (driver) | arg overflows `int` on the **negative** side (`"-99999999999"`, `"-9223372036854775809"`) | `strtol` clamps to `LONG_MIN` ⇒ `(int)0x8000000000000000 == 0` | [x] |
+| 8 | `main` (driver) | arg is exactly `"-9223372036854775808"` (`LONG_MIN`, representable, no clamp) | `strtol` returns `LONG_MIN` ⇒ `(int)` truncation == `0` | [x] |
+| 9 | `main` (driver) | more than 2 args (`argc > 3`) | extra args silently ignored, exit **0** | [x] |
+| 10 | `use_generated` | `n` outside the `switch` label set `0..=6` — i.e. `n == 7` | `default: break;` ⇒ accumulator untouched ⇒ returns `INIT_FOR(OP)` (`0` for add/sub, `1` for mul), prints `gen.acc=<INIT>`. Note `REP7` *exists* but the switch never selects it. | [x] |
+| 11 | `use_generated` | `n` negative (`-1`, `-100`, `INT_MIN`) | `default: break;` ⇒ returns `INIT_FOR(OP)` | [x] |
+| 12 | `use_generated` | `n` far above range (`8`, `100`, `INT_MAX`) | `default: break;` ⇒ returns `INIT_FOR(OP)` | [x] |
+| 13 | `op_add` | signed overflow: `INT_MAX + 1`, `INT_MIN + (-1)`, `INT_MAX + INT_MAX` | no rejection; gcc emits wrapping two's-complement `add`. Rust must wrap, **not** panic | [x] |
+| 14 | `op_sub` | signed overflow: `INT_MIN - 1`, `INT_MAX - INT_MIN`, `0 - INT_MIN` | no rejection; wrapping `sub` | [x] |
+| 15 | `op_mul` | signed overflow: `INT_MAX * 2`, `INT_MIN * -1`, `65536 * 65536` | no rejection; wrapping `imul` (low 32 bits) | [x] |
+| 16 | `helper_call` | overflow in `r + acc` (e.g. `a = INT_MAX, b = 0` under `-DOP=add`, `REPEAT >= 1`) | no rejection; wrapping `add` of the two wrapped halves | [x] |
+| 17 | `helper_call` / `helper_ptr` / `op_*` | *no* null-pointer surface exists — every parameter is `int` by value | passing arbitrary bit patterns (incl. `0`, `INT_MIN`, `INT_MAX`) is always valid; asserted for completeness | [x] |
+| 18 | `G_OP` | the `int (*)(int,int)` global is non-`const` and writable in C | reading it yields `&op_<OP>`; the library itself never reads it, so overwriting it from a caller changes nothing inside the `.so`. Rust `static mut G_OP` must behave identically | [x] |
+| 19 | `G_OP_NAME` | `const char *` global | points at a 3-byte + NUL C string equal to `STR(OP)`; never `NULL` | [x] |
+| 20 | `use_generated` | out-of-range "enum-like" selector crossing FFI: `n` is a plain `int` used as a `switch` selector, so every one of the 2^32 values is a real input | every value not in `0..=6` maps to `default` ⇒ `INIT_FOR(OP)`; randomized sweep asserts this | [x] |
+| 21 | `G_OP` **and** `G_OP_NAME` | an external caller *stores* to either global. The `const` in `const char *G_OP_NAME` qualifies the pointee, not the pointer, so gcc emits **both** globals into writable `.data` (`readelf -S`: section `.data`, `WA`) | the store succeeds and is observable on read-back; the library's own behaviour is unchanged. **A Rust immutable `static` would land in `.data.rel.ro`, which RELRO makes read-only, and the same store would SIGSEGV** — so both are `static mut` | [x] |
+| 22 | `G_OP_NAME` pointee | storing *through* the pointer, into the string itself | the target is a `STR(OP)` string literal in `.rodata` on both sides, so the store is fatal in C too. Tested in a forked child on each side; both must die with the same signal (SIGSEGV/11) | [x] |
 
-## Result
+## Boundary cases covered even though the C has no explicit check
 
-All 12 rows have a passing differential test, in all 24 `(OP, REPEAT)`
-configurations (`./run_all.sh`). Every row asserts the *specific* C value —
-`INIT_FOR(OP)` for the `default:` arm, exit status exactly `2` for the usage
-path, the exact wrapped `int` for overflow — never merely "both sides failed".
-
-Rows 1–6 and 11 are in `tests/errors.rs`; rows 7–10 in `tests/driver_cli.rs`;
-row 12 in `tests/build_surface.rs`.
-
-One divergence was found and fixed while working through this table: row 10
-(`atoi` on operands outside `int` range) diverged at exactly `LONG_MIN`. See the
-"Divergence found and fixed" section of `CONFIGS.md`.
+- zero (`0`), one (`1`), minus one (`-1`) for every `int` parameter
+- `INT_MIN`, `INT_MIN + 1`, `INT_MAX - 1`, `INT_MAX`
+- one step past the `switch` range on both sides (`-1` and `7`)
+- `atoi` inputs: empty, whitespace-only, sign-only (`"-"`, `"+"`), digits after
+  non-digits, `LONG_MIN`/`LONG_MAX` ± 1, 40-digit numbers
+- there is no length/size/pointer parameter anywhere in the API, so the
+  "null pointer / zero length / oversized length" class collapses to row 17

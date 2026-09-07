@@ -40,41 +40,6 @@ unsafe extern "C" {
     unsafe fn free(ptr: *mut c_void);
 }
 
-// ---------------------------------------------------------------------------
-// Opaque `malloc` / `free` trampolines.
-//
-// LLVM recognises `malloc`/`free` by name and will promote a small,
-// non-escaping heap block to registers, deleting the allocation entirely.  That
-// is normally a harmless optimisation, but here it changes OBSERVABLE
-// behaviour: `checkshift` has an allocation-failure branch that prints
-// "Error: Failed to allocate memory for state" and returns -1, and if the
-// `malloc` call is elided that branch becomes unreachable while the C version
-// still takes it (verified with an LD_PRELOAD interposer — see
-// tests/phase_c_malloc.rs).  It also makes the malloc/free pair invisible to
-// any external allocator interposer.
-//
-// Loading the function pointer with `read_volatile` hides the callee's identity
-// from the optimiser, so a real indirect call to the process `malloc`/`free` is
-// always emitted, exactly as the C code does.
-// ---------------------------------------------------------------------------
-type MallocFn = unsafe extern "C" fn(usize) -> *mut c_void;
-type FreeFn = unsafe extern "C" fn(*mut c_void);
-
-static MALLOC_FN: MallocFn = malloc;
-static FREE_FN: FreeFn = free;
-
-#[inline(never)]
-unsafe fn c_malloc(size: usize) -> *mut c_void {
-    let f = unsafe { core::ptr::read_volatile(&MALLOC_FN) };
-    unsafe { f(size) }
-}
-
-#[inline(never)]
-unsafe fn c_free(ptr: *mut c_void) {
-    let f = unsafe { core::ptr::read_volatile(&FREE_FN) };
-    unsafe { f(ptr) }
-}
-
 /// Helper: build a NUL-terminated format string literal usable with `printf`.
 macro_rules! cstr {
     ($s:literal) => {
@@ -335,7 +300,13 @@ pub extern "C" fn checkshift(
         );
     }
 
-    let state = unsafe { c_malloc(core::mem::size_of::<ComputeState>()) } as *mut ComputeState;
+    // `core::hint::black_box` keeps the allocation observable to the optimizer.
+    // Without it LLVM recognises this `malloc`/`free` pair as removable and
+    // deletes the allocation *along with the `state == NULL` branch*, which
+    // would make the C's allocation-failure path (print + `return -1`)
+    // unreachable in the Rust build.
+    let state = core::hint::black_box(unsafe { malloc(core::mem::size_of::<ComputeState>()) })
+        as *mut ComputeState;
 
     if state.is_null() {
         unsafe {
@@ -393,7 +364,7 @@ pub extern "C" fn checkshift(
     }
 
     unsafe {
-        c_free(state as *mut c_void);
+        free(state as *mut c_void);
     }
 
     unsafe {

@@ -1,27 +1,32 @@
 # Configuration Surface
 
-The crate declares no Cargo features. The C header exposes `driver`, while the
-C shared object additionally exports the lower-level `call_fma` and
-`fma_array`; all three entry points are included below.
+The crate declares no Cargo features. The C API exposes no runtime mode,
+option, flag, enum, format selector, or byte-order selector. The meaningful
+cross-product therefore consists of the full exported entry-point set and the
+input shapes distinguished by the C control flow.
 
-There are no runtime option, mode, flag, enum, element-type, format, or byte
-order axes. The meaningful cross-product is therefore the input shapes that
-the C loops and branches distinguish. Randomized rows include ordinary and
-wrapping `int` arithmetic values.
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| 1 | `fma_array` | no options; `len == 0`; pointers may be null; loop executes zero times | [x] |
+| 2 | `fma_array` | no options; `len == 1`; one output element; randomized full-width `int` operands | [x] |
+| 3 | `fma_array` | no options; `len > 1`; many output elements; randomized lengths and full-width `int` operands | [x] |
+| 4 | `fma_array` | no options; large valid length; fully allocated input/output arrays | [x] |
+| 5 | `call_fma` | no options; `len == 0`; `data` may be null; early return | [x] |
+| 6 | `call_fma` | no options; `len == 1`; returns the sole input element | [x] |
+| 7 | `call_fma` | no options; `len > 1`; randomized lengths/data; returns the final input element through the composed `fma_array` path | [x] |
+| 8 | `call_fma` | no options; large valid length; exercises the C VLA/composed path | [x] |
+| 9 | `driver` | no options; empty or initially non-numeric input; zero successful scans; prints `0\n` | [x] |
+| 10 | `driver` | no options; one valid decimal integer, including signs/whitespace; prints that value | [x] |
+| 11 | `driver` | no options; 2–99 valid decimal integers; randomized count/values; prints the last value | [x] |
+| 12 | `driver` | no options; valid prefix followed by malformed input before 100 values; scan stops and prints the last valid value | [x] |
+| 13 | `driver` | no options; exactly 100 valid integers; reaches fixed-array capacity and prints the 100th value | [x] |
+| 14 | `driver` | no options; more than 100 valid integers; ignores the suffix after the 100th and prints the 100th value | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | |
-|---|----------------|-------------------------------------------|-|
-| 1 | `fma_array` | `len == 0`; no elements and no pointer dereference. | [x] |
-| 2 | `fma_array` | `len == 1`; one output computed as `mul1[0] * mul2[0] + add[0]`. | [x] |
-| 3 | `fma_array` | `len > 1`; many independently computed elements, including `int` boundary/wrapping values. | [x] |
-| 4 | `call_fma` | `len == 0`; early return 0 before allocating VLAs or reading `data`. | [x] |
-| 5 | `call_fma` | `len == 1`; one data element and return the sole output. | [x] |
-| 6 | `call_fma` | `len > 1`; many data elements and return the last output. | [x] |
-| 7 | `call_fma` | Large positive `len` beyond `driver`'s 100-element cap but within the process stack limit. | [x] |
-| 8 | `driver` | Exactly one valid decimal integer, with optional sign/leading whitespace. | [x] |
-| 9 | `driver` | Between 2 and 99 valid integers, using whitespace and adjacent signed-token separators accepted by `%d`. | [x] |
-| 10 | `driver` | Exactly 100 valid integers; fill the fixed array and stop at the loop bound. | [x] |
-| 11 | `driver` | More than 100 valid integers; ignore every token after the 100th and print the 100th. | [x] |
+`fma_array` with a negative `len` also executes zero loop iterations, but a
+negative length is an invalid length-domain boundary and is tracked in
+`ERRORS.md` rather than duplicated here.
 
-The zero-valid-token and valid-prefix-followed-by-malformed-token parser shapes
-take the rejection branch and are listed in `ERRORS.md`.
+No standalone binary executable is built by either `CMakeLists.txt` or
+`Cargo.toml`, so binary stdout comparison is not applicable. The `driver`
+function's stdout is captured and compared through both shared-library FFI
+boundaries.

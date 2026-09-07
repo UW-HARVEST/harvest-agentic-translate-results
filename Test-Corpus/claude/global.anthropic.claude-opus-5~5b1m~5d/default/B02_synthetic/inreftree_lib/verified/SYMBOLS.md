@@ -1,60 +1,62 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Source of truth: `nm -D --defined-only` on the C shared object built by
-`c_src/CMakeLists.txt`.
+C `.so`: `c_src/build/libharvest-work-OzhDkb.so`
+Rust `.so`: `translation/target/release/libinreftree_lib.so`
 
-* C `.so`   : `c_src/build/lib<parent-dir-name>.so` (the CMake project name is derived
-  from the *parent directory* of `c_src`, so the file name is environment specific;
-  the test harness globs `c_src/build/*.so`).
-* Rust `.so`: `translation/target/<profile>/libinreftree_lib.so`
-  (`[lib] name = "inreftree_lib"`, `crate-type = ["cdylib"]`).
+Produced with `nm -D --defined-only <so> | sort`.
 
-The C library is a single translation unit (`src/lib.c`). Every non-`static`
-definition in it is exported, which is **11 functions + 2 data objects**.
+The C build (`CMakeLists.txt`) compiles the single TU `src/lib.c` into one shared
+object with default visibility, so **every** non-`static` definition in `lib.c`
+is part of the exported ABI — including the two global data objects.
 
 ## Symbol table
 
-| # | symbol | kind (C `nm`) | C declaration | in C `.so` | in Rust `.so` | notes |
-|---|--------|---------------|---------------|-----------|---------------|-------|
-| 1 | `add_op`             | `T` text   | `int add_op(int,int,int,int)`                     | yes | yes | `#[no_mangle] extern "C"` |
-| 2 | `multiply_op`        | `T` text   | `int multiply_op(int,int,int,int)`                 | yes | yes | |
-| 3 | `subtract_op`        | `T` text   | `int subtract_op(int,int,int,int)`                 | yes | yes | |
-| 4 | `divide_op`          | `T` text   | `int divide_op(int,int,int,int)`                   | yes | yes | |
-| 5 | `modulo_op`          | `T` text   | `int modulo_op(int,int,int,int)`                   | yes | yes | |
-| 6 | `find_node_by_id`    | `T` text   | `TreeNode* find_node_by_id(int)`                  | yes | yes | returns interior pointer into `node_table` |
-| 7 | `add_tree_node`      | `T` text   | `int add_tree_node(int,int,int,const char*)`       | yes | yes | |
-| 8 | `calculate_tree_sum` | `T` text   | `int calculate_tree_sum(int)`                     | yes | yes | recursive |
-| 9 | `parse_operation`    | `T` text   | `Operation parse_operation(const char*)`           | yes | yes | `Operation` is `int`-sized |
-| 10 | `get_operation_func`| `T` text   | `OperationFunc get_operation_func(Operation)`      | yes | yes | returns fn pointer |
-| 11 | `inreftree`         | `T` text   | `int inreftree(int,int,int,int)` (public header)    | yes | yes | only symbol in `include/lib.h` |
-| 12 | `node_table`        | `B` bss, size 2600 | `TreeNode node_table[50]`                  | yes | yes | `#[no_mangle] pub static mut` |
-| 13 | `node_count`        | `B` bss, size 4    | `int node_count`                           | yes | yes | `#[no_mangle] pub static mut` |
+| # | symbol | kind | C | Rust | notes |
+|---|--------|------|---|------|-------|
+| 1 | `add_op`            | T (func) | ✅ | ✅ | `int(int,int,int,int)` |
+| 2 | `multiply_op`       | T (func) | ✅ | ✅ | `int(int,int,int,int)` |
+| 3 | `subtract_op`       | T (func) | ✅ | ✅ | `int(int,int,int,int)` |
+| 4 | `divide_op`         | T (func) | ✅ | ✅ | `int(int,int,int,int)` |
+| 5 | `modulo_op`         | T (func) | ✅ | ✅ | `int(int,int,int,int)` |
+| 6 | `find_node_by_id`   | T (func) | ✅ | ✅ | `TreeNode*(int)` |
+| 7 | `add_tree_node`     | T (func) | ✅ | ✅ | `int(int,int,int,const char*)` |
+| 8 | `calculate_tree_sum`| T (func) | ✅ | ✅ | `int(int)` — recursive |
+| 9 | `parse_operation`   | T (func) | ✅ | ✅ | `Operation(const char*)` |
+|10 | `get_operation_func`| T (func) | ✅ | ✅ | `OperationFunc(Operation)` |
+|11 | `inreftree`         | T (func) | ✅ | ✅ | `int(int,int,int,int)` — only decl in `lib.h` |
+|12 | `node_table`        | B (data) | ✅ | ✅ | `TreeNode[50]`, 2600 bytes |
+|13 | `node_count`        | B (data) | ✅ | ✅ | `int`, 4 bytes |
 
-Nothing is `static` in `lib.c`, so there are no private symbols to account for.
-`Operation`, `TreeNode` and `OperationFunc` are types, not symbols.
+## Diff result
 
-## ABI details that must match (verified with `readelf -sW`)
+```
+comm -23 c_syms r_syms   ->   (empty)
+```
 
-| object | C size | Rust size | note |
-|--------|--------|-----------|------|
-| `node_table` | 2600 bytes | 2600 bytes | `TreeNode` = 5×`int` + `char[32]` = 52 bytes, align 4, ×50 |
-| `node_count` | 4 bytes    | 4 bytes    | `c_int` |
+**0 symbols missing from the Rust `.so`. 0 undefined non-libc symbols.**
+No stubs / `unimplemented!()` were used; every symbol is a real translation of
+the corresponding C definition.
 
-`find_node_by_id` hands out a pointer *into* `node_table`; the differential
-tests therefore compare the **byte offset from each library's own `node_table`
-base**, never the absolute address (the two libraries are mapped independently).
+## ABI-level object checks
 
-`get_operation_func` hands out a *function pointer*; the differential tests
-resolve it against the addresses of that same library's `add_op` … `modulo_op`
-via `dlsym` and compare the resulting **index**, never the absolute address.
+* `sizeof(TreeNode)` = 5*4 + 32 = **52** (align 4) in both; verified at runtime
+  by striding `node_table` through `dlsym` in
+  `tests/differential.rs::node_table_abi_layout_matches`.
+* `node_table` total size **2600** bytes in both.
+* `node_count` is an `int` (4 bytes) in both, initialised to 0.
+* `get_operation_func` returns a pointer that must resolve to that library's own
+  `*_op` symbol; verified by comparing against `dlsym` of each library
+  (`get_operation_func_returns_matching_symbol`).
 
-## Result
+## Feature combinations
 
-`nm -D` diff between the two shared objects: **0 symbols missing from the Rust
-`.so`**. No symbol needed a new export wrapper and no C module was missing from
-the translation (`src/lib.c` is the whole library). This is asserted
-mechanically by the test `phase_d_symbols::c_symbols_are_all_exported_by_rust`,
-which shells out to `nm -D` on both objects at test time.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only build
+configuration is the default one. Enumerated mechanically:
 
-Undefined (imported) symbols in the Rust `.so` are libc/`std` runtime symbols
-only — the test also asserts that no *non-libc* symbol is left undefined.
+```
+$ grep -n '^\[features\]' translation/Cargo.toml   # -> no match
+```
+
+Therefore `--no-default-features` and the default build are the same code, and
+Phases B–C cover 100% of the feature space. Both are still run explicitly by
+`run_all.sh`.

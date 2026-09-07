@@ -1,88 +1,77 @@
-# SYMBOLS.md — Public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
+Source of truth: `nm -D --defined-only` on the C shared library
+`c_src/build/libharvest-work-zSimsg.so`, compared with the Rust cdylib
+`translation/target/release/libintput_lib.so`.
+
+Regenerate with:
+
+```sh
+nm -D --defined-only c_src/build/libharvest-work-zSimsg.so | awk '{print $3}' | sort > /tmp/c.txt
+nm -D --defined-only translation/target/release/libintput_lib.so | awk '{print $3}' | sort > /tmp/r.txt
+diff /tmp/c.txt /tmp/r.txt      # MUST be empty
+```
+
+## Exported symbol table
+
+| # | symbol | C type | in C .so | in Rust .so | notes |
+|---|--------|--------|----------|-------------|-------|
+| 1 | `stbds_arrgrowf`     | `void *(void*, size_t, size_t, size_t)` | T | T | dynamic-array grow |
+| 2 | `stbds_arrfreef`     | `void (void*)` | T | T | frees `stbds_header(a)`; UB on NULL in both |
+| 3 | `stbds_rand_seed`    | `void (size_t)` | T | T | sets the file-static `stbds_hash_seed` |
+| 4 | `stbds_hash_string`  | `size_t (char*, size_t)` | T | T | rotate/mix string hash |
+| 5 | `stbds_hash_bytes`   | `size_t (void*, size_t, size_t)` | T | T | wraps static `stbds_siphash_bytes` |
+| 6 | `stbds_hmfree_func`  | `void (void*, size_t)` | T | T | frees map + strdup'd keys + arena |
+| 7 | `stbds_hmget_key_ts` | `void *(void*, size_t, void*, size_t, ptrdiff_t*, int)` | T | T | thread-safe lookup, index via `temp` out-param |
+| 8 | `stbds_hmget_key`    | `void *(void*, size_t, void*, size_t, int)` | T | T | lookup, index stored in header `temp` |
+| 9 | `stbds_hmput_default`| `void *(void*, size_t)` | T | T | materialises slot `[-1]` |
+| 10 | `stbds_hmput_key`   | `void *(void*, size_t, void*, size_t, int)` | T | T | insert/replace, grow/rehash |
+| 11 | `stbds_shmode_func` | `void *(size_t, int)` | T | T | creates map with `string.mode = (unsigned char) mode` |
+| 12 | `stbds_hmdel_key`   | `void *(void*, size_t, void*, size_t, size_t, int)` | T | T | delete, tombstone, shrink/rebuild |
+| 13 | `stbds_stralloc`    | `char *(stbds_string_arena*, char*)` | T | T | arena string allocator |
+| 14 | `stbds_strreset`    | `void (stbds_string_arena*)` | T | T | frees arena block chain, zeroes arena |
+| 15 | `strkey`            | `char *(int)` | T | T | `sprintf(buffer, "test_%d", n)` into a 256-byte static |
+| 16 | `intput`            | `void (int)` | T | T | the only symbol in `include/lib.h` |
+
+## Not exported (correctly absent from both)
+
+These are `static` in `c_src/src/lib.c` and therefore never in the dynamic
+symbol table; the Rust translation likewise keeps them private:
+
+`stbds_probe_position`, `stbds_log2`, `stbds_make_hash_index`,
+`stbds_siphash_bytes`, `stbds_is_key_equal`, `stbds_hm_find_slot`,
+`stbds_strdup`, `stbds_hash_seed`, `buffer`.
+
+`stbds_unit_tests` is *declared* `extern` in the C source but never defined and
+never called, so it is not a defined symbol in the C `.so` either.
+
+## Result
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-uAHqBm.so
-nm -D --defined-only translation/target/release/libintput_lib.so
-```
-
-The C library is a single translation unit (`c_src/src/lib.c`) containing the
-`stb_ds.h` implementation plus two test helpers (`strkey`, `intput`).
-`c_src/include/lib.h` declares only `void intput(int num);` — every other
-exported symbol is a non-`static` definition in `lib.c`.
-
-## Exported (dynamic, `T`) symbols
-
-| # | symbol | C signature (from lib.c) | in C `.so` | in Rust `.so` | status |
-|---|--------|--------------------------|-----------|---------------|--------|
-| 1 | `stbds_arrgrowf`      | `void *stbds_arrgrowf(void *a, size_t elemsize, size_t addlen, size_t min_cap)` | yes | yes | OK |
-| 2 | `stbds_arrfreef`      | `void stbds_arrfreef(void *a)` | yes | yes | OK |
-| 3 | `stbds_rand_seed`     | `void stbds_rand_seed(size_t seed)` | yes | yes | OK |
-| 4 | `stbds_hash_string`   | `size_t stbds_hash_string(char *str, size_t seed)` | yes | yes | OK |
-| 5 | `stbds_hash_bytes`    | `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)` | yes | yes | OK |
-| 6 | `stbds_hmfree_func`   | `void stbds_hmfree_func(void *a, size_t elemsize)` | yes | yes | OK |
-| 7 | `stbds_hmget_key_ts`  | `void *stbds_hmget_key_ts(void *a, size_t elemsize, void *key, size_t keysize, ptrdiff_t *temp, int mode)` | yes | yes | OK |
-| 8 | `stbds_hmget_key`     | `void *stbds_hmget_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | yes | yes | OK |
-| 9 | `stbds_hmput_default` | `void *stbds_hmput_default(void *a, size_t elemsize)` | yes | yes | OK |
-|10 | `stbds_hmput_key`     | `void *stbds_hmput_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | yes | yes | OK |
-|11 | `stbds_shmode_func`   | `void *stbds_shmode_func(size_t elemsize, int mode)` | yes | yes | OK |
-|12 | `stbds_hmdel_key`     | `void *stbds_hmdel_key(void *a, size_t elemsize, void *key, size_t keysize, size_t keyoffset, int mode)` | yes | yes | OK |
-|13 | `stbds_stralloc`      | `char *stbds_stralloc(stbds_string_arena *a, char *str)` | yes | yes | OK |
-|14 | `stbds_strreset`      | `void stbds_strreset(stbds_string_arena *a)` | yes | yes | OK |
-|15 | `strkey`              | `char *strkey(int n)` | yes | yes | OK |
-|16 | `intput`              | `void intput(int num)` | yes | yes | OK |
-
-**Symbol diff: EMPTY.** 16 exported symbols in C, 16 in Rust, exact name match.
-
-```
-$ diff <(nm -D --defined-only c_src/build/*.so | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/libintput_lib.so | awk '{print $3}' | sort)
+$ diff c_syms.txt r_syms.txt
 (no output)
 ```
 
-## Not exported by either (correctly)
+**0 missing symbols, 0 extra symbols.** Undefined (imported) symbols in the
+Rust `.so` are libc only (`realloc`, `free`, `__assert_fail`, plus the Rust
+runtime's `memcpy`/`memset`/unwind stubs), matching the C `.so`'s libc imports.
 
-These are `static` in `lib.c` and therefore local (`t`/`d` in `nm`, absent from
-`nm -D`).  The Rust translation keeps them private too.
+## Automated check
 
-| C symbol | why not exported |
-|----------|------------------|
-| `stbds_hash_seed`       | `static size_t` |
-| `stbds_probe_position`  | `static` |
-| `stbds_log2`            | `static` |
-| `stbds_make_hash_index` | `static` |
-| `stbds_siphash_bytes`   | `static` |
-| `stbds_is_key_equal`    | `static` |
-| `stbds_hm_find_slot`    | `static` |
-| `stbds_strdup`          | `static` |
-| `buffer`                | `static char buffer[256]` |
+`tests/phase_d.rs::d_01_symbol_parity` shells out to `nm` on both `.so`s and
+fails if either direction of the set difference is non-empty; it also pins the
+count at 16 so a newly added C symbol cannot silently slip through.
+`d_02_rust_so_has_no_unexpected_undefined_symbols` asserts the Rust `.so` has no
+*undefined* `stbds_*` / `intput` / `strkey` import (i.e. nothing was left as an
+unresolved reference to the C library).
 
-`stbds_unit_tests` is *declared* `extern` at lib.c:83 but never defined, so it
-appears in neither `.so`.  Rust correctly does not define it.
+```
+$ cargo test --offline --test phase_d -- --test-threads=1
+test d_01_symbol_parity ... ok
+test d_02_rust_so_has_no_unexpected_undefined_symbols ... ok
+```
 
-## Undefined symbols in the Rust `.so`
-
-`nm -D -u translation/target/release/libintput_lib.so` lists only libc /
-libgcc-unwind imports (`realloc`, `free`, `memcpy`, `memmove`, `memset`,
-`__assert_fail`, `abort`, `_Unwind_*`, `dl_iterate_phdr`, …).  **0 missing or
-undefined non-libc symbols.**
-
-## Assertion string parity
-
-`assert()` diagnostics are part of the observable behaviour (they are printed to
-stderr before `abort()`).  All six distinct assertion strings plus the four
-`__PRETTY_FUNCTION__` names and the `__FILE__` path exist in both `.so`s:
-
-| assertion text | C `.so` | Rust `.so` |
-|---|---|---|
-| `t->used_count_threshold + t->tombstone_count_threshold < t->slot_count` | yes | yes |
-| `(size_t) i+1 <= stbds_arrcap(a)` | yes | yes |
-| `slot < (ptrdiff_t) table->slot_count` | yes | yes |
-| `slot >= 0` | yes | yes |
-| `b->index[i] == final_index` | yes | yes |
-| `len <= a->remaining` | yes | yes |
-| `hmget(intmap, 9) == num` | yes | yes |
-| `hmget(intmap, 11) == 3` | yes | yes |
-| `hmget(intmap, num) == 7` | yes | yes |
-| `/…/c_src/src/lib.c` (`__FILE__`) | yes | yes (via `build.rs`) |
+No symbol needed a new `#[no_mangle]` wrapper and no C module was missing: the
+whole of `c_src/src/lib.c` (one translation unit) is present in
+`translation/src/lib.rs`, including the non-`stbds_` test helpers `strkey` and
+`intput`.

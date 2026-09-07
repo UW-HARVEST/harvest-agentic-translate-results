@@ -8,7 +8,24 @@
 //! `f32::max` in their NaN handling) and the original order of checks.
 
 use std::ffi::c_float;
-use std::ptr::{read_volatile, write_volatile};
+
+// The C performs no alignment check and no null check, so this access must
+// tolerate a misaligned `float*` and must fault (SIGSEGV) rather than trip a
+// Rust debug assertion (SIGABRT) on NULL. A volatile 4-byte-array access is
+// alignment-agnostic and carries no inserted checks.
+#[inline(always)]
+unsafe fn load_f32(p: *const c_float) -> f32 {
+    f32::from_ne_bytes(std::ptr::read_volatile(p as *const [u8; 4]))
+}
+
+// The C performs no alignment check and no null check, so this access must
+// tolerate a misaligned `float*` and must fault (SIGSEGV) rather than trip a
+// Rust debug assertion (SIGABRT) on NULL. A volatile 4-byte-array access is
+// alignment-agnostic and carries no inserted checks.
+#[inline(always)]
+unsafe fn store_f32(p: *mut c_float, v: f32) {
+    std::ptr::write_volatile(p as *mut [u8; 4], v.to_ne_bytes())
+}
 
 /// Convert an RGB triple to HSV.
 ///
@@ -17,41 +34,14 @@ use std::ptr::{read_volatile, write_volatile};
 /// `src` must point to at least 3 readable `float`s and `dest` to at least 3
 /// writable `float`s; the C original performs no validation and neither does
 /// this translation.
-///
-/// # Why volatile accesses
-///
-/// The three loads and three stores use `read_volatile` / `write_volatile`
-/// rather than plain dereferences, for two reasons, both about matching the C
-/// byte for byte:
-///
-/// 1. **Fault behaviour parity.** A plain `*ptr` deref is instrumented by rustc
-///    when `debug_assertions` are enabled, so a null `src`/`dest` aborts with a
-///    Rust panic (`SIGABRT`) instead of faulting like the C does (`SIGSEGV`).
-///    The C has no null check (verified: there is no `if (!src)` anywhere in
-///    `c_src/src/lib.c`), so the translated library must fault the same way.
-///    Volatile accesses are not instrumented, so both libraries produce the
-///    identical fatal signal in every build profile, not just release.
-/// 2. **Access ordering parity.** The C reads all three of `src` into locals
-///    before storing anything to `dest`, which is what makes `dest == src` and
-///    partially overlapping `dest`/`src` well behaved. Volatile accesses pin
-///    that order explicitly instead of leaving it to the optimiser.
-///
-/// The computed values are unaffected — only the memory-access behaviour is
-/// constrained.
-///
-/// # Safety
-///
-/// `src` must be valid for 3 `f32` reads and `dest` valid for 3 `f32` writes.
-/// This is the same (unchecked) contract as the C function.
 #[unsafe(no_mangle)]
-// The C declares `v` and `delta` up front and assigns them later. Keeping that
-// shape makes the translation line-for-line comparable with `c_src/src/lib.c`,
-// so the late initialisation is deliberate.
-#[allow(clippy::needless_late_init)]
 pub unsafe extern "C" fn rgb_to_hsv(dest: *mut c_float, src: *const c_float) {
-    let r: f32 = read_volatile(src.add(0));
-    let g: f32 = read_volatile(src.add(1));
-    let b: f32 = read_volatile(src.add(2));
+    // Use volatile 4-byte-array reads: the C original performs no alignment
+    // check and tolerates a misaligned `float*`, so we must not trigger
+    // rustc's debug-assertion misaligned-pointer check on such inputs.
+    let r: f32 = load_f32(src.add(0));
+    let g: f32 = load_f32(src.add(1));
+    let b: f32 = load_f32(src.add(2));
 
     let mut h: f32 = 0.0;
     let mut s: f32 = 0.0;
@@ -74,9 +64,10 @@ pub unsafe extern "C" fn rgb_to_hsv(dest: *mut c_float, src: *const c_float) {
     v = max;
 
     if delta == 0.0 || max == 0.0 {
-        write_volatile(dest.add(0), h);
-        write_volatile(dest.add(1), s);
-        write_volatile(dest.add(2), v);
+        // Volatile 4-byte-array writes: match the C, which tolerates a misaligned `float*`.
+        store_f32(dest.add(0), h);
+        store_f32(dest.add(1), s);
+        store_f32(dest.add(2), v);
         return;
     }
 
@@ -95,7 +86,8 @@ pub unsafe extern "C" fn rgb_to_hsv(dest: *mut c_float, src: *const c_float) {
         h += 360.0;
     }
 
-    write_volatile(dest.add(0), h);
-    write_volatile(dest.add(1), s);
-    write_volatile(dest.add(2), v);
+    // Volatile 4-byte-array writes: match the C, which tolerates a misaligned `float*`.
+    store_f32(dest.add(0), h);
+    store_f32(dest.add(1), s);
+    store_f32(dest.add(2), v);
 }

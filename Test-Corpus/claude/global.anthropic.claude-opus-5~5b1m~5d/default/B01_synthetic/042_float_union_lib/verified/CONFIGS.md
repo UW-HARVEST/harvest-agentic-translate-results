@@ -1,90 +1,83 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Phase A: configuration-surface table
 
-Derived mechanically from the C source and the public header.
+## Mechanical derivation of the axes
 
-## Axis derivation
+The public header exposes exactly one entry point and it is also the
+lowest-level entry point — there is no convenience wrapper / one-shot layer to
+skip past:
 
-### Axis 1 — runtime options / modes / flags: **NONE**
-
-Grepping the public header and the implementation for option state finds nothing:
-there are no setters, no context/handle struct, no global or `static` variables,
-no `#ifdef`/`#if` compile-time switches in the implementation, and no flags
-parameter. `driver` takes one `double` by value and returns `void`. The library
-is entirely stateless, so there is no option cross-product to enumerate.
-
-```
-$ grep -nE 'static|extern|global|_flag|_opt|#ifdef|#if |set[A-Z_]' src/driver.c
-(no matches outside the licence header)
+```c
+void driver(double f);          // include/driver.h — the entire public API
 ```
 
-### Axis 2 — full set of public entry points
+`c_src/src/driver.c` has **no** `if`, `switch`, `?:`, `#ifdef` (beyond the
+include guard), no global/static mutable state, no init/teardown, and no
+runtime option, mode or flag. So:
 
-The header declares exactly one function, and it is simultaneously the
-highest-level and the lowest-level entry point — there is no convenience wrapper
-layered over a lower-level core, so "test the low-level entry points too"
-collapses to "test `driver`". There are no internal helpers with external
-linkage (`nm -D` confirms `driver` is the only exported symbol).
+| axis category | axes found in the C |
+|---|---|
+| runtime options / modes / flags | **none** (no setters, no globals, no env reads) |
+| public entry points | **1**: `driver` |
+| compile-time `#ifdef` config | **none** |
 
-| entry point | signature | kind |
+Consequently the *only* configuration axis is the **shape of the single
+`double` argument**, and the branching on it is not in `driver`'s own code but
+in the three `printf` conversions it delegates to:
+
+```c
+printf("%llx %a %.4f\n", u.x, f, f);
+```
+
+Each conversion special-cases the operand differently, which is what generates
+distinct code paths:
+
+| conversion | operand | C paths it distinguishes |
 |---|---|---|
-| `driver` | `void driver(double f)` | sole public API; both the top and the bottom of the call graph |
+| `%llx` | `u.x` — the raw 64-bit pun of the `double` | value only; leading zeros suppressed, so bit patterns with a zero top nibble/word take a shorter path |
+| `%a` | `f` as `double` | normal (`0x1.…p±d`) vs subnormal (`0x0.…p-1022`) vs zero (`0x0p+0`) vs `inf`/`nan`; trailing-mantissa-zero trimming; sign; exponent sign & width |
+| `%.4f` | `f` as `double` | sign incl. `-0.0`; exact decimal expansion of the binary value; round-half-to-even at a tie; integer-part digit count from 1 to ~309; `inf`/`nan` spelling instead of digits |
 
-### Axis 3 — input shapes the code special-cases
+The rows below are the cross-product of the IEEE-754 **classes** (the shapes
+`%a` and `%.4f` genuinely treat differently) with the **magnitude / mantissa /
+sign / tie** sub-shapes, pruned to the combinations the code actually
+distinguishes. Also included is the union-pun axis (`raw_double_t`), whose only
+shape distinction is "which bytes are set", covered by the raw-bit-pattern rows.
 
-`driver`'s own body has zero branches. But it forwards the value to three
-`printf` conversions — `%llx` on the type-punned bits, `%a`, and `%.4f` — and
-*glibc's formatter branches heavily* on the IEEE-754 class of the value. That is
-where the real configuration surface lives, so the shapes below are derived from
-the value classes those three conversions distinguish:
+Every row is exercised **through both `.so` exports loaded with `libloading`**,
+with stdout captured per call and compared byte-for-byte, and with **many
+randomized inputs per row** (seeded, reproducible PRNG) rather than one
+hand-picked value.
 
-* sign bit: clear / set (affects `%a` and `%.4f` sign, and `-nan` spelling)
-* exponent field: all-zero (zero & subnormal), all-ones (inf & NaN), in between
-  (normal) — `%a` switches between `0x0.…p-1022` and `0x1.…p±N` forms
-* mantissa: zero (powers of two → `%a` trims to `0x1p+N`), trailing-zero runs
-  (partial trimming), full 52 significant bits (no trimming), NaN payloads
-* magnitude vs `%.4f`: huge (hundreds of integer digits), moderate, tiny
-  (underflows to `0.0000` / `-0.0000`)
-* decimal rounding position: exact ties at the 4th fractional digit
-  (round-half-to-even off the *exact* binary value)
+## The configuration-surface table
 
-### Axis 4 — environmental state `printf` branches on
-
-Both implementations share the process's libc and `stdout`, so two further axes
-are observable through the API even though `driver` never mentions them:
-
-* the C locale's `LC_NUMERIC` decimal point, which `%.4f` honours
-* `stdout`'s buffer state — ordering of `driver`'s output relative to output the
-  caller itself writes to `stdout`
-
-## Configuration table
-
-One row per combination the C actually treats differently. Every row is driven
-with **many randomized inputs (fixed seed `0x5EED_D1FF_C0FFEE01`)**, not a single
-hand-picked value, and asserts byte-identical stdout from the C `.so` and the
-Rust `.so`.
-
-| # | entry point(s) | configuration (options set + input shape) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| C1 | `driver` | No options (none exist). Positive **normal** doubles, randomized sign-free mantissa + exponent across the whole normal range. | [x] |
-| C2 | `driver` | Negative **normal** doubles, randomized — sign bit set on every field of C1. | [x] |
-| C3 | `driver` | **Zero mantissa** (exact powers of two), every exponent `2^-1074 … 2^1023`, both signs — drives `%a`'s trailing-zero trimming to the fully-trimmed `0x1p+N` form. | [x] |
-| C4 | `driver` | **Full 52-bit mantissa** (all mantissa bits set / randomized with low bit set), both signs — `%a` emits all 13 hex mantissa digits, no trimming. | [x] |
-| C5 | `driver` | **Partial trailing-zero mantissa runs**: mantissa randomized then masked to leave 1…12 trailing zero hex digits — exercises every intermediate `%a` trim length. | [x] |
-| C6 | `driver` | **Signed zeros**: `+0.0` (`0x0`) and `-0.0` (`0x8000000000000000`). Distinguishes `%llx` from the `%a`/`%.4f` sign rendering. | [x] |
-| C7 | `driver` | **Infinities**: `+inf`, `-inf` — glibc prints `inf`/`-inf` for both `%a` and `%.4f`. | [x] |
-| C8 | `driver` | **NaN family**: quiet/signalling × positive/negative × randomized payloads — `%llx` must preserve payload bits exactly while `%a`/`%.4f` collapse to `nan`/`-nan`. | [x] |
-| C9 | `driver` | **Subnormals**: smallest (`0x1`), largest (`0x000fffffffffffff`), and randomized subnormal mantissas, both signs — `%a` switches to the `0x0.…p-1022` form. | [x] |
-| C10 | `driver` | **Class boundaries**, each value and its `nextafter` neighbour on both sides: `±DBL_MIN`, `±DBL_MAX`, subnormal↔normal transition, `±1.0`, `±2.0`, `±0.5`. | [x] |
-| C11 | `driver` | **Huge magnitudes** → longest `%.4f` output: randomized values with exponents in `[1e50, DBL_MAX]`, both signs; `%.4f` emits up to ~310 integer digits. | [x] |
-| C12 | `driver` | **Tiny magnitudes** → `%.4f` underflows: randomized values in `(0, 1e-5)`, both signs, asserting `0.0000` vs `-0.0000` sign retention. | [x] |
-| C13 | `driver` | **`%.4f` rounding ties**: values at/near the 4th-fractional-digit halfway point (`0.00005`, `0.00015`, `0.00025`, `x.12345`), plus each tie's `nextafter` neighbours, at several magnitudes — round-half-to-even off the exact binary value. | [x] |
-| C14 | `driver` | **`%a` exponent sign flip** around `1.0`: values with exponents just above and below `p+0`, so `%a` prints `p+N`, `p+0`, and `p-N`. | [x] |
-| C15 | `driver` | **Exhaustive exponent-field sweep**: all 2048 exponent encodings × both signs × a randomized mantissa each — every `%a`/`%.4f` code path glibc selects on the exponent. | [x] |
-| C16 | `driver` | **Full-domain randomized raw bit-pattern sweep**: uniformly random `u64` values reinterpreted as `double` and passed through the ABI, covering all classes simultaneously (large volume). | [x] |
-| C17 | `driver` | **Repeated / sequential invocation**: many calls in one process, values from a randomized mixed-class stream — verifies statelessness and that N calls produce exactly N identical lines in the same order. | [x] |
-| C18 | `driver` | **Interleaving with caller's own `stdout` writes**: caller emits its own text via libc `fputs`/`printf` before and after each `driver` call — verifies the Rust side writes through the *same* libc `stdout` (a `println!`-based translation would reorder here). | [x] |
-| C19 | `driver` | **`LC_NUMERIC` locale set to a comma-decimal locale** (e.g. `de_DE.UTF-8`, skipped if absent), randomized values — `%.4f`'s decimal point must match between C and Rust under a non-`C` locale. | [x] |
-| C20 | `driver` | Build-configuration axis: default features, `--no-default-features`, and `--all-features`, each in **debug and release** profile (`panic = "abort"` applies to release only). Rows C1–C19 re-run under each. | [x] |
+| 1 | `driver` | no options (none exist) + `+0.0` and `-0.0` — the two zero encodings; exercises `%a`→`0x0p+0`, `%.4f`→`0.0000`/`-0.0000`, `%llx`→`0`/`8000000000000000` | [x] |
+| 2 | `driver` | small positive integers, exactly representable, `1.0…1024.0` (randomized) — shortest `%a` mantissa (trailing zeros fully trimmed), `%.4f` exact `.0000` | [x] |
+| 3 | `driver` | negative counterparts of row 2 — sign path in all three conversions | [x] |
+| 4 | `driver` | positive powers of two `2^-1074 … 2^1023` (every exponent, randomized order) — `%a` exponent formatting across its full range incl. the normal/subnormal transition | [x] |
+| 5 | `driver` | negative powers of two, same exponent sweep | [x] |
+| 6 | `driver` | normal doubles with **full 52-bit random mantissas**, exponent field random in `[1, 2046]`, random sign — the general normal path; no `%a` trailing-zero trimming | [x] |
+| 7 | `driver` | normal doubles with mantissas having **random trailing-zero runs** (mantissa `= r << k`, `k` random in `0..52`) — drives glibc's `%a` trailing-hex-digit trimming at every truncation length | [x] |
+| 8 | `driver` | **subnormals**: exponent field `0`, random non-zero 52-bit mantissa, both signs — `%a`'s `0x0.…p-1022` leading-digit path and `%.4f`'s deep-underflow-to-`0.0000` path | [x] |
+| 9 | `driver` | subnormal **boundary** values: min subnormal `2^-1074`, max subnormal, `DBL_MIN`, and `nextafter` neighbours of each, both signs | [x] |
+| 10 | `driver` | **huge magnitudes**: `DBL_MAX`, `1e308`, random normals with exponent field in `[2000, 2046]`, both signs — `%.4f` emits a ~310-character integer part; longest output path | [x] |
+| 11 | `driver` | **tiny magnitudes**: random normals with exponent field in `[1, 60]`, both signs — `%.4f` rounds to `0.0000`/`-0.0000`, `%a` uses large negative exponents | [x] |
+| 12 | `driver` | `%.4f` **tie / half-way** shapes: values near `k/2 * 10^-4` (`0.00005`, `0.00015`, `x.xxxx5`), plus each one's `nextafter` neighbours in both directions — round-half-to-even vs half-away divergence | [x] |
+| 13 | `driver` | `%.4f` **carry-propagation** shapes: values just below a rounding carry that ripples through the fractional and into the integer part (`0.99995`, `9.99995`, `999999.99995`, randomized `10^n - eps`) | [x] |
+| 14 | `driver` | **infinities**: `+inf`, `-inf` — `%a` and `%.4f` print `inf`/`-inf`, `%llx` prints the raw exponent-all-ones pattern | [x] |
+| 15 | `driver` | **NaNs**: quiet ±, signalling ± (`0x7ff0000000000001`), random non-zero payloads, all-ones patterns — `nan`/`-nan` spelling driven by the sign bit while the payload only shows up in `%llx` | [x] |
+| 16 | `driver` | **uniformly random raw `u64` bit patterns** reinterpreted as `double` (`f64::from_bits`) — hits every class in its natural frequency, incl. patterns unreachable from decimal literals; the strongest single row | [x] |
+| 17 | `driver` | random doubles drawn from **wide log-uniform magnitudes** (exponent uniform, mantissa uniform) spanning `10^-320 … 10^308`, both signs — decorrelates exponent and mantissa coverage | [x] |
+| 18 | `driver` | random doubles in the **`[0,1)` unit interval** and in `[-1,0)` — the densest region of the format, `%.4f` truncates ~48 mantissa bits away | [x] |
+| 19 | `driver` | values with a **zero high word / zero low word** (`u64` patterns like `0x0000_0000_xxxx_xxxx`, `0xxxxx_xxxx_0000_0000`) — the `%llx` leading-zero-suppression and union-pun byte-coverage path | [x] |
+| 20 | `driver` | **decimal round-trip** shapes: doubles parsed from random short decimal strings (`d.dddde±dd`) — the shapes a real consumer actually feeds in, where `%a`'s exact binary form is "ugly" | [x] |
+| 21 | `driver` | **sequential / stateful use**: the same `.so` handle called thousands of times in a row (rows 1–20 replayed back-to-back without reloading), and interleaved with the test's own libc `printf` — proves there is no hidden per-call state, no stdout-buffering divergence, and identical stream interleaving | [x] |
+| 22 | `driver` | **exhaustive exponent-field sweep**: all 2048 exponent-field values × a fixed set of representative mantissas × both signs, driven through raw bits — deterministic full coverage of every `%a` exponent and every IEEE class transition | [x] |
 
-All 20 rows are checked off only because they pass across their randomized
-inputs; see `tests/differential.rs` and `run_all_configs.sh`.
+## Feature combinations
+
+`Cargo.toml` has no `[features]` table, so the feature cross-product is the
+single empty set. Rows 1–22 are re-run verbatim under `--no-default-features`
+and `--all-features` (see `run_all.sh`) to discharge the "every feature
+combination" gate.

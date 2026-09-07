@@ -1,69 +1,86 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — public symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Commands used:
+Build commands used:
 
 ```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-nm -D -u   <each>
-ldd -r     translation/target/release/libdriver.so
+cd c_src && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd translation && cargo build --release
 ```
 
-## C source inventory
+## C `.so` — `c_src/build/libdriver.so`
 
-The whole library is two files:
+```
+$ nm -D --defined-only c_src/build/libdriver.so
+0000000000001173 T driver
+```
 
-| file | contents |
-|------|----------|
-| `c_src/include/driver.h` | one declaration: `void driver(int x);` |
-| `c_src/src/driver.c` | `house_t` (file-local typedef), `static void print_hex(unsigned char*, int)`, `void driver(int floors)` |
+## Rust `.so` — `translation/target/release/libdriver.so`
 
-`print_hex` is `static`, so it is deliberately **not** part of the exported ABI
-and must NOT appear in `nm -D` for either library. `house_t` is a typedef and
-emits no symbol. There is no macro-generated symbol machinery, no namespace
-prefix macro, no `#ifdef`-gated alternate implementation, and no second
-translation unit. Therefore the complete expected export set is exactly one
-name: `driver`.
+```
+$ nm -D --defined-only translation/target/release/libdriver.so
+0000000000011730 T driver
+```
 
-No C source file was left untranslated: `driver.c` is the only `.c` file
-referenced by `add_library(driver SHARED src/driver.c)` in `CMakeLists.txt`.
+## Parity table
 
-## Exported (defined, dynamic) symbols
+| # | C symbol | type | present in Rust `.so` | notes |
+|---|----------|------|-----------------------|-------|
+| 1 | `driver` | `T` (global text) | YES — exact name | `void driver(int)`, declared in `include/driver.h`. Exported from Rust via `#[unsafe(no_mangle)] pub extern "C" fn driver(floors: c_int)`. |
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `driver` | `T driver` | `T driver` | PRESENT in both |
+### Symbols intentionally NOT exported
 
-Symbol diff (`comm -23` of the two sorted defined-symbol lists): **empty**.
-Reverse diff (Rust exports that C does not): **empty**.
+| C symbol | reason |
+|----------|--------|
+| `print_hex` | declared `static void print_hex(unsigned char *p, int len)` in `src/driver.c` → internal linkage, absent from `nm -D` on the C `.so`. Kept private (`fn print_hex`) in Rust, so parity holds. |
 
-## Intentionally absent symbols
+### Undefined (imported) symbols
 
-| symbol | reason it must not be exported |
-|--------|-------------------------------|
-| `print_hex` | `static` in C — internal linkage. Kept private (`fn print_hex`) in Rust. |
+The Rust `.so` imports only toolchain/libc symbols. It deliberately imports
+libc's `printf`/`putchar` rather than using `println!`, so its output shares the
+C runtime's `stdout` buffer and lands in the same stream in the same order as the
+C implementation:
 
-Verified absent from both `.so` files.
+```
+$ nm -D --undefined-only translation/target/release/libdriver.so | awk '{print $2}' | sort -u
+```
 
-## Undefined (imported) symbols
+All 51 entries are glibc (`printf@GLIBC_2.2.5`, `putchar@GLIBC_2.2.5`,
+`malloc`, `memcpy`, `write`, …), libgcc unwinder (`_Unwind_*@GCC_*`), or the
+standard weak toolchain hooks (`__gmon_start__`, `_ITM_*TMCloneTable`,
+`__cxa_finalize`).
 
-The C `.so` imports `printf` and `putchar` from glibc, plus the four standard
-weak CRT/ITM hooks.
+Non-libc / non-toolchain undefined symbols: **0**.
 
-The Rust `.so` imports the same `printf` and `putchar`, plus the Rust standard
-library's runtime imports (`_Unwind_*` from libgcc, and glibc `malloc`,
-`memcpy`, `write`, `pthread_key_*`, … ). These are all libc / libgcc runtime
-symbols, not symbols that should have been defined by this crate.
+## Result
 
-`ldd -r translation/target/release/libdriver.so` reports **no** undefined
-symbols — every import resolves.
+Symbol diff (C exports − Rust exports) is **EMPTY**, verified under every
+feature combination by `run_differential.sh`:
 
-## Completion gate for this file
+```
+$ diff <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort) \
+       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+  symbol sets identical
+```
 
-- [x] Every symbol exported by the C `.so` is exported by the Rust `.so` with
-      the identical name.
-- [x] 0 missing symbols.
-- [x] 0 undefined non-libc/non-libgcc symbols in the Rust `.so`.
-- [x] No stubbed / `unimplemented!()` export was added to satisfy the diff.
+No missing implementation and no untranslated C module: `c_src` contains exactly
+one translation unit (`src/driver.c`) and one public header
+(`include/driver.h`), both fully translated in `translation/src/lib.rs`. Nothing
+was stubbed.
+
+## Build-system hazard found during verification
+
+`cargo test` does **not** rebuild a `crate-type = ["cdylib"]` artifact — only
+`cargo build` does. A differential test that `dlopen`s
+`target/release/libdriver.so` therefore silently exercises a **stale** `.so`
+after a source edit, and passes regardless of what the Rust source says. This
+was observed: three injected bugs all "passed" until the `.so` was rebuilt.
+
+Two mitigations are in place:
+
+* `tests/differential.rs::assert_artifacts_fresh` aborts the run if either
+  `.so` is older than any of its sources.
+* `run_differential.sh` always builds the C library and `cargo build --release`
+  before `cargo test --release`, for every feature combination.

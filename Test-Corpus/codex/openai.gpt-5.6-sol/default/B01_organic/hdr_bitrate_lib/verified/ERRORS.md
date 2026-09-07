@@ -1,25 +1,25 @@
 # Error Surface
 
-Mechanical searches of `../c_src/include/lib.h` and `../c_src/src/lib.c` found
-no error-return macros, error enums, `assert` calls, null checks, range checks,
-conditionals, or rejection returns. The only return is the successful table
-lookup in `hdr_bitrate`.
+Mechanical source scan covered `include/lib.h` and `src/lib.c` for error-return
+macros/statements, `assert`, `if`, `switch`, null checks, explicit range checks,
+enums, and min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
+|---|----------|---------------------------------------------|-------------------|-----|
 
-There are therefore zero explicit C rejection paths to check off.
+There are no explicit rejection or error paths in the C source.
 
-## Caller-Contract Boundaries
+`hdr_bitrate` unconditionally reads `h[1]` and `h[2]`, then indexes fixed
+arrays. A null/short/invalid pointer, layer selector 0, or bitrate index 15
+therefore invokes C undefined behavior rather than returning an error or
+sentinel. The API has no length or enum parameter, so zero/oversized lengths
+and out-of-range enum values are inapplicable. Undefined behavior is not
+invented as an error-surface row because the C source does not define a result
+to match.
 
-These are not error paths: the C implementation performs unchecked pointer
-dereferences and array indexing, so C specifies no result for them.
+The generic boundary probes are isolated in subprocesses. In this build, null
+pointers terminate both shared-library callers with status 139; layer selector
+0 and bitrate index 15 both return `0` from both shared libraries. These are
+observations of this build, not extra C error contracts.
 
-| Boundary | C behavior | Differential-test disposition |
-|----------|------------|-------------------------------|
-| `h == NULL` | Undefined behavior when evaluating `h[1]` | Isolated death test; both shared libraries must terminate by signal |
-| Buffer shorter than 3 bytes | Undefined behavior when evaluating `h[1]` or `h[2]` | Cannot assert a C result |
-| Layer bits `(h[1] >> 1) & 3 == 0` | Undefined behavior from row index `-1` | Cannot assert a C result |
-| Bitrate nibble `h[2] >> 4 == 15` | Undefined behavior from column index `15` | Cannot assert a C result |
-| Zero/oversized length | Not applicable; the API has no length parameter | No call to construct |
-| Out-of-range enum | Not applicable; the API has no enum parameter | No call to construct |
+Completion: [x] every explicit C rejection row is covered (zero rows).

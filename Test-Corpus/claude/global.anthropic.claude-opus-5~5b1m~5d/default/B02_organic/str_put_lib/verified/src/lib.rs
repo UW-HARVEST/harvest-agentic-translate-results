@@ -15,7 +15,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(unused_assignments)]
 
-use core::ffi::{c_char, c_int, c_uint, c_void};
+use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
 // ---------------------------------------------------------------------------
@@ -33,39 +33,6 @@ extern "C" {
     fn strlen(s: *const c_char) -> usize;
     fn printf(fmt: *const c_char, ...) -> c_int;
     fn sprintf(buf: *mut c_char, fmt: *const c_char, ...) -> c_int;
-    /// glibc's `assert` backend. `c_src/src/lib.c` is compiled *without*
-    /// `-DNDEBUG` (`nm -D` lists `__assert_fail` among its imports), so every
-    /// `STBDS_ASSERT` is a live check that prints a diagnostic and raises
-    /// `SIGABRT`. Calling the very same libc entry point reproduces both the
-    /// message and the termination signal exactly.
-    fn __assert_fail(
-        assertion: *const c_char,
-        file: *const c_char,
-        line: c_uint,
-        function: *const c_char,
-    ) -> !;
-}
-
-/// `__FILE__` of the original translation unit (see `build.rs`).
-const STBDS_C_FILE: &str = concat!(env!("STBDS_C_SOURCE_FILE"), "\0");
-
-/// `#define STBDS_ASSERT assert`
-///
-/// Reproduces the C `assert` macro: on failure the same glibc `__assert_fail`
-/// is invoked with the identical expression text, source line and function name.
-macro_rules! stbds_assert {
-    ($cond:expr, $expr_text:literal, $line:literal, $func:literal) => {
-        if !($cond) {
-            unsafe {
-                __assert_fail(
-                    concat!($expr_text, "\0").as_ptr() as *const c_char,
-                    STBDS_C_FILE.as_ptr() as *const c_char,
-                    $line,
-                    concat!($func, "\0").as_ptr() as *const c_char,
-                );
-            }
-        }
-    };
 }
 
 #[inline(always)]
@@ -153,23 +120,6 @@ const HEADER_SIZE: usize = core::mem::size_of::<stbds_array_header>();
 // Macro helpers
 // ---------------------------------------------------------------------------
 
-/// Writes `*p = v` the way C does, i.e. **without** the null-pointer check that
-/// rustc inserts for a `(*p).field = v` place expression when
-/// `debug-assertions` is on.
-///
-/// This matters for faithfulness: when `realloc` fails, `stbds_arrgrowf` happily
-/// stores the header at `(char *) NULL + sizeof(header)` and the C process dies
-/// with `SIGSEGV`.  A `(*p).field = v` in the translation would instead trip
-/// rustc's inserted null check and abort with a Rust panic message in the `dev`
-/// profile, so the observable failure mode would differ between profiles.
-/// `ptr::write` lives in precompiled `core`, where the corresponding
-/// `assert_unsafe_precondition!` is compiled out, so the store is emitted raw in
-/// both profiles -- exactly like the C.
-#[inline(always)]
-unsafe fn raw_write<T>(p: *mut T, v: T) {
-    ptr::write(p, v);
-}
-
 /// `stbds_header(t)` -- `((stbds_array_header *) (t) - 1)`
 #[inline(always)]
 fn stbds_header(t: *mut c_void) -> *mut stbds_array_header {
@@ -255,18 +205,14 @@ fn stbds_index_in_use(x: isize) -> bool {
 
 const STBDS_SIZE_T_BITS: u32 = (core::mem::size_of::<usize>() as u32) * 8;
 
-/// `STBDS_ROTATE_LEFT(val, n)` -- `(((val) << (n)) | ((val) >> (BITS - (n))))`.
-///
-/// `wrapping_shl`/`wrapping_shr` are used so the behaviour is identical in the
-/// `dev` and `release` profiles (C's `<<` on `size_t` never traps).
 #[inline(always)]
 fn stbds_rotate_left(val: usize, n: u32) -> usize {
-    val.wrapping_shl(n) | val.wrapping_shr(STBDS_SIZE_T_BITS.wrapping_sub(n))
+    (val << n) | (val >> (STBDS_SIZE_T_BITS - n))
 }
 
 #[inline(always)]
 fn stbds_rotate_right(val: usize, n: u32) -> usize {
-    val.wrapping_shr(n) | val.wrapping_shl(STBDS_SIZE_T_BITS.wrapping_sub(n))
+    (val >> n) | (val << (STBDS_SIZE_T_BITS - n))
 }
 
 // ---------------------------------------------------------------------------
@@ -309,15 +255,11 @@ pub unsafe extern "C" fn stbds_arrgrowf(
     );
     b = ((raw as usize).wrapping_add(HEADER_SIZE)) as *mut c_void;
     if a.is_null() {
-        let h = stbds_header(b);
-        raw_write(ptr::addr_of_mut!((*h).length), 0);
-        raw_write(ptr::addr_of_mut!((*h).hash_table), ptr::null_mut());
-        raw_write(ptr::addr_of_mut!((*h).temp), 0);
+        (*stbds_header(b)).length = 0;
+        (*stbds_header(b)).hash_table = ptr::null_mut();
+        (*stbds_header(b)).temp = 0;
     }
-    {
-        let h = stbds_header(b);
-        raw_write(ptr::addr_of_mut!((*h).capacity), min_cap);
-    }
+    (*stbds_header(b)).capacity = min_cap;
 
     b
 }
@@ -379,13 +321,10 @@ unsafe fn stbds_make_hash_index(
             .wrapping_add(STBDS_CACHE_LINE_SIZE - 1),
     ) as *mut stbds_hash_index;
 
-    raw_write(
-        ptr::addr_of_mut!((*t).storage),
-        stbds_align_fwd(
-            (t as usize).wrapping_add(core::mem::size_of::<stbds_hash_index>()),
-            STBDS_CACHE_LINE_SIZE,
-        ) as *mut stbds_hash_bucket,
-    );
+    (*t).storage = stbds_align_fwd(
+        (t as usize).wrapping_add(core::mem::size_of::<stbds_hash_index>()),
+        STBDS_CACHE_LINE_SIZE,
+    ) as *mut stbds_hash_bucket;
     (*t).slot_count = slot_count;
     (*t).slot_count_log2 = stbds_log2(slot_count);
     (*t).tombstone_count = 0;
@@ -398,13 +337,14 @@ unsafe fn stbds_make_hash_index(
     if slot_count <= STBDS_BUCKET_LENGTH {
         (*t).used_count_shrink_threshold = 0;
     }
-    stbds_assert!(
-        (*t).used_count_threshold
+    // STBDS_ASSERT(t->used_count_threshold + t->tombstone_count_threshold < t->slot_count)
+    // `STBDS_ASSERT` is `assert` and the C is built without NDEBUG, so this is
+    // live in the C `.so` (it imports `__assert_fail`).
+    assert!(
+        (*t)
+            .used_count_threshold
             .wrapping_add((*t).tombstone_count_threshold)
-            < (*t).slot_count,
-        "t->used_count_threshold + t->tombstone_count_threshold < t->slot_count",
-        401,
-        "stbds_make_hash_index"
+            < (*t).slot_count
     );
 
     if !ot.is_null() {
@@ -775,7 +715,7 @@ pub unsafe extern "C" fn stbds_hmget_key_ts(
     let keyoffset: usize = 0;
     if a.is_null() {
         let a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
-        (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+        (*stbds_header(a)).length += 1;
         memset(a, 0, elemsize);
         *temp = STBDS_INDEX_EMPTY;
         stbds_arr_to_hash(a, elemsize)
@@ -826,7 +766,7 @@ pub unsafe extern "C" fn stbds_hmput_default(a: *mut c_void, elemsize: usize) ->
             0,
             1,
         );
-        (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+        (*stbds_header(a)).length += 1;
         memset(a, 0, elemsize);
         a = stbds_arr_to_hash(a, elemsize);
     }
@@ -834,7 +774,7 @@ pub unsafe extern "C" fn stbds_hmput_default(a: *mut c_void, elemsize: usize) ->
 }
 
 unsafe fn stbds_strdup(str_: *mut c_char) -> *mut c_char {
-    let len = strlen(str_).wrapping_add(1);
+    let len = strlen(str_) + 1;
     let p = stbds_realloc(ptr::null_mut(), len) as *mut c_char;
     memmove(p as *mut c_void, str_ as *const c_void, len);
     p
@@ -856,7 +796,7 @@ pub unsafe extern "C" fn stbds_hmput_key(
     if a.is_null() {
         a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
         memset(a, 0, elemsize);
-        (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+        (*stbds_header(a)).length += 1;
         a = stbds_arr_to_hash(a, elemsize);
     }
 
@@ -999,17 +939,13 @@ pub unsafe extern "C" fn stbds_hmput_key(
             raw_a = stbds_arr_to_hash(a, elemsize);
             let _ = raw_a;
 
-            stbds_assert!(
-                (i as usize).wrapping_add(1) <= stbds_arrcap(a),
-                "(size_t) i+1 <= stbds_arrcap(a)",
-                778,
-                "stbds_hmput_key"
-            );
-            (*stbds_header(a)).length = i.wrapping_add(1) as usize;
+            // STBDS_ASSERT((size_t) i+1 <= stbds_arrcap(a))
+            assert!((i as usize).wrapping_add(1) <= stbds_arrcap(a));
+            (*stbds_header(a)).length = (i + 1) as usize;
             bucket = (*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
             (*bucket).hash[pos & STBDS_BUCKET_MASK] = hash;
-            (*bucket).index[pos & STBDS_BUCKET_MASK] = i.wrapping_sub(1);
-            stbds_set_temp(a, i.wrapping_sub(1));
+            (*bucket).index[pos & STBDS_BUCKET_MASK] = i - 1;
+            stbds_set_temp(a, i - 1);
 
             let slot: *mut *mut c_char = elem_ptr(a, elemsize, i as usize, 0) as *mut *mut c_char;
             match (*table).string.mode as c_int {
@@ -1080,20 +1016,15 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                     (*table).storage.add((slot >> STBDS_BUCKET_SHIFT) as usize);
                 let mut i: c_int = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
                 let old_index: isize = (*b).index[i as usize];
-                let final_index: isize = stbds_arrlen(raw_a).wrapping_sub(1).wrapping_sub(1);
-                stbds_assert!(
-                    slot < (*table).slot_count as isize,
-                    "slot < (ptrdiff_t) table->slot_count",
-                    828,
-                    "stbds_hmdel_key"
-                );
+                let final_index: isize = stbds_arrlen(raw_a) - 1 - 1;
+                // STBDS_ASSERT(slot < (ptrdiff_t) table->slot_count)
+                assert!(slot < (*table).slot_count as isize);
                 (*table).used_count = (*table).used_count.wrapping_sub(1);
                 (*table).tombstone_count = (*table).tombstone_count.wrapping_add(1);
                 stbds_set_temp(raw_a, 1);
-                // lib.c:832 `STBDS_ASSERT(table->used_count >= 0)` -- `used_count`
-                // is a `size_t`, so the condition is a tautology and gcc removes
-                // the check entirely (only 9 of the 10 asserts appear among the
-                // C `.so`'s `__assert_fail` call sites). Intentionally omitted.
+                // STBDS_ASSERT(table->used_count >= 0) is a tautology for the
+                // unsigned `size_t` field and can never fire; kept as a comment
+                // so the assert inventory stays complete.
                 (*b).hash[i as usize] = STBDS_HASH_DELETED;
                 (*b).index[i as usize] = STBDS_INDEX_DELETED;
 
@@ -1132,18 +1063,15 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                             mode,
                         );
                     }
-                    stbds_assert!(slot >= 0, "slot >= 0", 846, "stbds_hmdel_key");
+                    // STBDS_ASSERT(slot >= 0)
+                    assert!(slot >= 0);
                     b = (*table).storage.add((slot >> STBDS_BUCKET_SHIFT) as usize);
                     i = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
-                    stbds_assert!(
-                        (*b).index[i as usize] == final_index,
-                        "b->index[i] == final_index",
-                        849,
-                        "stbds_hmdel_key"
-                    );
+                    // STBDS_ASSERT(b->index[i] == final_index)
+                    assert!((*b).index[i as usize] == final_index);
                     (*b).index[i as usize] = old_index;
                 }
-                (*stbds_header(raw_a)).length = (*stbds_header(raw_a)).length.wrapping_sub(1);
+                (*stbds_header(raw_a)).length -= 1;
 
                 if (*table).used_count < (*table).used_count_shrink_threshold
                     && (*table).slot_count > STBDS_BUCKET_LENGTH
@@ -1176,16 +1104,11 @@ pub unsafe extern "C" fn stbds_stralloc(
     str_: *mut c_char,
 ) -> *mut c_char {
     let p: *mut c_char;
-    let len = strlen(str_).wrapping_add(1);
+    let len = strlen(str_) + 1;
     if len > (*a).remaining {
         let mut blocksize: usize = (*a).block as usize;
 
-        // `(size_t) 512u << (blocksize>>1)`.  The C shift count is `a->block>>1`
-        // which can be up to 127 for a caller-supplied arena; on x86-64 the
-        // hardware masks the count to 6 bits, which is exactly what
-        // `wrapping_shl` does.  Using `wrapping_shl` also keeps the `dev` and
-        // `release` profiles identical.
-        blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN.wrapping_shl((blocksize >> 1) as u32);
+        blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize >> 1);
 
         if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
             (*a).block = (*a).block.wrapping_add(1);
@@ -1194,9 +1117,7 @@ pub unsafe extern "C" fn stbds_stralloc(
         if len > blocksize {
             let sb = stbds_realloc(
                 ptr::null_mut(),
-                core::mem::size_of::<stbds_string_block>()
-                    .wrapping_sub(8)
-                    .wrapping_add(len),
+                core::mem::size_of::<stbds_string_block>() - 8 + len,
             ) as *mut stbds_string_block;
             memmove(
                 ptr::addr_of_mut!((*sb).storage) as *mut c_void,
@@ -1215,9 +1136,7 @@ pub unsafe extern "C" fn stbds_stralloc(
         } else {
             let sb = stbds_realloc(
                 ptr::null_mut(),
-                core::mem::size_of::<stbds_string_block>()
-                    .wrapping_sub(8)
-                    .wrapping_add(blocksize),
+                core::mem::size_of::<stbds_string_block>() - 8 + blocksize,
             ) as *mut stbds_string_block;
             (*sb).next = (*a).storage;
             (*a).storage = sb;
@@ -1225,16 +1144,12 @@ pub unsafe extern "C" fn stbds_stralloc(
         }
     }
 
-    stbds_assert!(
-        len <= (*a).remaining,
-        "len <= a->remaining",
-        913,
-        "stbds_stralloc"
-    );
+    // STBDS_ASSERT(len <= a->remaining)
+    assert!(len <= (*a).remaining);
     p = ((ptr::addr_of_mut!((*(*a).storage).storage) as usize)
         .wrapping_add((*a).remaining)
         .wrapping_sub(len)) as *mut c_char;
-    (*a).remaining = (*a).remaining.wrapping_sub(len);
+    (*a).remaining -= len;
     memmove(p as *mut c_void, str_ as *const c_void, len);
     p
 }
@@ -1323,24 +1238,12 @@ pub unsafe extern "C" fn str_put(num: c_int) {
         let tk = *((*stbds_header(arr)).hash_table as *mut *mut c_char);
         (*strmap.offset(t)).key = tk;
 
-        stbds_assert!(
-            *(*strmap.offset(0)).key == b'a' as c_char,
-            "*strmap[0].key == 'a'",
-            958,
-            "str_put"
-        );
-        stbds_assert!(
-            (*strmap.offset(0)).key == s.key,
-            "strmap[0].key == s.key",
-            959,
-            "str_put"
-        );
-        stbds_assert!(
-            (*strmap.offset(0)).value == s.value,
-            "strmap[0].value == s.value",
-            960,
-            "str_put"
-        );
+        // STBDS_ASSERT(*strmap[0].key == 'a');
+        // STBDS_ASSERT(strmap[0].key == s.key);
+        // STBDS_ASSERT(strmap[0].value == s.value);
+        assert!(*(*strmap.offset(0)).key == b'a' as c_char);
+        assert!((*strmap.offset(0)).key == s.key);
+        assert!((*strmap.offset(0)).value == s.value);
 
         // for (int z=0; z < shlen(strmap); ++z)
         //     printf("%s %d\n", strmap[z], strmap[z].value);
@@ -1370,8 +1273,7 @@ pub unsafe extern "C" fn str_put(num: c_int) {
 #[inline(always)]
 unsafe fn shlen(t: *mut str_map_entry, elemsize: usize) -> isize {
     if !t.is_null() {
-        ((*stbds_header(stbds_hash_to_arr(t as *mut c_void, elemsize))).length as isize)
-            .wrapping_sub(1)
+        (*stbds_header(stbds_hash_to_arr(t as *mut c_void, elemsize))).length as isize - 1
     } else {
         0
     }

@@ -1,89 +1,102 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Symbol parity between C `.so` and Rust `.so`
 
-Derived mechanically from `nm -D` on both shared libraries.
+Generated mechanically from:
 
-Commands used:
-
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libdriver.so
-
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libdriver.so
+```
+nm -D --defined-only  c_src/build/libdriver.so
+nm -D --defined-only  translation/target/release/libdriver.so
+nm -D --undefined-only <each>
 ```
 
-## C source inventory (completeness check)
+Target: `x86_64-unknown-linux-gnu` (SysV ABI, `char` is **signed**).
 
-`c_src/CMakeLists.txt` builds exactly one translation unit:
+## C source inventory
+
+`c_src/CMakeLists.txt` declares exactly one translation unit:
 
 ```cmake
 add_library(driver SHARED
     src/driver.c)
 ```
 
-`c_src` contains only `include/driver.h` and `src/driver.c`. There is no
-untranslated module — the whole library is one 36-line file, and both of its
-non-`static` functions are translated in `translation/src/lib.rs`. No stubs,
-no `unimplemented!()`.
+There is **no** `add_executable` — the project builds a shared library only, so
+there is no driver binary whose stdout needs comparing (Phase B binary check is
+N/A, recorded in the completion gate).
 
-## Exported symbol table
+`c_src/src/driver.c` defines exactly two functions, both `extern` (no `static`),
+both returning `void`:
 
-| # | symbol | C `.so` | Rust `.so` | declared in `driver.h`? | notes |
-|---|--------|---------|------------|-------------------------|-------|
-| 1 | `driver` | `T` | `T` | yes | `void driver(char data)` |
-| 2 | `printHexCharLine` | `T` | `T` | **no** | `void printHexCharLine(char charHex)` — not in the header but not `static`, so it is part of the exported ABI and is a genuine low-level entry point that must be tested directly |
+| C definition | file:line |
+|---|---|
+| `void printHexCharLine (char charHex)` | `src/driver.c:28` |
+| `void driver(char data)` | `src/driver.c:33` |
 
-No macro-generated symbols exist in this library (no function-generating macros
-in the C source).
+`c_src/include/driver.h` declares only `void driver(char data);`.
+`printHexCharLine` is **not** declared in the public header but *is* an exported
+dynamic symbol of the `.so`, so it is part of the ABI surface and is verified
+here and in Phases B/C.
 
-## Symbol diff
+There are no macro-generated symbols (no function-defining macros anywhere in
+`c_src`), no global/static data symbols, and no `#ifdef` build variants.
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so                | awk '{print $3}' | sort > /tmp/c_syms.txt
-nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/r_syms.txt
-comm -23 /tmp/c_syms.txt /tmp/r_syms.txt   # in C, missing from Rust
+## Exported (defined, dynamic) symbols
+
+| # | Symbol | C `.so` | Rust `.so` | Status |
+|---|--------|---------|------------|--------|
+| 1 | `driver`           | `T` | `T` | ✅ present in both |
+| 2 | `printHexCharLine` | `T` | `T` | ✅ present in both |
+
+Raw output:
+
+```
+$ nm -D --defined-only c_src/build/libdriver.so
+0000000000001143 T driver
+0000000000001119 T printHexCharLine
+
+$ nm -D --defined-only translation/target/release/libdriver.so | grep -vE ' (rust_|__|_ITM|_fini|_init)'
+0000000000011710 T driver
+0000000000011730 T printHexCharLine
 ```
 
-Result: **empty**. 0 symbols missing from the Rust `.so`.
+The Rust `.so` additionally exports Rust-runtime symbols
+(`rust_eh_personality`, `__rust_alloc`, `_init`, `_fini`, …). Extra symbols are
+allowed by the gate; the gate requires that no **C** symbol is missing from Rust.
 
-## Undefined symbols in the Rust `.so`
+### Symbol diff
 
-`nm -D --undefined-only translation/target/release/libdriver.so` lists only
-libc / libgcc-unwind / ld.so imports:
+```
+$ comm -23 <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort -u) \
+           <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort -u)
+(empty)
+```
 
-* `printf@GLIBC_2.2.5` — the single import the translation actually calls; it is
-  deliberately the *same* `printf` the C library calls, which is what makes the
-  formatted output and the stdout buffering behaviour byte-identical.
-* `malloc`, `free`, `calloc`, `realloc`, `posix_memalign`, `memcpy`, `memmove`,
-  `memset`, `bcmp`, `strlen`, `abort`, `getenv`, `getcwd`, `readlink`,
-  `realpath`, `open64`, `read`, `write`, `writev`, `close`, `lseek64`,
-  `stat64`, `fstat64`, `statx`, `mmap64`, `munmap`, `syscall`, `gettid`,
-  `__errno_location`, `__cxa_finalize`, `__cxa_thread_atexit_impl`,
-  `pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`,
-  `dl_iterate_phdr`, `__tls_get_addr` — pulled in by the Rust `std` runtime.
-* `_Unwind_*@GCC_*` — libgcc unwinder, pulled in by `std`.
-* `_ITM_registerTMCloneTable`, `_ITM_deregisterTMCloneTable`,
-  `__gmon_start__` — weak, optional toolchain hooks present in every ELF DSO
-  (also present in the C `.so`).
+**MISSING FROM RUST: none.** No `#[no_mangle]` wrapper had to be added and no
+untranslated C module was found — `src/driver.c` is the whole library and both of
+its functions are translated in `translation/src/lib.rs`. No stubs, no
+`unimplemented!()`.
 
-**0 missing/undefined non-libc symbols.** Gate satisfied.
+## Undefined (imported) symbols
+
+The C `.so` imports one non-weak libc symbol: `printf@GLIBC_2.2.5`.
+
+The Rust `.so` imports `printf@GLIBC_2.2.5` (it deliberately delegates to libc
+`printf` so formatting and stdout buffering are byte-identical) plus the usual
+Rust `std`/`libunwind` dependencies: `_Unwind_*@GCC_*`, `malloc`, `calloc`,
+`realloc`, `free`, `posix_memalign`, `memcpy`, `memmove`, `memset`, `bcmp`,
+`strlen`, `abort`, `getenv`, `getcwd`, `readlink`, `realpath`, `open64`,
+`close`, `read`, `write`, `writev`, `lseek64`, `stat64`, `fstat64`, `mmap64`,
+`munmap`, `dl_iterate_phdr`, `syscall`, `__errno_location`, `__tls_get_addr`,
+`pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, and the weak
+`statx`, `gettid`, `__cxa_finalize`, `__cxa_thread_atexit_impl`,
+`__gmon_start__`, `_ITM_*`.
+
+**Non-libc / non-runtime undefined symbols in the Rust `.so`: 0.** Every import
+resolves from `libc.so.6` / `libgcc_s.so.1`, so the Rust `.so` loads and runs
+standalone (confirmed: `libloading::Library::new` on it succeeds in the tests).
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares no `[features]` table, so the only build
-configuration is the default one (`--no-default-features` is equivalent). The
-"every feature combination" requirement collapses to a single combination; it is
-still enumerated mechanically (not hard-coded) and exercised by
-`translation/run_all_features.sh`, which runs `cargo check`, builds the cdylib in
-**both** the debug and release profiles, re-checks symbol parity per artifact,
-and runs the whole differential suite against each.
-
-## ABI note discovered during verification
-
-Symbol *names* matched from the start, but the exported `printHexCharLine`
-wrapper was not ABI-behaviour-identical. See the "Divergence found and fixed"
-section of `CONFIGS.md`.
-
+`translation/Cargo.toml` has **no `[features]` section** and no optional
+dependencies, therefore the only build configuration is the default one
+(equivalent to `--no-default-features`, which is also verified). This is
+re-checked mechanically by `scripts/verify.sh`.

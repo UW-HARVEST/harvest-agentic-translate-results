@@ -1,53 +1,59 @@
-# SYMBOLS.md — dynamic-symbol parity between the C and Rust shared objects
+# SYMBOLS.md — exported-symbol parity
 
-Derived mechanically from `nm -D` on both objects.
+Derived mechanically from `nm -D` on both shared objects.
 
-* C:    `c_src/build/libdriver.so`   (cmake, `CMAKE_BUILD_TYPE=""` → `-O0`, gcc 11.5.0)
-* Rust: `translation/target/release/libdriver.so` (`cargo build --release`, `crate-type = ["cdylib"]`)
-
-Reproduce with:
-
-```sh
-nm -D c_src/build/libdriver.so            | awk '$2=="T"{print $3}' | sort > /tmp/c.sym
-nm -D translation/target/release/libdriver.so | awk '$2=="T"{print $3}' | sort > /tmp/r.sym
-comm -23 /tmp/c.sym /tmp/r.sym   # must be empty
+```
+C:    nm -D --defined-only c_src/build/libdriver.so
+Rust: nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-## Defined (`T`) symbols
+## C `.so` dynamic symbol table (defined, global)
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `printLine` | T | T | `void printLine(const char *)`; declared nowhere in `driver.h` but external linkage in `driver.c`, hence exported |
-| 2 | `bad`       | T | T | `void bad(void)` |
-| 3 | `good`      | T | T | `void good(void)` |
-| 4 | `driver`    | T | T | `void driver(int)`; the only symbol declared in the public header |
+| # | symbol | C type | present in Rust `.so`? | Rust definition |
+|---|--------|--------|------------------------|-----------------|
+| 1 | `printLine` | `T` (`void printLine(const char*)`) | YES | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn printLine` |
+| 2 | `bad`       | `T` (`void bad(void)`)              | YES | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn bad` |
+| 3 | `good`      | `T` (`void good(void)`)             | YES | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn good` |
+| 4 | `driver`    | `T` (`void driver(int)`)            | YES | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver` |
 
-**Missing from Rust: none.** `comm -23` output is empty.
+Missing symbols: **none**. `comm -23` of the two sorted symbol-name lists is empty.
 
-## Deliberately absent (not a gap)
+## Deliberately NOT exported (must stay local in both)
 
-| C symbol | why it is not in `nm -D` of either object |
-|----------|-------------------------------------------|
-| `helperBad`    | `static` in `driver.c` → internal linkage. Private `fn helperBad()` in Rust. |
-| `helperGood1`  | `static` in `driver.c` → internal linkage. Private `fn helperGood1()` in Rust. |
+These are `static` in the C translation unit (`nm` shows lowercase `t`, they are
+absent from `nm -D`), so they are private in Rust as well. Exporting them would
+be an ABI *divergence*, not a fix.
 
-There is no untranslated C module: `c_src` contains exactly one translation unit
-(`src/driver.c`, 68 lines) plus one header (`include/driver.h`), and all four
-external-linkage functions in it are implemented and exported by the Rust crate.
+| symbol | C linkage | Rust |
+|--------|-----------|------|
+| `helperBad`    | `t` (file-local) | private `fn helperBad()` |
+| `helperGood1`  | `t` (file-local) | private `fn helperGood1()` |
 
-## Undefined / weak entries (linker + libc artifacts, not API)
+## Undefined (imported) symbols
 
-These are *not* required to match; they are toolchain-generated and differ
-because the two objects use different libc entry points and different runtimes.
+The C `.so` imports `printf` / `puts` from libc. The Rust `.so` imports `puts`
+(LLVM lowers `printf("%s\n", p)` to `puts(p)`, exactly as GCC does at `-O2`;
+byte output is identical) plus `memcpy`/`malloc`/unwinder/`std`-runtime libc
+symbols. `nm -D -u` on the Rust `.so` shows **0 undefined non-libc,
+non-libgcc_s symbols** — every remaining `U` entry resolves from
+`libc.so.6` / `libgcc_s.so.1` (glibc + `_Unwind_*`), which are present on the
+target platform and are loaded automatically.
 
-| symbol | C | Rust | comment |
-|--------|---|------|---------|
-| `puts@GLIBC_2.2.5` | U | – | gcc rewrites `printf("%s\n", x)` into `puts(x)` |
-| `printf@GLIBC_2.2.5` | – | U | Rust calls `printf` directly; byte-identical output to `puts` |
-| `_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__gmon_start__`, `__cxa_finalize` | w | w | present in both |
-| `__cxa_thread_atexit_impl`, `gettid`, `statx` | – | w | pulled in by the Rust `std` runtime |
+## Feature combinations
 
-`printf` vs `puts` is the only intentional codegen difference; both write the
-string followed by a single `\n` to the shared libc `stdout` FILE object, so the
-observable byte stream is identical. This is asserted by the differential tests
-rather than assumed.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+buildable configuration is the default one (`--no-default-features` is
+equivalent to the default here). Verified by
+`grep -n '^\[features\]' Cargo.toml` → no match. Phase D's "every feature
+combination" therefore reduces to the single default combination, and the test
+suite is additionally run with `--no-default-features` to prove that.
+
+## Binary executable
+
+Neither project builds a driver binary: `c_src/CMakeLists.txt` contains only
+`add_library(driver SHARED src/driver.c)` (no `add_executable`), there is no
+`main()` in `c_src/src/driver.c`, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]` (no `[[bin]]`, no `src/main.rs`). The
+"compare binary stdout" gate is therefore not applicable; stdout is instead
+compared per-call through the FFI boundary by capturing fd 1 (see
+`tests/differential.rs`).

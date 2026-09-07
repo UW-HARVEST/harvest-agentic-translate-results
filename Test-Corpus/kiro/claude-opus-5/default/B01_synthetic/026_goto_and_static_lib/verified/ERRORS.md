@@ -1,49 +1,38 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — error-surface table (Phase A → gates Phase C)
 
-Derived mechanically from `c_src/src/driver.c`. Method: grep every rejection
-construct in the whole C source.
+Derived mechanically from `c_src/src/driver.c` by grepping every rejection
+construct: `grep -n 'return|goto|assert|Error|fail|!=|==|NULL|-1'`.
 
-```
-grep -n 'return\|goto\|assert\|if (\|Error' c_src/src/driver.c
-```
+The C source contains **no** `assert`, **no** `return NULL`, **no** `return -1`,
+**no** error enum, **no** pointer parameters and therefore **no** null checks,
+and **no** min/max constants. Every rejection is one of the three `goto fail`
+guards in `static int multi_stage(int x, int z)` (driver.c:33, :39, :45), each
+of which sets a distinct `result` code and falls into the shared `fail:` label
+(driver.c:54) that prints `"Operation failed\n"`.
 
-Full inventory of what the C source contains:
+`void driver(int, int, int)` returns `void`, so the error code is observable
+**only** through stdout: `multi_stage`'s return value is printed by
+`printf("Result: %d\n", result)` (driver.c:61). "Same error/rejection" is
+therefore asserted as byte-identical stdout, which includes the exact numeric
+sentinel (`Result: 1` / `2` / `3`).
 
-| construct | count | where |
-|-----------|-------|-------|
-| `goto fail` | 3 | `multi_stage`: `x != 1`, `y != 2`, `z != 3` |
-| `return <code>` | 2 | `multi_stage`: success path `return result` (0), fail path `return result` (1/2/3) |
-| `assert` | 0 | — none in the source |
-| null-pointer check | 0 | — the API takes no pointers; `driver(int, int, int)` |
-| explicit range / min / max check | 0 | — no bounds, no clamping, no `INT_MAX`-style constants |
-| error enum / `errno` / `-1` sentinel | 0 | — `driver` returns `void`; the only error channel is `stdout` |
-| memory allocation that can fail | 0 | — `stdlib.h` is included but never used |
+Note the guards are checked in the fixed order x → y → z and short-circuit, so
+an earlier-failing input **masks** later invalid values. That masking is part of
+the contract and is asserted below.
 
-Consequence, and the reason every row below asserts on **stdout bytes**:
-`driver` has **no return value and no out-parameters**. The three error
-conditions are observable *only* as the exact byte sequence printed to
-`stdout`. "Same error/rejection" therefore means: identical error message line,
-identical `Operation failed` line, and identical `Result: <code>` code.
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|---------------------------------------------|-------------------|------|
+| 1 | `multi_stage` via `driver` | `x != 1` (driver.c:33), any `local_y`, any `z` | stdout `Error: x != 1\nOperation failed\nResult: 1\n`; `multi_stage` returns 1 | `err_row1_x_not_1` |
+| 2 | `multi_stage` via `driver` | `x == 1` **and** `y != 2`, where `y` is the static set from `local_y` (driver.c:39), any `z` | stdout `Error: x == 1 but y != 2\nOperation failed\nResult: 2\n`; returns 2 | `err_row2_y_not_2` |
+| 3 | `multi_stage` via `driver` | `x == 1` **and** `y == 2` **and** `z != 3` (driver.c:45) | stdout `Error: x == 1 and y == 2, but z != 3\nOperation failed\nResult: 3\n`; returns 3 | `err_row3_z_not_3` |
+| 4 | `driver` | guard **ordering / masking**: `x != 1` while `local_y != 2` and `z != 3` too — only row 1's message may appear (`fail:` is shared, so exactly 3 lines are printed, never 4+) | row-1 output only; `Result: 1` | `err_row4_masking_order` |
+| 5 | `driver` | guard ordering: `x == 1`, `local_y != 2`, `z != 3` — the `z` guard must be unreachable | row-2 output only; `Result: 2` | `err_row5_masking_y_before_z` |
+| 6 | `driver` | boundary/extreme ints one step past and far past the single valid value of `x`: `x ∈ {0, 2, -1, INT_MIN, INT_MAX}` | all take row 1; `Result: 1` | `err_row6_x_boundaries` |
+| 7 | `driver` | boundary/extreme ints for `local_y`: `x == 1`, `local_y ∈ {1, 3, 0, -1, INT_MIN, INT_MAX}` | all take row 2; `Result: 2` | `err_row7_y_boundaries` |
+| 8 | `driver` | boundary/extreme ints for `z`: `x == 1`, `local_y == 2`, `z ∈ {2, 4, 0, -1, INT_MIN, INT_MAX}` | all take row 3; `Result: 3` | `err_row8_z_boundaries` |
+| 9 | `driver` | "out-of-range enum" analogue across the FFI boundary: the C API takes plain `int`s with exactly one accepted value each, so *any* `int` with no valid meaning is an out-of-range input. Sweep arbitrary/garbage 32-bit values (incl. `0x8000_0000`, `0x7FFF_FFFF`, `0xFFFF_FFFF`, `0xDEAD_BEEF` reinterpreted as `i32`) in all three positions. | identical rejection path & `Result:` code in both libs; never a crash | `err_row9_out_of_range_ints` |
+| 10 | `driver` | the initial value `static int y = 123` (driver.c:29) is **never** observable as an error trigger, because `driver` unconditionally assigns `y = local_y` (driver.c:59) before `multi_stage` reads it. Asserted by making the first-ever call to each freshly `dlopen`ed library a `(1, 2, 3)` success — if the initializer leaked, this would print row 2. | `Ok!\nResult: 0\n` on the very first call after load | `err_row10_initial_y_never_observable` |
+| 11 | `driver` | no-crash / no-abort contract on the rejection paths: `driver` returns `void` and must return normally (not `abort`/panic) for every rejection above, including after repeated failing calls. | normal return, process alive, stdout as tabulated | `err_row11_rejection_paths_return_normally` |
 
-## Error-surface table
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
-|---|----------|---------------------------------------------|-------------------|------|---|
-| 1 | `driver` → `multi_stage` | `x != 1` (first guard fails; `y`/`z` never examined) | stdout `"Error: x != 1\nOperation failed\nResult: 1\n"`; internal code 1 | `err_row1_x_not_1` | [x] |
-| 2 | `driver` → `multi_stage` | `x == 1` **and** `local_y != 2` (second guard; `z` never examined) | stdout `"Error: x == 1 but y != 2\nOperation failed\nResult: 2\n"`; internal code 2 | `err_row2_y_not_2` | [x] |
-| 3 | `driver` → `multi_stage` | `x == 1` **and** `local_y == 2` **and** `z != 3` (third guard) | stdout `"Error: x == 1 and y == 2, but z != 3\nOperation failed\nResult: 3\n"`; internal code 3 | `err_row3_z_not_3` | [x] |
-| 4 | `driver` → `multi_stage` | fail-path `goto fail` target reached by ANY of rows 1–3 — must print `Operation failed` (and the success path must NOT) | `"Operation failed\n"` present iff code != 0 | `err_row4_fail_label_only_on_failure` | [x] |
-| 5 | `driver` | guard-order precedence: `x != 1` **and** `local_y != 2` **and** `z != 3` simultaneously — only the FIRST message may be emitted | code 1 only; rows 2/3 messages absent | `err_row5_guard_precedence` | [x] |
-| 6 | `driver` | guard-order precedence: `x == 1`, `local_y != 2`, `z != 3` — `y` guard wins over `z` guard | code 2 only; row 3 message absent | `err_row5_guard_precedence` | [x] |
-
-## Generic C-API boundary conditions (required even though absent from the table above)
-
-| # | condition | why it is a real input here | expected C result | test | ✔ |
-|---|-----------|-----------------------------|-------------------|------|---|
-| 7 | `INT_MIN` / `INT_MAX` in each of the three parameters | `int` params accept the full 32-bit range; none equals 1/2/3, so each must take the corresponding failure branch | per rows 1–3 by position | `err_boundary_int_extremes` | [x] |
-| 8 | one step past each "valid" value: `x ∈ {0, 2}`, `y ∈ {1, 3}`, `z ∈ {2, 4}` | off-by-one around the only three magic constants in the source | per rows 1–3 | `err_boundary_off_by_one` | [x] |
-| 9 | `0` in each parameter (C's default/zero value) | zero is not 1, 2, or 3 → always a failure branch | per rows 1–3 | `err_boundary_off_by_one` | [x] |
-| 10 | out-of-range "enum-like" ints passed across FFI: values with no meaningful variant (`-1`, `4`, `0x7fff_ffff`, `0x8000_0000` as `i32`) in each slot | C enums/ints accept any `int`; the ABI is `(i32,i32,i32)` so *every* bit pattern is reachable and must behave identically | identical stdout from both `.so`s | `err_out_of_range_enum_values` | [x] |
-| 11 | null pointers | **N/A** — the API surface contains no pointer parameters and no pointer returns (`void driver(int,int,int)`). Documented as intentionally not applicable. | — | — | [x] |
-| 12 | zero / oversized lengths | **N/A** — no buffer, length, count, or size parameter exists anywhere in the public API. Documented as intentionally not applicable. | — | — | [x] |
-| 13 | fail path leaves `static y` mutated for the next call | `driver` assigns `y = local_y` *before* any guard, so a failing call still commits the write; the following call must observe the same state in C and Rust | identical stdout across a call sequence | `err_state_persists_after_failure` | [x] |
+All 11 rows are checked off in the Phase C section of
+`tests/differential.rs` (see the `# ERRORS.md row N` comments) and pass.

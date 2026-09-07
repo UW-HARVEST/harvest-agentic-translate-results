@@ -1,95 +1,100 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Phase B configuration surface table
+
+## Axes, derived from the branches the C actually takes
+
+`c_src/src/lib.c` has no runtime option struct, no `#ifdef`, no global mode
+flags. Every branch is driven by the four call arguments and the two structs.
+The complete list of conditions the C source branches on:
+
+| axis | source line | distinct states the C treats differently |
+|------|-------------|-------------------------------------------|
+| A. `sci->total_bands` | `i < 2 * sci->total_bands` (l.22) | `0` (loop skipped) · `1` (2 bands) · small (`2..16`) · `32` (`i` exactly fills `bitalloc[64]`) · `33..64` (`i` runs into `scfcod[]`, still inside the object) |
+| B. `sci->bitalloc[i]` | `if (ba != 0)` (l.24), `if (ba < 17)` (l.25) | `0` (skip) · `1` (`half = 0`) · `2..15` (linear path) · `16` (`half = 0x7FFF`, max linear) · `17..24` (grouped, `mod = 3..257`, readable widths) · `25..46` (grouped, `n` huge) · `47` (`mod = 0x80000001`) · `48` (`mod = 1`) · `49..255` (`(ba-17)&31` wrap) · **mixed** values across bands |
+| C. `group_size` (k loop / `dst` base stride) | `dst = grbuf + group_size*j` (l.21), `k < group_size` (l.27/33) | `0` · negative · `1` · `2` · `3` · `4` · `12` · `18` (real MP3 value) · large |
+| D. `bs->pos & 7` (bit phase `s`) | `s = bs->pos & 7` (l.4), `255 >> s` (l.9) | all 8 phases `0..7` — each gives a different first-byte mask and a different `shl` byte count |
+| E. `bs->limit` vs demand | `(bs->pos += n) > bs->limit` (l.7) | ample (never hit) · exactly equal at a field end (accepted) · one bit short (rejected) · crossed mid-granule · `0` · negative |
+| F. `bs->buf` contents | `*p++` (l.9, l.12) | randomized (many seeds) · all `0x00` · all `0xFF` · alternating patterns |
+| G. `choff` phase | `choff = 18 - choff` (l.39), **initialised once outside the `j` loop** (l.19) | the band count `2*total_bands` is always **even**, so the +576/−558 toggle is applied an even number of times per granule and `choff` is provably back at 576 at every granule boundary. The `dst` *walk* (0, +576, +18, +594, +36, …) still has to be reproduced step for step, and the `j`-carry of `dst = grbuf + group_size*j` differs per granule. (Verified as an equivalence: `scripts/mutation_check.sh` shows that re-initialising `choff` per granule is an *undetectable* mutant, while perturbing the 576 or the 18 is caught.) |
+| H. field-width/byte-span in `get_bits` | `while ((shl -= 8) > 0)` (l.10) | `n + s <= 8` (single byte, loop body never runs) · `9..16` (1 iteration) · `17..24` · `>= 25` (many iterations) |
+| I. sign of `bs->pos` **at a real read** | `bs->buf + (bs->pos >> 3)` (l.6) | `pos >= 0` · `pos < 0` **with the read actually taken** — only observable when `bs->buf` points into the middle of a larger allocation, otherwise the arithmetic-vs-logical `>> 3` is invisible |
+| J. `total_bands` past the object | `sci->bitalloc[i]`, `i < 2*total_bands` (l.22–23) | `<= 64` (inside the struct) · `65..127` · `128..255` (walks up to `i == 509`) — made comparable by embedding `L12_scale_info` in a padded allocation with test-controlled trailing bytes |
 
 ## Public entry points
 
-`nm -D` on the C `.so` exports exactly one function, so the public surface is:
+There is exactly one exported entry point, `dequantize_granule`. The
+lowest-level function, `get_bits`, is `static` and is driven **only** through
+`dequantize_granule` — so every row below drives the composed pipeline
+end-to-end (bitstream state → band loop → `choff` walk → float writes), which is
+the only way to reach `get_bits`' own axes (D, E, H).
 
-| entry point | linkage | how it is driven |
-|-------------|---------|------------------|
-| `dequantize_granule(float *grbuf, bs_t *bs, L12_scale_info *sci, int group_size)` | `T` (exported) | called directly through `libloading` |
-| `get_bits(bs_t *bs, int n)` | `static` (**lowest-level** routine, not exported) | driven *indirectly but in isolation*: `total_bands = 1`, exactly one non-zero `bitalloc[0] = ba`, `group_size = 1`, so the whole call is a single `get_bits(bs, n(ba))`. Rows G* below are these isolating rows. |
-
-## Axes the C code actually branches on
-
-Derived from the `if`/`while`/`for`/`?` sites in `c_src/src/lib.c`:
-
-| axis | source site | distinct values the code treats differently |
-|------|-------------|---------------------------------------------|
-| **T** `sci->total_bands` | `i < 2 * sci->total_bands` (line 22) | `0` (loop never runs) · `1` · `2..31` · `32` (`i` reaches 63, last in-bounds `bitalloc`) · `33..64` (`i` ≥ 64 ⇒ reads spill into `scfcod`) · `65..255` (reads spill past the whole struct) |
-| **B** `bitalloc[i]` | `if (ba != 0)` / `if (ba < 17)` (24, 25) | `0` (band skipped) · `1` (`half = 0`, 1-bit read) · `2..15` · `16` (`half = 32767`, 16-bit read) · `17` (`mod = 3`) · `18..31` (`mod` grows to `32769`, `n` to `28675`) · `47` (`2 << 30` overflows `int`) · `48` (`2 << 31 == 0` ⇒ `mod == 1`) · `49..80` (shift count masked ⇒ aliases `17..48`) · `255` (`(255-17)&31 == 14`) |
-| **G** `group_size` | `k < group_size` (27, 33), `grbuf + group_size*j` (21), `return group_size*4` (42) | `< 0` · `0` · `1` · `2` · `3` · `4` · `12` · `18` · `32` (each changes both the write stride and how many times `code /= mod` runs) |
-| **P** `bs->pos & 7` | `s = bs->pos & 7`, `255 >> s`, `bs->buf + (pos>>3)` (4, 6, 9) | `0` (aligned) · `1..7` (unaligned; masks the first byte) |
-| **L** `bs->limit` vs reads | `if ((bs->pos += n) > bs->limit)` (7) | limit ≥ every read (fully valid) · limit in the middle (partial underrun) · `pos + n == limit` exactly (last legal read) · `limit == pos` · `limit == 0` · `limit < 0` |
-| **S** `shl = n + s` step count | `while ((shl -= 8) > 0)` (10) | 0 loop iterations (`n + s <= 8`) · 1..3 (`n <= 31`) · 4 (`shl` ends exactly at `0` ⇒ `next >> 0`) · many (wide `mod` reads, `n` up to `28675`) |
-| **D** `bs->buf` bytes | `next = *p++ & (255 >> s)` (9) | all `0x00` · all `0xFF` (max magnitudes / sign flips) · random |
-| **C** `choff` walk | `dst += choff; choff = 18 - choff;` (38, 39) | `+576` then `-558`, alternating, **carried across the `j` loop**; only observable with `total_bands >= 1` and a large `grbuf` |
-| **X** `scfcod` / post-struct bytes | out-of-bounds `bitalloc[i]` for `i >= 64` | all `0x00` · random (become bit-allocations!) |
-
-`j` is a fixed `0..4` loop with no data dependence, so it is not an axis; it is
-however what makes **C** (the `choff` carry) observable, and all rows below run
-the full 4 granules.
+Observables compared for every row: the full `grbuf` (bit-exact `f32` patterns
+over the whole allocation, so stray/out-of-range writes are caught),
+`bs->pos`, `bs->limit`, the entire `L12_scale_info` (catches unintended writes),
+and the `int` return value.
 
 ## Rows
 
-Every row is run with **many randomized inputs** (fixed-seed PRNG; bitstream
-bytes, `scf`, `scfcod`, post-struct padding and — where the row does not pin
-them — `pos`, `limit` and the per-band `bitalloc` values are all randomized).
-Both libraries are called through their `.so` exports and the full `grbuf`,
-the return value, and the mutated `bs` are compared byte-for-byte.
+Each row is run with **many randomized inputs** (fixed seed `0x5EED_1234`,
+32–64 cases per row unless noted) over the unconstrained axes.
 
-| #  | entry point(s) | configuration (options set + input shape) | differential test | [x] |
-|----|----------------|--------------------------------------------|-------------------|-----|
-|G1 | `get_bits` isolated | T=1, one band, B=1 (1-bit read), G=1, P=0, L=generous, D=random | `g1_get_bits_single_bit` | [x] |
-|G2 | `get_bits` isolated | T=1, B=1..16 (every `half`-branch width), G=1, P=0, L=generous, D=random | `g2_get_bits_every_half_branch_width_aligned` | [x] |
-|G3 | `get_bits` isolated | T=1, B=1..16, G=1, P=1..7 (every unaligned start), L=generous, D=random | `g3_get_bits_every_width_times_every_unaligned_start` | [x] |
-|G4 | `get_bits` isolated | T=1, B=16, G=1, P=0..7, S=4 (`shl` lands exactly on 0 ⇒ `next >> 0`), L=generous | `g4_get_bits_shl_lands_exactly_on_zero` | [x] |
-|G5 | `get_bits` isolated | T=1, B=17..46 (every `mod` width that does not underrun), G=1, P=0..7, L=generous | `g5_get_bits_mod_branch_widths` | [x] |
-|G6 | `get_bits` isolated | T=1, B=47 (`2<<30` `int` overflow ⇒ `mod = 0x80000001`, `n = 0x70000003`), G=1, L=generous-but-finite ⇒ guard fires | `g6_get_bits_ba47_signed_shift_overflow` | [x] |
-|G7 | `get_bits` isolated | T=1, B=48 (`2<<31 == 0` ⇒ `mod == 1`, `n == 3`), G=1, P=0..7, L=generous | `g7_get_bits_ba48_mod_is_one` | [x] |
-|G8 | `get_bits` isolated | T=1, B=49..255 (shift-count aliasing, period 32), G=1, P=0..7, L=generous | `g8_get_bits_shift_count_aliasing_above_48` | [x] |
-|G9 | `get_bits` isolated | T=1, B random 1..255, G=1, L = exactly `pos + n` (last legal read, `>` not `>=`) | `g9_limit_exactly_equals_pos_plus_n_last_legal_read` | [x] |
-|G10 | `get_bits` isolated | T=1, B random 1..255, G=1, L = `pos + n - 1` (first illegal read) | `g10_limit_one_below_pos_plus_n_first_illegal_read` | [x] |
-|G11 | `get_bits` isolated | T=1, B=1..16, G=1, P=0..7, D = all `0x00` | `g11_all_zero_bitstream` | [x] |
-|G12 | `get_bits` isolated | T=1, B=1..16, G=1, P=0..7, D = all `0xFF` (max magnitude, `next` fully set) | `g12_all_ones_bitstream` | [x] |
-|G13 | `get_bits` isolated | T=1, B=17..31, G=1, D = all `0xFF` (wide `mod` read, `cache` saturated) | `g13_mod_branch_with_all_ones_bitstream` | [x] |
-|G14 | `get_bits` isolated | T=1, B=31 (`n = 28675`, S=many: ~3585 loop steps), G=1, L=generous, D=random | `g14_widest_legal_read_many_loop_steps` | [x] |
-|G15 | `get_bits` isolated | T=1, B random, G=1, P = byte-aligned but non-zero (`pos = 8*m`) | `g15_byte_aligned_nonzero_start_positions` | [x] |
-|B1 | `dequantize_granule` | T=0 (empty band set), G=4, everything else random | `b1_total_bands_zero` | [x] |
-|B2 | `dequantize_granule` | T=1, B=all zero (band skipped, `choff` still walks), G=4 | `b2_all_bitalloc_zero` | [x] |
-|B3 | `dequantize_granule` | T=1, B random 1..16, G=1,2,3,4,12,18,32 (write-stride sweep), P=0, L=generous | `b3_group_size_sweep_aligned` | [x] |
-|B4 | `dequantize_granule` | T=1, B random 1..16, G as above, P=1..7 (unaligned), L=generous | `b4_group_size_sweep_unaligned` | [x] |
-|B5 | `dequantize_granule` | T=2..8, B random 1..16 mixed with zeros, G=4/12, L=generous (multi-band `choff` walk) | `b5_multi_band_choff_walk` | [x] |
-|B6 | `dequantize_granule` | T=31, B random 1..16, G=12, L=generous (`i` up to 61, in-bounds `bitalloc`) | `b6_total_bands_31` | [x] |
-|B7 | `dequantize_granule` | T=32, B random 1..16 (all 64 `bitalloc` bytes used, `i` max = 63), G=12 | `b7_total_bands_32_uses_all_64_bitalloc_bytes` | [x] |
-|B8 | `dequantize_granule` | T=33..64, B random, **X random** ⇒ `bitalloc[64..127]` aliases `scfcod` (out-of-bounds read inside the struct), G=12 | `b8_total_bands_33_to_64_reads_spill_into_scfcod` | [x] |
-|B9 | `dequantize_granule` | T=65..255, B random, X random ⇒ reads past the whole `L12_scale_info` into trailing padding, G=4 | `b9_total_bands_above_64_reads_past_the_struct` | [x] |
-|B10 | `dequantize_granule` | T=255 (max `uint8_t`), B/X random 1..255, G=4, L modest ⇒ mixture of legal reads and underruns | `b10_total_bands_255_full_value_range` | [x] |
-|B11 | `dequantize_granule` | T=2..64, B random **1..255** (mixed `half` and `mod` branches in one call), G=4/12, L=generous | `b11_mixed_half_and_mod_branches_in_one_call` | [x] |
-|B12 | `dequantize_granule` | T=2..64, B ∈ {17,18,19,20,48} only (`mod` branch only, `code /= mod` chains), G=12 | `b12_mod_branch_only_division_chains` | [x] |
-|B13 | `dequantize_granule` | T=8, B random, G=4, L placed mid-stream ⇒ first bands decode, later bands underrun (latching guard) | `b13_limit_mid_stream_partial_underrun` | [x] |
-|B14 | `dequantize_granule` | T=8, B random, G=4, L=0 (nothing readable at all) | `b14_limit_zero` | [x] |
-|B15 | `dequantize_granule` | T=8, B random, G=4, L<0 | `b15_negative_limit` | [x] |
-|B16 | `dequantize_granule` | T=8, B random, G=4, `pos` already `> limit` on entry | `b16_pos_already_past_limit` | [x] |
-|B17 | `dequantize_granule` | T=random, B random, G=0 (no writes but `mod`-branch `get_bits` still consumes bits) | `b17_group_size_zero` | [x] |
-|B18 | `dequantize_granule` | T=random, B random, G<0 (`dst` walks *before* `grbuf`, still no writes; negative return) | `b18_negative_group_size` | [x] |
-|B19 | `dequantize_granule` | T=random, B random, G=1 (single sample per band ⇒ `code /= mod` runs once) | `b19_group_size_one` | [x] |
-|B20 | `dequantize_granule` | T=64, B random 1..255, G=32 (largest stride × widest band set: `choff` walk reaches ≈ 5.1 k floats) | `b20_widest_band_set_times_largest_stride` | [x] |
-|B21 | `dequantize_granule` | D = all `0x00`, T random, B random 1..255, G=12 (all-zero bitstream ⇒ `dst = -half` / `-(mod/2)`) | `b21_zero_bitstream_full_range` | [x] |
-|B22 | `dequantize_granule` | D = all `0xFF`, T random, B random 1..255, G=12 | `b22_ones_bitstream_full_range` | [x] |
-|B23 | `dequantize_granule` | full random fuzz over **all** axes simultaneously (T,B,G,P,L,D,X), 20 000 cases | `b23_full_random_fuzz_over_all_axes` | [x] |
-|B24 | `dequantize_granule` | `grbuf` pre-filled with a distinctive pattern; asserts untouched slots stay identical and the *set of touched offsets* matches (`choff` carry across the `j` loop) | `b24_untouched_slots_and_touched_offset_pattern` | [x] |
-|B25 | `dequantize_granule` | repeated back-to-back calls on the **same** `bs_t` (state carried between calls: `pos` monotonically advances, later calls underrun) | `b25_chained_calls_share_one_bit_reader` | [x] |
-|B26 | `dequantize_granule` | G = 18 / 64 / 128 / **576** (the real MPEG granule width) x T = 1,2,8,32,64,255, B narrow, L=generous — largest write strides, overlapping `j` regions | `b26_large_group_size_full_granule_strides` | [x] |
+| # | entry point | configuration (options set + input shape) | test | [x] |
+|---|-------------|--------------------------------------------|------|-----|
+| C1 | `dequantize_granule` | A=0, C=18, E=ample — degenerate: no bands | `c1_no_bands` | [x] |
+| C2 | `dequantize_granule` | A=1, B=1 (`half=0`), C=18, D=0, E=ample, F=random | `c2_ba1_minimal` | [x] |
+| C3 | `dequantize_granule` | A=1, B∈{2..15} swept one value per case, C=18, D=0, E=ample | `c3_ba_linear_sweep` | [x] |
+| C4 | `dequantize_granule` | A=1, B=16 (max linear, `half=0x7FFF`), C=18, D=0, E=ample, H=`n+s∈{16..23}` | `c4_ba16_max_linear` | [x] |
+| C5 | `dequantize_granule` | A=1, B∈{1..16}, C=18, **D swept 0..7** (all bit phases), E=ample | `c5_all_bit_phases` | [x] |
+| C6 | `dequantize_granule` | A=1, B=1..8 chosen so `n+s <= 8` (single-byte fast path, `while` never entered), D=0..7 | `c6_single_byte_fields` | [x] |
+| C7 | `dequantize_granule` | A=1, B=16, D=7 ⇒ `shl=23` (multi-iteration `while`), E=ample | `c7_multi_byte_span` | [x] |
+| C8 | `dequantize_granule` | A=1, B=17 (`mod=3`, `n=5`), C=18, D=0..7, E=ample — grouped path | `c8_grouped_ba17` | [x] |
+| C9 | `dequantize_granule` | A=1, B∈{18..24} swept (`mod=5,9,17,33,65,129,257`), C=18, D random, E=ample | `c9_grouped_ba_sweep` | [x] |
+| C10 | `dequantize_granule` | A=1, B=48 (`mod=1` via `2<<31 == 0`), all outputs `0.0f`, `n=3` | `c10_grouped_mod_one` | [x] |
+| C11 | `dequantize_granule` | A=1, B∈{49,50,51,55,64,255} — masked shift `(ba-17)&31` aliasing, E=negative (no reads) | `c11_grouped_shift_alias` | [x] |
+| C12 | `dequantize_granule` | A=2..16 random, B=**mixed** random per band incl. zeros, C=18, D random, E=ample, F=random | `c12_mixed_bands_random` | [x] |
+| C13 | `dequantize_granule` | A=32 (`i` covers exactly `bitalloc[0..63]`), B=mixed random, C=18, E=ample | `c13_total_bands_32_full` | [x] |
+| C14 | `dequantize_granule` | A∈{33..64} (`i` runs into `scfcod[]`, still in-object), B+`scfcod` mixed random, C=18, E=ample | `c14_total_bands_into_scfcod` | [x] |
+| C15 | `dequantize_granule` | C swept over `{1,2,3,4,5,6,7,8,12,16,18,24,32}`, A=2, B=mixed, E=ample | `c15_group_size_sweep` | [x] |
+| C16 | `dequantize_granule` | C=1 with B>=17 grouped path (`code` divided once), A=4 | `c16_group_size_one_grouped` | [x] |
+| C17 | `dequantize_granule` | C=18 (real MP3), A=32, B=mixed 1..16 only, F=all `0x00` | `c17_buf_all_zeros` | [x] |
+| C18 | `dequantize_granule` | C=18, A=32, B=mixed 1..16 only, F=all `0xFF` | `c18_buf_all_ones` | [x] |
+| C19 | `dequantize_granule` | C=18, A=32, B=mixed, F=`0xAA/0x55` alternating and `0x0F/0xF0` | `c19_buf_patterns` | [x] |
+| C20 | `dequantize_granule` | E=exact boundary: `limit` set so the *last* field ends precisely at `limit` | `c20_limit_exact` | [x] |
+| C21 | `dequantize_granule` | E=crossed mid-granule (`limit` = 60% of demand), A=16, B=mixed, C=18 | `c21_limit_mid` | [x] |
+| C22 | `dequantize_granule` | G: 4-granule `choff` carry — A∈{1,2,3,5}, C∈{1,2,18}, verifies the `dst` walk `+576, −558, +576, …` and its per-granule `group_size*j` base | `c22_choff_carry_across_granules` | [x] |
+| C23 | `dequantize_granule` | Full-fuzz cross-product: A,B,C,D,E,F all randomized together, 4000 cases | `c23_full_random_fuzz` | [x] |
+| C24 | `dequantize_granule` | `bs->pos` starting at a large non-zero bit offset (mid-buffer), all other axes random | `c24_nonzero_start_pos` | [x] |
+| C25 | `dequantize_granule` | I: `bs->buf` pointed 32 KiB into a larger allocation, `bs->pos` **negative** and the read actually taken; every negative bit phase −1..−64, plus 256 randomized cases | `e7b_negative_pos_with_real_reads` | [x] |
+| C26 | `dequantize_granule` | I × E × A: same mid-allocation `bs->buf`, positions of **both signs**, limits ample/partial/negative, `total_bands` 0..64, 2000 randomized cases | `e7c_origin_fuzz_mixed_sign_positions` | [x] |
+| C27 | `dequantize_granule` | J: `L12_scale_info` embedded in a padded allocation; **every** `total_bands` 0..=255 (band index up to 509, far past the struct), small band widths | `e17b_total_bands_65_to_255_padded` | [x] |
+| C28 | `dequantize_granule` | J: `total_bands >= 128` (high bit set) with live band widths **only** past the end of the struct — catches a sign-extending `total_bands` read | `e17c_total_bands_high_bit_set` | [x] |
+| C29 | `dequantize_granule` | J × B × C × E: padded-struct fuzz, `total_bands` 0..=255, mixed widths incl. grouped, mixed limits, 1500 cases | `e17d_padded_fuzz` | [x] |
 
 ## Result
 
-All **41** rows pass, each across many fixed-seed randomized inputs, against
-both the debug and the release Rust `.so` and against the C `.so` built both at
-`-O0` (the default `CMakeLists.txt` build) and at `-O2`.
+All 29 rows pass, under both the `debug` and `release` profiles and both
+feature configurations (`default` and `--no-default-features`) — see
+`scripts/check_all.sh`.
 
-Run them with:
+Randomized-case totals actually executed (not merely attempted):
 
-```
-cargo test --offline --test phase_b
-bash scripts/check_feature_combos.sh    # every feature combo x profile
-```
+| test | cases run |
+|------|-----------|
+| `c23_full_random_fuzz` | 4000 / 4000 (0 skipped) |
+| `e7c_origin_fuzz_mixed_sign_positions` | 2000 |
+| `e17d_padded_fuzz` | 1500 |
+| `e7b_negative_pos_with_real_reads` | 256 + 128 phase-sweep |
+
+## Harness adequacy
+
+Passing tests only prove something if the tests *can* fail. `scripts/mutation_check.sh`
+injects 51 deliberate defects into `src/lib.rs` (one at a time), rebuilds the
+Rust `.so` and re-runs the whole suite:
+
+* **46 mutants are killed** — every off-by-one, wrong shift, wrong branch
+  threshold, wrong `choff` constant, wrong `dst` index, signedness error and
+  bounds-clamping "safe Rust" fix is detected.
+* **5 mutants survive, each with a written equivalence proof** (`choff`
+  re-initialisation per granule; `saturating_add`/plain `-=` where overflow is
+  unreachable; `>= 0` loop exit whose extra iteration contributes `next >> 8 == 0`;
+  two's-complement subtraction done in signed instead of unsigned space).
+* **0 unexplained survivors.**

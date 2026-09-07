@@ -1,118 +1,124 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Public symbol surface (Phase A)
 
 Derived mechanically from `nm -D` on both shared objects.
 
-## Commands
+C library:   `c_src/build/libharvest-work-mJBc45.so`
+Rust library: `translation/target/release/libdequantize_granule_lib.so`
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libharvest-work-ZcmQya.so
+## C source inventory (completeness check)
 
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libdequantize_granule_lib.so
-```
+The whole C library is two files:
 
-Both are re-run automatically by `translation/run_all.sh` and asserted by
-`tests/phase_d_symbols.rs`.
+| C file | functions defined | linkage | exported? |
+|--------|-------------------|---------|-----------|
+| `c_src/src/lib.c` | `get_bits` | `static` | no (internal) |
+| `c_src/src/lib.c` | `dequantize_granule` | external | yes |
+| `c_src/include/lib.h` | (types only: `bs_t`, `L12_scale_info`) | — | n/a |
 
-## C source surface
+`c_src/CMakeLists.txt` lists exactly one translation unit (`src/lib.c`) and
+builds a single SHARED target. There is no second module, no binary/driver
+target, and no `#ifdef`-gated extra source. So the complete external surface is
+one function. Nothing in the C tree is untranslated.
 
-`c_src/` contains exactly one translation unit (`src/lib.c`, 43 lines) and one
-public header (`include/lib.h`, 14 lines). There are **no untranslated
-modules**: `CMakeLists.txt` lists `src/lib.c` as the only source file, so the
-whole library is covered.
+## `nm -D --defined-only`, non-`_`-prefixed symbols
 
-| C source entity | linkage | exported? | Rust counterpart |
-|---|---|---|---|
-| `dequantize_granule` | external | yes | `dequantize_granule` — `#[unsafe(no_mangle)] pub unsafe extern "C" fn` in `src/lib.rs` |
-| `get_bits` | `static` | no (internal) | private `unsafe fn get_bits` — correctly NOT exported |
-| `bs_t` (typedef struct) | type | n/a | `#[repr(C)] pub struct bs_t` |
-| `L12_scale_info` (typedef struct) | type | n/a | `#[repr(C)] pub struct L12_scale_info` |
+| # | symbol | in C `.so` | in Rust `.so` | action |
+|---|--------|-----------|---------------|--------|
+| 1 | `dequantize_granule` | `T` (0x11d1) | `T` | none — already exported via `#[unsafe(no_mangle)] extern "C"` |
 
-No macro-generated symbols, no function-pointer tables, no global or static
-data objects (`nm` reports no `D` / `B` / `R` entries in the C `.so`), no weak
-definitions, no versioned exports.
+Symbols only in the Rust `.so` (extra, allowed — toolchain/runtime artifacts,
+not part of the C surface): `rust_eh_personality`, `_init`, `_fini`,
+`__bss_start`, `_edata`, `_end` and the `_ITM_*` / `__gmon_start__` weak refs.
 
-## Defined-symbol diff
-
-C `.so`:
+## Symbol diff
 
 ```
-00000000000011d1 T dequantize_granule
+$ comm -23 <(nm -D --defined-only C.so   | awk '{print $3}' | grep -v '^_' | sort) \
+           <(nm -D --defined-only RUST.so | awk '{print $3}' | grep -v '^_' | sort)
+(empty)
 ```
 
-Rust `.so`:
+**Missing from Rust: 0.**  **Stubs / `unimplemented!()` in Rust: 0.**
 
-```
-00000000000116d0 T dequantize_granule
-```
+## Undefined symbols in the Rust `.so`
 
-```sh
-comm -23 <(nm -D --defined-only "$C_SO"   | awk '{print $3}' | sort -u) \
-         <(nm -D --defined-only "$RUST_SO"| awk '{print $3}' | sort -u)
-# -> (empty)
-```
+All undefined symbols resolve to libc / libgcc_s (glibc `malloc`, `memcpy`,
+`__errno_location`, `pthread_*`, `_Unwind_*`, `dl_iterate_phdr`, …) pulled in by
+the Rust standard library. There are no undefined *non-libc* symbols, i.e. no
+references to un-translated C code.
 
-`comm -13` (extra in Rust) is also empty — the Rust `cdylib` exports nothing
-beyond `dequantize_granule`.
+## ABI types (must match, verified against the C compiler)
 
-**Result: 0 missing symbols, 0 extra symbols. Symbol parity is exact.**
+Verified with a `gcc` `offsetof`/`sizeof` probe against `c_src/include/lib.h`:
 
-Asserted by:
-* `phase_d_symbols::every_c_symbol_is_exported_by_rust`
-* `phase_d_symbols::static_c_helper_is_not_exported_by_either` (`get_bits` must
-  stay internal in both)
-
-## Undefined (imported) symbols
-
-C `.so` — 4 weak entries, all loader/glibc boilerplate:
-
-```
-w _ITM_deregisterTMCloneTable
-w _ITM_registerTMCloneTable
-w __cxa_finalize@GLIBC_2.2.5
-w __gmon_start__
-```
-
-Rust `.so` — 49 entries. Every one is either version-tagged `@GLIBC_*` (36) or
-`@GCC_*` (11 `_Unwind_*` entries from the panic runtime), plus the same two weak
-`_ITM_*` entries and `__gmon_start__` the C `.so` has:
-
-```sh
-nm -D --undefined-only "$RUST_SO" | awk '{print $NF}' \
-  | grep -v -E '@GLIBC_|@GCC_|^_ITM_|^__gmon_start__$'
-# -> (empty)
-```
-
-**0 undefined non-libc symbols in the Rust `.so`.**
-
-Asserted by `phase_d_symbols::rust_so_has_no_undefined_non_libc_symbols`.
-
-## ABI layout parity
-
-`src/lib.rs` pins the two struct layouts with compile-time `const` assertions
-(`size_of`, `offset_of`). Those are checked *behaviourally* against the C as
-well, because `dequantize_granule` reads `sci->bitalloc[i]` out of bounds and
-the exact bytes it lands on depend on the layout:
-
-| property | value | how it is verified against the C |
-|---|---|---|
-| `sizeof(bs_t)` | 16 | `phase_d_symbols::bs_t_layout_matches_c` |
-| `offsetof(bs_t, pos)` / `limit` | 8 / 12 | same test — a wrong offset would break the `limit` rejection |
-| `sizeof(L12_scale_info)` | 900 | `phase_d_symbols::l12_scale_info_layout_matches_c` |
-| `offsetof(total_bands)` | 768 | any wrong offset changes the `i`-loop bound |
-| `offsetof(bitalloc)` | 770 | `phase_c_error_paths::row15_out_of_bounds_bitalloc_read` |
-| `offsetof(scfcod)` | 834 | `l12_scale_info_layout_matches_c` — `bitalloc[64]` must land exactly on `scfcod[0]` |
+| type | C | Rust `#[repr(C)]` |
+|------|---|-------------------|
+| `bs_t` | size 16, `buf`@0, `pos`@8, `limit`@12 | identical (`const _:` asserts in `src/lib.rs`) |
+| `L12_scale_info` | size 900, align 4, `scf`@0, `total_bands`@768, `stereo_bands`@769, `bitalloc`@770, `scfcod`@834 | identical (`const _:` asserts in `src/lib.rs`) |
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the complete
-set of feature combinations is a single one: the default (empty) set.
-`run_all.sh` derives the list from `Cargo.toml` (so it keeps working if features
-are added later) and currently runs `cargo check --all-targets`,
-`cargo build --release`, the `nm -D` diff, and the full test suite under both
-`<default features>` and `--no-default-features`. Both report
-`0 missing symbols` / `0 undefined non-libc symbols` and all 47 tests passing.
+`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
+build configuration is the default one. Phase D's "repeat for every feature
+combo" reduces to: default, `--no-default-features`. Both are enumerated and
+run by `check_features.sh`.
+
+## Verification results (re-run after a clean `rm -rf target`)
+
+```
+$ diff <(nm -D --defined-only C.so    | awk '{print $3}' | grep -v '^_' | sort) \
+       <(nm -D --defined-only RUST.so | awk '{print $3}' | grep -v '^_' | sort)
+(no differences)
+
+$ nm -D --defined-only target/release/libdequantize_granule_lib.so | grep dequantize_granule
+00000000000116d0 T dequantize_granule
+```
+
+`check_features.sh` re-verifies this for every configuration × profile:
+
+```
+features declared in Cargo.toml: 0 (none)
+=== configuration: default  (cargo ) ===
+  symbol parity [default/release]: OK (1 C symbol(s), 0 missing, 0 undefined non-libc)
+  differential suite [default/release]: PASS
+  symbol parity [default/debug]: OK (1 C symbol(s), 0 missing, 0 undefined non-libc)
+  differential suite [default/debug]: PASS
+=== configuration: no-default  (cargo --no-default-features) ===
+  symbol parity [no-default/release]: OK (1 C symbol(s), 0 missing, 0 undefined non-libc)
+  differential suite [no-default/release]: PASS
+  symbol parity [no-default/debug]: OK (1 C symbol(s), 0 missing, 0 undefined non-libc)
+  differential suite [no-default/debug]: PASS
+
+PHASE D: ALL CONFIGURATIONS PASS
+```
+
+## Fix applied during verification
+
+One real divergence was found, and only by building the Rust `.so` with the
+`debug` profile:
+
+* **`Cargo.toml`** — Rust's `debug_assertions`-gated UB checks fired on the
+  deliberate null / out-of-bounds accesses this translation must reproduce,
+  turning the C's `SIGSEGV` into a Rust panic and `SIGABRT` (test
+  `e26_null_pointers`: `C: KILLED by signal 11` vs `R: KILLED by signal 6`).
+  `debug-assertions = false` / `overflow-checks = false` are now set in **both**
+  profiles so the library's observable behaviour does not depend on how it is
+  built. No change to `src/lib.rs` was required.
+
+## Suite trustworthiness (mutation testing)
+
+A passing differential suite only means something if it *can* fail.
+`mutation_check.sh` builds eight deliberately-wrong copies of `src/lib.rs` into
+their own `.so`, points the suite at each via `RUST_SO`, and requires the suite
+to fail. All eight are caught:
+
+```
+MUTANT guard-ge:        DETECTED   (exhaustion guard `>` changed to `>=`)
+MUTANT choff-19:        DETECTED   (`choff = 18 - choff` changed to 19)
+MUTANT shl-not-masked:  DETECTED   (out-of-range shift zeroed instead of masked)
+MUTANT sat-sub:         DETECTED   (`wrapping_sub` changed to `saturating_sub`)
+MUTANT ba-masked-idx:   DETECTED   (`bitalloc[i]` index masked to 6 bits)
+MUTANT half-off-one:    DETECTED   (`half` off by one)
+MUTANT pos-not-advanced:DETECTED   (`bs->pos` not advanced on the reject path)
+MUTANT mod-shift-wrap:  DETECTED   (`2 << (ba-17)` shift count clamped)
+```

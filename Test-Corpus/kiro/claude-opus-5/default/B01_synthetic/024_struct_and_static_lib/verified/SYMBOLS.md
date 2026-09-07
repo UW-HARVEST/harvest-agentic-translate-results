@@ -1,108 +1,93 @@
-# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
-
-```
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-```
-
-## C `.so` exported (dynamic, defined) symbols
-
-| # | symbol | C type | source of truth | present in Rust `.so`? |
-|---|--------|--------|-----------------|------------------------|
-| 1 | `driver` | `T` (global text) | `c_src/src/driver.c:63` — `void driver(int x)`; declared in `c_src/include/driver.h:26` | YES |
-| 2 | `run`    | `T` (global text) | `c_src/src/driver.c:52` — `void run(int extra_bedrooms)`; **not** declared in the public header, but has external linkage and is therefore part of the ABI surface | YES |
-
-Missing from Rust `.so`: **none**. No translation gaps, no export wrappers to add,
-no stubs.
-
-## C symbols that are deliberately NOT exported by either `.so`
-
-These are `static` (internal linkage) in the C translation unit, so they appear
-in `nm` but never in `nm -D`. The Rust translation correctly keeps them private
-(`fn` / `static` without `#[no_mangle]`), so the dynamic surfaces match.
-
-| symbol | `nm` class in C | Rust counterpart |
-|--------|-----------------|------------------|
-| `add_bedrooms`           | `t` | `unsafe fn add_bedrooms` (private) |
-| `add_floor`              | `t` | `unsafe fn add_floor` (private) |
-| `add_floor_to_the_house` | `t` | `unsafe fn add_floor_to_the_house` (private) |
-| `print_the_house`        | `t` | `unsafe fn print_the_house` (private) |
-| `the_house`              | `d` | `static THE_HOUSE: Global` (private) |
-
-Note: the C `house_t` struct is a file-local `typedef` and never crosses the ABI
-boundary (both public functions take a single `int`), so no `#[repr(C)]` layout
-compatibility is observable externally. The Rust translation marks it `#[repr(C)]`
-anyway.
-
-## Undefined / imported symbols
-
-| `.so` | non-libc undefined symbols |
-|-------|----------------------------|
-| C     | none (`printf@GLIBC_2.2.5`, `__cxa_finalize@GLIBC_2.2.5`, plus weak `__gmon_start__`, `_ITM_*` — all libc/toolchain) |
-| Rust  | none (libc + Rust `std` internals only) |
-
-## Symbol diff
+Derived mechanically from:
 
 ```
-$ diff <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $NF}' | sort) \
-       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort)
-(empty)
+nm -D c_src/build/libdriver.so
+nm -D translation/target/release/libdriver.so
 ```
 
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+## C `.so` dynamic symbol table (verbatim)
+
+```
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+000000000000120f T driver
+                 U printf@GLIBC_2.2.5
+000000000000119f T run
+```
+
+## Defined (exported) symbols — the parity requirement
+
+| # | C symbol | C type | in Rust `.so`? | Rust type | notes |
+|---|----------|--------|----------------|-----------|-------|
+| 1 | `driver` | `T` (global text) | YES | `T` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver(x: c_int)` |
+| 2 | `run`    | `T` (global text) | YES | `T` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn run(extra_bedrooms: c_int)` — not declared in `driver.h`, but non-`static` in `driver.c`, therefore exported; Rust must export it too |
+
+`w` (weak) symbols `_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+`__cxa_finalize`, `__gmon_start__` are toolchain/CRT artifacts, not library API.
+The Rust `.so` also carries all four (verified with `nm -D`).
+
+### C symbols NOT exported (internal, `static` in `driver.c`)
+
+These have no dynamic symbol and MUST NOT be exported by Rust either. They are
+reachable only through `run` / `driver`:
+
+| C internal | Rust counterpart | exported by Rust `.so`? |
+|---|---|---|
+| `static house_t the_house` | `static THE_HOUSE: Global` | no (checked: absent from `nm -D`) |
+| `static void add_floor(house_t*)` | `unsafe fn add_floor` | no |
+| `static void add_bedrooms(house_t*, int)` | `unsafe fn add_bedrooms` | no |
+| `static void add_floor_to_the_house()` | `unsafe fn add_floor_to_the_house` | no |
+| `static void print_the_house()` | `unsafe fn print_the_house` | no |
+
+## Undefined-symbol check on the Rust `.so`
+
+`nm -D --undefined-only translation/target/release/libdriver.so` yields only
+libc/`glibc` and `libgcc` unwinder imports:
+
+```
+_Unwind_* (GCC_*), __cxa_finalize, __cxa_thread_atexit_impl, __errno_location,
+__tls_get_addr, abort, bcmp, calloc, close, dl_iterate_phdr, free, fstat64,
+getcwd, getenv, gettid, lseek64, malloc, memcpy, memmove, memset, mmap64,
+munmap, open64, posix_memalign, printf, pthread_key_create, pthread_key_delete,
+pthread_setspecific, read, readlink, realloc, realpath, stat64, statx, strlen,
+syscall, write, writev, _ITM_*, __gmon_start__
+```
+
+`printf@GLIBC_2.2.5` is imported by BOTH libraries — the Rust translation calls
+glibc `printf` directly rather than reimplementing `%d` / `%.1f` formatting, so
+number formatting and stdout buffering are identical by construction.
+
+## Result
+
+- Missing from Rust `.so`: **0**
+- Undefined non-libc / non-unwinder symbols in Rust `.so`: **0**
+- Extra API symbols exported by Rust that C does not export: **0**
+
+No missing implementation and no missing module: `c_src` contains exactly one
+translation unit (`src/driver.c`, 66 lines) and it is fully translated in
+`translation/src/lib.rs`. No stubs were added.
+
+## No binary target
+
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)`.
+There is no `main()` anywhere in `c_src`, and `translation/Cargo.toml` declares
+only `crate-type = ["cdylib"]` with no `[[bin]]`. The "compare binary stdout"
+requirement is therefore not applicable; stdout is instead compared through the
+`.so` boundary by capturing fd 1 around each FFI call.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only build
-configuration is the default one. There are no `#[cfg(feature = ...)]` gates in
-`src/lib.rs` and no `#ifdef`-gated code in the C source other than the
-`DRIVER_H_` include guard. Phase D's "every feature combination" therefore
-collapses to a single combination, which is verified explicitly by
-`translation/check_all_features.sh`.
-
-## How to reproduce
+`translation/Cargo.toml` has **no `[features]` section** and no optional
+dependencies, so the only build configuration is the default one. Verified:
 
 ```
-cd translation && ./run_verification.sh
+$ grep -c '\[features\]' translation/Cargo.toml
+0
 ```
 
-That script builds the C `.so` with CMake, runs `cargo check`, builds the Rust
-`cdylib` in release mode (the artifact the tests `dlopen`), diffs the exported
-symbol sets, and then runs the whole differential suite under every feature
-combination via `check_all_features.sh`.
-
-## Test layout
-
-| test binary | phase | covers |
-|-------------|-------|--------|
-| `tests/symbol_parity.rs` | D | `nm -D` set equality both directions + `dlsym` resolvability of every C symbol in both `.so` files |
-| `tests/valid_paths.rs` | B | one test per `CONFIGS.md` row (17) |
-| `tests/error_paths.rs` | C | one test per `ERRORS.md` row (12 tests covering rows 1–12; rows 13/14 are unreachable and documented; row 15 lives in `printf_format.rs`) |
-| `tests/printf_format.rs` | B/C | `ERRORS.md` row 15 — `%d` and `%.1f` field-width growth from pristine state |
-| `tests/independence.rs` | — | harness integrity: proves the two `.so` files are distinct implementations with independent `static house_t the_house` state, so no differential assertion can pass vacuously |
-| `tests/harness/mod.rs` | — | shared harness: `dlopen`s both `.so` files, captures fd 1 per call, drives C then Rust in lock-step under a global mutex |
-
-Both public functions return `void` and report exclusively through `printf`, so
-"comparing outputs" means capturing the bytes each `.so` writes to file
-descriptor 1 and comparing them byte-for-byte. That redirection is
-process-global, so the suite requires single-threaded execution;
-`translation/.cargo/config.toml` sets `RUST_TEST_THREADS=1`, and the harness
-refuses to run (with instructions) if the effective `--test-threads` is not 1
-rather than failing flakily.
-
-## Negative controls performed
-
-The suite was validated by injecting faults into `src/lib.rs`, rebuilding the
-release `cdylib`, and confirming the tests fail — then reverting:
-
-| injected fault | detected by |
-|----------------|-------------|
-| `wrapping_add` → `saturating_add` in `add_bedrooms` | 11 of 12 `error_paths` tests |
-| `driver` calls `run` once instead of twice | 11 of 17 `valid_paths` tests |
-| `#[unsafe(no_mangle)]` removed from `run` | `symbols_01`, `symbols_04` |
-| glibc `printf("%.1f")` → Rust `format!("{:.1}")` | **not** detected — and correctly so: `bathrooms` is always an exactly representable `n + 0.5` for every reachable state, so the two formatters agree on the entire reachable value set. This is a genuine equivalence, not a gap. |
-
-`src/lib.rs` was restored byte-identically after each control (verified with
-`diff`), and no file under `c_src/` was modified (verified with `md5sum`).
+`--no-default-features` is therefore identical to the default build; both are
+exercised (see `run_all_features.sh`).

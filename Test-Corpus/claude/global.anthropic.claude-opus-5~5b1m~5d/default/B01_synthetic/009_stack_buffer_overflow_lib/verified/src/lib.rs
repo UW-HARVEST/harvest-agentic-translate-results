@@ -40,23 +40,40 @@ pub unsafe extern "C" fn printIntLine(intNumber: c_int) {
     printf(b"%d\n\0".as_ptr() as *const c_char, intNumber);
 }
 
-/// Backing storage for the `int buffer[10]` locals of `bad`, `goodG2B` and
-/// `goodB2G`.
+/// Backing storage for the `int buffer[10]` local of `bad`.
 ///
 /// The C code performs an unchecked `buffer[data] = 1` in `bad()`, which for
 /// `data >= 10` writes past the end of the array and into the rest of the
-/// function's stack frame.  A plain `[c_int; 10]` here would either panic
-/// (safe indexing) or immediately smash Rust's own frame in ways unrelated to
-/// the C layout, so the array is embedded in a struct that reserves trailing
-/// stack space, mirroring how the C compiler's frame absorbs modest
-/// overflows.  Only the first `BUFFER_LEN` elements are ever printed, exactly
-/// as in C.
+/// function's stack frame.  Reproducing that faithfully for the indices where
+/// the C behaviour is still *deterministic* requires somewhere for the stray
+/// store to land, so the array is embedded in a struct that reserves trailing
+/// stack space, mirroring how the C compiler's frame absorbs modest overflows.
+/// Only the first `BUFFER_LEN` elements are ever printed, exactly as in C.
+///
+/// Measured against the C build (`objdump -d libdriver.so`, frame base
+/// `-0x30(%rbp)`, `sub $0x40,%rsp`):
+///
+/// | `data` | C target slot                | C observable                     |
+/// |--------|------------------------------|----------------------------------|
+/// | 0..=9  | `buffer[data]`               | `1` printed on line `data + 1`   |
+/// | 10     | frame padding `-0x8(%rbp)`   | ten zeros                        |
+/// | 11     | loop counter `i` `-0x4(%rbp)`, then overwritten by `i = 0` | ten zeros |
+/// | >= 12  | saved `%rbp` / return address | **undefined behaviour**         |
+///
+/// The Rust version reproduces rows 1-3 exactly.  For `data >= 12` the C
+/// program has no defined behaviour at all, so nothing can be required of the
+/// translation; the store is simply absorbed by the slack (and suppressed
+/// entirely beyond the slack, so that the Rust side never itself commits
+/// undefined behaviour).
 #[repr(C)]
 struct Frame {
     buffer: [c_int; BUFFER_LEN],
     /// Trailing slack that stands in for the remainder of the C stack frame.
     _slack: [c_int; 118],
 }
+
+/// Total number of `int`-sized slots in a `Frame` (`BUFFER_LEN` + slack).
+const FRAME_SLOTS: usize = BUFFER_LEN + 118;
 
 impl Frame {
     fn new() -> Self {
@@ -75,10 +92,17 @@ impl Frame {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bad(data: c_int) {
     let mut frame = Frame::new();
+    // Take the base pointer from the *whole* `Frame`, not from the `buffer`
+    // field, so that its provenance legitimately spans the slack as well; a
+    // pointer derived from `frame.buffer` would only be valid for indices
+    // 0..BUFFER_LEN and the stray store would be undefined behaviour on the
+    // Rust side (and thus liable to be optimised away).
+    let base: *mut c_int = (&raw mut frame) as *mut c_int;
     if data >= 0 {
-        // buffer[data] = 1;  -- deliberately unchecked, as in the C original.
-        let base: *mut c_int = frame.buffer.as_mut_ptr();
-        base.offset(data as isize).write(1);
+        // buffer[data] = 1;  -- deliberately *not* upper-bounded, as in C.
+        if (data as usize) < FRAME_SLOTS {
+            base.add(data as usize).write(1);
+        }
         /* Print the array values */
         for i in 0..BUFFER_LEN {
             printIntLine(*base.add(i));
@@ -89,32 +113,31 @@ pub unsafe extern "C" fn bad(data: c_int) {
 }
 
 /// `static void goodG2B(void)` -- the fixed data source: `data` is always 7,
-/// so the write is in bounds.
+/// so the write is always in bounds and no frame slack is needed.
 unsafe fn goodG2B() {
     let data: c_int = 7;
-    let mut frame = Frame::new();
+    let mut buffer: [c_int; BUFFER_LEN] = [0; BUFFER_LEN];
     if data >= 0 {
-        let base: *mut c_int = frame.buffer.as_mut_ptr();
-        base.offset(data as isize).write(1);
+        buffer[data as usize] = 1;
         /* Print the array values */
         for i in 0..BUFFER_LEN {
-            printIntLine(*base.add(i));
+            printIntLine(buffer[i]);
         }
     } else {
+        // Dead code in C too (`data` is the constant 7), kept for fidelity.
         printLine(b"ERROR: Array index is negative.\0".as_ptr() as *const c_char);
     }
 }
 
 /// `static void goodB2G(int data)` -- the fixed sink: the index is fully
-/// range-checked before use.
+/// range-checked before use, so plain checked indexing matches C exactly.
 unsafe fn goodB2G(data: c_int) {
-    let mut frame = Frame::new();
+    let mut buffer: [c_int; BUFFER_LEN] = [0; BUFFER_LEN];
     if data >= 0 && data < (BUFFER_LEN as c_int) {
-        let base: *mut c_int = frame.buffer.as_mut_ptr();
-        base.offset(data as isize).write(1);
+        buffer[data as usize] = 1;
         /* Print the array values */
         for i in 0..BUFFER_LEN {
-            printIntLine(*base.add(i));
+            printIntLine(buffer[i]);
         }
     } else {
         printLine(b"ERROR: Array index is out-of-bounds\0".as_ptr() as *const c_char);

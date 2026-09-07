@@ -1,147 +1,94 @@
-# Verification report — StaticLoop C → Rust
+# Verification record — completion gate
 
-Differential verification of `translation/` against `c_src/` as ground truth.
-Both libraries are loaded as shared objects with `libloading` and driven only
-through their exported C symbols, so the `#[no_mangle]`/`extern "C"` wrappers
-are themselves under test. The Rust implementation is never called directly as
-a Rust function.
+Artifacts: `SYMBOLS.md` (Phase A/D), `ERRORS.md` (Phase A → gates C),
+`CONFIGS.md` (Phase A → gates B).
+Tests: `tests/harness/mod.rs`, `tests/differential.rs` (23), `tests/error_paths.rs` (15).
 
-## Result: PASS — no divergence found, and no change to `src/lib.rs` was needed.
+Both libraries are reached **only** through `dlopen` + their exported C symbols
+(`libloading`); no Rust function is ever called directly, so the
+`#[no_mangle] extern "C"` wrappers are themselves under test.
 
-54 differential tests, all passing, under every feature combination, both cargo
-profiles, and against the C library compiled at five optimisation levels.
+## Completion gate
 
-## How to reproduce
+- [x] **`SYMBOLS.md`** — `nm -D` diff between the C `.so` and the Rust `.so` is
+      empty (`static_sum`, `driver`); 0 missing symbols, 0 undefined non-libc
+      symbols. Asserted by `symbols::rust_so_exports_every_c_symbol` and
+      `symbols::rust_so_has_no_undefined_non_libc_symbols`.
+- [x] **Phase B** — all 21 `CONFIGS.md` rows pass, each driven with many
+      seeded-random inputs (`Rng` = SplitMix64, fixed seeds) rather than one
+      hand-picked value. Both entry points are exercised directly, including
+      the low-level `static_sum`, and in randomized interleavings on shared
+      hidden state (row 20).
+- [x] **Binary stdout** — N/A and asserted as such: `c_src/CMakeLists.txt` has
+      no `add_executable` and the crate has no `[[bin]]`
+      (`configs::row21_no_binary_target`). `driver`'s `printf` output is still
+      compared byte-for-byte via fd-1 capture.
+- [x] **Phase C** — all 15 `ERRORS.md` rows have a passing differential test
+      (`tests/error_paths.rs`).
+- [x] **All feature combinations** — the crate declares no `[features]`, so the
+      complete set is `default` and `--no-default-features`. `check_all_features.sh`
+      enumerates them mechanically and runs `cargo check` + `cargo build` +
+      `cargo test` for each, in **both** the `release` and `dev` profiles
+      (the latter has overflow checks on, which is a genuinely different code
+      path for the `wrapping_*` arithmetic). Result: **ALL PASSED**
+      (4 configurations × 38 tests).
+
+## Anti-vacuity evidence (mutation testing)
+
+A green suite is only meaningful if it can go red. Six deliberate bugs were
+injected into `src/lib.rs`, rebuilt, and re-run; every one was caught:
+
+| injected bug | tests failed |
+|--------------|--------------|
+| `wrapping_add` → `saturating_add` in `static_sum` | 10 |
+| `driver` loops 9 times instead of 10 | 9 |
+| `printf("%d\n")` → `printf("%d ")` | 9 |
+| `i * stride` → `i + stride` | 9 |
+| `#[no_mangle]` removed from `static_sum` (symbol unexported) | 14, incl. the symbol-parity test |
+| off-by-one triggered *only* when `update == 7` (value-dependent) | 3 |
+
+`src/lib.rs` was restored to its original byte content afterwards.
+
+## Two harness bugs found and fixed during verification
+
+Both produced misleading results and are worth recording, since either would
+have invalidated the whole exercise:
+
+1. **libtest progress text leaking into the `driver` stdout capture.** fd 1 is
+   process-global; with parallel test threads, libtest's own
+   `"test foo ... ok"` output landed inside the captured bytes and was reported
+   as a C/Rust divergence (the numbers themselves matched). Fixed by
+   serialising captures behind a mutex, flushing Rust's line-buffered
+   `io::stdout()` before stealing fd 1, pinning `RUST_TEST_THREADS=1` in
+   `.cargo/config.toml`, and adding an explicit "harness error" assertion so
+   this can never again masquerade as a translation bug.
+2. **`cargo test` does not rebuild a `crate-type = ["cdylib"]` artifact.**
+   Integration tests never link the cdylib, so `cargo test` left
+   `target/*/libStaticLoop.so` stale — the first mutation run reported all six
+   injected bugs as *passing*. Fixed by `assert_not_stale()` in the harness
+   (the suite now refuses to run against a `.so` older than `src/lib.rs`) and
+   by building the cdylib explicitly in `check_all_features.sh`.
+
+## Additional robustness checks
+
+- **Per-test fresh hidden state.** `static_sum` owns a function-scope
+  `static int sum`, so the *sequence* of calls is the real input. `Pair::fresh()`
+  copies each `.so` to a unique temp path before `dlopen`, giving glibc a
+  distinct image with `sum` re-initialised to 0. Row 1 asserts this directly
+  (across 64 fresh pairs, the first `static_sum(v)` returns exactly `v`).
+- **C optimization invariance.** Signed overflow is UB in C, so the C ground
+  truth was rebuilt out-of-tree at `-O0`, `-O2`, `-O3 -fstrict-overflow` and
+  `-Os` and the full suite re-run against each. The Rust `wrapping_*`
+  arithmetic matched the C at every level (0 failures each time), confirming
+  the translation is not tied to one particular codegen of the UB.
+
+## Reproducing
 
 ```sh
-# 1. C reference library
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-
-# 2. Rust cdylib + the suite  (cargo test alone does NOT emit a cdylib)
-cd translation && cargo build && cargo test
-
-# 3. Phase D gates
-./check_symbols.sh release     # symbol parity
-./check_features.sh            # every feature combo x {debug, release}
-./check_optlevels.sh           # C at -O0/-O1/-O2/-O3/-Os
+cd translation && ./check_all_features.sh          # everything, all combos
+# or, manually — note the mandatory explicit cdylib build:
+cd c_src && cmake -S . -B build -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build build
+cd ../translation && cargo build --release && cargo test --release
 ```
 
-## Phase A — artifacts
-
-| artifact | content |
-|---|---|
-| `SYMBOLS.md` | `nm -D` inventory for both `.so`s; 2 symbols each, 0 missing |
-| `ERRORS.md` | 17-row error/boundary-surface table, each mapped to a test |
-| `CONFIGS.md` | 34-row configuration-surface table, each mapped to a test |
-
-## Phase B — valid paths (`tests/phase_b_valid.rs`)
-
-34 tests, one per `CONFIGS.md` row, `row01_*` … `row34_*`. Rows admitting a
-value range are driven with randomized inputs from a fixed-seed SplitMix64
-(`Rng::BASE_SEED = 0x5EED_1234_ABCD_0001`, salted per row) rather than one
-hand-picked value. Both observable channels are compared: `static_sum`'s `int`
-return value, and `driver`'s stdout **bytes**.
-
-## Phase C — error paths (`tests/phase_c_errors.rs`)
-
-17 `err*` tests, one per `ERRORS.md` row, plus 3 `generic_*` tests for the
-generic FFI boundaries. Every assertion compares the concrete value or bytes
-returned by each side — never merely "both failed".
-
-## Phase D — parity, features, profiles
-
-* **Symbol parity: empty diff.** C exports `driver` and `static_sum`; Rust
-  exports exactly those two names. All of the Rust `.so`'s undefined symbols
-  resolve against libc/libgcc.
-* **Feature combinations: 1.** `Cargo.toml` declares no `[features]` section, so
-  the default (empty) feature set is the only configuration.
-  `check_features.sh` derives this mechanically from `Cargo.toml` rather than
-  assuming it, and re-runs the suite for whatever it finds, under both `debug`
-  and `release`. `release` matters here because it sets `panic = "abort"` and
-  turns off the debug overflow checks.
-
-## Notable findings
-
-### 1. The library has no explicit error surface (documented, not assumed)
-
-Grepping `staticloop.c` for error-return macros, sentinels, `assert`, `errno`,
-range checks, null checks, and allocation yields **zero hits**. Both entry
-points take one `int` by value and cannot fail; every `int` is a valid
-successful return of `static_sum`, so there is no reserved sentinel. Phase C
-therefore targets the *implicit* surface — the signed-overflow boundaries — and
-`ERRORS.md` records the grep results so the claim is auditable rather than a
-happy-path assumption.
-
-### 2. Signed-overflow UB: verified against five optimisation levels
-
-`sum += update` and `i * stride` are signed-overflow UB in C, and most
-`ERRORS.md` rows sit exactly on those boundaries. The Rust uses
-`wrapping_add`/`wrapping_mul`. Agreeing with the default CMake build would prove
-little, because that build passes no `-O` flag (`-O0`), where a compiler has no
-reason to exploit the UB. `check_optlevels.sh` builds the C source out-of-tree
-at `-O0`, `-O1`, `-O2`, `-O3` and `-Os` and re-runs all 54 tests against each
-(via the `STATICLOOP_C_SO` override). **All five agree with the Rust**, so the
-wrapping choice is correct rather than an artifact of an unoptimised build.
-
-### 3. The static accumulator required a per-test fresh-instance mechanism
-
-`static_sum`'s accumulator is a function-scope `static int`, i.e. per-loaded-
-object mutable state that persists across calls. glibc deduplicates `dlopen` by
-`(st_dev, st_ino)`, so loading the same path twice returns the *same* object
-with its accumulator already mutated — tests would have been order-dependent and
-mutually contaminating. The harness copies each `.so` to a uniquely named
-temporary file (a real copy, hence a distinct inode) and loads that, giving each
-test a genuine `sum == 0` instance. State-carrying rows are then exercised
-deliberately (rows 14–17, 29–32) rather than accidentally.
-
-### 4. `driver`'s output is on fd 1, and capturing it demanded serialisation
-
-`driver` writes via C `printf`, so its observable output is on file descriptor
-1, not Rust's `std::io::stdout`. The harness captures it by redirecting fd 1 to
-a scratch file. Two real hazards surfaced during bring-up, both of which
-initially produced a spurious failure:
-
-* libtest also writes progress to fd 1 from the main thread, so a concurrent
-  test's `ok` was captured *inside* `driver`'s output. Fixed by forcing
-  single-threaded execution (`.cargo/config.toml` sets `RUST_TEST_THREADS=1`) and
-  by *enforcing* it in `require_serial_execution()` — a contaminated capture
-  could otherwise hide a genuine divergence.
-* Rust's stdout is a `LineWriter` holding partial lines (`test row32 ... `) with
-  no trailing newline; those bytes were flushed into the capture. Fixed by
-  flushing both Rust's stdout and C stdio before installing the redirect.
-
-The Rust translation's decision to call C's `printf` (rather than
-`std::io::stdout`) is what makes byte-identical, correctly-interleaved output
-possible, and is validated by row 33's byte-shape assertions.
-
-### 5. The suite was mutation-tested to prove it is not vacuous
-
-An all-passing differential suite is worthless if it cannot fail. Five mutants
-were injected into `src/lib.rs` and every one was caught:
-
-| mutant | tests failed |
-|---|---|
-| `driver` loop bound `10` → `9` | 27 |
-| `static_sum` `wrapping_add` → `saturating_add` | 37 |
-| `driver` product `i*stride` → `i*stride + 1` | 37 |
-| `printf` format `%d` → `%u` | 37 |
-| initial `sum` `0` → `1` | 54 |
-
-`src/lib.rs` was then restored to its original state and re-verified.
-
-## Caveats
-
-* **Thread safety is intentionally absent, matching the C.** The C
-  `static int sum` is unsynchronised, so concurrent calls are a data race in C;
-  the Rust mirrors this exactly (`UnsafeCell` + `unsafe impl Sync`, no locking).
-  This is faithful to the ground truth but is not a differential-testable
-  property, so no test asserts it.
-* **`cargo test` alone does not build the cdylib.** The crate declares only
-  `crate-type = ["cdylib"]`, and cargo does not emit it for a test build, so
-  `cargo build` must run first. The harness fails with an explicit message
-  rather than silently skipping.
-* Verification covers `x86_64` System V. The argument-truncation rows (9, 15,
-  18) are ABI-specific in the sense that they rely on the callee reading only
-  the low 32 bits of the argument register; the *conclusion* (both sides agree)
-  is what is asserted, not a particular truncation rule.
+`CARGO_FLAGS` (default `--offline`) is forwarded to every cargo invocation.

@@ -1,13 +1,20 @@
-# Exported Symbol Surface
+# Dynamic symbol surface
 
-Generated from `nm -D --defined-only libharvest-work-GjQeyl.so`.
+Source binary: `c_src/build/libharvest-work-PBWdNu.so`
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `apply_bit_operations` | `T` | present | [x] |
-| `envy` | `T` | present | [x] |
-| `init_config_from_env` | `T` | present | [x] |
-| `parse_env_numeric` | `T` | present | [x] |
-| `perform_operation` | `T` | present | [x] |
+Command: `nm -D --defined-only`
 
-Undefined C imports are libc/toolchain symbols: `atoi`, `fprintf`, `getenv`, `printf`, `puts`, `snprintf`, `stderr`, `strchr`, `_ITM_*`, `__cxa_finalize`, and `__gmon_start__`.
+| C symbol | Type | Rust export present |
+|----------|------|---------------------|
+| `apply_bit_operations` | `T` | [x] |
+| `envy` | `T` | [x] |
+| `init_config_from_env` | `T` | [x] |
+| `parse_env_numeric` | `T` | [x] |
+| `perform_operation` | `T` | [x] |
+
+The C library's undefined dynamic symbols are libc/toolchain symbols:
+`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
+`__gmon_start__`, `atoi`, `fprintf`, `getenv`, `printf`, `puts`, `snprintf`,
+`stderr`, and `strchr`.
+
+Missing C-defined symbols in the Rust library: **0**.

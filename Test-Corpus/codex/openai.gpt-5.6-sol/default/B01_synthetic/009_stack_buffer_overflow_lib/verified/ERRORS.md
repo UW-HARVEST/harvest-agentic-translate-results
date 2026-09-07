@@ -1,26 +1,32 @@
 # Error Surface
 
-Mechanically derived from the null and range predicates in
-`../c_src/src/driver.c`. The API returns `void`, so rejection is observable as
-exact stdout bytes.
+This table is derived from every C null/range check and every explicit error
+string in `src/driver.c`. There are no return-error statements, error enums,
+assertions, or error return values; every public function returns `void`, so
+the observable result is its exact stdout bytes.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | tested |
-|---|----------|---------------------------------------------|-------------------|--------|
-| E1 | `printLine` | `line == NULL` (inverse of line 31) | no output; returns `void` | [x] |
-| E2 | `bad` | `data < 0` (inverse of line 46) | `ERROR: Array index is negative.\n` | [x] |
-| E3 | `good` / `goodB2G` | `data < 0` (first false term at line 85) | ten fixed `goodG2B` integer lines, then `ERROR: Array index is out-of-bounds\n` | [x] |
-| E4 | `good` / `goodB2G` | `data >= 10` (second false term at line 85) | ten fixed `goodG2B` integer lines, then `ERROR: Array index is out-of-bounds\n` | [x] |
-| E5 | `driver` via `good` | `goodData < 0` | exact composed `driver` output with the `goodB2G` out-of-bounds error | [x] |
-| E6 | `driver` via `good` | `goodData >= 10` | exact composed `driver` output with the `goodB2G` out-of-bounds error | [x] |
-| E7 | `driver` via `bad` | `badData < 0` | exact composed `driver` output with the negative-index error | [x] |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `printLine` | `line == NULL` | Return without writing any bytes. | [x] |
+| 2 | `bad` | `data < 0` | Write `ERROR: Array index is negative.\n`. | [x] |
+| 3 | `good` | `data < 0` (the `goodB2G` lower-bound failure) | First write the fixed ten-line `goodG2B` buffer, then `ERROR: Array index is out-of-bounds\n`. | [x] |
+| 4 | `good` | `data >= 10` (the `goodB2G` upper-bound failure) | First write the fixed ten-line `goodG2B` buffer, then `ERROR: Array index is out-of-bounds\n`. | [x] |
+| 5 | `driver` | `goodData < 0` | Emit the driver framing, the fixed `goodG2B` buffer, the `goodB2G` out-of-bounds error, and then the selected `bad` result. | [x] |
+| 6 | `driver` | `goodData >= 10` | Emit the driver framing, the fixed `goodG2B` buffer, the `goodB2G` out-of-bounds error, and then the selected `bad` result. | [x] |
+| 7 | `driver` | `badData < 0` | Emit the driver framing and selected `good` result, then `ERROR: Array index is negative.\n`, then `Finished bad()\n`. | [x] |
 
-## Boundary Audit
+`goodG2B` contains an error branch for `data < 0`, but `data` is a fixed local
+constant equal to 7. No caller-controlled input can trigger that branch.
 
-- `goodG2B` has a syntactic negative-index error branch at lines 75-78, but
-  its local `data` is unconditionally initialized to `7` at line 63. No API
-  input can reach that branch, so it is not a constructible rejection row.
-- No length parameters, enums, error codes, error-return statements, asserts,
-  option setters, min/max macros, or compile-time feature branches exist.
-- `bad` checks only `data >= 0`; it does **not** reject `data >= 10`.
-  Such calls execute an out-of-bounds C write and therefore have undefined
-  behavior. The one-past boundary is compared only in isolated subprocesses.
+`bad` intentionally has no upper-bound rejection. `bad(10)` and the equivalent
+`driver` composition are covered separately as generic one-past-boundary
+differential tests, but they are not error-surface rows because C takes the
+nonnegative branch.
+
+Generic FFI boundaries:
+
+- The only pointer-taking API is `printLine`; its null boundary is row 1.
+- There are no length parameters or enums.
+- Integer zero is valid and is covered by the valid-path matrix.
+- `good(10)` is the one-past-upper-bound case and is row 4.
+- `bad(10)` and `driver(_, 10)` exercise the missing-upper-check boundary.

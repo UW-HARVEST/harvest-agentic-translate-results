@@ -1,23 +1,31 @@
 # Dynamic symbol surface
 
-Generated from:
+Derived with:
 
 ```text
-nm -D --defined-only --format=posix ../c_src/build/libharvest-work-ohM76p.so
-nm -D --defined-only --format=posix target/release/libunfilter_lib.so
+nm -D --defined-only ../c_src/build/libharvest-work-fDrOX9.so
+nm -D --defined-only target/release/libunfilter_lib.so
 ```
 
-| C symbol | ELF type | C size (hex) | Rust export | Status |
-|----------|----------|--------------|-------------|--------|
-| `cp_dist_base` | `D` | `0x80` | `cp_dist_base` | present |
-| `cp_dist_extra_bits` | `D` | `0x20` | `cp_dist_extra_bits` | present |
-| `cp_error_reason` | `B` | `0x8` | `cp_error_reason` | present |
-| `cp_fixed_table` | `D` | `0x140` | `cp_fixed_table` | present |
-| `cp_inflate` | `T` | `0x29b` | `cp_inflate` | present |
-| `cp_len_base` | `D` | `0x7c` | `cp_len_base` | present |
-| `cp_len_extra_bits` | `D` | `0x1f` | `cp_len_extra_bits` | present |
-| `cp_permutation_order` | `D` | `0x13` | `cp_permutation_order` | present |
-| `unfilter` | `T` | `0x470` | `unfilter` | present |
+The C shared object has nine defined public dynamic symbols. All nine are
+present under the same name in the Rust shared object.
 
-Missing C symbols in Rust: **0**
+| C symbol | kind | Rust export | status |
+|---|---:|---:|---:|
+| `cp_dist_base` | data | `cp_dist_base` | [x] |
+| `cp_dist_extra_bits` | data | `cp_dist_extra_bits` | [x] |
+| `cp_error_reason` | BSS pointer | `cp_error_reason` | [x] |
+| `cp_fixed_table` | data | `cp_fixed_table` | [x] |
+| `cp_inflate` | function | `cp_inflate` | [x] |
+| `cp_len_base` | data | `cp_len_base` | [x] |
+| `cp_len_extra_bits` | data | `cp_len_extra_bits` | [x] |
+| `cp_permutation_order` | data | `cp_permutation_order` | [x] |
+| `unfilter` | function | `unfilter` | [x] |
 
+Undefined C-library/runtime imports (`calloc`, `free`, `memcmp`, `memcpy`,
+`memset`, `__assert_fail`, and weak ELF runtime hooks) are not library exports
+and are therefore outside export parity.
+
+Phase D was rerun after the final release build: C defined symbols = 9, Rust
+defined symbols = 9, missing = 0, extra = 0. `ldd -r` reports no unresolved
+symbols in the Rust shared object.

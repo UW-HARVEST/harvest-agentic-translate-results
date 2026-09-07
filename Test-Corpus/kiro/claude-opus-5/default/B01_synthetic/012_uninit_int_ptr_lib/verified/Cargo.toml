@@ -8,33 +8,16 @@ name = "driver"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
+[dev-dependencies]
+libloading = "0.8"
+libc = "0.2"
+
+# `no_std` without an `eh_personality` lang item requires abort-on-panic in
+# every profile that builds the cdylib.
+[profile.dev]
+panic = "abort"
+
 [profile.release]
 panic = "abort"
 
 [workspace]
-
-[dev-dependencies]
-libloading = "0.8"
-
-# `harness = false` on every differential test target, for a concrete reason:
-# comparing the two libraries means capturing what they write to libc `stdout`,
-# which requires redirecting fd 1 — a process-global resource. libtest runs tests
-# on parallel threads and writes its own progress output ("ok", test names) to
-# fd 1 from those threads, so with the default harness a sibling test's progress
-# text lands inside a capture window and is misreported as a divergence. These
-# targets therefore use a small sequential runner (`common::run_tests`) that owns
-# stdout for the whole run.
-[[test]]
-name = "configs"
-path = "tests/configs.rs"
-harness = false
-
-[[test]]
-name = "errors"
-path = "tests/errors.rs"
-harness = false
-
-[[test]]
-name = "symbols"
-path = "tests/symbols.rs"
-harness = false

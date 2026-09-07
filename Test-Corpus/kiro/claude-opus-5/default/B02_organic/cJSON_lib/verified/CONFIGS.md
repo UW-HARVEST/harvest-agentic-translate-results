@@ -1,150 +1,164 @@
-# CONFIGS.md — configuration surface (valid inputs) of `c_src/cJSON.c` + `c_src/test.c`
+# CONFIGS.md — configuration-surface table (valid inputs)
 
-Derived mechanically from the C source: every runtime flag the public API can
-set, every `if`/`switch`/`#ifdef` the C branches on, and every input **shape**
-that is special-cased. One row per combination the C actually distinguishes.
+Derived mechanically from the branches the C code takes. Axes:
 
-## Axes found in the C source
+* **P** print mode: `cJSON_Print` (format=1) / `cJSON_PrintUnformatted` (format=0) /
+  `cJSON_PrintBuffered(prebuffer, fmt)` / `cJSON_PrintPreallocated(buf, len, fmt)` (noalloc=true)
+* **R** parse entry: `cJSON_Parse` / `cJSON_ParseWithLength(len)` /
+  `cJSON_ParseWithOpts(&end, req_nul)` / `cJSON_ParseWithLengthOpts(len, &end, req_nul)`
+* **CS** case sensitivity: `cJSON_GetObjectItem` (insensitive) vs `…CaseSensitive`
+* **REC** `cJSON_Duplicate(item, recurse)` 0/1
+* **CK** constant key: `cJSON_AddItemToObject` (strdup) vs `cJSON_AddItemToObjectCS` (const)
+* **H** allocator hooks: default vs `cJSON_InitHooks(custom)` — note this also switches
+  `reallocate` to NULL (only set when `allocate==malloc && deallocate==free`), which
+  changes the `ensure()` and `print()` growth paths.
+* **SHAPE** input shape (numbers, strings/escapes, containers, depth, flags)
 
-**Runtime flags (all `cJSON_bool`, i.e. any `int` across FFI)**
+`[x]` = differential test passes across randomized inputs (fixed seed).
 
-| flag | set by | branch it controls |
-|------|--------|--------------------|
-| `require_null_terminated` | `cJSON_ParseWithOpts`, `cJSON_ParseWithLengthOpts` | trailing-garbage check |
-| `format` / `fmt` | `cJSON_Print`(1), `cJSON_PrintUnformatted`(0), `cJSON_PrintBuffered`, `cJSON_PrintPreallocated` | `printbuffer.format` → indentation, `", "` vs `","`, `":\t"` vs `":"`, `"{\n"` vs `"{"` |
-| `noalloc` | `cJSON_PrintPreallocated`(1) vs all others(0) | `ensure` refuses to grow |
-| `case_sensitive` | `cJSON_GetObjectItem`(0)/`…CaseSensitive`(1), `Detach…`, `Replace…`, `cJSON_Compare` | `strcmp` vs `case_insensitive_strcmp` |
-| `recurse` | `cJSON_Duplicate` | children copied or not |
-| `boolean` | `cJSON_CreateBool`, `cJSON_AddBoolToObject` | `cJSON_True` vs `cJSON_False` |
-| `constant_key` | `cJSON_AddItemToObject`(0) vs `cJSON_AddItemToObjectCS`(1) | `cJSON_StringIsConst`, key strdup'd or aliased |
-| `cJSON_IsReference` | `cJSON_Create{String,Object,Array}Reference`, `cJSON_AddItemReferenceTo{Array,Object}` | `cJSON_Delete` skips child/valuestring; `cJSON_Duplicate` clears the bit |
-| `prebuffer` | `cJSON_PrintBuffered` | initial `printbuffer.length` → number of `ensure` growth steps |
-| `length` | `cJSON_PrintPreallocated` | success vs `false` |
-| `buffer_length` | `cJSON_ParseWithLength{,Opts}` | `can_read`/`can_access_at_index` bounds; NUL not required |
-| hooks | `cJSON_InitHooks` | `reallocate != NULL` → realloc path in `ensure`/`print`; `NULL` → allocate+memcpy path |
-| `ENABLE_LOCALES` | compile-time (**ON** in `CMakeLists.txt`) | `get_decimal_point()` = `localeconv()->decimal_point[0]` |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | cJSON_Version | no args; returns "1.7.19" | [x] |
+| 2 | cJSON_malloc / cJSON_free | default hooks; sizes 1,8,64,4096 round-trip | [x] |
+| 3 | cJSON_InitHooks(NULL) | resets to malloc/free/realloc; then full parse+print pipeline still works | [x] |
+| 4 | cJSON_InitHooks(hooks with both malloc_fn+free_fn) | `reallocate == NULL` path: `ensure()` uses allocate+memcpy, `print()` uses allocate+memcpy instead of realloc; run print of large doc through it | [x] |
+| 5 | cJSON_InitHooks(hooks, only malloc_fn set) | deallocate stays `free`; `reallocate` NULL (allocate != malloc) | [x] |
+| 6 | cJSON_InitHooks(hooks, only free_fn set) | allocate stays `malloc`; `reallocate` NULL (deallocate != free) | [x] |
+| 7 | cJSON_CreateNull / True / False | scalar creators; type byte + print in both formats | [x] |
+| 8 | cJSON_CreateBool(b) | b = 0, 1, and non-0/1 ints (2, -1, 0x100) | [x] |
+| 9 | cJSON_CreateNumber(d) | d integer-representable → `%d` print path; randomized ints incl. 0, ±1, INT_MAX, INT_MIN | [x] |
+| 10 | cJSON_CreateNumber(d) | d needing `%1.15g`; randomized doubles in ±1e±[0..300] | [x] |
+| 11 | cJSON_CreateNumber(d) | d needing `%1.17g` (15g round-trip fails); randomized full-precision doubles | [x] |
+| 12 | cJSON_CreateNumber(d) | d ≥ INT_MAX / ≤ INT_MIN → `valueint` saturation | [x] |
+| 13 | cJSON_CreateNumber(d) | d = NaN, +inf, -inf → prints `null` | [x] |
+| 14 | cJSON_CreateNumber(d) | d = -0.0, DBL_MIN, DBL_MAX, DBL_EPSILON subnormals | [x] |
+| 15 | cJSON_CreateString(s) | ASCII, empty string, 1-char, long (>4096) | [x] |
+| 16 | cJSON_CreateString(s) | s containing every escape-triggering char: `"` `\` `\b` `\f` `\n` `\r` `\t` | [x] |
+| 17 | cJSON_CreateString(s) | s containing control chars 0x01..0x1F → `\uXXXX` print path | [x] |
+| 18 | cJSON_CreateString(s) | s containing UTF-8 multibyte (2/3/4-byte) — copied through unescaped | [x] |
+| 19 | cJSON_CreateString(s) | randomized bytes 0x01..0xFF, mixed escape/no-escape (escape_characters==0 fast path vs slow) | [x] |
+| 20 | cJSON_CreateStringReference(s) | sets `cJSON_IsReference`; print, Delete (must not free), Duplicate strips flag | [x] |
+| 21 | cJSON_CreateRaw(s) | raw JSON emitted verbatim; both print formats; nested in array/object | [x] |
+| 22 | cJSON_CreateArray / CreateObject | empty container; print format=0 `[]`/`{}` vs format=1 | [x] |
+| 23 | cJSON_CreateObjectReference(child) / CreateArrayReference(child) | `cJSON_IsReference` set; print, Delete, Duplicate | [x] |
+| 24 | cJSON_CreateIntArray | count = 0, 1, 2, and randomized 3..64 with randomized int values incl. INT_MIN/INT_MAX | [x] |
+| 25 | cJSON_CreateFloatArray | count = 0, 1, randomized 2..64; randomized f32 values, incl. values whose f64 promotion needs 17g | [x] |
+| 26 | cJSON_CreateDoubleArray | count = 0, 1, randomized 2..64; randomized f64 values | [x] |
+| 27 | cJSON_CreateStringArray | count = 0, 1, randomized 2..64; randomized strings with escapes | [x] |
+| 28 | cJSON_AddItemToArray | build array element-by-element: 0→1 (empty-list branch), 1→2, n→n+1 (append-via-prev) | [x] |
+| 29 | cJSON_AddItemToObject (CK=strdup) | non-constant key: `cJSON_StringIsConst` cleared, key strdup'd; then Delete frees it | [x] |
+| 30 | cJSON_AddItemToObjectCS (CK=const) | constant key: `cJSON_StringIsConst` set; Delete must not free key | [x] |
+| 31 | cJSON_AddItemReferenceToArray | wraps item in reference; original still owned by caller | [x] |
+| 32 | cJSON_AddItemReferenceToObject | reference + non-constant key | [x] |
+| 33 | cJSON_AddNullToObject / AddTrueToObject / AddFalseToObject | convenience wrappers, returned item pointer + resulting print | [x] |
+| 34 | cJSON_AddBoolToObject | boolean = 0, 1, and non-0/1 | [x] |
+| 35 | cJSON_AddNumberToObject | randomized numbers, all three print paths | [x] |
+| 36 | cJSON_AddStringToObject | randomized strings with escapes | [x] |
+| 37 | cJSON_AddRawToObject | raw payloads | [x] |
+| 38 | cJSON_AddObjectToObject / AddArrayToObject | nested container creation, then populate the returned child | [x] |
+| 39 | cJSON_GetArraySize | size 0, 1, and randomized 2..64 | [x] |
+| 40 | cJSON_GetArrayItem | index 0, size-1, mid; randomized index over randomized array | [x] |
+| 41 | cJSON_GetObjectItem (CS=0) | key match differing only in case; duplicate keys (first match wins); `tolower` on non-ASCII bytes | [x] |
+| 42 | cJSON_GetObjectItemCaseSensitive (CS=1) | exact key match only | [x] |
+| 43 | cJSON_HasObjectItem | present / absent / case-differing (uses insensitive lookup) | [x] |
+| 44 | cJSON_GetStringValue | String item, and String-reference item | [x] |
+| 45 | cJSON_GetNumberValue | Number item; randomized values incl. NaN/inf | [x] |
+| 46 | cJSON_Is* (all 10) | called on one item of EVERY type incl. references and const-string flags — full 10×N matrix | [x] |
+| 47 | cJSON_SetNumberHelper | randomized doubles on a Number item: saturation of `valueint`, return value | [x] |
+| 48 | cJSON_SetValuestring | new string SHORTER or EQUAL length → in-place `strcpy` branch | [x] |
+| 49 | cJSON_SetValuestring | new string LONGER → strdup + free branch; randomized lengths | [x] |
+| 50 | cJSON_Print (P=format 1) | scalar, empty array, empty object, flat array, flat object, nested mix; randomized trees | [x] |
+| 51 | cJSON_PrintUnformatted (P=format 0) | same shapes as row 50 | [x] |
+| 52 | cJSON_PrintBuffered(prebuffer, fmt=1) | prebuffer = 0, 1, 2, 16, exact-size, huge (forces `ensure()` doubling loop repeatedly) | [x] |
+| 53 | cJSON_PrintBuffered(prebuffer, fmt=0) | same prebuffer sweep, unformatted | [x] |
+| 54 | cJSON_PrintPreallocated(buf, len, fmt=1) | len exactly sufficient (success), len = needed+5 (success) | [x] |
+| 55 | cJSON_PrintPreallocated(buf, len, fmt=0) | len exactly sufficient / generous, unformatted | [x] |
+| 56 | cJSON_PrintPreallocated | len = needed-1 (noalloc reject) — partial buffer contents compared too | [x] |
+| 57 | cJSON_Parse | randomized valid JSON documents (round-trip via generator) | [x] |
+| 58 | cJSON_Parse | numbers: `0`, `-0`, `1`, `-1`, `1.5`, `1e5`, `1E+5`, `1e-5`, `1e400` (inf), `-1e400`, `1e-400` (0), 20-digit ints | [x] |
+| 59 | cJSON_Parse | strings: all escapes `\" \\ \/ \b \f \n \r \t`, `\u0041`, `\u00e9`, `\u20ac`, valid surrogate pair `\ud83d\ude00` | [x] |
+| 60 | cJSON_Parse | leading UTF-8 BOM `\xEF\xBB\xBF` (only skipped at offset 0) | [x] |
+| 61 | cJSON_Parse | leading/interior/trailing whitespace incl. all bytes ≤ 0x20 | [x] |
+| 62 | cJSON_Parse | `[]`, `{}`, single-element `[1]` / `{"a":1}`, many-element (64) | [x] |
+| 63 | cJSON_Parse | nesting depth 1, 2, 100, 999 (just under CJSON_NESTING_LIMIT) for arrays and objects | [x] |
+| 64 | cJSON_ParseWithLength(len = strlen+1) | equivalent to Parse | [x] |
+| 65 | cJSON_ParseWithLength(len < strlen+1) | truncates the document mid-token — buffer bound enforced, no NUL needed | [x] |
+| 66 | cJSON_ParseWithLength(len > payload, no NUL) | non-NUL-terminated buffer parsed by length only | [x] |
+| 67 | cJSON_ParseWithOpts(&end, req_nul=0) | trailing garbage allowed; `*return_parse_end` offset checked on success | [x] |
+| 68 | cJSON_ParseWithOpts(&end, req_nul=1) | trailing whitespace allowed, trailing garbage rejected; `*end` on failure | [x] |
+| 69 | cJSON_ParseWithOpts(NULL, req_nul=0/1) | `return_parse_end == NULL` branch not taken | [x] |
+| 70 | cJSON_ParseWithLengthOpts(len, &end, req_nul=0) | full low-level entry, all 4 flag/len combos × randomized docs | [x] |
+| 71 | cJSON_ParseWithLengthOpts(len, &end, req_nul=1) | ditto with null-termination required | [x] |
+| 72 | cJSON_GetErrorPtr | after a successful parse and after each failing parse — global offset pointer | [x] |
+| 73 | parse → print round trip (P=1) | randomized docs: `cJSON_Parse` then `cJSON_Print`, byte-compare | [x] |
+| 74 | parse → print round trip (P=0) | randomized docs: `cJSON_Parse` then `cJSON_PrintUnformatted` | [x] |
+| 75 | parse → print round trip (PrintBuffered, both fmt) | randomized docs × prebuffer sweep | [x] |
+| 76 | parse → print round trip (PrintPreallocated, both fmt) | randomized docs, exact and short buffers | [x] |
+| 77 | cJSON_Duplicate(REC=1) | deep copy of randomized nested trees; then Compare and Print both copies | [x] |
+| 78 | cJSON_Duplicate(REC=0) | shallow copy — children NOT copied; print of shallow copy differs from original | [x] |
+| 79 | cJSON_Duplicate | items with `cJSON_IsReference` (flag stripped) and `cJSON_StringIsConst` (key not strdup'd) | [x] |
+| 80 | cJSON_Duplicate | depth just under CJSON_CIRCULAR_LIMIT vs at/over it | [x] |
+| 81 | cJSON_Compare(case_sensitive=1) | equal / unequal randomized trees; objects with same keys different order | [x] |
+| 82 | cJSON_Compare(case_sensitive=0) | object keys differing only in case → equal | [x] |
+| 83 | cJSON_Compare | `a == b` identical pointer shortcut; every type pair (10×10 matrix) | [x] |
+| 84 | cJSON_Compare | Number values near `compare_double` epsilon threshold (equal-within-epsilon) | [x] |
+| 85 | cJSON_DetachItemViaPointer | detach first child / middle child / last child / only child of array and object | [x] |
+| 86 | cJSON_DetachItemFromArray | which = 0, mid, size-1 over randomized arrays | [x] |
+| 87 | cJSON_DetachItemFromObject (CS=0) / …CaseSensitive (CS=1) | key match with/without case difference | [x] |
+| 88 | cJSON_DeleteItemFromArray | which = 0, mid, size-1; resulting print compared | [x] |
+| 89 | cJSON_DeleteItemFromObject / …CaseSensitive | present key, both case modes | [x] |
+| 90 | cJSON_InsertItemInArray | which = 0 (head insert), mid, size-1, size (append fallback) | [x] |
+| 91 | cJSON_ReplaceItemViaPointer | replace head child, middle, last, only child (child->prev == child branch) in array and object | [x] |
+| 92 | cJSON_ReplaceItemInArray | which = 0, mid, size-1 | [x] |
+| 93 | cJSON_ReplaceItemInObject (CS=0) / …CaseSensitive (CS=1) | present key, both case modes; replacement gets the key strdup'd | [x] |
+| 94 | cJSON_Minify | whitespace-only, `//` line comment, `/* */` block comment, string containing `//` and `\"`, unterminated comment, randomized formatted JSON | [x] |
+| 95 | cJSON_Delete | every type, references, const keys, deep trees (no leak/double-free observable via subsequent ops) | [x] |
+| 96 | cJSON_SetIntValue / SetNumberValue / SetBoolValue (header macros) | replicated call sequences on Number/Bool items; observable via GetNumberValue + Print | [x] |
+| 97 | driver (test.c translation) | C `libcJSON_test.so` vs Rust `.so`: same `strings[7]`, `numbers[3][3]`, `ids[4]`, `record[2]` inputs; stdout compared byte-for-byte, incl. `1.0/0.0` → `null` case and the `PrintPreallocated`-too-small path | [x] |
+| 98 | driver | randomized `strings`/`numbers`/`ids`/`record` payloads (incl. escapes and extreme doubles), stdout byte-compared | [x] |
+| 99 | full pipeline composition | Parse → mutate (Add/Detach/Replace/Insert) → Duplicate → Compare → Print, randomized op sequences with a fixed seed | [x] |
+| 100 | full pipeline under custom hooks | row 99 repeated after `cJSON_InitHooks(custom)` so the no-`reallocate` growth path is exercised end to end | [x] |
+| 101 | all number entry points, `LC_NUMERIC` = `de_DE.utf8` | `ENABLE_LOCALES` is ON in the C build, so `get_decimal_point()` returns `,`: `parse_number` rewrites `.`→`,` before `strtod` and `print_number` rewrites `,`→`.` on output. Exercised over the full number corpus + randomized documents (test asserts `localeconv()->decimal_point == ','`, so the branch is provably taken) | [x] |
+| 102 | all number entry points, `LC_ALL=C` | baseline decimal point `.` | [x] |
+| 103 | Print / PrintUnformatted / PrintBuffered / PrintPreallocated at nesting depth 1…999 | `print_array`/`print_object` emit `depth` indentation tabs per level when `format=1`; deep trees drive many more `ensure()` growth rounds, and `PrintPreallocated` is checked at exactly-sufficient and one-byte-short lengths at every depth | [x] |
+| 104 | mixed-ownership container + `cJSON_Delete` | one container holding an owned child, a `cJSON_IsReference` child and a `cJSON_StringIsConst` key; after `Delete` the referenced tree must still be intact and printable | [x] |
+| 105 | every operation under a hook allocator | C and Rust must perform the **same number** of allocations for 17 representative operations (Parse, Print, PrintUnformatted, PrintBuffered, Duplicate, all constructors, Add*, Replace*, SetValuestring) — an allocation-count difference would mean the translation restructured the algorithm | [x] |
 
-**Input shapes the C special-cases**
+## Feature combinations
 
-- 8 item types (`cJSON_Invalid/False/True/NULL/Number/String/Array/Object/Raw`), masked `& 0xFF`; plus the `cJSON_IsReference`/`cJSON_StringIsConst` high bits.
-- Numbers: `d == (double)valueint` (integer fast path) · `%1.15g` round-trip OK · `%1.15g` round-trip fails ⇒ `%1.17g` · `isnan`/`isinf` ⇒ `"null"` · `INT_MAX`/`INT_MIN` saturation · `-0.0`.
-- Strings: empty · no-escape fast path (`memcpy`) · escape path (`\" \\ \b \f \n \r \t`) · `< 32` ⇒ `\u00xx` · raw bytes `> 127` passed through · `\u` BMP · `\u` surrogate pair.
-- Containers: empty · 1 element · many · nesting depth 1 … 999 / 1000 / 1001 (`CJSON_NESTING_LIMIT`).
-- Objects: empty key · duplicate keys · keys differing only in case · `string == NULL` child.
-- Parse input: leading whitespace (`<= 32`) · UTF-8 BOM · trailing garbage · non-NUL-terminated slice · exact-length slice.
-- `cJSON_Minify`: whitespace · `//` comment · `/* */` comment · `/` not a comment · string with `\"` · unterminated forms.
-- Print buffer growth: fits in the initial 256 bytes vs forces one or more `ensure` reallocations (`needed*2` vs `INT_MAX` clamp).
+`translation/Cargo.toml` declares **no `[features]`** table, so the only cargo
+feature configuration is the default (empty) one. Verified mechanically:
 
-## Configuration table
+```
+$ grep -c '^\[features\]' translation/Cargo.toml   # 0
+```
 
-| # | entry point(s) | configuration (options set + input shape) | covering test | [ ] |
-|---|----------------|--------------------------------------------|---------------|-----|
-| 1 | `cJSON_Parse` → `cJSON_Print` | round-trip, randomized JSON documents (all 8 types mixed), `format=1` || `phase_b_valid::row_1_2_15_35_randomized_documents` | [x] |
-| 2 | `cJSON_Parse` → `cJSON_PrintUnformatted` | same corpus, `format=0` || `phase_b_valid::row_1_2_15_35_randomized_documents` | [x] |
-| 3 | `cJSON_ParseWithOpts` | `return_parse_end = NULL`, `require_null_terminated = 0` || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 4 | `cJSON_ParseWithOpts` | `return_parse_end != NULL`, `require_null_terminated = 0`, trailing garbage present — compare returned end offset || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 5 | `cJSON_ParseWithOpts` | `return_parse_end != NULL`, `require_null_terminated = 1`, clean input || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 6 | `cJSON_ParseWithOpts` | `require_null_terminated` ∈ {2, -1, INT_MAX, INT_MIN} (out-of-range bool) || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 7 | `cJSON_ParseWithLength` | `buffer_length` = exact `strlen` (no NUL visible) || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 8 | `cJSON_ParseWithLength` | `buffer_length` = `strlen + 1` || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 9 | `cJSON_ParseWithLength` | `buffer_length` < `strlen` (truncated mid-token, every truncation point) || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 10 | `cJSON_ParseWithLength` | `buffer_length` > `strlen + 1` (embedded NUL then garbage) || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 11 | `cJSON_ParseWithLengthOpts` | all 4 args exercised: length × `return_parse_end` × `require_null_terminated` || `phase_b_valid::rows_3_11_parse_entry_points_matrix` | [x] |
-| 12 | `cJSON_Parse` | leading whitespace / tabs / CR / LF / bytes `<= 32` before the value || `phase_b_valid::row_12_whitespace_sprinkled_documents` | [x] |
-| 13 | `cJSON_Parse` | UTF-8 BOM `EF BB BF` prefix (and BOM-only input) || `phase_b_valid::row_13_utf8_bom` | [x] |
-| 14 | `cJSON_Parse` + `cJSON_GetErrorPtr` | failing parses — compare error offset for every prefix of a corpus || `phase_b_valid::row_14_error_pointer_for_every_prefix` | [x] |
-| 15 | `cJSON_Parse` | scalar `null` / `true` / `false` alone || `phase_b_valid::row_15_16_scalars_and_numbers` | [x] |
-| 16 | `cJSON_Parse` | numbers: integers, negatives, `0`, `-0`, exponents, `1e309` (inf), `1e-320` (subnormal), 17-sig-digit values, `2147483647`, `2147483648`, `-2147483648`, `-2147483649` || `phase_b_valid::row_15_16_scalars_and_numbers` | [x] |
-| 17 | `cJSON_Parse` | strings: empty, ASCII, all single-char escapes, `\u0000`–`\uFFFF` sweep, surrogate pairs, raw UTF-8 ≥ 0x80, control bytes || `phase_b_valid::row_17_strings_and_escapes` | [x] |
-| 18 | `cJSON_Parse` | arrays: `[]`, `[x]`, many elements, mixed types || `phase_b_valid::row_18_19_containers` | [x] |
-| 19 | `cJSON_Parse` | objects: `{}`, one key, many keys, duplicate keys, empty key `""`, keys differing only in case || `phase_b_valid::row_18_19_containers` | [x] |
-| 20 | `cJSON_Parse` | nesting depth 1, 2, 998, 999, 1000, 1001 for `[` and `{` (`CJSON_NESTING_LIMIT`) || `phase_b_valid::row_20_nesting_limit + phase_c_errors::rows_85_95_nesting_limit_exact_boundary` | [x] |
-| 21 | `cJSON_Print` | randomized trees, `format=1`, output larger than the 256-byte initial buffer (forces `ensure` growth) || `phase_b_valid::row_1_2_15_35_randomized_documents (render_all + preallocated_profile)` | [x] |
-| 22 | `cJSON_PrintUnformatted` | same trees, `format=0` || `phase_b_valid::row_1_2_15_35_randomized_documents (render_all + preallocated_profile)` | [x] |
-| 23 | `cJSON_PrintBuffered` | `prebuffer` ∈ {0, 1, 2, 8, 255, 256, 257, exact, exact+1, 4096} × `fmt` ∈ {0,1} || `phase_b_valid::row_1_2_15_35_randomized_documents (render_all + preallocated_profile)` | [x] |
-| 24 | `cJSON_PrintBuffered` | `fmt` ∈ {2, -1, INT_MAX} (out-of-range bool) || `phase_b_valid::row_1_2_15_35_randomized_documents (render_all + preallocated_profile)` | [x] |
-| 25 | `cJSON_PrintPreallocated` | `length` = exact rendered length + 1 (success), `fmt` ∈ {0,1} || `phase_b_valid::row_1_2_15_35_randomized_documents (render_all + preallocated_profile)` | [x] |
-| 26 | `cJSON_PrintPreallocated` | `length` swept from 0 to len+8 — find the exact success threshold (`noalloc` + `ensure`) || `phase_b_valid::row_1_2_15_35_randomized_documents (render_all + preallocated_profile)` | [x] |
-| 27 | `cJSON_PrintPreallocated` | `format` ∈ {2, -1} || `phase_b_valid::row_1_2_15_35_randomized_documents (render_all + preallocated_profile)` | [x] |
-| 28 | `cJSON_Print*` | item types: Invalid(0), False, True, NULL, Number, String, Array, Object, Raw || `phase_b_valid::rows_28_34_print_handbuilt_items` | [x] |
-| 29 | `cJSON_Print*` | `cJSON_Raw` item whose `valuestring` is arbitrary text (copied verbatim) || `phase_b_valid::rows_28_34_print_handbuilt_items` | [x] |
-| 30 | `cJSON_Print*` | numbers requiring the `%1.17g` fallback vs the `%1.15g` path vs the integer `%d` path || `phase_b_valid::rows_28_34_print_handbuilt_items` | [x] |
-| 31 | `cJSON_Print*` | number = NaN, +inf, -inf ⇒ `"null"`; `-0.0` || `phase_b_valid::rows_28_34_print_handbuilt_items` | [x] |
-| 32 | `cJSON_Print*` | strings on the no-escape `memcpy` fast path vs the escape path vs `<32` `\u00xx` path || `phase_b_valid::rows_28_34_print_handbuilt_items` | [x] |
-| 33 | `cJSON_Print*` | `valuestring == NULL` on a String item ⇒ `""` || `phase_b_valid::rows_28_34_print_handbuilt_items` | [x] |
-| 34 | `cJSON_Print*` | object with `string == NULL` key ⇒ `""` key || `phase_b_valid::rows_28_34_print_handbuilt_items` | [x] |
-| 35 | `cJSON_Print*` (formatted) | nested objects/arrays depth 1..6 — indentation (`depth` tabs) || `phase_b_valid::row_18_19_containers + row_1_2_15_35_randomized_documents` | [x] |
-| 36 | `cJSON_CreateNumber` | value sweep: ints, fractions, `INT_MAX±1`, `INT_MIN±1`, `1e300`, `-1e300`, NaN, ±inf, `-0.0` — compare `valueint`+`valuedouble` bits || `phase_b_valid::row_36_create_number_sweep` | [x] |
-| 37 | `cJSON_CreateBool` | `boolean` ∈ {0, 1, 2, -1, INT_MAX, INT_MIN} || `phase_b_api::row_37_52_create_bool_and_add_bool` | [x] |
-| 38 | `cJSON_CreateString` / `CreateRaw` | empty, ASCII, embedded escapes, high bytes || `phase_b_api::row_38_create_string_and_raw` | [x] |
-| 39 | `cJSON_CreateStringReference` | valid string, then `cJSON_Print` and `cJSON_Delete` (`cJSON_IsReference` ⇒ valuestring not freed) || `phase_b_api::row_39_40_reference_items` | [x] |
-| 40 | `cJSON_CreateObjectReference` / `CreateArrayReference` | referencing a live child list; print + delete || `phase_b_api::row_39_40_reference_items` | [x] |
-| 41 | `cJSON_CreateIntArray` | `count` ∈ {0, 1, 2, 16, 256} × randomized `i32` values incl. `INT_MIN`/`INT_MAX` || `phase_b_api::rows_41_44_typed_array_constructors` | [x] |
-| 42 | `cJSON_CreateFloatArray` | `count` ∈ {0,1,2,16} × randomized `f32` incl. subnormals, NaN, ±inf || `phase_b_api::rows_41_44_typed_array_constructors` | [x] |
-| 43 | `cJSON_CreateDoubleArray` | `count` ∈ {0,1,2,16} × randomized `f64` incl. NaN, ±inf, `-0.0` || `phase_b_api::rows_41_44_typed_array_constructors` | [x] |
-| 44 | `cJSON_CreateStringArray` | `count` ∈ {0,1,2,7,16} × randomized strings (as used by `driver`) || `phase_b_api::rows_41_44_typed_array_constructors` | [x] |
-| 45 | `cJSON_AddItemToArray` | append into empty / 1-element / n-element array; then print + `GetArraySize` || `phase_b_api::rows_45_48_add_item_to_object_const_vs_copied` | [x] |
-| 46 | `cJSON_AddItemToObject` | `constant_key = 0` — key strdup'd, `cJSON_StringIsConst` cleared || `phase_b_api::rows_45_48_add_item_to_object_const_vs_copied` | [x] |
-| 47 | `cJSON_AddItemToObjectCS` | `constant_key = 1` — key aliased, `cJSON_StringIsConst` set; verify `type` bits and print || `phase_b_api::rows_45_48_add_item_to_object_const_vs_copied` | [x] |
-| 48 | `cJSON_AddItemToObject` then re-add same item under a new key | old `item->string` freed (non-const) vs kept (const) || `phase_b_api::rows_45_48_add_item_to_object_const_vs_copied` | [x] |
-| 49 | `cJSON_AddItemReferenceToArray` | reference to a subtree; print parent, delete parent, subtree survives || `phase_b_api::rows_49_50_add_item_reference` | [x] |
-| 50 | `cJSON_AddItemReferenceToObject` | same, keyed || `phase_b_api::rows_49_50_add_item_reference` | [x] |
-| 51 | `cJSON_Add{Null,True,False,Bool,Number,String,Raw,Object,Array}ToObject` | all 9 helpers on a fresh object, then print || `phase_b_api::row_37_52_create_bool_and_add_bool (build_kitchen_sink)` | [x] |
-| 52 | `cJSON_AddBoolToObject` | `boolean` ∈ {0,1,2,-1} || `phase_b_api::row_37_52_create_bool_and_add_bool (build_kitchen_sink)` | [x] |
-| 53 | `cJSON_GetArraySize` | array of size 0..n; object; scalar; reference item || `phase_b_api::rows_53_58_queries` | [x] |
-| 54 | `cJSON_GetArrayItem` | `index` = 0, mid, size-1, size, size+1 over sizes 0..n || `phase_b_api::rows_53_58_queries` | [x] |
-| 55 | `cJSON_GetObjectItem` | `case_sensitive = 0`: exact key, differing-case key, absent key, duplicate keys (first match) || `phase_b_api::rows_53_58_queries` | [x] |
-| 56 | `cJSON_GetObjectItemCaseSensitive` | `case_sensitive = 1`: same set || `phase_b_api::rows_53_58_queries` | [x] |
-| 57 | `cJSON_HasObjectItem` | present / absent / differing case || `phase_b_api::rows_53_58_queries` | [x] |
-| 58 | `cJSON_GetStringValue` / `cJSON_GetNumberValue` | on each of the 9 item types || `phase_b_api::rows_53_58_queries` | [x] |
-| 59 | `cJSON_DetachItemViaPointer` | detach first / middle / last / only element of an array and of an object; then print parent || `phase_b_api::rows_59_60_62_detach_and_delete_array` | [x] |
-| 60 | `cJSON_DetachItemFromArray` | `which` = 0, mid, last, out-of-range, over sizes 0..n || `phase_b_api::rows_59_60_62_detach_and_delete_array` | [x] |
-| 61 | `cJSON_DetachItemFromObject{,CaseSensitive}` | present, differing case, absent || `phase_b_api::rows_61_63_detach_and_delete_object` | [x] |
-| 62 | `cJSON_DeleteItemFromArray` | `which` = 0, mid, last, out-of-range || `phase_b_api::rows_59_60_62_detach_and_delete_array` | [x] |
-| 63 | `cJSON_DeleteItemFromObject{,CaseSensitive}` | present, differing case, absent || `phase_b_api::rows_61_63_detach_and_delete_object` | [x] |
-| 64 | `cJSON_InsertItemInArray` | `which` = 0 (head), mid, size-1, size (append fallback), size+1, over sizes 0..n || `phase_b_api::row_64_insert_item_in_array` | [x] |
-| 65 | `cJSON_ReplaceItemViaPointer` | replace first (single-element and multi-element), middle, last; `replacement == item` || `phase_b_api::rows_65_66_replace_in_array` | [x] |
-| 66 | `cJSON_ReplaceItemInArray` | `which` = 0, mid, last, out-of-range || `phase_b_api::rows_65_66_replace_in_array` | [x] |
-| 67 | `cJSON_ReplaceItemInObject` | `case_sensitive = 0`: present, differing case, absent || `phase_b_api::rows_67_68_replace_in_object` | [x] |
-| 68 | `cJSON_ReplaceItemInObjectCaseSensitive` | `case_sensitive = 1`: same set || `phase_b_api::rows_67_68_replace_in_object` | [x] |
-| 69 | `cJSON_Duplicate` | `recurse = 0` on every item type (children dropped) || `phase_b_api::rows_69_73_duplicate` | [x] |
-| 70 | `cJSON_Duplicate` | `recurse = 1` on deep randomized trees || `phase_b_api::rows_69_73_duplicate` | [x] |
-| 71 | `cJSON_Duplicate` | `recurse` ∈ {2, -1} (out-of-range bool) || `phase_b_api::rows_69_73_duplicate` | [x] |
-| 72 | `cJSON_Duplicate` | item with `cJSON_IsReference` set (bit must be cleared in the copy) || `phase_b_api::rows_69_73_duplicate` | [x] |
-| 73 | `cJSON_Duplicate` | item with `cJSON_StringIsConst` key (pointer aliased, not strdup'd) || `phase_b_api::rows_69_73_duplicate` | [x] |
-| 74 | `cJSON_Duplicate` at nesting depth 10, 9998, 9999, 10000, 10001, 10002 | `CJSON_CIRCULAR_LIMIT` (10000). `cJSON_Duplicate_rec` itself is `-fvisibility=hidden` in the C build, so its `depth` argument is driven indirectly by tree depth || `phase_b_api::row_74_duplicate_circular_limit` | [x] |
-| 75 | `cJSON_Compare` | `case_sensitive = 0`, equal / unequal pairs across all 9 types || `phase_b_api::rows_75_78_compare` | [x] |
-| 76 | `cJSON_Compare` | `case_sensitive = 1`, same pairs plus case-differing object keys || `phase_b_api::rows_75_78_compare` | [x] |
-| 77 | `cJSON_Compare` | `case_sensitive` ∈ {2, -1}; `a == b` aliasing; nested arrays/objects; subset objects || `phase_b_api::rows_75_78_compare` | [x] |
-| 78 | `cJSON_Compare` | Number pairs straddling the `compare_double` / `DBL_EPSILON` threshold || `phase_b_api::rows_75_78_compare` | [x] |
-| 79 | `cJSON_Minify` | whitespace only, `//` comment (with and without trailing `\n`), `/* */`, unterminated `/*`, lone `/`, string containing `\"`, `//` inside a string, unterminated string, empty input || `phase_b_api::row_79_minify_edge_cases` | [x] |
-| 80 | `cJSON_Minify` | randomized JSON documents with injected comments/whitespace — compare minified bytes || `phase_b_api::row_80_minify_randomized` | [x] |
-| 81 | `cJSON_SetValuestring` | new shorter than old (in-place `strcpy`), equal length, longer (realloc), on a Raw item, on a reference item || `phase_b_api::row_81_set_valuestring` | [x] |
-| 82 | `cJSON_SetNumberHelper` | value sweep incl. `INT_MAX`/`INT_MIN` boundaries, NaN, ±inf — compare `valueint`/`valuedouble` || `phase_b_valid::row_82_set_number_helper_sweep` | [x] |
-| 83 | `cJSON_Version` | returned string bytes || `phase_b_valid::rows_83_84_version_malloc_free` | [x] |
-| 84 | `cJSON_malloc` / `cJSON_free` | default hooks; sizes 0, 1, 4096 || `phase_b_valid::rows_83_84_version_malloc_free` | [x] |
-| 85 | `cJSON_InitHooks` | `hooks = NULL` (reset) then full parse/print round-trip || `phase_bc_hooks::rows_85_88_hook_configurations` | [x] |
-| 86 | `cJSON_InitHooks` | custom malloc **and** custom free ⇒ `reallocate = NULL` ⇒ `ensure`/`print` take the allocate+memcpy path; full round-trip with growth || `phase_bc_hooks::rows_85_88_hook_configurations` | [x] |
-| 87 | `cJSON_InitHooks` | `hooks->malloc_fn = NULL`, `free_fn` custom || `phase_bc_hooks::rows_85_88_hook_configurations` | [x] |
-| 88 | `cJSON_InitHooks` | `hooks->free_fn = NULL`, `malloc_fn` custom || `phase_bc_hooks::rows_85_88_hook_configurations` | [x] |
-| 89 | `cJSON_InitHooks` | custom hooks that count allocations — compare the **allocation sequence** (sizes, order, count) between C and Rust for a fixed workload || `phase_bc_hooks::row_86_89_allocation_sequence_matches + ::init_hooks_realloc_selection_is_observable_via_alloc_trace` | [x] |
-| 90 | `driver` (`test.c`) | full end-to-end run with randomized `strings[7]`, `numbers[3][3]`, `ids[4]`, `record fields[2]` — compare captured stdout byte-for-byte || `phase_b_driver::row_90_driver_stdout_matches` | [x] |
-| 91 | composed pipeline | parse → mutate (insert/replace/detach) → duplicate → compare → print, randomized program of operations, fixed seed || `phase_b_api::rows_91_92_composed_pipeline` | [x] |
-| 92 | print after mutation | print an object/array whose links were rewired by `Detach`/`Insert`/`Replace` (exercises `child->prev` bookkeeping) || `phase_b_api::rows_91_92_composed_pipeline` | [x] |
-| 93 | locale | `ENABLE_LOCALES=ON`; process locale left at `"C"` ⇒ `decimal_point == '.'` (the only locale guaranteed present); both libraries observe the same `localeconv()` || `all of the above (process locale left at "C"; both libraries call the same `localeconv`)` | [x] |
+Therefore "every feature combination" = the single default configuration. The
+compile-time axes that DO exist live in the C build (`ENABLE_LOCALES`,
+`CJSON_NESTING_LIMIT`, `CJSON_CIRCULAR_LIMIT`, visibility macros); the C library
+under test is built with the CMake defaults (`ENABLE_LOCALES=ON`,
+`ENABLE_PUBLIC_SYMBOLS=ON`) and the Rust translation is compared against exactly
+that build. The locale axis is exercised at runtime in rows 9–14 and 58 (the
+`get_decimal_point()` path) under the process's active `LC_NUMERIC`.
 
-## Result
+## Where each row is verified
 
-All **93** rows pass across randomized inputs (fixed seeds, see
-`Rng::new(0x5EED_....)` in each test) under every configuration verified by
-`scripts/verify_all.sh`.
+| test file | rows |
+|-----------|------|
+| `tests/a_symbols.rs` | symbol resolution smoke test |
+| `tests/b_configs_core.rs` | 1-49, 96 |
+| `tests/b_configs_parse_print.rs` | 50-96, 99-100, 103-104 |
+| `tests/b_driver.rs` | 97-98 |
+| `tests/b_locale.rs` | 101-102 |
+| `tests/c_errors.rs` | every `ERRORS.md` row, G1-G7, row 105 |
 
-### Feature combinations
+Every test loads BOTH shared objects through `libloading` and calls only
+exported symbols; no Rust function is called directly, so the `#[no_mangle]`
+wrappers are themselves under test.  `run_verification.sh` rebuilds the C
+libraries and runs the whole suite against BOTH the debug and the release
+cdylib, then diffs `nm -D`.
 
-`translation/Cargo.toml` has **no `[features]` table**, so there is exactly one
-feature configuration. `scripts/verify_all.sh` still enumerates the table
-mechanically and runs the whole suite for the default set *and* for
-`--no-default-features`, in both the `dev` and `release` cargo profiles
-(`release` additionally enables `panic = "abort"`), giving 4 verified
-configurations. If a `[features]` table is ever added, the script expands to the
-full power set automatically.
+The harness refuses to run against a stale `.so`: `cargo test` does not rebuild
+a `cdylib` that no Rust target links against, so `tests/harness/mod.rs` compares
+the `.so` mtime against `src/**/*.rs` and fails loudly instead of silently
+verifying an old binary.

@@ -193,6 +193,13 @@ pub extern "C" fn c2AABBtoAABB(A: c2AABB, B: c2AABB) -> c_int {
 /// The pointers are dereferenced according to the supplied type tags, exactly
 /// as the C does — including the AABB/CIRCLE case, which reinterprets `B` as
 /// the circle and `A` as the box. Unknown type tags yield `0`.
+///
+/// `read_unaligned` is used rather than a plain dereference because the C
+/// performs `*(c2Circle *)A` on a `const void *` that carries no alignment
+/// guarantee: on x86-64 that lowers to ordinary loads which succeed for any
+/// address, so a caller may legitimately pass a misaligned pointer. A plain
+/// Rust `*ptr` would be UB there (and aborts under debug assertions), so the
+/// unaligned read is what actually matches the C's observable behaviour.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn collided(
     A: *const core::ffi::c_void,
@@ -200,25 +207,28 @@ pub unsafe extern "C" fn collided(
     B: *const core::ffi::c_void,
     typeB: c_int,
 ) -> c_int {
+    use core::ptr::read_unaligned;
     match typeA {
         C2_TYPE_CIRCLE => match typeB {
-            C2_TYPE_CIRCLE => {
-                c2CircletoCircle(unsafe { *(A as *const c2Circle) }, unsafe {
-                    *(B as *const c2Circle)
-                })
-            }
-            C2_TYPE_AABB => c2CircletoAABB(unsafe { *(A as *const c2Circle) }, unsafe {
-                *(B as *const c2AABB)
-            }),
+            C2_TYPE_CIRCLE => c2CircletoCircle(
+                unsafe { read_unaligned(A as *const c2Circle) },
+                unsafe { read_unaligned(B as *const c2Circle) },
+            ),
+            C2_TYPE_AABB => c2CircletoAABB(
+                unsafe { read_unaligned(A as *const c2Circle) },
+                unsafe { read_unaligned(B as *const c2AABB) },
+            ),
             _ => 0,
         },
         C2_TYPE_AABB => match typeB {
-            C2_TYPE_CIRCLE => c2CircletoAABB(unsafe { *(B as *const c2Circle) }, unsafe {
-                *(A as *const c2AABB)
-            }),
-            C2_TYPE_AABB => {
-                c2AABBtoAABB(unsafe { *(A as *const c2AABB) }, unsafe { *(B as *const c2AABB) })
-            }
+            C2_TYPE_CIRCLE => c2CircletoAABB(
+                unsafe { read_unaligned(B as *const c2Circle) },
+                unsafe { read_unaligned(A as *const c2AABB) },
+            ),
+            C2_TYPE_AABB => c2AABBtoAABB(
+                unsafe { read_unaligned(A as *const c2AABB) },
+                unsafe { read_unaligned(B as *const c2AABB) },
+            ),
             _ => 0,
         },
         _ => 0,

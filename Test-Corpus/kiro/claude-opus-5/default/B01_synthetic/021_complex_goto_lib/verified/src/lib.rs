@@ -85,14 +85,6 @@ fn c_print(s: &[u8]) {
 /// for some inputs (e.g. `x == 1, y == -1` loops forever), which is signed
 /// overflow in C. Wrapping matches what the C compiler actually emits rather
 /// than panicking.
-///
-/// # Safety
-///
-/// This function is `unsafe` only because it is an `extern "C"` export. It
-/// dereferences nothing and touches no caller-provided memory, so any `x` and
-/// `y` are accepted. The one caveat is inherited from the C: for
-/// `x > 0 && y < 0` the loop never terminates, exactly as in
-/// `c_src/src/driver.c`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(x: c_int, y: c_int) {
     let mut x = x;

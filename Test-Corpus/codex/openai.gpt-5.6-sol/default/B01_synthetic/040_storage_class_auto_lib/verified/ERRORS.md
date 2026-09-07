@@ -1,12 +1,14 @@
 # Error Surface
 
-Mechanical scans covered all C headers and sources for error returns, null and
-range checks, assertions, switches, and conditional branches. The public API
-has no rejection paths: `driver(int)` returns `void`, accepts the full C `int`
-domain, and has no pointer, length, enum, or option parameters.
+Mechanical searches of `../c_src/include/` and `../c_src/src/` found no
+error-return statements or macros, assertions, explicit range checks, null
+checks, error enums, or min/max constants. The sole public API accepts an
+`int` by value, returns `void`, and has no rejection path.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|---------------------------------------------|-------------------|--------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|---------------------------------------------|-------------------|----------|
 
-Generic FFI boundaries for null pointers, lengths, and out-of-range enums are
-not applicable to this scalar-only API.
+Generic pointer, length, and enum error boundaries do not apply to this API.
+The full C `int` boundary is valid input and is covered by `CONFIGS.md`.
+
+Phase C status: complete; the mechanically derived error surface has zero rows.

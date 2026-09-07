@@ -1,49 +1,65 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — exported-symbol parity
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from:
 
 ```
 nm -D --defined-only c_src/build/libdriver.so
 nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-## C `.so` exported (defined) symbols
+## C source inventory (`c_src/src/lib.c`)
 
-| # | symbol | type | exported by Rust `.so`? |
-|---|--------|------|-------------------------|
-| 1 | `FIO_createFilename_fromOutDir` | `T` (text, global) | YES |
-| 2 | `extractFilename`               | `T` (text, global) | YES |
+The whole library is one translation unit. Every function definition in it:
 
-`extractFilename` is *not* declared in `include/lib.h`, but it is a non-`static`
-function in `src/lib.c`, so the C build exports it. It is therefore part of the
-ABI surface and is exported (and differentially tested) from Rust as well.
+| C definition | `static`? | expected to be exported |
+|---|---|---|
+| `const char* extractFilename(const char* path, char separator)` | no | yes |
+| `char* FIO_createFilename_fromOutDir(const char* path, const char* outDirName, const size_t suffixLen)` | no | yes |
 
-## Symbol diff
+`c_src/include/lib.h` declares only `FIO_createFilename_fromOutDir`, but
+`extractFilename` has external linkage in `lib.c` and therefore lands in the
+dynamic symbol table too. It must be exported by Rust as well.
+
+No macros generate additional symbols; there are no global/static data objects.
+
+## Parity table
+
+| # | symbol | type | in C `.so` | in Rust `.so` | status |
+|---|--------|------|-----------|---------------|--------|
+| 1 | `FIO_createFilename_fromOutDir` | `T` (text, global) | yes | yes | OK |
+| 2 | `extractFilename` | `T` (text, global) | yes | yes | OK |
+
+### Symbol diff
 
 ```
-comm -23 <c defined syms> <rust defined syms>   -> (empty)
+$ comm -23 <(nm -D --defined-only c_src/build/libdriver.so   | awk '$2=="T"{print $3}' | sort) \
+           <(nm -D --defined-only translation/target/release/libdriver.so | awk '$2=="T"{print $3}' | sort)
+<empty>
 ```
 
-**0 missing symbols.** No C source file was left untranslated: `c_src` contains
-exactly one translation unit (`src/lib.c`, 53 lines) holding exactly the two
-functions above.
+**0 symbols missing from the Rust `.so`.**
 
-## Undefined symbols in the Rust `.so`
+## Undefined (imported) symbols
 
-All undefined/weak entries in the Rust `.so` are libc / libgcc-unwind /
-Rust-runtime imports (`calloc`, `memcpy`, `strlen`, `strrchr`, `strerror`,
-`fputs`, `stderr`, `exit`, `__errno_location`, `_Unwind_*`, `malloc`, `free`,
-…). There are **0 missing/undefined non-libc symbols**.
+The Rust `.so` must not require any non-libc symbol.
 
-## Checklist
+| symbol imported by Rust `.so` | provider | non-libc? |
+|---|---|---|
+| `calloc` | libc | no |
+| `memcpy` | libc | no |
+| `strlen` | libc | no |
+| `strrchr` | libc | no |
+| `strerror` | libc | no |
+| `fputs` | libc | no |
+| `exit` | libc | no |
+| `__errno_location` | libc (glibc) | no |
+| `stderr` | libc (glibc data symbol) | no |
+| `_Unwind_Resume` / `rust_eh_personality` | may appear from the Rust runtime; satisfied within the same object or unused under `panic = "abort"` | no |
 
-- [x] Every C-exported symbol is exported by the Rust `.so` with the exact name.
-- [x] No stubs / `unimplemented!()` — both symbols are real translations.
-- [x] `nm -D` shows 0 missing or undefined non-libc symbols in the Rust `.so`.
+The C `.so` imports `calloc`, `memcpy`, `strlen`, `strrchr`, `strerror`,
+`fprintf`, `exit`, `__errno_location`, `stderr` — the same libc surface.
+Rust replaces the single `fprintf(stderr, "...%s", strerror(errno))` with two
+`fputs` calls, which emit an identical byte stream, so the import set differs
+only in `fprintf` vs `fputs` (both libc).
 
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
-build configuration is the default one (`cargo test`, and equivalently
-`cargo test --no-default-features`). Both are exercised by
-`run_all_feature_combos.sh`.
+**0 missing/undefined non-libc symbols.**

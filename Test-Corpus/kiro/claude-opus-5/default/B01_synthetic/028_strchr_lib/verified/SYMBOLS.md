@@ -1,51 +1,58 @@
-# SYMBOLS.md — exported-symbol parity between the C `.so` and the Rust `.so`
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically. Commands used:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-nm -D --undefined-only translation/target/release/libdriver.so
+Commands:
+
+```
+nm -D --defined-only c_src/build/libdriver.so | sort
+nm -D --defined-only translation/target/release/libdriver.so | sort
 ```
 
-## C translation units
+## C `.so` exported (defined, global) symbols
 
-The whole C library is a single translation unit: `c_src/src/driver.c`
-(`c_src/CMakeLists.txt` → `add_library(driver SHARED src/driver.c)`).
-No other C source file exists, so no module could have been skipped by the
-translation. Verified with `find c_src -name '*.c' -o -name '*.h'`:
+| symbol | type | declared in header? | source |
+|--------|------|---------------------|--------|
+| `driver` | `T` (text/global) | yes — `c_src/include/driver.h:27` | `c_src/src/driver.c:37` |
+| `foo`    | `T` (text/global) | no (external linkage, still exported) | `c_src/src/driver.c:29` |
 
-* `c_src/include/driver.h`
-* `c_src/src/driver.c`
+The C translation unit is a single file (`src/driver.c`), so there is no
+untranslated module. `CMakeLists.txt` builds exactly one target,
+`add_library(driver SHARED src/driver.c)` — no executable/driver binary, so the
+"compare binary stdout" clause of the task has no applicable target. (Verified:
+`CMakeLists.txt` contains no `add_executable`.)
 
-## Defined (exported) symbols
+`strchr` is the only libc dependency of the algorithm; `printf` is the only
+libc dependency of `driver`. Both are *undefined* imports in the C `.so`, not
+exports, so they are not part of the parity requirement.
 
-| # | symbol | in C `.so` | in Rust `.so` | declared in `driver.h`? | notes |
-|---|--------|-----------|---------------|-------------------------|-------|
-| 1 | `driver` | `T` (0x1176) | `T` | yes | `void driver(const char *in)` |
-| 2 | `foo`    | `T` (0x1129) | `T` | **no** | `int foo(const char *in, char c)` — no `static`, so external linkage and part of the ABI. Exported from Rust with `#[unsafe(no_mangle)] extern "C"`. |
+## Rust `.so` exported symbols
 
-No macro-generated symbols exist in this library (grep for `#define` in
-`c_src` finds only the `DRIVER_H_` include guard).
+| symbol | Rust item | file |
+|--------|-----------|------|
+| `driver` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver` | `src/lib.rs:107` |
+| `foo`    | `#[unsafe(no_mangle)] pub unsafe extern "C" fn foo`    | `src/lib.rs:86`  |
 
-**Missing from Rust `.so`: none.** Symbol diff is empty in both directions for
-`T`/`D`/`B` (defined-global) symbols.
+## Parity diff
 
-## Undefined symbols in the Rust `.so`
+```
+$ comm -3 <(nm -D --defined-only c_src/build/libdriver.so   | awk '{print $3}' | sort) \
+          <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+(empty)
+```
 
-`nm -D --undefined-only` on the Rust `.so` lists only libc / libgcc-unwind
-imports (`printf`, `malloc`, `memcpy`, `strlen`, `_Unwind_*`, `__errno_location`,
-…). **0 missing/undefined non-libc symbols.** The only one that matters
-semantically is `printf@GLIBC_2.2.5`, which the Rust `driver` deliberately
-reuses so that formatting *and* stdio buffering are byte-identical to the C
-library.
+- Symbols in C but missing from Rust: **0**
+- Undefined non-libc symbols in the Rust `.so`: **0** (only `printf`,
+  `_Unwind_Resume`-class runtime and glibc symbols are undefined, matching the
+  C `.so`'s own reliance on `printf`/`strchr`).
 
-## ABI notes confirmed by disassembly
+Status: **PASS** — no export needs adding, no C module needs translating.
 
-* C `foo` stores only `%al` of the second argument and then sign-extends it
-  (`mov %esi,%eax; mov %al,-0x1c(%rbp); movsbl -0x1c(%rbp),%edx`), i.e. only
-  the **low byte** of `c` is significant.
-* Rust `foo` compares with `cmp %sil,%cl`, i.e. also only the low byte.
-* Therefore garbage in the upper 24 bits of the second argument register must
-  be ignored identically by both. This is covered by a differential test
-  (`ERRORS.md` row 8).
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` table** and no optional
+dependencies, therefore the only build configuration is the default one.
+`cargo check --no-default-features` is equivalent to `cargo check`. Verified by
+grepping Cargo.toml for `[features]` (0 hits). Phase D's "every feature
+combination" therefore collapses to a single combination, plus the debug/release
+profile split which is also exercised.

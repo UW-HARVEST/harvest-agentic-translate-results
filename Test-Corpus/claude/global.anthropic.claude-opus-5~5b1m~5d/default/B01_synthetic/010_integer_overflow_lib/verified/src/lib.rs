@@ -43,26 +43,32 @@ use core::ffi::{c_char, c_int};
 // bit-for-bit identical to the original library.
 unsafe extern "C" {
     fn printf(format: *const c_char, ...) -> c_int;
-
-    // `printHexCharLine` is defined below *and* re-declared here as an external
-    // symbol so that `driver` reaches it the way the C does: through the PLT.
-    //
-    // In the C library `printHexCharLine` is a non-`static` global, so gcc emits
-    // `call printHexCharLine@plt` inside `driver` -- which means the call is
-    // *interposable*: an `LD_PRELOAD`ed (or otherwise globally-scoped)
-    // definition replaces the one `driver` uses.  If `driver` simply called the
-    // Rust `printHexCharLine` by name, LLVM would inline it in release builds
-    // and that observable ABI property would be lost.  Routing the call through
-    // this `extern` declaration keeps the indirection, so C and Rust behave
-    // identically under symbol interposition as well.
-    #[link_name = "printHexCharLine"]
-    fn printHexCharLine_via_plt(charHex: c_int);
 }
 
-/// Address of the exported `printHexCharLine`, materialised as data so that the
-/// reference is a *relocation against the symbol* rather than a direct branch to
-/// the local definition.  See `driver` for why this matters.
-static PRINT_HEX_CHAR_LINE: unsafe extern "C" fn(c_int) = printHexCharLine_via_plt;
+// ---------------------------------------------------------------------------
+// ABI note: why the exported wrappers take `c_int` and narrow explicitly
+// ---------------------------------------------------------------------------
+//
+// Both C functions are declared `void f(char)`.  In the SysV x86-64 ABI a
+// `char` argument travels in the low byte of `%edi`, and GCC's prologue for
+// these functions *re-narrows* it before use:
+//
+//     mov   %edi,%eax
+//     mov   %al,-0x4(%rbp)     ; keep only the low 8 bits
+//     movsbl -0x4(%rbp),%eax   ; sign-extend them back to int
+//
+// So the C callee ignores whatever the caller left in bits 8..31.  Rust's
+// `extern "C" fn(c_char)` instead lowers the parameter with LLVM's `signext i8`
+// attribute, which lets an optimised build *assume* the caller already
+// sign-extended and forward `%edi` unchanged.  At `-O` that made
+// `printHexCharLine(128i32)` print `80` where the C library prints `ffffff80`.
+//
+// Taking `c_int` and doing `as u8 as c_char` reproduces GCC's narrowing
+// verbatim for every possible register value.  It is ABI-identical for
+// conforming `char` callers (the argument register is the same, and truncating
+// a properly extended `char` is the identity), while additionally matching the
+// C library for the non-conforming/over-wide values a real C caller can also
+// produce.
 
 /// C: `printf("%02x\n", charHex);`
 ///
@@ -70,33 +76,16 @@ static PRINT_HEX_CHAR_LINE: unsafe extern "C" fn(c_int) = printHexCharLine_via_p
 /// `char`, so it undergoes the default argument promotion to `int` before being
 /// consumed by `%x`, which reinterprets it as `unsigned int`.  On targets where
 /// `char` is signed (e.g. x86-64 Linux) a negative value therefore prints as
-/// eight hex digits -- `driver(0x7f)` yields `ffffff80`, not `80`.  This is not
-/// a bug we fix here; it is reproduced exactly.
-///
-/// ## Why the parameter is `c_int` and not `c_char`
-///
-/// The C prototype is `void printHexCharLine(char)`, but on x86-64 the psABI
-/// leaves the upper 24 bits of the argument register **unspecified** for a
-/// sub-word parameter, and gcc's callee therefore does not trust them: it
-/// re-truncates with `mov %edi,%eax; mov %al,slot` before sign-extending with
-/// `movsbl`.  So the C's observable behaviour for *any* 32-bit value a caller
-/// puts in `%edi` is "use the low byte, sign-extended".
-///
-/// Declaring this as `extern "C" fn(c_char)` would make rustc attach LLVM's
-/// `signext` attribute to the parameter, i.e. *assume* the caller already
-/// sign-extended.  In `--release` LLVM then drops the truncation entirely
-/// (`mov %edi,%esi`), and a caller that passes e.g. `0x000000ff` gets `ff`
-/// from Rust but `ffffffff` from C.  Taking `c_int` and truncating explicitly
-/// reproduces gcc's codegen for every possible register value, and is
-/// indistinguishable from the `char` prototype for well-behaved callers.
+/// eight hex digits -- `printHexCharLine(0x80)` yields `ffffff80`, not `80`.
+/// This is not a bug we fix here; it is reproduced exactly.
 #[unsafe(no_mangle)]
 pub extern "C" fn printHexCharLine(charHex: c_int) {
-    // gcc's `mov %al, ...` -- keep the low byte only.
-    let charHex: c_char = charHex as c_char;
+    // `mov %al, ...` -- the C callee only ever looks at the low 8 bits.
+    let charHex: c_char = charHex as u8 as c_char;
     // b"%02x\n\0" -- identical format string to the C source.
     const FORMAT: &[u8; 6] = b"%02x\n\0";
     unsafe {
-        // gcc's `movsbl` -- the default argument promotion of a signed `char`.
+        // `movsbl` -- the default argument promotion sign-extends `char`.
         printf(FORMAT.as_ptr() as *const c_char, charHex as c_int);
     }
 }
@@ -113,24 +102,11 @@ pub extern "C" fn printHexCharLine(charHex: c_int) {
 /// `data + 1` is evaluated in `int` and then converted back to `char`; GCC/Clang
 /// implement that narrowing conversion as a two's-complement truncation, which
 /// `wrapping_add` reproduces (so `driver(0x7f)` produces `result == -128`).
-/// The forwarding call deliberately goes through the `extern` re-declaration
-/// (see the `extern` block above) so that, exactly like gcc's
-/// `call printHexCharLine@plt`, it can be interposed by a preloaded definition.
-///
-/// The parameter is `c_int` for the same reason as in `printHexCharLine`: gcc
-/// emits `mov %edi,%eax; mov %al,slot; movzbl slot,%eax; add $1; mov %al,...`,
-/// i.e. it uses only the low byte of whatever the caller left in `%edi`.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(data: c_int) {
-    // gcc's `mov %al, ...` -- keep the low byte only, then `+ 1` truncated back
-    // to `char`.
-    let data: c_char = data as c_char;
+    // `mov %al, ...` -- as above, only the low 8 bits of the incoming register
+    // participate.
+    let data: c_char = data as u8 as c_char;
     let result: c_char = data.wrapping_add(1);
-    // The `read_volatile` stops LLVM from folding the pointer back to the local
-    // definition and inlining it (LLVM assumes ELF symbols are not interposed
-    // unless told otherwise, and rustc has no `-fsemantic-interposition`).  The
-    // resulting indirect call reproduces gcc's `call printHexCharLine@plt`.
-    let f = unsafe { core::ptr::read_volatile(&PRINT_HEX_CHAR_LINE) };
-    // gcc's `movsbl` of `result` into the argument register.
-    unsafe { f(result as c_int) };
+    printHexCharLine(result as c_int);
 }

@@ -1,19 +1,16 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
-
-Inventory command:
+Source command:
 
 ```text
 nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-| C symbol | C type | Rust symbol | Status |
+| C symbol | C type | Rust export | Status |
 |----------|--------|-------------|--------|
-| `driver` | `T` | `driver` (`T`) | present |
-| `run` | `T` | `run` (`T`) | present |
+| `driver` | `T` | `driver` | [x] |
+| `run` | `T` | `run` | [x] |
 
-The C library has no other defined dynamic symbols. Its undefined symbols are
-glibc/toolchain imports (`__errno_location`, `printf`, `puts`, `strtol`, and
-weak ELF runtime hooks), not library API symbols. The Rust library has zero
-missing C API symbols.
+The C and Rust defined-symbol sets were also independently checked with
+`readelf -Ws`, selecting defined global symbols. There are no missing C
+symbols in the Rust shared object.

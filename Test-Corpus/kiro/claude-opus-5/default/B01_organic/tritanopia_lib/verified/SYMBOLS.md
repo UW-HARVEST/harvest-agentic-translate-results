@@ -1,63 +1,66 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Derived mechanically, not from assumptions:
+Derived mechanically from `nm -D` on both shared objects.
+
+Build commands used:
 
 ```
-# C
-cd c_src/build && nm -D --defined-only libharvest-work-0BhnKx.so
-0000000000001670 T tritanopia
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libharvest-work-CJhSn4.so
 
-# Rust
-cd translation && nm -D --defined-only target/release/libtritanopia_lib.so
-0000000000011790 T tritanopia
+cd translation && cargo build --release
+# -> translation/target/release/libtritanopia_lib.so
 ```
 
-## Symbol table
+The C project (`c_src/CMakeLists.txt`) builds **only** a `SHARED` library from
+`src/lib.c`. There is **no binary / driver executable**, so the "compare C and
+Rust stdout" clause of the completion gate does not apply.
 
-| # | symbol | C `.so` | Rust `.so` | C definition site | Rust definition site | status |
-|---|--------|---------|------------|-------------------|----------------------|--------|
-| 1 | `tritanopia` | `T` (global text) | `T` (global text) | `c_src/src/lib.c:55` | `translation/src/lib.rs` (`#[unsafe(no_mangle)] pub extern "C" fn tritanopia`) | MATCH |
+## Defined dynamic symbols
 
-**Symbol diff (C-exported minus Rust-exported): EMPTY.** No missing symbols, so
-neither Phase A remedy (add a `#[no_mangle]` wrapper / translate an untranslated
-module) is needed. No stubs, no `unimplemented!()`, no faked exports exist in the
-Rust crate — verified by `grep -rn 'unimplemented\|todo!\|panic!' translation/src`.
+`nm -D --defined-only <so> | awk '{print $3}' | sort`
 
-## Non-exported C functions (`t`, file-local `static`) — completeness check
+| # | C symbol (`nm -D`) | present in Rust `.so` | Rust definition site |
+|---|--------------------|-----------------------|----------------------|
+| 1 | `tritanopia` | YES (`T tritanopia`) | `src/lib.rs`, `#[unsafe(no_mangle)] pub extern "C" fn tritanopia` |
 
-These are not part of the ABI, but each must still be *translated* (not skipped)
-because `tritanopia` composes all of them. Presence verified in the Rust source:
+Symbol diff (`comm -3` of the two sorted lists): **EMPTY**.
 
-| C static function | site | Rust counterpart | translated |
-|-------------------|------|------------------|------------|
-| `cbRemoveGammaRGB` | `lib.c:11` | `fn cbRemoveGammaRGB` | yes |
-| `cbNorm`           | `lib.c:22` | `fn cbNorm`           | yes |
-| `cbDenorm`         | `lib.c:28` | `fn cbDenorm` (+ `c_float_to_uchar`) | yes |
-| `cbApplyGammaRGB`  | `lib.c:35` | `fn cbApplyGammaRGB`  | yes |
-| `Tritanopia`       | `lib.c:48` | `fn Tritanopia`       | yes |
+* Symbols in C `.so` but not Rust `.so`: **0**
+* Symbols in Rust `.so` but not C `.so`: **0**
 
-The C translation unit is a single file (`c_src/CMakeLists.txt` lists exactly
-`src/lib.c`), so there is no untranslated module: the whole library is covered.
+No symbol required a new `#[no_mangle]` wrapper, and no C module was left
+untranslated: `c_src/src/lib.c` is the only C translation unit and all seven of
+its functions are present in `src/lib.rs`.
 
-## Undefined (imported) symbols in the Rust `.so`
+### Internal (non-exported) C functions — translated, intentionally not exported
 
-`nm -D -u target/release/libtritanopia_lib.so` lists only libc / libgcc-unwind
-imports (`pow@GLIBC_2.29`, `memcpy`, `malloc`, `_Unwind_*`, …). `pow` is the same
-libm entry point the C object imports (`nm -D -u` on the C `.so` also shows
-`pow@GLIBC_2.29`), which is deliberate: the Rust code calls libm's `pow` via
-`extern "C"` rather than `f64::powf`, so both builds resolve to the *same*
-implementation and cannot disagree in the last bit.
+`c_src/src/lib.c` declares these `static`, so they are absent from the C `.so`
+dynamic symbol table. The Rust keeps them private for exact parity; exporting
+them would *add* symbols the C does not have.
 
-**0 missing / 0 undefined non-libc symbols.**
+| C `static` function | Rust counterpart |
+|---------------------|------------------|
+| `cbRemoveGammaRGB`  | `fn cbRemoveGammaRGB` (private) |
+| `cbNorm`            | `fn cbNorm` (private) |
+| `cbDenorm`          | `fn cbDenorm` (private) |
+| `cbApplyGammaRGB`   | `fn cbApplyGammaRGB` (private) |
+| `Tritanopia`        | `fn Tritanopia` (private) |
 
-## Types crossing the ABI
+## Undefined (imported) symbols
 
-| C | Rust | notes |
-|---|------|-------|
-| `typedef struct cb_rgb_255 { unsigned char R, G, B; }` | `#[repr(C)] pub struct cb_rgb_255 { R, G, B: c_uchar }` | size 3, align 1; x86-64 SysV: one INTEGER eightbyte, passed/returned in `rdi`/`rax`. Confirmed against the C disassembly of `tritanopia`/`cbDenorm`. |
+The C `.so` imports exactly one non-weak libc symbol: `pow@GLIBC_2.29`.
+The Rust `.so` also imports `pow@GLIBC_2.29` (declared in an
+`unsafe extern "C"` block, so both builds resolve to the *same* libm `pow`).
+
+Every other undefined symbol in the Rust `.so` is libc / libgcc-unwind runtime
+support pulled in by the Rust standard library (`malloc`, `memcpy`, `abort`,
+`_Unwind_*`, `dl_iterate_phdr`, ...). **0 missing/undefined non-libc symbols.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-configuration is the default one. `cargo check --no-default-features` and
-`cargo check` are therefore the complete set (both verified clean).
+`translation/Cargo.toml` has **no `[features]` section** — therefore there is
+exactly one build configuration (`--no-default-features` is equivalent to the
+default). The whole gate is nevertheless re-run under both invocations by
+`check_all_features.sh`.

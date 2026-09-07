@@ -79,6 +79,23 @@ impl foo_t {
     const B_MASK: u8 = 0x01; // 1 bit
 
     #[inline]
+    fn get_x(&self) -> c_uint {
+        c_uint::from((self.bits[0] >> Self::X_SHIFT) & Self::X_MASK)
+    }
+
+    #[inline]
+    fn get_y(&self) -> c_uint {
+        c_uint::from((self.bits[0] >> Self::Y_SHIFT) & Self::Y_MASK)
+    }
+
+    /// The `bool b : 1` member. gcc materialises this as
+    /// `(byte0 >> 5) & 1`, i.e. an `int` valued 0 or 1.
+    #[inline]
+    fn get_b(&self) -> c_int {
+        c_int::from((self.bits[0] >> Self::B_SHIFT) & Self::B_MASK)
+    }
+
+    #[inline]
     fn set_x(&mut self, x: c_uint) {
         let v = (x as u8) & Self::X_MASK;
         self.bits[0] = (self.bits[0] & !(Self::X_MASK << Self::X_SHIFT)) | (v << Self::X_SHIFT);
@@ -105,38 +122,23 @@ impl foo_t {
 /// }
 /// ```
 ///
-/// The fields are read through raw pointer arithmetic rather than by forming a
-/// `&foo_t`, for two reasons:
-///
-/// * `alignof(foo_t) == 4`, but gcc compiles the `z` access to a plain
-///   `mov 0x4(%rax),%esi`, which tolerates a misaligned pointer on x86-64. A
-///   foreign caller may legally (as far as the compiled C is concerned) hand
-///   over a misaligned pointer, and the C prints the value rather than
-///   trapping. Creating a Rust reference would instead be UB and aborts under
-///   the debug alignment check, which is an observable divergence.
-/// * It reads exactly the bytes the C reads — byte 0 and bytes 4..=7 — leaving
-///   the padding bytes 1..=3 untouched, matching gcc's codegen.
-///
 /// # Safety
-/// `foo` must point at 8 readable bytes (the C original dereferences it
-/// unconditionally and does the same).
+/// `foo` must point at a valid, readable `foo_t` (the C original dereferences
+/// it unconditionally and does the same).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn print_foo(foo: *const foo_t) {
-    let base = foo as *const u8;
-    // `movzbl (%rax),%eax` — a single byte load, always aligned.
-    let byte0 = unsafe { core::ptr::read(base) };
-    // `mov 0x4(%rax),%esi` — an unaligned-tolerant 32-bit load.
-    let z = unsafe { core::ptr::read_unaligned(base.add(4) as *const c_int) };
-
-    let x = c_uint::from((byte0 >> foo_t::X_SHIFT) & foo_t::X_MASK);
-    let y = c_uint::from((byte0 >> foo_t::Y_SHIFT) & foo_t::Y_MASK);
-    let b = c_int::from((byte0 >> foo_t::B_SHIFT) & foo_t::B_MASK);
-
+    let foo = unsafe { &*foo };
     // Matches the C integer promotions: the `unsigned int` bit-fields of width
     // 2 and 3 and the `bool` bit-field of width 1 all promote to `int`, and are
     // therefore passed as 32-bit values.
     unsafe {
-        printf(c"%u %u %d %d\n".as_ptr(), x as c_int, y as c_int, b, z);
+        printf(
+            c"%u %u %d %d\n".as_ptr(),
+            foo.get_x() as c_int,
+            foo.get_y() as c_int,
+            foo.get_b(),
+            foo.z,
+        );
     }
 }
 

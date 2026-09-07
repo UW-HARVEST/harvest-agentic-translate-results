@@ -1,5 +1,4 @@
 use std::ffi::{c_char, c_int, c_void};
-use std::hint::black_box;
 use std::mem::size_of;
 use std::ptr;
 
@@ -27,10 +26,24 @@ fn log(message: &'static [u8]) {
     }
 }
 
+#[inline(never)]
+unsafe fn allocate_bytes(size: usize) -> *mut c_void {
+    unsafe { malloc(std::hint::black_box(size)) }
+}
+
+#[inline(never)]
+unsafe fn release_bytes(pointer: *mut c_void) {
+    unsafe {
+        free(std::hint::black_box(pointer));
+    }
+}
+
+#[inline(never)]
 unsafe fn is_valid_state(state: *mut ProcessorState) -> bool {
     unsafe { (*state).status != 0 && (*state).count < (*state).capacity }
 }
 
+#[inline(never)]
 fn check_char_flag(flag: c_char) -> bool {
     flag != 0
 }
@@ -62,16 +75,18 @@ pub unsafe extern "C" fn triple_value(
     value.wrapping_mul(3)
 }
 
+#[inline(never)]
 unsafe fn init_processor(capacity: usize, operation: OperationFn) -> *mut ProcessorState {
-    let state = unsafe { malloc(size_of::<ProcessorState>()).cast::<ProcessorState>() };
+    let state = unsafe { allocate_bytes(size_of::<ProcessorState>()).cast::<ProcessorState>() };
     if state.is_null() {
         return ptr::null_mut();
     }
 
-    let results = unsafe { malloc(capacity.wrapping_mul(size_of::<c_int>())).cast::<c_int>() };
+    let results =
+        unsafe { allocate_bytes(capacity.wrapping_mul(size_of::<c_int>())).cast::<c_int>() };
     if results.is_null() {
         unsafe {
-            free(state.cast());
+            release_bytes(state.cast());
         }
         return ptr::null_mut();
     }
@@ -88,19 +103,20 @@ unsafe fn init_processor(capacity: usize, operation: OperationFn) -> *mut Proces
             },
         );
     }
-    black_box(state)
+    state
 }
 
+#[inline(never)]
 unsafe fn cleanup_processor(state: *mut ProcessorState) {
     if !state.is_null() {
         let results = unsafe { (*state).results };
         if !results.is_null() {
             unsafe {
-                free(results.cast());
+                release_bytes(results.cast());
             }
         }
         unsafe {
-            free(state.cast());
+            release_bytes(state.cast());
         }
     }
 }
@@ -141,10 +157,9 @@ pub unsafe extern "C" fn gotomach(
             result = -3;
         } else {
             temp_buffer = unsafe {
-                malloc((iterations as usize).wrapping_mul(size_of::<c_int>())).cast::<c_int>()
+                allocate_bytes((iterations as usize).wrapping_mul(size_of::<c_int>()))
+                    .cast::<c_int>()
             };
-            temp_buffer = black_box(temp_buffer);
-            state = black_box(state);
             if temp_buffer.is_null() {
                 log(b"[ERROR] Failed to allocate temporary buffer\0");
                 result = -4;
@@ -156,7 +171,6 @@ pub unsafe extern "C" fn gotomach(
                 let mut processing_result = None;
 
                 for i in 0..iterations as usize {
-                    state = black_box(state);
                     if !unsafe { is_valid_state(state) } {
                         log(b"[ERROR] State became invalid during processing\0");
                         processing_result = Some(-6);
@@ -201,7 +215,7 @@ pub unsafe extern "C" fn gotomach(
 
     if !temp_buffer.is_null() {
         unsafe {
-            free(temp_buffer.cast());
+            release_bytes(temp_buffer.cast());
         }
     }
     unsafe {

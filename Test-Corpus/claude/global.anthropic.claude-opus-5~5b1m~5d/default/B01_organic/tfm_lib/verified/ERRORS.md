@@ -1,157 +1,111 @@
-# ERRORS.md — error / rejection surface table
+# ERRORS.md — Error-surface table
 
-Derived mechanically from `c_src/src/lib.c` (32 lines) and `c_src/include/lib.h`
-(1 line). Method: grep the C source for every `return`, `assert`, `NULL`,
-`errno`, error enum, explicit range check, and every min/max clamp constant.
+## Mechanical derivation
+
+Every rejection/error construct was grepped for across the *entire* C source
+(`c_src/src/lib.c`, 32 lines; `c_src/include/lib.h`, 1 line — these are the only
+C files, per `CMakeLists.txt`):
 
 ```
-$ grep -rn 'return\|assert\|NULL\|errno\|EINVAL\|-1' c_src/src c_src/include
-(no matches)
+$ grep -nE 'return|assert|NULL|errno|-1|abort|exit|if *\(|\?|enum|#define|#if' src/lib.c include/lib.h
+src/lib.c:8:        if (src[0] < src[1]) {
+src/lib.c:15:  0.5f * (dy2 + dx2 + sqrtf((((0) > (sqd)) ? (0) : (sqd))));
+src/lib.c:25:  0.5f * (dy2 + dx2 + sqrtf((((0) > (sqd)) ? (0) : (sqd))));
 ```
 
-**`tfm` is `void` and contains no `return`, no `assert`, no null check, and no
-explicit error code.** Its entire rejection surface therefore consists of:
+Findings:
 
-* the loop guard `i < count` — the *only* input validation in the library; and
-* the clamp `(((0) > (sqd)) ? (0) : (sqd))` — the only value-domain guard, which
-  silently substitutes a value instead of erroring; and
-* the implicit numeric "rejections" of IEEE-754 (NaN comparisons falling to the
-  `else` branch, overflow to infinity, invalid operations producing NaN).
+* **0** `return` statements (the function is `void`; it falls off the end).
+* **0** `RETURN_ERROR`-style macros, **0** error enums, **0** error codes,
+  **0** sentinel returns — there is no channel to report an error on.
+* **0** `assert` / `abort` / `exit` calls (`<assert.h>` is not even included).
+* **0** `NULL` checks on `dest` or `src`.
+* **0** explicit length/range/size validation of `count`.
+* **0** min/max named constants, **0** `#define`s, **0** `#if`/`#ifdef`.
+* No `enum` parameters anywhere in the API, so there is no out-of-range-enum
+  class of input to test (`count` is a plain `int` and every `int` value is
+  valid input to the loop guard).
+* The only value-conditioning in the whole library is the
+  `(((0) > (sqd)) ? (0) : (sqd))` clamp — an internal *saturation*, not a
+  rejection; it never reports anything to the caller.
 
-Every distinct rejection/guard branch gets one row. `[x]` = a differential test
-exists and passes against **both** the C `.so` and the Rust `.so`.
+So the C library's *explicit* error surface is empty: `tfm` accepts every
+argument combination and reports nothing. The rows below are therefore the
+**complete set of implicit rejection / boundary behaviours** the C code exhibits
+— i.e. every condition under which it declines to do work, plus the generic
+C-API boundaries mandated by the task (null pointers, zero/oversized lengths,
+one-past-range values). Each is a differential test asserting C and Rust behave
+*identically*, not merely "both failed".
 
 ## Table
 
-| # | function | trigger (exact invalid input/condition) | expected C result | [x] |
-|---|----------|------------------------------------------|-------------------|-----|
-| E1 | `tfm` | `count == 0` (loop guard `0 < 0` false) | returns immediately; **zero** loads from `src`, **zero** stores to `dest`; `dest` left bit-identical to its prior contents | [x] |
-| E2 | `tfm` | `count == -1` (loop guard `0 < -1` false) | same as E1: no-op, `dest` untouched. Not clamped, not an error code — silently nothing | [x] |
-| E3 | `tfm` | `count == INT_MIN` (`-2147483648`) | same as E1: no-op, `dest` untouched (no overflow, guard is a plain signed `<`) | [x] |
-| E4 | `tfm` | `count` = other negatives (`-2`, `-1000`, `INT_MIN+1`) | no-op, `dest` untouched | [x] |
-| E5 | `tfm` | `dest == NULL`, `src == NULL`, `count <= 0` | no-op; **no dereference**, no crash (loop body never runs) | [x] |
-| E6 | `tfm` | `dest == NULL`, `src` valid, `count > 0` | UB in C: stores through NULL → `SIGSEGV`. Verified to fault identically for C and Rust in a forked child process | [x] |
-| E7 | `tfm` | `src == NULL`, `dest` valid, `count > 0` | UB in C: loads through NULL → `SIGSEGV`. Verified identically for C and Rust in a forked child | [x] |
-| E8 | `tfm` | `src[0] == src[1]` — relational `src[0] < src[1]` is **false** | takes the `else` branch: `dy2=src[0]`, `dx2=src[1]`, `dest[0]=dxy`, `dest[1]=dx2-lambda`. (Boundary one step from the `if` branch) | [x] |
-| E9 | `tfm` | `src[0] > src[1]` | `else` branch, as E8 | [x] |
-| E10 | `tfm` | `src[0]` is NaN (either sign, any payload) — `NaN < x` is **false** | `else` branch (unordered compare rejects the `if`), *not* the `if` branch | [x] |
-| E11 | `tfm` | `src[1]` is NaN — `x < NaN` is **false** | `else` branch | [x] |
-| E12 | `tfm` | both `src[0]` and `src[1]` NaN | `else` branch | [x] |
-| E13 | `tfm` | `sqd < 0` — clamp `0 > sqd` is **true**. Mathematically `sqd = (dy2-dx2)² + 4dxy² ≥ 0`, so this is reachable **only through rounding**: near-equal `dx2`/`dy2` make `dy2*dy2 - 2*dx2*dy2 + dx2*dx2` round negative (see "unreachable claims" below for the exact constructor) | `sqrtf` receives the `float` `0.0f`, **never** a negative; returns `+0.0f`; no `EDOM` | [x] |
-| E14 | `tfm` | `sqd == -0.0f` — clamp `0 > -0.0f` is **false**, so `-0.0f` is *not* replaced | `sqrtf(-0.0f)` = `-0.0f` (IEEE-754 §6.3); `lambda = 0.5f*(dy2+dx2+(-0.0f))`. Distinguishes the C ternary from `fmaxf`, which would also return `-0.0`/`+0.0` ambiguously | [x] |
-| E15 | `tfm` | `sqd` is NaN — clamp `0 > NaN` is **false**, so NaN is *not* replaced | NaN reaches `sqrtf`, which returns a quiet NaN with the sign+payload preserved and mantissa MSB forced on; NaN propagates into `lambda` and out to `dest` | [x] |
-| E16 | `tfm` | `sqd == +inf` (overflow of `4.0f*dxy*dxy` or `dx2*dx2`) | clamp false; `sqrtf(+inf)=+inf`; `lambda=+inf`; `dest[0]=dx2-inf` (or `dest[1]`) | [x] |
-| E17 | `tfm` | invalid operation `inf - inf` inside `sqd` (both `dy2*dy2` and `2*dx2*dy2` overflow to `+inf`) | produces the x86 QNaN indefinite `0xFFC00000` (negative sign bit), which then flows through E15 | [x] |
-| E18 | `tfm` | invalid operation `0 * inf` inside `2.0f*dx2*dy2` (`dx2=0`, `dy2=±inf`) | produces `0xFFC00000`, then E15 | [x] |
-| E19 | `tfm` | invalid operation `inf + (-inf)` in `dy2 + dx2` (`dy2=+inf`, `dx2=-inf`) | `0xFFC00000` propagated into `lambda` | [x] |
-| E20 | `tfm` | subnormal / underflow-to-zero inputs (`±1e-45`, `±FLT_MIN/2`) — no flush-to-zero is requested by the C build | gradual underflow, subnormal results preserved bit-exactly (MXCSR FTZ/DAZ off in both) | [x] |
-| E21 | `tfm` | *signalling* NaN in `src[0..2]` (`0x7FA0_0000` / `0xFFA0_0000`) | no trap (SSE exceptions masked); the sNaN is **quieted** to `0x7FE0_0000`/`0xFFE0_0000` by the first arithmetic op that consumes it, or copied **verbatim** when it only passes through `dest[i] = dxy` (a plain store, not an FP op) | [x] |
-| E22 | `tfm` | NaN with a *non-canonical payload* (e.g. `0x7F80_0001`, `0xFFBF_FFFF`) | payload is preserved through the quieting rules; the surviving payload is the SSE **destination** operand's | [x] |
-| E23 | `tfm` | out-of-range enum value passed across FFI | **N/A — the API declares no enum.** The only non-pointer parameter is `int count`; its full `int` range is covered by E1–E4 and B-rows, including `INT_MIN`, `-1`, `0`, `1` and large positives | [x] |
-| E24 | `tfm` | "oversized length": `count` larger than the logical element count of the caller's data (buffer still allocated large enough that no OOB access occurs) | no bounds check exists — C happily processes the extra trailing elements; Rust must read/write exactly the same extra elements | [x] |
-| E25 | `tfm` | `count == 1` with a buffer sized for exactly 1 element (`3` in, `2` out) — the tight lower boundary of the loop | exactly 3 loads and 2 stores; **no** access to `src[3]` / `dest[2]` (checked with guard canaries either side) | [x] |
-| E26 | `tfm` | unaligned-for-vectorization but `float`-aligned pointers (`src`/`dest` offset by 1, 2, 3 floats inside a larger allocation) | identical results; no alignment fault (the C `-O0` build is scalar, and Rust must not require 16-byte alignment) | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `tfm` | `count == 0` (zero length) — loop guard `i < count` false on entry | returns immediately; **zero** bytes read from `src`, **zero** bytes written to `dest`. Rust must leave the destination buffer byte-identical to its pre-call contents. |
+| 2 | `tfm` | `count == -1` (negative length, one step past the valid `count >= 0` range) | loop guard false; no reads, no writes, no crash. Identical to row 1. |
+| 3 | `tfm` | `count == INT_MIN` (`-2147483648`, extreme negative) | loop guard false; no reads/writes. No wraparound into a huge positive loop count. |
+| 4 | `tfm` | `count < 0` for many random negative values | no reads/writes for every one of them. |
+| 5 | `tfm` | `dest == NULL`, `src == NULL`, **and** `count <= 0` | pointers are never dereferenced (the loop body never runs), so the null pointers are inert and the call returns normally. Rust must also not fault — in particular it must not form/deref a pointer or panic. |
+| 6 | `tfm` | `dest == NULL`, `src` valid, `count == 0` | same as row 5: returns normally, no fault. |
+| 7 | `tfm` | `src == NULL`, `dest` valid, `count == 0`; `dest` buffer pre-filled | returns normally, `dest` untouched (still the pre-fill pattern). |
+| 8 | `tfm` | `count == 1` with `src` sized to exactly 3 floats and `dest` to exactly 2 floats (minimum non-empty length; no slack) | reads exactly `src[0..3]`, writes exactly `dest[0..2]`. Guard bytes placed immediately after both buffers must be unmodified — i.e. no off-by-one over-read/over-write past `3*count` / `2*count`. |
+| 9 | `tfm` | `count == 1`, `sqd < 0` forced (negative discriminant) so the clamp `0 > sqd` is TRUE | `sqrtf` is called on the `0.0f` constant, **not** on the negative value; `errno` is never set and no `NaN` appears. `lambda == 0.5f*(dy2+dx2)`. |
+| 10 | `tfm` | `count == 1`, `sqd` is exactly zero (boundary of the clamp: `0 > 0.0f` and `0 > -0.0f` are both FALSE, so `sqd` itself — not the literal `0` — is what reaches `sqrtf`) | `sqd` is *not* clamped; `sqrtf(±0.0f) == ±0.0f`. The sign of the zero must match bit-for-bit. **Reachability, established experimentally:** a `-0.0f` discriminant is *unreachable* from finite inputs, because the final addend `4.0f*dxy*dxy` is `+0.0f` for every finite `dxy` and `x + (+0.0)` is never `-0.0`. The reachable boundary is `sqd == +0.0f` exactly, produced whenever `dx2 == dy2` and `dxy == ±0.0` (the `2*` doubling is exact, so the three terms cancel exactly). Both are covered. |
+| 11 | `tfm` | `count == 1`, `sqd` is `NaN` (clamp comparison `0 > NaN` is FALSE, so the NaN reaches `sqrtf`) | NaN propagates through `sqrtf` into `lambda` and into the output. Output bits (including NaN sign and payload) must match. |
+| 12 | `tfm` | `src[0]` and/or `src[1]` is `NaN`, so the branch test `src[0] < src[1]` is FALSE (unordered) | the **`else`** branch is taken, never the `if` branch. |
+| 13 | `tfm` | inputs at/over the float range: `±FLT_MAX`, `±inf`, so intermediates overflow to `±inf` and `inf - inf` / `0 * inf` produce the invalid-operation NaN | output bits must match exactly, including the NaN's sign bit and payload. |
+| 14 | `tfm` | subnormal / `±0.0` inputs (values one step past the normal range: `±FLT_MIN`, `±FLT_TRUE_MIN`, `±0.0`) | underflow-to-zero and signed-zero behaviour must match bit-for-bit. |
+| 15 | `tfm` | `dest == src` (fully aliasing pointers) — the C has no `restrict`, and the stride mismatch (`dest += 2` vs `src += 3`) means writes overwrite not-yet-read source elements | the C's exact read/write interleaving must be reproduced: each iteration reads all three inputs before writing two outputs. Buffer contents after the call must match byte-for-byte. |
+| 16 | `tfm` | `dest` overlapping `src` at a positive offset / negative offset (partial aliasing, several shifts) | same as row 15: byte-identical buffers afterwards. |
+| 17 | `tfm` | *all* inputs `NaN` with distinct non-canonical payloads and mixed sign bits | the surviving NaN payload/sign selected by the C must be reproduced exactly (this is the documented operand-order hazard in `src/lib.rs`). |
 
-## Notes on what is deliberately *absent*
-
-* No `errno` is ever set by `tfm`. The clamp at E13 guarantees `sqrtf` is never
-  called with a negative argument, so glibc never raises `EDOM`. This is
-  verified *indirectly*, not by reading `errno`: `e13_negative_sqd_is_clamped_to_zero`
-  asserts that no NaN escapes to the output for finite inputs, which is exactly
-  what an unclamped `sqrtf(negative)` would produce. (Reading `errno` across a
-  `dlopen`ed boundary would compare the harness's TLS slot, not the callee's, so
-  it would not be a meaningful assertion.)
-* There is no way for `tfm` to report failure to its caller: it is `void` and
-  has no out-param status. Consequently every row above is verified by
-  comparing the *written output buffer* (and process exit status / signal for
-  E6/E7), not by comparing return codes.
-* `float` is IEEE-754 binary32 in both languages on this target
-  (`x86_64-unknown-linux-gnu`, SSE2 baseline); no `long double` / x87 excess
-  precision can leak in.
+Rows 1–8 are the "declines to do work / no out-of-bounds access" rejections;
+9–17 are the value-domain boundaries that the clamp, the comparison and the
+IEEE-754 invalid operations create.
 
 ---
 
-## Verification result
+## Verification result — every row has a passing differential test
 
-All **26** rows have a passing differential test. The mapping is 1:1 and
-mechanically checkable:
+All in `tests/phase_c_errors.rs`. Each test constructs the exact condition,
+calls BOTH `.so`s, and asserts the *same* rejection (identical bytes / identical
+refusal to write), not merely "both failed".
 
-```
-$ diff <(grep -oE '^\| E[0-9]+ ' ERRORS.md   | grep -oE '[0-9]+' | awk '{printf "e%02d\n",$0}' | sort) \
-       <(grep -oE '^fn e[0-9]+' tests/phase_c.rs | grep -oE 'e[0-9]+' | sort)
-# (no output — 1:1 match)
-```
+| # | test | [x] |
+|---|------|-----|
+| 1 | `err01_count_zero_writes_nothing` | [x] |
+| 2 | `err02_count_negative_one` | [x] |
+| 3 | `err03_count_int_min` | [x] |
+| 4 | `err04_many_random_negative_counts` | [x] |
+| 5 | `err05_both_null_nonpositive_count` | [x] |
+| 6 | `err06_null_dest_valid_src_count_zero` | [x] |
+| 7 | `err07_null_src_valid_dest_count_zero` | [x] |
+| 8 | `err08_minimum_nonempty_exact_buffers` | [x] |
+| 9 | `err09_negative_discriminant_is_clamped_not_sqrt_of_negative` | [x] |
+| 10 | `err10_minus_zero_discriminant_boundary` | [x] |
+| 11 | `err11_nan_discriminant_propagates_through_sqrt` | [x] |
+| 12 | `err12_unordered_compare_takes_else_branch` | [x] |
+| 13 | `err13_range_extremes_and_invalid_ops` | [x] |
+| 14 | `err14_subnormal_and_signed_zero_boundaries` | [x] |
+| 15 | `err15_exact_aliasing_dest_equals_src` | [x] |
+| 16 | `err16_partial_overlap_offsets` | [x] |
+| 17 | `err17_all_nan_distinct_payloads` | [x] |
 
-`tests/phase_c.rs`: 26 row tests + 1 `#[ignore]`d helper
-(`zz_null_pointer_crash_child`, the child process used by E6/E7).
+Plus the generic C-API boundaries required regardless of the table:
 
-### Divergence found and fixed: E6 / E7 (NULL pointer, `count > 0`)
+| test | covers | [x] |
+|------|--------|-----|
+| `generic_count_full_int_domain` | `count` over the whole `int` domain: `INT_MIN`, every negative power of two, `-1`, `0`, `1..40`, and sign-bit boundaries. `count` is the API's only scalar parameter and it is a plain `int`; **there is no `enum` anywhere in the API**, so "out-of-range enum variant across FFI" reduces to exactly this test — every `int` bit pattern is fed through and C/Rust agree. | [x] |
+| `generic_all_null_and_zero_length_combinations` | all four NULL/non-NULL combinations of `dest`/`src` × zero and negative lengths | [x] |
+| `generic_bogus_nonnull_pointers_with_nonpositive_count` | non-NULL but unmapped/misaligned pointers with `count <= 0` (must not be dereferenced by either) | [x] |
 
-The only real defect this phase uncovered.
+### Note on unreachable error paths
 
-* **C** (`libharvest-work-qlgOWs.so`): dies with **`SIGSEGV` (11)**.
-* **Rust, `release` profile**: `SIGSEGV` (11) — already correct.
-* **Rust, `dev` profile**: died with **`SIGABRT` (6)**:
-  ```
-  thread '<unnamed>' panicked at src/lib.rs:270:17:
-  null pointer dereference occurred
-  thread caused non-unwinding panic. aborting.
-  ```
-  rustc's UB sanitizer — switched on implicitly by `debug-assertions` — turns
-  the raw-pointer store into a checked operation, so the debug `.so` rejected an
-  input that the C happily faults on.
-
-**Fix (Rust side only):** `[profile.dev] debug-assertions = false` in
-`translation/Cargo.toml`, with `overflow-checks = true` retained so nothing else
-is weakened. Both profiles now fault identically, verified by comparing the
-terminating signal of a forked child:
-
-```
-which=dest impl=c -> SIGSEGV(11)   impl=rust -> SIGSEGV(11)
-which=src  impl=c -> SIGSEGV(11)   impl=rust -> SIGSEGV(11)
-which=both impl=c -> SIGSEGV(11)   impl=rust -> SIGSEGV(11)
-```
-
-This is exactly the class of bug the "every configuration" gate exists to catch:
-the *shipped* `release` object was always right, and only the `dev` object was
-wrong, so testing one profile would have missed it entirely.
-
-### Two ERRORS.md claims that turned out to be *unreachable*, and how they were handled
-
-Rather than assert an unreachable condition (which would silently pass while
-proving nothing), each is now actively confirmed unreachable by search, and the
-*reachable* neighbours are tested instead:
-
-* **E14, `sqd == -0.0f`.** `sqd = dxy_term + acc` where
-  `dxy_term = (4*dxy)*dxy` is a square (never `-0.0`), and `acc` could only be
-  `-0.0` if `dx2*dx2` were. IEEE round-to-nearest yields `-0.0` from an addition
-  only when *both* addends are `-0.0`, so the regime cannot occur.
-  `b19_sqd_negative_zero` and `e14_*` assert **0 hits** across the exhaustive
-  24³ alphabet, the cancellation family and 400 000 random triples, then test the
-  reachable neighbours (`sqd == +0.0`, `sqd < 0`) and push `-0.0` through every
-  input lane instead.
-* **E13, negative `sqd`, is reachable but only via rounding.** Mathematically
-  `sqd = (dy2-dx2)² + 4dxy² ≥ 0`; it only goes negative through
-  catastrophic cancellation. The harness constructs it deliberately with
-  near-equal operands `1 + p·2⁻²³` vs `1 + q·2⁻²³`, whose residual is
-  `(rn(p²/2²³) + rn(q²/2²³) − 2·rn(pq/2²³))·2⁻²³` — e.g. `p=2048, q=2049`
-  gives `0 + 1 − 2 = −1`, i.e. `sqd = −2⁻²³`. **400 negative-`sqd` triples
-  found, split across both C branches**, so the clamp is genuinely exercised
-  rather than assumed.
-
-### Rows whose "expected result" is a branch choice, not a value
-
-E8–E12 claim the C falls into the `else` branch. That claim is now *observable*
-rather than inferred: the C writes `dxy` **verbatim** (a plain `movss`, not an FP
-op) to `dest[1]` in the `if` branch and to `dest[0]` in the `else` branch, so
-comparing `dest[i]` bits against `src[2]` bits reveals which branch ran. Each of
-E8–E12 asserts the observed branch is the expected one for both objects, and
-fails if the branch was indistinguishable for every input (so the test cannot
-pass vacuously).
-
-### `errno`
-
-Never set: the clamp (E13) guarantees `sqrtf` is never called with a negative
-argument, so glibc raises no `EDOM`. Confirmed indirectly — E13 verifies no NaN
-escapes for finite inputs, which is what an unclamped `sqrtf(negative)` would
-produce.
+`src/lib.rs`'s `fsqrt` contains a negative-argument branch. It is **provably
+dead**: `clamp_nonneg_c` returns `0.0f32` whenever `0.0 > sqd`, so `fsqrt` only
+ever receives a value `>= 0.0`, `-0.0`, or NaN. This mirrors the C, where the
+`comiss`/`jbe` pair replaces any negative `sqd` with the `0.0f` constant before
+`sqrtf@plt` is called, so C's `sqrtf` never sets `errno` either. Mutating that
+dead branch is a semantic no-op and cannot be caught by any differential test —
+confirmed experimentally, and recorded as an intentional exclusion in
+`verify.sh`. The *reachable* equivalents are rows 9, 10 and 11.

@@ -1,82 +1,94 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-```
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/debug/libdriver.so
-```
+* C   : `c_src/build/libdriver.so`   (built via CMake, `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`)
+* Rust: `translation/target/release/libdriver.so` (`crate-type = ["cdylib"]`)
 
-The C build (`c_src/CMakeLists.txt`) compiles exactly three translation units
-into one `SHARED` library:
+There is no `[features]` section in `translation/Cargo.toml`, therefore exactly
+**one** feature combination exists (the empty/default one). `--no-default-features`
+is equivalent to the default build.
 
-* `src/task_manager.c`
-* `src/logger.c`
-* `src/driver.c`
-
-All three are translated (`translation/src/task_manager.rs`,
-`translation/src/logger.rs`, `translation/src/driver.rs`), plus
-`translation/src/cstd.rs` holding the libc `extern` declarations. No C module
-is missing.
+The C project builds **only** a shared library (`add_library(driver SHARED ...)`).
+It builds **no binary executable**, and the Rust crate is `cdylib`-only, so the
+"compare the two drivers' stdout" clause of Phase B is satisfied by driving the
+exported `driver()` symbol through the FFI boundary and capturing `stdout` with
+`dup2` (see `tests/differential.rs::stdout_capture`).
 
 ## Exported (dynamic, defined) symbols
 
-| # | symbol | declared in | C `.so` | Rust `.so` | status |
-|---|--------|-------------|---------|------------|--------|
-| 1 | `create_task_manager`  | `include/task_manager.h` | T | T | OK |
-| 2 | `add_task`             | `include/task_manager.h` | T | T | OK |
-| 3 | `print_tasks`          | `include/task_manager.h` | T | T | OK |
-| 4 | `destroy_task_manager` | `include/task_manager.h` | T | T | OK |
-| 5 | `initialize_logger`    | `include/logger.h`       | T | T | OK |
-| 6 | `log_info`             | `include/logger.h`       | T | T | OK |
-| 7 | `log_warning`          | `include/logger.h`       | T | T | OK |
-| 8 | `log_error`            | `include/logger.h`       | T | T | OK |
-| 9 | `finalize_logger`      | `include/logger.h`       | T | T | OK |
-| 10 | `driver`              | `src/driver.c` (no header) | T | T | OK |
+| # | symbol | source | C `.so` | Rust `.so` | notes |
+|---|--------|--------|---------|------------|-------|
+| 1 | `initialize_logger`     | `logger.c`       | T | T | `int initialize_logger()` |
+| 2 | `log_info`              | `logger.c`       | T | T | `void log_info(const char*)` |
+| 3 | `log_warning`           | `logger.c`       | T | T | `void log_warning(const char*)` |
+| 4 | `log_error`             | `logger.c`       | T | T | `void log_error(const char*)` |
+| 5 | `finalize_logger`       | `logger.c`       | T | T | `void finalize_logger()` |
+| 6 | `create_task_manager`   | `task_manager.c` | T | T | `TaskManager* create_task_manager()` |
+| 7 | `add_task`              | `task_manager.c` | T | T | `void add_task(TaskManager*, const char*, int)` |
+| 8 | `print_tasks`           | `task_manager.c` | T | T | `void print_tasks(const TaskManager*)` |
+| 9 | `destroy_task_manager`  | `task_manager.c` | T | T | `void destroy_task_manager(TaskManager*)` |
+| 10 | `driver`               | `driver.c`       | T | T | `int driver(const char*)` |
 
-**Symbol diff (C-defined minus Rust-defined): EMPTY.** Verified by
-`tests/symbols.rs::c_exports_are_a_subset_of_rust_exports`, which shells out to
-`nm -D --defined-only` on both objects at test time.
+**Symbol diff (C-exported minus Rust-exported): EMPTY.** 10 / 10 present, exact
+names, no mangling, no macro-generated symbols in this library.
 
-There are no macro-generated symbols in this library.
+Reproduce with:
 
-`driver` has no prototype in any installed header (`install(DIRECTORY include/)`
-ships only `logger.h` and `task_manager.h`), but it has external linkage and is
-exported, so it is part of the ABI surface and is tested.
+```sh
+diff <(nm -D --defined-only c_src/build/libdriver.so        | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+```
 
-## Undefined symbols (imports)
+## Undefined (imported) symbols
 
-The C `.so` imports only glibc: `atoi fclose fopen fprintf free fwrite getenv
-malloc printf puts stderr strchr strlen strncpy` (+ weak `_ITM_*`,
-`__cxa_finalize`, `__gmon_start__`).
+Every undefined symbol in the Rust `.so` resolves to libc / the unwinder;
+there are **0 missing or undefined non-libc symbols**.
 
-Note `fwrite`/`puts` appear only because gcc rewrites
-`fprintf(f, "...%s\n", ...)`-style and `printf("Tasks:\n")` calls into
-`fwrite`/`puts`. That is a code-generation detail; the bytes written are
-identical, so the Rust side keeping literal `printf`/`fprintf` is behaviourally
-equivalent.
+C imports: `atoi fclose fopen fprintf free fwrite getenv malloc printf puts
+stderr strchr strlen strncpy` (+ weak `_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
 
-The Rust `.so` imports the same glibc set plus the Rust runtime's own libc /
-`libgcc_s` unwinder needs (`memcpy`, `memset`, `mmap64`, `_Unwind_*`,
-`pthread_key_*`, …). `ldd` resolves to `libc.so.6` and `libgcc_s.so.1` only.
+Rust imports the identical libc set — `atoi fclose fopen fprintf free fwrite
+getenv malloc printf puts stderr strchr strlen strncpy` — because
+`src/cstd.rs` deliberately calls straight into glibc rather than re-implementing
+stdio (this is what makes `%s`/`%d` formatting, the `(null)` rendering of a null
+`%s`, and stream-buffering behaviour byte-identical).
 
-**0 missing / 0 unresolved non-libc symbols in the Rust `.so`.**
+Rust additionally imports the Rust-runtime/unwinder set, which is expected for
+any `cdylib` and is *not* a translation gap:
+`_Unwind_* __errno_location __tls_get_addr abort bcmp calloc close
+dl_iterate_phdr fstat64 getcwd lseek64 memcpy memmove memset mmap64 munmap
+open64 posix_memalign pthread_key_* read readlink realloc realpath stat64
+syscall write writev` (+ weak `gettid`, `statx`, `__cxa_thread_atexit_impl`).
 
-## Feature combinations
+## Struct ABI parity (checked by the tests, not by `nm`)
 
-`translation/Cargo.toml` declares **no `[features]` table**, hence exactly one
-build configuration exists (default = no features). "Every feature combination"
-therefore reduces to the single default combination; the test suite is
-additionally run under `--release` and under `--no-default-features` to prove
-the surface is configuration-independent.
+`task_manager.h` exposes two structs by value in the public header, so their
+layout is part of the ABI. The tests read the C-allocated `TaskManager` through
+the Rust `#[repr(C)]` definition and vice versa.
 
-## Build note (staleness hazard)
+| type | C layout | Rust layout (`#[repr(C)]`) |
+|------|----------|----------------------------|
+| `Task`        | `char description[256]; int priority;` → size 260, align 4 | `[c_char; 256]`, `c_int` → 260 / 4 |
+| `TaskManager` | `Task *tasks; int max_tasks; int task_count;` → size 16, align 8 | `*mut Task`, `c_int`, `c_int` → 16 / 8 |
 
-`cargo test` does **not** build a `crate-type = ["cdylib"]` library target — the
-test harness cannot link one, so cargo skips it. The `.so` must be produced by
-an explicit `cargo build` / `cargo build --release` first, otherwise the tests
-either fail to find it or silently exercise an *old* one.
+## Result
 
-`tests/common/mod.rs::rust_so()` guards both cases: it asserts the `.so` exists
-and that every `src/*.rs` is older than it. `run_verification.sh` runs
-`cargo build` before `cargo test` for each profile and feature combination.
+Verified for both profiles after every change:
+
+```
+$ diff <(nm -D --defined-only c_src/build/libdriver.so | awk '{print $3}' | sort) \
+       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+(no output — symbol diff is EMPTY)
+```
+
+* 10 / 10 exported symbols present in the Rust `.so`, exact names.
+* 0 missing or undefined **non-libc** symbols.
+* No stubs: every symbol is a real translation of the corresponding C function.
+  `tests/phase_c.rs::e08_…` and `::e19_…` additionally assert mechanically that
+  all 16 string literals of the C implementation — including those on
+  unreachable error branches — are compiled into the Rust `.so`, so a dropped or
+  faked branch would be caught here rather than passing as "symbol present".
+* Struct ABI parity is exercised for real: the tests hand C-allocated
+  `TaskManager*` pointers to the Rust library and vice versa, and read every
+  `Task` back as raw bytes.

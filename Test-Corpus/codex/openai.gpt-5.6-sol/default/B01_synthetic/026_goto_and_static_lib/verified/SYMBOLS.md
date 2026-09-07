@@ -1,30 +1,21 @@
-# Dynamic Symbol Surface
+# Dynamic symbol parity
 
-Generated from:
+Derived mechanically from the complete output of:
 
 ```text
 nm -D ../c_src/build/libdriver.so
+nm -D target/release/libdriver.so
 ```
 
-## Library-defined public symbols
+| C dynamic symbol | C type | Rust entry present | Status |
+|------------------|--------|--------------------|--------|
+| `_ITM_deregisterTMCloneTable` | `w` | yes | [x] exact match |
+| `_ITM_registerTMCloneTable` | `w` | yes | [x] exact match |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | yes | [x] exact match |
+| `__gmon_start__` | `w` | yes | [x] exact match |
+| `driver` | `T` | yes (`T`) | [x] exact match |
+| `printf@GLIBC_2.2.5` | `U` | yes | [x] exact match |
+| `puts@GLIBC_2.2.5` | `U` | yes | [x] exact match |
 
-| symbol | C `nm` type | Rust export | status |
-|--------|-------------|-------------|--------|
-| `driver` | `T` | `driver` (`T`) | [x] |
-
-## Imported runtime symbols
-
-These are undefined runtime/toolchain imports, not API exports implemented by
-this library.
-
-| symbol | C `nm` type | Rust dynamic table |
-|--------|-------------|--------------------|
-| `_ITM_deregisterTMCloneTable` | `w` | present (`w`) |
-| `_ITM_registerTMCloneTable` | `w` | present (`w`) |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | present (`w`) |
-| `__gmon_start__` | `w` | present (`w`) |
-| `printf@GLIBC_2.2.5` | `U` | present (`U`) |
-| `puts@GLIBC_2.2.5` | `U` | present (`U`) |
-
-The C shared object has one defined dynamic symbol. No C-defined public symbol
-is missing from the Rust shared object.
+`driver` is the only symbol defined and publicly exported by the C library.
+Missing C dynamic symbol entries in Rust: **0**.

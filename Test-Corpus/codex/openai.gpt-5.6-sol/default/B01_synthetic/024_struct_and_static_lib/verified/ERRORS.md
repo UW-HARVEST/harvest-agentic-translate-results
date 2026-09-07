@@ -1,18 +1,16 @@
 # Error Surface
 
-The C source and public header were mechanically searched for rejection and
-error constructs, including `RETURN_ERROR`, `return`, `NULL`, `assert`,
-`abort`, `exit`, `if`, `switch`, loops, comparisons, range constants, and
-enums.
+Mechanical scans covered `c_src/include/` and `c_src/src/` for error-return
+macros/statements, negative and null returns, assertions, conditionals,
+switches, null checks, range comparisons, and min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
 
-There are no rejection branches or error-return paths in this library.
-Neither exported function accepts pointers, lengths, enum values, modes, or
-flags. Both accept one by-value C `int`, return `void`, and treat zero as a
-normal valid value. Consequently, the generic null, zero-length, oversized
-length, and out-of-range-enum checks are not applicable.
+There are zero source-defined rejection conditions. The exported functions
+take one C `int` by value and return `void`; there are no pointer, length, enum,
+option, mode, or documented-range inputs to reject.
 
-Phase C rows: **0 (complete)**
-
+Phase C status: [x] complete. Generic C-API boundary coverage is provided by
+`phase_c_generic_integer_boundaries`, which compares `INT_MIN` and `INT_MAX`
+through both exported entry points.

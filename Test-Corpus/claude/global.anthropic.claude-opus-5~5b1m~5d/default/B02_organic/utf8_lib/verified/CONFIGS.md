@@ -1,100 +1,95 @@
-# CONFIGS.md — CONFIGURATION-SURFACE TABLE (Phase A / gate for Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-Mechanically enumerated from the branches `c_src/src/lib.c` actually takes.
+## Axes mechanically derived from `c_src/src/lib.c`
 
-## Axis 1 — public entry points (ALL of them, lowest level included)
+**Public entry points** (the full set, lowest-level first):
 
-| entry point | declared in | level |
-|-------------|-------------|-------|
-| `w_utf8_drop(const char *)` | **not** in `lib.h`, exported from `lib.c` (line 39) | low-level scanner, callable directly |
-| `w_utf8_filter(const char *, bool)` | `lib.h` line 3 | high-level; internally *composes* `w_utf8_drop` + the copy loop |
+* `w_utf8_drop(const char *)` — the low-level scanner. Not in `lib.h`, but exported
+  (`nm -D` shows `T w_utf8_drop`), so it is a real public entry point and is driven
+  **directly**, not only through the `w_utf8_filter` wrapper.
+* `w_utf8_filter(const char *, bool)` — the convenience/one-shot wrapper.
 
-There is no init/teardown, no context object, no global state.
+**Runtime options** (the only one the API can set):
 
-## Axis 2 — runtime options / flags
+* `replacement` (`bool`): toggles the `if (replacement)` block at `lib.c:97`.
+  * `false` → invalid bytes are silently **dropped** (`valid++` only); output is never
+    longer than the input, so the initial `malloc(strlen+1)` is never grown and the
+    `repl`/`realloc` code is dead.
+  * `true` → each invalid byte emits `EF BF BD` (U+FFFD) and the
+    `repl < 3` / `size += REPLACEMENT_INC` / `realloc` growth machinery is live.
+  * non-canonical byte values (`2`, `0xFF`, ...) — see ERRORS.md E21.
 
-| option | values the C distinguishes | branch |
-|--------|---------------------------|--------|
-| `replacement` (`_Bool`) | `0` → false; **any** non-zero byte → true (`cmpb $0x0`, line 97) | `if (replacement)` |
-| `REPLACEMENT_INC` | compile-time `4096` (line 7); drives the `repl < 3` branch (line 98) | `if (repl < 3)` realloc-or-not |
+**Internal branch/state axis** in `w_utf8_filter`:
 
-There are **no** `#ifdef`s and no `[features]` in `Cargo.toml`, so the flag
-cross-product is `{0, 1, other-non-zero}`.
+* `*valid == '\0'` (input is entirely valid) → `strdup(string)` fast path.
+  Allocation is `strlen+1` from `strdup`, `replacement` is irrelevant.
+* `*valid != '\0'` (input has ≥1 invalid byte) → `malloc` + `memcpy` prefix path.
+  The `memcpy` length `i = valid - string` makes the **offset of the first invalid
+  byte** an axis in its own right (0 / 1 / mid-string / just before the NUL).
 
-## Axis 3 — input shapes the code special-cases
+**Input-shape axes the code special-cases** (one branch per `valid_N` macro and
+per sub-condition inside them):
 
-* **length**: 0 (empty), 1, 2, 3, 4, 5, small random, ≥ 4096, ≥ 1 MiB
-* **element width** taken by the scanner: 1 / 2 / 3 / 4 byte forms
-  (`valid_1` … `valid_4`, tried strictly in that order)
-* **lead-byte special cases**: `0xC2` (lowest legal 2-byte lead), `0xE0`
-  (overlong guard), `0xED` (surrogate guard), `0xEF` (the extra `<= 0xBF`
-  clause), `0xF0` (overlong guard), `0xF4` (upper-limit guard)
-* **code-point boundary values**: U+0001, U+007F, U+0080, U+07FF, U+0800,
-  U+D7FF, U+E000, U+FFFD, U+FFFF, U+10000, U+10FFFF
-* **validity mix**: all-valid / all-invalid / mixed
-* **position of the first invalid byte**: offset 0 (⇒ `memcpy` of 0 bytes),
-  middle, last byte, "none" (⇒ the `strdup` fast path at line 64)
-* **run length of invalid bytes** (drives the `repl`/`realloc` bookkeeping):
-  0, 1, 2, 3, 1364, 1365, 1366, 2730, 2731, 4096, 100 000
-* **truncation**: multi-byte form cut short by the NUL terminator (1, 2 or 3
-  bytes missing) — the boundary-read case
-* **byte order / element type**: n/a (byte-oriented API, no endianness, no
-  element-type parameter)
+* length: empty (0), 1 byte, 2, 3, 4, sub-4096, ~4096, > 4096 bytes.
+* `valid_1`: `00`-`7F` (incl. the NUL loop terminator).
+* `valid_2`: lead `C2`-`DF`; rejected leads `C0`,`C1`; continuation in/out of `80`-`BF`.
+* `valid_3`: lead `E0`-`EF`; special leads `E0` (needs b1 ≥ `A0`), `ED` (needs b1 < `A0`),
+  `EF` (needs b1 ≤ `BF`, vacuously true); generic leads `E1`-`EC`,`EE`.
+* `valid_4`: lead `F0`-`F4`; special leads `F0` (needs b1 ≥ `90`), `F4` (needs b1 ≤ `8F`);
+  generic leads `F1`-`F3`; rejected leads `F5`-`F7` (and `F8`-`FF` match nothing).
+* bare continuation bytes `80`-`BF` as a lead → matches nothing.
+* truncated sequences abutting the NUL terminator (short-circuit / no over-read).
+* count and clustering of invalid bytes: 0 / 1 / a few / many (> 1365, to force
+  repeated `realloc` cycles) / all bytes invalid / alternating valid+invalid.
+* signedness trap: bytes ≥ `0x80` (the C compares `char` **signed** in
+  `(x)[0] >= (char)0xC2` and `(x)[0] != (char)0xE0`, but **unsigned** in
+  `(unsigned char)(x)[1] >= 0xA0`) — every row uses high bytes.
 
-## Row table
+No `#ifdef`, no `switch`, no other flags, no byte-order or element-type axes exist
+in this library.
 
-`R` column: value(s) of `replacement` exercised. Every row is run with **many
-randomized inputs** (splitmix64, fixed seed per row) unless it says "fixed".
+## Rows (cross-product, pruned to what the C actually distinguishes)
 
-| #   | entry point(s) | configuration (options set + input shape) | R | test | ✔ |
-|-----|----------------|-------------------------------------------|---|------|---|
-| C1  | `w_utf8_drop` | empty string, length 0 | — | `c1_drop_empty` | [x] |
-| C2  | `w_utf8_drop` | all-ASCII (1-byte forms only), lengths 1…64 + random | — | `c2_drop_ascii` | [x] |
-| C3  | `w_utf8_drop` | valid 2-byte forms only (leads 0xC2…0xDF), random | — | `c3_drop_valid2` | [x] |
-| C4  | `w_utf8_drop` | valid 3-byte forms only (all leads 0xE0…0xEF incl. 0xE0/0xED/0xEF guards), random | — | `c4_drop_valid3` | [x] |
-| C5  | `w_utf8_drop` | valid 4-byte forms only (leads 0xF0…0xF4 incl. both guards), random | — | `c5_drop_valid4` | [x] |
-| C6  | `w_utf8_drop` | mixed valid forms, widths 1–4 interleaved, random | — | `c6_drop_valid_mixed` | [x] |
-| C7  | `w_utf8_drop` | code-point boundary table (fixed): U+0001, U+007F, U+0080, U+07FF, U+0800, U+D7FF, U+E000, U+FFFD, U+FFFF, U+10000, U+10FFFF | — | `c7_drop_boundary_codepoints` | [x] |
-| C8  | `w_utf8_drop` | uniform random bytes 0x01…0xFF (mostly invalid), lengths 1…64 | — | `c8_drop_uniform_random` | [x] |
-| C9  | `w_utf8_drop` | bytes drawn only from the *interesting* boundary set (0x7F, 0x80, 0x9F, 0xA0, 0xBF, 0xC0, 0xC1, 0xC2, 0xDF, 0xE0, 0xED, 0xEE, 0xEF, 0xF0, 0x8F, 0x90, 0xF4, 0xF5, 0xF7, 0xF8, 0xFF), lengths 1…40 | — | `c9_drop_interesting_bytes` | [x] |
-| C10 | `w_utf8_drop` | valid prefix of random length followed by one invalid sequence then more junk | — | `c10_drop_valid_prefix_then_invalid` | [x] |
-| C11 | `w_utf8_drop` | truncated multi-byte forms at end of buffer (2/3/4-byte forms cut by NUL, every cut position) | — | `c11_drop_truncated_tail` | [x] |
-| C12 | `w_utf8_drop` | long input (64 KiB) of mixed valid/invalid | — | `c12_drop_long_mixed` | [x] |
-| C13 | `w_utf8_filter` | fully valid input ⇒ `strdup` fast path; shapes of C2…C7 | 0 | `c13_filter_valid_strdup_r0` | [x] |
-| C14 | `w_utf8_filter` | fully valid input ⇒ `strdup` fast path; shapes of C2…C7 | 1 | `c14_filter_valid_strdup_r1` | [x] |
-| C15 | `w_utf8_filter` | empty string ⇒ `strdup("")` | 0, 1 | `c15_filter_empty` | [x] |
-| C16 | `w_utf8_filter` | first invalid byte at offset 0 (`memcpy` length 0) | 0 | `c16_filter_invalid_at_0_r0` | [x] |
-| C17 | `w_utf8_filter` | first invalid byte at offset 0 | 1 | `c17_filter_invalid_at_0_r1` | [x] |
-| C18 | `w_utf8_filter` | first invalid byte in the middle (non-zero `memcpy`) | 0 | `c18_filter_invalid_mid_r0` | [x] |
-| C19 | `w_utf8_filter` | first invalid byte in the middle | 1 | `c19_filter_invalid_mid_r1` | [x] |
-| C20 | `w_utf8_filter` | invalid byte is the **last** byte of the string | 0, 1 | `c20_filter_invalid_last` | [x] |
-| C21 | `w_utf8_filter` | uniform random bytes 0x01…0xFF, lengths 1…64 | 0 | `c21_filter_uniform_r0` | [x] |
-| C22 | `w_utf8_filter` | uniform random bytes 0x01…0xFF, lengths 1…64 | 1 | `c22_filter_uniform_r1` | [x] |
-| C23 | `w_utf8_filter` | interesting-byte-set inputs, lengths 1…40 | 0 | `c23_filter_interesting_r0` | [x] |
-| C24 | `w_utf8_filter` | interesting-byte-set inputs, lengths 1…40 | 1 | `c24_filter_interesting_r1` | [x] |
-| C25 | `w_utf8_filter` | mixed valid forms + injected invalid sequences of every invalid class | 0 | `c25_filter_mixed_classes_r0` | [x] |
-| C26 | `w_utf8_filter` | mixed valid forms + injected invalid sequences of every invalid class | 1 | `c26_filter_mixed_classes_r1` | [x] |
-| C27 | `w_utf8_filter` | truncated multi-byte tails (every cut position) | 0, 1 | `c27_filter_truncated_tail` | [x] |
-| C28 | `w_utf8_filter` | runs of exactly N invalid bytes, N ∈ {1,2,3,4,1364,1365,1366,2730,2731,4096} — crosses the `repl < 3` / `REPLACEMENT_INC` realloc boundary | 1 | `c28_filter_realloc_boundary_r1` | [x] |
-| C29 | `w_utf8_filter` | same run lengths as C28 but `replacement = 0` (no realloc at all, output shrinks) | 0 | `c29_filter_runs_no_realloc_r0` | [x] |
-| C30 | `w_utf8_filter` | invalid bytes spread through a long (64 KiB) mixed buffer ⇒ many realloc cycles | 0, 1 | `c30_filter_long_mixed` | [x] |
-| C31 | `w_utf8_filter` | 1 MiB fully-valid input (`strdup` of a large block) | 0, 1 | `c31_filter_large_valid` | [x] |
-| C32 | `w_utf8_filter` | 1 MiB fully-invalid input (≈350 000 reallocs) | 1 | `c32_filter_large_invalid_r1` | [x] |
-| C33 | `w_utf8_filter` | non-canonical `replacement` byte values 2, 3, 0x7F, 0x80, 0xFE, 0xFF on mixed input | 2,3,0x7F,0x80,0xFE,0xFF | `c33_filter_noncanonical_bool` | [x] |
-| C34 | `w_utf8_filter` | `replacement` register carrying garbage upper bits (0x100, 0x1FF, 0xFFFFFF00, 0xFFFFFFFF, 0xDEADBEEF00, 0xDEADBEEF01) on mixed input | wide | `c34_filter_wide_bool_register` | [x] |
-| C35 | `w_utf8_drop` → `w_utf8_filter` | **composed pipeline**: call `w_utf8_drop`, then `w_utf8_filter` on the returned suffix pointer, then `w_utf8_drop` on the filter's output (must reach the terminator) | 0, 1 | `c35_composed_pipeline` | [x] |
-| C36 | `w_utf8_filter` | idempotence/stability: filter twice, second pass on the already-filtered buffer | 0, 1 | `c36_filter_twice` | [x] |
-| C37 | both | every single-byte input 0x01…0xFF (fixed, exhaustive) | 0, 1 | `c37_exhaustive_len1` | [x] |
-| C38 | both | every two-byte input 0x01…0xFF × 0x01…0xFF (fixed, exhaustive, 65 025 cases) | 0, 1 | `c38_exhaustive_len2` | [x] |
-| C39 | both | exhaustive 3-byte sweep over the *interesting* byte set (23³ = 12 167) plus random 3-byte inputs | 0, 1 | `c39_exhaustive_len3_interesting` | [x] |
-| C40 | both | exhaustive 4-byte sweep over the *interesting* byte set (23⁴ = 279 841) | 0, 1 | `c40_exhaustive_len4_interesting` | [x] |
-| C41 | both | 0xEF-lead sequences specifically (the `<= 0xBF` clause) — all 0xEF x y combinations over the interesting set | 0, 1 | `c41_ef_lead_sweep` | [x] |
-| C42 | both | 0xE0 / 0xED / 0xF0 / 0xF4 lead bytes with **all** 256 possible second bytes (fixed, exhaustive) | 0, 1 | `c42_guarded_lead_all_second_bytes` | [x] |
-| C43 | both | repeated calls on the same buffer (statelessness) and interleaved C/Rust calls | 0, 1 | `c43_repeated_calls_stateless` | [x] |
-| C44 | both | buffers with **interior NUL bytes** (1 and several) — the API is `strlen`-based, so everything from the first NUL must be ignored; plus a buffer that starts with the terminator | 0, 1 | `c44_interior_nul_terminates` | [x] |
-| C45 | both | the same content at **every start offset 0…15** inside a larger allocation (unaligned input pointer), short and 400-byte buffers | 0, 1 | `c45_unaligned_start_pointer` | [x] |
+Every row is driven with **many randomized inputs** (fixed seed, deterministic
+xorshift PRNG in `tests/common/mod.rs`), and both `.so`s are called through
+`libloading` and compared byte-for-byte (plus, for `w_utf8_drop`, the returned
+*offset* is compared, and for `w_utf8_filter` the full NUL-terminated bytes).
 
-Verification for every row: `w_utf8_drop` → returned pointer offset must be
-identical; `w_utf8_filter` → NUL-terminated output bytes identical **and**
-`malloc_usable_size()` of the returned block identical (catches an allocation
-arithmetic divergence that byte comparison alone would hide).
+| #  | entry point(s) | configuration (options set + input shape) | [ ] |
+|----|----------------|-------------------------------------------|-----|
+| C1  | `w_utf8_drop` | empty string `""` | [x] |
+| C2  | `w_utf8_drop` | random pure-ASCII (`01`-`7F`), lengths 1..64 | [x] |
+| C3  | `w_utf8_drop` | random valid 2-byte sequences only (lead `C2`-`DF`), incl. boundary leads `C2`/`DF` | [x] |
+| C4  | `w_utf8_drop` | random valid 3-byte sequences only, generic leads `E1`-`EC`,`EE` | [x] |
+| C5  | `w_utf8_drop` | 3-byte with lead `E0`, b1 swept over the whole `80`-`BF` range (only ≥ `A0` valid) | [x] |
+| C6  | `w_utf8_drop` | 3-byte with lead `ED`, b1 swept over `80`-`BF` (only < `A0` valid — surrogates) | [x] |
+| C7  | `w_utf8_drop` | 3-byte with lead `EF`, b1 swept over `80`-`BF` (the vacuous `<= BF` condition) | [x] |
+| C8  | `w_utf8_drop` | random valid 4-byte sequences, generic leads `F1`-`F3` | [x] |
+| C9  | `w_utf8_drop` | 4-byte with lead `F0`, b1 swept over `80`-`BF` (only ≥ `90` valid) | [x] |
+| C10 | `w_utf8_drop` | 4-byte with lead `F4`, b1 swept over `80`-`BF` (only ≤ `8F` valid) | [x] |
+| C11 | `w_utf8_drop` | rejected leads `C0`,`C1`,`F5`-`F7`,`F8`-`FF` and bare continuations `80`-`BF`, each at offset 0 | [x] |
+| C12 | `w_utf8_drop` | **exhaustive**: all 256 single-byte strings; all 65 536 two-byte strings; all 16 777 216 three-byte strings (offset compared for every one) | [x] |
+| C13 | `w_utf8_drop` | truncated sequence at end of buffer, string placed flush against an unmapped guard page (over-read detection) | [x] |
+| C14 | `w_utf8_drop` | fully random bytes, lengths 0..64, thousands of cases (mixed valid/invalid, arbitrary clustering) | [x] |
+| C15 | `w_utf8_drop` | long random inputs, lengths 1000..9000 (crossing the 4096 boundary) | [x] |
+| C16 | `w_utf8_filter` | `replacement=false`, fully valid input → `strdup` fast path (ASCII / 2 / 3 / 4-byte, and empty) | [x] |
+| C17 | `w_utf8_filter` | `replacement=true`, fully valid input → `strdup` fast path (must be identical to C16) | [x] |
+| C18 | `w_utf8_filter` | `replacement=false`, first invalid byte at offset 0 (`memcpy` length 0) | [x] |
+| C19 | `w_utf8_filter` | `replacement=true`, first invalid byte at offset 0 | [x] |
+| C20 | `w_utf8_filter` | `replacement=false`, first invalid byte mid-string (non-zero `memcpy` prefix) | [x] |
+| C21 | `w_utf8_filter` | `replacement=true`, first invalid byte mid-string | [x] |
+| C22 | `w_utf8_filter` | `replacement=false`, invalid byte as the **last** byte before the NUL | [x] |
+| C23 | `w_utf8_filter` | `replacement=true`, invalid byte as the last byte before the NUL | [x] |
+| C24 | `w_utf8_filter` | `replacement=false`, alternating valid/invalid bytes, all four `valid_N` widths interleaved | [x] |
+| C25 | `w_utf8_filter` | `replacement=true`, alternating valid/invalid, all four widths interleaved | [x] |
+| C26 | `w_utf8_filter` | `replacement=false`, **all** bytes invalid (output is empty string) | [x] |
+| C27 | `w_utf8_filter` | `replacement=true`, all bytes invalid (output is 3× input length) | [x] |
+| C28 | `w_utf8_filter` | `replacement=true`, exactly 1 / 2 / 1365 / 1366 / 1367 / 2731 / 2732 invalid bytes — the `repl < 3` refill boundaries (`4096 / 3 = 1365.33`) | [x] |
+| C29 | `w_utf8_filter` | `replacement=true`, > 5000 invalid bytes → multiple `realloc` growth cycles | [x] |
+| C30 | `w_utf8_filter` | both `replacement` values, truncated multi-byte sequence at end of string | [x] |
+| C31 | `w_utf8_filter` | both `replacement` values, fully random bytes, lengths 0..64, thousands of cases | [x] |
+| C32 | `w_utf8_filter` | both `replacement` values, long random inputs, lengths 1000..9000 | [x] |
+| C33 | `w_utf8_filter` | **exhaustive**: all 256 single-byte and all 65 536 two-byte inputs, for `replacement` ∈ {0,1} | [x] |
+| C34 | `w_utf8_filter` | non-canonical `bool` bytes `2,3,0x7F,0x80,0xFF` on inputs containing invalid bytes (ERRORS.md E21) | [x] |
+| C35 | `w_utf8_drop` + `w_utf8_filter` composed | pipeline: `w_utf8_filter(s, r)` result fed back through `w_utf8_drop` — the filtered output must be fully valid (drop returns the terminating NUL) for `r=1`, and for `r=0`; compared across both `.so`s | [x] |
+| C36 | `w_utf8_filter` | returned pointer is `free()`-able (allocated by the same libc `malloc`/`strdup`) — checked for both `.so`s on both paths | [x] |

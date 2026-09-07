@@ -1,90 +1,93 @@
-# CONFIGS.md — Phase A: Configuration-surface table
+# CONFIGS.md — Phase A configuration-surface table
 
-## Axes, derived mechanically from the C source
+## Axis derivation
 
-Public API surface (`c_src/include/driver.h`, cross-checked against
-`nm -D --defined-only c_src/build/libdriver.so` which lists exactly one symbol):
+`driver` has no options, flags, modes, or `#ifdef`s. Grepping the C source for
+branch points:
 
-```c
-void driver(const char *s1, const char *s2);
+```
+$ grep -cE 'if|switch|#if|for|while|\?' c_src/src/driver.c
+0
 ```
 
-`driver` is simultaneously the highest-level *and* the lowest-level public entry point —
-there is only one, so "test the low-level entry points, not just the convenience
-wrapper" collapses to testing `driver` itself. Its body is
-`printf("%zu\n", strcspn(s1, s2))`.
+The C function body is straight-line code. All behavioural variation therefore
+comes from the two libc primitives it composes, so the configuration axes are
+the input *shapes* those primitives branch on:
 
-### Axis 1 — runtime options / modes / flags: **none**
+* **A1 — `strcspn` reject-set size** (`strlen(s2)`): `0` (empty reject set →
+  `strcspn` degenerates to `strlen`), `1`, `2..16`, `>16`, all 255 non-NUL bytes.
+  glibc dispatches `strcspn` to a `strlen` fast path when `s2[0] == '\0'`, and
+  to a 16-byte `pcmpistri` / AVX2 path otherwise, so this axis selects real
+  distinct machine code.
+* **A2 — match position in `s1`**: no match at all (scan to NUL), match at
+  index 0 (immediate return), match in the first vector chunk, match beyond the
+  first chunk, match at the very last byte.
+* **A3 — `strlen(s1)`**: 0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, ~4 KiB
+  (page), 1 MiB. Straddles every SIMD block size and the page boundary that
+  glibc's over-reading loads are careful about.
+* **A4 — byte-value domain**: ASCII-only, bytes `0x80..=0xFF` (high bit set —
+  distinguishes a signed-`char` from an unsigned-`char` comparison), full
+  `0x01..=0xFF` mix.
+* **A5 — pointer alignment**: `s1` and `s2` each offset `0..16` bytes into
+  their allocation, independently. Selects between glibc's aligned and
+  unaligned entry paths.
+* **A6 — buffer relationship**: disjoint buffers, `s1 == s2` (aliased), `s1`
+  pointing into the interior of `s2`'s buffer (overlapping).
+* **A7 — result magnitude → `printf("%zu")` digit width**: 1..7 digits, since
+  `%zu` formatting of a `size_t` is the other half of the observable output.
 
-`grep -nE '\b(if|switch|else)\b|#if' src/*.c include/*.h` matches only the `DRIVER_H_`
-include guard. There is no options struct, no context/handle object, no global or
-`static` state, no environment-variable lookup, no `#ifdef` feature toggle, and no
-integer/enum/flag parameter. Nothing the caller can set changes the code path. The
-only inputs are the *contents* of the two strings, so all remaining axes are input
-**shape** axes.
+Duplicate bytes inside `s2` and a `s2` that is a permutation of itself are
+folded into A1/A4 (they change no branch, only the table contents).
 
-### Axis 2 — shape of `s1` (the scanned string)
+## Entry points
 
-`empty` · `1 byte` · `short (2..16)` · `crosses SIMD block boundaries (15/16/17, 31/32/33, 63/64/65 bytes)` · `long (hundreds)` · `very long (≥ 1 MiB)`
-
-### Axis 3 — shape of `s2` (the reject set)
-
-`empty` · `1 byte` · `few bytes` · `many bytes` · `all 255 non-NUL bytes` · `contains duplicates` · `longer than s1`
-
-### Axis 4 — position of the first match (the value the result depends on)
-
-`no match → result = strlen(s1)` · `match at index 0 → result 0` · `match in the middle` · `match at the last byte → result = strlen(s1)-1` · `every byte matches`
-
-### Axis 5 — byte-value domain (the only place C `char` signedness can leak)
-
-`ASCII printable (0x20..0x7E)` · `0x01..0x1F control bytes` · `0x7F` · `0x80..0xFF high bytes (negative as signed char)` · `full 0x01..0xFF sweep` · `mixed ASCII + high`
-
-### Axis 6 — memory placement (over-read sensitivity of the scan loops)
-
-`heap, ordinary` · `NUL flush against an unmapped page boundary` · `misaligned start offsets 0..15`
-
-Result-value axis: the printed text is `%zu` of a `size_t`, so `result = 0`,
-single digit, multi-digit, and ≥ 2^20 all exercise different `printf` conversions.
+The library exposes exactly **one** public entry point, `driver`. There is no
+convenience wrapper / low-level split to distinguish: `driver` *is* the
+lowest-level entry point, and it is the one every row below calls, through the
+`.so` export via `libloading`.
 
 ## Configuration table
 
-One row per combination the C code treats differently (cross-product of axes 2–6,
-pruned to the distinguishable cases). Every row is driven through **both** `.so`s via
-`libloading` and compared byte-for-byte on stdout; every row marked *randomized* uses
-many seeded pseudo-random inputs (fixed seed, SplitMix64 in `tests/common/mod.rs`), not
-a single hand-picked value. Tests live in `tests/valid_paths.rs`.
+Each row is exercised with **many randomized inputs** (fixed seed `0x5EED_1234`,
+a `SplitMix64` generator in the test file, ≥64 cases per row unless noted) and
+its stdout compared byte-for-byte between the C and Rust `.so`.
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `driver` | `s1 = ""`, `s2 = ""` — both empty (result 0) | [x] |
-| 2 | `driver` | `s1 = ""`, `s2` non-empty (result 0; `s2` never dereferenced) | [x] |
-| 3 | `driver` | `s1` non-empty, `s2 = ""` — empty reject set ⇒ result = `strlen(s1)`; *randomized* over `s1` length 1..256 and random bytes | [x] |
-| 4 | `driver` | `s1` 1 byte, `s2` 1 byte, equal ⇒ 0 / unequal ⇒ 1; *randomized* over all byte pairs incl. high bytes | [x] |
-| 5 | `driver` | match at index 0 (first byte of `s1` is in `s2`) ⇒ result 0; *randomized* | [x] |
-| 6 | `driver` | match strictly in the middle of `s1`; *randomized* over length and match index | [x] |
-| 7 | `driver` | match at the **last** byte of `s1` ⇒ result = `strlen(s1)-1`; *randomized* | [x] |
-| 8 | `driver` | **no match at all** with non-empty `s2` ⇒ result = `strlen(s1)`; *randomized* with disjoint byte alphabets | [x] |
-| 9 | `driver` | **every** byte of `s1` is in `s2` ⇒ result 0; *randomized* | [x] |
-| 10 | `driver` | `s1` length exactly 15/16/17, 31/32/33, 63/64/65 (SIMD block boundaries) × {no match, match at last byte, match at index 0}; *randomized* content | [x] |
-| 11 | `driver` | `s2` = all 255 non-NUL bytes (maximal reject set) ⇒ result 0 for any non-empty `s1`; *randomized* `s1` | [x] |
-| 12 | `driver` | byte domain = ASCII printable only, both strings; *randomized* | [x] |
-| 13 | `driver` | byte domain = high bytes `0x80..0xFF` only (negative as signed `char`) — signedness boundary; *randomized* | [x] |
-| 14 | `driver` | byte domain = full `0x01..=0xFF` sweep, both strings; *randomized* | [x] |
-| 15 | `driver` | `s2` contains duplicate bytes / is longer than `s1` (no early exit) ; *randomized* | [x] |
-| 16 | `driver` | `s1` long (256..4096 bytes) with a match at a random index; *randomized* | [x] |
-| 17 | `driver` | `s1` very long (≥ 1 MiB) with no match ⇒ large `%zu` value (multi-digit conversion) | [x] |
-| 18 | `driver` | misaligned buffers: `s1` and `s2` started at every offset 0..15 inside an over-allocated block; *randomized* content | [x] |
-| 19 | `driver` | `s1` NUL-terminated flush against an unmapped page boundary (over-read detector), match / no match | [x] |
-| 20 | `driver` | `s2` NUL-terminated flush against an unmapped page boundary (over-read detector) | [x] |
-| 21 | `driver` | result-digit-count sweep: `s1` lengths chosen so the printed value has 1, 2, 3, 4, 5, 6, 7 digits (`%zu` formatting) | [x] |
-| 22 | `driver` | repeated / interleaved invocation of C then Rust then C in one process — checks the function is stateless and leaves no residue in stdio state; *randomized* sequence | [x] |
-| 23 | `driver` | full uniform random fuzz over both strings (lengths 0..64, bytes `0x01..=0xFF`), 20 000 seeded iterations | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `driver` | A1=0 (`s2` empty) × A3=0 (`s1` empty) — degenerate `strlen("")` | [x] |
+| 2 | `driver` | A1=0 (`s2` empty) × A3∈{1,15,16,17,31,32,33,63,64,65} × A4=ASCII — `strcspn` ≡ `strlen`, all SIMD block sizes | [x] |
+| 3 | `driver` | A1=0 (`s2` empty) × A3=4096 (page-sized `s1`) | [x] |
+| 4 | `driver` | A1=0 (`s2` empty) × A3=1 MiB (oversized `s1`) | [x] |
+| 5 | `driver` | A1=1 (single reject byte) × A2=no-match × A3∈{1..65} random × A4=ASCII | [x] |
+| 6 | `driver` | A1=1 × A2=match-at-index-0 (immediate return, result `0`) × A4=ASCII | [x] |
+| 7 | `driver` | A1=1 × A2=match-inside-first-16-byte-chunk × A3≥17 | [x] |
+| 8 | `driver` | A1=1 × A2=match-beyond-first-chunk (index ≥16) × A3≥33 | [x] |
+| 9 | `driver` | A1=1 × A2=match-at-last-byte × A3∈{1..65} random | [x] |
+| 10 | `driver` | A1∈2..16 (small reject set) × A2=random × A3∈0..80 random × A4=ASCII | [x] |
+| 11 | `driver` | A1>16 (reject set larger than one vector) × A2=random × A3∈0..80 random | [x] |
+| 12 | `driver` | A1=255 (`s2` = every non-NUL byte) × A3≥1 — result always `0` | [x] |
+| 13 | `driver` | A1=255 (`s2` = every non-NUL byte) × A3=0 — result `0`, `s1` never scanned | [x] |
+| 14 | `driver` | A4=high bytes `0x80..=0xFF` in **both** `s1` and `s2` × A2=match present — signed-vs-unsigned `char` comparison | [x] |
+| 15 | `driver` | A4=high bytes in `s1` only, ASCII `s2` (no match) — result is full `strlen` | [x] |
+| 16 | `driver` | A4=full `0x01..=0xFF` random mix in both × A1,A3 random — broad property sweep, 512 cases | [x] |
+| 17 | `driver` | A5=`s1` offset `0..16` × `s2` offset `0..16` (full 17×17 alignment cross-product) × A2=random | [x] |
+| 18 | `driver` | A6=aliased (`s1 == s2`), non-empty — first byte of `s1` is in `s2`, result `0` | [x] |
+| 19 | `driver` | A6=aliased (`s1 == s2`), both empty — result `0` | [x] |
+| 20 | `driver` | A6=overlapping: `s1` = interior suffix pointer into `s2`'s buffer | [x] |
+| 21 | `driver` | A3 tuned so the result spans A7=1..7 digit widths (0,1,9,10,99,100,999,1000,65535,65536,1048576) | [x] |
+| 22 | `driver` | A3 sized so `s1`'s NUL lands exactly on the final byte of a page, no match — glibc's page-crossing guard | [x] |
+| 23 | `driver` | A3 sized so the *match* byte lands exactly on a page boundary | [x] |
+| 24 | `driver` | `s2` contains repeated/duplicate bytes only (e.g. `"aaaaaaaa"`) × A2=random | [x] |
+| 25 | `driver` | `s1` is a single repeated byte, `s2` = that byte — result `0` | [x] |
+| 26 | `driver` | `s1` is a single repeated byte, `s2` = a different single byte — result `strlen(s1)` | [x] |
+| 27 | `driver` | repeated successive invocations in one process (stdio buffering / no hidden state carried between calls) | [x] |
+| 28 | `driver` | unrestricted property sweep: random A1×A2×A3×A4×A5 for 2000 cases, fixed seed | [x] |
 
-## Feature combinations
+## Binary executable
 
-`translation/Cargo.toml` has **no `[features]` table**, so the feature power-set is
-`{ default } = { ∅ }`: `--no-default-features`, `--all-features` and the default build
-are the same library. `check_features.sh` enumerates the (empty) feature list from
-`cargo metadata` and re-runs the whole suite for each combination, and
-`tests/feature_matrix.rs::no_cargo_features_declared` fails if a feature is ever added
-without extending this matrix.
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)`
+— there is **no `add_executable`**, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. The project builds **no driver
+binary**, so the "compare C and Rust stdout of the binaries" gate is vacuous.
+Stdout *is* nevertheless compared byte-for-byte for every row above, because
+`driver`'s only observable effect is what it `printf`s.

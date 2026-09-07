@@ -1,9 +1,12 @@
 # Configuration Surface
 
-Mechanical inspection found one public entry point and no runtime options,
-modes, flags, element types, sizes, formats, byte-order choices, compile-time
-features, or conditional data-shape branches.
+The public headers expose one entry point and no runtime options, modes,
+flags, element types, formats, byte-order choices, counts, pointers, or
+feature-controlled APIs. The C implementation contains no `if` or `switch`
+branch. Its one input shape is a by-value C `int`; tests include fixed-seed
+random values plus `INT_MIN`, `INT_MIN + 1`, `-1`, `0`, `1`, `INT_MAX - 1`,
+and `INT_MAX`.
 
-| # | entry point(s) | configuration (options set + input shape) | status |
-|---|----------------|--------------------------------------------|--------|
-| 1 | `driver(int)` | No options; scalar C `int` across negative, zero, positive, arithmetic-boundary, and full-domain randomized values; output is the exact bytes written to stdout. | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `driver(int)` | No options; every by-value C `int` input. Observable output is the bytes written to stdout by `printf("%d\n", 2*x + 300)`. | [x] |

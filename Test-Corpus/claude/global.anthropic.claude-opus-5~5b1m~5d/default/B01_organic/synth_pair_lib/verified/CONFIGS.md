@@ -1,84 +1,135 @@
-# CONFIGS.md — configuration / valid-input surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-Mechanically derived from the axes `c_src/src/lib.c` actually branches on or
-indexes with. There are **no** runtime options, no flags, no modes, no global
-state, no `#ifdef` in this library (`grep -c 'ifdef\|ifndef\|#if' c_src/src/lib.c
-c_src/include/lib.h` → 0), so the configuration surface is entirely made of
-*input shapes* and *value ranges*.
+Mechanically derived from `c_src/include/lib.h` + `c_src/src/lib.c`.
 
-## Axes the C code distinguishes
+## Axes the C code actually branches on
 
-| axis | values the C treats differently | where |
-|------|--------------------------------|-------|
-| A. entry point | `synth_pair` (only exported fn) · `mp3d_scale_pcm` (static, reachable only through `synth_pair`'s two call sites — lane 0 and lane 1) | `lib.c:23`, `lib.c:33` |
-| B. `nch` | `1` (mono/interleave-1) · `2` (stereo, the real mp3 use) · `>2` · `0` · negative · overflowing | `pcm[16 * nch]` |
-| C. `z` tap layout | lane 0 reads `z[k*64]`, k∈0..14 · lane 1 reads `z[2 + k*64]` for **even** k∈{0,2,…,14} (8 taps) — 23 distinct floats out of a 899-float extent | `lib.c:15-22`, `lib.c:24-32` |
-| D. per-lane sign pattern | lane 0 mixes **differences** (`z14-z0`, `z12-z2`, `z10-z4`, `z8-z6`) and **sums** (`z1+z13`, `z3+z11`, `z5+z9`) plus a bare `z7` term; lane 1 is 8 plain products with 3 negative weights (`-9975`, `-45`, `-5`) | `lib.c:15-32` |
-| E. accumulator magnitude | inside `(-32767.5, 32766.5)` (conversion path) · `>= 32766.5` (high clamp) · `<= -32767.5` (low clamp) | `lib.c:4-7` |
-| F. accumulator sign | `>= 0` (no bias correction) · `< 0` (`s -= 1`) | `lib.c:9` |
-| G. float classes present in `z` | normals · zeros (`+0`/`-0`) · subnormals · huge finite · `±inf` · NaN | IEEE-754 f32 behaviour of `subss`/`addss`/`mulss` |
-| H. `pcm` buffer geometry | write targets `pcm[0]` and `pcm[16*nch]` — distinct, identical (`nch==0`), or negative-side | `lib.c:23,33` |
+**Public entry points** (the header declares exactly one; there is no
+convenience wrapper vs. low-level split):
 
-The library has **no Cargo features** (`grep -A5 '\[features\]' Cargo.toml` → no
-`[features]` section), so the only build configurations are the default one and
-the `--no-default-features` one, which are identical. Both are exercised (see
-`run_all_feature_combos.sh`).
+* `void synth_pair(mp3d_sample_t *pcm, int nch, const float *z)` — the only
+  exported symbol.
+* `static int16_t mp3d_scale_pcm(float)` — internal, reachable only through
+  `synth_pair`; exercised via crafted `z` vectors that drive the accumulator to
+  each of its branches (that is the low-level path, driven end to end).
 
-## Configuration table (cross-product, pruned to what the C distinguishes)
+**Runtime options / modes:** none (no flags, no global state, no `#ifdef` in
+`lib.c`, no init/teardown). The library is a pure stateless function.
 
-Every row is driven with **many randomized inputs** from a fixed-seed
-xorshift/SplitMix PRNG (see `tests/common/mod.rs`), not a single hand-picked
-value, and asserts the **whole `pcm` buffer** matches byte-for-byte between the
-C `.so` and the Rust `.so`.
+**Axis 1 — `nch` (int).** The only integer parameter. It selects the store index
+`16 * nch` (line 33). Distinguished values:
+`0` (aliases `pcm[0]`, second store wins), `1` (mono stride), `2` (stereo
+stride — the real mp3 use), `>2`, negative (index below `pcm`).
 
-| # | entry point(s) | configuration (options set + input shape) | iters | test | ✔ |
-|---|----------------|--------------------------------------------|-------|------|---|
-| C1  | `synth_pair` | `nch=1`, `z` = small uniform normals in `[-1,1)`, conversion path, both signs | 20000 | `cfg_c1_small_uniform_nch1` | [x] |
-| C2  | `synth_pair` | `nch=2` (stereo), `z` = small uniform normals in `[-1,1)` | 20000 | `cfg_c2_small_uniform_nch2` | [x] |
-| C3  | `synth_pair` | `nch=3..8`, `z` = small uniform normals (checks the `16*nch` stride for many strides) | 20000 | `cfg_c3_varied_nch_small_uniform` | [x] |
-| C4  | `synth_pair` | `nch=2`, `z` scaled so lane sums straddle the clamp thresholds (mixed clamp / no-clamp, `±` amplitude ≈ `32767/75038`..`32767/1000`) | 20000 | `cfg_c4_near_clamp_thresholds` | [x] |
-| C5  | `synth_pair` | `nch=2`, `z` scaled so **both** lanes almost always clamp high or low (`amp` ≈ 1e2..1e6) | 20000 | `cfg_c5_mostly_clamping` | [x] |
-| C6  | `synth_pair` | `nch=1`, `z` = **all zeros** except one randomly chosen *read* tap set to a random value (isolates each of the 23 taps and its weight/sign) | 23×2000 | `cfg_c6_single_tap_isolation` | [x] |
-| C7  | `synth_pair` | `nch=2`, `z` = all zeros except one randomly chosen **non-read** index (proves the untouched indices really are untouched in both) | 4000 | `cfg_c7_unread_indices_are_ignored` | [x] |
-| C8  | `synth_pair` | `nch=2`, `z` = exact bit patterns drawn from a boundary pool: `±0.0`, `±f32::MIN_POSITIVE`, `±1e-40` (subnormal), `±1.0`, `±0.5`, `±32766.5`, `±32767.5`, `±f32::MAX`, `±f32::EPSILON` | 20000 | `cfg_c8_boundary_value_pool` | [x] |
-| C9  | `synth_pair` | `nch=2`, `z` = **fully random 32-bit patterns** reinterpreted as f32 (includes NaNs of every payload, infinities, subnormals, huge values) | 40000 | `cfg_c9_random_bit_patterns` | [x] |
-| C10 | `synth_pair` | `nch=2`, paired taps set to *equal* values so the difference terms cancel to `±0.0` (`z14==z0`, `z12==z2`, `z10==z4`, `z8==z6`) | 20000 | `cfg_c10_cancelling_difference_taps` | [x] |
-| C11 | `synth_pair` | `nch=2`, paired taps set to *opposite* values so the sum terms cancel (`z1==-z13`, `z3==-z11`, `z5==-z9`) | 20000 | `cfg_c11_cancelling_sum_taps` | [x] |
-| C12 | `synth_pair` | `nch=1`, magnitudes spread over the full binade range (random exponent in `2^-45..2^45`, random sign) — catches rounding/ordering differences in the accumulation chain | 40000 | `cfg_c12_wide_exponent_range` | [x] |
-| C13 | `synth_pair` | `nch=2`, only lane-0 taps (`z[k*64]`) randomized, lane-1 taps (`z[2+k*64]`) zeroed | 20000 | `cfg_c13_lane0_only` | [x] |
-| C14 | `synth_pair` | `nch=2`, only lane-1 taps randomized, lane-0 taps zeroed | 20000 | `cfg_c14_lane1_only` | [x] |
-| C15 | `synth_pair` | repeated calls into the **same** `pcm` buffer at different `nch` (statelessness / no hidden global state, interleaved C-then-Rust and Rust-then-C orders) | 8000 | `cfg_c15_repeated_calls_stateless` | [x] |
-| C16 | `synth_pair` | `z` pointer at a **non-zero offset** inside a larger allocation (verifies the `z += 2` pointer bump and offset arithmetic, not just base-of-buffer) | 20000 | `cfg_c16_offset_z_pointer` | [x] |
-| C17 | `synth_pair` | `pcm` pointer at a non-zero offset with a full-buffer byte-compare afterwards (verifies only 2 elements are written) | 20000 | `cfg_c17_offset_pcm_only_two_writes` | [x] |
-| C18 | `synth_pair` | `nch=2`, minimum-extent `z` of exactly `899` floats (no slack) | 20000 | `cfg_c18_exact_extent_z` | [x] |
-| C19 | `synth_pair` | `nch` from `{1,2}` × `z` drawn from a mixture: 70 % normals, 15 % boundary pool, 15 % raw bit patterns (interaction of all value classes in one buffer) | 40000 | `cfg_c19_mixed_class_buffers` | [x] |
-| C20 | `mp3d_scale_pcm` (through lane 0, `z` = one live tap) | sweep the accumulator through **every** distinct region of E1–E14 by solving `z[7*64] = target/75038` for targets across `[-40000, 40000]` plus exact clamp boundaries | 20000 | `cfg_c20_scale_pcm_full_sweep` | [x] |
+**Axis 2 — offset set read from `z`.** Two disjoint strided reads:
+* first accumulator: `z[k*64]` for `k` in `0..=14` (15 taps, coefficients
+  `29, 213, 459, 2037, 5153, 6574, 37489, 75038` with the paired
+  add/subtract structure of lines 15–22);
+* second accumulator, after `z += 2`: `z[2 + k*64]` for `k` in
+  `{0,2,4,6,8,10,12,14}` (8 taps, coefficients `-5, 146, -45, -9975, 64019,
+  9727, 1567, 104`).
+  Highest index touched: `2 + 14*64 = 898`, so `z` must span ≥ 899 floats.
 
-**No `CONFIGS.md` row is unchecked.**
+**Axis 3 — value shape of `z`.** The `f32` accumulation order and the three
+branches of `mp3d_scale_pcm` are value-dependent: small values (round path),
+large values (clamp high / clamp low), mixed signs (cancellation, which is
+where accumulation *order* becomes observable), exact `±0.0`, subnormals,
+`±inf`, `NaN`, and values that make the accumulator land exactly on the
+`32766.5` / `-32767.5` boundaries.
 
-## Exhaustive supplements (beyond the randomized rows)
+**Axis 4 — buffer/aliasing shape of `pcm`.** `pcm[0]` and `pcm[16*nch]` are
+either distinct (`nch != 0`) or the same cell (`nch == 0`); with negative `nch`
+the second store is at a negative offset.
 
-`tests/exhaustive.rs` goes past property-style sampling for the axes where the
-whole input domain is enumerable. All of these compare the C `.so` against the
-Rust `.so` through `dlopen`/`dlsym`.
+Each row below is a combination the C treats differently. Every row is run with
+**many randomized inputs** (seeded xorshift64\*, fixed seed, ≥ the count in the
+row) comparing the full `pcm` buffer byte-for-byte between the C and Rust
+`.so`s.
 
-| # | entry point | coverage | comparisons | test | ✔ |
-|---|-------------|----------|-------------|------|---|
-| X1 | `synth_pair` | **all 2^32** `f32` bit patterns through lane 0's last/dominant tap `z[448]` (weight `75038`) — every normal, subnormal, `±0`, `±inf` and NaN payload | 4 294 967 296 | `exhaustive_all_f32_through_lane0_dominant_tap` | [x] |
-| X2 | `synth_pair` | **all 2^32** `f32` bit patterns through lane 1's dominant tap `z[514]` (weight `64019`) | 4 294 967 296 | `exhaustive_all_f32_through_lane1_dominant_tap` | [x] |
-| X3 | `synth_pair` | strided full-domain sweep through **every one of the 23 read taps** (so every one of the 16 distinct weights and both lanes), plus odd-stride sweeps to hit other mantissa residue classes | ~30 M | `strided_all_f32_through_every_tap` | [x] |
-| X4 | `synth_pair` | each of the 4 **difference** pairs, one operand swept over the full domain while the other is pinned to 13 special values (`±0`, `±1`, subnormal, `±MAX`, `±inf`, NaN, clamp-threshold) — covers cancellation, `inf - inf`, sign-of-zero | ~6.8 M | `strided_difference_pairs_against_pinned_operands` | [x] |
-| X5 | `synth_pair` | each of the 3 **sum** pairs, same construction | ~2.2 M | `strided_sum_pairs_against_pinned_operands` | [x] |
-| X6 | `synth_pair` | validates the `c_scale_pcm_reference` / `model_lane0` cross-check helpers against the **real C `.so`** over all 2^32 lane-0 inputs | 4 294 967 296 | `exhaustive_reference_model_matches_the_c_so` | [x] |
+## Table
 
-Under `--release` these run at `step == 1` (truly exhaustive); unoptimized runs
-use a stride so the suite stays fast (`common::optimized()`).
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `synth_pair` | `nch=1`, `z` = uniform random in `[-1, 1)` (round path, tiny accumulator), 4096 iters | [x] |
+| 2 | `synth_pair` | `nch=2`, `z` = uniform random in `[-1, 1)` (stereo stride), 4096 iters | [x] |
+| 3 | `synth_pair` | `nch=1`, `z` = uniform random in `[-0.5, 0.5)` scaled so the accumulator straddles the whole `int16` range (mixed clamp / round), 4096 iters | [x] |
+| 4 | `synth_pair` | `nch=2`, `z` = random with magnitude `~1e-2` (accumulator in `(-3, 3)`: exercises `s -= (s<0)`, `s==0`, and both signs densely), 4096 iters | [x] |
+| 5 | `synth_pair` | `nch=2`, `z` = large random magnitude `~1e3` → both accumulators saturate high/low most iterations, 2048 iters | [x] |
+| 6 | `synth_pair` | `nch=2`, `z` = fully random 32-bit patterns (any `f32`: normals, subnormals, `±0`, `±inf`, `NaN` all appear), 8192 iters | [x] |
+| 7 | `synth_pair` | `nch=2`, `z` = all zeros / all `-0.0` / all `+1.0` / all `-1.0` (hand-picked degenerate uniform buffers) | [x] |
+| 8 | `synth_pair` | `nch=2`, exactly one tap set to a special value (`+inf`, `-inf`, `NaN`, `f32::MAX`, `f32::MIN_POSITIVE`, subnormal, `-0.0`) and the rest random — swept over **all 23 tap offsets** × 7 specials | [x] |
+| 9 | `synth_pair` | `nch=2`, `z` crafted so accumulator 1 hits the exact boundary `32766.5f` / `-32767.5f` and 1 ULP either side (single-tap solve via coefficient `75038`) | [x] |
+| 10 | `synth_pair` | `nch=0` — **aliasing row**: `pcm[16*0]` == `pcm[0]`, second store overwrites first; random `z`, 2048 iters | [x] |
+| 11 | `synth_pair` | `nch<0` (`-1`, `-2`, `-8`) — negative store offset into a buffer with head-room; random `z`, 1024 iters per `nch` | [x] |
+| 12 | `synth_pair` | `nch` large (`3, 4, 7, 16, 64, 512`) — wide stride, buffer sized `16*nch+1`; random `z` | [x] |
+| 13 | `synth_pair` | `pcm` pre-filled with a non-zero canary pattern, `nch=2` — verifies **only** indices `0` and `32` are written and every other cell is untouched, identically in C and Rust | [x] |
+| 14 | `synth_pair` | `z` buffer of the exact minimum length (899 floats) at the end of an allocation, `nch=1` — confirms neither side reads past index 898 | [x] |
+| 15 | `synth_pair` | `z` unaligned-by-element view (pointer offset by 1 float inside a larger buffer), `nch=2`, random — confirms both use plain element-indexed reads, 1024 iters | [x] |
+| 16 | `synth_pair` | repeated calls with the same `pcm` and advancing `z` (real decoder loop shape: 32 sub-band iterations over one 899+ float window), `nch=2` | [x] |
 
-## Environment-surface supplement
+## Binary executable
 
-| # | entry point | configuration | test | ✔ |
-|---|-------------|---------------|------|---|
-| C21 | `synth_pair` | all four IEEE rounding modes installed by the caller via `fesetround` (`FE_TONEAREST`, `FE_DOWNWARD`, `FE_UPWARD`, `FE_TOWARDZERO`) x 2000 randomized `z` buffers x `nch in {1,2}`. Neither library touches the FP environment, so both must honour MXCSR identically. The test asserts it is **non-vacuous**: all 3 non-default modes must actually change some output. | `differential_under_every_rounding_mode` | [x] |
+`c_src/CMakeLists.txt` builds `add_library(... SHARED ...)` only — there is **no**
+driver executable, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. The "compare binary stdout" gate is
+therefore **not applicable**.
 
-`tests/rounding_mode.rs` is a separate test binary because the rounding mode is
-process-global.
+## Feature combinations
+
+No `[features]` in `Cargo.toml` → the default and `--no-default-features` builds
+are byte-identical code paths. Both are run.
+
+---
+
+## Test-adequacy evidence (mutation testing)
+
+Passing tests only prove something if they can fail. `.scratch/mutate.sh`
+injects 20 deliberate faults into `src/lib.rs`, rebuilds, and re-runs the suite.
+Result: **14 caught, 6 survivors — all 6 proven non-faults.**
+
+| mutant | outcome |
+|--------|---------|
+| drop `s -= (s < 0)` | CAUGHT (15 tests) |
+| coefficient `213 -> 214` | CAUGHT (13) |
+| coefficient `75038 -> 75037` | CAUGHT (13) |
+| acc2 coefficient `-5 -> 5` | CAUGHT (13) |
+| acc2 coefficient `-9975 -> 9975` | CAUGHT (15) |
+| `z += 2` becomes `z += 1` | CAUGHT (16) |
+| tap stride `14*64 -> 14*63` | CAUGHT (13) |
+| reassociate the `459` term | CAUGHT (3 — f32 order matters) |
+| rounding `+0.5f -> +0.4f` | CAUGHT (15) |
+| clamp-high `32767 -> 32766` | CAUGHT (16) |
+| clamp-low `-32768 -> -32767` | CAUGHT (16) |
+| `nch` offset made unsigned | CAUGHT (SIGSEGV on negative `nch`) |
+| store index `16*nch -> 32*nch` | CAUGHT (3 + SIGABRT) |
+| `>=`/`<=` clamp bound flips | *survivor* — **provably equivalent**, see below |
+| clamp constant `32766.5 -> 32767.5` | *survivor* — **provably equivalent** |
+| `as i32 as i16` -> saturating `as i16` | *survivor* — **provably equivalent** |
+| `let mut a: f32` -> `f64` | *survivor* — **does not compile** (rustc rejects it) |
+| two textual no-op controls | *survivor* — expected; they change nothing |
+
+`tests/mutant_equivalence.rs` proves the three real survivors by **exhaustive
+per-ULP enumeration** of every `f32` in the affected windows:
+
+* `>=` -> `>`: differs only at exactly `a == 32766.5`, where the rounding path
+  computes `(int16_t)(32766.5 + .5f) == 32767` — the same value the clamp returns.
+* `<=` -> `<`: at exactly `a == -32767.5` the rounding path gives `-32767`, then
+  `s -= (s < 0)` yields `-32768` — again identical to the clamp.
+* clamp constant raised: for `a` in `[32766.5, 32767.5)`, `a + .5f` lands in
+  `[32767.0, 32768.0)` and is exactly representable (ULP = 1/512), so truncation
+  gives `32767` regardless of which branch is taken.
+* saturating cast: the two guards bound `sample + .5f` to `(-32767.0, 32767.0)`,
+  so saturation can never engage; `NaN` maps to `0` under both spellings.
+
+No input can distinguish these from the original, so their survival is correct
+rather than a coverage gap.
+
+## Harness correctness note
+
+`cargo test` recompiles the crate but does **not** refresh the `cdylib` artifact
+in `target/<profile>/`. An early run of this suite was loading a **stale** `.so`
+and every one of the 20 mutants "survived" — the tests were vacuous. Both
+`run_tests.sh` (builds before testing) and a staleness assertion in
+`tests/common/mod.rs` (refuses to run if the `.so` predates `src/lib.rs`) now
+prevent that failure mode. Always invoke the suite via `./run_tests.sh` or
+`./verify_all.sh`.

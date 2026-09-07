@@ -1,27 +1,37 @@
-# Configuration Surface
+# Configuration surface
 
-The public API has one entry point, no runtime options, no flags, no modes, no
-element-type choices, and no compile-time Cargo features. `cp_pixel_t` is
-always four bytes in RGBA order. The rows below are the defined input-shape
-classes distinguished by the C loop condition and iteration count.
+Mechanical inspection of the public header and implementation found:
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C1 | `premultiply` | zero computed extent: `w == 0` or `h == 0`; null `pix` is permitted because the loop does not execute | [x] |
-| C2 | `premultiply` | negative computed extent: exactly one of `w` and `h` is negative; non-null data remains untouched | [x] |
-| C3 | `premultiply` | one pixel: `w == 1`, `h == 1`; randomized RGBA values including alpha boundaries | [x] |
-| C4 | `premultiply` | many pixels: positive `w`, positive `h`; randomized dimensions and RGBA values | [x] |
-| C5 | `premultiply` | positive extent from two negative dimensions; randomized dimensions and RGBA values | [x] |
+- one public entry point: `premultiply`;
+- no runtime options, modes, flags, enums, formats, or byte-order choices;
+- one fixed four-byte RGBA pixel format;
+- no compile-time Cargo features;
+- one control-flow condition: the loop runs while
+  `i < (w * sizeof(cp_pixel_t)) * h`.
 
-The last row follows the C arithmetic literally: when both dimensions are
-negative and the final signed `stride * h` multiplication is representable,
-the byte extent is positive and the linear pixel loop executes. Inputs that
-overflow that signed multiplication are excluded because the C behavior is
-undefined.
+The rows below enumerate the distinct safe, defined input shapes that affect
+whether the loop runs zero, one, or many times. Positive row/column/rectangle
+shapes are kept separate so randomized tests exercise width and height
+independently.
 
-Feature combinations to verify:
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|---|---|---|
+| C1 | `premultiply` | One pixel: `w = 1`, `h = 1`; randomized RGBA bytes | [x] |
+| C2 | `premultiply` | One row: `w > 1`, `h = 1`; randomized widths and RGBA bytes | [x] |
+| C3 | `premultiply` | One column: `w = 1`, `h > 1`; randomized heights and RGBA bytes | [x] |
+| C4 | `premultiply` | Rectangle: `w > 1`, `h > 1`; randomized dimensions and RGBA bytes | [x] |
+| C5 | `premultiply` | Empty: `w == 0` or `h == 0`; includes null `pix` because C does not read it | [x] |
+| C6 | `premultiply` | Negative bound: exactly one of `w`, `h` is negative; C performs zero iterations | [x] |
+| C7 | `premultiply` | Positive bound from two negative dimensions; randomized safe magnitudes and backing pixels | [x] |
 
-| Cargo feature selection | [ ] |
-|-------------------------|-----|
-| default (no features declared) | [x] |
-| `--no-default-features` (no features declared) | [x] |
+All non-empty rows include alpha values `0`, `255`, and randomized interior
+values across repeated fixed-seed cases. Signed-overflowing dimension products
+are excluded because their C behavior is undefined.
+
+## Feature combinations
+
+`Cargo.toml` declares no features, so the only distinct code configuration is
+the default build. A `--no-default-features` test run is still used as a parity
+check and is behaviorally identical.
+
+All rows pass in both the default and `--no-default-features` test runs.
