@@ -1,77 +1,99 @@
-# ERRORS.md — the error-surface table
+# ERRORS.md -- error-surface table
 
-Derived mechanically from the C sources. Every distinct rejection was found with
-
-```sh
-grep -rn --include='*.c' -E 'return -|return NULL|assert|abort\(\)|exit\(|RNG_BAD|== NULL|!= NULL' \
-    c_src/app/src c_src/lib
-grep -rn --include='*.c' -E 'if *\(' c_src/app/src/sign.c
-```
-
-which yields exactly these sites (excluding `PQCgenKAT_sign.c`, the driver
-program, which is not part of the library):
+Derived mechanically from `c_src` by grepping for every `return -`, `return RNG_*`,
+`== NULL` / `!= NULL` test, `abort()`, range check and min/max constant:
 
 ```
-app/src/sign.c:180  return -1;                app/src/rng.c:33   return RNG_BAD_MAXLEN;
-app/src/sign.c:236  return -1;                app/src/rng.c:66-67 if (x == NULL) return RNG_BAD_OUTBUF;
-app/src/sign.c:272  return -1;                app/src/rng.c:69   return RNG_BAD_REQ_LEN;
-app/src/sign.c:280  return -1;                app/src/rng.c:109  abort();     (OpenSSL failure only)
-                                              app/src/rng.c:205  if (provided_data != NULL)
+grep -rnE 'return *-|return *NULL|RETURN_ERROR|assert|RNG_BAD|NULL|#error|abort' c_src/app c_src/lib
 ```
 
-There are **no** `assert`s anywhere in the library, and none of the hash
-backends (`lib/*/src/*.c`) has an error return: `blake256`/`blake512` always
-`return 0`, everything else returns `void`.
+The reference implementation has **no** `assert()`, no `errno`, and no error enum.
+Every runtime rejection is one of
 
-Sentinel values (`app/include/rng.h`): `RNG_SUCCESS 0`, `RNG_BAD_MAXLEN -1`,
-`RNG_BAD_OUTBUF -2`, `RNG_BAD_REQ_LEN -3`.
+* `sign.c`  -> `return -1`
+* `rng.c`   -> `RNG_BAD_MAXLEN (-1)`, `RNG_BAD_OUTBUF (-2)`, `RNG_BAD_REQ_LEN (-3)`
+* `rng.c`   -> `abort()` (only reachable when OpenSSL itself fails)
 
-## Rejection table
+All `#error` directives are *compile-time* assertions on the parameter sets; they
+are listed at the bottom for completeness but cannot be triggered at run time
+(all 48 shipped parameter combinations satisfy them).
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
-|---|----------|---------------------------------------------|-------------------|------|---|
-| 1 | `crypto_sign_verify` (`sign.c:179`) | `siglen != SPX_BYTES` — checked before anything else. Tested with `0`, `1`, `SPX_BYTES-1`, `SPX_BYTES+1`, `2*SPX_BYTES`, `SIZE_MAX` | `-1` | `diff_errors.rs::err_verify_wrong_siglen` | [x] |
-| 2 | `crypto_sign_verify` (`sign.c:235`) | `memcmp(root, pk + SPX_N, SPX_N) != 0` — the recomputed hypertree root differs. Reached via a 1-bit flip in the signature (R, FORS part, WOTS part, auth path, last byte), a fully random signature, a corrupted `pk` (root half *and* seed half), and a modified long message | `-1` | `diff_errors.rs::err_verify_root_mismatch` | [x] |
-| 3 | `crypto_sign_open` (`sign.c:269`) | `smlen < SPX_BYTES`. Side effects are part of the contract: `memset(m, 0, smlen)` and `*mlen = 0`. Tested with `0`, `1`, `2`, `SPX_BYTES/2`, `SPX_BYTES-1` (and `SPX_BYTES` as the accepted boundary) | `-1`, `*mlen == 0`, first `smlen` bytes of `m` zeroed, bytes beyond `smlen` untouched | `diff_errors.rs::err_sign_open_short_smlen`, `::sign_open_smlen_exactly_spx_bytes` | [x] |
-| 4 | `crypto_sign_open` (`sign.c:277`) | the inner `crypto_sign_verify` fails. Same side effects (`memset(m, 0, smlen)`, `*mlen = 0`). Reached by flipping a bit inside the signature region and by using the wrong `pk` | `-1`, `*mlen == 0`, `m[0..smlen] == 0` | `diff_errors.rs::err_sign_open_bad_signature` | [x] |
-| 5 | `seedexpander_init` (`rng.c:32`) | `maxlen >= 0x100000000`. Tested at `0x1_0000_0000`, `0x1_0000_0001`, `0x2_0000_0000`, `0xffff_ffff_ffff_0000`, `UINT64_MAX`; `0xffff_ffff` is the largest accepted value. The context must be left untouched | `RNG_BAD_MAXLEN` (`-1`) | `diff_rng.rs::err_seedexpander_init_bad_maxlen` | [x] |
-| 6 | `seedexpander` (`rng.c:66`) | `x == NULL`. Checked *before* the length check, so it wins even for an otherwise-invalid `xlen` (tested with `xlen` = 0, 1, 16, 1024, 100000) | `RNG_BAD_OUTBUF` (`-2`) | `diff_rng.rs::err_seedexpander_null_outbuf` | [x] |
-| 7 | `seedexpander` (`rng.c:68`) | `xlen >= ctx->length_remaining` — note the `>=`, so requesting exactly `length_remaining` is *rejected* and `length_remaining - 1` is the largest accepted request. Tested for `maxlen` ∈ {0,1,2,16,100} × `xlen` ∈ {`maxlen`, `maxlen+1`, `maxlen+1000`, `UINT64_MAX`}, plus `maxlen-1` as the accepted boundary | `RNG_BAD_REQ_LEN` (`-3`) | `diff_rng.rs::err_seedexpander_bad_req_len` | [x] |
-| 8 | `AES256_CTR_DRBG_Update` (`rng.c:205`) | `provided_data == NULL` — not an error, but a distinct NULL-pointer branch that skips the 48-byte XOR | no XOR; `Key`/`V` derived from the three AES blocks only | `diff_rng.rs::drbg_update_matches_with_and_without_provided_data` | [x] |
-| 9 | `randombytes_init` (`rng.c:141`) | `personalization_string == NULL` — distinct NULL-pointer branch that skips the seed-material XOR | `DRBG_ctx` seeded from `entropy_input` alone | `diff_rng.rs::randombytes_stream_and_drbg_ctx_state` (alternates NULL / non-NULL) | [x] |
-| 10 | `randombytes` (`rng.c:154`) | `xlen == 0` — the `while` body never runs, but the trailing `AES256_CTR_DRBG_Update(NULL, …)` and `reseed_counter++` still happen | `RNG_SUCCESS`, `DRBG_ctx` still advanced | `diff_rng.rs::randombytes_zero_length` | [x] |
-| 11 | `handleErrors` (`rng.c:107`) | an OpenSSL `EVP_*` call fails → `ERR_print_errors_fp(stderr); abort()` | process abort | **not reachable**: it can only fire if `EVP_CIPHER_CTX_new` / `EVP_EncryptInit_ex` / `EVP_EncryptUpdate` fail for AES-256-ECB, which cannot be provoked from the API. The Rust translation uses a self-contained AES-256 with no failure mode; equivalence of the *successful* path is what `diff_rng.rs::aes256_ecb_matches` establishes over 2000 random (key, block) pairs plus the all-zero/all-ff extremes. | [x] |
+`SPX_ADDR_TYPE_*` (`address.h`) is a set of `#define`d ints, not an `enum`, and
+`set_type()` truncates its argument to `unsigned char` with **no** validation --
+so an "out of range enum value" is not rejected, it is silently truncated.
+Rows 15-19 pin that behaviour down, because "no rejection" is itself the
+contract the Rust must reproduce.
 
-## Generic FFI boundaries (not in the table, covered anyway)
+| #  | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|----|----------|---------------------------------------------|-------------------|-----|
+| 1  | `crypto_sign_verify` (sign.c:179) | `siglen != SPX_BYTES` (tested: `0`, `1`, `SPX_BYTES-1`, `SPX_BYTES+1`, `2*SPX_BYTES`, `SIZE_MAX`) | returns `-1`, `sig` never dereferenced | [x] |
+| 2  | `crypto_sign_verify` (sign.c:235) | `siglen == SPX_BYTES` but recomputed root `!= pk + SPX_N` (corrupt R / FORS sig / WOTS sig / auth path / pk, or a changed `mlen`) | returns `-1` | [x] |
+| 2b | `crypto_sign_verify` | flipping a bit of the *message content* while keeping `mlen` -- with the **blake** backend this is NOT rejected, because `lib/blake/src/hash_blake.c` passes BYTE counts to `blakeX_update()`, whose `datalen` is a BIT count; for short messages no BLAKE compression happens at all and the digest is independent of the message bytes. Ground truth: do not "fix" it. | backend-dependent; the test asserts C and Rust return the **same** value | [x] |
+| 3  | `crypto_sign_verify` | valid signature (control row, must return `0`) | returns `0` | [x] |
+| 4  | `crypto_sign_open` (sign.c:269) | `smlen < SPX_BYTES` (tested: `0`, `1`, `SPX_BYTES-1`) | `memset(m,0,smlen)`, `*mlen = 0`, returns `-1` | [x] |
+| 5  | `crypto_sign_open` (sign.c:277) | `smlen >= SPX_BYTES` but inner `crypto_sign_verify` fails (corrupt `sm`, wrong `pk`) | `memset(m,0,smlen)`, `*mlen = 0`, returns `-1` | [x] |
+| 6  | `crypto_sign_open` | `smlen == SPX_BYTES` exactly -> zero-length message, valid signature | `*mlen = 0`, returns `0` | [x] |
+| 7  | `seedexpander_init` (rng.c:32) | `maxlen >= 0x100000000` (tested: `0x100000000`, `0xFFFFFFFFFFFFFFFF`) | returns `RNG_BAD_MAXLEN` = `-1`, `ctx` untouched | [x] |
+| 8  | `seedexpander_init` | `maxlen == 0xFFFFFFFF` (largest accepted value, one below the check) | returns `RNG_SUCCESS` = `0` | [x] |
+| 9  | `seedexpander` (rng.c:66) | `x == NULL` | returns `RNG_BAD_OUTBUF` = `-2` (checked *before* the length check) | [x] |
+| 10 | `seedexpander` (rng.c:68) | `xlen >= ctx->length_remaining` (tested `xlen == length_remaining` and `xlen > length_remaining`) | returns `RNG_BAD_REQ_LEN` = `-3`, `ctx` untouched | [x] |
+| 11 | `seedexpander` | `xlen == length_remaining - 1` (largest accepted) and `xlen == 0` | returns `RNG_SUCCESS` = `0` | [x] |
+| 12 | `seedexpander` | `x == NULL` **and** `xlen >= length_remaining` (both triggers at once -> which wins?) | returns `RNG_BAD_OUTBUF` = `-2` | [x] |
+| 13 | `randombytes_init` (rng.c:141) | `personalization_string == NULL` | no XOR applied; DRBG seeded from `entropy_input` alone | [x] |
+| 14 | `AES256_CTR_DRBG_Update` (rng.c:205) | `provided_data == NULL` | no XOR applied; `Key`/`V` taken straight from the 3 AES blocks | [x] |
+| 15 | `set_type` (address.c:33) | `type` outside `{0..6}` -- i.e. no valid `SPX_ADDR_TYPE_*` variant (tested `7`, `255`, `256`, `0x100 \| 3`, `0xFFFFFFFF`) | **no rejection**: `addr[SPX_OFFSET_TYPE] = (unsigned char)type` (truncation mod 256) | [x] |
+| 16 | `set_layer_addr` (address.c:11) | `layer >= 256` / `layer > SPX_D` | **no rejection**: truncated to `unsigned char` | [x] |
+| 17 | `set_chain_addr` / `set_hash_addr` (address.c:72,81) | value `>= 256` (e.g. `>= SPX_WOTS_LEN`, `>= SPX_WOTS_W`) | **no rejection**: truncated to `unsigned char` | [x] |
+| 18 | `set_tree_height` (address.c:92) | `tree_height >= 256` / `> SPX_FULL_HEIGHT` | **no rejection**: truncated to `unsigned char` | [x] |
+| 19 | `set_tree_addr` (address.c:19) | `tree` using all 64 bits (`0xFFFFFFFFFFFFFFFF`) although only `SPX_TREE_HEIGHT*(SPX_D-1)` bits are meaningful | **no rejection**: full 8 bytes written big-endian at `SPX_OFFSET_TREE` | [x] |
+| 20 | `ull_to_bytes` (utils.c:12) | `outlen == 0` | writes nothing (loop `i = -1; i >= 0` never runs) | [x] |
+| 21 | `bytes_to_ull` (utils.c:35) | `inlen == 0` | returns `0` (loop never runs) | [x] |
+| 22 | `bytes_to_ull` | `inlen == 8` (largest well-defined value; `inlen > 8` shifts by `>= 64` = C UB, out of contract) | returns the full 64-bit big-endian value | [x] |
+| 23 | `thash` (all backends) | `inblocks == 0` -> zero-length data part, VLA of size `SPX_N + SPX_ADDR_BYTES` | **no rejection**: hashes `pub_seed \|\| addr` only (haraka takes the `else` branch: `haraka_S` over `SPX_ADDR_BYTES`) | [x] |
+| 24 | `crypto_sign_signature` / `crypto_sign` / `crypto_sign_keypair` / `crypto_sign_seed_keypair` | *no* input is ever rejected -- these four have a single unconditional `return 0` | always returns `0` | [x] |
+| 25 | `randombytes` (rng.c:151, `rng.c` variant) | `xlen == 0` | returns `RNG_SUCCESS` = `0`; still runs one `AES256_CTR_DRBG_Update` and bumps `reseed_counter` | [x] |
+| 26 | `gen_message_random` / `hash_message` (all backends) | `mlen == 0` (empty message) | **no rejection**; sha2 takes the "cannot fill a block" branch | [x] |
+| 27 | `handleErrors` (rng.c:107) | OpenSSL `EVP_*` failure inside `AES256_ECB` | `ERR_print_errors_fp(stderr); abort()` -- **unreachable**: the Rust port has no OpenSSL, and `EVP_aes_256_ecb`/`EVP_EncryptUpdate` over one 16-byte block cannot fail. Not differentially testable. | n/a |
 
-| condition | expected | test | ✔ |
-|---|---|---|---|
-| `thash(out, in, 0, …)` — `inblocks == 0`, a zero-length input region | both hash `pub_seed ‖ addr` only | `diff_errors.rs::boundary_thash_inblocks` | [x] |
-| `thash` with `inblocks` one past the largest value the library ever uses (`max(SPX_WOTS_LEN, SPX_FORS_TREES) + 1`) | identical output | `diff_errors.rs::boundary_thash_inblocks` | [x] |
-| `ull_to_bytes(out, 0, v)` — zero length: the `for (i = outlen-1; i >= 0; i--)` loop must not run | nothing written | `diff_errors.rs::boundary_zero_and_max_lengths` | [x] |
-| `bytes_to_ull(in, 0)` | `0` | `diff_errors.rs::boundary_zero_and_max_lengths` | [x] |
-| `bytes_to_ull(in, inlen)` for the whole documented range `0..=8` (`inlen > 8` would shift a `u64` by ≥ 64, i.e. UB in C, so it is out of scope) | identical | `diff_utils_address.rs::bytes_to_ull_all_inlens` | [x] |
-| **out-of-range enum across the FFI**: `set_type(addr, t)` takes the `SPX_ADDR_TYPE_*` constants `0..=6` but is a plain `uint32_t`; the C truncates it to one byte. Tested with `7, 8, 9, 100, 255, 256, 257, 0x10006, 0x7fffffff, 0x80000000, 0xffffffff` and 64 random `u32`s, then the resulting address is fed to `prf_addr` and `thash` | identical address bytes and identical hashes | `diff_errors.rs::boundary_out_of_range_addr_type` | [x] |
-| the other one-byte address fields (`set_layer_addr`, `set_chain_addr`, `set_hash_addr`, `set_tree_height`) with values past `0xff` | identical truncation | `diff_errors.rs::boundary_out_of_range_addr_fields` | [x] |
-| `treehash(..., tree_height = 0, ...)` — `1 << 0 == 1`, so one leaf and no `thash` | identical root/auth path | `diff_errors.rs::boundary_treehash_zero_height` | [x] |
-| `crypto_sign_signature` / `crypto_sign_verify` with `mlen == 0` and a **NULL** message pointer (the C never dereferences it) | identical signature; the signature verifies | `diff_errors.rs::boundary_zero_length_message` | [x] |
-| `randombytes(NULL, 0)` — NULL output with zero length | `RNG_SUCCESS`, state still advanced | `diff_rng.rs::randombytes_zero_length` | [x] |
-| `seedexpander_init` at `maxlen = 0` followed by any request | `RNG_BAD_REQ_LEN` | `diff_rng.rs::err_seedexpander_bad_req_len` | [x] |
+## Compile-time assertions (`#error`) -- cannot fire at run time
 
-## Conditions deliberately **not** tested (undefined behaviour in the C)
+| file | condition |
+|------|-----------|
+| `app/params/params-sphincs-*.h:30/35` | `SPX_WOTS_W` not in `{16, 256}` |
+| `app/params/params-sphincs-*.h:42/47/52/57` | `SPX_N` outside `{2,..,256}` (no precomputed `SPX_WOTS_LEN2`) |
+| `app/params/params-sphincs-*.h:64/69` | `SPX_D` does not divide `SPX_FULL_HEIGHT` |
+| `app/src/address.c:22` | `SPX_TREE_HEIGHT * (SPX_D - 1) > 64` |
+| `lib/blake/include/blake.h:10` | `SPX_BLAKE256_OUTPUT_BYTES < SPX_N` |
+| `lib/sha2/include/sha2.h:14` | `SPX_SHA256_OUTPUT_BYTES < SPX_N` |
+| `lib/sha2/src/hash_sha2.c:79` | `SPX_N > SPX_SHAX_BLOCK_BYTES` |
+| `lib/sha2/src/hash_sha2.c:139` | `SPX_SHAX_BLOCK_BYTES` not a power of two |
+| `lib/{blake,sha2,shake,haraka}/src/hash_*.c` | `SPX_TREE_BITS > 64` |
 
-These are documented rather than exercised, because the C reference itself has
-no defined behaviour for them, so there is no ground truth to compare against:
+## Dead run-time branch
 
-* `compute_root(..., tree_height = 0, ...)` — `for (i = 0; i < tree_height - 1; i++)`
-  with `uint32_t tree_height == 0` gives `0xFFFFFFFF`, so the C reads ~4 GiB
-  past the end of `auth_path` and crashes.
-* `bytes_to_ull(in, inlen > 8)` and `ull_to_bytes(out, outlen > 8, …)` —
-  shifting a `unsigned long long` by ≥ 64 bits.
-* `treehash(..., tree_height >= 31, ...)` — `1 << tree_height` on a signed
-  `int`.
-* Passing `NULL` for `pk` / `sk` / `sig` / `addr` / `ctx`, or a buffer shorter
-  than the size the header mandates: the C dereferences these unconditionally
-  and segfaults. (The two places where the C *does* have a NULL check —
-  `seedexpander`'s `x` and `AES256_CTR_DRBG_Update`/`randombytes_init`'s
-  optional inputs — are rows 6, 8 and 9 above.)
+`hash_message()` in all four backends contains `if (SPX_D == 1) { *tree = 0; }`.
+`SPX_D` is `7`, `8`, `17` or `22` in every shipped parameter set, so the
+`SPX_D == 1` arm is **dead code** in all 48 configurations; only the `else` arm
+is differentially observable.
+
+## Undefined behaviour in C, deliberately NOT tested
+
+* `compute_root(tree_height = 0)` -> `for (i = 0; i < tree_height - 1; i++)` with
+  `uint32_t` wraps to `0xFFFFFFFF` iterations and walks off `auth_path`.
+* `bytes_to_ull(inlen > 8)` -> shift count `>= 64`.
+* `treehash`/`*_treehashx1` with `tree_height >= 32` -> `1 << tree_height` on `int`.
+
+## Status
+
+Every row above has a passing differential test in `tests/t10_errors.rs`
+(`err01`..`err26`), run for **all 60 cargo feature combinations**.  Each test
+asserts the *same* return value / sentinel on both sides (`-1`, `-2`, `-3`, `0`)
+plus the same side effects (`*mlen`, the `memset` extent, the `AES_XOF_struct`
+and the exported `DRBG_ctx` bytes), not merely "both failed".
+
+Generic boundaries additionally covered there: NULL `sig`/`m`/`pk`,
+NULL `x`/`provided_data`/`personalization_string`, `xlen`/`outlen`/`inlen`/
+`mlen`/`smlen`/`siglen`/`inblocks` = 0, `siglen` = `SIZE_MAX`,
+`maxlen` = `2^32` and `2^64-1`, one step past every documented range, and
+out-of-range "enum" values (`SPX_ADDR_TYPE_*` = 7, 255, 256, 0x103, 0xFFFFFFFF)
+passed across the FFI boundary.

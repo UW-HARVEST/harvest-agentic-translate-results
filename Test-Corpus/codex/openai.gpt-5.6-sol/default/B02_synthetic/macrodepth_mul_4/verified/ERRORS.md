@@ -1,22 +1,18 @@
-# Error Surface
+# Error-surface table
 
-The table was derived by grepping all files under `c_src/src/` for returns,
-assertions, null checks, range checks, conditionals, switch statements, and
-min/max constants.
+This table was derived by scanning all of `c_src/` for error returns,
+`RETURN_ERROR`, `return -1`, `return NULL`, assertions, null checks, explicit
+range checks, min/max constants, enums, and conditional branches.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|----------------------------------------------|-------------------|--------|
-| 1 | `main` | `argc < 3` | writes `usage: %s A B\n` to `stderr`, using `argv[0]` for `%s`, and returns `2` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|---------------------------------------------|-------------------|----------|
+| 1 | `main` | `argc < 3` | Write `usage: <argv[0]> A B\n` to `stderr` and return `2` without reading `argv[1]` or `argv[2]`. | [x] |
 
-Audit notes:
+No other C function rejects input. The exported arithmetic/helper functions
+take only `int` values and contain no pointer, length, enum, or explicit range
+validation. Signed-overflow inputs are outside the defined C input domain and
+are not classified as rejection paths.
 
-- `mdcore.c` contains no rejection/error branches, assertions, null checks, or
-  range checks.
-- `use_generated` does not reject out-of-range `n`: values outside `0..=6`
-  take the `default` switch branch and return the selected operation's initial
-  accumulator. Those are valid configurations covered in `CONFIGS.md`.
-- The C source defines no public enum inputs and no length-taking APIs.
-- Generic FFI pointer boundaries for `main` are tested separately: null
-  `argv`, null argument entries, zero `argc`, and oversized/extra `argc`.
-- Row 1 and all generic boundaries pass for every one of the 24 valid feature
-  combinations.
+Final verification: the row passed under all 2,048 Cargo feature subsets.
+Generic zero/negative/oversized `argc`, runtime `n=7` and larger, and null
+`argv` crash parity were also covered; there are no enum or length APIs.
