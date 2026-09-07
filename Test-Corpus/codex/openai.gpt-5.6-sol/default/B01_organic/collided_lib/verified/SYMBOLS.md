@@ -1,27 +1,31 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Source command:
+Derived with:
 
-```sh
-nm -D --defined-only ../c_src/build/libharvest-work-bfWKpd.so
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-BZe1V7.so
+nm -D --defined-only target/release/libcollided_lib.so
 ```
 
-The C shared library exports ten functions. The Rust status was determined by
-exact-name comparison with `target/release/libcollided_lib.so`.
+The C library exports 10 defined public symbols. The Rust library currently
+exports every one with the exact spelling.
 
-| # | C symbol | C source | Rust export |
-|---|----------|----------|-------------|
-| 1 | `c2V` | `src/lib.c:18` | present |
-| 2 | `c2Maxv` | `src/lib.c:25` | present |
-| 3 | `c2Minv` | `src/lib.c:30` | present |
-| 4 | `c2Clampv` | `src/lib.c:35` | present |
-| 5 | `c2Sub` | `src/lib.c:39` | present |
-| 6 | `c2Dot` | `src/lib.c:45` | present |
-| 7 | `c2CircletoCircle` | `src/lib.c:49` | present |
-| 8 | `c2CircletoAABB` | `src/lib.c:57` | present |
-| 9 | `c2AABBtoAABB` | `src/lib.c:65` | present |
-| 10 | `collided` | `src/lib.c:73` | present |
+| # | C symbol | C type | Rust export | Status |
+|---|----------|--------|-------------|--------|
+| 1 | `c2AABBtoAABB` | `T` | `c2AABBtoAABB` | [x] |
+| 2 | `c2CircletoAABB` | `T` | `c2CircletoAABB` | [x] |
+| 3 | `c2CircletoCircle` | `T` | `c2CircletoCircle` | [x] |
+| 4 | `c2Clampv` | `T` | `c2Clampv` | [x] |
+| 5 | `c2Dot` | `T` | `c2Dot` | [x] |
+| 6 | `c2Maxv` | `T` | `c2Maxv` | [x] |
+| 7 | `c2Minv` | `T` | `c2Minv` | [x] |
+| 8 | `c2Sub` | `T` | `c2Sub` | [x] |
+| 9 | `c2V` | `T` | `c2V` | [x] |
+| 10 | `collided` | `T` | `collided` | [x] |
 
-Missing C symbols in Rust: **0**.
+Missing C exports in Rust: **0**.
 
-Undefined non-libc C symbols in Rust: **0**.
+The C library has no undefined non-libc dependency symbols. Its only undefined
+entries are standard weak runtime symbols. The Rust `cdylib` has the expected
+Rust runtime, unwind, allocator, pthread, dynamic-loader, and libc imports; none
+are unresolved project-library symbols.

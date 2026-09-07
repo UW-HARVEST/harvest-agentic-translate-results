@@ -1,62 +1,87 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-- C `.so`:    `c_src/build/libharvest-work-EoMR1V.so`
+- C `.so`: `c_src/build/libharvest-work-DtYVZa.so`
 - Rust `.so`: `translation/target/release/libhalf2float_lib.so`
 
-Reproduce with:
+## C exported (defined) dynamic symbols
 
-```sh
-./check_symbols.sh
+Command: `nm -D --defined-only c_src/build/libharvest-work-DtYVZa.so`
+
+```
+00000000000010f9 T half2float
 ```
 
-## C source inventory (completeness check)
+## Rust exported (defined) dynamic symbols
 
-`c_src` contains exactly one translation unit and one public header:
+Command: `nm -D --defined-only translation/target/release/libhalf2float_lib.so`
 
-| C file | contents | translated? |
-|--------|----------|-------------|
-| `c_src/include/lib.h` | `#include <stdint.h>`; declares `float half2float(uint16_t h);` | yes |
-| `c_src/src/lib.c` | 3 `static` tables (`m__mantissa[2048]`, `m__offset[64]`, `m__exponent[64]`) + `half2float` | yes |
+```
+0000000000013810 T half2float
+```
 
-No C module/file is missing from the Rust crate, so no additional translation
-work was required for symbol parity.
+## Parity table
 
-## Defined (exported) symbols
+| # | symbol | in C `.so` | in Rust `.so` | action |
+|---|--------|-----------|--------------|--------|
+| 1 | `half2float` | yes (`T`) | yes (`T`) | none — exported via `#[unsafe(no_mangle)] pub extern "C"` |
 
-`nm -D --defined-only`, filtering out the linker/toolchain weak symbols that
-are not part of the library API (`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
+**Symbol diff: EMPTY.** No symbol exported by the C `.so` is missing from the
+Rust `.so`. No stubs were added; the single symbol has a real translated body.
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `half2float` | `T` | `T` | `#[unsafe(no_mangle)] pub extern "C" fn half2float(h: c_ushort) -> c_float` |
+## Whole-module completeness check
 
-**Symbol diff (C exported minus Rust exported): EMPTY.**
+`c_src` contains exactly two source files:
 
-The three lookup tables are `static` in C (internal linkage) and are therefore
-*not* exported by the C `.so`. The Rust equivalents are private `static`s and
-are likewise not exported. This matches.
+- `c_src/include/lib.h` — declares only `float half2float(uint16_t h);`
+- `c_src/src/lib.c` — 376 lines: three `static` lookup tables
+  (`m__mantissa[2048]`, `m__offset[64]`, `m__exponent[64]`) and the single
+  function `half2float`.
 
-Table contents were additionally verified value-by-value against the C source
-(all 2048 + 64 + 64 entries identical) — see `check_symbols.sh`.
+`CMakeLists.txt` compiles only `src/lib.c` into the shared library and declares
+no `add_executable`. Therefore no C module was skipped by the translation: the
+Rust crate contains all three tables and the one function. The three `static`
+tables are file-local in C (`static`, so not exported) and correspondingly
+private in Rust (`static M__MANTISSA/M__OFFSET/M__EXPONENT`), which is why they
+appear in neither `nm -D` listing. This is correct parity, not a gap.
 
-## Undefined symbols
+## Undefined symbols (informational)
 
-The C `.so` imports nothing but weak toolchain symbols. The Rust `.so` imports
-only libc / libgcc-unwind symbols (`malloc`, `memcpy`, `_Unwind_*`,
-`pthread_key_create`, …) pulled in by the Rust standard library. There are
-**0 missing/undefined non-libc symbols** in the Rust `.so`.
+The C `.so` has 4 undefined symbols, all weak CRT hooks
+(`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
 
-## Feature combinations
+The Rust `.so` additionally imports libc and libgcc-unwind symbols
+(`malloc`, `memcpy`, `_Unwind_*`, `pthread_key_create`, …) pulled in by the Rust
+standard library / panic runtime. **0 undefined non-libc symbols** — every
+non-libc/non-unwind reference resolves inside the object. This difference is an
+artifact of linking `std`, not a missing translation unit.
 
-`translation/Cargo.toml` declares no `[features]` table, so the only build
-configuration is the default (empty) feature set. `check_features.sh`
-enumerates the feature list mechanically and loops `cargo check` / `cargo test`
-over every combination, so this stays correct if features are added later.
+## Verification record
 
-## Completion status
+`comm -23` on the two sorted `nm -D --defined-only` name lists:
 
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust
-- [x] Every symbol exported by the C `.so` is exported by the Rust `.so`, same name
-- [x] No stubbed / `unimplemented!()` symbols
+```
+MISSING FROM RUST: (none)  -> symbol diff EMPTY
+```
+
+Undefined non-libc / non-unwind symbols in the Rust `.so`: **0**.
+
+Symbol presence was re-checked per build configuration by
+`tools/check_all_configs.sh`, which asserts ` T half2float` in
+`target/<profile>/libhalf2float_lib.so` for every profile and feature
+combination before running the tests.
+
+## Table provenance
+
+The three lookup tables are not hand-copied. `tools/gen_lib_rs.py` parses them
+out of `c_src/src/lib.c` with a regex on the `static` declarations and emits
+`translation/src/lib.rs`, so the Rust tables cannot drift from the C. The
+extraction is independently re-checked by diffing the hex literals of each
+table between the two sources:
+
+```
+mant: IDENTICAL   (2048 entries both sides)
+off:  IDENTICAL   (64 entries both sides)
+exp:  IDENTICAL   (64 entries both sides)
+```

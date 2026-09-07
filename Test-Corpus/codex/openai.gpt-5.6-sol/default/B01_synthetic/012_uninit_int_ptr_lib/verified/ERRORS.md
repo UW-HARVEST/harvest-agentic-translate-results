@@ -1,22 +1,20 @@
 # Error Surface
 
-Mechanical searches covered `c_src/include/` and `c_src/src/` for error-return
-statements and macros, assertions, null checks, range checks, enums, and
-minimum/maximum constants. The C source contains none, so there are no explicit
-rejection rows:
+The C source contains no error-return statements, error enums, assertions,
+explicit range checks, null checks, or min/max rejection constants. The rows
+below are the mandatory generic FFI-boundary invalid cases and the two public
+paths that mechanically reach the C source's uninitialized-pointer
+dereference.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
-|---|----------|---------------------------------------------|-------------------|-----|
+| # | function | trigger (the exact invalid input/condition) | expected C result | |
+|---|----------|----------------------------------------------|-------------------|-|
+| 1 | `printIntPtrLine` | `intNumber == NULL` | Undefined behavior from `*intNumber`; compare the built C and Rust libraries in isolated subprocesses | [x] |
+| 2 | `bad` | Always: local `data` is read without initialization and passed to `printIntPtrLine` | Undefined behavior from an indeterminate pointer; compare isolated subprocess outcomes | [x] |
+| 3 | `driver` | `useGood == 0`, which calls `bad` | Same behavior as `bad`; compare isolated subprocess outcomes | [x] |
 
-## Required Generic Boundaries
+There are no length parameters, enum parameters, allocation results, or
+documented numeric ranges in this API, so zero/oversized lengths and
+out-of-range enum tests are not applicable.
 
-These are required FFI boundary cases rather than explicit C rejections.
-
-| # | function | boundary input | expected C behavior | [ ] |
-|---|----------|----------------|---------------------|-----|
-| G1 | `printIntPtrLine` | null `intNumber` | invalid dereference; isolate the process and compare its terminating signal | [x] |
-| G2 | `driver` | `useGood == 0` | calls `bad`; isolate both calls and compare the exact observed process behavior and output | [x] |
-
-Length and enum boundaries are not applicable: the API has no length parameters
-or enum parameters. `int` spans the complete FFI argument domain for
-`driver`, and its zero/nonzero partition is listed in `CONFIGS.md`.
+All rows pass in both the default and `--no-default-features`
+configurations.

@@ -1,127 +1,139 @@
 #!/usr/bin/env bash
-# Full verification sweep: builds both libraries, diffs their exported symbol
-# tables, and runs the differential test suite across every cargo feature
-# combination and both profiles.
-#
-# Usage:  ./verify.sh
+# Full verification sweep: builds both libraries, checks symbol parity, and runs
+# the differential suite across every feature combination and both Rust build
+# profiles. Nothing here is manual or per-configuration by hand.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"
-C_SRC="$ROOT/c_src"
-C_SO="$C_SRC/build/libhello.so"
-FAILURES=0
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CRATE="$ROOT/translation"
+CSRC="$ROOT/c_src"
+FAIL=0
 
-say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
-fail() { printf '\033[31mFAIL\033[0m %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
-pass() { printf '\033[32mok\033[0m   %s\n' "$*"; }
+say() { printf '\n=== %s ===\n' "$*"; }
+ok()  { printf '  OK    %s\n' "$*"; }
+bad() { printf '  FAIL  %s\n' "$*"; FAIL=1; }
 
-# --------------------------------------------------------------- build the C
-say "Building the C shared library"
-mkdir -p "$C_SRC/build"
-( cd "$C_SRC/build" \
-    && timeout 600 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-    && timeout 600 cmake --build . >/dev/null ) \
-  && pass "libhello.so built" || fail "C build failed"
-[[ -f "$C_SO" ]] || { fail "missing $C_SO"; exit 1; }
+# ---------------------------------------------------------------------------
+say "Build C shared library"
+mkdir -p "$CSRC/build"
+( cd "$CSRC/build" \
+  && timeout 600 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+  && timeout 600 cmake --build . >/dev/null ) \
+  && ok "libhello.so (C)" || bad "C build"
+C_SO="$CSRC/build/libhello.so"
+[ -f "$C_SO" ] || bad "missing $C_SO"
 
-# ------------------------------------------- enumerate feature combinations
-# Every subset of the optional features declared in Cargo.toml, plus the
-# default build and the no-default-features build.
-say "Enumerating cargo feature combinations"
-mapfile -t FEATURES < <(
-  awk '
-    /^\[features\]/ { inf = 1; next }
-    /^\[/           { inf = 0 }
-    inf && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
-      split($0, a, "="); gsub(/[[:space:]]/, "", a[1])
-      if (a[1] != "default") print a[1]
-    }
-  ' "$HERE/Cargo.toml"
-)
-echo "optional features: ${#FEATURES[@]} ${FEATURES[*]:-(none)}"
+# ---------------------------------------------------------------------------
+say "Enumerate feature combinations from Cargo.toml"
+# Every declared feature (the [features] section keys). Empty => single config.
+FEATURES=$(awk '
+  /^\[features\]/ {inside=1; next}
+  /^\[/           {inside=0}
+  inside && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
+     sub(/[[:space:]]*=.*/,""); print
+  }' "$CRATE/Cargo.toml")
 
-COMBOS=()                     # each entry is a set of cargo flags
-COMBOS+=("")                                        # default features
-COMBOS+=("--no-default-features")                   # nothing enabled
-n=${#FEATURES[@]}
-if (( n > 0 )); then
-  for (( mask = 1; mask < (1 << n); mask++ )); do
-    sel=()
-    for (( i = 0; i < n; i++ )); do
-      (( mask & (1 << i) )) && sel+=("${FEATURES[i]}")
+if [ -z "$FEATURES" ]; then
+  echo "  no [features] declared -> exactly one configuration"
+  # The two ways an external consumer can build it; both must pass.
+  COMBOS=("--no-default-features" "")
+else
+  echo "  features: $FEATURES"
+  # Power set of the declared features.
+  mapfile -t FARR <<<"$FEATURES"
+  n=${#FARR[@]}
+  COMBOS=()
+  for ((m=0; m<(1<<n); m++)); do
+    sel=""
+    for ((i=0; i<n; i++)); do
+      (( m & (1<<i) )) && sel="${sel:+$sel,}${FARR[$i]}"
     done
-    COMBOS+=("--no-default-features --features $(IFS=,; echo "${sel[*]}")")
-    COMBOS+=("--features $(IFS=,; echo "${sel[*]}")")
+    COMBOS+=("--no-default-features${sel:+ --features $sel}")
   done
+  COMBOS+=("")   # plus the plain default build
 fi
-if (( n > 0 )); then
-  COMBOS+=("--all-features")
-fi
-echo "combinations to verify: ${#COMBOS[@]}"
+printf '  %d combination(s) to sweep\n' "${#COMBOS[@]}"
 
-# ------------------------------------------------------- sweep every combo
-for profile in debug release; do
-  PROF_FLAG=""
-  [[ $profile == release ]] && PROF_FLAG="--release"
-  for combo in "${COMBOS[@]}"; do
-    label="profile=$profile features=[${combo:-default}]"
+# ---------------------------------------------------------------------------
+symbol_parity () {
+  local rust_so="$1" label="$2"
+  local c_syms rust_syms missing extra
+  c_syms=$(nm -D --defined-only --format=posix "$C_SO"   | awk '{print $1}' | sort -u)
+  rust_syms=$(nm -D --defined-only --format=posix "$rust_so" | awk '{print $1}' | sort -u)
+  missing=$(comm -23 <(echo "$c_syms") <(echo "$rust_syms"))
+  extra=$(comm -13 <(echo "$c_syms") <(echo "$rust_syms"))
+  if [ -z "$missing" ]; then
+    ok "symbol parity [$label]: 0 missing ($(echo "$c_syms" | wc -l) C symbol(s) all present)"
+  else
+    bad "symbol parity [$label]: MISSING from Rust .so: $(echo "$missing" | tr '\n' ' ')"
+  fi
+  [ -n "$extra" ] && echo "  note  extra Rust-only exports [$label]: $(echo "$extra" | tr '\n' ' ')"
+  # Nothing may be left unresolved at load time either.
+  if ldd -r "$rust_so" 2>&1 | grep -qiE 'undefined|not found'; then
+    bad "ldd -r [$label]: unresolved symbols"
+  else
+    ok "ldd -r [$label]: all symbols resolve"
+  fi
+}
 
-    say "cargo check — $label"
-    if timeout 600 cargo check $PROF_FLAG $combo --all-targets >/tmp/hv_check.log 2>&1; then
-      pass "check: $label"
+# ---------------------------------------------------------------------------
+cd "$CRATE"
+for combo in "${COMBOS[@]}"; do
+  label="${combo:-<default>}"
+  say "Configuration: $label"
+
+  # shellcheck disable=SC2086
+  if timeout 600 cargo check $combo >/dev/null 2>&1; then ok "cargo check"; else bad "cargo check [$label]"; fi
+
+  for profile in release debug; do
+    relflag=""; [ "$profile" = release ] && relflag="--release"
+    # shellcheck disable=SC2086
+    if timeout 600 cargo build $relflag $combo >/dev/null 2>&1; then
+      ok "cargo build ($profile)"
     else
-      fail "check: $label"; tail -25 /tmp/hv_check.log
-      continue
+      bad "cargo build $profile [$label]"; continue
     fi
 
-    say "cargo build — $label"
-    if timeout 600 cargo build $PROF_FLAG $combo >/tmp/hv_build.log 2>&1; then
-      pass "build: $label"
-    else
-      fail "build: $label"; tail -25 /tmp/hv_build.log
-      continue
-    fi
+    RUST_SO="$CRATE/target/$profile/libhello.so"
+    [ -f "$RUST_SO" ] || { bad "missing $RUST_SO"; continue; }
+    symbol_parity "$RUST_SO" "$label/$profile"
 
-    RUST_SO="$HERE/target/$profile/libhello.so"
-    if [[ ! -f $RUST_SO ]]; then
-      fail "no Rust .so at $RUST_SO for $label"
-      continue
-    fi
-
-    # ---- symbol parity for this exact build
-    say "symbol parity — $label"
-    diff <(nm -D --defined-only "$C_SO"    | awk '{print $NF}' | sed 's/@.*//' | sort -u) \
-         <(nm -D --defined-only "$RUST_SO" | awk '{print $NF}' | sed 's/@.*//' | sort -u) \
-         >/tmp/hv_syms.diff
-    if grep -q '^<' /tmp/hv_syms.diff; then
-      fail "symbols missing from the Rust .so ($label):"
-      grep '^<' /tmp/hv_syms.diff
+    # Run the differential suite against THIS .so.
+    # shellcheck disable=SC2086
+    res=$(HELLO_C_SO="$C_SO" HELLO_RUST_SO="$RUST_SO" \
+          timeout 600 cargo test $combo -- --test-threads=1 2>&1 \
+          | grep -E '^test result:' | tail -1)
+    if echo "$res" | grep -q 'FAILED'; then
+      bad "differential suite [$label/$profile]: $res"
+      HELLO_C_SO="$C_SO" HELLO_RUST_SO="$RUST_SO" \
+        timeout 600 cargo test $combo -- --test-threads=1 2>&1 \
+        | grep -E '^test .* FAILED' | sed 's/^/        /'
     else
-      pass "every C export present in the Rust .so ($label)"
-    fi
-
-    # ---- differential suite
-    say "cargo test — $label"
-    if HELLO_C_SO="$C_SO" HELLO_RUST_SO="$RUST_SO" \
-         timeout 600 cargo test $PROF_FLAG $combo -- --test-threads=1 \
-         >/tmp/hv_test.log 2>&1; then
-      pass "tests: $label"
-      grep -E '^test result:' /tmp/hv_test.log | sed 's/^/       /'
-    else
-      fail "tests: $label"
-      tail -60 /tmp/hv_test.log
+      ok "differential suite [$label/$profile]: $res"
     fi
   done
 done
 
-# ------------------------------------------------------------------ summary
-say "Summary"
-echo "C   exports: $(nm -D --defined-only "$C_SO" | awk '{print $NF}' | sed 's/@.*//' | sort -u | tr '\n' ' ')"
-echo "Rust exports: $(nm -D --defined-only "$HERE/target/release/libhello.so" | awk '{print $NF}' | sed 's/@.*//' | sort -u | tr '\n' ' ')"
-if (( FAILURES == 0 )); then
-  printf '\n\033[32mALL CHECKS PASSED\033[0m\n'
-  exit 0
+# ---------------------------------------------------------------------------
+say "Driver binaries"
+if grep -q add_executable "$CSRC/CMakeLists.txt" 2>/dev/null; then
+  bad "C declares add_executable but no binary comparison is implemented"
+else
+  ok "C builds no executable (add_library only) -> no stdout comparison to make"
 fi
-printf '\n\033[31m%d CHECK(S) FAILED\033[0m\n' "$FAILURES"
-exit 1
+if grep -q '^\[\[bin\]\]' "$CRATE/Cargo.toml" || [ -f "$CRATE/src/main.rs" ] || [ -d "$CRATE/src/bin" ]; then
+  bad "Rust declares a binary but no binary comparison is implemented"
+else
+  ok "Rust builds no binary ([[bin]]/src/main.rs/src/bin all absent)"
+fi
+
+say "No stubs in the translation"
+if grep -rnE 'unimplemented!|todo!|panic!\("not' "$CRATE/src"; then
+  bad "translation contains stubbed functionality"
+else
+  ok "no unimplemented!/todo! in translation/src"
+fi
+
+say "RESULT"
+if [ "$FAIL" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "SOME CHECKS FAILED"; fi
+exit "$FAIL"

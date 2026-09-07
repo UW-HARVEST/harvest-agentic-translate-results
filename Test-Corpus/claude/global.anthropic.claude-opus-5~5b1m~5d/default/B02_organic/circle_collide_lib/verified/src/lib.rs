@@ -21,14 +21,6 @@
 //! * No bugs are "fixed": e.g. `c2CircletoCapsule` still divides by
 //!   `c2Dot(n, n)` without a zero check, and `c2Collided` still blindly
 //!   reinterprets `A` as a `c2Circle`.
-//! * The commutative `fmul`/`fadd` operand orders are pinned to the ones GCC
-//!   emits for the documented build of `c_src` (`cmake` with no
-//!   `CMAKE_BUILD_TYPE`, i.e. `-O0`), because SSE returns the *destination*
-//!   operand when it is a NaN — so the order is observable whenever two
-//!   different NaN payloads meet. See `mul_keep_lhs_nan` / `add_keep_lhs_nan`
-//!   below, `tests/nan_operand_order.rs` for the assertions that hold the C
-//!   side of that contract, and `VERIFICATION.md` for the measured
-//!   `-O0` / `-O2` / `-O3` differences.
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -179,15 +171,14 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
 /// }
 /// ```
 ///
-/// GCC emits, for each lane:
+/// GCC emits, per lane (`c2Mulvs+0xe`, `+0x1d`):
 ///
 /// ```text
-/// movss  -0x8(%rbp),%xmm0      ; xmm0 = a.x
-/// mulss  -0xc(%rbp),%xmm0      ; xmm0 = mulss(dst = a.x, src = b)
+/// movss xmm0, [a.x]        ; dst = a.x
+/// mulss xmm0, [b]          ; dst *= b
 /// ```
 ///
-/// so the *vector component* is the destination and `a.x`'s NaN wins over `b`'s.
-/// `mul_keep_lhs_nan(a.x, b)` reproduces that.
+/// The *vector lane* is the destination, so `a`'s NaN wins over `b`'s.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
     let mut a = a;
@@ -258,23 +249,18 @@ pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
 /// }
 /// ```
 ///
-/// GCC emits:
+/// GCC's `-O0` codegen (`c2Dot+0xe` .. `+0x2a`) picks a *different* destination
+/// for each lane, and adds the lanes in the opposite order to the source text:
 ///
 /// ```text
-/// movss  -0x8(%rbp),%xmm1   ; xmm1 = a.x
-/// movss  -0x10(%rbp),%xmm0  ; xmm0 = b.x
-/// mulss  %xmm0,%xmm1        ; xmm1 = mulss(dst = a.x, src = b.x)  == px
-/// movss  -0x4(%rbp),%xmm2   ; xmm2 = a.y
-/// movss  -0xc(%rbp),%xmm0   ; xmm0 = b.y
-/// mulss  %xmm2,%xmm0        ; xmm0 = mulss(dst = b.y, src = a.y)  == py
-/// addss  %xmm1,%xmm0        ; xmm0 = addss(dst = py,  src = px)
+/// movss xmm1, [a.x] ; movss xmm0, [b.x] ; mulss xmm1, xmm0   ; px: dst = a.x
+/// movss xmm2, [a.y] ; movss xmm0, [b.y] ; mulss xmm0, xmm2   ; py: dst = b.y
+/// addss xmm0, xmm1                                           ; sum: dst = py
 /// ```
 ///
-/// Note the asymmetry: the `x` product takes `a.x` as destination but the `y`
-/// product takes `b.y` as destination, and the sum takes the `y` product as
-/// destination. SSE returns the destination operand when it is a NaN, so all
-/// three choices are observable with distinct NaN payloads and are pinned here
-/// exactly.
+/// So `a.x`'s NaN wins in the `x` lane, `b.y`'s NaN wins in the `y` lane, and
+/// the `y` product's NaN wins over the `x` product's in the sum. The helpers
+/// pin exactly that so NaN inputs yield identical bytes.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
     let px = mul_keep_lhs_nan(a.x, b.x);
@@ -299,10 +285,8 @@ pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
 pub extern "C" fn c2CircletoCircle(A: c2Circle, B: c2Circle) -> c_int {
     let c = c2Sub(B.p, A.p);
     let d2 = c2Dot(c, c);
-    // GCC: `movss A.r,%xmm1; movss B.r,%xmm0; addss %xmm1,%xmm0`, i.e.
-    // `addss(dst = B.r, src = A.r)`. Pinned for exactness; the choice is not
-    // actually observable here because the function only returns `d2 < r2`,
-    // which is false for every NaN regardless of payload.
+    // GCC (`c2CircletoCircle+0x68`): `movss xmm1,[A.r]; movss xmm0,[B.r];
+    // addss xmm0,xmm1` — `B.r` is the destination, so its NaN wins over `A.r`'s.
     let mut r2 = add_keep_lhs_nan(B.r, A.r);
     r2 = r2 * r2;
     (d2 < r2) as c_int
@@ -369,8 +353,8 @@ pub extern "C" fn c2CircletoCapsule(A: c2Circle, B: c2Capsule) -> c_int {
             d2 = c2Dot(bp, bp);
         }
     }
-    // GCC: `movss A.r,%xmm1; movss B.r,%xmm0; addss %xmm1,%xmm0`, i.e.
-    // `addss(dst = B.r, src = A.r)` — same as in `c2CircletoCircle`.
+    // GCC (`c2CircletoCapsule+0x189`): `movss xmm1,[A.r]; movss xmm0,[B.r];
+    // addss xmm0,xmm1` — `B.r` is the destination, so its NaN wins over `A.r`'s.
     let r = add_keep_lhs_nan(B.r, A.r);
     (d2 < r * r) as c_int
 }

@@ -120,14 +120,6 @@ pub extern "C" fn safe_add(a: c_int, b: c_int, perms: c_int) -> c_int {
 //
 // NOTE: the C code dereferences `log_msg` unconditionally (no NULL check).
 // That bug is reproduced here rather than fixed.
-//
-// The store and the read-back deliberately go through libc `memcpy` instead of
-// `*log_msg = …` / `*log_msg`. A plain raw-pointer dereference picks up
-// rustc's debug-only null-and-alignment precondition assertions, which turn a
-// NULL or misaligned out-pointer into a panic/`abort` (SIGABRT) instead of the
-// hardware fault (SIGSEGV) the C produces. Routing the 8-byte store through
-// `memcpy` keeps the failure mode identical in every profile while being
-// exactly the same store for well-formed pointers.
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn multiply_with_log(
@@ -136,26 +128,12 @@ pub unsafe extern "C" fn multiply_with_log(
     log_msg: *mut *mut c_char,
 ) -> c_int {
     unsafe {
-        const PSZ: usize = core::mem::size_of::<*mut c_char>();
-
-        // The C evaluates the right-hand side first, so the string is created
-        // (and leaked) before the faulting store when `log_msg` is NULL.
-        let produced = create_result_string(cstr!("multiply"), a.wrapping_mul(b));
-        c_memcpy(
-            log_msg as *mut c_void,
-            &produced as *const *mut c_char as *const c_void,
-            PSZ,
-        );
-
-        // `if (*log_msg == NULL)` — re-read through the caller's pointer, as
-        // the C does.
-        let mut stored: *mut c_char = core::ptr::null_mut();
-        c_memcpy(
-            &mut stored as *mut *mut c_char as *mut c_void,
-            log_msg as *const c_void,
-            PSZ,
-        );
-        if stored.is_null() {
+        // Volatile so that this store is emitted exactly as the C's plain
+        // `*log_msg = ...` is, without the null/alignment instrumentation that
+        // `-C debug-assertions` injects into a plain raw-pointer deref (which
+        // would turn the C's SIGSEGV on a NULL out-param into a Rust panic).
+        log_msg.write_volatile(create_result_string(cstr!("multiply"), a.wrapping_mul(b)));
+        if log_msg.read_volatile().is_null() {
             return 0;
         }
         a.wrapping_mul(b)
@@ -216,9 +194,6 @@ pub unsafe extern "C" fn compare_operations(op1: *const c_char, op2: *const c_ch
 // int complexmode(int mode, int value1, int value2, int value3)
 // ---------------------------------------------------------------------------
 #[unsafe(no_mangle)]
-// `int result = 0;` in the C is dead on every path (each switch arm, including
-// `default:`, assigns before the read). Kept verbatim for faithfulness.
-#[allow(unused_assignments)]
 pub unsafe extern "C" fn complexmode(
     mode: c_int,
     value1: c_int,

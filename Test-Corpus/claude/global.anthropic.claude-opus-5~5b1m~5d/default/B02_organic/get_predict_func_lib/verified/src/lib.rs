@@ -498,80 +498,58 @@ pub unsafe extern "C" fn __difftest_predict(
     unsafe { f(psamp, idx, pfcn, ridx) }
 }
 
-/// Verification-only hook exposing `BTAC1C2_GetPredictFunc`'s *choice*.
-///
-/// Returns `0..=11` when the selector handed back `BTAC1C2_PredictSample_PfnN`,
-/// `12` when it handed back the generic `BTAC1C2_PredictSample`, and `-1` for an
-/// unrecognised pointer.  Without this hook the selector's `default:` arm is
-/// unobservable (the public wrapper's own `default:` never inspects the pointer),
-/// so a wrong fallback would go undetected.
+/// Verification-only hook mirroring `__difftest_dispatch_tag` in
+/// `tests/difftest_c_harness.c`: identifies *which* predictor
+/// `BTAC1C2_GetPredictFunc` returned, so the dispatcher itself (not merely
+/// `get_predict_func`'s boolean) can be compared against the C.
+/// Compiled only under the `difftest` feature; not part of the library ABI.
 #[cfg(feature = "difftest")]
 #[unsafe(no_mangle)]
-pub extern "C" fn __difftest_selector(pfcn: c_int) -> c_int {
-    let fcn: *const () = BTAC1C2_GetPredictFunc(pfcn);
-    let table: [PredictFn; 12] = [
-        BTAC1C2_PredictSample_Pfn0,
-        BTAC1C2_PredictSample_Pfn1,
-        BTAC1C2_PredictSample_Pfn2,
-        BTAC1C2_PredictSample_Pfn3,
-        BTAC1C2_PredictSample_Pfn4,
-        BTAC1C2_PredictSample_Pfn5,
-        BTAC1C2_PredictSample_Pfn6,
-        BTAC1C2_PredictSample_Pfn7,
-        BTAC1C2_PredictSample_Pfn8,
-        BTAC1C2_PredictSample_Pfn9,
-        BTAC1C2_PredictSample_Pfn10,
-        BTAC1C2_PredictSample_Pfn11,
+pub extern "C" fn __difftest_dispatch_tag(pfcn: c_int) -> c_int {
+    let f = BTAC1C2_GetPredictFunc(pfcn);
+    let table: [(*const (), c_int); 13] = [
+        (BTAC1C2_PredictSample_Pfn0 as *const (), 0),
+        (BTAC1C2_PredictSample_Pfn1 as *const (), 1),
+        (BTAC1C2_PredictSample_Pfn2 as *const (), 2),
+        (BTAC1C2_PredictSample_Pfn3 as *const (), 3),
+        (BTAC1C2_PredictSample_Pfn4 as *const (), 4),
+        (BTAC1C2_PredictSample_Pfn5 as *const (), 5),
+        (BTAC1C2_PredictSample_Pfn6 as *const (), 6),
+        (BTAC1C2_PredictSample_Pfn7 as *const (), 7),
+        (BTAC1C2_PredictSample_Pfn8 as *const (), 8),
+        (BTAC1C2_PredictSample_Pfn9 as *const (), 9),
+        (BTAC1C2_PredictSample_Pfn10 as *const (), 10),
+        (BTAC1C2_PredictSample_Pfn11 as *const (), 11),
+        (BTAC1C2_PredictSample as *const (), 12),
     ];
-    let mut i = 0usize;
-    while i < 12 {
-        if fcn == table[i] as *const () {
-            return i as c_int;
+    for (ptr, tag) in table {
+        if f == ptr {
+            return tag;
         }
-        i += 1;
-    }
-    if fcn == BTAC1C2_PredictSample as PredictFn as *const () {
-        return 12;
     }
     -1
 }
 
-/// Verification-only hook that invokes whatever `BTAC1C2_GetPredictFunc`
-/// selected, so the selector and the predictors are exercised as a composed
-/// pipeline rather than as isolated units.
-#[cfg(feature = "difftest")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn __difftest_call_selected(
-    psamp: *mut c_int,
-    idx: c_int,
-    pfcn: c_int,
-    ridx: *mut btac1c_idxstate,
-) -> c_int {
-    let fcn: *const () = BTAC1C2_GetPredictFunc(pfcn);
-    let f: PredictFn = unsafe { core::mem::transmute::<*const (), PredictFn>(fcn) };
-    unsafe { f(psamp, idx, pfcn, ridx) }
-}
-
-/// Verification-only hook mirroring `__difftest_layout` in the C test shim, so
-/// the differential test can prove the Rust `btac1c_idxstate` has byte-identical
-/// layout to the C `struct btac1c_idxstate_s`.
+/// Verification-only hook exposing `btac1c_idxstate`'s layout so that the
+/// differential test can prove the `#[repr(C)]` struct matches the C
+/// `struct btac1c_idxstate_s` field-for-field (size, alignment, offsets).
+/// Compiled only under the `difftest` feature; not part of the library ABI.
 #[cfg(feature = "difftest")]
 #[unsafe(no_mangle)]
 pub extern "C" fn __difftest_layout(what: c_int) -> c_int {
-    use core::mem::{align_of, size_of};
-    // `offset_of!` is stable since 1.77.
+    use core::mem::{align_of, offset_of, size_of};
     match what {
         0 => size_of::<btac1c_idxstate>() as c_int,
-        1 => core::mem::offset_of!(btac1c_idxstate, idx) as c_int,
-        2 => core::mem::offset_of!(btac1c_idxstate, lpred) as c_int,
-        3 => core::mem::offset_of!(btac1c_idxstate, rpred) as c_int,
-        4 => core::mem::offset_of!(btac1c_idxstate, tag) as c_int,
-        5 => core::mem::offset_of!(btac1c_idxstate, bcfcn) as c_int,
-        6 => core::mem::offset_of!(btac1c_idxstate, bsfcn) as c_int,
-        7 => core::mem::offset_of!(btac1c_idxstate, usefx) as c_int,
-        8 => core::mem::offset_of!(btac1c_idxstate, firfx) as c_int,
-        9 => size_of::<[[btac1c_s16; 8]; 4]>() as c_int,
-        10 => align_of::<btac1c_idxstate>() as c_int,
+        1 => align_of::<btac1c_idxstate>() as c_int,
+        2 => offset_of!(btac1c_idxstate, idx) as c_int,
+        3 => offset_of!(btac1c_idxstate, lpred) as c_int,
+        4 => offset_of!(btac1c_idxstate, rpred) as c_int,
+        5 => offset_of!(btac1c_idxstate, tag) as c_int,
+        6 => offset_of!(btac1c_idxstate, bcfcn) as c_int,
+        7 => offset_of!(btac1c_idxstate, bsfcn) as c_int,
+        8 => offset_of!(btac1c_idxstate, usefx) as c_int,
+        9 => offset_of!(btac1c_idxstate, firfx) as c_int,
+        10 => size_of::<[[btac1c_s16; 8]; 4]>() as c_int,
         _ => -1,
     }
 }

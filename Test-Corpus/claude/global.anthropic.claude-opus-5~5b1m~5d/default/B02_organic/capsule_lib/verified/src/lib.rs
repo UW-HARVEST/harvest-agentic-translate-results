@@ -24,6 +24,7 @@
     unused_mut
 )]
 
+use std::cell::UnsafeCell;
 use std::ffi::{c_int, c_void};
 
 // ---------------------------------------------------------------------------
@@ -567,6 +568,46 @@ pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
 // GJK
 // ---------------------------------------------------------------------------
 
+/// Backing store for the C's `c2Proxy pA; c2Proxy pB;` locals.
+///
+/// Those two declarations are *uninitialised* automatic variables, so they
+/// occupy a pair of fixed stack slots that every `c2GJK` invocation made from
+/// the same call site reuses.  `c2MakeProxy` only writes `verts[0 .. count)`
+/// (and writes nothing at all for an out-of-range `C2_TYPE`), so any read of
+/// `pA.verts[k]` with `k >= count` — reachable through `c2GJKCache::iA` /
+/// `iB`, which the C never validates — observes whatever an *earlier* call
+/// left in that slot.
+///
+/// Zero-initialising a fresh `c2Proxy` on every call would therefore be
+/// observably wrong.  The slots are modelled as thread-local persistent
+/// scratch (the C stack is per-thread), indexed by call depth: a direct call
+/// to `c2GJK` lays its frame at a different address than a call nested inside
+/// `c2AABBtoCapsule` / `c2CapsuletoCapsule`, so each depth gets its own slot.
+/// Before the first call the slots are zero, matching the freshly-mapped,
+/// zero-filled stack pages the C starts out with.
+struct ProxyScratch(UnsafeCell<[[c2Proxy; 2]; 2]>);
+
+thread_local! {
+    static PROXY_SCRATCH: ProxyScratch = ProxyScratch(UnsafeCell::new(
+        [[c2Proxy {
+            radius: 0.0,
+            count: 0,
+            verts: [c2v { x: 0.0, y: 0.0 }; 8],
+        }; 2]; 2],
+    ));
+}
+
+/// `depth` selects the stack slot: 0 = called directly by the user,
+/// 1 = called from one of the boolean wrappers.
+unsafe fn with_proxy_slot<R>(depth: usize, f: impl FnOnce(*mut c2Proxy, *mut c2Proxy) -> R) -> R {
+    PROXY_SCRATCH.with(|s| {
+        let slot = (*s.0.get()).as_mut_ptr().add(depth);
+        let pa = (*slot).as_mut_ptr();
+        let pb = pa.add(1);
+        f(pa, pb)
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2GJK(
     A: *const c_void,
@@ -581,6 +622,52 @@ pub unsafe extern "C" fn c2GJK(
     iterations: *mut c_int,
     cache: *mut c2GJKCache,
 ) -> f32 {
+    with_proxy_slot(0, |pa, pb| {
+        c2GJK_impl(
+            A, typeA, ax_ptr, B, typeB, bx_ptr, outA, outB, use_radius, iterations, cache, pa, pb,
+        )
+    })
+}
+
+/// `c2GJK` as reached from the boolean wrappers: one frame deeper in the C, so
+/// it gets its own `c2Proxy` stack slot.
+#[allow(clippy::too_many_arguments)]
+unsafe fn c2GJK_nested(
+    A: *const c_void,
+    typeA: c_int,
+    ax_ptr: *const c2x,
+    B: *const c_void,
+    typeB: c_int,
+    bx_ptr: *const c2x,
+    outA: *mut c2v,
+    outB: *mut c2v,
+    use_radius: c_int,
+    iterations: *mut c_int,
+    cache: *mut c2GJKCache,
+) -> f32 {
+    with_proxy_slot(1, |pa, pb| {
+        c2GJK_impl(
+            A, typeA, ax_ptr, B, typeB, bx_ptr, outA, outB, use_radius, iterations, cache, pa, pb,
+        )
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn c2GJK_impl(
+    A: *const c_void,
+    typeA: c_int,
+    ax_ptr: *const c2x,
+    B: *const c_void,
+    typeB: c_int,
+    bx_ptr: *const c2x,
+    outA: *mut c2v,
+    outB: *mut c2v,
+    use_radius: c_int,
+    iterations: *mut c_int,
+    cache: *mut c2GJKCache,
+    pA_slot: *mut c2Proxy,
+    pB_slot: *mut c2Proxy,
+) -> f32 {
     let ax: c2x;
     let bx: c2x;
     if ax_ptr.is_null() {
@@ -593,14 +680,16 @@ pub unsafe extern "C" fn c2GJK(
     } else {
         bx = *bx_ptr;
     }
-    let mut pA = c2Proxy::default();
-    let mut pB = c2Proxy::default();
-    c2MakeProxy(A, typeA, &mut pA);
-    c2MakeProxy(B, typeB, &mut pB);
+    // `c2Proxy pA; c2Proxy pB;` -- uninitialised locals reusing a fixed stack
+    // slot, see `ProxyScratch`. NOT re-zeroed here: the C does not zero them.
+    let pA: *mut c2Proxy = pA_slot;
+    let pB: *mut c2Proxy = pB_slot;
+    c2MakeProxy(A, typeA, pA);
+    c2MakeProxy(B, typeB, pB);
     // Raw views of the fixed-size C arrays: the original indexes them without
     // any bounds check, so Rust must not introduce a panicking one either.
-    let pAv: *const c2v = pA.verts.as_ptr();
-    let pBv: *const c2v = pB.verts.as_ptr();
+    let pAv: *const c2v = (*pA).verts.as_ptr();
+    let pBv: *const c2v = (*pB).verts.as_ptr();
     let mut s = c2Simplex::default();
     let sp: *mut c2Simplex = &mut s;
     let verts: *mut c2sv = (*sp).verts.as_mut_ptr();
@@ -685,9 +774,9 @@ pub unsafe extern "C" fn c2GJK(
         if c2Dot(d, d) < C2_FLT_EPSILON_SQ {
             break;
         }
-        let iA = c2Support(pAv, pA.count, c2MulrvT(ax.r, c2Neg(d)));
+        let iA = c2Support(pAv, (*pA).count, c2MulrvT(ax.r, c2Neg(d)));
         let sA = c2Mulxv(ax, *pAv.offset(iA as isize));
-        let iB = c2Support(pBv, pB.count, c2MulrvT(bx.r, d));
+        let iB = c2Support(pBv, (*pB).count, c2MulrvT(bx.r, d));
         let sB = c2Mulxv(bx, *pBv.offset(iB as isize));
         let v: *mut c2sv = verts.offset((*sp).count as isize);
         (*v).iA = iA;
@@ -718,8 +807,8 @@ pub unsafe extern "C" fn c2GJK(
         a = b;
         dist = 0.0;
     } else if use_radius != 0 {
-        let rA = pA.radius;
-        let rB = pB.radius;
+        let rA = (*pA).radius;
+        let rB = (*pB).radius;
         if dist > add_ss(rA, rB) && dist > C2_FLT_EPSILON {
             dist = sub_ss(dist, add_ss(rA, rB));
             let n = c2Norm(c2Sub(b, a));
@@ -779,7 +868,9 @@ pub extern "C" fn c2AABBtoCapsule(A: c2AABB, B: c2Capsule) -> c_int {
     let a = A;
     let b = B;
     unsafe {
-        if c2GJK(
+        // The C calls c2GJK one frame deeper here, so its `c2Proxy` locals sit
+        // in a different stack slot than a direct call's -- hence slot 1.
+        if c2GJK_nested(
             &a as *const c2AABB as *const c_void,
             C2_TYPE_AABB,
             std::ptr::null(),
@@ -804,7 +895,9 @@ pub extern "C" fn c2CapsuletoCapsule(A: c2Capsule, B: c2Capsule) -> c_int {
     let a = A;
     let b = B;
     unsafe {
-        if c2GJK(
+        // The C calls c2GJK one frame deeper here, so its `c2Proxy` locals sit
+        // in a different stack slot than a direct call's -- hence slot 1.
+        if c2GJK_nested(
             &a as *const c2Capsule as *const c_void,
             C2_TYPE_CAPSULE,
             std::ptr::null(),

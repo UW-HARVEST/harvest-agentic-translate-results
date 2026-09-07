@@ -1,28 +1,26 @@
-# Configuration Surface
+# Configuration surface
 
-The public header exposes one entry point and no options, flags, modes, enums,
-formats, element-type choices, byte-order choices, or compile-time features.
-`cp_pixel_t` is always four bytes in `r`, `g`, `b`, `a` order.
+Public entry points: `flip_horizontal` (the only declaration in
+`c_src/include/lib.h`).
 
-The C loop structure distinguishes these valid image-shape axes:
+There are no runtime options, modes, flags, enums, compile-time feature
+branches, convenience wrappers, or lower-level public functions. The C code
+branches only through the outer condition `i < h / 2` and the inner condition
+`j < w`. The rows below are the pruned cross-product of the distinct valid
+height and width shapes those loops treat differently.
 
-- width: zero (inner loop never executes), one, or many;
-- height: zero, one, even and at least two, or odd and at least three.
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `flip_horizontal` | empty image: `h == 0`, `w == 0` | [x] |
+| 2 | `flip_horizontal` | one row: `h == 1`, randomized positive `w`; outer loop does not run | [x] |
+| 3 | `flip_horizontal` | one row pair and zero columns: `h == 2`, `w == 0` | [x] |
+| 4 | `flip_horizontal` | one row pair and one column: `h == 2`, `w == 1` | [x] |
+| 5 | `flip_horizontal` | one row pair and many columns: `h == 2`, `w > 1` | [x] |
+| 6 | `flip_horizontal` | odd multi-row image and zero columns: odd `h >= 3`, `w == 0`; middle row is unpaired | [x] |
+| 7 | `flip_horizontal` | odd multi-row image and one column: odd `h >= 3`, `w == 1`; middle row is unchanged | [x] |
+| 8 | `flip_horizontal` | odd multi-row image and many columns: odd `h >= 3`, `w > 1`; middle row is unchanged | [x] |
+| 9 | `flip_horizontal` | even multi-row image and zero columns: even `h >= 4`, `w == 0` | [x] |
+| 10 | `flip_horizontal` | even multi-row image and one column: even `h >= 4`, `w == 1` | [x] |
+| 11 | `flip_horizontal` | even multi-row image and many columns: even `h >= 4`, `w > 1` | [x] |
 
-The table is their complete meaningful cross-product. Randomized dimensions
-and pixel bytes within each row are required before checking it.
-
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `flip_horizontal` | no options; width zero, height zero | [x] |
-| 2 | `flip_horizontal` | no options; width zero, height one | [x] |
-| 3 | `flip_horizontal` | no options; width zero, positive even height | [x] |
-| 4 | `flip_horizontal` | no options; width zero, odd height at least three | [x] |
-| 5 | `flip_horizontal` | no options; width one, height zero | [x] |
-| 6 | `flip_horizontal` | no options; width one, height one | [x] |
-| 7 | `flip_horizontal` | no options; width one, positive even height | [x] |
-| 8 | `flip_horizontal` | no options; width one, odd height at least three | [x] |
-| 9 | `flip_horizontal` | no options; width many, height zero | [x] |
-| 10 | `flip_horizontal` | no options; width many, height one | [x] |
-| 11 | `flip_horizontal` | no options; width many, positive even height | [x] |
-| 12 | `flip_horizontal` | no options; width many, odd height at least three | [x] |
+Feature combinations from `Cargo.toml`: default only (`[features]` is absent).

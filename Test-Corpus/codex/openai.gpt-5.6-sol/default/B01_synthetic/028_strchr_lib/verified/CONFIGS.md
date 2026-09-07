@@ -1,30 +1,32 @@
-# Configuration Surface
+# Configuration-surface table
 
-There are no runtime options, modes, flags, element types, widths, byte-order
-choices, format choices, or Cargo features. The public dynamic-symbol surface
-contains the low-level `foo` entry point and the header-declared `driver`
-entry point.
+Mechanical source scan found no runtime options, modes, flags, enums,
+preprocessor feature branches, element-type choices, byte-order choices, or
+length/count parameters. `Cargo.toml` declares no features and CMake declares
+one shared library and no executable.
 
-For `foo`, the loop distinguishes zero, one, and multiple matches. Tests use
-random non-NUL target bytes (including high-bit bytes) and randomized
-NUL-terminated byte strings. A NUL target is excluded because the C loop
-advances beyond the string terminator and subsequent access has undefined
-behavior.
+The public dynamic entry points are `foo` (the lowest-level counter, exported
+despite not appearing in `driver.h`) and `driver` (the header-declared
+composed operation). The meaningful valid-input shapes come from the
+`strchr`-controlled loop in `foo` and the cross-product of the fixed `'A'` and
+`'x'` searches in `driver`. Inputs are NUL-terminated byte strings; embedded
+NUL ends the input.
 
-For `driver`, the two independent `foo` calls produce the mechanically derived
-cross-product of zero, one, and multiple occurrences of `A` and `x`.
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| 1 | `foo` | empty string; non-NUL target byte; zero matches | [x] |
+| 2 | `foo` | nonempty string; target absent | [x] |
+| 3 | `foo` | nonempty string; exactly one match at start, middle, or end | [x] |
+| 4 | `foo` | nonempty string; multiple separated matches | [x] |
+| 5 | `foo` | nonempty string; multiple consecutive matches | [x] |
+| 6 | `foo` | non-ASCII target byte (`0x80..=0xff`) passed through signed C `char` | [x] |
+| 7 | `driver` | empty string or nonempty string containing neither `'A'` nor `'x'` | [x] |
+| 8 | `driver` | one or more `'A'`, no `'x'` | [x] |
+| 9 | `driver` | no `'A'`, one or more `'x'` | [x] |
+| 10 | `driver` | one or more of both `'A'` and `'x'`, including adjacent and separated occurrences | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `foo` | no options; target occurs zero times (empty and nonempty inputs included) | [x] |
-| 2 | `foo` | no options; target occurs exactly once | [x] |
-| 3 | `foo` | no options; target occurs multiple times | [x] |
-| 4 | `driver` | no options; `A` count zero, `x` count zero | [x] |
-| 5 | `driver` | no options; `A` count zero, `x` count one | [x] |
-| 6 | `driver` | no options; `A` count zero, `x` count multiple | [x] |
-| 7 | `driver` | no options; `A` count one, `x` count zero | [x] |
-| 8 | `driver` | no options; `A` count one, `x` count one | [x] |
-| 9 | `driver` | no options; `A` count one, `x` count multiple | [x] |
-| 10 | `driver` | no options; `A` count multiple, `x` count zero | [x] |
-| 11 | `driver` | no options; `A` count multiple, `x` count one | [x] |
-| 12 | `driver` | no options; `A` count multiple, `x` count multiple | [x] |
+Feature/build combinations:
+
+| # | combination | status |
+|---|-------------|--------|
+| 1 | default / `--no-default-features` (equivalent because no features are declared) | [x] |

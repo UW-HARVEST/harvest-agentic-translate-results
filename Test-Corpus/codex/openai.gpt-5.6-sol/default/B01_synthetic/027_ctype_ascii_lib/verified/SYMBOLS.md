@@ -1,22 +1,22 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
-
-Command used:
+Generated from:
 
 ```text
 nm -D --defined-only ../c_src/build/libdriver.so
+nm -D --defined-only target/release/libdriver.so
 ```
 
-## Public Symbols
+| C symbol | C type | Rust symbol | Rust type | Status |
+|----------|--------|-------------|-----------|--------|
+| `driver` | `T` | `driver` | `T` | present |
 
-| symbol | C type | Rust export | status |
-|--------|--------|-------------|--------|
-| `driver` | `T` | `T` | present |
+The complete C defined dynamic-symbol set contains one symbol. The Rust
+defined dynamic-symbol set contains the same symbol, with no missing entries.
 
-The C shared object has no other defined dynamic symbols. Its undefined
-dynamic symbols (`__ctype_b_loc`, `printf`, `setlocale`, `tolower`, and
-`toupper`, plus weak ELF runtime hooks) are provided by libc or the toolchain;
-there are no undefined project-local symbols.
+- [x] Final defined-symbol diff is empty.
 
-Completion: [x] zero C public symbols are missing from the Rust shared object.
+The C library's undefined dynamic symbols are libc/toolchain imports:
+`__ctype_b_loc`, `printf`, `setlocale`, `tolower`, and `toupper`, plus weak
+runtime hooks. They are dependencies rather than symbols implemented by this
+library and therefore are not export-parity targets.

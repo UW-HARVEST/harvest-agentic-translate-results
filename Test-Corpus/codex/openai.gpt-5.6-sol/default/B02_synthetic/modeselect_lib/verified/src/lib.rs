@@ -105,8 +105,7 @@ pub extern "C" fn modeselect(
     const SELECTED_MODE_FORMAT: &[u8] = b"Selected mode: %s (0x%X)\n\0";
     const COMPLEXITY_FORMAT: &[u8] = b"Complexity level: %d, Multiplier: 0x%X\n\0";
     const TIME_FORMAT: &[u8] = b"Modified time: %ld, Hash: 0x%X\n\0";
-    const CONVERTING_INT_FORMAT: &[u8] =
-        b"Converting double %.2e to int (may overflow)...\n\0";
+    const CONVERTING_INT_FORMAT: &[u8] = b"Converting double %.2e to int (may overflow)...\n\0";
     const RESULT_ONE_FORMAT: &[u8] = b"Result 1: %d (0x%X)\n\0";
     const CONVERTING_NEGATIVE_FORMAT: &[u8] =
         b"Converting double %.2e to int (may underflow)...\n\0";
@@ -150,11 +149,7 @@ pub extern "C" fn modeselect(
     let time_hash = hash_time_value(modified_time);
 
     unsafe {
-        printf(
-            TIME_FORMAT.as_ptr().cast(),
-            modified_time,
-            time_hash,
-        );
+        printf(TIME_FORMAT.as_ptr().cast(), modified_time, time_hash);
     }
     result = result.wrapping_add(time_hash % 0x1000);
 

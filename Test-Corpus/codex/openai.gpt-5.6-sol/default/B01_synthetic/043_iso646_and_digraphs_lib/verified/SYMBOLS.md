@@ -1,34 +1,21 @@
 # Dynamic Symbol Surface
 
-Reference library: `../c_src/build/libdriver.so`
+Source library: `../c_src/build/libdriver.so`
 
 Command used:
 
 ```text
-nm -D ../c_src/build/libdriver.so
+nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-## Defined public API symbols
+| symbol | C type | Rust `.so` status |
+|--------|--------|-------------------|
+| `driver` | `T` (global function) | present as `T driver` |
 
-| Symbol | C type | Rust export | Status |
-|---|---|---|---|
-| `driver` | `T` | `driver` | Present |
+The unfiltered C `nm -D` output also contains only undefined libc/toolchain
+references: `printf`, `puts`, `_ITM_deregisterTMCloneTable`,
+`_ITM_registerTMCloneTable`, `__cxa_finalize`, and `__gmon_start__`. These are
+dynamic dependencies, not symbols exported by the C library.
 
-## Dynamic imports
+Missing C exports in Rust: **0**
 
-These entries are not API exports implemented by this library.
-
-| Symbol | C type | Classification |
-|---|---|---|
-| `_ITM_deregisterTMCloneTable` | `w` | ELF toolchain runtime |
-| `_ITM_registerTMCloneTable` | `w` | ELF toolchain runtime |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | libc/runtime |
-| `__gmon_start__` | `w` | ELF toolchain runtime |
-| `printf@GLIBC_2.2.5` | `U` | libc |
-| `puts@GLIBC_2.2.5` | `U` | libc |
-
-## Completion
-
-- [x] Every C-defined public symbol is exported by the Rust shared library.
-- [x] Zero C-defined public symbols are missing from the Rust shared library.
-- [x] Zero undefined non-libc API symbols require a Rust implementation.

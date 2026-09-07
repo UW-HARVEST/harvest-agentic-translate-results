@@ -1,7 +1,7 @@
 //! Translations of the buffer helpers: `find_value_in_buffer` and
 //! `create_numeric_buffer`.
 
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::{c_char, c_int};
 
 /// ```c
 /// int find_value_in_buffer(const char *buffer, size_t size, int search_val) {
@@ -16,10 +16,8 @@ use core::ffi::{c_char, c_int, c_void};
 ///
 /// `search_val` is first narrowed to `char` and then widened back to `int` by
 /// the default argument promotion of `memchr`; `memchr` in turn compares
-/// against `(unsigned char)c`. The narrowing is reproduced explicitly and the
-/// search is delegated to the very same `memchr` the C calls, so the result is
-/// identical for every input — including the oversized `size` values that are
-/// UB in C but still resolve as soon as a match is found.
+/// against `(unsigned char)c`. The net effect is a search for the low byte of
+/// `search_val`, which is what the byte comparison below performs.
 ///
 /// # Safety
 /// `buffer` must be valid for reads of `size` bytes.
@@ -31,11 +29,18 @@ pub unsafe extern "C" fn find_value_in_buffer(
 ) -> c_int {
     let target = search_val as c_char;
 
-    let result = unsafe { crate::ffi::memchr(buffer as *const c_void, c_int::from(target), size) };
-    if !result.is_null() {
-        return unsafe { (result as *const c_char).offset_from(buffer) } as c_int;
+    // `memchr` never dereferences the pointer when the length is zero.
+    if size == 0 {
+        return -1;
     }
-    -1
+
+    let haystack = unsafe { core::slice::from_raw_parts(buffer as *const u8, size) };
+    let needle = target as u8;
+
+    match haystack.iter().position(|&byte| byte == needle) {
+        Some(offset) => offset as c_int,
+        None => -1,
+    }
 }
 
 /// ```c

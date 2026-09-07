@@ -51,6 +51,14 @@ pub struct C2m {
     pub y: C2v,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum C2Type {
+    Circle,
+    Aabb,
+    Capsule,
+}
+
 unsafe extern "C" {
     fn sqrtf(value: f32) -> f32;
 }
@@ -147,7 +155,9 @@ pub extern "C" fn c2V(x: f32, y: f32) -> C2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: C2v, b: C2v) -> f32 {
-    add_f32(mul_f32(a.x, b.x), mul_f32(a.y, b.y))
+    let x = mul_f32(a.x, b.x);
+    let y = mul_f32(b.y, a.y);
+    add_f32(y, x)
 }
 
 #[unsafe(no_mangle)]
@@ -157,8 +167,8 @@ pub extern "C" fn c2Len(a: C2v) -> f32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(mut a: C2v, b: C2v) -> C2v {
-    a.x = add_f32(a.x, b.x);
-    a.y = add_f32(a.y, b.y);
+    a.x = add_f32(b.x, a.x);
+    a.y = add_f32(b.y, a.y);
     a
 }
 
@@ -171,8 +181,8 @@ pub extern "C" fn c2Sub(mut a: C2v, b: C2v) -> C2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(mut a: C2v, b: f32) -> C2v {
-    a.x = mul_f32(b, a.x);
-    a.y = mul_f32(b, a.y);
+    a.x = mul_f32(a.x, b);
+    a.y = mul_f32(a.y, b);
     a
 }
 
@@ -339,9 +349,13 @@ pub extern "C" fn c2CCW90(a: C2v) -> C2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulmvT(a: C2m, b: C2v) -> C2v {
+    let xx = mul_f32(a.x.x, b.x);
+    let xy = mul_f32(b.y, a.x.y);
+    let yx = mul_f32(a.y.x, b.x);
+    let yy = mul_f32(b.y, a.y.y);
     C2v {
-        x: add_f32(mul_f32(a.x.x, b.x), mul_f32(a.x.y, b.y)),
-        y: add_f32(mul_f32(a.y.x, b.x), mul_f32(a.y.y, b.y)),
+        x: add_f32(xy, xx),
+        y: add_f32(yy, yx),
     }
 }
 
@@ -431,49 +445,31 @@ pub unsafe extern "C" fn c2RaytoCapsule(a: C2Ray, b: C2Capsule, out: *mut C2Rayc
     0
 }
 
-#[inline(never)]
-unsafe extern "C" fn c2_cast_ray_valid(
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2CastRay(
     a: C2Ray,
     b: *const c_void,
     type_b: c_int,
     out: *mut C2Raycast,
 ) -> c_int {
+    let entry_eax: c_int;
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!(
+            "",
+            lateout("eax") entry_eax,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    let entry_eax = 0;
+
     match type_b {
         0 => unsafe { c2RaytoCircle(a, *(b.cast::<C2Circle>()), out) },
         1 => unsafe { c2RaytoAABB(a, *(b.cast::<C2Aabb>()), out) },
         2 => unsafe { c2RaytoCapsule(a, *(b.cast::<C2Capsule>()), out) },
-        _ => 0,
+        _ => entry_eax,
     }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[unsafe(naked)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2CastRay(
-    _a: C2Ray,
-    _b: *const c_void,
-    _type_b: c_int,
-    _out: *mut C2Raycast,
-) -> c_int {
-    core::arch::naked_asm!(
-        "cmp esi, 2",
-        "ja 2f",
-        "jmp {valid}",
-        "2:",
-        "ret",
-        valid = sym c2_cast_ray_valid,
-    )
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2CastRay(
-    a: C2Ray,
-    b: *const c_void,
-    type_b: c_int,
-    out: *mut C2Raycast,
-) -> c_int {
-    unsafe { c2_cast_ray_valid(a, b, type_b, out) }
 }
 
 #[unsafe(no_mangle)]
@@ -510,17 +506,38 @@ pub unsafe extern "C" fn gen_ray(
         p: c2V(c_p_x, c_p_y),
         r: c_r,
     };
-    let mut hit = unsafe { c2CastRay(ray, (&circle as *const C2Circle).cast(), 0, cast1) };
+    let mut hit = unsafe {
+        c2CastRay(
+            ray,
+            (&circle as *const C2Circle).cast(),
+            C2Type::Circle as c_int,
+            cast1,
+        )
+    };
     let capsule = C2Capsule {
         a: c2V(cap_a_x, cap_a_y),
         b: c2V(cap_b_x, cap_b_y),
         r: cap_r,
     };
-    hit += unsafe { c2CastRay(ray, (&capsule as *const C2Capsule).cast(), 2, cast2) } << 1;
+    hit += unsafe {
+        c2CastRay(
+            ray,
+            (&capsule as *const C2Capsule).cast(),
+            C2Type::Capsule as c_int,
+            cast2,
+        )
+    } << 1;
     let aabb = C2Aabb {
         min: c2V(bb_min_x, bb_min_y),
         max: c2V(bb_max_x, bb_max_y),
     };
-    hit += unsafe { c2CastRay(ray, (&aabb as *const C2Aabb).cast(), 1, cast3) } << 2;
+    hit += unsafe {
+        c2CastRay(
+            ray,
+            (&aabb as *const C2Aabb).cast(),
+            C2Type::Aabb as c_int,
+            cast3,
+        )
+    } << 2;
     hit
 }

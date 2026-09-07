@@ -1,5 +1,4 @@
 use std::ffi::{c_char, c_int, c_void};
-use std::hint::black_box;
 use std::ptr;
 
 unsafe extern "C" {
@@ -25,15 +24,13 @@ pub unsafe extern "C" fn cleanup(a: c_int, b: c_int, c: c_int, d: c_int) -> c_in
     let mut dynamic_str: *mut c_char = ptr::null_mut();
     let mut result: c_int = 0;
 
-    let expected_str = VALID.as_ptr().cast();
-    let input_str = VALID.as_ptr().cast();
-    // Keep these as observable C calls. The C shared object permits normal ELF
-    // symbol interposition even though both fixed strings currently match.
-    let strlen_fn = black_box(strlen as unsafe extern "C" fn(*const c_char) -> usize);
-    let strncmp_fn =
-        black_box(strncmp as unsafe extern "C" fn(*const c_char, *const c_char, usize) -> c_int);
+    // Keep the C implementation's runtime validation calls observable. Without
+    // the barriers, release optimization proves the two literals identical and
+    // removes the strlen/strncmp branch that the C shared library still executes.
+    let expected_str = std::hint::black_box(VALID.as_ptr()).cast();
+    let input_str = std::hint::black_box(VALID.as_ptr()).cast();
     // SAFETY: Both pointers refer to static NUL-terminated byte strings.
-    if unsafe { strncmp_fn(input_str, expected_str, strlen_fn(expected_str)) } != 0 {
+    if unsafe { strncmp(input_str, expected_str, strlen(expected_str)) } != 0 {
         // SAFETY: The format is a static NUL-terminated string with no conversions.
         unsafe { printf(VALIDATION_FAILED.as_ptr().cast()) };
     } else {

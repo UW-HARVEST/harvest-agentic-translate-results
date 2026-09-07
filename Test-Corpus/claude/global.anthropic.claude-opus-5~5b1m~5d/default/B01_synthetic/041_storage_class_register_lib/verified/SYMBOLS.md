@@ -1,69 +1,50 @@
-# SYMBOLS.md — Phase A symbol surface map
+# SYMBOLS.md — Public symbol surface
 
-Derived mechanically from `nm -D` on both shared objects. No assumptions.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-## Source inventory (proof the whole C tree is covered)
+- C:    `c_src/build/libdriver.so`
+- Rust: `translation/target/release/libdriver.so`
 
-Every file in `c_src/`:
+## Defined (exported) dynamic symbols
 
-| C file | contents | translated? |
-|--------|----------|-------------|
-| `c_src/CMakeLists.txt` | build script, `add_library(driver SHARED src/driver.c)` | n/a (build file) |
-| `c_src/include/driver.h` | single declaration `void driver(int x);` | yes |
-| `c_src/src/driver.c` | single definition `driver` (5 statements) | yes — `translation/src/lib.rs` |
+| # | symbol | in C `.so` | in Rust `.so` | notes |
+|---|--------|-----------|---------------|-------|
+| 1 | `driver` | `T` (yes) | `T` (yes) | `void driver(int x)` — declared in `include/driver.h`; only public API of the library |
 
-There is exactly **one** translation unit and **one** public function in the whole
-library. No module/file was skipped, so no Phase A "translate the missing C
-source" work applies.
+C source files: `c_src/src/driver.c` (only one). It defines exactly one
+function, `driver`. No macro-generated symbols, no global data, no static
+tables, no other translation units. Therefore the complete public surface is
+the single symbol above; nothing was skipped in the translation.
 
-## `nm -D` — DEFINED (exported) symbols
-
-Commands:
+## Symbol diff
 
 ```
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
+$ comm -3 <(nm -D --defined-only c_src/build/libdriver.so   | awk '{print $NF}' | sort) \
+          <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort)
+(empty)
 ```
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `driver` | `T` (0x1109) | `T` (0x116c0) | `void driver(int)`. Exported from Rust via `#[unsafe(no_mangle)] pub extern "C" fn driver`. |
+**Missing from Rust: 0.**  **Extra in Rust: 0.**
 
-**Symbol diff (C-defined minus Rust-defined): EMPTY (0 symbols).**
+## Undefined (imported) symbols
 
-```
-$ comm -23 c_def.txt r_def.txt | wc -l
-0
-```
+The C `.so` imports only `printf` (plus the usual weak glibc/CRT hooks
+`__cxa_finalize`, `__gmon_start__`, `_ITM_*TMCloneTable`).
 
-No macro-generated symbols exist in this library (the C source contains no
-function-defining macros — verified by grep: there are no `#define`s at all
-other than the `DRIVER_H_` include guard).
+The Rust `.so` imports `printf` as well, plus the libc/`libgcc` symbols pulled
+in by the Rust standard library and its unwinder (`malloc`, `memcpy`,
+`_Unwind_*`, `pthread_key_*`, …). **All Rust imports are libc / libgcc runtime
+symbols — there are 0 missing or undefined non-libc symbols.**
 
-## Weak / undefined symbols (informational — not part of the parity gate)
+## Verification result
 
-The C `.so` additionally lists these, none of which are library API:
-
-- `w _ITM_deregisterTMCloneTable`, `w _ITM_registerTMCloneTable`,
-  `w __cxa_finalize@GLIBC_2.2.5`, `w __gmon_start__` — toolchain-injected weak
-  symbols; the Rust `.so` also has the first, third and fourth.
-- `U printf@GLIBC_2.2.5` — libc import. The Rust `.so` imports the **same**
-  `printf@GLIBC_2.2.5`, so formatting is performed by the identical glibc code
-  in both cases.
-
-The Rust `.so` has additional `U` imports (`_Unwind_*`, `malloc`, `memcpy`,
-`mmap64`, `dl_iterate_phdr`, …) pulled in by the Rust standard library /
-panic-unwind machinery. These are **imports**, not exports, and all resolve
-against the system libc/libgcc present in the process. There are **0 missing or
-unresolvable non-libc symbols**:
+Re-checked after all work (`verify_all.sh` step "Symbol parity"):
 
 ```
-$ ldd -r translation/target/release/libdriver.so   # no "undefined symbol" lines
+-- PASS: exported symbol sets identical
 ```
 
-## Gate status
-
-- [x] Every symbol the C `.so` defines is defined by the Rust `.so` with the
-      exact same name.
-- [x] Symbol diff reaches empty.
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+- missing from Rust `.so`: **0**
+- undefined non-libc symbols in Rust `.so`: **0**
+- nothing was stubbed: `driver` is a real translation of `c_src/src/driver.c`
+  (`grep -c 'unimplemented!\|todo!\|panic!("stub' src/lib.rs` → 0).

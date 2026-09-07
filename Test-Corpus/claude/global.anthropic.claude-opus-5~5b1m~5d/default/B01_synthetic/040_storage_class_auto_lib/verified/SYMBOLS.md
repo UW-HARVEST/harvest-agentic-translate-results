@@ -1,48 +1,72 @@
-# SYMBOLS.md — public symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-Commands used:
+Build commands used:
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-nm -D --undefined-only <each>
 ```
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd translation && cargo build --release
+```
+
+## C translation units in scope
+
+The whole library is `c_src/src/driver.c` (the only source file listed in
+`c_src/CMakeLists.txt`) plus the single public header `c_src/include/driver.h`.
+There are no other modules, so there is no un-translated C source.
+
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)` —
+there is **no** `add_executable` and no `main()` anywhere in `c_src`, so the
+project builds **no binary driver**. The "compare C and Rust stdout of the
+binary" clause of the completion gate is therefore not applicable (there is
+nothing to run); stdout is instead compared through the FFI boundary, because
+the one public function's entire observable effect *is* what it prints.
 
 ## Exported (defined, dynamic) symbols
 
-| # | symbol | in C `.so` | in Rust `.so` | notes |
-|---|--------|------------|---------------|-------|
-| 1 | `driver` | `T driver` | `T driver` | `void driver(int)` — the only public symbol; declared in `c_src/include/driver.h`. Exported from Rust via `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver(x: c_int)`. |
+`nm -D --defined-only`:
 
-C source inventory (`grep -nE '^[a-zA-Z_].*\('  c_src/src/driver.c`) shows exactly one
-function definition, `driver`, so there is no untranslated C module. There are no
-macro-generated symbols, no exported data objects, no versioned symbols, and no
-`static` helpers in the C translation unit.
+| # | symbol | C `.so` | Rust `.so` | notes |
+|---|--------|---------|------------|-------|
+| 1 | `driver` | `T driver` | `T driver` | `void driver(int)`; declared in `driver.h`, defined in `driver.c`. Rust: `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver(x: c_int)` |
 
-## Symbol diff
+Exported-symbol diff (C minus Rust): **empty**.
+Exported-symbol diff (Rust minus C): **empty**.
+
+There are no macro-generated exports, no exported data objects, and no
+additional public entry points hidden in the source: `driver.h` declares
+exactly one function, and `driver.c` defines exactly that one function with
+external linkage.
+
+## Undefined (imported) symbols
+
+The C `.so` imports one non-weak libc symbol:
 
 ```
-C defined-only  : {driver}
-Rust defined-only (filtered to C's set) : {driver}
-C \ Rust        : {}      <-- EMPTY  ✅
+U printf@GLIBC_2.2.5
 ```
 
-**0 missing symbols.** No `#[no_mangle]` wrapper needed to be added, and no C
-module was skipped by the translation.
+The Rust `.so` imports the same `printf@GLIBC_2.2.5` (the translation calls
+libc `printf` directly so that formatting and stdout buffering are identical),
+plus the usual Rust `std`/`libgcc` runtime imports, all of which are libc or
+unwinder symbols:
 
-## Undefined (imported) symbols — informational
+`_Unwind_*` (GCC unwinder), `__cxa_finalize`, `__cxa_thread_atexit_impl`,
+`__errno_location`, `__tls_get_addr`, `abort`, `bcmp`, `calloc`, `close`,
+`dl_iterate_phdr`, `free`, `fstat64`, `getcwd`, `getenv`, `gettid`, `lseek64`,
+`malloc`, `memcpy`, `memmove`, `memset`, `mmap64`, `munmap`, `open64`,
+`posix_memalign`, `printf`, `pthread_key_create`, `pthread_key_delete`,
+`pthread_setspecific`, `read`, `readlink`, `realloc`, `realpath`, `stat64`,
+`statx`, `strlen`, `syscall`, `write`, `writev`.
 
-The C `.so` imports: `printf@GLIBC_2.2.5` plus the standard weak
-`_ITM_registerTMCloneTable`, `_ITM_deregisterTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`.
+**0 missing symbols; 0 undefined non-libc / non-unwinder symbols in the Rust
+`.so`.** Symbol parity holds.
 
-The Rust `.so` imports `printf@GLIBC_2.2.5` (the translation deliberately calls
-libc `printf` rather than reimplementing formatting, so the emitted bytes and the
-stdout buffering behaviour are identical) plus the usual libc/`libgcc` unwinder
-symbols pulled in by the Rust standard library (`memcpy`, `malloc`, `abort`,
-`_Unwind_*`, `dl_iterate_phdr`, …).
+## Feature combinations
 
-All Rust undefined symbols are libc / libgcc-unwind symbols resolved by the
-dynamic loader. **0 undefined non-libc symbols.** ✅
+`translation/Cargo.toml` declares **no `[features]` table**, so the only build
+configuration is the default one (`--no-default-features` and the default build
+are the same build). The whole gate is therefore satisfied by the single
+default configuration; this is verified explicitly by the
+`features_surface_is_only_default` check in `tests/differential.rs` and by
+running the suite under `--no-default-features` as well.

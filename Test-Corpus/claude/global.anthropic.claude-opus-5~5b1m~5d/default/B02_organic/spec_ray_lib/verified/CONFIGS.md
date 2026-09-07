@@ -1,112 +1,149 @@
-# CONFIGS.md — configuration surface (Phase A)
+# CONFIGS.md — Phase B configuration surface table
 
-`c_src/src/lib.c` has **no build-time options** (`grep -c '#if' src/lib.c` = 0,
-no `#ifdef`, no globals, no init/teardown, no allocator hooks) and the Rust crate
-has **no cargo features** (`[features]` absent from `Cargo.toml`), so the only
-"configuration" axes are the **runtime mode selector** and the **input shapes**
-the code branches on:
+## Axes the C code actually branches on
 
-## Axes derived from the C source
+Derived from `c_src/src/lib.c` + `c_src/include/lib.h`.
 
-| axis | values the C actually distinguishes | where |
-|------|-------------------------------------|-------|
-| A. shape dispatch mode | `C2_TYPE_CIRCLE(0)`, `C2_TYPE_AABB(1)`, `C2_TYPE_CAPSULE(2)` | `c2CastRay` `switch` L295 |
-| B. entry level | low-level vector helpers · mid-level predicates (`c2AABBtoAABB`, `c2AABBtoPoint`, `c2CircleToPoint`) · raycasts (`c2RaytoCircle/AABB/Capsule`) · dispatcher (`c2CastRay`) · one-shot wrapper (`spec_ray`) | whole file |
-| C. hit / miss outcome | hit-and-write-`out` vs reject (see `ERRORS.md`) | every `return 1` / `return 0` |
-| D. ray-vs-circle sub-path | `disc<0` · `t<0` · `t>A.t` · `0<=t<=A.t` · ray origin inside circle (`t<0` because `-b-sqrt(disc)<0`) · tangent (`disc==0`) | L100–109 |
-| E. ray-vs-AABB axis winner | `t0` (−x face) · `t1` (+x face) · `t2` (−y face) · `t3` (+y face) · all-equal tie (ties resolve to the *first* `>=` chain that succeeds) | L180–192 |
-| F. ray-vs-AABB plane sub-path | per axis: `da<0` → 0 · `da*db>0` → 1 · `d==0` → 0 · else `da/d` | `c2RayToPlane_OneDimensional` L125 |
-| G. ray-vs-capsule sub-path | origin inside the rotated bb (L245) · origin inside end-cap a (L254) · origin inside end-cap b (L256) · `\|yAp.x\|<r` + `yAp.y<0` → circle a · `\|yAp.x\|<r` + `yAp.y>=0` → circle b · side-plane hit with `y<=0` → circle a · `y>=yBb.y` → circle b · genuine side hit `c>0` (`n=M.x`) · genuine side hit `c<=0` (`n=skew(M.y)`) · full fall-through | L231–291 |
-| H. AABB shape | proper (`min<max`) · inverted (`min>max`) · degenerate (`min==max`, zero area) · line (zero width or zero height) | `c2Minv`/`c2Maxv`, `c2AABBtoAABB` |
-| I. ray shape | `t>0` · `t==0` (degenerate, zero-length sweep) · `t<0` (backwards) · huge `t` · unnormalised `d` · zero `d` · axis-aligned `d` · diagonal `d` | `c2Add(A.p, c2Mulvs(A.d, A.t))` |
-| J. circle/capsule radius | `r>0` · `r==0` · `r<0` (behaves like `\|r\|` through `r*r`) · huge `r` | L97, L228, L264 |
-| K. capsule axis | vertical · horizontal · diagonal · reversed (`b` below `a`, so `yBb.y<0` and the bb is inverted) · degenerate `a==b` | L233–242 |
-| L. float value class | normals · small/large magnitudes · exact integers (exercise ties) · `±0.0` · denormals · `±inf` · NaN · random bit patterns | all arithmetic |
-| M. `out` aliasing / pre-state | fresh `out` · `out` pre-filled with a poison pattern (proves *which* fields get written on which path) · `out == NULL` on non-writing paths | every `out->` store |
+**A1 — runtime option / mode.** The library has exactly **one** runtime
+"option": the `C2_TYPE typeB` shape selector consumed by `c2CastRay`'s `switch`
+(`C2_TYPE_CIRCLE=0`, `C2_TYPE_AABB=1`, `C2_TYPE_CAPSULE=2`). There are no
+`#ifdef`s, no global state, no init/config functions, no byte-order handling.
+`spec_ray` hard-codes `C2_TYPE_CIRCLE`.
 
-`spec_ray` is the only function in the public header (`include/lib.h`), but the
-`.so` exports all 22 functions and an external caller can call every one of them,
-so all of them are driven directly (axis B) — including through `c2CastRay`
-(axis A), not only through the `spec_ray` convenience wrapper.
+**A2 — float value class (per scalar).** Every branch in the library is a float
+comparison, so the value class of each input is a real axis:
+`normal`, `+0.0`, `-0.0`, `denormal`, `+inf`, `-inf`, `NaN`, `huge (1e30±)`,
+`tiny (1e-30±)`, `exactly-representable-integer`, and `equal operands`
+(needed for the `d != 0`, `t0 >= t1`, `y >= yBb.y`, `t <= A.t`,
+`d2 < r*r` ties).
 
-## Configuration rows (Phase B checklist)
+**A3 — argument-passing shape (ABI).** Struct sizes select different SysV
+classes, and every public function must be driven through the `.so` for the
+class to be exercised: `c2v` 8 B (one SSE eightbyte), `c2Circle`/`c2Raycast`
+12 B (SSE,SSE), `c2AABB`/`c2m` 16 B (SSE,SSE), `c2Ray`/`c2Capsule` 20 B →
+**MEMORY** (passed on the stack). `c2CastRay` mixes a stack-passed `c2Ray` with
+three register args.
 
-Every row is run with **many randomized inputs** (fixed-seed xorshift PRNG,
-`N = 20 000` per row unless noted) *plus* the hand-picked corner values of the
-row's axis, and asserts bit-identical return value **and** bit-identical
-`c2Raycast` out-struct (poison-prefilled) between the C `.so` and the Rust `.so`.
+**A4 — geometric configuration** (the shape-specific branch structure):
+sign of `disc`, sign of `t` vs `A.t`, which of the 4 AABB separating tests
+fires, which of `t0..t3` wins the 4-way `>=` chain, which capsule region the
+ray origin lies in, which end cap the delegation picks, degenerate
+(zero-length / zero-radius / inverted / coincident) shapes.
 
-| #  | entry point(s) | configuration (options set + input shape) | test | ✔ |
-|----|----------------|-------------------------------------------|------|---|
-|  1 | `c2V` | random bit patterns + all of axis L (incl. NaN/inf/denormal/±0) | `cfg_01_c2v` | [x] |
-|  2 | `c2Dot` | random normals; both operands from axis L; equal/opposite vectors | `cfg_02_c2dot` | [x] |
-|  3 | `c2Len` | random; zero vector; huge (overflow to inf); denormal; NaN | `cfg_03_c2len` | [x] |
-|  4 | `c2Add`, `c2Sub` | random + axis L cross product (±0 cancellation, inf−inf) | `cfg_04_add_sub` | [x] |
-|  5 | `c2Mulvs` | random scalar × axis L (0·inf, −0·−0) | `cfg_05_mulvs` | [x] |
-|  6 | `c2Div` | random scalar; `b=±0`; `b=±inf`; `b` denormal (reciprocal overflow) | `cfg_06_div` | [x] |
-|  7 | `c2Norm` | random; unit; zero vector; huge; denormal; NaN | `cfg_07_norm` | [x] |
-|  8 | `c2Minv`, `c2Maxv` | random pairs; equal; ±0 pairs; NaN in first vs second operand | `cfg_08_minv_maxv` | [x] |
-|  9 | `c2Skew`, `c2CCW90`, `c2Absv` | random + axis L (`-0.0`, `-NaN` sign handling) | `cfg_09_skew_ccw90_absv` | [x] |
-| 10 | `c2MulmvT` | random `c2m` (16-byte 2×SSE arg) × random `c2v`; identity; NaN rows | `cfg_10_mulmvt` | [x] |
-| 11 | `c2AABBtoAABB` | random proper boxes, overlapping and disjoint (all 4 separating axes) | `cfg_11_aabbtoaabb_proper` | [x] |
-| 12 | `c2AABBtoAABB` | inverted / degenerate / line boxes (axis H) + specials | `cfg_12_aabbtoaabb_degenerate` | [x] |
-| 13 | `c2AABBtoPoint` | random point vs random proper box (inside / on each edge / outside) | `cfg_13_aabbtopoint` | [x] |
-| 14 | `c2AABBtoPoint` | inverted/degenerate box + point on the exact boundary + specials | `cfg_14_aabbtopoint_degenerate` | [x] |
-| 15 | `c2CircleToPoint` | random point vs circle: inside / exactly on rim / outside; `r=0`; `r<0`; huge `r` | `cfg_15_circletopoint` | [x] |
-| 16 | `c2RaytoCircle` | proper hit (`0<=t<=A.t`), normalized `d`, `r>0` — axis D hit path | `cfg_16_raytocircle_hit` | [x] |
-| 17 | `c2RaytoCircle` | unnormalized / zero / axis-aligned `d`, `A.t` ∈ {0, small, huge, negative} | `cfg_17_raytocircle_t_shapes` | [x] |
-| 18 | `c2RaytoCircle` | origin inside the circle (`c<0`, `t<0`) and tangent (`disc≈0`) | `cfg_18_raytocircle_inside_tangent` | [x] |
-| 19 | `c2RaytoCircle` | fully random bit-pattern rays/circles (all of axes D+I+J+L at once) | `cfg_19_raytocircle_random_bits` | [x] |
-| 20 | `c2RaytoAABB` | proper box, random ray crossing it — exercises axis E winners `t0..t3` and the tie path | `cfg_20_raytoaabb_hit` | [x] |
-| 21 | `c2RaytoAABB` | axis-aligned rays (`d=(±1,0)`, `(0,±1)`) → `da*db>0` / `d==0` sub-paths of axis F | `cfg_21_raytoaabb_axis_aligned` | [x] |
-| 22 | `c2RaytoAABB` | ray origin inside the box; ray fully inside; zero-length ray (`A.t=0`) | `cfg_22_raytoaabb_inside` | [x] |
-| 23 | `c2RaytoAABB` | degenerate/inverted/line boxes + huge coordinates | `cfg_23_raytoaabb_degenerate_box` | [x] |
-| 24 | `c2RaytoAABB` | fully random bit patterns (NaN/inf in ray and box) | `cfg_24_raytoaabb_random_bits` | [x] |
-| 25 | `c2RaytoCapsule` | vertical capsule, ray origin outside, genuine side hit `c>0` (axis G h) | `cfg_25_raytocapsule_side_hit_pos` | [x] |
-| 26 | `c2RaytoCapsule` | vertical capsule, side hit from the other side `c<=0` (axis G i) | `cfg_26_raytocapsule_side_hit_neg` | [x] |
-| 27 | `c2RaytoCapsule` | origin inside the capsule body / inside cap a / inside cap b (axis G a–c) | `cfg_27_raytocapsule_origin_inside` | [x] |
-| 28 | `c2RaytoCapsule` | `\|yAp.x\|<r` delegation to circle a (`yAp.y<0`) and circle b (`yAp.y>=0`) (axis G d,e) | `cfg_28_raytocapsule_delegate_caps` | [x] |
-| 29 | `c2RaytoCapsule` | side-plane hit that leaves the segment → delegation via `y<=0` / `y>=yBb.y` (axis G f,g) | `cfg_29_raytocapsule_delegate_by_y` | [x] |
-| 30 | `c2RaytoCapsule` | diagonal / horizontal / reversed capsule axis, `r` ∈ {0, small, huge} (axes J+K) | `cfg_30_raytocapsule_axis_shapes` | [x] |
-| 31 | `c2RaytoCapsule` | fully random bit patterns (incl. `a==b`, NaN, inf) | `cfg_31_raytocapsule_random_bits` | [x] |
-| 32 | `c2CastRay` | `typeB=C2_TYPE_CIRCLE` — random rays/circles, result compared to the direct `c2RaytoCircle` call as well | `cfg_32_castray_circle` | [x] |
-| 33 | `c2CastRay` | `typeB=C2_TYPE_AABB` — random rays/boxes | `cfg_33_castray_aabb` | [x] |
-| 34 | `c2CastRay` | `typeB=C2_TYPE_CAPSULE` — random rays/capsules | `cfg_34_castray_capsule` | [x] |
-| 35 | `c2CastRay` | the three valid modes interleaved in one random stream, `out` reused across calls (state carry-over) | `cfg_35_castray_mixed_stream` | [x] |
-| 36 | `spec_ray` | random mouse point / circle / ray origin: hit configuration | `cfg_36_spec_ray_hit` | [x] |
-| 37 | `spec_ray` | miss configuration (circle behind or beyond the mouse point) | `cfg_37_spec_ray_miss` | [x] |
-| 38 | `spec_ray` | grid sweep of exact integer coordinates (ties, `t == A.t` boundary) | `cfg_38_spec_ray_integer_grid` | [x] |
-| 39 | `spec_ray` | fully random bit patterns for all 7 floats (NaN/inf/denormal heavy) | `cfg_39_spec_ray_random_bits` | [x] |
-| 40 | all raycasts | `out` pre-filled with a poison pattern and *not* reset between calls — proves which fields each path writes (axis M) | `cfg_40_out_poison_write_tracking` | [x] |
+**A5 — out-parameter state.** `*out` is pre-filled with a sentinel before each
+call so that "did the callee write it?" is itself part of the compared output
+(the C code leaves `*out` untouched on the miss paths of `c2RaytoCircle` /
+`c2RaytoAABB` but *always* writes it in `c2RaytoCapsule`).
 
-## Verification evidence
+Every row below is compared **bit-for-bit** (`f32::to_bits`, `c_int`) between
+the C `.so` and the Rust `.so`, both loaded with `libloading`, over **many
+randomized inputs** from a fixed-seed xorshift64\* PRNG (seed `0x2545F4914F6CDD1D`).
 
-Every row above is a `#[test]` in `tests/phase_b_valid.rs` that calls **both**
-`.so` files through `libloading` and compares the return value and the whole
-`c2Raycast` out-struct bit for bit (poison-prefilled, so an unwritten field is
-detectable).
+---
 
-* `SPEC_RAY_N` randomized inputs per row (default 20 000, run at 200 000 for the
-  final pass) plus the hand-picked corner values of each row's axis, from a fixed
-  seed per row.
-* Result of the final pass: **62 929 792 comparisons, 0 hard mismatches**
-  (37 157 NaN-payload-only differences, all from NaN inputs — see the table in
-  `ERRORS.md`).
-* Sub-path coverage is *proved*, not assumed: `tests/common/mod.rs` contains
-  classifiers that recompute each function's branch conditions **using the C
-  library's own exported helpers** (`c2Norm`, `c2MulmvT`, `c2AABBtoPoint`, …), and
-  every row asserts that its intended sub-path was actually reached. The
-  histograms printed with `--nocapture` show all sub-paths of every axis are hit:
+## Rows
 
-  | function | sub-paths | covered by |
-  |---|---|---|
-  | `c2RaytoCircle` | `disc<0`, `t<0`, `t>A.t`, HIT, NaN | rows 16-19, 32 |
-  | `c2RaytoAABB` | broadphase reject, SAT reject, no-plane-hit, winner `t0`/`t1`/`t2`/`t3` | rows 20-24, 33 |
-  | `c2RaytoCapsule` | all 10 (in-bb, in-cap-a, in-cap-b, `|yAp.x|<r`→a/b, side-plane→a/b, side hit `c>0`/`c<=0`, fall-through) | rows 25-31, 34 |
+### Level 0 — leaf vector helpers (12-symbol group, `c2v`/scalar ABI)
 
-  Rows 25-29 drive the capsule through a **capsule-local frame** (`CapFrame`), so
-  a specific local `(lx, ly)` maps to the world point `a + lx*M.x + ly*M.y` and
-  the intended branch is hit deterministically (19 973/20 000 for the `c>0` side
-  hit, 20 000/20 000 for both `|yAp.x|<r` delegations, etc.).
-* The full matrix (both feature combinations x dev/release cdylib x C `-O0`/`-O2`)
-  is run by `./verify.sh`.
+| # | entry point(s) | configuration (options set + input shape) | ✅ |
+|---|----------------|-------------------------------------------|----|
+| 1 | `c2V` | random `f32` bit-patterns (all classes incl. NaN payloads, ±0, denormals) | ✅ |
+| 2 | `c2V` | the exact constant set the library itself uses: `(-1,0) (1,0) (0,-1) (0,1) (-r,0) (r,yBb.y)` | ✅ |
+| 3 | `c2Dot` | both vectors random normals (finite, moderate magnitude) | ✅ |
+| 4 | `c2Dot` | mixed classes: one component ±0 / denormal / ±inf, cancellation cases (`a.x*b.x == -(a.y*b.y)`) | ✅ |
+| 5 | `c2Dot` | overflow to ±inf (`1e30 · 1e30`) and `inf·0` → NaN | ✅ |
+| 6 | `c2Len` | random finite vectors; perfect squares (3,4)→5; ±0 → 0 | ✅ |
+| 7 | `c2Len` | `(0,0)` → 0; components ±inf → inf; denormal-only vector (underflow of the dot) | ✅ |
+| 8 | `c2Add` / `c2Sub` | random finite pairs, plus ±0 combinations (`+0 + -0`, `-0 - -0` — sign-of-zero matters) | ✅ |
+| 9 | `c2Add` / `c2Sub` | `inf - inf` → NaN, `inf + inf` → inf, overflow to inf | ✅ |
+| 10 | `c2Mulvs` | random vector × random scalar; scalar = `±0`, `±1`, `0.5f`, denormal, `±inf`, NaN | ✅ |
+| 11 | `c2Div` | random vector, scalar random; **`b == ±0`** (→ `a*±inf`), `b == ±inf` (→ `a*0`), `b` denormal (→ `1/b` overflows to inf) | ✅ |
+| 12 | `c2Div` | `b` such that `1.0f/b` rounds (e.g. `b = 3.0f`) — verifies reciprocal-multiply, **not** division | ✅ |
+| 13 | `c2Norm` | random finite vectors (unit, huge, tiny) | ✅ |
+| 14 | `c2Norm` | `(0,0)` → `(NaN,NaN)`; components ±inf; vector whose dot overflows (`1e30,1e30`); denormal vector | ✅ |
+| 15 | `c2Minv` / `c2Maxv` | random pairs; **equal components** (ternary picks the `else` branch); `+0` vs `-0` (ternary keeps `b`, unlike `fminf`) | ✅ |
+| 16 | `c2Minv` / `c2Maxv` | one/both components NaN — ternary result differs from `fminf`/`fmaxf`, so this row pins the exact C semantics | ✅ |
+| 17 | `c2Skew` / `c2CCW90` | random vectors; ±0 (negation of zero flips the sign bit); NaN (sign-bit flip of a NaN) | ✅ |
+| 18 | `c2Absv` | random vectors; `-0.0` (ternary: `-0 < 0` is false ⇒ **`-0.0` is returned unchanged**, unlike `fabsf`); `-NaN`; `-inf` | ✅ |
+| 19 | `c2MulmvT` | random `c2m` × random `c2v` (16-B SSE,SSE struct arg) | ✅ |
+| 20 | `c2MulmvT` | `c2m` = the NaN matrix produced by a degenerate `c2Norm`, and the rotation matrix `{CCW90(y), y}` actually built by `c2RaytoCapsule` | ✅ |
+
+### Level 1 — boolean overlap predicates
+
+| # | entry point(s) | configuration (options set + input shape) | ✅ |
+|---|----------------|-------------------------------------------|----|
+| 21 | `c2AABBtoAABB` | random well-formed boxes, overlapping | ✅ |
+| 22 | `c2AABBtoAABB` | random boxes, disjoint along each of the 4 axes individually and in combination | ✅ |
+| 23 | `c2AABBtoAABB` | edge-touching (`A.max.x == B.min.x`) and corner-touching — the `<` is strict | ✅ |
+| 24 | `c2AABBtoAABB` | one box fully inside the other; zero-area box (`min == max`); inverted box (`min > max`) | ✅ |
+| 25 | `c2AABBtoAABB` | NaN / ±inf coordinates (all-`<`-false ⇒ returns 1) | ✅ |
+| 26 | `c2AABBtoPoint` | random point vs random box: inside, outside on each of the 4 sides, exactly on each edge/corner | ✅ |
+| 27 | `c2AABBtoPoint` | zero-area box + point equal to it; inverted box; the `{(-r,0),(r,yBb.y)}` capsule slab shape incl. `yBb.y < 0`; NaN/±inf point | ✅ |
+| 28 | `c2CircleToPoint` | random point vs random circle: inside, outside, **exactly on the rim** (`d2 == r*r`, strict `<` ⇒ 0) | ✅ |
+| 29 | `c2CircleToPoint` | `r == 0`, `r < 0`, `r == inf`, `r` NaN, `r` denormal (so `r*r` underflows to 0); point == centre | ✅ |
+
+### Level 2 — raycasts (each called directly through the `.so`, `c2Ray` on the stack)
+
+| # | entry point(s) | configuration (options set + input shape) | ✅ |
+|---|----------------|-------------------------------------------|----|
+| 30 | `c2RaytoCircle` | random normalized-`d` rays vs random circles — mixed hit/miss (broad property sweep) | ✅ |
+| 31 | `c2RaytoCircle` | guaranteed **hit**: ray aimed at the centre, `A.t` long enough (exercises the `out->t`/`out->n` write and `c2Norm` of the impact normal) | ✅ |
+| 32 | `c2RaytoCircle` | guaranteed **miss** via `disc < 0`; via `t < 0` (origin past the circle); via `t > A.t` | ✅ |
+| 33 | `c2RaytoCircle` | tangent (`disc == 0`), origin exactly on the rim (`t == 0`), impact exactly at `t == A.t` (boundary of `<=`) | ✅ |
+| 34 | `c2RaytoCircle` | origin **inside** the circle (`c < 0` ⇒ `t < 0` ⇒ miss) | ✅ |
+| 35 | `c2RaytoCircle` | non-unit `A.d` (the function never re-normalizes — arbitrary `d` is a valid input), `A.d == (0,0)`, `A.t == 0`, `A.t == inf` | ✅ |
+| 36 | `c2RaytoCircle` | `r == 0` / `r < 0` / huge `r` / degenerate: impact `== B.p` ⇒ `c2Norm((0,0))` = `(NaN,NaN)` written to `out->n` while returning **1** | ✅ |
+| 37 | `c2RaytoAABB` | random rays vs random boxes — broad property sweep, mixed hit/miss | ✅ |
+| 38 | `c2RaytoAABB` | hit resolved by each of the 4 branches of the `t0/t1/t2/t3 >=` chain: `-x` face, `+x` face, `-y` face, `+y` face | ✅ |
+| 39 | `c2RaytoAABB` | hit where **several `t` are tied** (e.g. all zero, or corner-exact) — pins the first-wins order of the `>=` chain | ✅ |
+| 40 | `c2RaytoAABB` | miss via the swept-box `c2AABBtoAABB` reject; miss via `d > 0` (SAT); miss via `hit == 0` | ✅ |
+| 41 | `c2RaytoAABB` | axis-aligned rays (`ab.x == 0` ⇒ `n = (0, 0)`-ish, `da == db` ⇒ the `d != 0` guard fires) | ✅ |
+| 42 | `c2RaytoAABB` | ray origin **inside** the box; ray exactly along a face; `A.t == 0`; `A.t == inf`; `A.d == (0,0)` | ✅ |
+| 43 | `c2RaytoAABB` | zero-area box (`min == max`), inverted box, huge box (`±1e30` ⇒ half-extents overflow), NaN in `A.d`/`A.t`/box | ✅ |
+| 44 | `c2RaytoCapsule` | random rays vs random capsules — broad property sweep | ✅ |
+| 45 | `c2RaytoCapsule` | origin **inside the slab** (`c2AABBtoPoint(capsule_bb, yAp)` ⇒ early `return 1`, `t = 0`) | ✅ |
+| 46 | `c2RaytoCapsule` | origin inside end cap `a`; origin inside end cap `b` (the two `c2CircleToPoint` early returns) | ✅ |
+| 47 | `c2RaytoCapsule` | side-wall hit: `|yAp.x| >= B.r`, `0 < y < yBb.y` ⇒ `out->n = M.x` (`c > 0`) | ✅ |
+| 48 | `c2RaytoCapsule` | side-wall hit on the other side ⇒ `out->n = c2Skew(M.y)` (`c < 0`) | ✅ |
+| 49 | `c2RaytoCapsule` | cap delegation `y <= 0` ⇒ `c2RaytoCircle(A, Ca, out)`; `y >= yBb.y` ⇒ `c2RaytoCircle(A, Cb, out)` (both the returns-1 and the returns-0 sub-cases) | ✅ |
+| 50 | `c2RaytoCapsule` | `|yAp.x| < B.r` branch: `yAp.y < 0` ⇒ cap `a`, else cap `b` | ✅ |
+| 51 | `c2RaytoCapsule` | full miss (`return 0`) — asserts `*out` **was still overwritten** with `n=normalize(b-a)`, `t=0` | ✅ |
+| 52 | `c2RaytoCapsule` | capsule with `b` "below" `a` (`yBb.y < 0` ⇒ inverted slab), horizontal capsule, unit capsule | ✅ |
+| 53 | `c2RaytoCapsule` | degenerate `B.a == B.b` (NaN matrix), `B.r == 0`, `B.r < 0`, `B.r == inf`, `yAe.x == yAp.x` (division by zero in the `t` formula) | ✅ |
+
+### Level 3 — the dispatcher (option axis A1 × every shape)
+
+| # | entry point(s) | configuration (options set + input shape) | ✅ |
+|---|----------------|-------------------------------------------|----|
+| 54 | `c2CastRay` | `typeB = C2_TYPE_CIRCLE (0)`, random rays/circles — must equal a direct `c2RaytoCircle` call | ✅ |
+| 55 | `c2CastRay` | `typeB = C2_TYPE_AABB (1)`, random rays/boxes — must equal a direct `c2RaytoAABB` call | ✅ |
+| 56 | `c2CastRay` | `typeB = C2_TYPE_CAPSULE (2)`, random rays/capsules — must equal a direct `c2RaytoCapsule` call | ✅ |
+| 57 | `c2CastRay` | each `typeB` on the **miss** path (verifies `*out` untouched propagates through the dispatcher) | ✅ |
+| 58 | `c2CastRay` | mixed 20-B-stack `c2Ray` + register args across many randomized calls (ABI stress, incl. NaN/inf rays) | ✅ |
+
+### Level 4 — the public header entry point
+
+| # | entry point(s) | configuration (options set + input shape) | ✅ |
+|---|----------------|-------------------------------------------|----|
+| 59 | `spec_ray` | random finite `(mp, c.p, c.r, ray.p)` in a moderate range — mixed hit/miss property sweep | ✅ |
+| 60 | `spec_ray` | guaranteed hit: `mp` = circle centre, `ray.p` outside, `c_r` large enough | ✅ |
+| 61 | `spec_ray` | guaranteed miss: `mp` aimed away from the circle; circle behind the ray origin | ✅ |
+| 62 | `spec_ray` | `ray.p` **inside** the circle (`t < 0` ⇒ miss, `*cast` untouched) | ✅ |
+| 63 | `spec_ray` | impact exactly at `t == ray.t` (`mp` on the far rim — boundary of `t <= A.t`) | ✅ |
+| 64 | `spec_ray` | `mp == ray.p` ⇒ `c2Norm((0,0))` ⇒ NaN direction and NaN `ray.t` | ✅ |
+| 65 | `spec_ray` | `c_r == 0`, `c_r < 0`, `c_r == inf`, `c_r` denormal | ✅ |
+| 66 | `spec_ray` | any argument ±inf / NaN / ±0 / denormal / huge (random bit-pattern sweep over all 7 floats) | ✅ |
+| 67 | `spec_ray` | integer-valued coordinates (the typical mouse-picking use case: `mp`, `ray.p` on a pixel grid) | ✅ |
+| 68 | `spec_ray` | must equal the manual composition `c2Norm`+`c2Dot`+`c2CastRay(…,CIRCLE,…)` driven through the `.so` — verifies the composed pipeline, not just the wrapper | ✅ |
+
+---
+
+## Not applicable
+
+* **Binary/driver executable:** `c_src/CMakeLists.txt` only does
+  `add_library(${project_name} SHARED src/lib.c)`. No executable is produced,
+  so there is no stdout to compare.
+* **Feature combinations:** `translation/Cargo.toml` has no `[features]`
+  section, so the default build is the only configuration
+  (`--no-default-features` is equivalent and is exercised by
+  `verify_all_features.sh`).

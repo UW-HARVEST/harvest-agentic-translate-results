@@ -410,3 +410,109 @@ pub extern "C" fn call_predict(pfcn: c_int) -> c_int {
     }
     result
 }
+
+// ---------------------------------------------------------------------------
+// Test-only scaffolding (`--features test_internals`).
+//
+// The C `.so` exports only `call_predict`; every prediction helper is `static`.
+// To differentially test that math anyway, `harness/wrap.c` textually includes
+// the unmodified `c_src/src/lib.c` and re-exports the statics as `wrap_*`. These
+// `rsw_*` wrappers are the mirror image on the Rust side. They are compiled out
+// unless the non-default `test_internals` feature is on, so the default build's
+// exported symbol set stays byte-for-byte identical to the C library's.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "test_internals")]
+mod test_internals {
+    use super::*;
+
+    macro_rules! rsw {
+        ($name:ident => $target:ident) => {
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $name(
+                psamp: *mut c_int,
+                idx: c_int,
+                pfcn: c_int,
+                ridx: *mut btac1c_idxstate,
+            ) -> c_int {
+                unsafe { $target(psamp, idx, pfcn, ridx) }
+            }
+        };
+    }
+
+    rsw!(rsw_predict_sample => BTAC1C2_PredictSample);
+    rsw!(rsw_pfn0 => BTAC1C2_PredictSample_Pfn0);
+    rsw!(rsw_pfn1 => BTAC1C2_PredictSample_Pfn1);
+    rsw!(rsw_pfn2 => BTAC1C2_PredictSample_Pfn2);
+    rsw!(rsw_pfn3 => BTAC1C2_PredictSample_Pfn3);
+    rsw!(rsw_pfn4 => BTAC1C2_PredictSample_Pfn4);
+    rsw!(rsw_pfn5 => BTAC1C2_PredictSample_Pfn5);
+    rsw!(rsw_pfn6 => BTAC1C2_PredictSample_Pfn6);
+    rsw!(rsw_pfn7 => BTAC1C2_PredictSample_Pfn7);
+    rsw!(rsw_pfn8 => BTAC1C2_PredictSample_Pfn8);
+    rsw!(rsw_pfn9 => BTAC1C2_PredictSample_Pfn9);
+    rsw!(rsw_pfn10 => BTAC1C2_PredictSample_Pfn10);
+    rsw!(rsw_pfn11 => BTAC1C2_PredictSample_Pfn11);
+
+    /// Identity of the pointer `BTAC1C2_GetPredictFunc` returns, encoded as an
+    /// `int` so it is comparable across the two shared objects:
+    /// `0..=11` = the matching `Pfn<n>` helper, `-1` = the generic
+    /// `BTAC1C2_PredictSample`, `-2` = unrecognised (must never happen).
+    #[unsafe(no_mangle)]
+    pub extern "C" fn rsw_get_predict_func_index(pfcn: c_int) -> c_int {
+        let f = BTAC1C2_GetPredictFunc(pfcn);
+        let table: [(*const (), c_int); 13] = [
+            (BTAC1C2_PredictSample_Pfn0 as *const (), 0),
+            (BTAC1C2_PredictSample_Pfn1 as *const (), 1),
+            (BTAC1C2_PredictSample_Pfn2 as *const (), 2),
+            (BTAC1C2_PredictSample_Pfn3 as *const (), 3),
+            (BTAC1C2_PredictSample_Pfn4 as *const (), 4),
+            (BTAC1C2_PredictSample_Pfn5 as *const (), 5),
+            (BTAC1C2_PredictSample_Pfn6 as *const (), 6),
+            (BTAC1C2_PredictSample_Pfn7 as *const (), 7),
+            (BTAC1C2_PredictSample_Pfn8 as *const (), 8),
+            (BTAC1C2_PredictSample_Pfn9 as *const (), 9),
+            (BTAC1C2_PredictSample_Pfn10 as *const (), 10),
+            (BTAC1C2_PredictSample_Pfn11 as *const (), 11),
+            (BTAC1C2_PredictSample as *const (), -1),
+        ];
+        for (p, n) in table {
+            if f == p {
+                return n;
+            }
+        }
+        -2
+    }
+
+    /// End-to-end composed path: dispatch, then call through the returned pointer.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn rsw_call_through(
+        pfcn: c_int,
+        psamp: *mut c_int,
+        idx: c_int,
+        ridx: *mut btac1c_idxstate,
+    ) -> c_int {
+        let f: PredictFn = unsafe { std::mem::transmute(BTAC1C2_GetPredictFunc(pfcn)) };
+        unsafe { f(psamp, idx, pfcn, ridx) }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn rsw_sizeof_idxstate() -> c_int {
+        std::mem::size_of::<btac1c_idxstate>() as c_int
+    }
+    #[unsafe(no_mangle)]
+    pub extern "C" fn rsw_alignof_idxstate() -> c_int {
+        std::mem::align_of::<btac1c_idxstate>() as c_int
+    }
+    #[unsafe(no_mangle)]
+    pub extern "C" fn rsw_offsetof_firfx() -> c_int {
+        std::mem::offset_of!(btac1c_idxstate, firfx) as c_int
+    }
+    #[unsafe(no_mangle)]
+    pub extern "C" fn rsw_offsetof_usefx() -> c_int {
+        std::mem::offset_of!(btac1c_idxstate, usefx) as c_int
+    }
+    #[unsafe(no_mangle)]
+    pub extern "C" fn rsw_offsetof_lpred() -> c_int {
+        std::mem::offset_of!(btac1c_idxstate, lpred) as c_int
+    }
+}

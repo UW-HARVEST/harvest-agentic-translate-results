@@ -49,23 +49,18 @@ const TFLAC_CHANNEL_MID_SIDE: tflac_u8 = 3;
 /// `t` must be a valid, aligned, non-null pointer to a `tflac` struct, exactly
 /// as required by the C original (which also dereferences it unconditionally).
 ///
-/// Field access goes through raw pointers (`addr_of!` / `addr_of_mut!`) rather
-/// than through a `&mut tflac` reference. This matters for FFI fidelity: forming
-/// a reference from the incoming pointer would trip rustc's debug-only
-/// null/alignment dereference check, which panics and — across an `extern "C"`
-/// boundary — aborts with `SIGABRT`, whereas the C simply faults with
-/// `SIGSEGV`. Staying on raw pointers reproduces the C's fault behaviour, and
-/// also avoids asserting the aliasing and validity guarantees a reference would
-/// imply for a pointer that came from outside.
+/// Note: all accesses go through raw-pointer place expressions rather than a
+/// `&mut` reference. Creating a reference would make rustc emit a debug-mode
+/// null/alignment UB check that aborts (`SIGABRT`) instead of faulting like the
+/// C does (`SIGSEGV`); raw accesses reproduce the C's fault behaviour under both
+/// the debug and release profiles.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn update_frame_header(t: *mut tflac) {
-    use core::ptr::{addr_of, addr_of_mut};
-
-    let cur_blocksize: tflac_u32 = addr_of!((*t).cur_blocksize).read();
-    let samplerate: tflac_u32 = addr_of!((*t).samplerate).read();
-    let channels: tflac_u32 = addr_of!((*t).channels).read();
-    let bitdepth: tflac_u32 = addr_of!((*t).bitdepth).read();
-    let channel_mode: tflac_u8 = addr_of!((*t).channel_mode).read();
+    let cur_blocksize: tflac_u32 = (*t).cur_blocksize;
+    let samplerate: tflac_u32 = (*t).samplerate;
+    let channels: tflac_u32 = (*t).channels;
+    let channel_mode: tflac_u8 = (*t).channel_mode;
+    let bitdepth: tflac_u32 = (*t).bitdepth;
 
     // Sync code + reserved + blocking strategy bits.
     let mut frame_header: tflac_u32 = 0xFFF8u32 << 16;
@@ -127,9 +122,9 @@ pub unsafe extern "C" fn update_frame_header(t: *mut tflac) {
     let mode: tflac_u8 = channel_mode % 4;
     match mode {
         TFLAC_CHANNEL_INDEPENDENT => {
-            // `wrapping_sub` reproduces the C unsigned underflow when
-            // `channels == 0`; `wrapping_shl` reproduces the bits shifted off
-            // the top of the 32-bit word for large `channels`.
+            // Wrapping subtraction reproduces the C unsigned underflow when
+            // `channels == 0`; the `<< 4` truncates modulo 2^32 like C's shift
+            // of an `unsigned int`.
             frame_header |= channels.wrapping_sub(1).wrapping_shl(4);
         }
         TFLAC_CHANNEL_LEFT_SIDE => frame_header |= 0x08u32 << 4,
@@ -149,7 +144,5 @@ pub unsafe extern "C" fn update_frame_header(t: *mut tflac) {
         _ => {}
     }
 
-    // The C assigns `frame_header` (it never reads the incoming value), and it
-    // writes no other field.
-    addr_of_mut!((*t).frame_header).write(frame_header);
+    (*t).frame_header = frame_header;
 }

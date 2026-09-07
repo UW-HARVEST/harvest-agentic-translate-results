@@ -1,66 +1,86 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically:
-
-```
-nm -D --defined-only c_src/build/libharvest-work-xA5qFF.so   | awk '{print $3}' | sort
-nm -D --defined-only translation/target/release/libstr_dups_lib.so | awk '{print $3}' | sort
-comm -23 c.txt rust.txt      # missing from Rust
-```
-
-`c_src/src/lib.c` is a single-file amalgamation of `stb_ds.h` plus the `str_dups`
-driver from stb_ds's unit-test block. The public header (`include/lib.h`)
-declares only `str_dups`, but every non-`static` definition in `lib.c` has
-external linkage and therefore appears in `nm -D`. All 16 are listed below.
-
-| # | symbol | C signature | Rust export | status |
-|---|--------|-------------|-------------|--------|
-| 1 | `stbds_arrgrowf` | `void *(void *a, size_t elemsize, size_t addlen, size_t min_cap)` | yes | OK |
-| 2 | `stbds_arrfreef` | `void (void *a)` | yes | OK |
-| 3 | `stbds_rand_seed` | `void (size_t seed)` | yes | OK |
-| 4 | `stbds_hash_string` | `size_t (char *str, size_t seed)` | yes | OK |
-| 5 | `stbds_hash_bytes` | `size_t (void *p, size_t len, size_t seed)` | yes | OK |
-| 6 | `stbds_hmfree_func` | `void (void *a, size_t elemsize)` | yes | OK |
-| 7 | `stbds_hmget_key_ts` | `void *(void *a, size_t elemsize, void *key, size_t keysize, ptrdiff_t *temp, int mode)` | yes | OK |
-| 8 | `stbds_hmget_key` | `void *(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | yes | OK |
-| 9 | `stbds_hmput_default` | `void *(void *a, size_t elemsize)` | yes | OK |
-| 10 | `stbds_hmput_key` | `void *(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | yes | OK |
-| 11 | `stbds_shmode_func` | `void *(size_t elemsize, int mode)` | yes | OK |
-| 12 | `stbds_hmdel_key` | `void *(void *a, size_t elemsize, void *key, size_t keysize, size_t keyoffset, int mode)` | yes | OK |
-| 13 | `stbds_stralloc` | `char *(stbds_string_arena *a, char *str)` | yes | OK |
-| 14 | `stbds_strreset` | `void (stbds_string_arena *a)` | yes | OK |
-| 15 | `strkey` | `char *(int n)` | yes | OK |
-| 16 | `str_dups` | `void (int num)` | yes | OK |
-
-## `static` (internal) C functions — deliberately NOT exported by either .so
-
-`stbds_probe_position`, `stbds_log2`, `stbds_make_hash_index`,
-`stbds_siphash_bytes`, `stbds_is_key_equal`, `stbds_hm_find_slot`,
-`stbds_strdup`, plus the `static size_t stbds_hash_seed` /
-`static char buffer[256]` objects. The Rust translation keeps all of these
-private (`fn` / `static mut`), matching the C `.so`'s `nm -D`.
-
-The C source also `extern`-declares `stbds_unit_tests` but never defines it; it
-is not in `nm -D --defined-only` of either library, so nothing to translate.
-
-## Result
+Derived mechanically from:
 
 ```
-$ comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt
-(empty)
-$ comm -13 /tmp/c_syms.txt /tmp/rust_syms.txt
-(empty)
+nm -D --defined-only c_src/build/libharvest-work-0huCPf.so
+nm -D --defined-only translation/target/release/libstr_dups_lib.so
 ```
 
-**0 missing symbols; 0 extra symbols.** Undefined symbols in the Rust `.so` are
-all libc / libgcc-unwind / Rust-runtime imports (`realloc`, `free`, `memset`,
-`memcpy`, `memmove`, `bcmp` (LLVM's `memcmp`), `strcmp`, `strlen`, `sprintf`,
-`printf`, `__assert_fail`, `abort`, `_Unwind_*`, `__tls_get_addr`, …) — no
-undefined `stbds_*` references.
+The C library is a single-TU amalgamation of `stb_ds.h` plus the `str_dups`
+driver from stb_ds's unit-test block (`c_src/src/lib.c`, 969 lines). Everything
+else in the file is a preprocessor macro or a `static` function, so it produces
+no dynamic symbol.
 
-## Feature combinations
+## Public symbol table
 
-`translation/Cargo.toml` declares no `[features]` table, so the only build
-configuration is the default one (`cargo test`,
-`cargo test --no-default-features`). Both were exercised; see
-`FEATURE_MATRIX.md`.
+| # | symbol | C type | Rust wrapper | present in Rust `.so` |
+|---|--------|--------|--------------|-----------------------|
+| 1 | `stbds_arrgrowf` | `void *(void*, size_t, size_t, size_t)` | `#[no_mangle] extern "C"` | yes |
+| 2 | `stbds_arrfreef` | `void (void*)` | `#[no_mangle] extern "C"` | yes |
+| 3 | `stbds_rand_seed` | `void (size_t)` | `#[no_mangle] extern "C"` | yes |
+| 4 | `stbds_hash_string` | `size_t (char*, size_t)` | `#[no_mangle] extern "C"` | yes |
+| 5 | `stbds_hash_bytes` | `size_t (void*, size_t, size_t)` | `#[no_mangle] extern "C"` | yes |
+| 6 | `stbds_hmfree_func` | `void (void*, size_t)` | `#[no_mangle] extern "C"` | yes |
+| 7 | `stbds_hmget_key` | `void *(void*, size_t, void*, size_t, int)` | `#[no_mangle] extern "C"` | yes |
+| 8 | `stbds_hmget_key_ts` | `void *(void*, size_t, void*, size_t, ptrdiff_t*, int)` | `#[no_mangle] extern "C"` | yes |
+| 9 | `stbds_hmput_default` | `void *(void*, size_t)` | `#[no_mangle] extern "C"` | yes |
+| 10 | `stbds_hmput_key` | `void *(void*, size_t, void*, size_t, int)` | `#[no_mangle] extern "C"` | yes |
+| 11 | `stbds_hmdel_key` | `void *(void*, size_t, void*, size_t, size_t, int)` | `#[no_mangle] extern "C"` | yes |
+| 12 | `stbds_shmode_func` | `void *(size_t, int)` | `#[no_mangle] extern "C"` | yes |
+| 13 | `stbds_stralloc` | `char *(stbds_string_arena*, char*)` | `#[no_mangle] extern "C"` | yes |
+| 14 | `stbds_strreset` | `void (stbds_string_arena*)` | `#[no_mangle] extern "C"` | yes |
+| 15 | `strkey` | `char *(int)` | `#[no_mangle] extern "C"` | yes |
+| 16 | `str_dups` | `void (int)` | `#[no_mangle] extern "C"` | yes |
+
+## Symbols intentionally absent from BOTH libraries
+
+Declared `extern` in `c_src/src/lib.c` but never defined there, so the C `.so`
+lists them as **undefined**, not defined. The Rust `.so` must NOT define them
+either (and does not):
+
+* `stbds_unit_tests` — declared at lib.c:84, never defined.
+
+`static`-only C functions with no dynamic symbol (translated as private Rust
+`fn`s, correctly not exported): `stbds_probe_position`, `stbds_log2`,
+`stbds_make_hash_index`, `stbds_siphash_bytes`, `stbds_is_key_equal`,
+`stbds_hm_find_slot`, `stbds_strdup`.
+
+## Undefined (imported) symbols
+
+| library | non-libc undefined symbols |
+|---------|----------------------------|
+| C `.so` | none |
+| Rust `.so` | none |
+
+Both import only libc / libgcc / ld symbols. The C `.so` imports `realloc`,
+`free`, `malloc`, `memset`, `memcpy`, `memmove`, `memcmp`, `strcmp`, `strlen`,
+`sprintf`, `printf`, `__assert_fail`, `__cxa_finalize`, plus the weak
+`_ITM_*`/`__gmon_start__` link-time stubs. The Rust `.so` imports the same libc
+functions plus the ones the Rust standard library needs (`mmap64`, `munmap`,
+`pthread_key_*`, `write`, …), all versioned `@GLIBC…`, and libgcc's
+`_Unwind_*@GCC_*`. Nothing outside those categories.
+
+## Status
+
+**Symbol diff is EMPTY in both directions**, for both the `dev` and the
+`release` Rust profile. Verified with:
+
+```
+diff <(nm -D --defined-only <C.so>  | awk '$2=="T"{print $3}' | sort) \
+     <(nm -D --defined-only <RS.so> | awk '$2=="T"{print $3}' | sort)
+```
+
+Automated in `phase_d.sh` (section D.2), which also lists any undefined symbol
+in the Rust `.so` that is not glibc (`…@GLIBC…`), libgcc unwind
+(`_Unwind_*@GCC_*`), or a standard weak stub (`_ITM_*`, `__gmon_start__`) —
+that list is empty.
+
+No module of the C source was left untranslated: `c_src/CMakeLists.txt` lists
+only `src/lib.c`, and all 16 of its external definitions plus all 7 `static`
+helpers are present in `translation/src/lib.rs`. No export is a stub.
+
+- [x] `nm -D` shows 0 missing symbols in Rust (debug and release)
+- [x] `nm -D` shows 0 extra symbols in Rust (debug and release)
+- [x] 0 undefined non-libc symbols in Rust
+- [x] No stubbed / `unimplemented!()` exports

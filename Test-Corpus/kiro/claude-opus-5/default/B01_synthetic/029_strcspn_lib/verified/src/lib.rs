@@ -31,56 +31,46 @@ unsafe extern "C" {
 /// against the non-NUL bytes of `s2`; if no byte of `s1` occurs in `s2` the
 /// full length of `s1` is returned.
 ///
-/// # Argument read order
+/// # Ordering (deliberate)
 ///
-/// The reject set `s2` is consumed *in full, and first*, before a single byte of
-/// `s1` is read. That ordering is not incidental — it is required to match the
-/// observable behaviour of the glibc `strcspn` that the C library links against,
-/// which was confirmed by probing the compiled `libdriver.so`:
-///
-/// * glibc inspects the reject set before it touches `s1` (the generic
-///   implementation tests `reject[0]`/`reject[1]` to pick its fast paths; the
-///   x86-64 SSE4.2 implementation tests `*a == 0`). Consequently
-///   `driver("", <invalid s2>)` faults in C — an empty `s1` does *not* short
-///   circuit the call. A translation that scanned `s1` first would instead
-///   print `0`.
-/// * glibc consumes the *whole* reject set to build its lookup table / SIMD
-///   mask, so an unterminated `s2` faults even when `s1[0]` is already a member
-///   of the set. A translation that searched `s2` linearly per `s1` byte would
-///   return early instead of faulting.
-///
-/// Building a 256-entry membership table up front reproduces both properties
-/// while returning exactly the same values for all well-defined inputs.
+/// This walks the whole reject set `s2` up to its NUL terminator *first*,
+/// building a 256-entry membership table, and only then scans `s1`. That
+/// ordering is intentional: it reproduces glibc's observable behaviour, in
+/// which `strcspn` materialises the reject-set table by walking `s2` before it
+/// ever dereferences `s1`. In particular, a NULL `s2` faults immediately (on
+/// the very first read of `s2`) regardless of the contents of `s1` — even when
+/// `s1` points at an empty string — which a lazy `s1`-first implementation
+/// would fail to match.
 ///
 /// # Safety
 ///
 /// `s1` and `s2` must both be valid pointers to NUL-terminated byte strings,
 /// exactly as C's `strcspn` requires.
 unsafe fn strcspn(s1: *const c_char, s2: *const c_char) -> usize {
-    // Membership table for the reject set. Indexed by the byte value widened
-    // through `u8`, never through the (signed on x86-64) `c_char`, so bytes
-    // 0x80..=0xFF are handled the same way glibc handles them.
+    // Build the reject-set membership table by walking `s2` first. This read
+    // of `s2` happens unconditionally, before any byte of `s1` is touched, so
+    // that a NULL/invalid `s2` faults here exactly as glibc's does.
     let mut reject = [false; 256];
-
-    // Consume all of `s2` first — see "Argument read order" above.
     let mut j: usize = 0;
     loop {
-        // SAFETY: `s2` is a NUL-terminated string and we stop advancing as soon
-        // as we observe the NUL, so `s2 + j` stays in bounds.
+        // SAFETY: `s2` is a NUL-terminated string and we stop advancing as
+        // soon as we observe the NUL, so `s2 + j` stays in bounds. `c_char` is
+        // `i8` here; cast through `u8` so bytes 0x80..=0xFF map to distinct
+        // table slots and never alias slot 0x00.
         let r = unsafe { *s2.add(j) };
         if r == 0 {
-            // The terminating NUL is not a member of the reject set.
+            // The NUL terminator of `s2` is not a member of the reject set.
             break;
         }
         reject[r as u8 as usize] = true;
         j += 1;
     }
 
-    // Then scan `s1`. An empty reject set makes this a plain `strlen`, which is
-    // exactly what C's `strcspn` degenerates to in that case.
+    // Now scan `s1`, stopping at its NUL or at the first rejected byte.
     let mut i: usize = 0;
     loop {
-        // SAFETY: same reasoning as above, for `s1`.
+        // SAFETY: `s1` is a NUL-terminated string and we stop advancing as
+        // soon as we observe the NUL, so `s1 + i` stays in bounds.
         let c = unsafe { *s1.add(i) };
         if c == 0 {
             // Reached the end of `s1` without finding a rejected byte.

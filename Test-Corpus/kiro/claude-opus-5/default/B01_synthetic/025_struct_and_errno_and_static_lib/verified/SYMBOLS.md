@@ -1,70 +1,69 @@
-# SYMBOLS.md — dynamic symbol surface (Phase A / Phase D)
+# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
 
 Derived mechanically from:
 
-```sh
-nm -D c_src/build/libdriver.so
-nm -D translation/target/release/libdriver.so
+```
+nm -D --defined-only ../c_src/build/libdriver.so
+nm -D --defined-only target/release/libdriver.so
 ```
 
-## C `.so` — defined (exported) symbols
+## Defined (exported) dynamic symbols
 
-`nm -D --defined-only c_src/build/libdriver.so`
+| # | symbol | C `.so` | Rust `.so` | linkage in C source | status |
+|---|--------|---------|------------|---------------------|--------|
+| 1 | `driver` | `T` | `T` | `void driver(const char *in)` — declared in `include/driver.h`, external | MATCH |
+| 2 | `run`    | `T` | `T` | `void run(int extra_bedrooms)` — NOT in the header but NOT `static`, so external linkage; part of the exported ABI | MATCH |
 
-| symbol | type | C source | present in Rust `.so`? |
-|--------|------|----------|------------------------|
-| `driver` | `T` (global text) | `c_src/src/driver.c:78` — `void driver(const char *in)`, declared in `include/driver.h` | YES (`T driver`) |
-| `run`    | `T` (global text) | `c_src/src/driver.c:57` — `void run(int extra_bedrooms)`; **not** declared in `driver.h` but not `static` either, so it has external linkage and is part of the exported ABI | YES (`T run`) |
+**Symbol diff (C defined − Rust defined): EMPTY.**
+**Symbol diff (Rust defined − C defined): EMPTY** (`cdylib` + only two
+`#[unsafe(no_mangle)]` items; no extra public surface).
 
-That is the complete set: the C translation unit defines exactly two symbols
-with external linkage. Everything else in `driver.c` is `static` (internal
-linkage) and therefore deliberately absent from both `.so` files:
+## Internal-linkage items (correctly NOT exported by either side)
 
-`the_house`, `add_floor`, `add_bedrooms`, `add_floor_to_the_house`,
-`print_the_house`, `parse_val`.
+Every other function/object in `c_src/src/driver.c` is `static`, i.e. internal
+linkage, and must NOT appear in `nm -D` for either library:
 
-No macro-generated symbols exist in this translation unit (no symbol-defining
-macros are used).
+| C item | kind | Rust counterpart | exported? |
+|--------|------|------------------|-----------|
+| `house_t` | `typedef struct` | `struct House` (`#[repr(C)]`) | n/a (type) |
+| `the_house` | `static house_t` | `static mut THE_HOUSE` | no (both) |
+| `add_floor` | `static void` | `fn add_floor` | no (both) |
+| `add_bedrooms` | `static void` | `fn add_bedrooms` | no (both) |
+| `add_floor_to_the_house` | `static void` | `unsafe fn add_floor_to_the_house` | no (both) |
+| `print_the_house` | `static void` | `unsafe fn print_the_house` | no (both) |
+| `parse_val` | `static bool` | `unsafe fn parse_val` | no (both) |
 
-## Symbol diff
-
-```
-comm -23 <(nm -D --defined-only c_src/build/libdriver.so      | awk '{print $NF}' | sort -u) \
-         <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort -u)
-```
-
-Result: **empty**. 0 symbols exported by the C `.so` are missing from the Rust
-`.so`. No wrappers had to be added and no C module was left untranslated —
-`c_src/src/driver.c` is the only C source file in the project
-(`c_src/CMakeLists.txt` lists exactly `src/driver.c`) and it is fully
-translated in `translation/src/lib.rs`.
-
-The Rust `.so` exports no *extra* non-libc symbols either (`nm -D
---defined-only` yields exactly `driver` and `run`).
+Confirmed: `nm -D` on both libraries lists exactly two `T` symbols, so no
+internal item leaked into the dynamic symbol table on either side.
 
 ## Undefined (imported) symbols
 
-Not required to match — these are the libc/runtime imports each toolchain
-happens to need — but recorded for completeness.
+Requirement: 0 missing/undefined **non-libc** symbols in the Rust `.so`.
 
-| symbol | C `.so` | Rust `.so` | note |
-|--------|---------|-----------|------|
-| `printf@GLIBC_2.2.5`   | U | U | both call the platform `printf` |
-| `puts@GLIBC_2.2.5`     | U | U | in C this is gcc's `printf("...\n")` → `puts` optimisation for the two constant-string calls; the emitted bytes are identical either way |
-| `strtol@GLIBC_2.2.5`   | U | U | Rust delegates parsing to the platform `strtol` |
-| `__errno_location@GLIBC_2.2.5` | U | U | Rust reads/writes the same thread-local `errno` storage `strtol` writes |
-| `__cxa_finalize`, `__gmon_start__`, `_ITM_*` | w | w | standard weak startup/teardown hooks |
-| `_Unwind_*`, `malloc`, `free`, `memcpy`, `dl_iterate_phdr`, `pthread_key_*`, … | — | U | Rust `std`/panic-runtime imports pulled in by the `std` prelude; they are not part of the library's own API surface |
+C `.so` imports: `printf`, `puts`, `strtol`, `__errno_location` (all glibc)
+plus the usual weak `_ITM_*` / `__cxa_finalize` / `__gmon_start__` stubs.
 
-There are **0 missing/undefined non-libc symbols** in the Rust `.so`: every
-undefined symbol it lists resolves against glibc / libgcc_s, which are already
-loaded in any process that loads the library (verified with
-`ldd translation/target/release/libdriver.so` reporting no "not found").
+> Note: the C compiler rewrote `printf("An error occurred\n")` into
+> `puts("An error occurred")`. That is a libc-level, byte-equivalent
+> transformation of the same output, not a behavioural difference.
 
-## Feature combinations
+Rust `.so` imports: the same `printf`, `strtol`, `__errno_location`, `puts`,
+plus glibc/`libgcc_s` runtime support used by the Rust `std`/panic machinery
+(`malloc`, `free`, `memcpy`, `write`, `writev`, `_Unwind_*`, `pthread_key_*`,
+…). `ldd` resolves the Rust `.so` against only `libgcc_s.so.1`, `libc.so.6`
+and the loader:
 
-`translation/Cargo.toml` declares **no** `[features]` table, so the only
-configuration is the default one (`--no-default-features` and the default build
-produce the identical crate). The symbol table above therefore holds for every
-feature combination; `scripts/check_features.sh` enumerates the feature set
-mechanically and confirms the list is empty.
+```
+libgcc_s.so.1 => /lib64/libgcc_s.so.1
+libc.so.6     => /lib64/libc.so.6
+```
+
+**Non-libc / non-runtime undefined symbols in the Rust `.so`: 0.**
+
+## Verdict
+
+- [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
+- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.
+- [x] No whole C module was left untranslated: `c_src` contains exactly one
+      translation unit (`src/driver.c`, 86 lines) and one header
+      (`include/driver.h`); every function in it has a Rust counterpart above.

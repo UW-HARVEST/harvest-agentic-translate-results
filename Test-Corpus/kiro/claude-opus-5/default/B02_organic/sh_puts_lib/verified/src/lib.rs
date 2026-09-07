@@ -15,7 +15,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(unused_assignments)]
 
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::mem::size_of;
 use core::ptr;
 
@@ -30,33 +30,40 @@ extern "C" {
     fn strcmp(a: *const c_char, b: *const c_char) -> c_int;
     fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> c_int;
     fn printf(fmt: *const c_char, ...) -> c_int;
-    fn abort() -> !;
-    fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
 }
 
-// ---------------------------------------------------------------------------
-// STBDS_ASSERT
-//
-// `#define STBDS_ASSERT assert` and the CMake build defines no `NDEBUG`, so the
-// C asserts are LIVE: a violated one writes a diagnostic to stderr and calls
-// `abort()` (SIGABRT).  Several of them are reachable through the public API
-// (e.g. `stbds_hmdel_key` with `mode > STBDS_HM_STRING`), so the translation
-// must terminate the same way instead of continuing with a bad index.
-// ---------------------------------------------------------------------------
-
-#[cold]
-#[inline(never)]
-unsafe fn stbds_assert_fail(msg: &'static str) -> ! {
-    write(2, msg.as_ptr() as *const c_void, msg.len());
-    abort()
+extern "C" {
+    fn __assert_fail(
+        assertion: *const c_char,
+        file: *const c_char,
+        line: c_uint,
+        function: *const c_char,
+    ) -> !;
 }
 
-macro_rules! stbds_assert {
-    ($cond:expr, $msg:literal) => {
-        if !($cond) {
-            stbds_assert_fail(concat!("Assertion `", $msg, "' failed.\n"))
-        }
-    };
+/// `__FILE__` as the C build sees it.
+const STBDS_FILE: &core::ffi::CStr = c"src/lib.c";
+
+/// `STBDS_ASSERT(cond)` => `assert(cond)`.
+///
+/// The C library is compiled without `NDEBUG`, so every `assert` is live and
+/// aborts through glibc `__assert_fail`.  Reproduce that (same assertion text,
+/// line number and enclosing function name) rather than silently continuing.
+#[inline]
+unsafe fn stbds_assert(
+    cond: bool,
+    assertion: &core::ffi::CStr,
+    line: u32,
+    function: &core::ffi::CStr,
+) {
+    if !cond {
+        __assert_fail(
+            assertion.as_ptr(),
+            STBDS_FILE.as_ptr(),
+            line as c_uint,
+            function.as_ptr(),
+        );
+    }
 }
 
 /// `STBDS_REALLOC(c, p, s)` => `realloc(p, s)`
@@ -403,12 +410,11 @@ unsafe fn stbds_make_hash_index(
     if slot_count <= STBDS_BUCKET_LENGTH {
         (*t).used_count_shrink_threshold = 0;
     }
-    stbds_assert!(
-        (*t)
-            .used_count_threshold
-            .wrapping_add((*t).tombstone_count_threshold)
-            < (*t).slot_count,
-        "t->used_count_threshold + t->tombstone_count_threshold < t->slot_count"
+    stbds_assert(
+        (*t).used_count_threshold.wrapping_add((*t).tombstone_count_threshold) < (*t).slot_count,
+        c"t->used_count_threshold + t->tombstone_count_threshold < t->slot_count",
+        401,
+        c"stbds_make_hash_index",
     );
 
     if !ot.is_null() {
@@ -970,9 +976,11 @@ pub unsafe extern "C" fn stbds_hmput_key(
         }
         raw_a = stbds_arr_to_hash(a, elemsize);
 
-        stbds_assert!(
+        stbds_assert(
             (i as usize).wrapping_add(1) <= stbds_arrcap(a),
-            "(size_t) i+1 <= stbds_arrcap(a)"
+            c"(size_t) i+1 <= stbds_arrcap(a)",
+            778,
+            c"stbds_hmput_key",
         );
         (*stbds_header(a)).length = (i + 1) as usize;
         bucket = (*table).storage.wrapping_add(pos >> STBDS_BUCKET_SHIFT);
@@ -1056,15 +1064,21 @@ pub unsafe extern "C" fn stbds_hmdel_key(
     let mut i: c_int = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
     let old_index: isize = (*b).index[i as usize];
     let final_index: isize = stbds_arrlen(raw_a) - 1 - 1;
-    stbds_assert!(
+    stbds_assert(
         slot < (*table).slot_count as isize,
-        "slot < (ptrdiff_t) table->slot_count"
+        c"slot < (ptrdiff_t) table->slot_count",
+        828,
+        c"stbds_hmdel_key",
     );
     (*table).used_count = (*table).used_count.wrapping_sub(1);
     (*table).tombstone_count = (*table).tombstone_count.wrapping_add(1);
     stbds_set_temp(raw_a, 1);
-    // STBDS_ASSERT(table->used_count >= 0) -- `used_count` is `size_t`, so the
-    // C comparison is a tautology and can never fire; deliberately omitted.
+    stbds_assert(
+        true, // size_t is unsigned: `table->used_count >= 0` is always true in C
+        c"table->used_count >= 0",
+        832,
+        c"stbds_hmdel_key",
+    );
     (*b).hash[i as usize] = STBDS_HASH_DELETED;
     (*b).index[i as usize] = STBDS_INDEX_DELETED;
 
@@ -1087,13 +1101,17 @@ pub unsafe extern "C" fn stbds_hmdel_key(
             let k = elem_at(a, elemsize, old_index as usize).wrapping_add(keyoffset);
             slot = stbds_hm_find_slot(a, elemsize, k as *mut c_void, keysize, keyoffset, mode);
         }
-        // STBDS_ASSERT(slot >= 0);
-        stbds_assert!(slot >= 0, "slot >= 0");
+        stbds_assert(slot >= 0, c"slot >= 0", 846, c"stbds_hmdel_key");
         b = (*table)
             .storage
             .wrapping_add((slot >> STBDS_BUCKET_SHIFT) as usize);
         i = ((slot as usize) & STBDS_BUCKET_MASK) as c_int;
-        stbds_assert!((*b).index[i as usize] == final_index, "b->index[i] == final_index");
+        stbds_assert(
+            (*b).index[i as usize] == final_index,
+            c"b->index[i] == final_index",
+            849,
+            c"stbds_hmdel_key",
+        );
         (*b).index[i as usize] = old_index;
     }
     (*stbds_header(raw_a)).length -= 1;
@@ -1127,12 +1145,7 @@ pub unsafe extern "C" fn stbds_stralloc(
     if len > (*a).remaining {
         let mut blocksize: usize = (*a).block as usize;
 
-        // `(size_t) 512u << (blocksize >> 1)`.  For every arena the library
-        // itself creates, `block` saturates at 22 so the shift count never
-        // exceeds 11.  A caller-forged arena with `block > 127` would make the
-        // C expression a shift-count overflow (UB); gcc on x86-64 emits `shl`,
-        // whose count is taken mod 64, so mask to match instead of panicking.
-        blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << ((blocksize >> 1) & (STBDS_SIZE_T_BITS as usize - 1));
+        blocksize = STBDS_STRING_ARENA_BLOCKSIZE_MIN << (blocksize >> 1);
 
         if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
             (*a).block = (*a).block.wrapping_add(1);
@@ -1168,8 +1181,12 @@ pub unsafe extern "C" fn stbds_stralloc(
         }
     }
 
-    // STBDS_ASSERT(len <= a->remaining);
-    stbds_assert!(len <= (*a).remaining, "len <= a->remaining");
+    stbds_assert(
+        len <= (*a).remaining,
+        c"len <= a->remaining",
+        913,
+        c"stbds_stralloc",
+    );
     let p = ((&raw mut (*(*a).storage).storage) as *mut c_char)
         .wrapping_add((*a).remaining.wrapping_sub(len) as isize as usize);
     (*a).remaining = (*a).remaining.wrapping_sub(len);
@@ -1290,12 +1307,24 @@ pub unsafe extern "C" fn sh_puts(num: c_int) {
         *strmap.wrapping_offset(stbds_temp(raw)) = s;
         (*strmap.wrapping_offset(stbds_temp(raw))).key = stbds_temp_key(raw);
 
-        // STBDS_ASSERT(*strmap[0].key == 'a');
-        // STBDS_ASSERT(strmap[0].key != s.key);
-        // STBDS_ASSERT(strmap[0].value == s.value);
-        stbds_assert!(*(*strmap).key == b'a' as c_char, "*strmap[0].key == 'a'");
-        stbds_assert!((*strmap).key != s.key, "strmap[0].key != s.key");
-        stbds_assert!((*strmap).value == s.value, "strmap[0].value == s.value");
+        stbds_assert(
+            *(*strmap.wrapping_add(0)).key == b'a' as c_char,
+            c"*strmap[0].key == 'a'",
+            959,
+            c"sh_puts",
+        );
+        stbds_assert(
+            (*strmap.wrapping_add(0)).key != s.key,
+            c"strmap[0].key != s.key",
+            960,
+            c"sh_puts",
+        );
+        stbds_assert(
+            (*strmap.wrapping_add(0)).value == s.value,
+            c"strmap[0].value == s.value",
+            961,
+            c"sh_puts",
+        );
 
         // for (int z=0; z < shlen(strmap); ++z)
         //     printf("%s %d\n", strmap[z], strmap[z].value);

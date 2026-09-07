@@ -130,7 +130,7 @@ unsafe fn would_overflow(s: *const State, num_bits: c_int) -> bool {
 
 unsafe fn state_ptr(s: *const State) -> *const u8 {
     unsafe {
-        assert_eq!((*s).bits_left & 7, 0);
+        assert!((*s).bits_left & 7 == 0);
         (*s).words
             .add((*s).word_index as usize)
             .cast::<u8>()
@@ -273,7 +273,7 @@ unsafe fn decode(s: *mut State, tree: *const u32, mut hi: c_int) -> c_int {
         }
         let key = *tree.add((lo - 1) as usize);
         let len = 32 - (key & 0xf);
-        assert_eq!(search >> len, key >> len);
+        assert!((search >> len) == (key >> len));
         let _code = consume_bits(s, (key & 0xf) as c_int);
         ((key >> 4) & 0xfff) as c_int
     }

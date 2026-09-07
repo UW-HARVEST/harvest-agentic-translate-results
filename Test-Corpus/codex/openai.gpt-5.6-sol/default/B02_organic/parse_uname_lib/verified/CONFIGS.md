@@ -1,83 +1,47 @@
-# Configuration Surface
+# Configuration surface
 
-The rows below are derived from the three symbols exported by the C shared
-library, the `ARCHS` loop, and every `if` branch in `src/lib.c`. There are no
-compile-time options, runtime flags, byte-order modes, element types, or Cargo
-features.
-
-Parser combination notation:
-
-- `A0` / `A1`: no recognized architecture / recognized architecture in the
-  mutable prefix before `" ["`.
-- `P0` / `P1`: OS name has no `|platform` / has `|platform`.
-- `C0` / `C1`: version has no `" (codename)"` / has it.
-- `VN`, `VM`, `VMM`: non-numeric version / major only / major and minor.
+The rows below come from the public entry points found by `nm -D`, the `ARCHS`
+table, and each `if`/regex branch in `../c_src/src/lib.c`. The API has no
+compile-time Cargo features and no runtime option object; its configuration
+axes are regex match shape, architecture-token precedence, and uname format.
 
 | # | entry point(s) | configuration (options set + input shape) | status |
-|---|----------------|--------------------------------------------|--------|
-| C01 | `get_os_arch` | Header contains `x86_64` | [x] |
-| C02 | `get_os_arch` | Header contains `i386` | [x] |
-| C03 | `get_os_arch` | Header contains `i686` | [x] |
-| C04 | `get_os_arch` | Header contains `sparc` | [x] |
-| C05 | `get_os_arch` | Header contains `amd64` | [x] |
-| C06 | `get_os_arch` | Header contains `i86pc` | [x] |
-| C07 | `get_os_arch` | Header contains `ia64` | [x] |
-| C08 | `get_os_arch` | Header contains `AIX` | [x] |
-| C09 | `get_os_arch` | Header contains `armv6` | [x] |
-| C10 | `get_os_arch` | Header contains `armv7` | [x] |
-| C11 | `get_os_arch` | Header contains `aarch64` | [x] |
-| C12 | `get_os_arch` | Header contains `arm64` | [x] |
-| C13 | `get_os_arch` | Header contains multiple recognized strings; earliest `ARCHS` entry wins, independent of text order | [x] |
-| C14 | `get_os_arch` | Empty/nonempty header contains no recognized string | [x] |
-| C15 | `w_regexec` | Empty pattern and empty string, `nmatch=0`, `pmatch=NULL` | [x] |
-| C16 | `w_regexec` | Valid literal pattern matches a nonempty string, `nmatch=0`, `pmatch=NULL` | [x] |
-| C17 | `w_regexec` | Valid literal pattern matches, `nmatch=1`, whole-match offsets requested | [x] |
-| C18 | `w_regexec` | Valid pattern with one capture matches, `nmatch=2`, whole and capture offsets requested | [x] |
-| C19 | `w_regexec` | Valid pattern with fewer captures than slots matches, `nmatch>2`; unmatched slots are reported | [x] |
-| C20 | `w_regexec` | Valid pattern does not match an empty/nonempty string | [x] |
-| C21 | `parse_uname_string`, `w_regexec` | Windows marker; version is non-numeric, so major/minor/build do not match | [x] |
-| C22 | `parse_uname_string`, `w_regexec` | Windows marker; version has major only | [x] |
-| C23 | `parse_uname_string`, `w_regexec` | Windows marker; version has major.minor only | [x] |
-| C24 | `parse_uname_string`, `w_regexec` | Windows marker; version has major.minor.single-build | [x] |
-| C25 | `parse_uname_string`, `w_regexec` | Windows marker; version has major.minor.multi-part-build | [x] |
-| C26 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `x86_64` | [x] |
-| C27 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `i386` | [x] |
-| C28 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `i686` | [x] |
-| C29 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `sparc` | [x] |
-| C30 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `amd64` | [x] |
-| C31 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `i86pc` | [x] |
-| C32 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `ia64` | [x] |
-| C33 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `AIX` | [x] |
-| C34 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `armv6` | [x] |
-| C35 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `armv7` | [x] |
-| C36 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `aarch64` | [x] |
-| C37 | `parse_uname_string`, `get_os_arch` | No `" ["` marker; prefix contains `arm64` | [x] |
-| C38 | `parse_uname_string`, `get_os_arch` | No `" ["` marker and no recognized architecture | [x] |
-| C39 | `parse_uname_string`, `get_os_arch` | Non-Windows marker without `": "`: `P0 A0` | [x] |
-| C40 | `parse_uname_string`, `get_os_arch` | Non-Windows marker without `": "`: `P0 A1` | [x] |
-| C41 | `parse_uname_string`, `get_os_arch` | Non-Windows marker without `": "`: `P1 A0` | [x] |
-| C42 | `parse_uname_string`, `get_os_arch` | Non-Windows marker without `": "`: `P1 A1` | [x] |
-| C43 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C0 P0 A0` | [x] |
-| C44 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C0 P0 A1` | [x] |
-| C45 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C0 P1 A0` | [x] |
-| C46 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C0 P1 A1` | [x] |
-| C47 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C1 P0 A0` | [x] |
-| C48 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C1 P0 A1` | [x] |
-| C49 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C1 P1 A0` | [x] |
-| C50 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VN C1 P1 A1` | [x] |
-| C51 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C0 P0 A0` | [x] |
-| C52 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C0 P0 A1` | [x] |
-| C53 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C0 P1 A0` | [x] |
-| C54 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C0 P1 A1` | [x] |
-| C55 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C1 P0 A0` | [x] |
-| C56 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C1 P0 A1` | [x] |
-| C57 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C1 P1 A0` | [x] |
-| C58 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VM C1 P1 A1` | [x] |
-| C59 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C0 P0 A0` | [x] |
-| C60 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C0 P0 A1` | [x] |
-| C61 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C0 P1 A0` | [x] |
-| C62 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C0 P1 A1` | [x] |
-| C63 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C1 P0 A0` | [x] |
-| C64 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C1 P0 A1` | [x] |
-| C65 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C1 P1 A0` | [x] |
-| C66 | `parse_uname_string`, `w_regexec`, `get_os_arch` | Non-Windows marker with `": "`: `VMM C1 P1 A1` | [x] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `get_os_arch` | input contains `x86_64` | [x] |
+| 2 | `get_os_arch` | input contains `i386` | [x] |
+| 3 | `get_os_arch` | input contains `i686` | [x] |
+| 4 | `get_os_arch` | input contains `sparc` | [x] |
+| 5 | `get_os_arch` | input contains `amd64` | [x] |
+| 6 | `get_os_arch` | input contains `i86pc` | [x] |
+| 7 | `get_os_arch` | input contains `ia64` | [x] |
+| 8 | `get_os_arch` | input contains `AIX` | [x] |
+| 9 | `get_os_arch` | input contains `armv6` | [x] |
+| 10 | `get_os_arch` | input contains `armv7` | [x] |
+| 11 | `get_os_arch` | input contains `aarch64` | [x] |
+| 12 | `get_os_arch` | input contains `arm64` | [x] |
+| 13 | `get_os_arch` | input contains multiple supported tokens; first `ARCHS` table entry wins, independent of textual position | [x] |
+| 14 | `w_regexec` | valid regex matches; `nmatch == 0`, `pmatch == NULL` | [x] |
+| 15 | `w_regexec` | valid regex matches; `nmatch == 1`, full-match offsets requested | [x] |
+| 16 | `w_regexec` | valid regex with a capture matches; `nmatch == 2`, subgroup offsets requested | [x] |
+| 17 | `w_regexec` | valid regex does not match | [x] |
+| 18 | `w_regexec` | empty valid regex and empty input string | [x] |
+| 19 | `w_regexec` | valid regex matches with a large safely backed `nmatch` array | [x] |
+| 20 | `parse_uname_string`, `w_regexec` | Windows ` [Ver: ...]` format with major-only numeric version | [x] |
+| 21 | `parse_uname_string`, `w_regexec` | Windows format with major.minor version | [x] |
+| 22 | `parse_uname_string`, `w_regexec` | Windows format with major.minor.build version | [x] |
+| 23 | `parse_uname_string`, `w_regexec` | Windows format with dotted multi-component build | [x] |
+| 24 | `parse_uname_string`, `w_regexec` | Windows format with nonnumeric/empty version; no numeric captures | [x] |
+| 25 | `parse_uname_string` | generic ` [...]` format, no `: `, no `|`; closing byte is removed from `os_name` | [x] |
+| 26 | `parse_uname_string` | generic format, no `: `, with `name|platform`; name/platform split after closing-byte removal | [x] |
+| 27 | `parse_uname_string`, `w_regexec` | generic `name: version` with major-only numeric version, no codename, no platform | [x] |
+| 28 | `parse_uname_string`, `w_regexec` | generic `name: major.minor` version, no codename, no platform | [x] |
+| 29 | `parse_uname_string`, `w_regexec` | generic numeric version with ` (codename)` | [x] |
+| 30 | `parse_uname_string`, `w_regexec` | generic nonnumeric version with ` (codename)`; codename set but numeric captures absent | [x] |
+| 31 | `parse_uname_string`, `w_regexec` | generic `name|platform: version`; platform split combines with version parsing | [x] |
+| 32 | `parse_uname_string`, `get_os_arch` | no bracket marker and one supported architecture token; only `os_arch` is set | [x] |
+| 33 | `parse_uname_string`, `get_os_arch` | no bracket marker and no supported architecture token; all fields remain null | [x] |
+| 34 | `parse_uname_string`, `get_os_arch` | generic marker with supported architecture in the prefix before ` [`; architecture survives input truncation | [x] |
+| 35 | `parse_uname_string`, `get_os_arch` | generic marker with supported architecture only after ` [`; architecture is not found after input truncation | [x] |
+| 36 | `parse_uname_string` | Windows marker takes precedence over generic marker handling and skips architecture extraction | [x] |
+| 37 | `parse_uname_string` | empty input string (zero-length shape), no marker, no architecture | [x] |
+| 38 | `parse_uname_string` | one-byte input string, no marker, no architecture | [x] |

@@ -3,80 +3,55 @@
 Derived mechanically from:
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-Dg6S6m.so
+nm -D --defined-only c_src/build/libharvest-work-tyyXk5.so
 nm -D --defined-only translation/target/release/libbetagamma_lib.so
 ```
 
-## C `.so` exported symbols (all `T`, dynamic)
+The C library is built from exactly one translation unit (`c_src/src/lib.c`,
+per `c_src/CMakeLists.txt`). `c_src/include/lib.h` declares only `betagamma`,
+but the other four functions in `lib.c` are non-`static`, so they are exported
+too and are part of the ABI surface that must be reproduced.
 
-| # | symbol | C signature (`c_src/src/lib.c`) | present in Rust `.so`? |
-|---|--------|---------------------------------|------------------------|
-| 1 | `allocate_block` | `MemoryBlock* allocate_block(size_t count, int init_value)` | YES |
-| 2 | `betagamma`      | `int betagamma(int, int, int, int)` (the only symbol in `include/lib.h`) | YES |
-| 3 | `compute_hash`   | `int compute_hash(MemoryBlock *mb1, MemoryBlock *mb2)` | YES |
-| 4 | `create_block`   | `DataBlock create_block(int id, const char *name, uint8_t flags)` | YES |
-| 5 | `free_block`     | `void free_block(MemoryBlock *mb)` | YES |
+## Exported (defined, global text) symbols
 
-There are no `static` functions, no macro-generated symbols, no exported data
-objects, and no `#ifdef`-gated alternate definitions in `c_src/src/lib.c`, so
-the list above is the complete C surface.
+| # | symbol | in C `.so` | in Rust `.so` | notes |
+|---|--------|-----------|--------------|-------|
+| 1 | `create_block`   | yes (T) | yes (T) | returns `DataBlock` (40 bytes) by value — MEMORY-class, hidden sret pointer |
+| 2 | `allocate_block` | yes (T) | yes (T) | returns `MemoryBlock*` |
+| 3 | `free_block`     | yes (T) | yes (T) | void |
+| 4 | `compute_hash`   | yes (T) | yes (T) | reads raw pointer values out of the two structs |
+| 5 | `betagamma`      | yes (T) | yes (T) | the only symbol declared in the public header |
 
-## Diff result
+**Missing symbols: 0.** No implementation was absent, so no C source needed to
+be translated in this phase and no stubs were introduced.
 
-```
-comm -23 c_syms.txt rust_syms.txt   ->   (empty)
-```
+## Undefined (imported) symbols in the Rust `.so`
 
-**0 symbols missing from the Rust `.so`.** No wrappers had to be added and no C
-module was left untranslated: `c_src` contains exactly one translation unit
-(`src/lib.c`, per `CMakeLists.txt`), and all five of its external definitions
-have real Rust implementations (no stubs, no `unimplemented!()`).
+`nm -D --undefined-only` on the Rust `.so` lists only libc / libgcc-unwind
+imports, i.e. 0 missing non-libc symbols:
 
-## Undefined symbols in the Rust `.so`
+* allocator + string: `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`,
+  `strcpy`, `strlen`, `memcpy`, `memmove`, `memset`, `bcmp`
+* Rust std/panic runtime support: `_Unwind_*`, `abort`, `__errno_location`,
+  `__tls_get_addr`, `pthread_key_*`, `dl_iterate_phdr`
+* std file/IO support pulled in by the std prelude: `open64`, `read`, `write`,
+  `writev`, `close`, `lseek64`, `stat64`, `fstat64`, `statx`, `getcwd`,
+  `readlink`, `realpath`, `getenv`, `mmap64`, `munmap`, `syscall`
+* weak: `_ITM_*TMCloneTable`, `__cxa_finalize`, `__cxa_thread_atexit_impl`,
+  `__gmon_start__`, `gettid`
 
-All `U`/`w` entries are libc / libgcc-unwind / TLS runtime imports:
-`malloc`, `calloc`, `free`, `strcpy`, `memcpy`, `memmove`, `memset`, `strlen`,
-`bcmp`, `realloc`, `posix_memalign`, `abort`, `__errno_location`, the
-`_Unwind_*` family, `dl_iterate_phdr`, `pthread_key_*`, and the
-`open64`/`read`/`write`/`stat64`/`mmap64` syscall wrappers pulled in by the Rust
-`std` panic/backtrace machinery.
+The extra std-related imports are inert (the C `.so` needs none of them); they
+do not add or remove any *defined* symbol, so ABI parity holds.
 
-**0 missing/undefined non-libc symbols.**
+Critically, the Rust `.so` imports `malloc` / `calloc` / `free` from libc
+rather than shipping its own allocator. That is required for fidelity: see
+`CONFIGS.md` axis **H** — `compute_hash` observes raw heap addresses, so the
+Rust build must drive the *same* allocator with the *same* request sizes in the
+*same* order as the C build.
 
 ## Feature combinations
 
-`translation/Cargo.toml` has no `[features]` table, so the only build
-configurations are the default (empty feature set) and
-`--no-default-features` — which are identical. Both are exercised by
-`scripts/verify_all.sh`.
-
-## Verification status
-
-Re-checked after the final build (`scripts/verify_all.sh`):
-
-```
-$ comm -23 <(nm -D --defined-only c_src/build/*.so       | awk '{print $NF}' | sort -u) \
-           <(nm -D --defined-only translation/target/release/libbetagamma_lib.so \
-                                                          | awk '{print $NF}' | sort -u)
-(empty)
-```
-
-* 5/5 C symbols exported by the Rust `.so`, exact names.
-* 0 missing symbols; 0 unresolved non-libc symbols.
-* Enforced in-test by `tests/phase_d_symbols.rs`, which also asserts the C
-  surface has not changed and that **no export is a stub** — every symbol is
-  additionally checked to produce the C's real observable effect
-  (`phase_d_no_symbol_is_a_stub`), since a symbol that merely exists would
-  satisfy `nm` while lying about behaviour.
-
-### A caveat worth recording
-
-Midway through verification, `translation/src/lib.rs` was replaced in the
-working tree by a translation of a *different* C library (exporting `arity`,
-`arity2`, `arity3`, `arity4`, `shift_array`, `process_string`, `apply_bitmask`,
-`init_matrix`, `compare_allocations`) while `c_src/` remained unchanged. That
-left **0 of 5** required symbols present. The file was restored to the
-translation of *this* `c_src` and everything was re-verified from scratch. The
-symbol-parity test in `phase_d_symbols.rs` detects exactly this class of
-mismatch, and is why it asserts the expected C surface explicitly rather than
-just diffing whatever two `.so` files happen to be present.
+`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
+configuration is the default one. The Phase D "repeat for every feature combo"
+requirement collapses to a single combination; `--no-default-features` is still
+exercised by `scripts/check_features.sh` for completeness.

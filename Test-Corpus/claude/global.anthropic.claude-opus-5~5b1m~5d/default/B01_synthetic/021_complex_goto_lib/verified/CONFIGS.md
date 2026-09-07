@@ -1,95 +1,113 @@
-# CONFIGS.md — configuration / valid-input surface table
+# CONFIGS.md — Phase B configuration surface table
 
-## Public API surface (from `c_src/include/driver.h`)
+## Axes derived from the C source
+
+`c_src/include/driver.h` exposes exactly one entry point, the lowest-level one:
 
 ```c
 void driver(int x, int y);
 ```
 
-* Entry points: **exactly one**, `driver`. There is no convenience wrapper vs.
-  low-level split, no context/handle object, no init/teardown, no callbacks.
-* Runtime options / modes / flags: **none**. No globals (`grep -nE
-  '^[a-zA-Z].*=|static' c_src/src/driver.c` → nothing), no `#ifdef` in the
-  library source, no environment lookups, so there is no option state to set.
-* Cargo features in `translation/Cargo.toml`: **none declared** → the only
-  build configuration is the default one (see "feature combinations" below).
-* Observable output: bytes written to `stdout` via libc (`printf` → `puts`).
-  The differential tests capture `stdout` and compare byte-for-byte.
+There are **no runtime options/modes/flags**, **no `#ifdef`s**, **no global
+state**, **no convenience wrappers** (so "lowest-level entry point" == the only
+entry point). `translation/Cargo.toml` declares **no `[features]`**, so the only
+feature combination is the default (see Phase D).
 
-## Axes the C code actually branches on
+The configuration surface is therefore the cross-product of the input shapes
+the code branches on. Every branch in the C body:
 
-| axis | source line | distinguished values |
-|------|-------------|----------------------|
-| A1 loop guard `x > 0 \|\| y > 0` | 30 | `x<=0 && y<=0` (skip) vs. `x>0` vs. `y>0` |
-| A2 `x == 1 && y == 4` (`goto label2`) | 33 | exactly `(1,4)` vs. everything else |
-| A3 `x > 0` (`printf("x"); x--`) | 38 | `x<=0` vs. `x>0` |
-| A4 `y == 0` (`continue`) | 44 | `y==0` vs. `y!=0` (incl. `y<0`!) |
-| A5 `x < 3` (backward `goto label1`) | 49 | `x<3` vs. `x>=3` |
-| A6 magnitude / sign shape of `x` | — | `INT_MIN`, `<0`, `0`, `1`, `2`, `3`, `4`, large |
-| A7 magnitude / sign shape of `y` | — | `INT_MIN`, `<0`, `0`, `1`, `2`, `3`, `4`, `5`, large |
+| line | branch | axis it creates |
+|------|--------|-----------------|
+| 30 | `while (x > 0 \|\| y > 0)` | sign of `x` (`>0` vs `<=0`) × sign of `y` |
+| 33 | `if (x == 1 && y == 4)` | `x == 1` exactly; `y == 4` exactly (the `goto label2` special case) |
+| 38 | `if (x > 0)` | `x > 0` vs `x <= 0` at the `label1` re-entry point |
+| 44 | `if (y == 0)` → `continue` | `y == 0` vs `y != 0` |
+| 49 | `if (x < 3)` → `goto label1` | `x < 3` vs `x >= 3` — chooses whether the body re-loops or ends |
 
-## Configuration rows (pruned cross product)
+So the distinguished value classes are:
 
-Every row is exercised through **both** `.so` files via `libloading` and compared
-byte-for-byte. Rows marked "randomized" use many pseudo-random values from a
-fixed-seed LCG (seed `0x2545F4914F6CDD1D`).
+* `x` ∈ { `<= 0` (incl. `INT_MIN`, `-1`, `0`), `1`, `2`, `>= 3` (3, 4, large, `INT_MAX`) }
+* `y` ∈ { `< 0`, `0`, `1`, `2`, `3`, `4` (special), `5`, `> 5`, large }
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|-------------------------------------------|------|-----|
-| C1 | `driver` | A1 false: `x<=0 && y<=0` — randomized over `x,y ∈ [-64,0]` | `cfg_c1_guard_false` | [x] |
-| C2 | `driver` | `x>0, y==0` (A3 taken, A4 `continue` every iteration, A5 depends on `x`) — randomized `x ∈ [1,300]` | `cfg_c2_positive_x_zero_y` | [x] |
-| C3 | `driver` | `x==0, y>0` (A3 never taken, A5 always true → inner backward-goto loop drains `y`) — randomized `y ∈ [1,300]` | `cfg_c3_zero_x_positive_y` | [x] |
-| C4 | `driver` | `x<0, y>0` (A1 satisfied only via `y`; `x` never decremented) — randomized `x ∈ [-300,-1]`, `y ∈ [1,300]` | `cfg_c4_negative_x_positive_y` | [x] |
-| C5 | `driver` | A2 hit: exactly `x==1, y==4` (`goto label2` skips the `label1` block on the first pass) | `cfg_c5_goto_label2_exact` | [x] |
-| C6 | `driver` | A2 near-misses: `(1,3) (1,5) (0,4) (2,4) (1,-4) (-1,4)` | `cfg_c6_goto_label2_near_misses` | [x] |
-| C7 | `driver` | `x==1`, all `y ∈ [0,16]` (A5 always true, A3 taken once) | `cfg_c7_x_one_sweep_y` | [x] |
-| C8 | `driver` | `x==2`, all `y ∈ [0,16]` (A5 true boundary-1) | `cfg_c8_x_two_sweep_y` | [x] |
-| C9 | `driver` | `x==3`, all `y ∈ [0,16]` (A5 false boundary: falls through to the guard) | `cfg_c9_x_three_sweep_y` | [x] |
-| C10 | `driver` | `x==4`, all `y ∈ [0,16]` (A5 false, then `x` decays through 3→2 flipping A5 mid-run) | `cfg_c10_x_four_sweep_y` | [x] |
-| C11 | `driver` | exhaustive small grid: every `(x,y)` with `x ∈ [-6,16]`, `y ∈ [0,16]` (all A1–A5 combinations reachable without UB) | `cfg_c11_exhaustive_small_grid` | [x] |
-| C12 | `driver` | exhaustive negative-`y` grid, guard-false side: every `(x,y)` with `x ∈ [-6,0]`, `y ∈ [-16,-1]` (A4 `y!=0` with A1 false) | `cfg_c12_negative_y_grid` | [x] |
-| C13 | `driver` | `x>=3 && y>=1` "wide" shape (A5 false path dominates) — randomized `x ∈ [3,400]`, `y ∈ [1,400]` | `cfg_c13_wide_random` | [x] |
-| C14 | `driver` | `x` large ≫ `y` and `y` large ≫ `x` (asymmetric drain order) — randomized | `cfg_c14_asymmetric_random` | [x] |
-| C15 | `driver` | largest feasible magnitudes: `(3000,0) (0,3000) (3000,3000) (3000,1) (1,3000) (2,3000)` | `cfg_c15_large_feasible` | [x] |
-| C16 | `driver` | `INT_MIN` / `INT_MIN+1` / `INT_MAX`-adjacent inputs on the guard-false side, plus `x=INT_MIN` with `y>0` | `cfg_c16_extremes` | [x] |
-| C17 | `driver` | repeated calls in sequence (statelessness: output of call *n* must not depend on calls `0..n-1`), interleaved C/Rust | `cfg_c17_statelessness_interleaved` | [x] |
-| C18 | `driver` | unbounded path prefix (`x>0, y<0` → C spins ~2^31 times): compare the first 64 KiB of stdout from a forked child of each implementation | `cfg_c18_infinite_path_prefix` | [x] |
+Note a **termination constraint** read off the C: `y--` only stops at `y == 0`,
+so a negative `y` combined with `x > 0` never terminates (row E9 of
+`ERRORS.md`). Valid-path rows therefore keep `y >= 0` whenever `x > 0`.
+
+## Rows (each = a combination the C treats differently)
+
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `driver` | guard false on entry: `x <= 0 && y <= 0` — randomized over `x,y ∈ [INT_MIN, 0]` | [x] |
+| C2 | `driver` | `x > 0`, `y == 0` — pure `x`-drain, `continue` path; randomized `x ∈ [1, 40]` | [x] |
+| C3 | `driver` | `x <= 0`, `y > 0` — pure `y`-drain, `if (x>0)` always false; randomized `x ∈ [-40, 0]`, `y ∈ [1, 40]` | [x] |
+| C4 | `driver` | `x == 1`, `y == 4` — the exact `goto label2` special case (skips `label1` on the first pass) | [x] |
+| C5 | `driver` | `x == 1`, `y != 4`, `y > 0` — special case rejected on the `y` half; randomized `y ∈ [1,40] \ {4}` | [x] |
+| C6 | `driver` | `x != 1`, `y == 4` — special case rejected on the `x` half; randomized `x ∈ [-10,40] \ {1}` | [x] |
+| C7 | `driver` | `x == 2`, `y > 0` — `x < 3` true so the backwards `goto label1` fires; randomized `y ∈ [1,40]` | [x] |
+| C8 | `driver` | `x >= 3`, `y > 0` — `x < 3` false at first, so the body ends and the `while` guard is re-tested; the run later crosses into `x < 3` and switches mode mid-run; randomized `x ∈ [3,40]`, `y ∈ [1,40]` | [x] |
+| C9 | `driver` | boundary `x == 3`, `y == 1` and neighbours `x ∈ {2,3,4}` × `y ∈ {0,1,2}` — exhaustive small grid around the `x < 3` / `y == 0` boundaries | [x] |
+| C10 | `driver` | boundary around the special case: `x ∈ {0,1,2}` × `y ∈ {3,4,5}` exhaustive | [x] |
+| C11 | `driver` | `y` much larger than `x` (`x ∈ [0,3]`, `y ∈ [50,200]`) — many `while` iterations, `continue` never taken until the end | [x] |
+| C12 | `driver` | `x` much larger than `y` (`x ∈ [50,200]`, `y ∈ [0,3]`) — long `x`-drain after `y` hits 0 | [x] |
+| C13 | `driver` | exhaustive dense grid `x ∈ [-3, 12]` × `y ∈ [0, 12]` — the full cross-product of all five branches at small magnitudes | [x] |
+| C14 | `driver` | randomized property sweep, fixed seed (xorshift64\*, seed `0x2545F4914F6CDD1D`), 2000 pairs with `x ∈ [-50, 300]`, `y ∈ [0, 300]` | [x] |
+| C15 | `driver` | `x <= 0` with `y` at the positive extreme class — `x ∈ {INT_MIN, -1, 0}`, `y ∈ {1, 2, 4, 64}` | [x] |
+| C16 | `driver` | repeated invocation / statefulness check: the same `.so` handle called many times in sequence, asserting no carried state (C has no globals; Rust must not either) | [x] |
+
+## Binary executable
+
+`c_src/CMakeLists.txt` builds only `add_library(driver SHARED ...)` — there is
+**no driver binary/executable target**, and `translation/Cargo.toml` declares
+only library crate types (`cdylib` — the deliverable — plus `rlib`, added purely
+so `cargo test` rebuilds the `.so`; see the harness note below) with no
+`[[bin]]` and no `src/main.rs`. The
+"compare C and Rust binary stdout" gate is therefore **not applicable**;
+stdout is instead compared per-call by redirecting fd 1, which covers the same
+observable surface.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares no `[features]` section, so the complete set of
-feature combinations is:
+`translation/Cargo.toml` has no `[features]` table and no optional
+dependencies, so the complete set of feature combinations is:
 
 | combo | command |
 |-------|---------|
-| default (empty) | `cargo test` |
-| `--no-default-features` | `cargo test --no-default-features` |
-| `--all-features` | `cargo test --all-features` |
+| default | `cargo test --release` |
+| no-default-features | `cargo test --release --no-default-features` |
+| all-features | `cargo test --release --all-features` |
 
-All three are identical builds of the same code path; `./run_all_combos.sh` runs
-each of them in **both** the dev and release profiles (6 runs) and then diffs
-`nm -D`. Every row above passes in all 6 runs.
+All three are run by `run_all_combos.sh`.
 
-## How to run
+## Result
 
-```sh
-./run_all_combos.sh                      # everything, both profiles, + symbol diff
-RUST_TEST_THREADS=1 cargo test -- --test-threads=1   # single run
+`tests/configs.rs :: phase_b_all_config_rows` runs rows C1–C16 sequentially:
+
+```
+running 1 test
+test phase_b_all_config_rows ... ok
 ```
 
-`driver`'s only output channel is fd 1, so the harness redirects fd 1 around each
-call; the libtest harness therefore **must** be single-threaded (the harness
-asserts `RUST_TEST_THREADS=1` and tells you so if it is not).
+All 16 rows pass under all six profile × feature combinations
+(`./run_all_combos.sh` → `ALL COMBINATIONS PASSED`).
 
-## Harness sensitivity (mutation check)
+## Harness note (a real bug this uncovered — in the harness, not the library)
 
-To confirm the differential tests are not vacuous, four mutations were injected
-into `src/lib.rs` one at a time; each was caught (7 of 17 `configs.rs` tests
-failing) and then reverted:
+Two traps had to be closed before these results meant anything:
 
-| mutation | caught |
-|----------|--------|
-| `if x < 3` → `if x <= 3` | yes |
-| `x == 1 && y == 4` → `x == 1 && y == 5` | yes |
-| `if y == 0` → `if y == 1` | yes |
-| `print_lit(b"y\n")` → `print_lit(b"Y\n")` | yes |
+1. **fd 1 is process-global.** `driver`'s only output is `printf`, so the
+   harness redirects fd 1. With libtest's default thread-per-test parallelism,
+   libtest's own progress banner (`test cN ... ok`) landed *inside* a capture
+   window and produced four bogus "divergences". Fixed by running every row from
+   a single `#[test]` and flushing Rust's `Stdout` before each capture.
+2. **`cargo test` does not refresh `target/<profile>/libdriver.so`.** An
+   integration test that only `dlopen`s the cdylib creates no build dependency
+   on it. `cargo test` rebuilds `target/<profile>/deps/libdriver.so` but leaves
+   the top-level hardlink stale, so the suite was comparing against an old
+   object. Fixed by (a) adding `rlib` to `crate-type` so the lib is a build
+   dependency of the tests, (b) loading the *newest* of the two candidate paths,
+   and (c) asserting the chosen `.so` is not older than `src/lib.rs`.
+
+`./mutation_check.sh` guards against a recurrence: a semantics-preserving "null
+mutant" must PASS, and 14 single-branch mutations of `src/lib.rs` (one per
+condition, comparison bound, decrement and printed literal in the C body) must
+each FAIL. Current status: **null mutant survives, 14/14 mutants killed**.

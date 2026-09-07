@@ -11,23 +11,22 @@ path = "src/lib.rs"
 [dev-dependencies]
 libloading = "0.8"
 
-# `ima_parse` faithfully reproduces the C's undefined behaviour (it dereferences
-# `data`, `desc` and `pakt` without any NULL check, exactly like `src/lib.c`).
-# Rust's optional UB checks turn those derefs into a panic, and a panic escaping
-# an `extern "C"` function aborts (SIGABRT) where the C raises SIGSEGV. Turning
-# the checks off keeps the dev-profile `.so` behaviourally identical to the C
-# `.so`, which is what the differential tests require. There is no integer
-# arithmetic in the crate that can overflow, so `overflow-checks` is moot.
+# The C this crate translates deliberately performs accesses the Rust abstract
+# machine calls UB: it dereferences `info`/`data` without a NULL check and walks
+# the chunk list with attacker-controlled (possibly negative) offsets. Rust's
+# `-C debug-assertions` also switches on `-C ub-checks`, which turns those
+# faithful faults into `panic!("null pointer dereference occurred")` -> a
+# non-unwinding panic across `extern "C"` -> `SIGABRT`, where the C raises
+# `SIGSEGV`. Byte-identical behaviour therefore requires the checks off in every
+# profile, not just `release`. (Verified by tests/phase_c.rs `crash::crash_parity`,
+# which compares the fatal signal of the C and Rust `.so`s side by side.)
 [profile.dev]
 debug-assertions = false
 overflow-checks = false
 
-# The test harness keeps its own assertions enabled.
-[profile.test]
-debug-assertions = true
-overflow-checks = true
-
 [profile.release]
 panic = "abort"
+debug-assertions = false
+overflow-checks = false
 
 [workspace]

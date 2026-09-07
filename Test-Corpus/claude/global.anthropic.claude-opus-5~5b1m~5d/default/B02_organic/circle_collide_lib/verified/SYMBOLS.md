@@ -1,90 +1,76 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
+
+- C  `.so`: `c_src/build/libharvest-work-pvaRaj.so`
+- Rust `.so`: `translation/target/release/libcircle_collide_lib.so`
+
+Commands used:
 
 ```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libharvest-work-ws7ccv.so
-
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libcircle_collide_lib.so
+nm -D --defined-only c_src/build/libharvest-work-pvaRaj.so | awk '{print $3}' | sort > /tmp/c.syms
+nm -D --defined-only translation/target/release/libcircle_collide_lib.so | awk '{print $3}' | sort > /tmp/r.syms
+comm -23 /tmp/c.syms /tmp/r.syms   # in C, missing from Rust  -> MUST be empty
 ```
-
-## C source inventory (completeness check)
-
-`c_src/CMakeLists.txt` compiles exactly one translation unit:
-
-```
-add_library(${project_name} SHARED src/lib.c)
-```
-
-`find c_src -name '*.c' -o -name '*.h'` →
-`c_src/src/lib.c` (144 lines), `c_src/include/lib.h` (1 line).
-
-Both are translated in `translation/src/lib.rs`. **No C module was skipped**, so
-no "absent implementation" case from the Phase A rule applies here — every
-missing symbol (had there been one) would have been an export-wrapper problem
-only. In fact there are no missing symbols at all (see the diff below).
 
 ## Symbol table
 
-`T` = global text symbol. All 12 are `extern "C"` + `#[no_mangle]` in Rust.
+All symbols are `T` (global text) in both objects.
 
-| # | symbol | C `.so` | Rust `.so` | C signature (`c_src/src/lib.c`) | Rust item |
-|---|--------|---------|------------|----------------------------------|-----------|
-| 1 | `c2V`               | T | T | `c2v c2V(float, float)`                 | `pub extern "C" fn c2V` |
-| 2 | `c2Mulvs`           | T | T | `c2v c2Mulvs(c2v, float)`               | `pub extern "C" fn c2Mulvs` |
-| 3 | `c2Maxv`            | T | T | `c2v c2Maxv(c2v, c2v)`                  | `pub extern "C" fn c2Maxv` |
-| 4 | `c2Minv`            | T | T | `c2v c2Minv(c2v, c2v)`                  | `pub extern "C" fn c2Minv` |
-| 5 | `c2Clampv`          | T | T | `c2v c2Clampv(c2v, c2v, c2v)`           | `pub extern "C" fn c2Clampv` |
-| 6 | `c2Sub`             | T | T | `c2v c2Sub(c2v, c2v)`                   | `pub extern "C" fn c2Sub` |
-| 7 | `c2Dot`             | T | T | `float c2Dot(c2v, c2v)`                 | `pub extern "C" fn c2Dot` |
-| 8 | `c2CircletoCircle`  | T | T | `int c2CircletoCircle(c2Circle, c2Circle)` | `pub extern "C" fn c2CircletoCircle` |
-| 9 | `c2CircletoAABB`    | T | T | `int c2CircletoAABB(c2Circle, c2AABB)`  | `pub extern "C" fn c2CircletoAABB` |
-| 10 | `c2CircletoCapsule` | T | T | `int c2CircletoCapsule(c2Circle, c2Capsule)` | `pub extern "C" fn c2CircletoCapsule` |
-| 11 | `c2Collided`        | T | T | `int c2Collided(const void*, const void*, C2_TYPE)` | `pub unsafe extern "C" fn c2Collided` |
-| 12 | `circle_collide`    | T | T | `int circle_collide(float, float, float)` | `pub extern "C" fn circle_collide` |
+| # | symbol | C signature (from `c_src/src/lib.c`) | in C `.so` | in Rust `.so` | status |
+|---|--------|--------------------------------------|-----------|--------------|--------|
+| 1 | `c2V`               | `c2v c2V(float x, float y)`                              | T | T | OK |
+| 2 | `c2Mulvs`           | `c2v c2Mulvs(c2v a, float b)`                            | T | T | OK |
+| 3 | `c2Maxv`            | `c2v c2Maxv(c2v a, c2v b)`                               | T | T | OK |
+| 4 | `c2Minv`            | `c2v c2Minv(c2v a, c2v b)`                               | T | T | OK |
+| 5 | `c2Clampv`          | `c2v c2Clampv(c2v a, c2v lo, c2v hi)`                    | T | T | OK |
+| 6 | `c2Sub`             | `c2v c2Sub(c2v a, c2v b)`                                | T | T | OK |
+| 7 | `c2Dot`             | `float c2Dot(c2v a, c2v b)`                              | T | T | OK |
+| 8 | `c2CircletoCircle`  | `int c2CircletoCircle(c2Circle A, c2Circle B)`           | T | T | OK |
+| 9 | `c2CircletoAABB`    | `int c2CircletoAABB(c2Circle A, c2AABB B)`               | T | T | OK |
+| 10 | `c2CircletoCapsule`| `int c2CircletoCapsule(c2Circle A, c2Capsule B)`         | T | T | OK |
+| 11 | `c2Collided`       | `int c2Collided(const void *A, const void *B, C2_TYPE typeB)` | T | T | OK |
+| 12 | `circle_collide`   | `int circle_collide(float x, float y, float r)`           | T | T | OK |
 
-`c_src/include/lib.h` declares only `circle_collide`; the other 11 symbols have
-external linkage in `lib.c` (no `static`) and are therefore part of the C `.so`'s
-public ABI, so the Rust `.so` must export them too.
+**Missing from Rust: 0.** `comm -23` output is empty. No module of C source was
+skipped: `c_src` contains exactly one translation unit (`src/lib.c`, 144 lines)
+plus `include/lib.h` (1 line), and every function defined in it is exported by
+the Rust `.so` under the identical name.
 
-## Diff
+## Undefined (imported) symbols
 
+```sh
+nm -D --undefined-only c_src/build/libharvest-work-pvaRaj.so
+nm -D --undefined-only translation/target/release/libcircle_collide_lib.so
 ```
-$ diff <(nm -D --defined-only c_src/build/libharvest-work-ws7ccv.so   | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/libcircle_collide_lib.so | awk '{print $3}' | sort)
-(no output)
+
+Neither object imports any non-libc symbol. The C object imports nothing at all
+(no libc calls in the source). The Rust object imports only libc/ld.so glue that
+`cdylib` linkage always pulls in. After filtering the standard libc set, the
+residue reported by `verify.sh` is:
+
+```text
+__cxa_thread_atexit_impl@GLIBC_2.18
+lseek64@GLIBC_2.2.5
+realpath@GLIBC_2.3
 ```
 
-- Symbols in C but missing from Rust: **0**
-- Undefined non-libc symbols in the Rust `.so`: **0**
-  `nm -D --undefined-only translation/target/release/libcircle_collide_lib.so`
-  lists only libc / libgcc_s / ld.so imports pulled in by `core`+`std`'s panic
-  and backtrace machinery, i.e. all of them resolve against the system runtime:
-  `_ITM_{de,}registerTMCloneTable`, `_Unwind_*@GCC_*`, `__cxa_finalize`,
-  `__cxa_thread_atexit_impl`, `__errno_location`, `__gmon_start__`,
-  `__tls_get_addr`, `abort`, `bcmp`, `calloc`, `close`, `dl_iterate_phdr`,
-  `free`, `fstat64`, `getcwd`, `getenv`, `gettid`, `lseek64`, `malloc`,
-  `memcpy`, `memmove`, `memset`, `mmap64`, `munmap`, `open64`,
-  `posix_memalign`, `pthread_key_{create,delete}`, `pthread_setspecific`,
-  `read`, `readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`,
-  `syscall`, `write`, `writev`.
-  Verified resolvable end-to-end: `dlopen()` of the Rust `.so` from the
-  integration tests succeeds and every one of the 12 symbols is callable.
+All three are glibc symbols (versioned `@GLIBC_*`), pulled in by `std`'s
+thread-local destructor and `std::fs`/`std::path` machinery — not program
+symbols, and not required to be mirrored by the C object. There are **0
+undefined non-libc symbols**.
 
-## Feature combinations
+## ABI notes relevant to the FFI tests
 
-`translation/Cargo.toml` declares **no** `[features]` table, so the only build
-configuration is the default one. `cargo check --no-default-features` and
-`cargo check` are the same build; the automated sweep in
-`translation/check_features.sh` confirms the symbol diff is empty for every
-(i.e. the single) feature combination.
+SysV AMD64 classification of the by-value struct types, which the Rust
+`extern "C"` declarations must reproduce:
 
-## Result
+| type | size | classes | passed in |
+|------|------|---------|-----------|
+| `c2v`       | 8  | SSE            | low 8 bytes of one XMM (two packed floats) |
+| `c2Circle`  | 12 | SSE, SSE       | `xmm0` = `{p.x,p.y}`, `xmm1` = `{r}` |
+| `c2AABB`    | 16 | SSE, SSE       | `xmm0` = `{min.x,min.y}`, `xmm1` = `{max.x,max.y}` |
+| `c2Capsule` | 20 | MEMORY (> 16B) | on the stack |
 
-- [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
-- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.
+`C2_TYPE` is an enum whose enumerators fit in `int`, so it is passed as a
+32-bit `int`; any `int` value is a representable argument (see `ERRORS.md` #1).

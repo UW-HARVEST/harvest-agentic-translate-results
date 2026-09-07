@@ -1,75 +1,96 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — public symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
-
-* C   `.so`: `c_src/build/libharvest-work-OPiDaj.so` (cmake, `CMAKE_BUILD_TYPE` empty → gcc 11.5 with **no** `-O` flag)
-* Rust `.so`: `translation/target/release/libread_side_info_lib.so`
-
-Regenerate with `./check_symbols.sh`.
-
-## Exported (defined, dynamic) symbols
-
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `read_side_info` | `T` | `T` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn`; parity asserted by `sym_read_side_info_exported_by_both` |
-
-`nm -D --defined-only` on the C `.so` reports exactly **one** symbol. The
-`get_bits` helper is `static` in C, so it is a local symbol (`t`, not `T`) and
-is deliberately *not* exported; the Rust translation keeps it as a private
-`unsafe fn`. Symbol parity therefore requires exactly one export.
-
-### Symbol diff
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
 ```
-$ diff <(nm -D --defined-only c_src/build/*.so     | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/*.so | awk '{print $3}' | sort)
+C:    c_src/build/libharvest-work-wnyfiX.so
+Rust: translation/target/release/libread_side_info_lib.so
+```
+
+## C `.so` exported symbols (`nm -D --defined-only`)
+
+| # | symbol | type | present in Rust `.so`? |
+|---|--------|------|------------------------|
+| 1 | `read_side_info` | `T` (global text) | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn read_side_info` |
+
+The C `.so` exports exactly **one** symbol. `get_bits` is `static` in
+`c_src/src/lib.c`, therefore it has internal linkage and is deliberately NOT
+exported (`nm -D` does not list it). The Rust side mirrors this: `get_bits` is a
+private `unsafe fn` with no `#[no_mangle]`.
+
+The three scalefactor-band tables (`g_scf_long`, `g_scf_short`, `g_scf_mixed`)
+are function-local `static const` in C and are likewise not exported; in Rust
+they are a private `static G_SCF_TABLES` blob.
+
+## Symbol diff
+
+```
+$ comm -23 <(nm -D --defined-only C.so   | awk '{print $NF}' | sort) \
+           <(nm -D --defined-only rust.so| awk '{print $NF}' | sort)
 <empty>
 ```
 
-**0 missing symbols.** No C module was left untranslated: `c_src` contains a
-single translation unit (`src/lib.c`, 163 lines) holding exactly two functions
-(`get_bits`, `read_side_info`), both present in `src/lib.rs`. No stubs, no
-`unimplemented!()`.
+* Symbols in C but missing from Rust: **0**
+* Undefined non-libc symbols in the Rust `.so`: **0** (only `libc`/`libgcc`
+  runtime imports, which the C `.so` also has)
 
-## Non-exported C local symbols (for reference, not part of the ABI)
+No module of the C source was left untranslated: `c_src` consists of exactly
+`include/lib.h` (types + one prototype) and `src/lib.c` (`get_bits` +
+`read_side_info`), and both functions are present in `translation/src/lib.rs`.
 
-| symbol | kind | Rust counterpart |
-|--------|------|------------------|
-| `get_bits` | `t` (local text) | private `unsafe fn get_bits` |
-| `g_scf_long.2`  | `r` (local rodata, `0x2000`, 8×23 = 184 B) | `G_SCF_TABLES[OFF_LONG..]` |
-| `g_scf_short.1` | `r` (local rodata, `0x20c0`, 8×40 = 320 B) | `G_SCF_TABLES[OFF_SHORT..]` |
-| `g_scf_mixed.0` | `r` (local rodata, `0x2200`, 8×40 = 320 B) | `G_SCF_TABLES[OFF_MIXED..]` |
+## Types crossing the ABI (verified layout)
 
-These three are function-local `static const` arrays. Their *relative* layout
-is observable through the public API, because `sr_idx` can reach `8` while every
-table only has 8 rows (`0..=7`) — see `CONFIGS.md` rows 25–27. The C object file
-lays them out as
+`bs_t` — size 16, align 8: `buf` @0, `pos` @8, `limit` @12.
+
+`L3_gr_info_t` — size 32, align 8, no internal padding:
+
+| offset | field | C type |
+|--------|-------|--------|
+| 0  | `sfbtab`            | `const uint8_t *` |
+| 8  | `part_23_length`    | `uint16_t` |
+| 10 | `big_values`        | `uint16_t` |
+| 12 | `scalefac_compress` | `uint16_t` |
+| 14 | `global_gain`       | `uint8_t` |
+| 15 | `block_type`        | `uint8_t` |
+| 16 | `mixed_block_flag`  | `uint8_t` |
+| 17 | `n_long_sfb`        | `uint8_t` |
+| 18 | `n_short_sfb`       | `uint8_t` |
+| 19 | `table_select[3]`   | `uint8_t[3]` |
+| 22 | `region_count[3]`   | `uint8_t[3]` |
+| 25 | `subblock_gain[3]`  | `uint8_t[3]` |
+| 28 | `preflag`           | `uint8_t` |
+| 29 | `scalefac_scale`    | `uint8_t` |
+| 30 | `count1_table`      | `uint8_t` |
+| 31 | `scfsi`             | `uint8_t` |
+
+Because there is no padding, the whole 32-byte struct can be compared
+byte-for-byte between the two implementations (test `struct_layout_matches`
+asserts the sizes/offsets both sides agree on).
+
+## Cargo features
+
+`translation/Cargo.toml` declares one non-default feature:
+
+| feature | default | effect |
+|---------|---------|--------|
+| `c_layout_o2` | off | Reproduces the `.rodata` array order the C compiler emits at `-O2` (`cmake -DCMAKE_BUILD_TYPE=Release`) instead of the `-O0` order produced by the plain `cmake ..` build. Observable **only** through the out-of-range `sr_idx == 8` scalefactor-band row (ERRORS.md E8/N5). |
+
+Both feature combinations export the same single symbol and are verified
+against the C build whose layout they reproduce. `run_all.sh` enumerates the
+power set of the declared features (`<default>`, `--no-default-features`,
+`--no-default-features --features c_layout_o2`, `--all-features`) x both build
+profiles (`debug`, `release`) = 8 configurations, checks `nm -D` parity for each
+and runs the full differential suite for each. All 8 pass.
+
+## Verification of this table
 
 ```
-+0    g_scf_long   184 B
-+184  (8 zero pad bytes, gcc aligns the next array to 32)
-+192  g_scf_short  320 B
-+512  g_scf_mixed  320 B
-+832  .eh_frame_hdr   <-- no longer .rodata
+$ ./run_all.sh
+...
+>>> <default features> / debug    symbols: OK (1 exported by C, 0 missing from Rust)
+>>> <default features> / release  symbols: OK (1 exported by C, 0 missing from Rust)
+>>> --no-default-features / debug ...
+>>> --no-default-features --features c_layout_o2 / debug ...
+>>> --all-features / release      symbols: OK (1 exported by C, 0 missing from Rust)
+ ALL PHASES PASSED
 ```
-
-`src/lib.rs` reproduces this exact blob (verified byte-for-byte against
-`objdump -s -j .rodata`, and re-checked at test time by
-`sym_layout_matches_c_rodata`), so the out-of-bounds row 8 aliasing matches:
-`g_scf_long[8]` → pad + `g_scf_short[0]`, and `g_scf_short[8]` → `g_scf_mixed[0]`.
-
-**This ordering is optimisation-dependent.** With gcc 11.5 the unoptimised build
-(what the documented cmake invocation produces, since `CMAKE_BUILD_TYPE` is
-empty) emits `long, pad, short, mixed`, while `-O1` and above emit
-`mixed, short, long` with no padding. The translation targets the reference
-build. Rows `0..=7` are byte-identical either way; only the one-past-the-end
-`sr_idx == 8` case can tell the two layouts apart. See `CONFIGS.md` C15–C17.
-
-## Undefined symbols
-
-The C `.so` imports only weak toolchain hooks (`__cxa_finalize`,
-`__gmon_start__`, `_ITM_*`). The Rust `.so` additionally imports libc and
-libgcc unwinder symbols (`malloc`, `memcpy`, `_Unwind_*`, …) pulled in by the
-Rust standard library. **0 missing/undefined non-libc symbols** — every
-undefined Rust symbol resolves from `libc`/`libgcc_s`, which `libloading`
-confirms by loading the object successfully in every test.

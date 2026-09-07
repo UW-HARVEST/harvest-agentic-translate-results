@@ -1,110 +1,91 @@
-# CONFIGS.md — Phase A: CONFIGURATION-SURFACE TABLE (valid inputs)
+# CONFIGS.md — Phase B configuration-surface table
 
-## Axes actually present in the C source
+## Mechanical derivation of the axes
 
-Enumerated mechanically, not guessed:
+The complete public API is one function (`c_src/include/driver.h`):
 
-1. **Runtime options / modes / flags:** **none.** `driver.h` exports exactly one
-   declaration, `void driver(float x);` — no setter, no context struct, no
-   global, no `#ifdef` in `src/driver.c` (grep: 0 `#if`s other than the header
-   guard), no `switch`, no `if`. There is nothing to configure, so the
-   configuration cross-product collapses onto the *input-shape* axes below.
-2. **Public entry points (FULL set, including the lowest level):**
-   - `driver` — the only *exported* symbol (`nm -D` ⇒ 1 symbol).
-   - `print_hex` — the lower-level worker. It is `static`, i.e. **not** part of
-     the ABI, so it cannot be (and must not be) called across the `.so`
-     boundary. It is nevertheless exercised on every `driver` call with
-     `len == sizeof(float) == 4`, which is its only reachable configuration
-     (see ERRORS.md rows 1–3).
-3. **Input shapes the code's behaviour distinguishes** (the value is
-   reinterpreted byte-wise, so *every* IEEE-754 binary32 class is a distinct
-   shape, and byte order matters):
-   - IEEE class: `+0`, `-0`, subnormal, normal, `inf`, quiet NaN, signalling NaN
-   - sign bit: `0` / `1`
-   - byte-level shapes: bytes `< 0x10` (exercise the `%02x` **zero-padding**),
-     bytes `>= 0x80` (exercise `unsigned char` → `int` promotion, i.e. that no
-     sign extension leaks in), `0x00` bytes, `0xff` bytes
-   - byte order: the loop walks the object representation from the lowest
-     address up, so on x86-64 little-endian the LSB prints first — a
-     bswap/endianness mistake in the Rust is visible here
-   - counts: one call, two calls, many calls (output concatenation / stream
-     buffering on the shared libc `stdout`)
-4. **Cargo feature axes:** `Cargo.toml` declares **no `[features]` table**, so
-   the only feature combination is the default (empty) one. Verified with
-   `cargo metadata`; see the feature-combination script in
-   `tests/phase_d_symbols.rs` / the report.
+```c
+void driver(float x);
+```
 
-## Configuration table (one row per combination the C treats differently)
+Axes the C code actually branches on / distinguishes:
 
-Every row is driven through the exported `.so` symbol `driver` in **both** the C
-and the Rust library, with **many randomized inputs per row** (fixed seed
-`0x5EED_1234`, deterministic xorshift64* PRNG) unless the row is a fixed
-singleton bit pattern, and stdout compared byte-for-byte.
+* **Runtime options / modes / flags:** none. There is no init function, no
+  context struct, no global state, no setter, no environment variable read, and
+  no `#ifdef` other than the `DRIVER_H_` include guard. `grep -c 'if\|switch'`
+  over `src/driver.c` yields exactly one `if`-free `for` loop.
+* **Cargo features:** `Cargo.toml` declares **no** `[features]` table, so the
+  only feature combination is the default (empty) one. Verified by
+  `cargo test --no-default-features` (see summary).
+* **Public entry points:** exactly one, `driver`. It is also the *lowest-level*
+  exported entry point — the only lower-level routine, `print_hex`, is `static`
+  and deliberately not exported by either `.so` (see `SYMBOLS.md`).
+* **Input shape:** a single `float`, so the "shape" axis collapses onto the
+  4-byte object representation. The code paths the implementation
+  distinguishes are therefore *value-classes of the 32-bit pattern* and the
+  *per-byte* `%02x` formatting behaviour:
+  * byte value `0x00` (must print `00`, not the empty string — `%02x` padding)
+  * byte value `0x01..0x0f` (must print a leading `0`)
+  * byte value `0x10..0x7f` (two digits, high bit clear)
+  * byte value `0x80..0xff` (high bit set — zero-extension on variadic
+    promotion, lowercase digits)
+  * loop trip count is fixed at `sizeof(float)` == 4, so byte position 0..3
+    (little-endian ordering must be preserved: LSB printed first)
+  * float value class: zero, subnormal, normal, infinity, NaN
+  * sign bit set / clear
+* **Byte order / width:** the C casts `&x` to `unsigned char*` and walks it in
+  ascending address order, i.e. **host (little-endian x86-64) order, LSB
+  first**. The Rust must reproduce this, not the big-endian/"natural reading"
+  order.
+* **Statefulness:** stdout is a shared, process-global, libc-buffered stream.
+  Both `.so`s use the *same* libc `printf`, so a further axis is whether output
+  interleaves correctly across many calls and across the C/Rust boundary.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|------------------------------------------|-----|
-| 1 | `driver` (→ `print_hex`, len=4) | `+0.0f` — all-zero object representation | [x] |
-| 2 | `driver` | `-0.0f` — sign bit only | [x] |
-| 3 | `driver` | small positive integers as floats: `1,2,3,…,1024` (many values) | [x] |
-| 4 | `driver` | small negative integers as floats: `-1,-2,…,-1024` (many values) | [x] |
-| 5 | `driver` | randomized normal positives, full exponent range (uniform random bit patterns filtered to normal, sign=0) | [x] |
-| 6 | `driver` | randomized normal negatives (uniform random bit patterns filtered to normal, sign=1) | [x] |
-| 7 | `driver` | randomized **subnormals**, sign=0 (exp field 0, mantissa≠0) | [x] |
-| 8 | `driver` | randomized **subnormals**, sign=1 | [x] |
-| 9 | `driver` | `+inf` / `-inf` | [x] |
-| 10 | `driver` | randomized **quiet NaNs** with random payloads, both signs | [x] |
-| 11 | `driver` | randomized **signalling NaNs** with random payloads, both signs | [x] |
-| 12 | `driver` | boundary constants: `FLT_MIN`, `FLT_MAX`, `-FLT_MIN`, `-FLT_MAX`, `FLT_EPSILON`, smallest subnormal, largest subnormal | [x] |
-| 13 | `driver` | byte-shape: patterns whose bytes are all `< 0x10` (forces `%02x` zero padding, e.g. `0x0f0e0100`) | [x] |
-| 14 | `driver` | byte-shape: patterns whose bytes are all `>= 0x80` (checks `unsigned char`→`int` promotion, no sign extension), e.g. `0xffffffff`, `0x80808080` | [x] |
-| 15 | `driver` | byte-shape: mixed `0x00`/`0xff` permutations — all 2^4 = 16 combinations of per-byte `0x00`/`0xff` (endianness/order check) | [x] |
-| 16 | `driver` | byte-shape: single-byte walk — `1 << k` for every bit position `k` in `0..32` (exhaustive per-bit endianness/order check) | [x] |
-| 17 | `driver` | uniform-random **arbitrary 32-bit patterns** reinterpreted as `float` (large randomized sweep across all IEEE classes at once) | [x] |
-| 18 | `driver` | systematic sweep: exhaustive over the top 16 bits with the low 16 bits randomized (covers every sign/exponent/high-mantissa combination) | [x] |
-| 19 | `driver` | count = 1 call (single invocation, exactly 9 output bytes) | [x] |
-| 20 | `driver` | count = 2 calls (output concatenation, no separator inserted) | [x] |
-| 21 | `driver` | count = many (100 000+ calls in one capture; stream buffering / no flush-behaviour divergence) | [x] |
-| 22 | `driver` | interleaved C-then-Rust-then-C calls onto the **same** `stdout` stream (shared-libc buffering interaction) | [x] |
-| 23 | `driver` | argument passed as a value already living in an xmm register vs. loaded from memory (calling-convention check: value computed at runtime, opaque to the optimiser, so no constant folding hides a mismatch) | [x] |
-| 24 | `print_hex` reachable configuration | `len == 4` with every possible byte value `0x00..0xff` appearing in every one of the 4 positions (4 × 256 = 1024 distinct placements) | [x] |
-| 25 | all of rows 1–24 | under the **only** feature combination (default / no features — no `[features]` in `Cargo.toml`), and under both the `debug` and `release` (`panic = "abort"`) build profiles of the Rust `.so` | [x] |
+Cross-product of those axes, pruned to combinations the code actually
+distinguishes:
 
-Covered by `tests/phase_b_valid.rs` (+ `tests/phase_d_symbols.rs` for row 25's
-symbol/profile part).
+## Configuration table
 
-## Additional deep-coverage rows (opt-in: `cargo test --release -- --ignored`)
+| #  | entry point(s) | configuration (options set + input shape) | [x] |
+|----|----------------|--------------------------------------------|-----|
+| 1  | `driver` (exported, lowest level) | canonical happy path: small positive normals (`1.0`, `2.5`, `3.14159`) | [x] |
+| 2  | `driver` | positive zero `+0.0f` — all four bytes are `0x00`, exercises `%02x` zero padding on every byte | [x] |
+| 3  | `driver` | negative zero `-0.0f` — only the sign byte differs; byte position 3 == `0x80` | [x] |
+| 4  | `driver` | sign bit set, negative normals (`-1.0`, `-2.5`, `-1e30`) | [x] |
+| 5  | `driver` | bit patterns whose bytes are all in `0x01..0x0f` (leading-zero nibble padding, e.g. `0x01020304`) | [x] |
+| 6  | `driver` | bit patterns whose bytes are all in `0x10..0x7f` (no padding, high bit clear, e.g. `0x11223344`) | [x] |
+| 7  | `driver` | bit patterns whose bytes are all in `0x80..0xff` (high bit set → zero- vs sign-extension, e.g. `0x80808080`, `0xdeadbeef`) | [x] |
+| 8  | `driver` | mixed-byte patterns spanning all four byte classes in one value (e.g. `0x000f80ff`), verifies per-position independence | [x] |
+| 9  | `driver` | little-endian byte-order probe: `0x00000001` vs `0x01000000` must print differently (`01000000` vs `00000001`) | [x] |
+| 10 | `driver` | subnormals: smallest `0x00000001`, largest `0x007fffff`, negative subnormal `0x80000001` | [x] |
+| 11 | `driver` | infinities: `+inf` `0x7f800000`, `-inf` `0xff800000` | [x] |
+| 12 | `driver` | NaNs: quiet `0x7fc00000`, negative quiet `0xffc00000`, signalling `0x7fa00000`, min-payload `0x7f800001`, max-payload `0x7fffffff` | [x] |
+| 13 | `driver` | magnitude extremes: `FLT_MIN` `0x00800000`, `FLT_MAX` `0x7f7fffff`, `-FLT_MAX` `0xff7fffff`, all-ones `0xffffffff` | [x] |
+| 14 | `driver` | integral values that a decimal-formatting bug would survive but a hex-dump bug would not (`1<<k` for k in 0..31 reinterpreted as float) | [x] |
+| 15 | `driver` | randomized property test, **uniform over all 2^32 bit patterns** (`u32::from_bits`), fixed-seed xorshift, 20 000 samples — includes NaNs/subnormals by construction | [x] |
+| 16 | `driver` | randomized property test over *finite* floats produced from a random exponent+mantissa (fixed seed, 20 000 samples) | [x] |
+| 17 | `driver` | exhaustive-ish sweep: all 2^16 patterns with the low 16 bits varying and high bits fixed, plus all 2^16 with high 16 varying (covers every byte value in every position) | [x] |
+| 18 | `driver` | statefulness / stream interleaving: 1000 alternating C-then-Rust calls in one captured stdout region | [x] |
+| 19 | `driver` | repeated identical call idempotence (same input 100×, output must be 100 identical lines) | [x] |
+| 20 | `driver` | ABI shape: return value is `void`/no-return-slot, `f32` passed in `xmm0`, no callee-save/stack corruption (verified by calling with a full xmm/gp register footprint and re-reading a canary after the call) | [x] |
+| 21 | `driver` | binary/driver executable comparison | N/A — `c_src/CMakeLists.txt` declares only `add_library(driver SHARED ...)`; no `add_executable`, so the project builds no binary. Nothing to compare. |
+| 22 | `driver` | feature-combination axis | N/A/[x] — `Cargo.toml` has no `[features]`; the default (empty) combo is the only one, and it is what all rows above run under. `--no-default-features` re-run confirms identical results. |
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|------------------------------------------|-----|
-| 26 | `driver` | strided sweep over the **entire 2^32 input space** (prime stride 4093 ⇒ 1 049 344 distinct bit patterns, walking every sign/exponent/mantissa region) | [x] |
-| 27 | `driver` | **exhaustive** over all 2^16 low bits for 8 fixed high halves — one per IEEE class (`0x0000` ±zero/subnormal, `0x8000`, `0x0080` smallest normal, `0x3f80` around 1.0, `0x7f7f` near FLT_MAX, `0x7f80` +inf/+sNaN, `0x7fc0` +qNaN, `0xff80` -inf/-sNaN) ⇒ 524 288 patterns | [x] |
+## Status
 
-Both were executed and passed byte-for-byte (≈1.57 M differential comparisons).
+All 22 rows are implemented in `tests/phase_b_configs.rs` (`cfg01_..cfg22_`),
+each driving both `.so`s via `libloading` and comparing stdout byte-for-byte;
+rows 5-7, 10, 12, 15-18 and 20 use fixed-seed randomized inputs
+(2 000-20 000 samples each) and row 17 sweeps 2x65 536 bit patterns plus every
+byte value in every byte position.
 
-## Test-suite sensitivity (mutation check)
+Result: `22 passed; 0 failed` under both cargo profiles (`dev`, `release`) and
+both feature selections (default, `--no-default-features`) —
+`./run_all_configs.sh` => "ALL CONFIGURATIONS PASSED".
 
-A configuration table only means something if the tests would notice a wrong
-translation. `./mutation_check.sh` injects one deliberate bug at a time into
-`src/lib.rs`, rebuilds the `.so`, and checks the suite fails:
-
-| mutant | result |
-|--------|--------|
-| uppercase hex (`%02X`) | CAUGHT (23 tests) |
-| no zero padding (`%2x`) | CAUGHT (24 tests) |
-| byte order reversed (big-endian dump) | CAUGHT (24 tests) |
-| sign-extended byte (`i8` promotion) | CAUGHT (23 tests) |
-| length off by one (3 bytes) | CAUGHT (25 tests) |
-| length off by one (5 bytes) | CAUGHT (25 tests) |
-| missing trailing newline | CAUGHT (25 tests) |
-| newline → `\r\n` | CAUGHT (25 tests) |
-| NaN quietened / canonicalised | CAUGHT (11 tests) |
-| negative zero flattened | CAUGHT (3 tests) |
-| subnormals flushed to zero | CAUGHT (13 tests) |
-| dumps `f64` bytes instead of `f32` | CAUGHT (24 tests) |
-| loop guard uses **unsigned** compare | *not caught — equivalent mutant* |
-
-The single uncaught mutant is behaviourally **unobservable through the ABI**:
-it only changes `print_hex` when `len < 0`, and `driver` always passes the
-compile-time constant `sizeof(float)` == 4 (ERRORS.md rows 2–3). No input to the
-exported `driver` can distinguish it, so it is an equivalent mutant rather than a
-gap in the tests.
+Note on the harness: `cargo test` does **not** rebuild a `crate-type =
+["cdylib"]` target, so the tests were initially comparing against a stale
+`.so` (proven by a mutation that went undetected). `tests/common/mod.rs` now
+builds the cdylib itself into a separate `--target-dir` before loading it, and
+asserts both `.so`s are newer than their sources. After that fix, six
+independent mutations of the Rust source were all detected.

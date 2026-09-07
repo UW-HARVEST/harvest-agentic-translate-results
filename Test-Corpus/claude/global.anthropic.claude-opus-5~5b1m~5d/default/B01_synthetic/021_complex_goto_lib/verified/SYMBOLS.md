@@ -1,50 +1,62 @@
-# SYMBOLS.md — public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects
+(`w`/`V` weak/unique entries filtered — those are toolchain artifacts, not API).
+
+## C `.so` (`c_src/build/libdriver.so`)
 
 ```
-$ nm -D --defined-only c_src/build/libdriver.so
+$ nm -D --defined-only c_src/build/libdriver.so | grep -v ' [wV] '
 0000000000001109 T driver
-(plus only-weak/absolute entries: _init, _fini, __bss_start, _edata, _end,
- and the glibc weak refs __gmon_start__/__cxa_finalize which are UNDEFINED)
+```
 
-$ nm -D --defined-only translation/target/release/libdriver.so
+## Rust `.so` (`translation/target/release/libdriver.so`)
+
+```
+$ nm -D --defined-only translation/target/release/libdriver.so | grep -v ' [wV] '
 0000000000011700 T driver
 ```
 
-## Symbol table
+## Parity table
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `driver` | `T` (global text) | `T` (global text) | `void driver(int x, int y)` — the only symbol declared in `include/driver.h`; exported from Rust with `#[unsafe(no_mangle)] pub extern "C"` |
+| # | symbol | type | in C `.so` | in Rust `.so` | status |
+|---|--------|------|-----------|---------------|--------|
+| 1 | `driver` | `T` (text, global) | yes | yes | OK — exported by `#[unsafe(no_mangle)] pub extern "C" fn driver` |
 
-## Linker-synthesized / toolchain symbols (not API, not required to match)
+**Missing from Rust: none.** The C library is a single translation unit
+(`c_src/src/driver.c`) declaring a single public function in
+`c_src/include/driver.h`:
 
-| symbol | C | Rust | notes |
-|--------|---|------|-------|
-| `_init` / `_fini` | present | absent | crt glue emitted by GNU ld for the C `.so`; not part of the API and never called by a consumer |
-| `__bss_start`, `_edata`, `_end` | present | present | linker-provided absolute section markers (`A`/`B`), not functions |
-| `__gmon_start__`, `__cxa_finalize`, `_ITM_*`, `__tls_get_addr` | `w`/`U` | `w`/`U` | weak/undefined libc hooks |
+```c
+void driver(int x, int y);
+```
+
+No module of the C source was skipped, so no additional translation work
+is required for symbol completeness.
 
 ## Undefined (imported) symbols
 
-| `.so` | undefined non-libc symbols |
-|-------|----------------------------|
-| C | none (only `puts`/`printf` from libc) |
-| Rust | none (only `printf` + `libc`/`ld` runtime symbols) |
+The C `.so` imports `puts` (gcc rewrites `printf("literal\n")` → `puts`).
+The Rust `.so` imports `printf` from libc directly. Both are libc symbols
+resolved from `libc.so.6` at load time; neither is a non-libc undefined
+symbol.
 
-Verification command used:
-
-```sh
-diff <(nm -D --defined-only c_src/build/libdriver.so      | awk '$2=="T"{print $3}' | sort) \
-     <(nm -D --defined-only translation/target/release/libdriver.so | awk '$2=="T"{print $3}' | sort)
+```
+$ nm -D --undefined-only c_src/build/libdriver.so   # puts, plus glibc glue
+$ nm -D --undefined-only translation/target/release/libdriver.so  # printf, plus glibc glue
 ```
 
-Result: **empty diff** → 0 missing symbols in the Rust `.so`. No C source file was
-left untranslated: `c_src/src/driver.c` is the only translation unit and its only
-function is `driver`.
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
 
-> Note: the C compiler lowers `printf("loop\n")` to `puts("loop")`; the Rust
-> translation calls `printf` with the same literal. Both go through the *same*
-> process-wide libc `stdout` FILE, so the emitted bytes and buffering are
-> identical. This is verified byte-for-byte by the differential tests.
+## Result
+
+`tests/symbols.rs :: phase_d_symbol_parity` performs this diff at test time
+(`comm -23` equivalent over `nm -D` output) and passes:
+
+```
+== symbol parity ==
+C-only symbols (must be empty):
+                       <-- empty
+```
+
+Verified under all six profile × feature combinations by `./run_all_combos.sh`.

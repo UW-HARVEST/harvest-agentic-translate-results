@@ -164,33 +164,30 @@ pub extern "C" fn get_children_count(parent_id: c_int) -> c_int {
     count
 }
 
-/// x86-64 SSE `addsd dst, src` semantics: `dst + src`, but with the hardware's
-/// NaN-propagation rule spelled out.
+/// Reproduces the exact NaN-propagation choice made by the x86-64 `ADDSD`
+/// instruction that the C compiles to.
 ///
-/// The C statement being translated is
+/// The C body `sum += calculate_subtree_sum(...)` compiles to
 ///
-/// ```c
-/// sum += calculate_subtree_sum(node_storage[i].id);
+/// ```text
+///   call  calculate_subtree_sum   ; child result -> %xmm0
+///   movsd -0x8(%rbp),%xmm1        ; accumulator  -> %xmm1
+///   addsd %xmm1,%xmm0             ; %xmm0 = %xmm0 + %xmm1  (dest = child!)
 /// ```
 ///
-/// gcc leaves the callee's return value in `%xmm0` and emits
-/// `addsd %xmm1,%xmm0` — i.e. the *destination* register holds the **child's**
-/// subtree sum and the *source* holds the running accumulator. `addsd` returns
-/// the destination operand (quieted) when it is a NaN, and only otherwise falls
-/// back to the source operand, so the child's NaN sign and payload win over the
-/// accumulator's.
+/// so the *recursive result* is `ADDSD`'s destination operand. Per Intel SDM
+/// Table 4-7 ("Rules for handling NaNs"), when both operands are NaN the result
+/// is the **first (destination)** operand, quieted; when exactly one is NaN the
+/// result is that NaN, quieted. IEEE-754 leaves this choice unspecified and
+/// `fadd` is commutative, so LLVM freely reorders the operands and picks the
+/// other NaN. Emulating the rule explicitly is what makes the returned `f64`
+/// bit-identical to the C for every input, including signalling NaNs.
 ///
-/// Writing `child + sum` in Rust would express that at the source level, but
-/// LLVM treats `fadd` as commutative and is free to canonicalise the operand
-/// order, so the rule is written out explicitly here. When neither operand is a
-/// NaN this is a plain `addsd` and any NaN *created* by the addition
-/// (`inf + -inf`) is the hardware's "indefinite" QNaN on both sides.
+/// For NaN-free operands this defers to a plain add, which is fully determined
+/// by IEEE-754 (including `inf + -inf` yielding the x86 default indefinite).
 #[inline]
 fn addsd(dst: c_double, src: c_double) -> c_double {
-    /// Bit 51 — setting it turns a signalling NaN into the quiet NaN with the
-    /// same sign and payload, and is a no-op for an already-quiet NaN.
     const QUIET_BIT: u64 = 0x0008_0000_0000_0000;
-
     if dst.is_nan() {
         return c_double::from_bits(dst.to_bits() | QUIET_BIT);
     }
@@ -204,10 +201,6 @@ fn addsd(dst: c_double, src: c_double) -> c_double {
 ///
 /// Recursive, exactly as in C -- including the fact that a parent/child cycle
 /// would recurse forever. Behaviour is reproduced, not "fixed".
-///
-/// The accumulation goes through [`addsd`] rather than `sum += child` so that
-/// NaN payload/sign propagation matches the C build bit-for-bit; see the
-/// comment on [`addsd`].
 #[unsafe(no_mangle)]
 pub extern "C" fn calculate_subtree_sum(node_id: c_int) -> c_double {
     let node = find_node_by_id(node_id);
@@ -225,8 +218,8 @@ pub extern "C" fn calculate_subtree_sum(node_id: c_int) -> c_double {
             (n.parent_id, n.active, n.id)
         };
         if parent_id == node_id && active != 0 {
-            let child = calculate_subtree_sum(child_id);
-            sum = addsd(child, sum);
+            // `sum += child` with the CHILD as ADDSD's destination operand.
+            sum = addsd(calculate_subtree_sum(child_id), sum);
         }
         i += 1;
     }

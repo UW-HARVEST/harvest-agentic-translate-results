@@ -1,61 +1,68 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
-
-* C `.so`:    `c_src/build/libharvest-work-FXVbjZ.so`
-* Rust `.so`: `translation/target/release/libpow43_lib.so`
-
-## Defined (`T`) symbols exported by the C `.so`
+Derived mechanically from:
 
 ```
-$ nm -D c_src/build/libharvest-work-FXVbjZ.so
-                 w _ITM_deregisterTMCloneTable
-                 w _ITM_registerTMCloneTable
-                 w __cxa_finalize@GLIBC_2.2.5
-                 w __gmon_start__
-00000000000010f9 T pow43
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+nm -D --defined-only c_src/build/libharvest-work-87rYkA.so
+nm -D --defined-only translation/target/release/libpow43_lib.so
 ```
 
-| # | C symbol | type | present in Rust `.so`? | notes |
-|---|----------|------|------------------------|-------|
-| 1 | `pow43`  | `T`  | YES (`T pow43`)        | `#[unsafe(no_mangle)] pub extern "C" fn pow43(x: c_int) -> f32` |
-| 2 | `_ITM_deregisterTMCloneTable` | `w` (weak, undefined) | YES (`w`) | toolchain-emitted, not library API |
-| 3 | `_ITM_registerTMCloneTable`   | `w` (weak, undefined) | YES (`w`) | toolchain-emitted, not library API |
-| 4 | `__cxa_finalize@GLIBC_2.2.5`  | `w` | YES (`w`) | libc |
-| 5 | `__gmon_start__`              | `w` | YES (`w`) | libc/profiling |
-
-## Non-API symbols in the C source (deliberately NOT exported)
-
-| C identifier | storage | exported? | reason |
-|--------------|---------|-----------|--------|
-| `g_pow43` | `static const float[129 + 16]` | no (C: local symbol; Rust: private `static G_POW43`) | `static` in C ⇒ internal linkage, correctly absent from `nm -D` on both sides |
-
-## Header surface (`c_src/include/lib.h`)
-
-The entire header is one line:
-
-```c
-float pow43(int x);
-```
-
-There are no macros, no renaming/aliasing macros, no additional declarations, no
-`#ifdef`-guarded alternate names. So the linker symbol is plainly `pow43` and
-there are no macro-generated symbols to reproduce.
-
-## Missing-symbol diff
+## C `.so` exported (defined) dynamic symbols
 
 ```
-$ comm -23 <(nm -D <C.so>  | awk '$2=="T"{print $3}' | sort) \
-           <(nm -D <RS.so> | awk '$2=="T"{print $3}' | sort)
-<empty>
+0000000000001109 T pow43
 ```
 
-**Result: 0 missing symbols.** No module of the C source was left untranslated —
-`c_src/src/lib.c` is the only translation unit and its single external function
-is implemented and exported. Nothing is stubbed.
+(address is build-dependent; the name is what matters for ABI parity)
 
-Undefined (`U`) symbols in the Rust `.so` are all libc / `_Unwind_*` /
-`pthread_*` runtime imports pulled in by the Rust `std` prelude
-(`__errno_location`, `malloc`, `memcpy`, `dl_iterate_phdr`, …). There are 0
-missing/undefined **non-libc** symbols. Verified with the script
-`translation/check_symbols.sh`.
+Weak/undefined entries emitted by the C toolchain itself (not part of the
+library ABI, ignored for parity):
+
+```
+w _ITM_deregisterTMCloneTable
+w _ITM_registerTMCloneTable
+w __cxa_finalize@GLIBC_2.2.5
+w __gmon_start__
+```
+
+## Rust `.so` exported (defined) dynamic symbols
+
+```
+0000000000011a60 T pow43
+```
+
+## Parity table
+
+| # | C symbol | kind | C source declaration | present in Rust `.so` | note |
+|---|----------|------|----------------------|-----------------------|------|
+| 1 | `pow43`  | `T` (global text) | `float pow43(int x);` (`c_src/include/lib.h:1`) | YES | `#[unsafe(no_mangle)] pub extern "C" fn pow43(x: c_int) -> f32` |
+
+## Symbols NOT exported by C (must also not be part of the compared ABI)
+
+| C entity | storage | exported? | Rust counterpart |
+|----------|---------|-----------|------------------|
+| `g_pow43[129 + 16]` | `static const float` | no (internal) | `static G_POW43: [f32; 145]` (private) |
+
+## Diff
+
+`comm -23` of the two defined-symbol name lists (C minus Rust): **empty**.
+`comm -13` (Rust minus C): **empty** — Rust exports no extra ABI symbols.
+
+Undefined (`U`) symbols in the Rust `.so` are all libc / libgcc-unwind imports
+(`memcpy`, `malloc`, `_Unwind_*`, `pthread_*`, …) pulled in by the Rust runtime;
+there are **0 missing/undefined non-libc symbols**.
+
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+- [x] Every C-exported symbol is exported by the Rust `.so` under the exact same name.
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+buildable configuration is the default (empty) feature set. The feature-combo
+sweep therefore consists of exactly:
+
+| # | cargo invocation | symbols match |
+|---|------------------|---------------|
+| 1 | `cargo build --release` (default) | yes |
+| 2 | `cargo build --release --no-default-features` (identical, no features exist) | yes |

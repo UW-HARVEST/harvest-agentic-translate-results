@@ -34,19 +34,7 @@ pub unsafe extern "C" fn stbds_stralloc(
     if len > (*a).remaining {
         let mut blocksize: usize = (*a).block as usize;
 
-        // ```c
-        // blocksize = (size_t) (STBDS_STRING_ARENA_BLOCKSIZE_MIN) << (blocksize>>1);
-        // ```
-        //
-        // `a->block` saturates at 22 when the arena is only ever driven through
-        // this function, so `blocksize >> 1 <= 11`. A caller handing over an
-        // arena with a larger `block` (it is a plain `unsigned char` field) makes
-        // the shift count exceed the width of `size_t`, which is UB in C. On
-        // x86-64 gcc that compiles to a `shl` whose count register is taken
-        // modulo 64, so mask explicitly to reproduce the reference behaviour
-        // instead of leaving it to the Rust backend.
-        blocksize = (STBDS_STRING_ARENA_BLOCKSIZE_MIN as usize)
-            << ((blocksize >> 1) & (usize::BITS as usize - 1));
+        blocksize = (STBDS_STRING_ARENA_BLOCKSIZE_MIN as usize) << (blocksize >> 1);
 
         if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX as usize {
             (*a).block = (*a).block.wrapping_add(1);

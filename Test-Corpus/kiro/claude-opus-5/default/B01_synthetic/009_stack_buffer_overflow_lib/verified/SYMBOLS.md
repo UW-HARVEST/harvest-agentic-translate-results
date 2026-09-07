@@ -1,4 +1,4 @@
-# SYMBOLS.md — dynamic symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from:
 
@@ -7,100 +7,66 @@ nm -D --defined-only c_src/build/libdriver.so
 nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-## C source inventory (`c_src/src/driver.c`)
+## C `.so` dynamic defined symbols (ground truth)
 
-| C function | linkage in C | must be exported? |
-|------------|--------------|-------------------|
-| `printLine(const char *)` | external | yes |
-| `printIntLine(int)`       | external | yes |
-| `bad(int)`                | external | yes |
-| `goodG2B(void)`           | `static` | no — file-local, not in the ABI |
-| `goodB2G(int)`            | `static` | no — file-local, not in the ABI |
-| `good(int)`               | external | yes |
-| `driver(int, int)`        | external | yes |
+| # | symbol | C declaration | in Rust `.so`? | notes |
+|---|--------|---------------|----------------|-------|
+| 1 | `printLine`    | `void printLine(const char *line)` | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn printLine` |
+| 2 | `printIntLine` | `void printIntLine(int intNumber)` | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn printIntLine` |
+| 3 | `bad`          | `void bad(int data)`               | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn bad` |
+| 4 | `good`         | `void good(int data)`              | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn good` |
+| 5 | `driver`       | `void driver(int goodData, int badData)` | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver` |
 
-`c_src` contains exactly one translation unit (`src/driver.c`) and one public
-header (`include/driver.h`). No module was skipped by the translation; the whole
-library is one file and it is fully present in `translation/src/lib.rs`.
+**Missing from Rust `.so`: NONE.** The symbol diff is empty in both directions
+(no extra non-libc exports on the Rust side either).
 
-## `T` (defined text) symbol comparison
+## Deliberately NOT exported (correct)
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `bad`          | T | T | MATCH |
-| 2 | `driver`       | T | T | MATCH |
-| 3 | `good`         | T | T | MATCH |
-| 4 | `printIntLine` | T | T | MATCH |
-| 5 | `printLine`    | T | T | MATCH |
-
-Missing from Rust: **none**. Extra in Rust: **none** (no extra `T`/`D`/`B`
-symbols; Rust exports only the five C entry points).
-
-`goodG2B` / `goodB2G` are absent from BOTH `.so` files, as required — they are
-`static` in C and private (`fn`, no `#[no_mangle]`) in Rust.
-
-## Weak / undefined symbols
-
-Weak symbols are toolchain runtime hooks, not API. C has
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`; Rust has those plus `__cxa_thread_atexit_impl`, `gettid`,
-`statx` (glibc-version-guarded weak refs emitted by Rust `std`). These are not
-part of the library surface.
-
-Undefined (`U`) symbols in the Rust `.so` are all libc / `libgcc` unwinder
-imports (`printf`, `puts`, `memcpy`, `malloc`, `_Unwind_*`, …). There are **0
-missing/undefined non-libc symbols** — nothing the loader cannot resolve:
+`nm` on the C object (including local symbols) also shows:
 
 ```
-$ ldd -r translation/target/release/libdriver.so   # no "undefined symbol" lines
+000000000000121f t goodG2B
+00000000000012a0 t goodB2G
 ```
 
-The C `.so` imports `printf` and `puts`. Note that GCC lowered
-`printf("%s\n", line)` in `printLine` to `puts(line)`; the Rust translation
-calls `printf("%s\n", line)` directly. The two are byte-identical on stdout
-(`puts` appends exactly one `\n`), so this import difference is not observable.
+Lower-case `t` = local. Both are `static` in `c_src/src/driver.c`, so they are
+**not** part of the ABI. The Rust translation keeps them as private `fn goodG2B()`
+/ `fn goodB2G(data)`. They are still exercised indirectly — they are the entire
+body of the exported `good()`. Exporting them would be a *divergence*, not a fix.
+
+Also local in C and irrelevant to the ABI (toolchain-generated):
+`_init`, `_fini`, `deregister_tm_clones`, `register_tm_clones`,
+`__do_global_dtors_aux`, `frame_dummy`.
+
+## Undefined (imported) symbols
+
+C imports: `printf@GLIBC_2.2.5`, `puts@GLIBC_2.2.5`, plus the weak
+`_ITM_*`/`__cxa_finalize`/`__gmon_start__` set.
+
+> GCC rewrites `printf("%s\n", line)` into `puts(line)`, which is why the C `.so`
+> imports `puts` as well. Byte-for-byte the emitted stream is identical
+> (`line` followed by `\n`), so the Rust side using `printf("%s\n", …)` is
+> ABI- and output-equivalent. Both libraries resolve to the *same* glibc
+> `stdout` FILE object in-process, so buffering/interleaving also matches.
+
+Rust imports: `printf@GLIBC_2.2.5`, `puts@GLIBC_2.2.5`, and the usual Rust
+`std` runtime set (`memcpy`, `malloc`, `mmap64`, `_Unwind_*`, `pthread_key_*`,
+…). **0 missing/undefined non-libc symbols** — every undefined symbol in the
+Rust `.so` is provided by glibc / libgcc_s, exactly as for any Rust `cdylib`.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so there is exactly
-one build configuration (`default` == no features). `--no-default-features` and
-the empty feature set are the same build. Phase D's "every feature combination"
-therefore collapses to a single combination, which is verified by
-`scripts/check_features.sh`.
+`translation/Cargo.toml` declares **no `[features]` section**, so the only build
+configuration is the default one. `--no-default-features` and any
+`--features <combo>` are therefore equivalent to the default build; the
+"all feature combinations" gate collapses to the single default configuration.
+Verified by `scripts/verify_all.sh`, which builds every combination, diffs
+`nm -D` against the C `.so` for each, re-runs the Phase B/C/D suites for each,
+and asserts all combinations export an identical symbol set.
+`sym_06_no_cargo_features_declared` fails if a `[features]` section is ever
+added without extending the matrix.
 
-## How to reproduce
+## Verdict
 
-```
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo test --release          # one configuration
-cd translation && ./scripts/check_features.sh   # every feature combo x both profiles
-```
-
-Exit status 0 and `ALL PHASES PASSED` mean the symbol diff was empty and every
-`CONFIGS.md` / `ERRORS.md` row matched.
-
-## Harness pitfall worth recording
-
-`cargo test` does **not** build a `crate-type = ["cdylib"]` library: an
-integration test cannot link against a cdylib, so Cargo has no reason to produce
-it. A differential test that simply picks up `target/<profile>/libdriver.so`
-therefore verifies whatever `.so` was left behind by an earlier `cargo build` —
-edits to `src/lib.rs` are invisible and every run passes vacuously. This was
-observed here: five deliberately injected bugs all "passed" until it was fixed.
-
-`tests/common/mod.rs::rust_lib()` now (a) shells out to `cargo build --lib` with
-the current profile and feature flags before locating the artifact, and (b)
-asserts the resulting `.so` is not older than `src/lib.rs` / `Cargo.toml`,
-aborting with `STALE ARTIFACT: …` otherwise.
-
-The suite's sensitivity was then confirmed by mutation testing — each of these
-injected defects is caught, so the assertions are not vacuous:
-
-| injected defect | rows that failed |
-|-----------------|------------------|
-| `"…out-of-bounds"` → `"…out-of-bounds."` | CONFIGS 22,23,26–32; ERRORS 5,6,7,11,G7 |
-| `goodB2G`: `data < 10` → `data <= 10` | CONFIGS 22,26,29,30,32; ERRORS 7,11,G7 |
-| `goodG2B`: `data = 7` → `data = 6` | CONFIGS 20–32; ERRORS 5,6,7,10,11,12,G7 |
-| `printLine`: NULL guard removed | CONFIGS 32; ERRORS row 1 (all three checks) |
-| `bad()`: prints 9 elements instead of 10 | CONFIGS 13–19; ERRORS 3,8,9,G8 |
+- [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
+- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.

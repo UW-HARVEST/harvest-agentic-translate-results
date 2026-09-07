@@ -1,36 +1,31 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Reference library: `../c_src/build/libStaticAlias.so`
+Mechanically derived with:
 
-Command:
-
-```sh
+```text
 nm -D ../c_src/build/libStaticAlias.so
+nm -D target/release/libStaticAlias.so
 ```
 
-## C-defined public exports
+The C shared object has the following defined public dynamic symbols. Runtime
+imports (`printf`) and weak ELF/toolchain hooks are recorded below but are not
+library API exports.
 
-| symbol | C type | Rust export | status |
-|---|---:|---:|---:|
-| `driver` | `T` | `T` | present |
-| `static_alias` | `T` | `T` | present |
+| C symbol | C type | Rust type | parity |
+|----------|--------|-----------|--------|
+| `driver` | `T` | `T` | [x] |
+| `static_alias` | `T` | `T` | [x] |
 
-## Complete remaining `nm -D` surface
+Missing defined C symbols in Rust: **0**.
 
-These are undefined weak/runtime symbols rather than API definitions. They are
-listed so that every line emitted by `nm -D` is accounted for.
+## C runtime imports and weak hooks
 
-| symbol | C type | role | Rust resolution |
-|---|---:|---|---|
-| `_ITM_deregisterTMCloneTable` | `w` | toolchain weak import | weak import |
-| `_ITM_registerTMCloneTable` | `w` | toolchain weak import | weak import |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | libc weak import | weak import |
-| `__gmon_start__` | `w` | toolchain weak import | weak import |
-| `printf@GLIBC_2.2.5` | `U` | libc import used by `driver` | libc import |
+| symbol | `nm -D` type | classification |
+|--------|--------------|----------------|
+| `_ITM_deregisterTMCloneTable` | `w` | weak toolchain hook |
+| `_ITM_registerTMCloneTable` | `w` | weak toolchain hook |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | weak libc runtime hook |
+| `__gmon_start__` | `w` | weak profiling hook |
+| `printf@GLIBC_2.2.5` | `U` | libc import used by `driver` |
 
-## Completion
-
-- [x] Every C-defined dynamic symbol is exported by the Rust `cdylib` under
-      the exact same name.
-- [x] There are zero missing C-defined symbols.
-- [x] There are zero undefined non-libc application symbols.
+There are no undefined non-libc application symbols in the C shared object.

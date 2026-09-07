@@ -1,67 +1,70 @@
-# ERRORS.md — Error-surface table (Phase A, gate for Phase C)
+# ERRORS.md — Phase A error-surface table
 
-Derived mechanically from the C source, not from documentation or assumption.
-
-## Mechanical derivation
-
-Grep over `c_src/src` and `c_src/include` for every rejection construct:
+Derived mechanically from the complete C source (`c_src/src/lib.c`, 9 lines;
+`c_src/include/lib.h`, 3 lines). Grep used to enumerate every rejection
+mechanism:
 
 ```sh
-grep -rnE 'return +-|return +NULL|RETURN_ERROR|assert|errno|goto|if *\(|switch|#if|enum|ERROR|E[A-Z]+' \
-     c_src/src c_src/include
-# (no matches)
+grep -nE 'return[[:space:]]+(-1|NULL|0)|assert|RETURN_ERROR|errno|ERROR|abort|exit|if[[:space:]]*\(|switch|#ifdef|#if |#ifndef|goto' -r c_src/src c_src/include
+# -> no matches
 ```
 
-Statement-level inventory of `c_src/src/lib.c`: 5 statements, all of them
-unconditional assignments/returns.
+## Result of the mechanical scan
 
-Findings:
+| mechanism searched for | occurrences in C source |
+|------------------------|-------------------------|
+| error-return macros (`RETURN_ERROR`, …) | 0 |
+| `return -1` / `return NULL` / sentinel returns | 0 (the single `return a;` returns a computed value) |
+| error enums / status codes | 0 (return type is `uint32_t`, a value, not a status) |
+| `assert` | 0 |
+| explicit range / bounds checks | 0 |
+| null-pointer checks | 0 (the API takes no pointers) |
+| min/max constants | 0 |
+| `if` / `switch` / `goto` / early return | 0 (function is straight-line and branchless) |
+| `#if` / `#ifdef` / `#ifndef` | 0 |
+| allocation, I/O, or any other fallible operation | 0 |
+| integer division or modulo (UB on 0) | 0 |
+| signed overflow / UB-capable shift (shift count is a literal 1/2/4/8 on an unsigned value) | 0 |
 
-* error-return macros (`RETURN_ERROR`, …): **0**
-* `return -1` / `return NULL` / negative or sentinel error returns: **0**
-* error enums or status codes: **0** — the only return type is `uint32_t`, and
-  every one of the 2^32 possible return values is a legitimate result
-* `assert` / `abort` / `errno` writes: **0**
-* explicit range checks, null checks, size checks: **0**
-* min/max constants: **0** (the four hex literals `0xAAAA 0x5555 0xCCCC 0x3333
-  0xF0F0 0x0F0F 0xFF00 0x00FF` are bit masks, not bounds)
-* pointer parameters anywhere in the API: **0** (`rev16` takes a `uint32_t` by
-  value and returns a `uint32_t` by value)
-* enum parameters anywhere in the API: **0**
-* branches (`if` / `switch` / ternary / `#ifdef`): **0**
-
-## Error-surface table
+## Error-surface rows
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|---------------------------------------------|-------------------|
-| — | `rev16`  | *none — the function is total*              | n/a               |
+| — | — | **(no rows)** — the C API has no rejection path | — |
 
-The table is intentionally empty of rejection rows: `rev16` is a pure, total
-function over `uint32_t`. There is no input it rejects, no code path that can
-fail, and no out-of-band error channel (no return sentinel, no `errno`, no
-out-parameter, no pointer to dereference).
+`rev16` is a **total function** over its entire domain: every one of the
+2^32 possible `uint32_t` arguments is valid and produces a defined value. There
+is no invalid input, no out-of-range condition, no sentinel, and no error code.
+Consequently there is nothing to check off in this table.
 
-## Generic boundary rows tested anyway (Phase C)
+## Generic FFI boundaries still exercised in Phase C
 
-Because "no rejection path exists" is itself a claim that must be verified
-differentially — the Rust must also *not* reject, panic, or abort where the C
-computes a value — the following boundary and adversarial inputs are covered by
-`tests/differential.rs` (`phase_c_*` tests). Each asserts C and Rust return the
-**same 32-bit value**, and that neither aborts.
+Even with an empty table, the task requires covering the generic boundaries any
+C API has. The ones that are *meaningful for this signature* are enumerated
+below and are covered by `tests/differential.rs`
+(`phase_c_generic_boundaries`); each asserts C and Rust agree bit-for-bit on
+the returned `uint32_t`.
 
-| # | function | boundary input | expected behaviour |
-|---|----------|----------------|--------------------|
-| C1 | `rev16` | `0x0000_0000` (zero / minimum) | returns `0x0000_0000`, no error |
-| C2 | `rev16` | `0xFFFF_FFFF` (`UINT32_MAX`, maximum) | returns `0x0000_FFFF`, no error |
-| C3 | `rev16` | `0x0000_FFFF` (largest value whose bits all survive the 16-bit masks) | returns `0x0000_FFFF`, no error |
-| C4 | `rev16` | `0x0001_0000` (one step past the 16-bit "documented range") | returns `0x0000_0000`, no error |
-| C5 | `rev16` | `0x8000_0000` (top bit only — sign bit if misread as signed `int`) | returns `0x0000_0000`, no error |
-| C6 | `rev16` | `0x7FFF_FFFF` (`INT32_MAX`) | returns `0x0000_FFFF`, no error |
-| C7 | `rev16` | `0x8000_0001` / `0xFFFF_0001` (negative when misread as signed) | upper half discarded; equals `rev16(0x1)` = `0x8000` |
-| C8 | `rev16` | out-of-range "enum-like" ints: `-1`, `-2147483648`, `2147483647`, `0xDEAD_BEEF` passed through the FFI boundary as `c_uint` | C accepts any bit pattern; Rust must produce the identical value and must not panic |
-| C9 | `rev16` | every value of the form `1u32 << k` for `k = 0..=31` (walking one, including the 16 bits that are silently dropped) | `k < 16` → `1 << (15-k)`; `k >= 16` → `0` |
-| C10 | `rev16` | `0xFFFF_0000` (only the discarded half set — "oversized length" analogue) | returns `0x0000_0000`, no error |
-| C11 | `rev16` | repeated invocation with the same and with alternating inputs (no hidden state / no `errno`-style stickiness) | results identical to single invocation, in both objects |
+| # | boundary class | concrete inputs | status |
+|---|----------------|-----------------|--------|
+| C1 | zero / minimum value | `0x0000_0000` | [x] |
+| C2 | maximum value | `0xFFFF_FFFF` | [x] |
+| C3 | one step past the "documented" 16-bit range the masks imply | `0x0001_0000`, `0x0000_FFFF`, `0x0001_FFFF` | [x] |
+| C4 | high-half saturated, low half swept (upper bits must be discarded) | `0xFFFF_0000 \| lo` for all `lo` in `0..=0xFFFF` | [x] |
+| C5 | every single-bit value across the full 32-bit width (incl. bits 16..31 that have no valid effect) | `1u32 << k`, `k` in `0..32` | [x] |
+| C6 | every single-bit-clear value (`!(1<<k)`) | `!(1u32 << k)`, `k` in `0..32` | [x] |
+| C7 | sign-bit / `INT_MAX` / `INT_MIN` reinterpretations passed as `unsigned` | `0x8000_0000`, `0x7FFF_FFFF`, `-1 as u32`, `-2147483648 as u32` | [x] |
+| C8 | nibble/byte-boundary values one step past each mask edge | `0x00FF`,`0x0100`,`0x0F0F`,`0xF0F0`,`0x5555`,`0xAAAA`,`0x3333`,`0xCCCC`,`0xFF00` and each `±1` | [x] |
 
-Rows C1–C11 are the complete Phase C checklist. All are checked off in
-`CONFIGS.md`-style form at the bottom of `tests/differential.rs`.
+Not applicable to this API and therefore intentionally absent: null pointers
+(no pointer parameters), zero/oversized lengths (no length parameters), buffers
+(no buffer parameters), and out-of-range enum values (no enum parameters — the
+sole parameter is `uint32_t`, whose entire value range is valid; the "any int
+crosses the boundary" concern is nevertheless covered exhaustively by the
+32-bit sweeps above and by the full-range randomized sweep in Phase B).
+
+## Gate
+
+- [x] Every row in the error-surface table has a passing error-path
+      differential test — vacuously satisfied (0 rows), with the generic
+      boundary rows C1–C8 tested and passing in addition.

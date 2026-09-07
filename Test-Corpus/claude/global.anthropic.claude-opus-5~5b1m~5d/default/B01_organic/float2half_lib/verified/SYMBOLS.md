@@ -1,88 +1,91 @@
-# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Derived mechanically from `nm -D` on both shared libraries.
 
-## Build commands
+Build commands used:
 
 ```
-# C
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/lib<parent-dir-name>.so   (CMake derives the target name from
-#    the directory ABOVE c_src, so the file name is environment specific;
-#    the tests glob for `lib*.so` instead of hard-coding it.)
-
-# Rust
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+#  -> c_src/build/libharvest-work-dX6ZkX.so
 cd translation && cargo build --release
-# -> translation/target/release/libfloat2half_lib.so
+#  -> translation/target/release/libfloat2half_lib.so
 ```
 
-## C `.so` exported (defined) symbols
+## C `.so` exported (defined) dynamic symbols
+
+`nm -D --defined-only c_src/build/libharvest-work-dX6ZkX.so`
+
+| # | symbol | type | notes |
+|---|--------|------|-------|
+| 1 | `float2half` | `T` (global text) | the only public symbol; declared in `include/lib.h` as `uint16_t float2half(float flt)` |
+
+Not exported by the C `.so` (and therefore not required of Rust):
+
+| C object | linkage | why not exported |
+|---|---|---|
+| `m__base[512]` (`uint16_t`) | `static` | file-local, no dynamic symbol |
+| `m__shift[512]` (`uint8_t`) | `static` | file-local, no dynamic symbol |
+
+There are no macro-generated symbols in the C source (no function-defining
+macros, no `#define`-generated entry points, no visibility attributes).
+
+## Rust `.so` exported (defined) dynamic symbols
+
+`nm -D --defined-only translation/target/release/libfloat2half_lib.so`
+
+| # | symbol | type |
+|---|--------|------|
+| 1 | `float2half` | `T` (global text) |
+
+## Parity diff
 
 ```
-$ nm -D --defined-only c_src/build/libharvest-work-Te7Ifm.so
-00000000000010f9 T float2half
+comm -3 <(nm -D --defined-only <c.so>  | awk '{print $NF}' | sort -u) \
+        <(nm -D --defined-only <rs.so> | awk '{print $NF}' | sort -u)
 ```
 
-Total: **1** exported function symbol.
+Result: **empty**.
 
-`m__base` and `m__shift` are `static` in `src/lib.c`, therefore they have
-internal linkage and are deliberately NOT part of the dynamic symbol table.
-They must NOT be exported by the Rust `.so` either (and are not — they are
-private `static` items in `src/lib.rs`).
+- Symbols in C but missing from Rust: **0**
+- Symbols in Rust but not in C: **0** (Rust exports no extra public symbols)
 
-## Rust `.so` exported (defined) symbols
+No module of the C source was skipped: `c_src` consists of exactly
+`include/lib.h` (3 lines, 1 declaration) and `src/lib.c` (118 lines, 2 static
+tables + 1 function), all of which are present in `translation/src/lib.rs`.
+The two lookup tables were compared element-by-element against the C source and
+match at all 512 positions each (see `tests/differential.rs::tables_match_c_source`
+for the in-test re-verification via observable behaviour).
 
-```
-$ nm -D --defined-only translation/target/release/libfloat2half_lib.so
-0000000000012220 T float2half
-```
+## Undefined symbols in the Rust `.so`
 
-## Parity table
+`nm -D -u translation/target/release/libfloat2half_lib.so`
 
-| # | C symbol | type | present in Rust `.so`? | Rust item | action taken |
-|---|----------|------|------------------------|-----------|--------------|
-| 1 | `float2half` | `T` (global text) | YES — exact name | `#[unsafe(no_mangle)] pub extern "C" fn float2half(f32) -> u16` | none needed |
+All undefined entries are libc / libgcc-unwind imports pulled in by the Rust
+standard library, not unresolved project code:
 
-## Symbol diff
+- glibc: `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `memcpy`,
+  `memmove`, `memset`, `bcmp`, `strlen`, `abort`, `__errno_location`,
+  `getenv`, `getcwd`, `readlink`, `realpath`, `open64`, `close`, `read`,
+  `write`, `writev`, `lseek64`, `stat64`, `fstat64`, `statx`, `mmap64`,
+  `munmap`, `dl_iterate_phdr`, `syscall`, `gettid`, `pthread_key_create`,
+  `pthread_key_delete`, `pthread_setspecific`, `__cxa_finalize`,
+  `__cxa_thread_atexit_impl`, `__tls_get_addr`
+- libgcc unwinder: `_Unwind_*`
+- weak toolchain hooks: `_ITM_deregisterTMCloneTable`,
+  `_ITM_registerTMCloneTable`, `__gmon_start__`
 
-```
-$ diff <(nm -D --defined-only <c.so>  | awk '{print $3}' | sort) \
-       <(nm -D --defined-only <rs.so> | awk '{print $3}' | sort)
-(empty)
-```
-
-**Missing-from-Rust symbols: 0. Undefined non-libc symbols in Rust `.so`: 0.**
-
-No C source file was left untranslated: `c_src` contains exactly one
-translation unit (`src/lib.c`, 118 lines) and one public header
-(`include/lib.h`, 3 lines), and both are fully represented in
-`translation/src/lib.rs`. No stubs, no `unimplemented!()`.
-
-## Non-exported internal state parity
-
-Because the two lookup tables are the entire behaviour of the library, they
-were also diffed mechanically (element-by-element, parsed out of both source
-files) rather than only through the function's output:
-
-| table | C declaration | Rust declaration | length | element-wise equal |
-|-------|---------------|------------------|--------|--------------------|
-| base  | `static uint16_t m__base[512]` | `static M_BASE: [u16; 512]` | 512 = 512 | YES |
-| shift | `static uint8_t m__shift[512]`  | `static M_SHIFT: [u8; 512]` | 512 = 512 | YES |
+**Non-libc undefined symbols: 0.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section** and `src/`
-contains **no `cfg(feature = ...)`** attributes, so exactly one feature
-combination exists (the empty/default one). `--no-default-features` and the
-default build are therefore the same build; both are still exercised by
-`run_all.sh` for completeness.
+`translation/Cargo.toml` declares no `[features]` section, so the only
+configuration is the default (empty) feature set. Verified with
+`grep -c '^\[features\]' Cargo.toml` -> 0.
 
-## Automated enforcement
+## Binary / driver
 
-Symbol parity is not only recorded here, it is asserted by
-`symbol_parity_c_so_vs_rust_so` in `tests/phase_d_exhaustive.rs` (which shells
-out to `nm -D --defined-only` on both `.so` files) and re-checked by
-`run_all.sh` for both the debug and release profiles. `run_all.sh` additionally
-verifies that the Rust `.so` has **0 undefined non-libc symbols** and that
-`ldd -r` reports no unresolved symbols.
+Neither project builds an executable: `c_src/CMakeLists.txt` contains only
+`add_library(... SHARED src/lib.c)` (no `add_executable`), and
+`translation/Cargo.toml` declares only `[lib] crate-type = ["cdylib"]` with no
+`[[bin]]` target and no `src/main.rs`. The "compare binary stdout" gate is
+therefore not applicable.

@@ -1,142 +1,181 @@
-# CONFIGS.md — configuration-surface table
+# CONFIGS.md — configuration / valid-input surface table (Phase B gate)
 
-Derived mechanically from the branch/index structure of `c_src/src/lib.c`.
+## Mechanical derivation of the axes
 
-## Public entry points (full set, lowest level included)
-
-`c_src/include/lib.h` declares exactly one function and it *is* the lowest-level
-entry point — there are no convenience wrappers, no init/teardown, no opaque
-context object and no setter functions:
+`c_src/include/lib.h` exposes exactly one entry point, and it is also the
+lowest-level one — there is no convenience wrapper and no one-shot API to
+prefer over a primitive:
 
 ```c
 unsigned hdr_bitrate(const uint8_t *h);
 ```
 
-So the entry-point axis has a single value, and every row below drives that
-function directly through the `.so` export.
+There is no runtime option, no mode flag, no init/config struct, no global
+state, no `#ifdef`, and no byte-order or element-type parameter (confirmed by
+the grep in `ERRORS.md`, which finds zero conditionals or preprocessor
+branches). The Rust crate likewise declares **no** `[features]`, so the only
+feature combination is the default/empty one.
 
-## Axes the C actually distinguishes
+The C therefore branches on nothing *except* the bit-fields it extracts from
+the input buffer. Those bit-fields are the configuration axes, read straight out
+of the return expression:
 
-The body contains no `if` / `switch` / `#ifdef`, so there are no runtime
-option/mode/flag axes. All branching is *data* branching through three index
-expressions:
+```c
+return 2 * halfrate[!!((h[1]) & 0x8)][(((h[1]) >> 1) & 3) - 1][((h[2]) >> 4)];
+```
 
-| axis | expression in C | distinct values | effect |
-|------|-----------------|-----------------|--------|
-| A. version bit | `!!((h[1]) & 0x8)` → `i` | 2 (`0`, `1`) | selects `halfrate[i]`, i.e. flat offset `+0` or `+45` |
-| B. layer field | `(((h[1]) >> 1) & 3) - 1` → `j` | 4 (`-1`, `0`, `1`, `2`) | selects the row, `+15*j`; value `-1` (layer field `0b00`) escapes the declared bounds |
-| C. bitrate nibble | `((h[2]) >> 4)` → `k` | 16 (`0..15`) | byte within the row; value `15` escapes the declared 15-byte row |
-| D. ignored input bits | — | — | `h[0]`, `h[1] & 0x01`, `h[1] & 0xF0`, `h[2] & 0x0F`, and `h[3]`+ are **never read**; changing them must not change the result |
-| E. buffer shape | — | — | no length parameter; C touches exactly `h[1]` and `h[2]`, so buffer length ≥ 3, pointer alignment, and offset-into-a-larger-buffer must all be irrelevant |
+| axis | source expression | distinct values the code treats differently |
+|------|-------------------|---------------------------------------------|
+| `i` — MPEG version / ID bit | `!!(h[1] & 0x8)` | 2: `0` (h[1] bit3 clear), `1` (set) |
+| `layer` — layer field | `(h[1] >> 1) & 3` | 4: `0b00` (**reserved** ⇒ row index `-1`), `0b01`, `0b10`, `0b11` |
+| `k` — bitrate index nibble | `h[2] >> 4` | 16: `0`(free) .. `14`, and `15` (**bad**/reserved) |
+| `h[0]` | not read | 1 (must be irrelevant — asserted, not enumerated) |
+| `h[1]` bit0 | not used by any index | 1 (must be irrelevant — asserted, not enumerated) |
+| `h[2]` low nibble | shifted out | 1 (must be irrelevant — asserted, not enumerated) |
 
-Pruning C: the code treats `k` differently for every value, but three classes
-carry distinct *meaning* and distinct in/out-of-bounds behaviour: `k = 0`
-(the "free" bitrate slot, always table value `0`), `k = 1..14` (in-range table
-entries), `k = 15` (the "bad" index, one past the row). Rows are the cross
-product A × B × {k=0, k∈1..14, k=15} = 2 × 4 × 3 = 24, plus rows for axes D and E.
+Pruned cross-product of the axes that actually change the result:
+`2 (i) × 4 (layer) × 16 (k)` = **128 rows**, enumerated below. Nothing is
+pruned away as "unimportant"; all 128 are listed because the C distinguishes
+all 128 (they map to 128 distinct flat table offsets, per `ERRORS.md`).
 
-Each row is exercised with **many randomized inputs** (fixed seed
-`0x5DEECE66D`, SplitMix64) over the free bits of that configuration — the
-ignored bits of `h[1]`/`h[2]`, all of `h[0]`/`h[3..]`, buffer length, and
-buffer offset — and over the full `k` sub-range where the row spans one.
+Each row is exercised with **many randomized inputs** (fixed seed): for a row's
+`(i, layer, k)` the free bits — all 8 bits of `h[0]`, `h[1]` bit0, and `h[2]`'s
+low nibble — are randomized, so a row passes only if it holds across all the
+value combinations that must not matter. In addition, Phase B runs an
+**exhaustive** sweep of all 65 536 `(h[1], h[2])` pairs, which is a superset of
+every row.
 
-## Cargo feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` section**, so the complete
-feature-combination set is the single default configuration (equivalently
-`--no-default-features`, which is identical here). Both are run; see the
-`run_all.sh` output recorded in the completion gate.
-
-## Table
+`offset` below is the flat byte index `45*i + 15*(layer-1) + k` that the
+compiled C actually loads (see `ERRORS.md`); `OOB<` = before the table,
+`OOB>` = past it, `alias` = lands in a different row than declared.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| C01 | `hdr_bitrate` | A: `i=0` (`h[1]&0x8 == 0`); B: layer field `0b00` ⇒ `j=-1`; C: `k=0` ⇒ flat offset `-15`, read before the table | [x] |
-| C02 | `hdr_bitrate` | A: `i=0`; B: `j=-1`; C: `k∈1..14` ⇒ flat offsets `-14..-1`, all before the table | [x] |
-| C03 | `hdr_bitrate` | A: `i=0`; B: `j=-1`; C: `k=15` ⇒ flat offset `0`, aliases `halfrate[0][0][0]` | [x] |
-| C04 | `hdr_bitrate` | A: `i=0`; B: layer field `0b01` ⇒ `j=0`; C: `k=0` ⇒ `halfrate[0][0][0]` | [x] |
-| C05 | `hdr_bitrate` | A: `i=0`; B: `j=0`; C: `k∈1..14` ⇒ `halfrate[0][0][1..14]` (MPEG-2/2.5 Layer III row) | [x] |
-| C06 | `hdr_bitrate` | A: `i=0`; B: `j=0`; C: `k=15` ⇒ flat offset `15`, aliases `halfrate[0][1][0]` | [x] |
-| C07 | `hdr_bitrate` | A: `i=0`; B: layer field `0b10` ⇒ `j=1`; C: `k=0` ⇒ `halfrate[0][1][0]` | [x] |
-| C08 | `hdr_bitrate` | A: `i=0`; B: `j=1`; C: `k∈1..14` ⇒ `halfrate[0][1][1..14]` (MPEG-2/2.5 Layer II row) | [x] |
-| C09 | `hdr_bitrate` | A: `i=0`; B: `j=1`; C: `k=15` ⇒ flat offset `30`, aliases `halfrate[0][2][0]` | [x] |
-| C10 | `hdr_bitrate` | A: `i=0`; B: layer field `0b11` ⇒ `j=2`; C: `k=0` ⇒ `halfrate[0][2][0]` | [x] |
-| C11 | `hdr_bitrate` | A: `i=0`; B: `j=2`; C: `k∈1..14` ⇒ `halfrate[0][2][1..14]` (MPEG-2/2.5 Layer I row) | [x] |
-| C12 | `hdr_bitrate` | A: `i=0`; B: `j=2`; C: `k=15` ⇒ flat offset `45`, aliases `halfrate[1][0][0]` | [x] |
-| C13 | `hdr_bitrate` | A: `i=1` (`h[1]&0x8 != 0`); B: `j=-1`; C: `k=0` ⇒ flat offset `30`, aliases `halfrate[0][2][0]` | [x] |
-| C14 | `hdr_bitrate` | A: `i=1`; B: `j=-1`; C: `k∈1..14` ⇒ flat offsets `31..44`, alias `halfrate[0][2][1..14]` | [x] |
-| C15 | `hdr_bitrate` | A: `i=1`; B: `j=-1`; C: `k=15` ⇒ flat offset `45`, aliases `halfrate[1][0][0]` | [x] |
-| C16 | `hdr_bitrate` | A: `i=1`; B: `j=0`; C: `k=0` ⇒ `halfrate[1][0][0]` | [x] |
-| C17 | `hdr_bitrate` | A: `i=1`; B: `j=0`; C: `k∈1..14` ⇒ `halfrate[1][0][1..14]` (MPEG-1 Layer III row) | [x] |
-| C18 | `hdr_bitrate` | A: `i=1`; B: `j=0`; C: `k=15` ⇒ flat offset `60`, aliases `halfrate[1][1][0]` | [x] |
-| C19 | `hdr_bitrate` | A: `i=1`; B: `j=1`; C: `k=0` ⇒ `halfrate[1][1][0]` | [x] |
-| C20 | `hdr_bitrate` | A: `i=1`; B: `j=1`; C: `k∈1..14` ⇒ `halfrate[1][1][1..14]` (MPEG-1 Layer II row) | [x] |
-| C21 | `hdr_bitrate` | A: `i=1`; B: `j=1`; C: `k=15` ⇒ flat offset `75`, aliases `halfrate[1][2][0]` | [x] |
-| C22 | `hdr_bitrate` | A: `i=1`; B: `j=2`; C: `k=0` ⇒ `halfrate[1][2][0]` | [x] |
-| C23 | `hdr_bitrate` | A: `i=1`; B: `j=2`; C: `k∈1..14` ⇒ `halfrate[1][2][1..14]` (MPEG-1 Layer I row) | [x] |
-| C24 | `hdr_bitrate` | A: `i=1`; B: `j=2`; C: `k=15` ⇒ flat offset `90`, one byte past the end of the whole table | [x] |
-| C25 | `hdr_bitrate` | D: ignored bits — for a fixed `(i, layer, k)`, randomize `h[0]`, `h[1] & 0x01`, `h[1] & 0xF0`, `h[2] & 0x0F`; result must be invariant and equal in C and Rust | [x] |
-| C26 | `hdr_bitrate` | D/E: trailing bytes `h[3..]` randomized, buffer lengths 3..64; result must be invariant | [x] |
-| C27 | `hdr_bitrate` | E: pointer offset into a larger buffer, offsets 0..15 (all alignments mod 16), same 3 header bytes at each offset | [x] |
-| C28 | `hdr_bitrate` | E: buffer of exactly 3 bytes ending immediately before an unmapped guard page — proves both read only `h[1]`, `h[2]` and neither over-reads | [x] |
-| C29 | `hdr_bitrate` | E: repeated invocation / statelessness — the same input called many times interleaved with other inputs yields the same value (C table is `static`, Rust table is a `static`; neither may accumulate state) | [x] |
-| C30 | `hdr_bitrate` | Full cross product, exhaustive: all 256 × 256 `(h[1], h[2])` values with randomized surrounding bytes — the complete A × B × C space with no pruning | [x] |
-
-## Verification gate
-
-- [x] Every row above passes across randomized inputs (fixed seed) under the
-      default feature set.
-- [x] Every row above passes under `--no-default-features` (identical set here,
-      as no features are declared).
-
-## How the suite was validated (test sensitivity)
-
-A green differential suite proves nothing unless it can fail. Two findings:
-
-### Pitfall: `cargo test` does not rebuild a `cdylib`
-
-With `crate-type = ["cdylib"]` and no test target linking the library, `cargo
-test` recompiles the crate for the harness but leaves
-`target/<profile>/libhdr_bitrate_lib.so` untouched. An initial run of this suite
-passed against a *stale* `.so`, and every injected bug passed too. Two mitigations
-are now in place:
-
-* `assert_rust_so_is_fresh()` in `tests/differential.rs` fails the run if the
-  `.so` is older than any crate source.
-* `run_all.sh` runs `cargo build` before every `cargo test`, for each profile and
-  feature combination.
-
-### Mutation results (each mutant rebuilt via `run_all.sh`)
-
-| mutant | injected change | result |
-|--------|-----------------|--------|
-| M2 | clamp bitrate nibble `15 → 14` | caught |
-| M3 | last table byte `224 → 225` | caught |
-| M4 | return `half` instead of `2 * half` | caught |
-| M5 | read `h[3]` instead of `h[2]` | caught |
-| M6 | remove the `#[no_mangle]` export | caught (symbol-parity test) |
-| M7 | version mask `0x8 → 0x4` | caught |
-| M9 | out-of-table fallback `0 → 1` | caught by C01, C02, C24, C25–C27, C29, C30, E2, E4, E5, E6 |
-| M10 | `u8::wrapping_sub` for `layer - 1` (yields `255`, not `-1`) | caught |
-| M11 | invert version row selection | caught |
-| M1 | `isize::saturating_sub(1)` for `layer - 1` | not caught — **behaviourally equivalent**: `isize` saturates at `isize::MIN`, so `0 - 1` is still `-1` |
-| M8 | clamp negative flat offset to `0` | not caught — **behaviourally equivalent**: offsets `-15..-1` read zero padding and `HALFRATE[0]` is also `0` |
-
-The two uncaught mutants are equivalent mutants, not coverage gaps.
-
-## Notes on the out-of-bounds reads
-
-`c_src/src/lib.c` indexes `halfrate[2][3][15]` with a middle index that can be
-`-1` and a last index that can be `15`, so flat offsets span `-15 ..= 90` against
-a 90-byte table. What the C reads outside the table is a property of the built
-object, so it was measured rather than assumed:
-
-* `.rodata` starts at `0x2000`, a page boundary, and the table is at its very
-  start (`objdump -s -j .rodata`, `readelf -S`). Offsets `-15..-1` therefore land
-  in the zero tail-padding of the preceding `R E` segment page ⇒ `0`.
-* The table occupies `0x2000..0x205A`; `.eh_frame_hdr` begins at `0x205C`, so
-  offset `90` (`0x205A`) is alignment padding ⇒ `0`.
-
-The Rust translation returns `0` for any offset outside the flat table, which
-matches. Rather than relying on that reasoning, `c30_e7_exhaustive_all_header_bytes`
-compares all 65 536 `(h[1], h[2])` pairs against the actual built C `.so`.
+| 1 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=0 (free) — offset -15 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 2 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=1 — offset -14 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 3 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=2 — offset -13 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 4 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=3 — offset -12 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 5 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=4 — offset -11 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 6 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=5 — offset -10 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 7 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=6 — offset -9 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 8 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=7 — offset -8 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 9 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=8 — offset -7 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 10 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=9 — offset -6 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 11 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=10 — offset -5 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 12 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=11 — offset -4 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 13 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=12 — offset -3 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 14 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=13 — offset -2 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 15 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=14 — offset -1 OOB< before table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 16 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b00 RESERVED, k=15 (bad) — offset 0 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 17 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=0 (free) — offset 0 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 18 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=1 — offset 1 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 19 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=2 — offset 2 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 20 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=3 — offset 3 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 21 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=4 — offset 4 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 22 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=5 — offset 5 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 23 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=6 — offset 6 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 24 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=7 — offset 7 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 25 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=8 — offset 8 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 26 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=9 — offset 9 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 27 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=10 — offset 10 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 28 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=11 — offset 11 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 29 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=12 — offset 12 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 30 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=13 — offset 13 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 31 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=14 — offset 14 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 32 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b01, k=15 (bad) — offset 15 alias (bad nibble reads next row's first byte); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 33 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=0 (free) — offset 15 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 34 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=1 — offset 16 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 35 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=2 — offset 17 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 36 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=3 — offset 18 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 37 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=4 — offset 19 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 38 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=5 — offset 20 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 39 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=6 — offset 21 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 40 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=7 — offset 22 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 41 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=8 — offset 23 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 42 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=9 — offset 24 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 43 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=10 — offset 25 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 44 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=11 — offset 26 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 45 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=12 — offset 27 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 46 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=13 — offset 28 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 47 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=14 — offset 29 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 48 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b10, k=15 (bad) — offset 30 alias (bad nibble reads next row's first byte); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 49 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=0 (free) — offset 30 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 50 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=1 — offset 31 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 51 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=2 — offset 32 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 52 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=3 — offset 33 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 53 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=4 — offset 34 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 54 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=5 — offset 35 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 55 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=6 — offset 36 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 56 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=7 — offset 37 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 57 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=8 — offset 38 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 58 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=9 — offset 39 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 59 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=10 — offset 40 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 60 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=11 — offset 41 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 61 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=12 — offset 42 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 62 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=13 — offset 43 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 63 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=14 — offset 44 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 64 | `hdr_bitrate` | i=0 (h[1]&0x8 clear), layer=0b11, k=15 (bad) — offset 45 alias (bad nibble reads next row's first byte); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 65 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=0 (free) — offset 30 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 66 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=1 — offset 31 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 67 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=2 — offset 32 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 68 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=3 — offset 33 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 69 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=4 — offset 34 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 70 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=5 — offset 35 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 71 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=6 — offset 36 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 72 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=7 — offset 37 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 73 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=8 — offset 38 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 74 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=9 — offset 39 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 75 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=10 — offset 40 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 76 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=11 — offset 41 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 77 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=12 — offset 42 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 78 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=13 — offset 43 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 79 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=14 — offset 44 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 80 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b00 RESERVED, k=15 (bad) — offset 45 alias (reserved layer folds into another row); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 81 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=0 (free) — offset 45 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 82 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=1 — offset 46 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 83 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=2 — offset 47 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 84 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=3 — offset 48 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 85 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=4 — offset 49 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 86 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=5 — offset 50 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 87 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=6 — offset 51 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 88 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=7 — offset 52 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 89 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=8 — offset 53 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 90 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=9 — offset 54 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 91 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=10 — offset 55 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 92 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=11 — offset 56 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 93 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=12 — offset 57 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 94 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=13 — offset 58 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 95 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=14 — offset 59 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 96 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b01, k=15 (bad) — offset 60 alias (bad nibble reads next row's first byte); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 97 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=0 (free) — offset 60 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 98 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=1 — offset 61 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 99 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=2 — offset 62 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 100 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=3 — offset 63 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 101 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=4 — offset 64 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 102 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=5 — offset 65 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 103 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=6 — offset 66 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 104 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=7 — offset 67 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 105 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=8 — offset 68 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 106 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=9 — offset 69 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 107 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=10 — offset 70 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 108 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=11 — offset 71 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 109 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=12 — offset 72 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 110 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=13 — offset 73 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 111 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=14 — offset 74 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 112 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b10, k=15 (bad) — offset 75 alias (bad nibble reads next row's first byte); free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 113 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=0 (free) — offset 75 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 114 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=1 — offset 76 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 115 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=2 — offset 77 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 116 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=3 — offset 78 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 117 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=4 — offset 79 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 118 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=5 — offset 80 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 119 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=6 — offset 81 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 120 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=7 — offset 82 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 121 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=8 — offset 83 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 122 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=9 — offset 84 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 123 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=10 — offset 85 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 124 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=11 — offset 86 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 125 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=12 — offset 87 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 126 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=13 — offset 88 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 127 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=14 — offset 89 in declared bounds; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |
+| 128 | `hdr_bitrate` | i=1 (h[1]&0x8 set), layer=0b11, k=15 (bad) — offset 90 OOB> past table; free bits h[0]/h[1]bit0/h[2]low-nibble randomized | [x] |

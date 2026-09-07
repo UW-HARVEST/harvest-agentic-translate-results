@@ -1,98 +1,49 @@
 # ERRORS.md — Phase C error-surface table
 
-Every distinct way `c_src/src/lib.c` rejects, clamps, or bails out on input.
-Derived mechanically by grepping the C for `return`, `NULL`, `isnan`, `isinf`,
-`INT_MAX`, `INT_MIN`, `default:`, and every `if (` guard. There are **no**
-`assert`s in the C source, and the only sentinel value used is `-1`
-(`malloc` failure). Line numbers refer to `c_src/src/lib.c`.
+Mechanically derived from every rejection / early-return / sentinel / implicit
+saturation branch in `c_src/src/lib.c`. There are no `assert`s, no error enums
+and no `errno` use in the C; the rejection mechanisms are:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| E1 | `safe_double_to_int` (L49) | `d` is NaN (any payload: `f64::NAN`, `-NAN`, signalling bit patterns) | `0` |
-| E2 | `safe_double_to_int` (L53) | `d == +INFINITY` (`isinf` true, `d > 0`) | `INT_MAX` = `2147483647` |
-| E3 | `safe_double_to_int` (L53) | `d == -INFINITY` (`isinf` true, `d > 0` false) | `INT_MIN` = `-2147483648` |
-| E4 | `safe_double_to_int` (L57) | `d >= (double)INT_MAX`, i.e. `d >= 2147483647.0` (finite overflow, incl. exactly `2147483647.0`) | `INT_MAX` |
-| E5 | `safe_double_to_int` (L60) | `d <= (double)INT_MIN`, i.e. `d <= -2147483648.0` (finite underflow, incl. exactly `-2147483648.0`) | `INT_MIN` |
-| E6 | `allocate_and_compute` (L105) | `malloc(size * sizeof(DataPoint))` returns `NULL`. `size` is `int` promoted to `size_t`, so **every `size < 0`** becomes a ~2^64 byte request → `NULL` | `-1` |
-| E7 | `allocate_and_compute` (L105) | `size > 0` so large that `(size_t)size * 16` exceeds what `malloc` can serve → `NULL` | `-1` |
-| E8 | `switch_fallthrough_calculator` (L95) | `operation` matches no `case`: any value `< 0` or `> 4` (incl. `-1`, `5`, `INT_MIN`, `INT_MAX`) — the out-of-range-enum-across-FFI case | `0` (result discarded) |
-| E9 | `fallcalc` (L145) | `malloc(5 * sizeof(int))` returns `NULL` (20-byte request; unreachable in practice) | `-1` (returned **unmasked**, before `&= 0777`) |
-| E10 | `fallcalc` (L163 → E6) | `param4 % 10 + 1 < 0`, i.e. `param4 % 10 <= -2` (truncated remainder `-2..-9`, e.g. `param4 = -2..-9`, `-12`, `INT_MIN` whose remainder is `-8`) → inner `allocate_and_compute` gets a **negative** size and returns `-1`. Note `param4 % 10 == -1` gives size `0` → `malloc(0)` → succeeds (E13), and `param4 % 10 == 0` gives size `1` → succeeds. | `-1` is *added into* `result`, then `&= 0777`; **not** propagated as an error |
-| E11 | `process_array_reverse` (L71) | `count <= 0` (incl. `INT_MIN`) — loop guard `i < count` never true, so `end` is **never dereferenced**; a NULL `end` is accepted | `0` |
-| E12 | `foreach_sum` (L130) | `count <= 0` (incl. `INT_MIN`) — `FOREACH` guard `idx < size` never true, so `array` is **never dereferenced**; a NULL `array` is accepted | `0` |
-| E13 | `allocate_and_compute` (L109/L115) | `size == 0` → `malloc(0)`, which on glibc returns a **non-NULL** unique pointer, so the `NULL` guard does *not* fire; both loops are skipped | `0` (not `-1`) |
-| E14 | `safe_double_to_int` (L64) | `multiplier`/sum arithmetic in `allocate_and_compute` overflows to `±Inf` (e.g. `multiplier = f64::MAX`) → falls into E2/E3 | `INT_MAX` / `INT_MIN` |
-| E15 | `allocate_and_compute` (L111) | `multiplier` is NaN or the product is `0 * Inf` → `sum` becomes NaN → E1 | `0` |
+* `return -1` on `malloc` failure (2 sites: `allocate_and_compute`, `fallcalc`)
+* the saturating / NaN guards in `safe_double_to_int` (5 guarded returns)
+* the `default:` arm of `switch_fallthrough_calculator` (`result = 0`)
+* implicit "do nothing" guards: loop conditions `i < count` / `idx < size`
+  reject non-positive counts by never entering the body (return 0)
+* `INT_MAX` / `INT_MIN` / `0777` / `0100` / `0200` / `010` constants
 
-## Notes on non-errors (deliberately *not* rejected by the C)
-
-These are inputs a reader might expect to be validated but which the C accepts
-silently; the Rust must accept them identically rather than panicking:
-
-- **Signed integer overflow.** `base_value = param1 * 0100 + param2`,
-  `result *= OCTAL_BASE`, `result *= 3`, `points[i].value = i * OCTAL_BASE` and
-  every accumulation can overflow `int`. This is UB in C; the reference `.so` is
-  built with no `-O` flag (CMake sets no `CMAKE_BUILD_TYPE`), so it wraps
-  two's-complement. The Rust uses `wrapping_*` everywhere to match, and must
-  never panic with `overflow-checks` on.
-- **Negative modulo.** `param3 % 5` and `param4 % 10` use C truncated division,
-  so negative inputs give **negative** remainders (`-7 % 5 == -2`). A negative
-  `param3 % 5` therefore lands in the `default:` arm (E8), and a negative
-  `param4 % 10` drives E10. Rust's `wrapping_rem` has the same truncating
-  semantics. `INT_MIN % 5` / `INT_MIN % 10` do not trap (divisor is not `-1`).
-- **NULL pointers with positive counts.** `process_array_reverse(NULL, 3)` and
-  `foreach_sum(NULL, 3)` dereference NULL in both languages (segfault). This is
-  UB, is not a defined rejection, and is therefore **not** differentially tested.
-- **`process_array_reverse` reads backwards.** `fallcalc` passes
-  `data_array + 4` with `count = 5`, so it reads indices 4,3,2,1,0 — in bounds.
-  Calling it with a larger `count` walks off the front of the buffer (UB), so
-  only in-bounds `count`s are tested.
-
-## Status — ALL ROWS PASSING
-
-| row | test | status |
-|-----|------|--------|
-| E1 | `errors.rs::e1_nan_returns_zero` (2000 NaN payloads) | [x] |
-| E2 | `errors.rs::e2_positive_infinity_returns_int_max` | [x] |
-| E3 | `errors.rs::e3_negative_infinity_returns_int_min` | [x] |
-| E4 | `errors.rs::e4_at_or_above_int_max_clamps` | [x] |
-| E5 | `errors.rs::e5_at_or_below_int_min_clamps` | [x] |
-| E6 | `errors.rs::e6_negative_size_returns_minus_one` | [x] |
-| E7 | `errors_malloc_failure.rs::e7_and_e9_forced_malloc_failure` | [x] |
-| E8 | `errors.rs::e8_out_of_range_operation_returns_zero` | [x] |
-| E9 | `errors_malloc_failure.rs::e7_and_e9_forced_malloc_failure` | [x] |
-| E10 | `errors.rs::e10_inner_alloc_failure_is_folded_not_propagated` | [x] |
-| E11 | `errors.rs::e11_process_array_reverse_nonpositive_count_accepts_null` | [x] |
-| E12 | `errors.rs::e12_foreach_sum_nonpositive_count_accepts_null` | [x] |
-| E13 | `errors.rs::e13_size_zero_is_not_an_error` | [x] |
-| E14 | `errors.rs::e14_sum_overflow_clamps_to_int_extremes` | [x] |
-| E15 | `errors.rs::e15_nan_accumulator_returns_zero` | [x] |
-| generic | `errors.rs::generic_one_past_every_documented_range` (null ptrs, zero/oversized/negative lengths, one-past-range, out-of-range enum ints) | [x] |
-
-### How E7 and E9 were made reachable
-
-Both are `malloc(...) == NULL` branches that ordinary inputs cannot trigger
-(E9's request is only 20 bytes). `tests/errors_malloc_failure.rs` defines
-`malloc` in the **test executable**, which on glibc/ELF preempts libc's for the
-whole process — including both `dlopen`ed objects. Because the C `.so` calls
-libc `malloc` and the Rust `.so` deliberately *imports* libc `malloc` (rather
-than using Rust's allocator), one interposer forces the identical failure in
-both, which is what makes the comparison fair. E7 is driven for every
-`size` in `1..=256` plus larger ones; E9 for nine parameter quadruples, and
-additionally in a nested form where `fallcalc`'s own allocation succeeds but the
-inner `allocate_and_compute` fails.
-
-### Divergence found and fixed by this row
-
-**E9 exposed a real bug in the Rust, visible only at `-O2` and above.** LLVM
-recognised `fallcalc`'s *constant-size* `malloc(5 * sizeof(int))` whose pointer
-does not escape and applied "heap-to-stack": the allocation became an `alloca`,
-which cannot fail, so `if (data_array == NULL) return -1;` was folded away as
-unreachable. With the allocation forced to fail, C returned `-1` while the
-release-profile Rust returned `368`. Fixed in `src/lib.rs` by routing both
-allocations through `c_malloc`, which hides the size and the result behind
-`core::hint::black_box` so the genuine libc call and the NULL comparison
-survive every optimisation level. Verified by disassembly (both `malloc` call
-sites now present in the release `.so`) and by the test passing under
-`release`, `release+opt3`, `release+opt-s`, `release+lto-thin`,
-`release+lto-fat` and `release+codegen-units-1`.
+| # | function | trigger (exact invalid input/condition) | expected C result | test | status |
+|---|----------|------------------------------------------|-------------------|------|--------|
+| 1 | `safe_double_to_int` | `isnan(d)` — quiet NaN | `0` | `err_01_nan` | [x] |
+| 2 | `safe_double_to_int` | `isnan(d)` — negative / signalling NaN bit patterns | `0` | `err_01_nan` | [x] |
+| 3 | `safe_double_to_int` | `isinf(d) && d > 0` (`+INFINITY`) | `INT_MAX` = 2147483647 | `err_02_pos_inf` | [x] |
+| 4 | `safe_double_to_int` | `isinf(d) && d < 0` (`-INFINITY`) | `INT_MIN` = -2147483648 | `err_03_neg_inf` | [x] |
+| 5 | `safe_double_to_int` | finite `d >= (double)INT_MAX` (== 2147483647.0, one step past, 1e300, DBL_MAX) | `INT_MAX` | `err_04_ge_int_max` | [x] |
+| 6 | `safe_double_to_int` | finite `d <= (double)INT_MIN` (== -2147483648.0, one step past, -1e300, -DBL_MAX) | `INT_MIN` | `err_05_le_int_min` | [x] |
+| 7 | `safe_double_to_int` | one step *inside* each bound (`nextafter(INT_MAX,0)`, `nextafter(INT_MIN,0)`) — must NOT saturate | truncated cast, `2147483646` / `-2147483647` | `err_06_just_inside_bounds` | [x] |
+| 8 | `safe_double_to_int` | `-0.0`, subnormals (`DBL_MIN`, `5e-324`) | `0` | `err_07_zero_and_subnormal` | [x] |
+| 9 | `allocate_and_compute` | `size < 0` ⇒ `(size_t)size * 16` is astronomically large ⇒ `malloc` returns `NULL` | `-1` | `err_08_alloc_negative_size` | [x] |
+| 10 | `allocate_and_compute` | `size` such that `size * sizeof(DataPoint)` overflows/exhausts memory (e.g. `INT_MAX`, `INT_MAX/2`) ⇒ `malloc` `NULL` | `-1` | `err_09_alloc_huge_size` | [x] |
+| 11 | `allocate_and_compute` | `size == 0` ⇒ `malloc(0)` returns a non-NULL unique pointer, both loops skipped, `sum == 0.0` | `0` (**not** `-1`) | `err_10_alloc_zero_size` | [x] |
+| 12 | `allocate_and_compute` | `multiplier` = NaN ⇒ `sum` becomes NaN (for `size >= 2`) ⇒ `safe_double_to_int` NaN guard | `0` | `err_11_alloc_nan_multiplier` | [x] |
+| 13 | `allocate_and_compute` | `multiplier` = ±Inf, any `size >= 1`. **Verified against C:** `points[0].coefficient = 0.0 * inf = NaN` and `points[0].value = 0`, so the first term `0 * NaN = NaN` poisons `sum` for every size — the `isnan` guard fires, **not** the `isinf` one | `0` (**not** `INT_MAX`/`INT_MIN`) | `err_12_alloc_inf_multiplier` | [x] |
+| 14 | `allocate_and_compute` | `size == 1` with any multiplier: only `points[0]` exists and `points[0].value == 0`, so the product is `0 * anything` (`0`, or `NaN` for non-finite) | `0` for every multiplier | `err_12_alloc_inf_multiplier`, `cfg_23` | [x] |
+| 15 | `allocate_and_compute` | huge finite `multiplier` (`1e300`) with `size >= 2` ⇒ `sum` overflows to `+Inf` | `INT_MAX` | `err_13_alloc_overflow_to_inf` | [x] |
+| 16 | `process_array_reverse` | `count == 0` — loop never entered, pointer never dereferenced (accepts even a garbage/NULL `end`) | `0` | `err_14_reverse_zero_count` | [x] |
+| 17 | `process_array_reverse` | `count < 0` (incl. `INT_MIN`) — `i < count` false immediately, no deref | `0` | `err_15_reverse_negative_count` | [x] |
+| 18 | `process_array_reverse` | `end == NULL` **and** `count <= 0` — must not crash, must return 0 | `0` | `err_16_reverse_null_ptr_zero_count` | [x] |
+| 19 | `foreach_sum` | `count == 0` — `FOREACH` expands to `idx < size` false ⇒ body skipped | `0` | `err_17_foreach_zero_count` | [x] |
+| 20 | `foreach_sum` | `count < 0` (incl. `INT_MIN`) | `0` | `err_18_foreach_negative_count` | [x] |
+| 21 | `foreach_sum` | `array == NULL` **and** `count <= 0` | `0` | `err_19_foreach_null_ptr_zero_count` | [x] |
+| 22 | `switch_fallthrough_calculator` | `operation` outside `0..=4` — i.e. an out-of-range "enum" value crossing FFI (`5`, `6`, `-1`, `-5`, `INT_MIN`, `INT_MAX`, `1<<31` wrap) hits `default:` | `0` | `err_20_switch_default_arm` | [x] |
+| 23 | `switch_fallthrough_calculator` | `value == INT_MAX` / `INT_MIN` with `operation == 0` ⇒ signed overflow in `result *= 010` then `+= 0200` then `& 0777` | same masked low 9 bits as C (gcc wraps) | `err_21_switch_overflow_values` | [x] |
+| 24 | `switch_fallthrough_calculator` | `value == INT_MAX` with `operation == 3` ⇒ `result *= 3` overflows, then `+= 0100`, **no mask** ⇒ full 32-bit wrapped value escapes | wrapped `int` | `err_21_switch_overflow_values` | [x] |
+| 25 | `fallcalc` | `param3 % 5` lands outside `0..=4` because C `%` is truncating ⇒ negative `param3` ⇒ `default:` arm ⇒ `switch_result == 0` | see differential | `err_22_fallcalc_negative_param3` | [x] |
+| 26 | `fallcalc` | `param4 % 10 + 1 <= -1`, i.e. `param4 % 10 <= -2` (negative `param4`) ⇒ `allocate_and_compute` gets a negative size ⇒ inner `malloc` `NULL` ⇒ `alloc_result == -1` (propagated into the sum, **not** returned as an error) | `(… + -1) & 0777` | `err_23_fallcalc_negative_param4` | [x] |
+| 27 | `fallcalc` | `param4 % 10 == -1` (`param4 ∈ {-1,-11,-21,…}`) ⇒ size `0` ⇒ `malloc(0)` ⇒ `alloc_result == 0` (boundary between rows 26 and the happy path) | `(… + 0) & 0777` | `err_23_fallcalc_negative_param4` | [x] |
+| 28 | `fallcalc` | `param1 * 0100 + param2` signed-overflows (`param1` near `INT_MAX`/`INT_MIN`) | wrapped, then `& 0777` | `err_24_fallcalc_overflow_params` | [x] |
+| 29 | `fallcalc` | `param3 > 0200` ⇒ `result \|= 0200` is applied *before* the `& 0777` mask | bit 7 forced set | `err_25_fallcalc_flag_boundary` | [x] |
+| 30 | `fallcalc` | `param3 == 0200` exactly (`128`) — strict `>` ⇒ flag NOT applied (off-by-one boundary) | no bit-7 force | `err_25_fallcalc_flag_boundary` | [x] |
+| 31 | `fallcalc` | `param3 == INT_MIN` ⇒ `INT_MIN % 5 == -3` (well-defined in C), and `INT_MIN > 0200` is false | see differential | `err_26_fallcalc_extremes` | [x] |
+| 32 | `fallcalc` | all four params at `INT_MIN`/`INT_MAX`/`0`/`-1` (cross-product of extremes, 256 combos) | see differential | `err_26_fallcalc_extremes` | [x] |
+| 33 | `fallcalc` | `data_array == NULL` ⇒ `return -1`. Unreachable in practice (`malloc(5*4)` never fails), documented as dead-but-present branch; asserted indirectly — `fallcalc` never returns `-1` because the final `& 0777` cannot yield `-1` | never `-1` | `err_27_fallcalc_never_returns_minus_one` | [x] |
+| 34 | all functions | return value is always in `INT_MIN..=INT_MAX` and `fallcalc`'s is always in `0..=511` (post-mask invariant) | in-range | `err_28_fallcalc_range_invariant` | [x] |

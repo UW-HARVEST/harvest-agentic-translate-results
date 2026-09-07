@@ -219,9 +219,13 @@ unsafe fn make_hash_index(slot_count: usize, old: *mut HashIndex) -> *mut HashIn
     if slot_count <= BUCKET_LENGTH {
         (*table).used_count_shrink_threshold = 0;
     }
-    require(
-        (*table).used_count_threshold + (*table).tombstone_count_threshold < (*table).slot_count,
-    );
+    if (*table)
+        .used_count_threshold
+        .wrapping_add((*table).tombstone_count_threshold)
+        >= (*table).slot_count
+    {
+        abort();
+    }
 
     if !old.is_null() {
         (*table).string = (*old).string;
@@ -660,7 +664,9 @@ pub unsafe extern "C" fn stbds_hmput_key(
     if index as usize + 1 > array_capacity(raw_array) {
         raw_array = stbds_arrgrowf(raw_array, element_size, 1, 0);
     }
-    require(index as usize + 1 <= array_capacity(raw_array));
+    if index as usize + 1 > array_capacity(raw_array) {
+        abort();
+    }
     public_array = array_to_hash(raw_array, element_size);
     (*header(raw_array)).length = index as usize + 1;
 
@@ -732,9 +738,11 @@ pub unsafe extern "C" fn stbds_hmdel_key(
 
     let mut bucket = bucket_at(table, slot as usize);
     let mut bucket_index = slot as usize & BUCKET_MASK;
+    if slot >= (*table).slot_count as isize {
+        abort();
+    }
     let old_index = (*bucket).index[bucket_index];
     let final_index = array_len(raw_array) as isize - 2;
-    require(slot < (*table).slot_count as isize);
     (*table).used_count -= 1;
     (*table).tombstone_count += 1;
     (*header(raw_array)).temp = 1;
@@ -778,10 +786,14 @@ pub unsafe extern "C" fn stbds_hmdel_key(
                 mode,
             )
         };
-        require(slot >= 0);
+        if slot < 0 {
+            abort();
+        }
         bucket = bucket_at(table, slot as usize);
         bucket_index = slot as usize & BUCKET_MASK;
-        require((*bucket).index[bucket_index] == final_index);
+        if (*bucket).index[bucket_index] != final_index {
+            abort();
+        }
         (*bucket).index[bucket_index] = old_index;
     }
 
@@ -838,7 +850,9 @@ pub unsafe extern "C" fn stbds_stralloc(
         (*arena).remaining = block_size;
     }
 
-    require(len <= (*arena).remaining);
+    if len > (*arena).remaining {
+        abort();
+    }
     let result = ptr::addr_of_mut!((*(*arena).storage).storage)
         .cast::<c_char>()
         .add((*arena).remaining - len);

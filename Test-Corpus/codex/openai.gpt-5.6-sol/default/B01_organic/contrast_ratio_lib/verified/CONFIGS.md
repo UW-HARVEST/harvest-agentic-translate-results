@@ -1,143 +1,98 @@
-# Configuration Surface
+# Configuration-surface table
 
-The public API has one entry point and no runtime options, modes, flags,
-pointers, lengths, enums, or compile-time Cargo features. Its fixed input shape
-is two three-byte `cb_rgb_255` values.
+The public surface contains one entry point, no runtime options, and one fixed
+input shape: two by-value RGB structs containing six `unsigned char` channels.
 
-The C source independently branches for all six normalized channels at
-`0.04045`, then branches on `LumA < LumB`. For byte inputs, `L` means
-`0..=10` (the divide-by-12.92 path) and `H` means `11..=255` (the `pow` path).
-Masks list `AR AG AB BR BG BB`. The table is the mechanically generated
-cross-product of all 64 channel masks and every feasible luminance ordering;
-four impossible orderings are pruned by the monotonic endpoint bounds.
+`cbLuminance` branches independently for every channel at normalized value
+`0.04045`. For the public byte API this partitions each channel into:
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
+- `L`: byte values `0..=10`, taking the linear `channel / 12.92` branch;
+- `N`: byte values `11..=255`, taking the nonlinear `pow(...)` branch.
+
+The rows below mechanically enumerate the full `2^6` branch cross-product in
+the order `A.R A.G A.B B.R B.G B.B`. Each row is exercised with fixed-seed
+random inputs from every listed range.
+
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 00a | `contrast_ratio` | `LLLLLL`; `LumA < LumB` | [x] |
-| 00b | `contrast_ratio` | `LLLLLL`; `LumA >= LumB` | [x] |
-| 01a | `contrast_ratio` | `LLLLLH`; `LumA < LumB` | [x] |
-| 01b | `contrast_ratio` | `LLLLLH`; `LumA >= LumB` | [x] |
-| 02a | `contrast_ratio` | `LLLLHL`; `LumA < LumB` | [x] |
-| 02b | `contrast_ratio` | `LLLLHL`; `LumA >= LumB` | [x] |
-| 03a | `contrast_ratio` | `LLLLHH`; `LumA < LumB` | [x] |
-| 03b | `contrast_ratio` | `LLLLHH`; `LumA >= LumB` | [x] |
-| 04a | `contrast_ratio` | `LLLHLL`; `LumA < LumB` | [x] |
-| 04b | `contrast_ratio` | `LLLHLL`; `LumA >= LumB` | [x] |
-| 05a | `contrast_ratio` | `LLLHLH`; `LumA < LumB` | [x] |
-| 05b | `contrast_ratio` | `LLLHLH`; `LumA >= LumB` | [x] |
-| 06a | `contrast_ratio` | `LLLHHL`; `LumA < LumB` | [x] |
-| 07a | `contrast_ratio` | `LLLHHH`; `LumA < LumB` | [x] |
-| 08a | `contrast_ratio` | `LLHLLL`; `LumA < LumB` | [x] |
-| 08b | `contrast_ratio` | `LLHLLL`; `LumA >= LumB` | [x] |
-| 09a | `contrast_ratio` | `LLHLLH`; `LumA < LumB` | [x] |
-| 09b | `contrast_ratio` | `LLHLLH`; `LumA >= LumB` | [x] |
-| 10a | `contrast_ratio` | `LLHLHL`; `LumA < LumB` | [x] |
-| 10b | `contrast_ratio` | `LLHLHL`; `LumA >= LumB` | [x] |
-| 11a | `contrast_ratio` | `LLHLHH`; `LumA < LumB` | [x] |
-| 11b | `contrast_ratio` | `LLHLHH`; `LumA >= LumB` | [x] |
-| 12a | `contrast_ratio` | `LLHHLL`; `LumA < LumB` | [x] |
-| 12b | `contrast_ratio` | `LLHHLL`; `LumA >= LumB` | [x] |
-| 13a | `contrast_ratio` | `LLHHLH`; `LumA < LumB` | [x] |
-| 13b | `contrast_ratio` | `LLHHLH`; `LumA >= LumB` | [x] |
-| 14a | `contrast_ratio` | `LLHHHL`; `LumA < LumB` | [x] |
-| 14b | `contrast_ratio` | `LLHHHL`; `LumA >= LumB` | [x] |
-| 15a | `contrast_ratio` | `LLHHHH`; `LumA < LumB` | [x] |
-| 15b | `contrast_ratio` | `LLHHHH`; `LumA >= LumB` | [x] |
-| 16a | `contrast_ratio` | `LHLLLL`; `LumA < LumB` | [x] |
-| 16b | `contrast_ratio` | `LHLLLL`; `LumA >= LumB` | [x] |
-| 17a | `contrast_ratio` | `LHLLLH`; `LumA < LumB` | [x] |
-| 17b | `contrast_ratio` | `LHLLLH`; `LumA >= LumB` | [x] |
-| 18a | `contrast_ratio` | `LHLLHL`; `LumA < LumB` | [x] |
-| 18b | `contrast_ratio` | `LHLLHL`; `LumA >= LumB` | [x] |
-| 19a | `contrast_ratio` | `LHLLHH`; `LumA < LumB` | [x] |
-| 19b | `contrast_ratio` | `LHLLHH`; `LumA >= LumB` | [x] |
-| 20a | `contrast_ratio` | `LHLHLL`; `LumA < LumB` | [x] |
-| 20b | `contrast_ratio` | `LHLHLL`; `LumA >= LumB` | [x] |
-| 21a | `contrast_ratio` | `LHLHLH`; `LumA < LumB` | [x] |
-| 21b | `contrast_ratio` | `LHLHLH`; `LumA >= LumB` | [x] |
-| 22a | `contrast_ratio` | `LHLHHL`; `LumA < LumB` | [x] |
-| 22b | `contrast_ratio` | `LHLHHL`; `LumA >= LumB` | [x] |
-| 23a | `contrast_ratio` | `LHLHHH`; `LumA < LumB` | [x] |
-| 23b | `contrast_ratio` | `LHLHHH`; `LumA >= LumB` | [x] |
-| 24a | `contrast_ratio` | `LHHLLL`; `LumA < LumB` | [x] |
-| 24b | `contrast_ratio` | `LHHLLL`; `LumA >= LumB` | [x] |
-| 25a | `contrast_ratio` | `LHHLLH`; `LumA < LumB` | [x] |
-| 25b | `contrast_ratio` | `LHHLLH`; `LumA >= LumB` | [x] |
-| 26a | `contrast_ratio` | `LHHLHL`; `LumA < LumB` | [x] |
-| 26b | `contrast_ratio` | `LHHLHL`; `LumA >= LumB` | [x] |
-| 27a | `contrast_ratio` | `LHHLHH`; `LumA < LumB` | [x] |
-| 27b | `contrast_ratio` | `LHHLHH`; `LumA >= LumB` | [x] |
-| 28a | `contrast_ratio` | `LHHHLL`; `LumA < LumB` | [x] |
-| 28b | `contrast_ratio` | `LHHHLL`; `LumA >= LumB` | [x] |
-| 29a | `contrast_ratio` | `LHHHLH`; `LumA < LumB` | [x] |
-| 29b | `contrast_ratio` | `LHHHLH`; `LumA >= LumB` | [x] |
-| 30a | `contrast_ratio` | `LHHHHL`; `LumA < LumB` | [x] |
-| 30b | `contrast_ratio` | `LHHHHL`; `LumA >= LumB` | [x] |
-| 31a | `contrast_ratio` | `LHHHHH`; `LumA < LumB` | [x] |
-| 31b | `contrast_ratio` | `LHHHHH`; `LumA >= LumB` | [x] |
-| 32a | `contrast_ratio` | `HLLLLL`; `LumA < LumB` | [x] |
-| 32b | `contrast_ratio` | `HLLLLL`; `LumA >= LumB` | [x] |
-| 33a | `contrast_ratio` | `HLLLLH`; `LumA < LumB` | [x] |
-| 33b | `contrast_ratio` | `HLLLLH`; `LumA >= LumB` | [x] |
-| 34a | `contrast_ratio` | `HLLLHL`; `LumA < LumB` | [x] |
-| 34b | `contrast_ratio` | `HLLLHL`; `LumA >= LumB` | [x] |
-| 35a | `contrast_ratio` | `HLLLHH`; `LumA < LumB` | [x] |
-| 35b | `contrast_ratio` | `HLLLHH`; `LumA >= LumB` | [x] |
-| 36a | `contrast_ratio` | `HLLHLL`; `LumA < LumB` | [x] |
-| 36b | `contrast_ratio` | `HLLHLL`; `LumA >= LumB` | [x] |
-| 37a | `contrast_ratio` | `HLLHLH`; `LumA < LumB` | [x] |
-| 37b | `contrast_ratio` | `HLLHLH`; `LumA >= LumB` | [x] |
-| 38a | `contrast_ratio` | `HLLHHL`; `LumA < LumB` | [x] |
-| 38b | `contrast_ratio` | `HLLHHL`; `LumA >= LumB` | [x] |
-| 39a | `contrast_ratio` | `HLLHHH`; `LumA < LumB` | [x] |
-| 39b | `contrast_ratio` | `HLLHHH`; `LumA >= LumB` | [x] |
-| 40a | `contrast_ratio` | `HLHLLL`; `LumA < LumB` | [x] |
-| 40b | `contrast_ratio` | `HLHLLL`; `LumA >= LumB` | [x] |
-| 41a | `contrast_ratio` | `HLHLLH`; `LumA < LumB` | [x] |
-| 41b | `contrast_ratio` | `HLHLLH`; `LumA >= LumB` | [x] |
-| 42a | `contrast_ratio` | `HLHLHL`; `LumA < LumB` | [x] |
-| 42b | `contrast_ratio` | `HLHLHL`; `LumA >= LumB` | [x] |
-| 43a | `contrast_ratio` | `HLHLHH`; `LumA < LumB` | [x] |
-| 43b | `contrast_ratio` | `HLHLHH`; `LumA >= LumB` | [x] |
-| 44a | `contrast_ratio` | `HLHHLL`; `LumA < LumB` | [x] |
-| 44b | `contrast_ratio` | `HLHHLL`; `LumA >= LumB` | [x] |
-| 45a | `contrast_ratio` | `HLHHLH`; `LumA < LumB` | [x] |
-| 45b | `contrast_ratio` | `HLHHLH`; `LumA >= LumB` | [x] |
-| 46a | `contrast_ratio` | `HLHHHL`; `LumA < LumB` | [x] |
-| 46b | `contrast_ratio` | `HLHHHL`; `LumA >= LumB` | [x] |
-| 47a | `contrast_ratio` | `HLHHHH`; `LumA < LumB` | [x] |
-| 47b | `contrast_ratio` | `HLHHHH`; `LumA >= LumB` | [x] |
-| 48b | `contrast_ratio` | `HHLLLL`; `LumA >= LumB` | [x] |
-| 49a | `contrast_ratio` | `HHLLLH`; `LumA < LumB` | [x] |
-| 49b | `contrast_ratio` | `HHLLLH`; `LumA >= LumB` | [x] |
-| 50a | `contrast_ratio` | `HHLLHL`; `LumA < LumB` | [x] |
-| 50b | `contrast_ratio` | `HHLLHL`; `LumA >= LumB` | [x] |
-| 51a | `contrast_ratio` | `HHLLHH`; `LumA < LumB` | [x] |
-| 51b | `contrast_ratio` | `HHLLHH`; `LumA >= LumB` | [x] |
-| 52a | `contrast_ratio` | `HHLHLL`; `LumA < LumB` | [x] |
-| 52b | `contrast_ratio` | `HHLHLL`; `LumA >= LumB` | [x] |
-| 53a | `contrast_ratio` | `HHLHLH`; `LumA < LumB` | [x] |
-| 53b | `contrast_ratio` | `HHLHLH`; `LumA >= LumB` | [x] |
-| 54a | `contrast_ratio` | `HHLHHL`; `LumA < LumB` | [x] |
-| 54b | `contrast_ratio` | `HHLHHL`; `LumA >= LumB` | [x] |
-| 55a | `contrast_ratio` | `HHLHHH`; `LumA < LumB` | [x] |
-| 55b | `contrast_ratio` | `HHLHHH`; `LumA >= LumB` | [x] |
-| 56b | `contrast_ratio` | `HHHLLL`; `LumA >= LumB` | [x] |
-| 57a | `contrast_ratio` | `HHHLLH`; `LumA < LumB` | [x] |
-| 57b | `contrast_ratio` | `HHHLLH`; `LumA >= LumB` | [x] |
-| 58a | `contrast_ratio` | `HHHLHL`; `LumA < LumB` | [x] |
-| 58b | `contrast_ratio` | `HHHLHL`; `LumA >= LumB` | [x] |
-| 59a | `contrast_ratio` | `HHHLHH`; `LumA < LumB` | [x] |
-| 59b | `contrast_ratio` | `HHHLHH`; `LumA >= LumB` | [x] |
-| 60a | `contrast_ratio` | `HHHHLL`; `LumA < LumB` | [x] |
-| 60b | `contrast_ratio` | `HHHHLL`; `LumA >= LumB` | [x] |
-| 61a | `contrast_ratio` | `HHHHLH`; `LumA < LumB` | [x] |
-| 61b | `contrast_ratio` | `HHHHLH`; `LumA >= LumB` | [x] |
-| 62a | `contrast_ratio` | `HHHHHL`; `LumA < LumB` | [x] |
-| 62b | `contrast_ratio` | `HHHHHL`; `LumA >= LumB` | [x] |
-| 63a | `contrast_ratio` | `HHHHHH`; `LumA < LumB` | [x] |
-| 63b | `contrast_ratio` | `HHHHHH`; `LumA >= LumB` | [x] |
+| 1 | `contrast_ratio` | `LLLLLL` | [x] |
+| 2 | `contrast_ratio` | `LLLLLN` | [x] |
+| 3 | `contrast_ratio` | `LLLLNL` | [x] |
+| 4 | `contrast_ratio` | `LLLLNN` | [x] |
+| 5 | `contrast_ratio` | `LLLNLL` | [x] |
+| 6 | `contrast_ratio` | `LLLNLN` | [x] |
+| 7 | `contrast_ratio` | `LLLNNL` | [x] |
+| 8 | `contrast_ratio` | `LLLNNN` | [x] |
+| 9 | `contrast_ratio` | `LLNLLL` | [x] |
+| 10 | `contrast_ratio` | `LLNLLN` | [x] |
+| 11 | `contrast_ratio` | `LLNLNL` | [x] |
+| 12 | `contrast_ratio` | `LLNLNN` | [x] |
+| 13 | `contrast_ratio` | `LLNNLL` | [x] |
+| 14 | `contrast_ratio` | `LLNNLN` | [x] |
+| 15 | `contrast_ratio` | `LLNNNL` | [x] |
+| 16 | `contrast_ratio` | `LLNNNN` | [x] |
+| 17 | `contrast_ratio` | `LNLLLL` | [x] |
+| 18 | `contrast_ratio` | `LNLLLN` | [x] |
+| 19 | `contrast_ratio` | `LNLLNL` | [x] |
+| 20 | `contrast_ratio` | `LNLLNN` | [x] |
+| 21 | `contrast_ratio` | `LNLNLL` | [x] |
+| 22 | `contrast_ratio` | `LNLNLN` | [x] |
+| 23 | `contrast_ratio` | `LNLNNL` | [x] |
+| 24 | `contrast_ratio` | `LNLNNN` | [x] |
+| 25 | `contrast_ratio` | `LNNLLL` | [x] |
+| 26 | `contrast_ratio` | `LNNLLN` | [x] |
+| 27 | `contrast_ratio` | `LNNLNL` | [x] |
+| 28 | `contrast_ratio` | `LNNLNN` | [x] |
+| 29 | `contrast_ratio` | `LNNNLL` | [x] |
+| 30 | `contrast_ratio` | `LNNNLN` | [x] |
+| 31 | `contrast_ratio` | `LNNNNL` | [x] |
+| 32 | `contrast_ratio` | `LNNNNN` | [x] |
+| 33 | `contrast_ratio` | `NLLLLL` | [x] |
+| 34 | `contrast_ratio` | `NLLLLN` | [x] |
+| 35 | `contrast_ratio` | `NLLLNL` | [x] |
+| 36 | `contrast_ratio` | `NLLLNN` | [x] |
+| 37 | `contrast_ratio` | `NLLNLL` | [x] |
+| 38 | `contrast_ratio` | `NLLNLN` | [x] |
+| 39 | `contrast_ratio` | `NLLNNL` | [x] |
+| 40 | `contrast_ratio` | `NLLNNN` | [x] |
+| 41 | `contrast_ratio` | `NLNLLL` | [x] |
+| 42 | `contrast_ratio` | `NLNLLN` | [x] |
+| 43 | `contrast_ratio` | `NLNLNL` | [x] |
+| 44 | `contrast_ratio` | `NLNLNN` | [x] |
+| 45 | `contrast_ratio` | `NLNNLL` | [x] |
+| 46 | `contrast_ratio` | `NLNNLN` | [x] |
+| 47 | `contrast_ratio` | `NLNNNL` | [x] |
+| 48 | `contrast_ratio` | `NLNNNN` | [x] |
+| 49 | `contrast_ratio` | `NNLLLL` | [x] |
+| 50 | `contrast_ratio` | `NNLLLN` | [x] |
+| 51 | `contrast_ratio` | `NNLLNL` | [x] |
+| 52 | `contrast_ratio` | `NNLLNN` | [x] |
+| 53 | `contrast_ratio` | `NNLNLL` | [x] |
+| 54 | `contrast_ratio` | `NNLNLN` | [x] |
+| 55 | `contrast_ratio` | `NNLNNL` | [x] |
+| 56 | `contrast_ratio` | `NNLNNN` | [x] |
+| 57 | `contrast_ratio` | `NNNLLL` | [x] |
+| 58 | `contrast_ratio` | `NNNLLN` | [x] |
+| 59 | `contrast_ratio` | `NNNLNL` | [x] |
+| 60 | `contrast_ratio` | `NNNLNN` | [x] |
+| 61 | `contrast_ratio` | `NNNNLL` | [x] |
+| 62 | `contrast_ratio` | `NNNNLN` | [x] |
+| 63 | `contrast_ratio` | `NNNNNL` | [x] |
+| 64 | `contrast_ratio` | `NNNNNN` | [x] |
 
-Boundary values `0`, `10`, `11`, and `255`, equal nonzero colors, and the
-zero-luminance `0/0` and nonzero-over-zero cases are exercised explicitly in
-addition to the randomized cases represented above.
+The ratio calculation has one ordering branch and IEEE-754 singular outcomes.
+These rows supplement the channel cross-product with exact branch boundaries
+and result shapes:
+
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 65 | `contrast_ratio` | `LumA < LumB` (swap branch taken) | [x] |
+| 66 | `contrast_ratio` | `LumA >= LumB` (swap branch not taken, including equal colors) | [x] |
+| 67 | `contrast_ratio` | every channel `0` (`0.0 / 0.0`, NaN result) | [x] |
+| 68 | `contrast_ratio` | exactly one black color (positive luminance divided by zero, +infinity) | [x] |
+| 69 | `contrast_ratio` | threshold boundary byte `10` in every channel | [x] |
+| 70 | `contrast_ratio` | first nonlinear byte `11` in every channel | [x] |
+| 71 | `contrast_ratio` | byte extrema `0` and `255` across both operands | [x] |
+
+There are no Cargo features and no C preprocessor feature branches, so the
+default/no-default build is the complete feature-combination surface.

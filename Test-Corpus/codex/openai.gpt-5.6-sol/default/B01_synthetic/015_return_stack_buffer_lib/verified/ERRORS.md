@@ -1,21 +1,18 @@
 # Error Surface
 
-Mechanical review covered `return` statements, error macros, `assert`, null
-checks, range checks, enums, and min/max constants in `../c_src/include` and
-`../c_src/src`. The only explicit rejection is the null check in `printLine`.
-The API has no lengths, enums, error-return macros, assertions, or range
-constants.
+Mechanically derived by searching `c_src/include` and `c_src/src` for error
+returns, assertions, null/range checks, and min/max constants. The C source has
+no error-return macros, error enums, assertions, explicit range checks, or
+min/max constants. Its sole input rejection is the null check below.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Verified |
-|---|----------|---------------------------------------------|-------------------|----------|
-| 1 | `printLine` | `line == NULL` | Return `void` without writing output | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `printLine` | `line == NULL` | Return `void` without writing any bytes to stdout. [x] |
 
 Generic FFI boundaries:
 
-- `printLine`: null is row 1. A non-null pointer that does not identify a
-  NUL-terminated readable C string is outside the C function's defined input
-  domain.
-- `bad` and `good`: no parameters.
-- `driver`: accepts the full C `int` range; zero and nonzero values are valid.
-- No API accepts a length or enum, so zero/oversized lengths and invalid enum
-  discriminants do not apply.
+- `driver(int)`: every representable C `int` is accepted; there is no invalid
+  enum value or out-of-range integer branch. Zero selects `bad`; every nonzero
+  value selects `good`.
+- `bad()` and `good()`: no inputs.
+- No API takes a length, so zero/oversized-length cases do not exist.

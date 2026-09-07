@@ -1,111 +1,55 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public ABI surface parity
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
-
-## Build commands
+Derived mechanically from `nm -D` on both shared objects.
 
 ```
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-0ZGyJF.so   (name derives from parent dir name
-#    via cmake_path(GET parent FILENAME project_name) in CMakeLists.txt)
-
-cd translation && cargo build --release
-# -> translation/target/release/libbitwriter_add_lib.so
+C   .so : c_src/build/libharvest-work-gmUtdR.so
+Rust.so : translation/target/release/libbitwriter_add_lib.so
 ```
 
-## C `.so` exported symbols (`nm -D --defined-only`)
+## C `.so` defined dynamic symbols (`nm -D --defined-only`)
+
+| # | symbol | type | present in Rust `.so`? |
+|---|--------|------|------------------------|
+| 1 | `bitwriter_add` | `T` (global text) | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn bitwriter_add` |
+
+Total C exported symbols: **1**. Total matched in Rust: **1**.
+
+## Symbol diff
 
 ```
-00000000000010f9 T bitwriter_add
+$ comm -23 <(nm -D --defined-only C.so   | awk '{print $NF}' | sort) \
+           <(nm -D --defined-only RUST.so| awk '{print $NF}' | sort)
+(empty)
 ```
 
-Total: **1** exported text symbol.
+**0 symbols missing from the Rust `.so`.**
 
-## Rust `.so` exported symbols (`nm -D --defined-only`)
+Note: the header `include/lib.h` contains no namespace-renaming preprocessor
+macros and no macro-generated function definitions, so the set of linker names
+is exactly the set of source-level function names. `c_src/src/lib.c` is the only
+translation unit in `c_src/CMakeLists.txt`, and it defines exactly one function.
+No C module was skipped by the translation.
 
-```
-00000000000116a0 T bitwriter_add
-```
+## Undefined symbols
 
-Total: **1** exported text symbol.
+The C `.so` has only weak ABI/CRT stubs undefined
+(`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
 
-## Parity table
+The Rust `.so` additionally references libc and libgcc unwinder symbols
+(`malloc`, `memcpy`, `_Unwind_*`, `pthread_key_create`, ...) pulled in by the
+Rust standard library / panic machinery. **0 non-libc, non-unwinder undefined
+symbols.**
 
-| # | symbol          | in C `.so` | in Rust `.so` | status |
-|---|-----------------|------------|---------------|--------|
-| 1 | `bitwriter_add` | yes (`T`)  | yes (`T`)     | OK     |
-
-**Symbols missing from Rust `.so`: 0.**
-**Undefined non-libc symbols in Rust `.so`: 0.**
-
-There are no macro-generated symbols: `include/lib.h` declares no
-function-like macros and no namespace-renaming macros, so the linker name
-equals the source-level name. `src/lib.c` contains exactly one function
-definition, and it is the one declared in the header — no whole C module was
-skipped by the translation, so no additional C source needed translating.
-
-Verified with:
-
-```
-diff <(nm -D --defined-only ../c_src/build/libharvest-work-0ZGyJF.so \
-        | awk '{print $3}' | sort) \
-     <(nm -D --defined-only target/release/libbitwriter_add_lib.so \
-        | awk '{print $3}' | sort)
-```
-
-## ABI surface
-
-`struct tflac_bitwriter` (from `include/lib.h`), layout confirmed by compiling
-a `offsetof`/`sizeof` probe against the real header with the same compiler:
-
-```
-size=32 align=8 val=0 bits=8 pos=12 len=16 tot=20 buffer=24
-```
-
-No tail or interior padding. The Rust `#[repr(C)] struct tflac_bitwriter`
-matches this layout exactly, so the full 32-byte object can be compared
-byte-for-byte after each call.
-
-## Cargo features
+## Feature combinations
 
 `translation/Cargo.toml` declares **no `[features]` table**, so the only
-feature configuration that exists is the default (empty) one. `--features`
-combinations beyond the default are therefore vacuous for this crate; Phase D
-records the enumeration that proves this.
-
-## Phase D result
-
-`tests/phase_d_symbols.rs` enforces all of the above as tests:
-
-* `d1_every_c_symbol_is_exported_by_rust` — the set difference
-  (C exports − Rust exports) must be empty. **PASSES.**
-* `d2_rust_so_has_no_undefined_non_libc_symbols` — every undefined symbol in
-  the Rust `.so` (with `@GLIBC_x.y` version suffixes stripped) must be defined
-  by a library that `ldd` actually resolves, and `ldd` must report no
-  "not found". The allowed set is enumerated mechanically from `ldd` + `nm`,
-  not hand-written. **PASSES** (50 undefined, all provided by glibc/ld.so
-  except the three weak `__gmon_start__` / `_ITM_*TMCloneTable` symbols that
-  are optional by design).
-* `d3_struct_layout_matches_c_abi` — re-asserts size/align/offsets. **PASSES.**
-
-Shell equivalent, run by `verify.sh`:
+buildable configuration is the default (empty) feature set. Verified with:
 
 ```
-$ diff <(nm -D --defined-only c_src/build/libharvest-work-0ZGyJF.so \
-          | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/libbitwriter_add_lib.so \
-          | awk '{print $3}' | sort)
-# (no output)  ->  symbol diff EMPTY
+$ grep -n '^\[features\]' Cargo.toml   # no match
 ```
 
-## Profile note
-
-The harness loads the **release** cdylib by default, since that is the shipped
-artifact (`cargo build --release`; `[profile.release] panic = "abort"`).
-`verify.sh` additionally re-runs every suite against the **debug** cdylib via
-`RUST_SO=`. The two agree on every input except `ERRORS.md` row E13
-(`bw == NULL`), where rustc's debug-profile `ub_checks` turn the C's unchecked
-store through a null pointer into a Rust panic — `SIGABRT` instead of the C's
-`SIGSEGV`. That is a property of the debug profile's inserted checks, not of the
-translation; the release artifact faults identically to C.
+Consequently `cargo test`, `cargo test --no-default-features`, and
+`cargo test --all-features` are the same configuration; all three are run by
+`check_features.sh`.

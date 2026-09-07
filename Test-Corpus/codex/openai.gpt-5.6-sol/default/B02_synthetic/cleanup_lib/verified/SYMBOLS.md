@@ -1,22 +1,30 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Generated from:
+Derived from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-KQ5axu.so
-nm -D --defined-only target/release/libcleanup_lib.so
+nm -D --defined-only ../c_src/build/libharvest-work-NKkSCG.so
 ```
 
-Only globally defined C-library symbols are API symbols. Undefined GLIBC
-imports and weak toolchain hooks are runtime dependencies, not public API.
+The C shared library exports exactly these library-defined public symbols:
 
-| C symbol | C type | Rust type | Rust status |
-|----------|--------|-----------|-------------|
-| `cleanup` | `T` | `T` | present |
-| `cleanup_resources` | `T` | `T` | present |
-| `print_result` | `T` | `T` | present |
+| C symbol | C type | Rust export | implementation |
+|---|---|---|---|
+| `cleanup` | `T` | present | translated in `src/lib.rs` |
+| `cleanup_resources` | `T` | present | translated in `src/lib.rs` |
+| `print_result` | `T` | present | translated in `src/lib.rs` |
 
-Missing C symbols in Rust: **0**
+Missing from Rust: **none**.
 
-- [x] All C-defined dynamic API symbols are defined by the Rust shared object.
-- [x] The Rust shared object has no unresolved dynamic symbols.
+Completion gate: [x] exact defined-symbol parity; [x] no unresolved non-libc
+symbols (`ldd -r` clean).
+
+The complete C `nm -D` output also contains undefined/weak runtime dependencies:
+`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
+`__gmon_start__`, `free`, `malloc`, `printf`, `puts`, `snprintf`, `strlen`, and
+`strncmp`. These are libc/toolchain imports rather than library exports. The
+Rust shared library resolves all C imports it uses through libc and has no
+undefined non-libc application symbols.
+
+There are no macro-generated public functions in the C source. `STRINGIZE` and
+`TO_STRING` expand only the private string literal used by `cleanup`.

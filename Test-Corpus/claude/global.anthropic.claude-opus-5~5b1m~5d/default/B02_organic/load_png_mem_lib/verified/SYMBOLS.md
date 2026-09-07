@@ -1,60 +1,112 @@
 # SYMBOLS.md — exported-symbol parity
 
-Reference C library: `c_src/build/libharvest-work-0arZgJ.so`
-built with `cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .`
-(no `CMAKE_BUILD_TYPE` ⇒ `-O0`, **`NDEBUG` is NOT defined ⇒ `assert()` is live**).
+Reference C library built exactly as instructed:
 
-Rust library: `translation/target/release/libload_png_mem_lib.so` (`cdylib`).
+```sh
+cd c_src && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libharvest-work-YXyZDY.so   (no CMAKE_BUILD_TYPE => -O0, asserts ON)
+```
 
-## `nm -D --defined-only`
+Rust library: `translation/target/release/libload_png_mem_lib.so`
+(`cargo build --release`).
 
-| # | symbol | C type | C size | in Rust `.so` | Rust type |
-|---|--------|--------|--------|---------------|-----------|
-| 1 | `load_png_mem`         | `T` FUNC   | –   | yes | `T` FUNC |
-| 2 | `cp_inflate`           | `T` FUNC   | –   | yes | `T` FUNC |
-| 3 | `cp_error_reason`      | `B` OBJECT | 8   | yes | `B` OBJECT |
-| 4 | `cp_fixed_table`       | `D` OBJECT | 320 | yes | `D` OBJECT |
-| 5 | `cp_permutation_order` | `D` OBJECT | 19  | yes | `D` OBJECT |
-| 6 | `cp_len_extra_bits`    | `D` OBJECT | 31  | yes | `D` OBJECT |
-| 7 | `cp_len_base`          | `D` OBJECT | 124 | yes | `D` OBJECT |
-| 8 | `cp_dist_extra_bits`   | `D` OBJECT | 32  | yes | `D` OBJECT |
-| 9 | `cp_dist_base`         | `D` OBJECT | 128 | yes | `D` OBJECT |
+## `nm -D --defined-only` comparison
 
-Missing from Rust: **none**. Extra in Rust: none.
-No renaming macros exist in `c_src/include/lib.h`, so linker names == source names.
+| # | symbol | C type/size | Rust type/size | present in Rust |
+|---|--------|-------------|----------------|-----------------|
+| 1 | `cp_inflate`           | `T` (FUNC)          | `T` (FUNC)          | yes |
+| 2 | `load_png_mem`         | `T` (FUNC)          | `T` (FUNC)          | yes |
+| 3 | `cp_fixed_table`       | `D` OBJECT 0x140=320| `D` OBJECT 320      | yes |
+| 4 | `cp_permutation_order` | `D` OBJECT 0x13=19  | `D` OBJECT 19       | yes |
+| 5 | `cp_len_extra_bits`    | `D` OBJECT 0x1f=31  | `D` OBJECT 31       | yes |
+| 6 | `cp_len_base`          | `D` OBJECT 0x7c=124 | `D` OBJECT 124      | yes |
+| 7 | `cp_dist_extra_bits`   | `D` OBJECT 0x20=32  | `D` OBJECT 32       | yes |
+| 8 | `cp_dist_base`         | `D` OBJECT 0x80=128 | `D` OBJECT 128      | yes |
+| 9 | `cp_error_reason`      | `B` OBJECT 8        | `B` OBJECT 8        | yes |
 
-`static` C functions (`cp_make_pixel*`, `cp_would_overflow`, `cp_ptr`,
+**Missing from Rust: none.** No module of `c_src` was left untranslated —
+`c_src` consists of a single translation unit (`src/lib.c`, 758 lines) and every
+one of its functions has a counterpart in `translation/src/lib.rs`
+(`cp_make_pixel_a`, `cp_make_pixel`, `cp_would_overflow`, `cp_ptr`,
 `cp_peak_bits`, `cp_consume_bits`, `cp_read_bits`, `cp_rev16`, `cp_build`,
-`cp_stored`, `cp_fixed`, `cp_decode`, `cp_dynamic`, `cp_block`, `cp_paeth`,
-`cp_make32`, `cp_chunk`, `cp_find`, `cp_unfilter`, `cp_convert`,
-`cp_get_alpha_for_indexed_image`, `cp_depalette`,
-`cp_get_chunk_byte_length`, `cp_out_size`) are not exported by either library
-and are all translated as private Rust `fn`s.
+`cp_stored`, `cp_fixed`, `cp_decode`, `cp_dynamic`, `cp_block`, `cp_inflate`,
+`cp_paeth`, `cp_make32`, `cp_chunk`, `cp_find`, `cp_unfilter`, `cp_convert`,
+`cp_get_alpha_for_indexed_image`, `cp_depalette`, `cp_get_chunk_byte_length`,
+`cp_out_size`, `load_png_mem`).  The `static` C functions are not exported by
+either library, so they are correctly not in the table above.
 
-Undefined (imported) symbols in the C `.so`: `__assert_fail`, `calloc`, `free`,
-`malloc`, `memcmp`, `memcpy`, `memset` — all libc. The Rust `.so` imports the
-same libc set (`abort` instead of `__assert_fail`, plus the Rust runtime's own
-`_Unwind_*`/`__rust_*`-free set because `panic = "abort"`); it has 0 missing or
-undefined non-libc symbols.
+There are no namespace/renaming macros in `c_src/include/lib.h`, so no
+macro-generated symbol names exist.
 
-## Reference `.data` layout (matters for the C's out-of-range table reads)
+## Undefined (imported) symbols
 
-`.data` is 0x2a0 = 672 bytes at 0x6060 and contains exactly the six tables, in
-**source order**, each 32-byte aligned:
+The Rust `.so` imports only libc symbols, all of which the C `.so` also imports:
 
 ```
-rel 0   cp_fixed_table        320 B
-rel 320 cp_permutation_order   19 B  + 13 pad
-rel 352 cp_len_extra_bits      31 B  +  1 pad
-rel 384 cp_len_base           124 B  +  4 pad
-rel 512 cp_dist_extra_bits     32 B
-rel 544 cp_dist_base          128 B   (ends at rel 672 == .bss start)
+malloc, calloc, free, memcpy, memset, memcmp   (+ Rust runtime: none required
+                                                 because panic = "abort")
 ```
 
-`.bss` (0x6300, 16 B) = `completed.0` (8 B, rel 672..680) then `cp_error_reason`
-(8 B, rel 680..688). The RW `LOAD` segment ends at 0x6310 and the mapping is
-page-rounded to 0x7000, so rel 688..4000 reads as zero and rel ≥ 4000 faults.
+Verified with `nm -D --undefined-only`; there are 0 non-libc undefined symbols.
 
-`src/lib.rs` models this blob in `blob_byte()`; Rust/LLVM order statics
-differently so the model is what makes the C's out-of-range
-`cp_len_*`/`cp_dist_*` indexing agree.
+## `.data` layout of the six exported tables — IMPORTANT
+
+`cp_block` indexes `cp_len_extra_bits` / `cp_len_base` with `symbol - 257` and
+`cp_dist_extra_bits` / `cp_dist_base` with a decoded distance symbol.  A corrupt
+Huffman tree makes `cp_decode` return values up to 4095, so the C reads *past*
+the end of the table and into whatever the linker put next.  In the reference
+build the six tables are the whole of `.data` (0x6060, size 0x2a0 = 672 bytes):
+
+| blob offset | object | bytes | pad |
+|---|---|---|---|
+| 0   | `cp_fixed_table`       | 320 | 0  |
+| 320 | `cp_permutation_order` | 19  | 13 |
+| 352 | `cp_len_extra_bits`    | 31  | 1  |
+| 384 | `cp_len_base`          | 124 | 4  |
+| 512 | `cp_dist_extra_bits`   | 32  | 0  |
+| 544 | `cp_dist_base`         | 128 | 0  |
+| 672 | (`.bss`: 8 pad bytes, then `cp_error_reason`) | | |
+
+This is **source order**, which is what gcc emits at `-O0` (the reference build).
+At `-O1`/`-O2`/`-O3`/`-Os` gcc emits the *reverse* order — measured:
+
+```
+-O0 : fixed_table, permutation_order, len_extra_bits, len_base, dist_extra_bits, dist_base
+-O1+: dist_base, dist_extra_bits, len_base, len_extra_bits, permutation_order, fixed_table
+```
+
+`translation/src/lib.rs` models the `-O0` (reference) order in `blob_byte()`.
+This was **fixed during verification** — the model previously encoded the `-O1+`
+order, which made every out-of-range table read disagree with the reference
+`.so` (e.g. `cp_len_extra_bits[32]`: reference reads `cp_len_base[0]`'s LSB = 3,
+the old model returned `cp_permutation_order[0]` = 16).
+
+## Result
+
+`verify.sh` step 3 (`comm -23` of the two sorted `nm -D --defined-only` lists):
+
+```
+0 symbols missing from the Rust .so (9 exported by C)
+```
+
+Automated equivalents live in `tests/phase_d_symbols.rs`:
+
+* `every_c_symbol_is_exported_by_rust` — set equality plus matching symbol
+  *types*, and matching *sizes* for every OBJECT (function code sizes differ, as
+  expected: `cp_inflate` is 667 bytes of `-O0` C and 3379 bytes of optimised
+  Rust).
+* `expected_symbol_set` — the pinned 9-symbol list above.
+* `rust_so_has_no_unresolved_symbols` — `dlopen(RTLD_NOW)` on the Rust `.so`
+  (which forces the loader to resolve every import) and a check that every libc
+  symbol the C imports is also imported by Rust.  The single deliberate
+  exception is `__assert_fail`: the reference C build has `assert()` enabled, the
+  translation is `NDEBUG`-equivalent (see `ERRORS.md`, rows A1..A10).
+  `memcmp` is satisfied by `bcmp` (the same function, LLVM's preferred name).
+* `c_data_layout_is_source_order` — asserts the six tables sit at blob offsets
+  0 / 320 / 352 / 384 / 512 / 544 in the reference `.so`, i.e. the premise the
+  `blob_byte` model in `src/lib.rs` is built on.  If a future C build reorders
+  `.data`, this test fails and names the model that has to change.
+* `out_of_range_table_read_agrees` — a differential check that an out-of-range
+  table read (literal/length symbols 286 and 287) produces identical results;
+  `phase_c_errors::row48_out_of_range_table_reads` is the exhaustive version.

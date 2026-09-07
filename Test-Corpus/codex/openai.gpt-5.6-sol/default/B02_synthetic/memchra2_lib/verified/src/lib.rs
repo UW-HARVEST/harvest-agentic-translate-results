@@ -34,9 +34,7 @@ fn process_strings(strings: &[&[u8]], target: &[u8]) -> c_int {
 }
 
 fn safe_sum_array(values: &[c_int]) -> c_int {
-    values
-        .iter()
-        .fold(0, |sum, &value| sum.wrapping_add(value))
+    values.iter().fold(0, |sum, &value| sum.wrapping_add(value))
 }
 
 fn interpret_as_int(bytes: &[u8]) -> c_int {
@@ -52,7 +50,10 @@ fn count_occurrences(text: &[u8], value: u8) -> c_int {
         return 0;
     }
 
-    let length = text.iter().position(|&byte| byte == 0).unwrap_or(text.len());
+    let length = text
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(text.len());
     memchra(&text[..length], value)
 }
 

@@ -1,55 +1,46 @@
-# ERRORS.md — error / rejection surface table (Phase A, gate for Phase C)
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/driver.c` and `c_src/include/driver.h`.
-The complete grep for rejection constructs over the whole C source is:
+Derived mechanically from `c_src/src/driver.c` + `c_src/include/driver.h` by
+grepping for every `return`, `assert`, `NULL`, comparison operator, error macro,
+`errno`, `exit`, and every min/max constant:
 
 ```
-$ grep -n "return\|assert\|NULL\|exit\|abort\|errno\|if\s*(" c_src/src/driver.c c_src/include/driver.h
-c_src/src/driver.c:32:    if(line != NULL)
-c_src/src/driver.c:61:    data = NULL;
-c_src/src/driver.c:75:    if (useGood)
+src/driver.c:32:    if(line != NULL)
+src/driver.c:50:        for (i = 0; i < 10; i++)
+src/driver.c:61:        data = NULL;
+src/driver.c:66:        for (i = 0; i < 10; i++)
 ```
 
-That is the entire set. This library has:
+Findings that shape the table:
 
-- **no** `RETURN_ERROR`-style macro, **no** error enum, **no** error codes;
-- **no** `return <value>` at all — every one of the five functions is `void`,
-  so there is no return value that could carry a status;
-- **no** `assert`, no `exit`, no `abort`, no `errno` use;
-- **no** explicit range check and no min/max constant (the only numeric
-  literals in the file are the array/loop bound `10`, the `0` initialiser, and
-  the copyright year `2025`);
-- exactly **one** guard that rejects an input: the null check at line 32.
+* Every public function returns `void`. There is **no** error code, no sentinel
+  return, no `errno` write, no `assert`, no error enum, no `RETURN_ERROR` macro,
+  and no `exit`/`abort` path anywhere in the library.
+* Therefore the library's entire *rejection* surface is the single guarded
+  branch at `driver.c:32` — `printLine` silently does nothing when handed a
+  null pointer. "Same error/rejection" for this API means **same observable
+  effect**, i.e. identical bytes on `stdout` (and no crash).
+* The remaining rows below are the generic FFI boundaries the task requires:
+  null pointers, zero/oversized lengths, and values one past a valid range.
+  `driver`'s `int useGood` is the only enum-like parameter crossing the FFI
+  boundary; C accepts any `int` there, so out-of-range "enum" values
+  (`INT_MIN`, `-1`, `2`, `INT_MAX`, …) are real inputs and each must select the
+  same branch in Rust as in C (`!= 0` → `good`, `== 0` → `bad`).
 
-Line 61 (`data = NULL;`) is a local initialisation inside `good()`, not a
-rejection. Line 75 (`if (useGood)`) is a mode selector, not a rejection — it is
-covered as a configuration axis in `CONFIGS.md`.
-
-Consequently the table below is short **because the C is short**, not because
-rows were pruned. Rows 2–7 are the generic FFI-boundary boundaries the task
-requires regardless of the table; each states the behaviour the C actually
-exhibits, and each is asserted identical for C and Rust.
-
-## Table
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✓ |
-|---|----------|----------------------------------------------|-------------------|------|---|
-| 1 | `printLine` | `line == NULL` — the guard at `driver.c:32` is false | silent no-op: **no** `printf`/`puts` call, **zero** bytes written to `stdout`, no crash, returns normally | `err_01_print_line_null_is_silent_noop` | [x] |
-| 2 | `printLine` | `line` points at a 0-length string (`""`) — passes the null guard with an empty payload | writes exactly one byte, `"\n"` | `err_02_print_line_empty_string` | [x] |
-| 3 | `printLine` | `line` payload contains `printf` conversion specifiers (`"%s %d %n %%"`) — the value is a *data* argument to a `"%s\n"` format, so it must **not** be interpreted as a format string | the specifier text is echoed verbatim followed by `"\n"`; no format-string evaluation | `err_03_print_line_format_specifiers_not_interpreted` | [x] |
-| 4 | `printLine` | `line` payload is oversized (64 KiB, i.e. far past any stdio buffer) and contains non-ASCII / high bytes `0x80..0xFF` | all payload bytes echoed verbatim, then `"\n"`; no truncation at the 4 KiB/8 KiB `stdout` buffer boundary | `err_04_print_line_oversized_and_high_bytes` | [x] |
-| 5 | `printIntLine` | out-of-usual-range `int` values one step past the extremes: `INT_MIN`, `INT_MIN+1`, `INT_MAX`, `INT_MAX-1`, `-1`, `0` | `%d` rendering of the two's-complement value (`INT_MIN` → `-2147483648`), then `"\n"` — no clamping, no overflow trap | `err_05_print_int_line_extremes` | [x] |
-| 6 | `driver` | out-of-range "enum-like" values for the `useGood` flag: the C parameter is `int`, so every one of the 2^32 values is a real input, including ones no sane caller passes (`2`, `-1`, `INT_MIN`, `INT_MAX`, `0x100`, `0xFFFF0000`) | `if (useGood)` is C truthiness, **not** an equality test against `1`: every non-zero value selects `good()`, only `0` selects `bad()`. No value is rejected, nothing is validated, no error is reported | `err_06_driver_out_of_range_flag_values`, `err_09_driver_low_byte_zero_is_still_truthy` | [x] |
-| 7 | `driver` | the `int` argument is passed with a dirty upper half of the 64-bit register (`0xFFFFFFFF_00000000`-style values whose low 32 bits are `0`) — i.e. a value that is truthy as 64-bit but zero as `int` | only the low 32 bits are significant; such a value is `0` as an `int` and therefore selects `bad()` | `err_09_driver_low_byte_zero_is_still_truthy` | [x] |
-
-`bad()` and `good()` take no arguments and contain no guard, so they contribute
-no rejection rows; their (single, defect-preserving) behaviour is a
-`CONFIGS.md` row instead.
-
-## Status
-
-All 7 rows have a passing error-path differential test that constructs the
-condition, calls **both** the C `.so` and the Rust `.so` through their exported
-symbols, and asserts the *same* observable result — identical captured `stdout`
-bytes, and for row 1 the specific sentinel "zero bytes written" rather than
-merely "both did something".
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
+|---|----------|---------------------------------------------|-------------------|------|-----|
+| 1 | `printLine` | `line == NULL` (the `if (line != NULL)` guard at `driver.c:32` fails) | no output at all; returns normally, no crash | `err_row01_print_line_null` | [x] |
+| 2 | `printLine` | `line` points at an immediately-terminating string `""` (zero length — the degenerate/"zero length" boundary; guard passes) | prints just `"\n"` | `err_row02_print_line_empty` | [x] |
+| 3 | `printLine` | `line` points at a huge (64 KiB) string — "oversized length" boundary | prints all 65536 bytes then `"\n"` | `err_row03_print_line_oversized` | [x] |
+| 4 | `printLine` | `line` contains `printf` format metacharacters (`%s %n %d %%`) — data must be treated as data, never as a format string | prints the literal bytes then `"\n"` | `err_row04_print_line_format_metachars` | [x] |
+| 5 | `printLine` | `line` contains high/non-UTF-8 bytes (`0x80..0xFF`) — invalid Unicode is not an error for a C `char*` | prints the raw bytes verbatim then `"\n"` | `err_row05_print_line_non_utf8` | [x] |
+| 6 | `printIntLine` | `intNumber == INT_MIN` (`-2147483648`) — one step past the negative end of the range | prints `-2147483648\n` | `err_row06_print_int_line_int_min` | [x] |
+| 7 | `printIntLine` | `intNumber == INT_MAX` (`2147483647`) — the positive extreme | prints `2147483647\n` | `err_row07_print_int_line_int_max` | [x] |
+| 8 | `driver` | `useGood == 0` (the false branch of `if (useGood)`) → calls the *defective* `bad()` whose `alloca(10)` under-allocates | prints `0\n`; must not crash or corrupt | `err_row08_driver_zero_selects_bad` | [x] |
+| 9 | `driver` | out-of-range enum-ish value `useGood == -1` (no "valid variant"; C truncates nothing, any non-zero is true) | prints `0\n` via `good()` | `err_row09_driver_out_of_range_enum` | [x] |
+| 10 | `driver` | out-of-range enum-ish value `useGood == 2` (one past the documented `{0,1}` range) | prints `0\n` via `good()` | `err_row10_driver_two` | [x] |
+| 11 | `driver` | `useGood == INT_MIN` — non-zero, so the true branch; also checks no sign/`!= 0` mistranslation | prints `0\n` via `good()` | `err_row11_driver_int_min` | [x] |
+| 12 | `driver` | `useGood == INT_MAX` | prints `0\n` via `good()` | `err_row12_driver_int_max` | [x] |
+| 13 | `driver` | `useGood == 0x100000000` truncated to `int` by the ABI, i.e. the low 32 bits are `0` → must take the **`bad`** branch even though the wider value is non-zero | prints `0\n` via `bad()` | `err_row13_driver_truncating_value` | [x] |
+| 14 | `bad` | the intrinsic defect: `alloca(10)` gives 10 **bytes** but the loop writes 10 `int`s (40 bytes). Calling `bad()` repeatedly must stay survivable and observably identical | prints `0\n` each call, no crash | `err_row14_bad_repeated_overrun` | [x] |
+| 15 | `good` | no invalid input is expressible (`void` parameters); called repeatedly as the control for row 14 | prints `0\n` each call | `err_row15_good_repeated` | [x] |

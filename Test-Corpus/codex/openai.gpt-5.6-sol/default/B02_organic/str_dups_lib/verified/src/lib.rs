@@ -774,6 +774,7 @@ pub unsafe extern "C" fn stbds_shmode_func(element_size: usize, mode: c_int) -> 
 }
 
 #[unsafe(no_mangle)]
+#[allow(unused_comparisons)]
 pub unsafe extern "C" fn stbds_hmdel_key(
     array: *mut c_void,
     element_size: usize,
@@ -807,6 +808,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
         (*table).used_count -= 1;
         (*table).tombstone_count += 1;
         (*header(raw_array)).temp = 1;
+        assert!((*table).used_count >= 0);
         (*bucket).hash[bucket_slot] = HASH_DELETED;
         (*bucket).index[bucket_slot] = INDEX_DELETED;
     }
@@ -859,7 +861,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
         bucket = unsafe { (*table).storage.add(slot as usize >> BUCKET_SHIFT) };
         bucket_slot = slot as usize & BUCKET_MASK;
         unsafe {
-            assert_eq!((*bucket).index[bucket_slot], final_index);
+            assert!((*bucket).index[bucket_slot] == final_index);
             (*bucket).index[bucket_slot] = old_index;
         }
     }
@@ -1000,9 +1002,9 @@ pub extern "C" fn str_dups(number: c_int) {
         let map_index = (*header(raw_array)).temp as usize;
         *map.add(map_index) = source;
         (*map.add(map_index)).key = (*hash_table(raw_array)).temp_key;
-        assert_eq!(*(*map).key, b'a' as c_char);
-        assert_ne!((*map).key, source.key);
-        assert_eq!((*map).value, source.value);
+        assert!(*(*map).key == b'a' as c_char);
+        assert!((*map).key != source.key);
+        assert!((*map).value == source.value);
 
         let length = (*header(raw_array)).length as isize - 1;
         let mut output_index = 0isize;

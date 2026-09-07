@@ -8,10 +8,18 @@ name = "driver"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
+[profile.release]
+panic = "abort"
+
 [dev-dependencies]
 libloading = "0.8"
 
-[profile.release]
-panic = "abort"
+# `harness = false` gives the differential test its own `main`, which it needs in
+# order to re-`exec` itself as a single-purpose worker process. The C library's
+# `static house_t the_house` is never reset, so every configuration must run in a
+# pristine process to be comparable.
+[[test]]
+name = "differential"
+harness = false
 
 [workspace]

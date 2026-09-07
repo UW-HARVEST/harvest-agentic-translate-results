@@ -1,98 +1,112 @@
-# CONFIGS.md — Phase A configuration-surface table
+# CONFIGS.md — configuration-surface table (valid inputs)
 
-Derived mechanically from the branches in `c_src/src/lib.c` and the public
-surface in `c_src/include/lib.h`. This is the mirror of `ERRORS.md`: only
-**valid** inputs, enumerated over the axes the C actually distinguishes.
+Axes derived mechanically from every `if` / `while` / arithmetic branch in
+`c_src/src/lib.c` and every field of `struct tflac` in `c_src/include/lib.h`.
+There are no `#ifdef`s, no runtime option setters, and no `switch` statements —
+the entire configuration surface is (a) the argument of `tflac_size_memory` and
+(b) the ten input fields of `struct tflac`.
 
-## Public entry points (both are tested directly — no wrapper-only coverage)
+## Axes the C actually branches on
 
-| entry point | declared in header? | exported? |
-|-------------|---------------------|-----------|
-| `flac_validate(tflac *t)` | yes | yes |
-| `tflac_size_memory(tflac_u32 blocksize)` | **no** (undeclared but non-`static`) | yes — the lowest-level entry point, tested directly through `nm`-visible symbol |
+| axis | states the C distinguishes |
+|------|----------------------------|
+| `blocksize` (`flac_validate`) | `<16` reject · `16` · interior · `65535` · `>65535` reject; **and** its 2-adic valuation (how many times it is divisible by 2) which drives the `partition_order` loop |
+| `blocksize` (`tflac_size_memory`) | no rejection; `blocksize*4` non-wrapping vs wrapping (`>= 2^30`); the `& 0xFFFFFFF0` mask; the `5*` wrapping multiply |
+| `samplerate` | `0` reject · `1` · interior · `655350` · `>655350` reject |
+| `channels` | `0` reject · `==2` (side-stereo eligible) · `1`,`3..8` (not eligible) · `>8` reject |
+| `bitdepth` | `0` reject · `1..16` (rice default 14) · `17..31` (rice default 30) · `==32` (rice 30 **and** forces independent) · `>32` reject |
+| `channel_mode` | `==0` untouched · `1..3` valid non-independent · `4..255` out-of-enum non-independent (treated identically to 1..3) |
+| `max_rice_value` | `==0` → defaulted from `bitdepth` · `1..30` → kept · `31..255` reject |
+| `max_partition_order` | `0..15` accepted · `16..255` reject |
+| `min_partition_order` | `<= max` accepted · `> max` reject |
+| `partition_order` (output) | loop runs 0 times / some / until it hits `max_partition_order` |
+| `cur_blocksize` (output) | always overwritten with `blocksize` on success only |
 
-There is no convenience/one-shot wrapper in this library; `flac_validate` is
-driven by mutating the caller-owned `struct tflac` in place, so every "option"
-is a struct field. The struct is the configuration surface.
+## Rows — one per meaningful combination
 
-## Axes the C branches on
+Every row is driven with **many randomised inputs** (fixed seed, deterministic
+xorshift PRNG in `tests/differential.rs`), and asserts the return value **and**
+all 28 struct bytes match byte-for-byte between the C `.so` and the Rust `.so`.
 
-**`flac_validate` — option fields (all caller-set state):**
+| #  | entry point(s) | configuration (options set + input shape) | [x] |
+|----|----------------|--------------------------------------------|-----|
+| 1  | `tflac_size_memory` | `blocksize` in `0..=65535` (no wrap): exhaustive | [x] |
+| 2  | `tflac_size_memory` | `blocksize` on masking/alignment boundaries: every `b` where `15+4b` is `≡0 mod 16` and its neighbours, plus `0,1,2,3,4,15,16,17` | [x] |
+| 3  | `tflac_size_memory` | `blocksize >= 2^30` so `blocksize*4` wraps, incl. `0x3FFFFFFF..0xFFFFFFFF` and randomised full-range `u32` | [x] |
+| 4  | `flac_validate` | fully randomised full-range fields (all 28 bytes random, mostly rejected) — smoke fuzz over the whole surface | [x] |
+| 5  | `flac_validate` | valid + `channel_mode == 0` (independent), `channels` random `1..=8`, `bitdepth` random `1..=32` | [x] |
+| 6  | `flac_validate` | valid + `channel_mode ∈ 1..=3`, `channels == 2`, `bitdepth ∈ 1..=31` → mode **preserved** | [x] |
+| 7  | `flac_validate` | valid + `channel_mode ∈ 1..=3`, `channels == 2`, `bitdepth == 32` → mode **forced to 0** | [x] |
+| 8  | `flac_validate` | valid + `channel_mode ∈ 1..=3`, `channels ∈ {1,3,4,5,6,7,8}` → mode **forced to 0** | [x] |
+| 9  | `flac_validate` | valid + `channel_mode ∈ 4..=255` (out-of-enum), `channels == 2`, `bitdepth ∈ 1..=31` → mode **preserved verbatim** | [x] |
+| 10 | `flac_validate` | valid + `channel_mode ∈ 4..=255` (out-of-enum), `channels != 2` or `bitdepth == 32` → mode **forced to 0** | [x] |
+| 11 | `flac_validate` | valid + `max_rice_value == 0`, `bitdepth ∈ 1..=16` → defaults to 14 | [x] |
+| 12 | `flac_validate` | valid + `max_rice_value == 0`, `bitdepth ∈ 17..=32` → defaults to 30 | [x] |
+| 13 | `flac_validate` | valid + `max_rice_value ∈ 1..=30` → kept unchanged (incl. boundaries 1 and 30) | [x] |
+| 14 | `flac_validate` | valid + `min_partition_order == max_partition_order` (`0..=15`) → loop never advances | [x] |
+| 15 | `flac_validate` | valid + `min=0`, `max=15`, `blocksize` odd → loop exits immediately, `partition_order == 0` | [x] |
+| 16 | `flac_validate` | valid + `min=0`, `max=15`, `blocksize = 32768` (2-adic valuation 15) → `partition_order` climbs to `max` (shift reaches `1<<16`) | [x] |
+| 17 | `flac_validate` | valid + `min=0`, `max=15`, `blocksize = odd * 2^k` for every `k ∈ 0..=15` → loop stops at `min(k, max)` | [x] |
+| 18 | `flac_validate` | valid + `min`/`max` random with `min <= max`, `blocksize` random `16..=65535` → loop clamped by `max` | [x] |
+| 19 | `flac_validate` | boundary-value sweep: `blocksize ∈ {16,17,65534,65535}` × `samplerate ∈ {1,2,655349,655350}` × `channels ∈ 1..=8` × `bitdepth ∈ {1,16,17,31,32}` | [x] |
+| 20 | `flac_validate` | output fields `partition_order` / `cur_blocksize` **pre-seeded with random garbage** on both success and reject paths → confirms identical overwrite / non-overwrite | [x] |
+| 21 | `flac_validate` | called twice in a row on the same struct (idempotence / second-pass over already-normalised state, e.g. `max_rice_value` now non-zero) | [x] |
+| 22 | `flac_validate` + `tflac_size_memory` | composed pipeline: validate, then feed the resulting `cur_blocksize` into `tflac_size_memory` | [x] |
 
-| axis | states the C distinguishes | source |
-|------|----------------------------|--------|
-| `channel_mode` | `0` (INDEPENDENT) vs **any nonzero**; `1`/`2`/`3` valid, `4` = `TFLAC_CHANNEL_MODE_COUNT`, `5..=255` out-of-range | line 32 |
-| `channel_mode` reset predicate | `channels == 2 && bitdepth != 32` (mode kept) vs otherwise (mode forced to 0) | line 33 |
-| `max_rice_value` | `0` → auto-fill; `1..=30` → kept verbatim | line 37, 43 |
-| auto-fill split | `bitdepth <= 16` → 14; `bitdepth > 16` → 30 | line 38 |
-| `min_partition_order` / `max_partition_order` | `min == max` (loop cannot advance) vs `min < max` (loop may advance); `max == 0`; `max == 15` (shift amount reaches 16) | lines 46–53 |
+## Not applicable
 
-**`flac_validate` — input-shape axes:**
+* No binary / driver executable is built — `c_src/CMakeLists.txt` declares only
+  `add_library(... SHARED src/lib.c)`, so there is no stdout to compare.
+* `translation/Cargo.toml` declares **no `[features]` table**, so the only
+  feature combination is the default (empty) one. Verified by
+  `cargo check --no-default-features` and `cargo test --no-default-features`
+  both succeeding with identical results.
 
-| axis | shapes the C distinguishes | source |
-|------|----------------------------|--------|
-| `blocksize` | boundary `16`, boundary `65535`; power-of-two vs not; **2-adic valuation** `v2(blocksize)` decides how far the partition-order loop runs | lines 16–18, 52 |
-| `samplerate` | boundary `1`, boundary `655350`; otherwise opaque (no other branch) | lines 20–22 |
-| `channels` | `1`, `2` (only value that preserves a stereo `channel_mode`), `3..=8` | lines 24–26, 33 |
-| `bitdepth` | `1`, `16` / `17` (the `<= 16` auto-fill split), `32` (only value that kills a stereo `channel_mode`), `31` | lines 28–30, 33, 38 |
-| padding bytes 21..23 | never written by either side — compared byte-for-byte to prove neither writes them | struct layout |
+## How to reproduce
 
-**`tflac_size_memory` — input-shape axes:**
+```
+cd translation && ./verify.sh
+```
 
-| axis | shapes | source |
-|------|--------|--------|
-| `blocksize mod 4` | decides whether `15 + 4*blocksize` has its low nibble masked off by `& 0xFFFFFFF0` | line 12 |
-| magnitude | no wrap; `blocksize * 4U` wraps `u32` (`blocksize > 0x3FFFFFFF`); `5U * masked` wraps `u32` (`masked > 0x33333333`); both wrap | line 12 |
+`verify.sh` builds the C `.so`, builds the Rust cdylib, enumerates the feature
+combinations from `Cargo.toml`, runs the test suite for each, and diffs `nm -D`.
 
-## Configuration rows
+### Why the explicit build step matters
 
-Every row is exercised with **many randomized inputs** (fixed-seed xorshift64\*
-PRNG, no external dep) over the free axes, plus the named boundary values, and
-compared **byte-for-byte over all 28 struct bytes + the `int` return value**
-between the C `.so` and the Rust `.so`.
+`cargo test` does **not** rebuild a `crate-type = ["cdylib"]`-only lib target.
+An earlier run of this suite therefore loaded a *stale* `.so` and every
+differential test passed vacuously — verified by mutating `src/lib.rs` and
+observing zero failures. Two fixes are in place:
 
-### `tflac_size_memory`
+1. `verify.sh` runs `cargo build --release` before `cargo test`.
+2. `tests/harness/mod.rs::assert_so_fresh` hard-fails the tests if
+   `libflac_validate_lib.so` is older than any file under `src/` or
+   `Cargo.toml`, so the failure mode can never be silent again.
 
-| # | entry point | configuration (options set + input shape) | [x] |
-|---|-------------|-------------------------------------------|-----|
-| S1 | `tflac_size_memory` | `blocksize == 0` | [x] |
-| S2 | `tflac_size_memory` | `blocksize ∈ 1..=15` (exhaustive; sub-mask-granularity) | [x] |
-| S3 | `tflac_size_memory` | `blocksize ≡ 0 (mod 4)`, no wrap — low nibble of `15+4b` is `0xF`, fully masked | [x] |
-| S4 | `tflac_size_memory` | `blocksize ≡ 1, 2, 3 (mod 4)`, no wrap (all three residues) | [x] |
-| S5 | `tflac_size_memory` | `blocksize ∈ 16..=65535` (the FLAC-legal range), randomized | [x] |
-| S6 | `tflac_size_memory` | `5U * masked` wraps but `4U*b` does not: `masked > 0x33333333` ⟹ `b ≳ 0x0CCCCCCC`, randomized in `0x0CCCCCCD..=0x3FFFFFFF` | [x] |
-| S7 | `tflac_size_memory` | `blocksize * 4U` wraps `u32`: `b > 0x3FFFFFFF`, randomized (both multiplies wrap) | [x] |
-| S8 | `tflac_size_memory` | exhaustive boundary sweep: `0x3FFFFFFE..=0x40000002`, `0x0CCCCCCB..=0x0CCCCCCF`, `0xFFFFFFFD..=0xFFFFFFFF`, `0x7FFFFFFF`, `0x80000000` | [x] |
-| S9 | `tflac_size_memory` | unconstrained random `u32` (full domain) | [x] |
+### Harness non-vacuity (mutation testing)
 
-### `flac_validate` — valid (accepted, returns 0) configurations
+Nineteen single-token mutations were injected into `translation/src/lib.rs`, the
+suite was re-run through `verify.sh`, and the source was restored bit-identically
+afterwards. **All 19 were caught** (each produced 3–19 failing tests):
 
-| # | entry point | configuration (options set + input shape) | [x] |
-|---|-------------|-------------------------------------------|-----|
-| V1 | `flac_validate` | `channel_mode=0`, `max_rice_value=0`, `min=max=0`; blocksize/samplerate/channels/bitdepth randomized in range | [x] |
-| V2 | `flac_validate` | `channel_mode=0`, `max_rice_value=0`, `bitdepth ≤ 16` (auto-fill ⇒ 14), orders randomized | [x] |
-| V3 | `flac_validate` | `channel_mode=0`, `max_rice_value=0`, `bitdepth ∈ 17..=32` (auto-fill ⇒ 30), orders randomized | [x] |
-| V4 | `flac_validate` | `max_rice_value ∈ 1..=30` (explicit, no auto-fill), everything else randomized | [x] |
-| V5 | `flac_validate` | `max_rice_value == 30` exactly (upper boundary, accepted) | [x] |
-| V6 | `flac_validate` | `max_rice_value == 1` exactly (lower nonzero boundary) | [x] |
-| V7 | `flac_validate` | `channel_mode ∈ 1..=3` **with** `channels == 2 && bitdepth != 32` ⇒ mode **kept** | [x] |
-| V8 | `flac_validate` | `channel_mode ∈ 1..=3` **with** `channels == 2 && bitdepth == 32` ⇒ mode **reset to 0** | [x] |
-| V9 | `flac_validate` | `channel_mode ∈ 1..=3` **with** `channels != 2` (1, 3..=8) ⇒ mode **reset to 0** | [x] |
-| V10 | `flac_validate` | `channel_mode == 4` (`TFLAC_CHANNEL_MODE_COUNT`, no real variant) × the kept/reset predicate | [x] |
-| V11 | `flac_validate` | `channel_mode ∈ 5..=255` (out-of-range enum across FFI) × the kept/reset predicate | [x] |
-| V12 | `flac_validate` | `min_partition_order == max_partition_order` (loop cannot advance), orders randomized `0..=15` | [x] |
-| V13 | `flac_validate` | `min_partition_order < max_partition_order`, `blocksize` **odd** (loop cannot advance past `min`) | [x] |
-| V14 | `flac_validate` | `min=0`, `max=15`, `blocksize = 32768` (`v2 = 15`, maximal loop run; shift reaches `1 << 16`) | [x] |
-| V15 | `flac_validate` | `min=0`, `max=15`, `blocksize` a random power of two in `16..=32768` (loop stops at `v2`) | [x] |
-| V16 | `flac_validate` | `min=0`, `max=15`, `blocksize = 2^k * odd` with randomized `k ∈ 0..=15` (loop stops at `min(v2, max)`) | [x] |
-| V17 | `flac_validate` | `min` randomized `0..=15`, `max` randomized `min..=15`, `blocksize` randomized — full order cross-product | [x] |
-| V18 | `flac_validate` | `max_partition_order == 15` (upper boundary, accepted) with `min` randomized | [x] |
-| V19 | `flac_validate` | `blocksize == 16` (lower boundary) × all order combos | [x] |
-| V20 | `flac_validate` | `blocksize == 65535` (upper boundary, odd ⇒ loop never advances) × all order combos | [x] |
-| V21 | `flac_validate` | `samplerate == 1` and `samplerate == 655350` (both boundaries) | [x] |
-| V22 | `flac_validate` | `channels` swept exhaustively `1..=8` × `bitdepth` swept exhaustively `1..=32` (256 combos) with orders/mode randomized | [x] |
-| V23 | `flac_validate` | `bitdepth == 16` / `17` (auto-fill split boundary) × `max_rice_value == 0` | [x] |
-| V24 | `flac_validate` | pre-dirtied output fields: `partition_order` and `cur_blocksize` pre-set to garbage, proving both sides overwrite them identically | [x] |
-| V25 | `flac_validate` | **repeated invocation** — call `flac_validate` twice on the same struct (idempotence / second-pass state, since the first call rewrites `channel_mode` and `max_rice_value`) | [x] |
-| V26 | `flac_validate` | fully unconstrained random 28-byte struct (all fields random `u32`/`u8`, mostly rejected) — the catch-all cross-product row | [x] |
-| V27 | `tflac_size_memory` + `flac_validate` | composed pipeline: validate a randomized struct, then feed the resulting `cur_blocksize` into `tflac_size_memory`, comparing the C-pair result to the Rust-pair result | [x] |
+| mutation | detected |
+|----------|----------|
+| `tflac_size_memory`: constant `15` → `16` | yes (4) |
+| `tflac_size_memory`: mask `0xFFFFFFF0` → `0xFFFFFFF8` | yes (4) |
+| `tflac_size_memory`: multiplier `5` → `6` | yes (4) |
+| `blocksize < 16` → `<= 16` | yes (14) |
+| `samplerate > 655350` → `>=` | yes (5) |
+| `channels > 8` → `> 7` | yes (14) |
+| `bitdepth > 32` → `> 31` | yes (14) |
+| `channel_mode` guard `||` → `&&` | yes (14) |
+| `channel_mode` forced to `LEFT_SIDE` instead of `INDEPENDENT` | yes (14) |
+| rice-default split `bitdepth <= 16` → `< 16` | yes (16) |
+| rice default `14` → `13` | yes (16) |
+| rice default `30` → `29` | yes (15) |
+| `max_rice_value > 30` → `>= 30` | yes (14) |
+| `max_partition_order > 15` → `> 14` | yes (19) |
+| `min > max` → `min >= max` | yes (17) |
+| partition-order loop `<` → `<=` | yes (15) |
+| shift amount `partition_order + 1` → `partition_order` | yes (17) |
+| `cur_blocksize` written on error paths too | yes (3) |
+| `cur_blocksize` reordered before the loop | yes |

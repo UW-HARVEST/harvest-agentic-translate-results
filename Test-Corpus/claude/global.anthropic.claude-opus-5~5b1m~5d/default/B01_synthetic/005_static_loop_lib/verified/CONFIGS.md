@@ -1,77 +1,80 @@
-# CONFIGS.md — Phase A configuration-surface table
-
-Mechanically derived from `c_src/src/staticloop.c` and
-`c_src/include/staticloop.h`.
+# CONFIGS.md — Configuration-surface table (Phase A, gates Phase B)
 
 ## Axes the C code actually branches on
 
-Enumerated by grepping the C for every `if` / `switch` / `#ifdef` / loop bound
-and every runtime option the public header exposes:
+Derived from `c_src/include/staticloop.h` (the full public API) and every
+branch/loop in `c_src/src/staticloop.c`:
 
-| axis | source of the axis | distinct values the C distinguishes |
-|---|---|---|
-| **A. entry point** | `staticloop.h` declares exactly two | `static_sum` (low-level), `driver` (composed wrapper that calls `static_sum` 10×) |
-| **B. runtime options / flags** | grep for `#ifdef`, `#if`, `switch`, option setters in the header: **none** | there are no flags, no modes, no build-time configuration. The `for (int i = 0; i < 10; i++)` bound is a hard-coded literal `10`, not tunable. |
-| **C. accumulator state on entry** | the function-scope `static int sum` | `sum == 0` (fresh library), `sum > 0`, `sum < 0`, `sum == INT_MAX`, `sum == INT_MIN`, `sum` near a wrap boundary |
-| **D. `update` / `stride` value shape** | the only parameter; feeds `sum += update` and `i * stride` | `0`, `+1`, `-1`, small positive, small negative, `INT_MAX`, `INT_MIN`, `INT_MAX/9` (accumulator overflows but products do not), values that make `i * stride` overflow, arbitrary random `i32` |
-| **E. call-sequence length** | statefulness of `sum` | zero calls (fresh), one call, many calls (accumulation), long sweeps |
-| **F. entry-point interleaving** | both entry points write the same `sum` | `static_sum`-only, `driver`-only, `static_sum` then `driver`, `driver` then `static_sum`, finely alternated |
-| **G. observable channel** | `driver` uses `printf("%d\n", ...)`; `static_sum` uses its return value | return value (`int`), stdout bytes, both simultaneously |
-| **H. library instance freshness** | `static` storage duration is per loaded object | freshly `dlopen`ed copy (`sum == 0`) vs. an instance already mutated by earlier calls |
+**Public entry points (complete set, 2 of 2):**
 
-Axis **B is empty**: this library exposes no options, so the configuration
-cross-product is A × C × D × E × F × G × H. Pruned to the combinations the code
-actually treats differently, that gives the rows below.
+| entry point | signature | level |
+|-------------|-----------|-------|
+| `static_sum` | `int static_sum(int update)` | **lowest level** — mutates the function-scope `static int sum` and returns it |
+| `driver`     | `void driver(int stride)`     | convenience wrapper — loops `i = 0..9`, calls `static_sum(i * stride)`, `printf("%d\n", ...)` each iteration |
 
-## Configuration table
+**Runtime options / modes / flags:** none. There is no init function, no
+options struct, no global config, no `#ifdef`-selected behaviour, no
+environment variable read. The only "configuration" the library carries is its
+**hidden persistent state**: the function-scope `static int sum`, initialised
+to `0` once per loaded library image.
 
-Every row is exercised with many randomized inputs (fixed seed
-`0x5EED_1234_ABCD_0001`, SplitMix64) where the row admits a value range, not a
-single hand-picked constant.
+**Therefore the real configuration axes are:**
+
+- **A. Entry point:** `static_sum` alone / `driver` alone / the two interleaved.
+- **B. Hidden-state configuration (the accumulator's value on entry):** fresh
+  (`sum == 0`) / small positive / small negative / `INT_MAX` / `INT_MIN` /
+  arbitrary random. This is the axis a naive test misses entirely, because
+  every result of both functions is a function of it.
+- **C. Call multiplicity ("empty / one / many"):** 0 calls, 1 call, 2 calls,
+  many (hundreds/thousands) calls — because state accumulates, the *sequence*
+  is the input, not the scalar.
+- **D. Input value shape for `update` / `stride`:** `0` / `+1` / `-1` / small
+  positive / small negative / powers of two / `INT_MAX` / `INT_MIN` /
+  `INT_MAX-1` / `INT_MIN+1` / random full-domain `i32`.
+- **E. Overflow regime** (the only value-dependent behaviour in the code):
+  no overflow / `i * stride` (the multiply in `driver`) overflows /
+  `sum += update` (the add) overflows / both overflow.
+- **F. Observation channel:** the `int` return value of `static_sum` /
+  the `printf`-produced **stdout bytes** of `driver` (10 lines,
+  `"%d\n"` each). Both must be compared byte-for-byte.
+
+`driver`'s loop bound is the constant `10`, so iteration count is not an axis;
+however the loop makes `driver` a *composed pipeline* over `static_sum`, which
+is why rows 12–20 drive `driver` from non-fresh state rather than only fresh.
+
+Each test acquires a **freshly `dlopen`ed private copy** of each `.so` (copied
+to a unique temp path so glibc gives it a distinct image with a re-initialised
+`sum`), so row-level state configurations are exact and independent.
+
+## Rows (cross-product, pruned to what the C distinguishes)
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|-------------------------------------------|-----|
-| 1 | `static_sum` | fresh instance, single call, `update == 0` → must return `0` | [x] |
-| 2 | `static_sum` | fresh instance, single call, `update == 1` | [x] |
-| 3 | `static_sum` | fresh instance, single call, `update == -1` | [x] |
-| 4 | `static_sum` | fresh instance, single call, randomized small positive `update` (1..=1000) | [x] |
-| 5 | `static_sum` | fresh instance, single call, randomized small negative `update` (-1000..=-1) | [x] |
-| 6 | `static_sum` | fresh instance, single call, randomized full-range `i32` `update` | [x] |
-| 7 | `static_sum` | fresh instance, single call, `update == INT_MAX` | [x] |
-| 8 | `static_sum` | fresh instance, single call, `update == INT_MIN` | [x] |
-| 9 | `static_sum` | fresh instance, many calls (n = 2), accumulation of two randomized values | [x] |
-| 10 | `static_sum` | fresh instance, many calls (n = 10), all-positive randomized sequence, `sum` stays in range | [x] |
-| 11 | `static_sum` | fresh instance, many calls (n = 10), all-negative randomized sequence | [x] |
-| 12 | `static_sum` | fresh instance, many calls (n = 256), mixed-sign randomized sequence crossing `0` repeatedly | [x] |
-| 13 | `static_sum` | fresh instance, many calls (n = 1000), randomized full-range `i32` sequence → `sum` wraps many times | [x] |
-| 14 | `static_sum` | pre-driven state: `sum` walked to exactly `INT_MAX`, then randomized `update` | [x] |
-| 15 | `static_sum` | pre-driven state: `sum` walked to exactly `INT_MIN`, then randomized `update` | [x] |
-| 16 | `static_sum` | pre-driven state: `sum` positive, then large negative `update` (crosses `0` downward) | [x] |
-| 17 | `static_sum` | pre-driven state: `sum` negative, then large positive `update` (crosses `0` upward) | [x] |
-| 18 | `static_sum` | argument-width shape: value passed in a 64-bit register with high bits set (FFI truncation) | [x] |
-| 19 | `driver` | fresh instance, `stride == 0` → 10 lines, all `0`; return value channel unused | [x] |
-| 20 | `driver` | fresh instance, `stride == 1` → canonical triangular sums `0 1 3 6 … 45` | [x] |
-| 21 | `driver` | fresh instance, `stride == -1` → `0 -1 -3 … -45` | [x] |
-| 22 | `driver` | fresh instance, randomized small positive `stride` (1..=1000) | [x] |
-| 23 | `driver` | fresh instance, randomized small negative `stride` (-1000..=-1) | [x] |
-| 24 | `driver` | fresh instance, randomized full-range `i32` `stride` → both `i * stride` and `sum` wrap | [x] |
-| 25 | `driver` | fresh instance, `stride == INT_MAX` (product overflows for every `i >= 2`) | [x] |
-| 26 | `driver` | fresh instance, `stride == INT_MIN` (product overflows for every `i >= 2`) | [x] |
-| 27 | `driver` | fresh instance, `stride == INT_MAX / 9` and `INT_MIN / 9`, `/10` (products fit, accumulator overflows) | [x] |
-| 28 | `driver` | fresh instance, `stride` a power of two near the wrap boundary (`1 << 28`, `1 << 30`) | [x] |
-| 29 | `driver` | pre-driven instance (`sum != 0` from prior `static_sum` calls), randomized `stride` — stdout must reflect the carried-in `sum` | [x] |
-| 30 | `driver` | repeated `driver` calls on the SAME instance (n = 8), randomized strides — accumulator carries across whole loops | [x] |
-| 31 | `driver` + `static_sum` | interleaved: `static_sum` then `driver` then `static_sum`, randomized values — return values AND stdout both compared | [x] |
-| 32 | `driver` + `static_sum` | finely alternated long sequence (n = 200) of randomly chosen entry points and randomized arguments; every return value and every stdout byte compared | [x] |
-| 33 | `driver` | stdout byte-exactness: no trailing-newline, no width/padding, no locale-grouping differences across 10 lines for a randomized `stride` | [x] |
-| 34 | both | full-`i32` randomized sweep (n = 20000) of `static_sum` on one shared instance pair, comparing every single return value | [x] |
+| 1 | `static_sum` | fresh state, **0 calls** — assert the fresh accumulator by observing that the first call returns exactly its own argument | [x] |
+| 2 | `static_sum` | fresh state, **1 call**, `update = 0` (degenerate) | [x] |
+| 3 | `static_sum` | fresh state, **1 call**, randomized small `update` ∈ [-1000, 1000], 512 seeded samples (fresh instance each) | [x] |
+| 4 | `static_sum` | fresh state, **1 call**, randomized full-domain `update: i32`, 512 seeded samples (fresh instance each) | [x] |
+| 5 | `static_sum` | fresh state, **2 calls**, both randomized full-domain — first accumulation step | [x] |
+| 6 | `static_sum` | fresh state, **many calls** (1024), randomized small values, no overflow regime | [x] |
+| 7 | `static_sum` | fresh state, **many calls** (4096), randomized full-domain values — add-overflow regime hit repeatedly | [x] |
+| 8 | `static_sum` | fresh state, **many calls**, all-zero sequence (identity/no-op sequence) | [x] |
+| 9 | `static_sum` | fresh state, **many calls**, monotone `+1` sequence then monotone `-1` sequence (walks state up and back to 0) | [x] |
+| 10 | `static_sum` | fresh state, sequence of the boundary set `{0, ±1, ±2^k, ±(2^k-1), INT_MAX, INT_MIN}` in seeded random order | [x] |
+| 11 | `static_sum` | **pre-seeded extreme state** (`INT_MAX`, then `INT_MIN`) followed by randomized full-domain updates | [x] |
+| 12 | `driver` | fresh state, `stride = 0` (no-op stride, no overflow) — 10 stdout lines | [x] |
+| 13 | `driver` | fresh state, `stride = 1` and `stride = -1` (minimal ± strides) | [x] |
+| 14 | `driver` | fresh state, randomized small `stride` ∈ [-1000, 1000], 256 seeded samples, fresh instance each — no-overflow regime | [x] |
+| 15 | `driver` | fresh state, randomized full-domain `stride: i32`, 256 seeded samples, fresh instance each — multiply-overflow **and** add-overflow regimes | [x] |
+| 16 | `driver` | fresh state, `stride` from the boundary set `{INT_MAX, INT_MIN, INT_MAX-1, INT_MIN+1, ±2^k for k=0..31}` — multiply-overflow regime | [x] |
+| 17 | `driver` | fresh state, `stride = 0x2000_0000` — multiply does **not** overflow for small `i` but the accumulated `sum` **does** mid-loop (add-overflow-only regime) | [x] |
+| 18 | `driver` | **`driver` called repeatedly** (8 consecutive calls) on one instance with a randomized stride — 80 stdout lines, state carried across calls | [x] |
+| 19 | `driver` | **non-fresh state**: N randomized `static_sum` calls first, then `driver(stride)` — composed pipeline over dirty state | [x] |
+| 20 | `static_sum` + `driver` **interleaved** | randomized script of 256 operations, each randomly either `static_sum(v)` (return value compared) or `driver(v)` (stdout bytes compared), on one shared instance — full pipeline, both channels, shared hidden state | [x] |
+| 21 | binary executable | **N/A** — `c_src/CMakeLists.txt` builds only `add_library(StaticLoop SHARED ...)`; there is no `add_executable`, so no driver binary stdout to compare. Asserted in `configs::row21_no_binary_target`. | [x] |
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the crate has
-exactly one configuration: the default (empty) feature set. `check_features.sh`
-in the crate root enumerates features from `Cargo.toml` and re-runs the whole
-suite for every combination; with zero declared features that is the single
-default build. Both the `dev` and `release` profiles are exercised, since
-`release` sets `panic = "abort"` and disables the debug overflow checks that
-could otherwise mask a wrapping-arithmetic mistranslation.
+`translation/Cargo.toml` has no `[features]` table, so the default build is the
+only configuration; `check_all_features.sh` enumerates and re-runs the suite
+for every combination that exists (namely: default, and `--no-default-features`
+which is identical).

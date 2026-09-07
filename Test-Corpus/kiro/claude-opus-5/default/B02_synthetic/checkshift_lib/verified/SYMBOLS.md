@@ -1,83 +1,103 @@
-# SYMBOLS.md — dynamic-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
+Mechanically derived from:
 
-```sh
-C_SO=c_src/build/libharvest-work-PwHu6w.so
-R_SO=translation/target/release/libcheckshift_lib.so
-nm -D --defined-only "$C_SO" | awk '{print $3}' | sort > /tmp/c_syms.txt
-nm -D --defined-only "$R_SO" | awk '{print $3}' | sort > /tmp/r_syms.txt
-comm -23 /tmp/c_syms.txt /tmp/r_syms.txt   # missing from Rust  -> MUST be empty
+```
+nm -D --defined-only c_src/build/libharvest-work-lrkokh.so
+nm -D --defined-only translation/target/release/libcheckshift_lib.so
 ```
 
-The whole C library is one translation unit (`c_src/src/lib.c`, built by
-`c_src/CMakeLists.txt` as a single `SHARED` target). There are no macro-generated
-exported symbols: `STRINGIFY` / `LOG_VALUE` expand only inside function bodies.
+C source translated: `c_src/src/lib.c` (191 lines, the only `.c` file in
+`CMakeLists.txt`). Public header: `c_src/include/lib.h` (declares `checkshift`
+only; the other nine symbols are non-`static` definitions in `lib.c` and are
+therefore exported too).
 
-## Defined dynamic symbols
+## Exported symbol parity
 
-C `.so`: **10**  ·  Rust `.so`: **10**  ·  missing from Rust: **0**  ·  extra in Rust: **0**
+| # | C symbol (`nm -D`, type `T`) | in Rust `.so`? | Rust definition |
+|---|------------------------------|----------------|-----------------|
+| 1 | `add_with_static`    | yes | `#[unsafe(no_mangle)] pub extern "C" fn add_with_static` |
+| 2 | `apply_operation`    | yes | `#[unsafe(no_mangle)] pub unsafe extern "C" fn apply_operation` |
+| 3 | `checkshift`         | yes | `#[unsafe(no_mangle)] pub extern "C" fn checkshift` |
+| 4 | `compute_checksum`   | yes | `#[unsafe(no_mangle)] pub unsafe extern "C" fn compute_checksum` |
+| 5 | `execute_operation`  | yes | `#[unsafe(no_mangle)] pub unsafe extern "C" fn execute_operation` |
+| 6 | `get_operation`      | yes | `#[unsafe(no_mangle)] pub extern "C" fn get_operation` |
+| 7 | `init_state`         | yes | `#[unsafe(no_mangle)] pub unsafe extern "C" fn init_state` |
+| 8 | `multiply_with_static` | yes | `#[unsafe(no_mangle)] pub extern "C" fn multiply_with_static` |
+| 9 | `shift_with_static`  | yes | `#[unsafe(no_mangle)] pub extern "C" fn shift_with_static` |
+| 10 | `xor_operation`     | yes | `#[unsafe(no_mangle)] pub extern "C" fn xor_operation` |
 
-| symbol | C `.so` | Rust `.so` | status |
-|--------|---------|------------|--------|
-| `add_with_static` | T | T | ok |
-| `apply_operation` | T | T | ok |
-| `checkshift` | T | T | ok |
-| `compute_checksum` | T | T | ok |
-| `execute_operation` | T | T | ok |
-| `get_operation` | T | T | ok |
-| `init_state` | T | T | ok |
-| `multiply_with_static` | T | T | ok |
-| `shift_with_static` | T | T | ok |
-| `xor_operation` | T | T | ok |
+`comm -23 c_syms r_syms` → **empty**. 0 missing symbols.
 
-`checkshift` is the only symbol declared in the public header
-(`c_src/include/lib.h`); the other nine have external linkage in `lib.c` (they are
-not `static`) and are therefore part of the C `.so`'s ABI surface. All nine are
-tested directly through the `.so` exports, not only via `checkshift`.
+## Non-exported C entities (no symbol expected)
 
-The three file-scope `static int`s (`static_multiplier`, `static_addend`,
-`static_shift_amount`) have internal linkage and are correctly **not** exported by
-either library.
+| C entity | kind | note |
+|----------|------|------|
+| `static int static_multiplier = 3`     | `static` file-scope | internal (`d`/local), mirrored by `STATIC_MULTIPLIER` |
+| `static int static_addend = 100`       | `static` file-scope | internal, mirrored by `STATIC_ADDEND` |
+| `static int static_shift_amount = 2`   | `static` file-scope | internal, mirrored by `STATIC_SHIFT_AMOUNT` |
+| `static operation_func ops[4]`         | function-`static` inside `get_operation` | lazily filled table; behaviourally equivalent to Rust's local array |
+| `ComputeState`                         | typedef struct | `#[repr(C)] pub struct ComputeState` (12 bytes, align 4, no padding) |
+| `operation_func`                       | function-pointer typedef | `pub type OperationFunc = Option<unsafe extern "C" fn(c_int, c_int) -> c_int>` |
+| `STRINGIFY`, `LOG_VALUE`               | macros | expanded inline: `"Variable a = %d\n"`, `"Variable b = %d\n"` |
+| `OP_ADD/OP_MULTIPLY/OP_XOR/OP_SHIFT`   | macros | unused by the C code; kept as `const` (dead) |
+| `MAGIC_NUMBER`, `MASK_LOWER`           | macros | `const MAGIC_NUMBER`, `const MASK_LOWER` |
 
-## Undefined symbols
+No macro-generated exported symbols exist in this library.
 
-Both libraries import only libc / runtime symbols. The C `.so` imports
-`malloc`, `free`, `memcpy`, `printf`, `puts` (gcc rewrites the no-vararg
-`printf("…\n")` calls to `puts`, which emits identical bytes). The Rust `.so`
-imports the same five plus the Rust `std`/unwind runtime set (`_Unwind_*`,
-`__tls_get_addr`, `mmap64`, `dl_iterate_phdr`, …).
+## Undefined symbols in the Rust `.so`
 
-**0 missing/undefined non-libc symbols in the Rust `.so`.**
-
-Verified by `tests/symbols.rs::symbol_parity_c_vs_rust`, which re-runs the `nm -D`
-diff at test time so the gate cannot silently rot, and by
-`every_symbol_is_dlsym_able_from_both`, which requires each name to be actually
-`dlsym`-able (present in `nm` is not the same as callable).
-
-### Libc call parity
-
-Exported-symbol parity is necessary but not sufficient: the *calls* a library makes
-into libc are also part of its observable behaviour when an interposer is present,
-and one of them turned out to matter.
-
-* `malloc` / `free` — **had diverged.** LLVM recognises them by name and had deleted
-  the Rust `.so`'s 12-byte `ComputeState` allocation, which removed `checkshift`'s
-  allocation-failure branch. Fixed via `read_volatile` function-pointer
-  trampolines; see the finding in `ERRORS.md` and the
-  `err18b_allocator_call_parity` guard.
-* `printf` / `puts` — both libraries reach the same process-wide `stdout`. gcc
-  rewrites the C library's no-vararg `printf("…\n")` calls to `puts` (hence the
-  `puts` import); the emitted bytes are identical and this is asserted, not assumed.
-* `memcpy` — call counts differ (C calls it for the small fixed-size struct copies,
-  Rust inlines them). Examined and deliberately not "fixed": `memcpy` cannot fail,
-  no C branch is keyed on it, and no return value, state byte or emitted byte
-  changes. See the note in `ERRORS.md`.
+All `U`/`w` entries are libc / libgcc-unwind / gmon imports
+(`printf`, `malloc`, `free`, `memcpy`, `_Unwind_*`, `__cxa_finalize`, …).
+**0 missing/undefined non-libc symbols.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one (`--no-default-features` is equivalent to the
-default here). `tests/symbols.rs::no_cargo_features_declared` asserts this, so
-that adding a feature later forces the Phase D matrix to be revisited.
-`scripts/check_features.sh` enumerates and builds/tests every combination.
+`translation/Cargo.toml` declares **no `[features]` section** and no optional
+dependencies, so the only configuration is the default one. Verified with
+`cargo metadata` (see `check_features.sh`).
+
+## Binary executable
+
+Neither `CMakeLists.txt` (only `add_library(... SHARED src/lib.c)`) nor
+`Cargo.toml` (only `[lib] crate-type = ["cdylib"]`) builds an executable
+driver, so the "compare binary stdout" gate is **N/A**. Instead, all
+`printf` output of every entry point is captured at the fd level and compared
+byte-for-byte (see `tests/common/mod.rs::capture_stdout`).
+
+## How to reproduce
+
+```
+cd translation && ./verify.sh
+```
+
+`verify.sh` builds the C `.so`, extracts the feature list from `Cargo.toml`
+mechanically, then for every (feature combination × profile) pair rebuilds the
+Rust `cdylib`, diffs `nm -D`, and runs both differential test suites against
+that exact `.so` (via `CHECKSHIFT_RUST_SO`).
+
+Tests must run with `--test-threads=1`: the harness redirects file descriptor 1
+process-wide to capture each library's `printf` bytes, so parallel tests would
+interleave libtest's own progress output into the captured buffers. This was a
+real harness defect during development (a `static Mutex` inside a generic
+function is instantiated per monomorphisation and did not serialise).
+
+## Verification results
+
+| gate | result |
+|------|--------|
+| `nm -D` missing symbols (release + debug) | 0 of 10 |
+| `nm -D` undefined non-libc symbols | 0 |
+| Phase B — all 36 `CONFIGS.md` rows | pass |
+| Phase C — all 20 `ERRORS.md` rows + 4 generic boundary sweeps | pass |
+| Binary/driver stdout comparison | N/A (no executable is built); all `printf` output compared at fd level instead |
+| Feature combinations | only `default` exists; verified under both `release` and `debug` (overflow checks on) |
+
+Test sensitivity was confirmed by mutation: changing `STATIC_ADDEND` from 100 to
+101 fails 16 tests. The source was restored afterwards.
+
+## Divergence found and fixed
+
+One: the release build optimised away `checkshift`'s `malloc` together with its
+`state == NULL` failure branch. See the row-20 note in `ERRORS.md`. Fixed in
+`src/lib.rs` with `core::hint::black_box`; no change was made to `c_src/`.

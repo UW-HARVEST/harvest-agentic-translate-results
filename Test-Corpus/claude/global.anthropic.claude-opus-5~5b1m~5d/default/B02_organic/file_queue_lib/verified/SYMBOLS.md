@@ -1,57 +1,59 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
+* C   : `c_src/build/libdriver.so`
+* Rust: `translation/target/release/libdriver.so`
+
+## Dynamic symbol table (defined, `T`)
+
+| # | symbol | source (C) | in C `.so` | in Rust `.so` | Rust impl site |
+|---|--------|------------|-----------|---------------|----------------|
+| 1 | `merror`         | `src/file-queue.c:24`  | T | T | `src/file_queue.rs::merror` |
+| 2 | `Init_FileQueue` | `src/file-queue.c:113` | T | T | `src/file_queue.rs::Init_FileQueue` |
+| 3 | `Read_FileMon`   | `src/file-queue.c:143` | T | T | `src/file_queue.rs::Read_FileMon` |
+| 4 | `os_calloc`      | `include/shared.h:13`  | T | T | `src/shared.rs::os_calloc` |
+| 5 | `os_realloc`     | `include/shared.h:22`  | T | T | `src/shared.rs::os_realloc` |
+| 6 | `os_strdup`      | `include/shared.h:31`  | T | T | `src/shared.rs::os_strdup` |
+| 7 | `FreeAlertData`  | `src/read-alert.c:64`  | T | T | `src/read_alert.rs::FreeAlertData` |
+| 8 | `GetAlertData`   | `src/read-alert.c:93`  | T | T | `src/read_alert.rs::GetAlertData` |
+| 9 | `driver`         | `src/driver.c:6`       | T | T | `src/driver.rs::driver` |
+
+**Missing from Rust: 0. Extra in Rust: 0.**
+
+`static` C functions (`file_sleep`, `GetFile_Queue`, `Handle_Queue`) have
+internal linkage and are correctly *not* exported by either object; they are
+private `unsafe fn`s in `src/file_queue.rs`.
+
+## Undefined symbols
+
+Both objects import only libc / runtime symbols. The Rust object additionally
+imports the Rust `std` runtime's libc/unwind set
+(`_Unwind_*`, `malloc`, `memcpy`, `pthread_key_*`, `open64`, `mmap64`, …) plus
+`strtol` (used to model glibc's inline `atoi`) and the `*64`/`statx` variants of
+the `stat` family. **0 undefined non-libc/non-runtime symbols.**
+
+Verify with:
+
+```sh
+diff <(nm -D --defined-only c_src/build/libdriver.so         | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
 ```
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-```
 
-## C `.so` defined dynamic symbols (9 total)
+## ABI: struct layout parity (x86-64 glibc)
 
-| # | symbol | C definition site | exported by Rust `.so`? | Rust definition site |
-|---|--------|-------------------|-------------------------|----------------------|
-| 1 | `os_calloc`      | `c_src/include/shared.h:13` (non-`static` definition in a header, pulled in by `read-alert.c`) | YES | `src/shared.rs` `#[no_mangle] os_calloc` |
-| 2 | `os_realloc`     | `c_src/include/shared.h:22` | YES | `src/shared.rs` `#[no_mangle] os_realloc` |
-| 3 | `os_strdup`      | `c_src/include/shared.h:31` | YES | `src/shared.rs` `#[no_mangle] os_strdup` |
-| 4 | `FreeAlertData`  | `c_src/src/read-alert.c:64` | YES | `src/read_alert.rs` `#[no_mangle] FreeAlertData` |
-| 5 | `GetAlertData`   | `c_src/src/read-alert.c:93` | YES | `src/read_alert.rs` `#[no_mangle] GetAlertData` |
-| 6 | `merror`         | `c_src/src/file-queue.c:24` | YES | `src/file_queue.rs` `#[no_mangle] merror` |
-| 7 | `Init_FileQueue` | `c_src/src/file-queue.c:113` | YES | `src/file_queue.rs` `#[no_mangle] Init_FileQueue` |
-| 8 | `Read_FileMon`   | `c_src/src/file-queue.c:143` | YES | `src/file_queue.rs` `#[no_mangle] Read_FileMon` |
-| 9 | `driver`         | `c_src/src/driver.c:6` | YES | `src/driver.rs` `#[no_mangle] driver` |
+Confirmed against a C `offsetof` probe.
 
-`file_sleep`, `GetFile_Queue` and `Handle_Queue` are `static` in
-`c_src/src/file-queue.c`, so they are **not** dynamic symbols; the Rust
-translation keeps them as private `unsafe fn`s (correctly *not* exported).
+| struct | size | field offsets |
+|--------|------|---------------|
+| `file_queue` | 440 | last_change 0, year 8, day 12, flags 16, mon 20, file_name 24, fp 288, f_status 296 |
+| `alert_data` | 96  | rule 0, level 4, alertid 8, date 16, location 24, comment 32, group 40, srcip 48, srcport 56, dstip 64, dstport 72, user 80, filename 88 |
+| `struct stat` | 144 | `st_mtim` at 88 |
+| `struct tm`   | 56  | — |
 
-There are no macro-generated symbols in this library (all `#define`s are
-constants / expression macros, none define functions).
+## ABI notes / cross-object interop
 
-## Symbol diff
-
-```
-$ comm -23 <(nm -D --defined-only c_src/build/libdriver.so | awk '{print $3}' | sort) \
-           <(nm -D --defined-only translation/target/{debug,release}/libdriver.so | awk '{print $3}' | sort -u)
-(empty)
-```
-
-**Result: 0 symbols missing from the Rust `.so`.** No stubs were needed —
-every C translation unit (`shared.h`, `read-alert.c`, `file-queue.c`,
-`driver.c`) has a real, complete Rust counterpart
-(`shared.rs`, `read_alert.rs`, `file_queue.rs`, `driver.rs`).
-
-The Rust `.so` additionally references the usual Rust-runtime libc/unwind
-imports (`_Unwind_*`, `malloc`, `memcpy`, `mmap64`, …). Those are *undefined*
-(imported) symbols, not extra exports, and are irrelevant to ABI parity.
-`nm -D -u` on the Rust `.so` shows **no undefined non-libc / non-libgcc
-symbol**, i.e. nothing that a plain `dlopen` could fail to resolve.
-
-## Cargo features
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-feature combination that exists is the default (empty) one. The
-`scripts/check_features.sh` helper enumerates the feature combinations from
-`Cargo.toml` and runs the full suite for each; with no features declared it
-runs the single default configuration plus `--no-default-features`, in both the
-debug and the release profile. Last run: **ALL FEATURE COMBINATIONS PASSED**.
+`alert_data` and `file_queue` are plain `#[repr(C)]` PODs allocated with
+`calloc`/`strdup`, so a struct produced by the C `.so` can be freed by the Rust
+`.so` and vice versa. Tests exploit this to compare and then release results
+through either library.

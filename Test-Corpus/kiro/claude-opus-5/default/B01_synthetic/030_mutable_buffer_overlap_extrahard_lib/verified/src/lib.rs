@@ -14,17 +14,6 @@ use core::ffi::{c_char, c_int, c_void};
 unsafe extern "C" {
     fn printf(fmt: *const c_char, ...) -> c_int;
     fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
-
-    // Used only to learn the current thread's stack extent, so that the
-    // variable-length array in `driver` can fail exactly like the C one.
-    fn pthread_self() -> usize;
-    fn pthread_getattr_np(th: usize, attr: *mut c_void) -> c_int;
-    fn pthread_attr_getstack(
-        attr: *const c_void,
-        stackaddr: *mut *mut c_void,
-        stacksize: *mut usize,
-    ) -> c_int;
-    fn pthread_attr_destroy(attr: *mut c_void) -> c_int;
 }
 
 /// `%d\n` format string used by the C `printf` call in `inner`.
@@ -52,7 +41,7 @@ pub unsafe extern "C" fn fma_array(
             let a = *add.offset(idx);
             *out.offset(idx) = m1.wrapping_mul(m2).wrapping_add(a);
         }
-        i = i.wrapping_add(1);
+        i += 1;
     }
 }
 
@@ -66,93 +55,86 @@ fn inner(out: *mut c_int, len: c_int) {
         unsafe {
             printf(FMT_D_NL.as_ptr(), *out.offset(i as isize));
         }
-        i = i.wrapping_add(1);
+        i += 1;
     }
-}
-
-/// Number of bytes still available below `sp` on the current thread's stack,
-/// or `usize::MAX` if it cannot be determined (in which case no VLA check is
-/// performed, so no fault is ever invented).
-fn stack_bytes_below(sp: usize) -> usize {
-    // glibc's `pthread_attr_t` is 56 bytes on x86-64; over-allocate and keep
-    // 8-byte alignment.
-    let mut attr = [0u64; 16];
-    let attr_ptr = attr.as_mut_ptr() as *mut c_void;
-    unsafe {
-        if pthread_getattr_np(pthread_self(), attr_ptr) != 0 {
-            return usize::MAX;
-        }
-        let mut base: *mut c_void = core::ptr::null_mut();
-        let mut size: usize = 0;
-        let rc = pthread_attr_getstack(attr_ptr, &mut base, &mut size);
-        pthread_attr_destroy(attr_ptr);
-        if rc != 0 || base.is_null() || size == 0 {
-            return usize::MAX;
-        }
-        let low = base as usize;
-        if sp <= low { 0 } else { sp - low }
-    }
-}
-
-/// Reproduce the memory behaviour of the C `int out[len]` variable-length array.
-///
-/// gcc lowers a VLA to a stack-pointer decrement, and the `memcpy` that follows
-/// is the first access to that memory. When the VLA does not fit in the
-/// remaining stack, the C process therefore dies with `SIGSEGV`. A Rust `Vec`
-/// of the same size would instead report a heap allocation failure and abort
-/// with `SIGABRT`, so the rejection would not match. Perform the same
-/// out-of-stack access the C makes, which faults identically.
-#[inline(never)]
-fn vla_stack_probe(n_bytes: usize) {
-    // Sizes this small cannot exhaust a stack; skip the check entirely so no
-    // stack memory is touched on the ordinary paths.
-    const MIN_INTERESTING: usize = 64 * 1024;
-    if n_bytes < MIN_INTERESTING {
-        return;
-    }
-    let anchor: usize = 0;
-    let sp = &anchor as *const usize as usize;
-    core::hint::black_box(&anchor);
-
-    // `len * sizeof(int)` can exceed the address space (e.g. a negative `len`).
-    // The C's stack-pointer arithmetic then wraps around and it faults inside
-    // `memcpy` instead; leave that path to the `memcpy` below.
-    if n_bytes > sp {
-        return;
-    }
-    let available = stack_bytes_below(sp);
-    if n_bytes <= available {
-        return; // The VLA fits, exactly as it does in C.
-    }
-    // The VLA base lies below the stack mapping. This is the address the C
-    // memcpy writes to first.
-    unsafe { core::ptr::write_volatile((sp - n_bytes) as *mut u8, 0) };
 }
 
 /// void driver(const int *data, int len)
 ///
-/// The C version declares a variable-length array `int out[len]` and copies
-/// `len * sizeof(int)` bytes into it. The byte count is computed exactly as C
-/// does (the `int` `len` is converted to `size_t`, i.e. sign-extended, before
-/// being multiplied), so non-positive lengths behave as they do in the original.
+/// The C version declares a variable-length array `int out[len]` (an
+/// UNINITIALIZED stack VLA) and copies `len * sizeof(int)` bytes into it.
+///
+/// Fidelity note on the backing storage: a `Vec`/`vec![0; elems]` is the wrong
+/// model here. For a huge `len` (e.g. `INT_MAX`, ~8 GiB) the C code moves the
+/// stack pointer past the stack guard and dies with SIGSEGV, whereas asking the
+/// Rust global allocator for ~8 GiB fails and routes through
+/// `handle_alloc_error`, which `abort()`s -> SIGABRT. To reproduce the C's
+/// SIGSEGV we back the buffer with a RAW `std::alloc::alloc` (the uninitialized
+/// variant, matching the uninitialized VLA) and, crucially, on allocation
+/// failure we DO NOT call `handle_alloc_error`, panic, or abort: we carry on
+/// with a null pointer so the subsequent `memcpy` faults with SIGSEGV, exactly
+/// as the C stack-clash does.
+///
+/// The byte count is computed exactly as C does (the `int` `len` is converted to
+/// `size_t`, i.e. sign-extended, before being multiplied), so non-positive
+/// lengths behave as they do in the original.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(data: *const c_int, len: c_int) {
-    let n_bytes = (len as isize as usize).wrapping_mul(core::mem::size_of::<c_int>());
+    // Transliterate gcc's emitted VLA arithmetic exactly.
+    //
+    //   movslq/cltq ; lea (,rax,4)  -> size_bytes = (u64)(i64)len * 4, WRAPPING
+    let size_bytes: u64 = (len as i64 as u64).wrapping_mul(core::mem::size_of::<c_int>() as u64);
+    //   add 15 ; unsigned div 16 ; imul 16 -> frame = ((size_bytes + 15) / 16) * 16
+    // The WRAPPING add is the whole point: for len in {-1,-2,-3} it wraps small
+    // and frame becomes 0 (valid stack address); for len <= -4 it does not wrap
+    // and frame is astronomically large (wild pointer).
+    let frame: u64 = size_bytes.wrapping_add(15) / 16 * 16;
 
-    // `int out[len];` — match the stack-exhaustion behaviour of the VLA before
-    // allocating anything.
-    vla_stack_probe(n_bytes);
+    // Choose the destination pointer.
+    let mut layout: Option<core::alloc::Layout> = None;
+    let mut stack_probe: c_int = 0;
+    let out: *mut c_int = if len > 0 {
+        // Normal VLA: real uninitialized heap storage (matching the
+        // uninitialized VLA). On any failure carry on with a NULL pointer so the
+        // memcpy faults with SIGSEGV, mirroring the C stack clash. Do NOT call
+        // `handle_alloc_error`, panic, or abort. (Preserves the first fix.)
+        match core::alloc::Layout::array::<c_int>(len as usize) {
+            Ok(l) => {
+                layout = Some(l);
+                unsafe { std::alloc::alloc(l) as *mut c_int }
+            }
+            Err(_) => core::ptr::null_mut(),
+        }
+    } else {
+        // Model `out = align_up_4(rsp - frame)`. Use the address of a local as
+        // the stand-in for rsp. frame == 0 for len in {0,-1,-2,-3} yields a
+        // valid stack address; the huge frame for len <= -4 yields a wild
+        // pointer. No allocation, no layout recorded.
+        let base = &mut stack_probe as *mut c_int as usize;
+        let addr = base.wrapping_sub(frame as usize).wrapping_add(3) >> 2 << 2;
+        addr as *mut c_int
+    };
 
-    let elems = if len > 0 { len as usize } else { 0 };
-    let mut out: Vec<c_int> = vec![0; elems];
-
+    // Route the destination through `black_box` so LLVM cannot prove the
+    // huge-count memcpy is UB and delete it (the actual bug being fixed).
+    let dst = core::hint::black_box(out);
+    // The count is `size_bytes` (the value C recomputes), NOT the rounded frame.
     unsafe {
-        memcpy(
-            out.as_mut_ptr() as *mut c_void,
-            data as *const c_void,
-            n_bytes,
-        );
+        memcpy(dst as *mut c_void, data as *const c_void, size_bytes as usize);
     }
 
-    inner(out.as_mut_ptr(), len);
+    inner(dst, len);
+
+    // Free only in the len > 0 case, only when a layout was constructed and the
+    // pointer is non-null. Control flow never reaches here in the crashing
+    // cases, which matches C.
+    if len > 0 {
+        if let Some(l) = layout {
+            if !dst.is_null() {
+                unsafe {
+                    std::alloc::dealloc(dst as *mut u8, l);
+                }
+            }
+        }
+    }
 }

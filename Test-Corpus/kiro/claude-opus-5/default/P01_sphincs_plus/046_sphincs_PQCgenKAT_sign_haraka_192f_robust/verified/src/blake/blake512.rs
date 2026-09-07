@@ -60,6 +60,9 @@ unsafe fn u64to8(p: *mut u8, v: u64) {
     u32to8(p.add(4), v as u32);
 }
 
+/// `const u64 cst[16]` from `lib/blake/src/blake512.c`.  This is *not* `static`
+/// in the C source, so it is part of the shared library's exported symbol set
+/// and has to be exported under the exact same name here.
 #[unsafe(no_mangle)]
 pub static cst: [u64; 16] = [
     0x243F6A8885A308D3, 0x13198A2E03707344, 0xA4093822299F31D0, 0x082EFA98EC4E6C89,
@@ -67,6 +70,10 @@ pub static cst: [u64; 16] = [
     0x9216D5D98979FB1B, 0xD1310BA698DFB5AC, 0x2FFD72DBD01ADFB7, 0xB8E1AFED6A267E96,
     0xBA7C9045F12C7F99, 0x24A19947B3916CF7, 0x0801F2E2858EFC16, 0x636920D871574E69,
 ];
+
+/// Internal alias so the (many) `round!` invocations below keep reading as
+/// they do in the C macro expansion.
+use crate::blake::blake512::cst as CST;
 
 static PADDING: [u8; 129] = [
     0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -276,22 +283,22 @@ pub unsafe extern "C" fn blake512_compress(S: *mut blakestate512, block: *const 
         };
     }
 
-    round!(m0, cst[1], m1, cst[0], m2, cst[3], m3, cst[2], m4, cst[5], m5, cst[4], m6, cst[7], m7, cst[6], m8, cst[9], m9, cst[8], m10, cst[11], m11, cst[10], m12, cst[13], m13, cst[12], m14, cst[15], m15, cst[14]);
-    round!(m14, cst[10], m10, cst[14], m4, cst[8], m8, cst[4], m9, cst[15], m15, cst[9], m13, cst[6], m6, cst[13], m1, cst[12], m12, cst[1], m0, cst[2], m2, cst[0], m11, cst[7], m7, cst[11], m5, cst[3], m3, cst[5]);
-    round!(m11, cst[8], m8, cst[11], m12, cst[0], m0, cst[12], m5, cst[2], m2, cst[5], m15, cst[13], m13, cst[15], m10, cst[14], m14, cst[10], m3, cst[6], m6, cst[3], m7, cst[1], m1, cst[7], m9, cst[4], m4, cst[9]);
-    round!(m7, cst[9], m9, cst[7], m3, cst[1], m1, cst[3], m13, cst[12], m12, cst[13], m11, cst[14], m14, cst[11], m2, cst[6], m6, cst[2], m5, cst[10], m10, cst[5], m4, cst[0], m0, cst[4], m15, cst[8], m8, cst[15]);
-    round!(m9, cst[0], m0, cst[9], m5, cst[7], m7, cst[5], m2, cst[4], m4, cst[2], m10, cst[15], m15, cst[10], m14, cst[1], m1, cst[14], m11, cst[12], m12, cst[11], m6, cst[8], m8, cst[6], m3, cst[13], m13, cst[3]);
-    round!(m2, cst[12], m12, cst[2], m6, cst[10], m10, cst[6], m0, cst[11], m11, cst[0], m8, cst[3], m3, cst[8], m4, cst[13], m13, cst[4], m7, cst[5], m5, cst[7], m15, cst[14], m14, cst[15], m1, cst[9], m9, cst[1]);
-    round!(m12, cst[5], m5, cst[12], m1, cst[15], m15, cst[1], m14, cst[13], m13, cst[14], m4, cst[10], m10, cst[4], m0, cst[7], m7, cst[0], m6, cst[3], m3, cst[6], m9, cst[2], m2, cst[9], m8, cst[11], m11, cst[8]);
-    round!(m13, cst[11], m11, cst[13], m7, cst[14], m14, cst[7], m12, cst[1], m1, cst[12], m3, cst[9], m9, cst[3], m5, cst[0], m0, cst[5], m15, cst[4], m4, cst[15], m8, cst[6], m6, cst[8], m2, cst[10], m10, cst[2]);
-    round!(m6, cst[15], m15, cst[6], m14, cst[9], m9, cst[14], m11, cst[3], m3, cst[11], m0, cst[8], m8, cst[0], m12, cst[2], m2, cst[12], m13, cst[7], m7, cst[13], m1, cst[4], m4, cst[1], m10, cst[5], m5, cst[10]);
-    round!(m10, cst[2], m2, cst[10], m8, cst[4], m4, cst[8], m7, cst[6], m6, cst[7], m1, cst[5], m5, cst[1], m15, cst[11], m11, cst[15], m9, cst[14], m14, cst[9], m3, cst[12], m12, cst[3], m13, cst[0], m0, cst[13]);
-    round!(m0, cst[1], m1, cst[0], m2, cst[3], m3, cst[2], m4, cst[5], m5, cst[4], m6, cst[7], m7, cst[6], m8, cst[9], m9, cst[8], m10, cst[11], m11, cst[10], m12, cst[13], m13, cst[12], m14, cst[15], m15, cst[14]);
-    round!(m14, cst[10], m10, cst[14], m4, cst[8], m8, cst[4], m9, cst[15], m15, cst[9], m13, cst[6], m6, cst[13], m1, cst[12], m12, cst[1], m0, cst[2], m2, cst[0], m11, cst[7], m7, cst[11], m5, cst[3], m3, cst[5]);
-    round!(m11, cst[8], m8, cst[11], m12, cst[0], m0, cst[12], m5, cst[2], m2, cst[5], m15, cst[13], m13, cst[15], m10, cst[14], m14, cst[10], m3, cst[6], m6, cst[3], m7, cst[1], m1, cst[7], m9, cst[4], m4, cst[9]);
-    round!(m7, cst[9], m9, cst[7], m3, cst[1], m1, cst[3], m13, cst[12], m12, cst[13], m11, cst[14], m14, cst[11], m2, cst[6], m6, cst[2], m5, cst[10], m10, cst[5], m4, cst[0], m0, cst[4], m15, cst[8], m8, cst[15]);
-    round!(m9, cst[0], m0, cst[9], m5, cst[7], m7, cst[5], m2, cst[4], m4, cst[2], m10, cst[15], m15, cst[10], m14, cst[1], m1, cst[14], m11, cst[12], m12, cst[11], m6, cst[8], m8, cst[6], m3, cst[13], m13, cst[3]);
-    round!(m2, cst[12], m12, cst[2], m6, cst[10], m10, cst[6], m0, cst[11], m11, cst[0], m8, cst[3], m3, cst[8], m4, cst[13], m13, cst[4], m7, cst[5], m5, cst[7], m15, cst[14], m14, cst[15], m1, cst[9], m9, cst[1]);
+    round!(m0, CST[1], m1, CST[0], m2, CST[3], m3, CST[2], m4, CST[5], m5, CST[4], m6, CST[7], m7, CST[6], m8, CST[9], m9, CST[8], m10, CST[11], m11, CST[10], m12, CST[13], m13, CST[12], m14, CST[15], m15, CST[14]);
+    round!(m14, CST[10], m10, CST[14], m4, CST[8], m8, CST[4], m9, CST[15], m15, CST[9], m13, CST[6], m6, CST[13], m1, CST[12], m12, CST[1], m0, CST[2], m2, CST[0], m11, CST[7], m7, CST[11], m5, CST[3], m3, CST[5]);
+    round!(m11, CST[8], m8, CST[11], m12, CST[0], m0, CST[12], m5, CST[2], m2, CST[5], m15, CST[13], m13, CST[15], m10, CST[14], m14, CST[10], m3, CST[6], m6, CST[3], m7, CST[1], m1, CST[7], m9, CST[4], m4, CST[9]);
+    round!(m7, CST[9], m9, CST[7], m3, CST[1], m1, CST[3], m13, CST[12], m12, CST[13], m11, CST[14], m14, CST[11], m2, CST[6], m6, CST[2], m5, CST[10], m10, CST[5], m4, CST[0], m0, CST[4], m15, CST[8], m8, CST[15]);
+    round!(m9, CST[0], m0, CST[9], m5, CST[7], m7, CST[5], m2, CST[4], m4, CST[2], m10, CST[15], m15, CST[10], m14, CST[1], m1, CST[14], m11, CST[12], m12, CST[11], m6, CST[8], m8, CST[6], m3, CST[13], m13, CST[3]);
+    round!(m2, CST[12], m12, CST[2], m6, CST[10], m10, CST[6], m0, CST[11], m11, CST[0], m8, CST[3], m3, CST[8], m4, CST[13], m13, CST[4], m7, CST[5], m5, CST[7], m15, CST[14], m14, CST[15], m1, CST[9], m9, CST[1]);
+    round!(m12, CST[5], m5, CST[12], m1, CST[15], m15, CST[1], m14, CST[13], m13, CST[14], m4, CST[10], m10, CST[4], m0, CST[7], m7, CST[0], m6, CST[3], m3, CST[6], m9, CST[2], m2, CST[9], m8, CST[11], m11, CST[8]);
+    round!(m13, CST[11], m11, CST[13], m7, CST[14], m14, CST[7], m12, CST[1], m1, CST[12], m3, CST[9], m9, CST[3], m5, CST[0], m0, CST[5], m15, CST[4], m4, CST[15], m8, CST[6], m6, CST[8], m2, CST[10], m10, CST[2]);
+    round!(m6, CST[15], m15, CST[6], m14, CST[9], m9, CST[14], m11, CST[3], m3, CST[11], m0, CST[8], m8, CST[0], m12, CST[2], m2, CST[12], m13, CST[7], m7, CST[13], m1, CST[4], m4, CST[1], m10, CST[5], m5, CST[10]);
+    round!(m10, CST[2], m2, CST[10], m8, CST[4], m4, CST[8], m7, CST[6], m6, CST[7], m1, CST[5], m5, CST[1], m15, CST[11], m11, CST[15], m9, CST[14], m14, CST[9], m3, CST[12], m12, CST[3], m13, CST[0], m0, CST[13]);
+    round!(m0, CST[1], m1, CST[0], m2, CST[3], m3, CST[2], m4, CST[5], m5, CST[4], m6, CST[7], m7, CST[6], m8, CST[9], m9, CST[8], m10, CST[11], m11, CST[10], m12, CST[13], m13, CST[12], m14, CST[15], m15, CST[14]);
+    round!(m14, CST[10], m10, CST[14], m4, CST[8], m8, CST[4], m9, CST[15], m15, CST[9], m13, CST[6], m6, CST[13], m1, CST[12], m12, CST[1], m0, CST[2], m2, CST[0], m11, CST[7], m7, CST[11], m5, CST[3], m3, CST[5]);
+    round!(m11, CST[8], m8, CST[11], m12, CST[0], m0, CST[12], m5, CST[2], m2, CST[5], m15, CST[13], m13, CST[15], m10, CST[14], m14, CST[10], m3, CST[6], m6, CST[3], m7, CST[1], m1, CST[7], m9, CST[4], m4, CST[9]);
+    round!(m7, CST[9], m9, CST[7], m3, CST[1], m1, CST[3], m13, CST[12], m12, CST[13], m11, CST[14], m14, CST[11], m2, CST[6], m6, CST[2], m5, CST[10], m10, CST[5], m4, CST[0], m0, CST[4], m15, CST[8], m8, CST[15]);
+    round!(m9, CST[0], m0, CST[9], m5, CST[7], m7, CST[5], m2, CST[4], m4, CST[2], m10, CST[15], m15, CST[10], m14, CST[1], m1, CST[14], m11, CST[12], m12, CST[11], m6, CST[8], m8, CST[6], m3, CST[13], m13, CST[3]);
+    round!(m2, CST[12], m12, CST[2], m6, CST[10], m10, CST[6], m0, CST[11], m11, CST[0], m8, CST[3], m3, CST[8], m4, CST[13], m13, CST[4], m7, CST[5], m5, CST[7], m15, CST[14], m14, CST[15], m1, CST[9], m9, CST[1]);
 
     v0 ^= v8;
     v1 ^= v9;

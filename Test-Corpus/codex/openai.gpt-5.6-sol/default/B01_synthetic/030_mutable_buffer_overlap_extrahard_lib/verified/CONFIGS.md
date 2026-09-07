@@ -1,42 +1,28 @@
-# Configuration surface
+# Configuration Surface
 
-The public dynamic surface consists of the low-level `fma_array` entry point
-and the composed `driver` entry point. There are no runtime option flags,
-compile-time Cargo features, enums, format selectors, element-type selectors,
-or byte-order modes.
-
-The C branches only on each loop's `i < len` condition. Pointer aliasing is
-nevertheless part of the public low-level input shape because the parameters
-are not `restrict`-qualified, and shifted overlap changes later loop
-iterations. Randomized positive-length rows cover lengths from 1 through 64.
+The C source has no runtime option, mode, flag, conditional-compilation feature,
+element-type choice, format choice, or byte-order branch. Its configuration
+surface comes from the two exported entry points, the `i < len` loop boundary,
+pointer aliasing accepted by `fma_array`, and the one/many input shapes.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `fma_array` | `len == 0`; all pointers may be null; empty/no-op shape | [x] |
-| 2 | `fma_array` | positive randomized length; four disjoint buffers; values constrained so multiply-add does not overflow | [x] |
-| 3 | `fma_array` | positive randomized length; four disjoint buffers; full-width `int` values including wrapping/edge cases | [x] |
-| 4 | `fma_array` | positive randomized length; `out == mul1`; `mul2` and `add` disjoint | [x] |
-| 5 | `fma_array` | positive randomized length; `out == mul2`; `mul1` and `add` disjoint | [x] |
-| 6 | `fma_array` | positive randomized length; `out == add`; `mul1` and `mul2` disjoint | [x] |
-| 7 | `fma_array` | positive randomized length; `out == mul1 == mul2`; `add` disjoint | [x] |
-| 8 | `fma_array` | positive randomized length; `out == mul1 == add`; `mul2` disjoint | [x] |
-| 9 | `fma_array` | positive randomized length; `out == mul2 == add`; `mul1` disjoint | [x] |
-| 10 | `fma_array` | positive randomized length; all four pointers exactly alias | [x] |
-| 11 | `fma_array` | positive randomized length; `mul1 == mul2`; `out` and `add` disjoint | [x] |
-| 12 | `fma_array` | positive randomized length; `mul1 == add`; `out` and `mul2` disjoint | [x] |
-| 13 | `fma_array` | positive randomized length; `mul2 == add`; `out` and `mul1` disjoint | [x] |
-| 14 | `fma_array` | positive randomized length; `mul1 == mul2 == add`; `out` disjoint | [x] |
-| 15 | `fma_array` | randomized length at least 2; `out` starts one element after a shared `mul1`/`mul2`/`add` buffer (forward shifted overlap) | [x] |
-| 16 | `fma_array` | randomized length at least 2; shared `mul1`/`mul2`/`add` starts one element after `out` (backward shifted overlap) | [x] |
-| 17 | `driver` | `len == 0`; null data; no output | [x] |
-| 18 | `driver` | `len == 1`; randomized scalar values including `INT_MIN`, `INT_MAX`, negative, zero, and positive | [x] |
-| 19 | `driver` | randomized `len` from 2 through 64; randomized arrays including edge and multiply-add-overflow values; decimal newline output | [x] |
+| 1 | `fma_array` | negative `len`; null pointers; loop executes zero times | [x] |
+| 2 | `fma_array` | zero `len`; null pointers; loop executes zero times | [x] |
+| 3 | `fma_array` | one element; four distinct buffers | [x] |
+| 4 | `fma_array` | many elements; four distinct buffers | [x] |
+| 5 | `fma_array` | many elements; `out == mul1` | [x] |
+| 6 | `fma_array` | many elements; `out == mul2` | [x] |
+| 7 | `fma_array` | many elements; `out == add` | [x] |
+| 8 | `fma_array` | many elements; all four pointers alias (the shape used by `driver`) | [x] |
+| 9 | `fma_array` | many elements; source arrays alias each other while `out` is distinct | [x] |
+| 10 | `fma_array` | many elements; shifted overlap where writes affect a later source element | [x] |
+| 11 | `fma_array` | many elements; reverse shifted overlap where writes do not affect prior elements | [x] |
+| 12 | `fma_array` | large input (`len == 4096`) with distinct buffers | [x] |
+| 13 | `driver` | zero elements | [x] |
+| 14 | `driver` | one element; output captured through C stdout | [x] |
+| 15 | `driver` | many elements; output captured through C stdout | [x] |
+| 16 | `driver` | large input (`len == 4096`); output captured through C stdout | [x] |
 
-## Feature combinations
-
-`Cargo.toml` declares no features. The complete build matrix is therefore:
-
-| # | Cargo invocation mode | [ ] |
-|---|-----------------------|-----|
-| 1 | default features | [x] |
-| 2 | `--no-default-features` (equivalent empty feature set) | [x] |
+`driver` composes copy, fully aliased `fma_array`, and decimal-line output.
+Rows 13–16 therefore exercise the complete pipeline through the exported ABI.

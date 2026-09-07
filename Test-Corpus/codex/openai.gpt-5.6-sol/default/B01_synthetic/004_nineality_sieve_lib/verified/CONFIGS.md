@@ -1,15 +1,27 @@
 # Configuration Surface
 
-The public surface contains only `void sieve(int start)`. There are no runtime
-options, modes, flags, element types, formats, byte-order settings, counts,
-pointers, lengths, enums, compile-time feature flags, or lower-level entry
-points. The rows below are derived from the sole C branch,
-`if (val % 10 == 9)`, including C's signed remainder behavior.
+Mechanically derived from the sole public declaration in
+`../c_src/include/sieve.h` and the `if (val % 10 == 9)` branch in
+`../c_src/src/sieve.c`.
 
-| # | entry point(s) | configuration (options set + input shape) | Verified |
-|---|----------------|--------------------------------------------|----------|
-| 1 | `sieve` | Nonnegative `start` with `start % 10 == 9`; the initial value satisfies the termination branch and exactly one line is emitted. | [x] |
-| 2 | `sieve` | Nonnegative `start` with `start % 10 != 9` and no signed-overflow execution; values are emitted through the next value whose remainder is 9. This includes the zero boundary. | [x] |
-| 3 | `sieve` | Negative `start`; C remainders are negative or zero, so the termination branch is first satisfied at positive 9. | [x] |
+There are no runtime options, modes, flags, element types, formats, byte-order
+choices, alternate entry points, compile-time features, or binaries. The input
+is one C `int`. Nonnegative decimal residue classes produce distinct output
+lengths, while negative inputs take the distinct path of counting through zero
+before the stopping condition can become true.
 
-Public entry points covered: **1 of 1**
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `sieve` | negative `int`; count crosses zero and stops at positive 9 | [x] |
+| 2 | `sieve` | nonnegative `int`, `val % 10 == 9`; immediate stop | [x] |
+| 3 | `sieve` | nonnegative `int`, `val % 10 == 0`; 10 emitted values (includes zero) | [x] |
+| 4 | `sieve` | nonnegative `int`, `val % 10 == 1`; 9 emitted values | [x] |
+| 5 | `sieve` | nonnegative `int`, `val % 10 == 2`; 8 emitted values | [x] |
+| 6 | `sieve` | nonnegative `int`, `val % 10 == 3`; 7 emitted values | [x] |
+| 7 | `sieve` | nonnegative `int`, `val % 10 == 4`; 6 emitted values | [x] |
+| 8 | `sieve` | nonnegative `int`, `val % 10 == 5`; 5 emitted values | [x] |
+| 9 | `sieve` | nonnegative `int`, `val % 10 == 6`; 4 emitted values | [x] |
+| 10 | `sieve` | nonnegative `int`, `val % 10 == 7`; 3 emitted values | [x] |
+| 11 | `sieve` | nonnegative `int`, `val % 10 == 8`; 2 emitted values | [x] |
+
+Feature combinations: one (the crate declares no Cargo features).

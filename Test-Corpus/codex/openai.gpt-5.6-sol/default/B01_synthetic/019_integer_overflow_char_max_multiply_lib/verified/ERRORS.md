@@ -1,24 +1,16 @@
-# Error-surface table
+# Error Surface
 
-Mechanically derived from null checks, range checks, and limit constants in
-`../c_src/src/driver.c`. There are no error-return macros, `return -1`,
-`return NULL`, assertions, public enums, lengths, or error codes.
+Mechanical source scan covered `RETURN_ERROR`, negative/NULL returns, error
+enums, `assert`, all `if` conditions, `NULL`, and `CHAR_MIN`/`CHAR_MAX`.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
-|---|----------|----------------------------------------------|-------------------|----------|
-| 1 | `printLine` | `line == NULL` | returns `void` and writes zero bytes to stdout | [x] |
-| 2 | `good` (internal `goodB2G`) | fixed `data == CHAR_MAX`, therefore `data >= CHAR_MAX / 2` | rejects the multiplication and writes `data value is too large to perform arithmetic safely.\n` after the preceding `goodG2B` output | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `printLine` | `line == NULL` | Returns `void` without calling `printf`; emits zero bytes and does not crash. | [x] |
+| 2 | `goodB2G` (static; reached through `good` and `driver(useGood != 0)`) | `data >= CHAR_MAX / 2` after `data > 0`; concretely `data == CHAR_MAX` | Rejects the multiplication and emits `data value is too large to perform arithmetic safely.\n`. | [x] |
 
-## Non-rejection guards and generic-boundary audit
+There are no error-return macros/statements, assertions, error enums, length
+arguments, or externally supplied enum values in this C source.
 
-- `bad`: `data > 0` is always true because `data` is fixed to `CHAR_MAX`
-  (`127` on this build).
-- `goodG2B`: `data > 0` is always true because `data` is fixed to `2`.
-- `goodB2G`: `data > 0` is always true because `data` is fixed to `CHAR_MAX`.
-- No API accepts a length, count, allocation size, or enum. Zero/oversized
-  lengths and out-of-range enum discriminants are therefore not applicable.
-- `driver(int useGood)` deliberately accepts the full C `int` domain. Zero
-  selects `bad`; every nonzero value, including `INT_MIN` and `INT_MAX`,
-  selects `good`.
-- `printHexCharLine(char)` deliberately accepts the full signed-`char` domain
-  (`SCHAR_MIN` through `SCHAR_MAX`).
+The remaining `data > 0` guards are not rejection rows: their local values are
+unconditionally assigned to positive constants (`CHAR_MAX` or `2`), so their
+false branches are unreachable through every public entry point.

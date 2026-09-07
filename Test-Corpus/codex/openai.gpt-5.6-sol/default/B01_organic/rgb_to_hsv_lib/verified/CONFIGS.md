@@ -1,46 +1,37 @@
 # Configuration surface
 
-The public header declares only `rgb_to_hsv(float *dest, const float *src)`.
-There are no runtime options, flags, modes, feature macros, lengths, element
-types, formats, or byte-order settings. The rows below are derived from every
-comparison branch in `src/lib.c`: the min/max ternaries, the early return,
-dominant-channel selection, and negative-hue adjustment. The tie and IEEE-754
-rows cover comparison outcomes that change those branches.
+The header exposes one entry point and no runtime options, modes, flags,
+element-type choices, counts, formats, or byte-order controls. The input shape
+is always three `float` values and the output shape is always three `float`
+values. The rows below mechanically cover the conditions selected by the
+comparison and `if` branches in `src/lib.c`, including IEEE-754 values that
+alter those comparisons. Pointer overlap is included because the ABI does not
+declare `restrict` and the C implementation reads all three inputs before its
+first output write.
 
-Each row is exercised with deterministic randomized bit patterns or randomized
-finite values, as appropriate.
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `rgb_to_hsv` | all channels `+0.0`; both `delta == 0` and `max == 0` are true | [x] |
+| 2 | `rgb_to_hsv` | signed-zero permutations; zero comparisons are equal but the selected `v` sign is byte-observable | [x] |
+| 3 | `rgb_to_hsv` | all channels equal and finite nonzero; `delta == 0` early return | [x] |
+| 4 | `rgb_to_hsv` | unequal finite nonpositive channels with `max == 0` and `delta != 0` | [x] |
+| 5 | `rgb_to_hsv` | finite unique red maximum with `g >= b`; red branch and no negative-hue wrap | [x] |
+| 6 | `rgb_to_hsv` | finite unique red maximum with `g < b`; red branch and negative-hue wrap | [x] |
+| 7 | `rgb_to_hsv` | finite `r == g > b`; tied maximum resolves to the red branch | [x] |
+| 8 | `rgb_to_hsv` | finite `r == b > g`; tied maximum resolves to the red branch and wraps negative hue | [x] |
+| 9 | `rgb_to_hsv` | finite unique green maximum; green branch | [x] |
+| 10 | `rgb_to_hsv` | finite `g == b > r`; tied maximum resolves to the green branch | [x] |
+| 11 | `rgb_to_hsv` | finite unique blue maximum; final `else` branch | [x] |
+| 12 | `rgb_to_hsv` | finite unique maximum below zero; negative `max` and saturation arithmetic | [x] |
+| 13 | `rgb_to_hsv` | infinities among the three channels, exercising infinite `delta` and NaN arithmetic | [x] |
+| 14 | `rgb_to_hsv` | NaN in red, with the ternary comparisons replacing it from `min`/`max` | [x] |
+| 15 | `rgb_to_hsv` | NaN in green, with later blue comparisons replacing it from `min`/`max` | [x] |
+| 16 | `rgb_to_hsv` | NaN in blue, forcing NaN `min`, `max`, `delta`, and the final hue branch | [x] |
+| 17 | `rgb_to_hsv` | finite IEEE-754 boundaries: subnormals, minimum normals, and `FLT_MAX` magnitudes | [x] |
+| 18 | `rgb_to_hsv` | ordinary finite values with disjoint source and destination arrays | [x] |
+| 19 | `rgb_to_hsv` | exact alias: `dest == src` | [x] |
+| 20 | `rgb_to_hsv` | partial overlap with `dest == src + 1` in a four-float allocation | [x] |
+| 21 | `rgb_to_hsv` | partial overlap with `src == dest + 1` in a four-float allocation | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `rgb_to_hsv` | finite achromatic input (`r == g == b`, `delta == 0`, nonzero `max`) | [x] |
-| 2 | `rgb_to_hsv` | signed-zero achromatic input (`delta == 0`; preserves the selected `max` zero sign) | [x] |
-| 3 | `rgb_to_hsv` | finite non-achromatic input with `max == 0` (zero plus negative channels) | [x] |
-| 4 | `rgb_to_hsv` | finite, unique red maximum with `g >= b` (`r == max`, no negative-hue adjustment) | [x] |
-| 5 | `rgb_to_hsv` | finite, unique red maximum with `g < b` (`r == max`, negative-hue adjustment) | [x] |
-| 6 | `rgb_to_hsv` | finite, unique green maximum (`r != max`, `g == max`) | [x] |
-| 7 | `rgb_to_hsv` | finite, unique blue maximum (`r != max`, `g != max`) | [x] |
-| 8 | `rgb_to_hsv` | finite red/green maximum tie above blue (red branch wins) | [x] |
-| 9 | `rgb_to_hsv` | finite red/blue maximum tie above green (red branch wins and hue is adjusted) | [x] |
-| 10 | `rgb_to_hsv` | finite green/blue maximum tie above red (green branch wins) | [x] |
-| 11 | `rgb_to_hsv` | subnormal finite channels, including a subnormal `delta` | [x] |
-| 12 | `rgb_to_hsv` | `r` is NaN; first min/max comparisons are false | [x] |
-| 13 | `rgb_to_hsv` | `g` is NaN; the ternaries select `g`, then the following comparisons are false | [x] |
-| 14 | `rgb_to_hsv` | `b` is NaN; final min/max ternaries select `b` | [x] |
-| 15 | `rgb_to_hsv` | positive infinity is the unique maximum (red, green, and blue placements) | [x] |
-| 16 | `rgb_to_hsv` | negative infinity is the unique minimum (red, green, and blue placements) | [x] |
-| 17 | `rgb_to_hsv` | multiple infinities, producing infinite-minus-infinite `delta` | [x] |
-| 18 | `rgb_to_hsv` | separate non-overlapping source and destination arrays | [x] |
-| 19 | `rgb_to_hsv` | exact in-place operation (`dest == src`) | [x] |
-| 20 | `rgb_to_hsv` | partially overlapping source and destination arrays in either direction | [x] |
-
-## Public entry-point audit
-
-`rgb_to_hsv` is the only declaration in `include/lib.h` and the only global
-symbol defined by the C shared object. It is both the lowest-level and the
-only convenience-level entry point.
-
-## Compile-time feature audit
-
-`Cargo.toml` declares no features, and the C source has no conditional
-compilation branches. The sole feature configuration is Cargo's empty default
-feature set.
+Feature combinations: Cargo.toml declares no features, so the only build
+configuration is the default/no-feature configuration.

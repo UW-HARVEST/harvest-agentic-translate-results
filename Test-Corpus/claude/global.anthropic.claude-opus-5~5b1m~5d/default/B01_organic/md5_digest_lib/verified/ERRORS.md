@@ -1,64 +1,63 @@
 # ERRORS.md — Phase A: error-surface table
 
-Mechanically derived by grepping `c_src/` for **every** rejection construct:
+## Mechanical grep of the whole C source
+
+Commands run over `c_src/` (the entire C tree is `include/lib.h` + `src/lib.c`,
+35 lines total):
 
 ```
-$ grep -nE "return|assert|NULL|if|else|switch|while|for|#if|#ifdef|ERROR|errno|-1|MIN|MAX|enum" \
-      c_src/src/lib.c c_src/include/lib.h
-(no matches)
+$ grep -nE 'return|RETURN|ERROR|errno|assert|NULL|nullptr|if|else|switch|case|while|for|\?|exit|abort|<|>|==|!=|<=|>=|&&|\|\|' c_src/src/lib.c c_src/include/lib.h
+c_src/src/lib.c:4-19:   out[N] = (tflac_u8)(m->X >> K);   # only ">>" matches; no comparisons
+c_src/include/lib.h:14: void md5_digest(const tflac_md5 *m, tflac_u8 out[16]);
 ```
 
-## The C error surface is EMPTY — and that is itself the contract
+Findings:
 
-`md5_digest` is the only entry point. Facts established from the source:
+* `md5_digest` returns `void` — there is **no** error return channel at all:
+  no error enum, no `int` status, no sentinel pointer, no out-param flag.
+* **0** occurrences of `return <value>`, `RETURN_ERROR`, `-1`, `NULL`,
+  `assert`, `abort`, `exit`, `errno`.
+* **0** occurrences of `if` / `else` / `switch` / `?:` / any loop — the function
+  is 16 straight-line assignments, so there are no conditional rejection
+  branches to mirror.
+* **0** range checks, **0** null checks, **0** min/max constants.
+* **0** enum types anywhere in the public header, therefore no
+  out-of-range-enum-value class to test (see row 5 below for how this is
+  discharged).
 
-* return type is `void` — there is **no** error code, sentinel, or `errno` use;
-* there are **zero** `return` statements (implicit fall-off-the-end only);
-* there are **zero** `if` / `switch` / loops — it is 16 straight-line stores;
-* there are **zero** `assert`s, null checks, or range checks;
-* there are **zero** `#ifdef`s / compile-time configuration macros;
-* there are **zero** named constants, min/max bounds, or `enum`s, so there is
-  no "one past a valid range" value and **no out-of-range enum variant can be
-  passed across the FFI boundary** (the API has no enum parameter at all);
-* both parameters are unvalidated raw pointers; `out` has no length parameter
-  (the `tflac_u8 out[16]` array-parameter syntax decays to `tflac_u8 *` and is
-  **not** checked at runtime).
+Consequence: the C library **has an empty rejection surface**. It never rejects
+any input. The table below therefore has no `RETURN_ERROR`-style rows; instead
+it records every generic C-API boundary condition that the task mandates
+covering even when absent from the source, with the observed C outcome that the
+Rust must reproduce.
 
-Therefore the correctness obligation for the Rust port is: it must **not invent
-an error surface**. It must not add null checks, not add alignment checks, not
-panic, and not abort where C quietly proceeds. Every row below asserts that the
-Rust reproduces the C's *unchecked* behaviour, byte-for-byte or signal-for-signal.
+## Error-surface table
 
-## Table
+`n/a (no error channel)` below means: the function is `void` and performs no
+validation, so the only observable "result" is the memory effect (or the fault
+the OS raises). "Same fatal signal" rows are verified by running the call in a
+forked child process for each library and comparing the raw `wait` status.
 
-Each row = one distinct way the API can be handed invalid/degenerate input.
-"expected C result" is the empirically-verified behaviour of the built `.so`.
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|---------------------------------------------|-------------------|------|
+| 1 | `md5_digest` | `m == NULL` (out valid) | No validation exists; the `mov (%rax),%eax` at `+0x1109` faults. Process dies with **SIGSEGV (raw wait status 11, core-dump flag)**; `out` untouched. | `err_null_m_faults_identically` |
+| 2 | `md5_digest` | `out == NULL` (m valid) | No validation exists; the first byte store `mov %dl,(%rax)` at `+0x1111` faults. Process dies with **SIGSEGV**. | `err_null_out_faults_identically` |
+| 3 | `md5_digest` | `m == NULL && out == NULL` | Faults on the `m` load first (it precedes the first store). **SIGSEGV**. | `err_both_null_fault_identically` |
+| 4 | `md5_digest` | `out` buffer shorter than 16 bytes (undersized length, e.g. 15 / 8 / 1 / 0 bytes usable) | No length parameter exists, so no check is possible: the C unconditionally writes exactly 16 bytes and overruns. Observable result = **16 bytes written, past-the-end bytes clobbered in the same order/values**. Verified against a 16-byte window inside a larger guarded arena (so the overrun is observable but not a crash). | `err_undersized_out_writes_16_anyway` |
+| 5 | `md5_digest` | out-of-range enum value across the FFI boundary | **Not applicable — the public header declares no enum type.** The only parameter types are `const tflac_md5 *` and `tflac_u8 *`. The nearest analogue is an arbitrary/garbage bit pattern in the `tflac_u32` fields, which has no invalid encodings: every one of the 2^32 values is valid. Discharged by feeding fully random 32-bit words, including all-zero / all-ones / single-bit / 0x80000000-class values, and comparing byte-for-byte. | `err_no_enum_surface_all_bit_patterns_valid` |
+| 6 | `md5_digest` | `out == (tflac_u8*)m` and every overlap offset in `-16..=16` (aliasing input and output — well-defined in C, since writing through a character-type lvalue may alias any object) | The C **re-loads `m->a`/`b`/`c`/`d` from memory after every single byte store** (confirmed in the disassembly: `mov -0x8(%rbp),%rax; mov (%rax),%eax` repeats before each of the 16 stores). So overlapping buffers produce a byte-cascade, not a snapshot copy. Rust must reproduce the exact cascade. | `err_overlapping_buffers_cascade` |
+| 7 | `md5_digest` | misaligned `m` (struct pointer at odd/2-mod-4 addresses) | No alignment check; x86-64 `mov` loads succeed. Same 16 output bytes as the aligned case. | `err_misaligned_m_and_out` |
+| 8 | `md5_digest` | misaligned `out` | No alignment check; byte stores are always aligned. Same 16 output bytes. | `err_misaligned_m_and_out` |
+| 9 | `md5_digest` | "one step past a documented valid range" for the `tflac_u32` fields | The documented range of `uint32_t` is `0..=0xFFFFFFFF` and the type cannot hold anything else; `0xFFFFFFFF + 1` wraps to `0` at the caller. Both endpoints and the wrap are fed explicitly. | `err_no_enum_surface_all_bit_patterns_valid` |
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
-|---|----------|---------------------------------------------|-------------------|------|---|
-| E1 | `md5_digest` | `m == NULL`, `out` valid → deref of null at offset 0 | fatal `SIGSEGV`, no bytes written | `err_null_m_segv_both` | [x] |
-| E2 | `md5_digest` | `m` valid, `out == NULL` → store to null | fatal `SIGSEGV` | `err_null_out_segv_both` | [x] |
-| E3 | `md5_digest` | `m == NULL && out == NULL` | fatal `SIGSEGV` | `err_both_null_segv_both` | [x] |
-| E4 | `md5_digest` | `out` points to a read-only page (writable-length 0) | fatal `SIGSEGV` on first store | `err_readonly_out_segv_both` | [x] |
-| E5 | `md5_digest` | `out` buffer shorter than 16 (last byte at page end, next page unmapped) → write past 16 | writes exactly 16 bytes then `SIGSEGV` **only if** <16 mapped; with exactly 16 mapped: **no fault**, proving it never writes a 17th byte | `err_out_exactly_16_no_overrun`, `err_out_15_bytes_segv_both` | [x] |
-| E6 | `md5_digest` | `m` truncated: only 15 of 16 source bytes mapped → read past end | fatal `SIGSEGV`; with exactly 16 mapped: no fault, proving it never reads a 17th byte | `err_m_exactly_16_no_overread`, `err_m_15_bytes_segv_both` | [x] |
-| E7 | `md5_digest` | `m` misaligned (odd address, not 4-byte aligned) — UB in C, works on x86 | **no** fault, correct little-endian bytes | `err_misaligned_m_no_fault`, `cfg_c9_misaligned_m` | [x] |
-| E8 | `md5_digest` | `out` misaligned (odd address) | **no** fault, correct bytes | `err_misaligned_out_no_fault`, `cfg_c8_misaligned_out` | [x] |
-| E9 | `md5_digest` | `m` non-null but wildly invalid / never-mapped address (e.g. `0x1`) | fatal `SIGSEGV` | `err_wild_m_segv_both` | [x] |
-| E10 | `md5_digest` | `out` non-null but never-mapped address (e.g. `0x1`) | fatal `SIGSEGV` | `err_wild_out_segv_both` | [x] |
-| E11 | `md5_digest` | all-zero input struct (degenerate but legal) — must NOT be treated as "empty/error" | 16 zero bytes written, no error | `err_all_zero_is_not_an_error` | [x] |
-| E12 | `md5_digest` | `out == (tflac_u8*)m` (full self-overlap; legal C, no `restrict`) | **no** error; C reloads each field before each store, so output is defined and equals a byte-wise ascending copy | `err_exact_overlap_defined`, `cfg_c11_overlap_exact` | [x] |
-| E13 | `md5_digest` | called twice in a row on the same `out` (no reset/idempotency check) | second call overwrites; identical result | `err_repeat_call_idempotent` | [x] |
+### Row status
 
-Rows E1–E4, E9, E10 are verified by **forking a child process** and comparing
-the exact termination signal from the C `.so` and the Rust `.so` — i.e. the same
-rejection, not merely "both failed somehow". Rows E5/E6 use `mmap` with an
-adjacent `PROT_NONE` guard page so an off-by-one read/write is turned into a
-deterministic, observable `SIGSEGV`.
-
-## Note on "no error surface" ≠ "nothing to test"
-
-The absence of validation means the *only* observable "error" behaviour is the
-hardware fault, and the failure mode a naive Rust port exhibits is the
-*opposite* one: adding a check and returning quietly, or panicking with a Rust
-message instead of faulting. Rows E1–E4/E9/E10 exist specifically to catch that.
+* [x] 1 — `err_null_m_faults_identically`
+* [x] 2 — `err_null_out_faults_identically`
+* [x] 3 — `err_both_null_fault_identically`
+* [x] 4 — `err_undersized_out_writes_16_anyway`
+* [x] 5 — `err_no_enum_surface_all_bit_patterns_valid`
+* [x] 6 — `err_overlapping_buffers_cascade`
+* [x] 7 — `err_misaligned_m_and_out`
+* [x] 8 — `err_misaligned_m_and_out`
+* [x] 9 — `err_no_enum_surface_all_bit_patterns_valid`

@@ -19,15 +19,10 @@
 //!   `(a > b ? a : b)` / `(a < b ? a : b)` propagate the *second* operand when
 //!   an operand is NaN and always return the second operand for `±0.0`,
 //!   whereas `f32::max`/`f32::min` are NaN-suppressing. Reproducing the C
-//!   behaviour requires the raw comparison (gcc lowers the ternary to
-//!   `comiss` + `jbe`, i.e. "not greater ⇒ take `b`", which is what the `if`
-//!   below expresses).
+//!   behaviour requires the raw comparison (this is what gcc lowers to
+//!   `maxss`/`minss`).
 //! * Boolean results are converted with `as c_int`, yielding exactly the 1/0
 //!   that C's relational operators produce.
-//! * `collided`'s `*(T *)p` loads are done with raw `mov` instructions
-//!   (see `load32`) so that a null or misaligned pointer behaves exactly as in
-//!   C — every checked Rust load turns C's `SIGSEGV` into a Rust abort in
-//!   `debug_assertions` builds.
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -274,102 +269,6 @@ pub extern "C" fn c2AABBtoAABB(A: c2AABB, B: c2AABB) -> c_int {
     ((d0 | d1 | d2 | d3) == 0) as c_int
 }
 
-// ---------------------------------------------------------------------------
-// Reproducing the C's `*(T *)p` loads
-// ---------------------------------------------------------------------------
-//
-// `collided` dereferences its `const void *` arguments unconditionally, with:
-//
-// * **no null check** — a null `p` therefore has to produce the same
-//   memory-access fault (`SIGSEGV`) here. Getting that right rules out every
-//   obvious spelling: `ptr::read`, `read_unaligned`, `read_volatile` and
-//   `copy_nonoverlapping` (hence also a `repr(packed)` field read) each carry an
-//   `assert_unsafe_precondition!`, and even a plain `*(p as *const T)` gets
-//   rustc's inserted "null pointer dereference occurred" check. All of those
-//   turn the fault into a *non-unwinding panic* (`SIGABRT`) as soon as the
-//   cdylib is built with `debug_assertions`/UB checks — an observable
-//   divergence from the C for exactly this input;
-// * **no alignment requirement** — a misaligned `p` must read the same bytes
-//   rather than trip an alignment assumption.
-//
-// A single `mov` per 4-byte field, emitted through `asm!`, is opaque to all of
-// those checks and is exactly what gcc emits for the C, so it satisfies both
-// requirements at once. `f32::from_bits` is a pure bitcast, so NaN payloads
-// pass through unquieted.
-
-/// One unaligned little-endian 32-bit load, with no null/alignment check.
-///
-/// # Safety
-/// Same contract as C's `*(float *)p`: `p` must point at 4 readable bytes.
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-unsafe fn load32(p: *const u8) -> u32 {
-    let out: u32;
-    unsafe {
-        core::arch::asm!(
-            "mov {out:e}, dword ptr [{ptr}]",
-            ptr = in(reg) p,
-            out = out(reg) out,
-            options(readonly, nostack, preserves_flags)
-        );
-    }
-    out
-}
-
-/// Portable fallback for non-x86_64 targets (the C `.so` this is verified
-/// against is x86_64, where the `asm!` path above is used).
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-unsafe fn load32(p: *const u8) -> u32 {
-    unsafe { (p as *const u32).read_unaligned() }
-}
-
-/// One `float` field at byte offset `off`.
-///
-/// # Safety
-/// `p + off` must point at 4 readable bytes.
-#[inline(always)]
-unsafe fn load_f32(p: *const c_void, off: usize) -> f32 {
-    f32::from_bits(unsafe { load32((p as *const u8).wrapping_add(off)) })
-}
-
-/// `*(c2Circle *)p` — see the notes above.
-///
-/// # Safety
-/// Same contract as the C: `p` must point at 12 readable bytes.
-#[inline(always)]
-unsafe fn read_circle(p: *const c_void) -> c2Circle {
-    unsafe {
-        c2Circle {
-            p: c2v {
-                x: load_f32(p, 0),
-                y: load_f32(p, 4),
-            },
-            r: load_f32(p, 8),
-        }
-    }
-}
-
-/// `*(c2AABB *)p` — see the notes above.
-///
-/// # Safety
-/// Same contract as the C: `p` must point at 16 readable bytes.
-#[inline(always)]
-unsafe fn read_aabb(p: *const c_void) -> c2AABB {
-    unsafe {
-        c2AABB {
-            min: c2v {
-                x: load_f32(p, 0),
-                y: load_f32(p, 4),
-            },
-            max: c2v {
-                x: load_f32(p, 8),
-                y: load_f32(p, 12),
-            },
-        }
-    }
-}
-
 /// ```c
 /// int collided(const void *A, C2_TYPE typeA, const void *B, C2_TYPE typeB);
 /// ```
@@ -390,21 +289,25 @@ pub unsafe extern "C" fn collided(
 ) -> c_int {
     match typeA {
         C2_TYPE_CIRCLE => match typeB {
-            C2_TYPE_CIRCLE => c2CircletoCircle(unsafe { read_circle(A) }, unsafe {
-                read_circle(B)
-            }),
-            C2_TYPE_AABB => c2CircletoAABB(unsafe { read_circle(A) }, unsafe {
-                read_aabb(B)
-            }),
+            C2_TYPE_CIRCLE => c2CircletoCircle(
+                unsafe { (A as *const c2Circle).read_unaligned() },
+                unsafe { (B as *const c2Circle).read_unaligned() },
+            ),
+            C2_TYPE_AABB => c2CircletoAABB(
+                unsafe { (A as *const c2Circle).read_unaligned() },
+                unsafe { (B as *const c2AABB).read_unaligned() },
+            ),
             _ => 0,
         },
         C2_TYPE_AABB => match typeB {
-            C2_TYPE_CIRCLE => c2CircletoAABB(unsafe { read_circle(B) }, unsafe {
-                read_aabb(A)
-            }),
-            C2_TYPE_AABB => c2AABBtoAABB(unsafe { read_aabb(A) }, unsafe {
-                read_aabb(B)
-            }),
+            C2_TYPE_CIRCLE => c2CircletoAABB(
+                unsafe { (B as *const c2Circle).read_unaligned() },
+                unsafe { (A as *const c2AABB).read_unaligned() },
+            ),
+            C2_TYPE_AABB => c2AABBtoAABB(
+                unsafe { (A as *const c2AABB).read_unaligned() },
+                unsafe { (B as *const c2AABB).read_unaligned() },
+            ),
             _ => 0,
         },
         _ => 0,

@@ -37,34 +37,28 @@ pub struct cn_rnd_t {
 /// exported ABI). All arithmetic uses wrapping semantics to match C's unsigned
 /// integer overflow behaviour.
 ///
-/// # Alignment
+/// The state is accessed through `read_unaligned` / `write_unaligned` on a raw
+/// pointer rather than through a `&mut cn_rnd_t`. This is deliberate and is
+/// required for C parity: the C compiler emits plain `mov`s that tolerate a
+/// misaligned `cn_rnd_t *` on x86-64, whereas forming a Rust reference from a
+/// misaligned pointer trips the `debug_assertions` alignment check and aborts
+/// the process (`SIGABRT`) — a divergence from C, which returns a value. Using
+/// unaligned accesses keeps the behaviour identical in every build profile and
+/// also removes the reference-formation UB.
 ///
-/// The C code performs plain `uint64_t` loads/stores through `cn_rnd_t *` and
-/// contains no alignment check, so on x86-64 it happily accepts a *misaligned*
-/// `cn_rnd_t *`. Forming a Rust `&mut cn_rnd_t` from such a pointer would be
-/// UB (and aborts under the debug alignment check), so the state is accessed
-/// exclusively through `read_unaligned` / `write_unaligned` on raw pointers.
-/// This keeps the Rust tolerant of misalignment exactly like the C, and the
-/// generated code for the aligned case is identical.
-///
-/// The two stores are issued in the same order as the C (`state[0]` before
-/// `state[1]`), and each state word is read once up-front, mirroring the C's
-/// `x`/`y` locals.
-///
-/// # Safety
-///
-/// `rnd` must be non-null and point to 16 readable+writable bytes. Alignment is
-/// *not* required. A null `rnd` reproduces the C's unconditional dereference.
+/// Reads and writes touch only `state[0]` and `state[1]`, i.e. never outside
+/// the 16 bytes of the object, exactly like the C.
 unsafe fn cn_rnd_next(rnd: *mut cn_rnd_t) -> u64 {
+    // `addr_of_mut!` computes the field address without creating a reference.
     let state: *mut u64 = unsafe { core::ptr::addr_of_mut!((*rnd).state) }.cast::<u64>();
 
-    let mut x: u64 = unsafe { state.read_unaligned() };
-    let y: u64 = unsafe { state.add(1).read_unaligned() };
-    unsafe { state.write_unaligned(y) };
+    let mut x: u64 = unsafe { core::ptr::read_unaligned(state) };
+    let y: u64 = unsafe { core::ptr::read_unaligned(state.add(1)) };
+    unsafe { core::ptr::write_unaligned(state, y) };
     x ^= x << 23;
     x ^= x >> 17;
     x ^= y ^ (y >> 26);
-    unsafe { state.add(1).write_unaligned(x) };
+    unsafe { core::ptr::write_unaligned(state.add(1), x) };
     x.wrapping_add(y)
 }
 
@@ -82,10 +76,9 @@ unsafe fn cn_rnd_next(rnd: *mut cn_rnd_t) -> u64 {
 ///
 /// The type-punning `*(double *)&result` is reproduced bit-for-bit with
 /// `f64::from_bits`.
-///
-/// The pointer is passed straight through to `cn_rnd_next` without forming a
-/// reference, so — like the C — a misaligned `cn_rnd_t *` is accepted and a
-/// null one faults on the first load rather than being rejected.
+/// The pointer is forwarded to `cn_rnd_next` as a raw pointer (no `&mut` is
+/// formed), so a `NULL` argument faults with `SIGSEGV` on first access exactly
+/// like the C, and a misaligned argument is handled rather than aborting.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn next_double(rnd: *mut cn_rnd_t) -> f64 {
     let value: u64 = unsafe { cn_rnd_next(rnd) };

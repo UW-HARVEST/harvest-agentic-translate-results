@@ -1,83 +1,63 @@
 # Configuration Surface
 
-Derived from all exported C entry points and every data-dependent `?:`, `if`,
-and `switch` branch in `c_src/src/lib.c`. There are no compile-time or runtime
-feature flags. `low`, `inside`, and `high` below are per-axis positions relative
-to ordered AABB/clamp bounds. `overlap`, `tangent`, and `separate` mean `<`,
-`==`, and `>` respectively for the exact squared-distance comparison used by C.
-False comparison arms include equality and unordered (NaN) comparisons.
+Derived from every exported C entry point and every comparison/switch branch in
+`c_src/src/lib.c`. The C library has no compile-time Cargo feature equivalent,
+runtime option object, byte-order mode, format selector, or length/count input.
+Its varying shapes are IEEE-754 `float` values, geometric relative positions,
+and the `c2Collided` type selector.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `c2V` | Arbitrary `x,y` bit patterns: finite, signed zero, infinity, NaN | [x] |
-| 2 | `c2Mulvs` | Arbitrary vector and scalar; no data-dependent branch | [x] |
-| 3 | `c2Maxv` | `a.x > b.x`, `a.y > b.y` | [x] |
-| 4 | `c2Maxv` | `a.x > b.x`, `a.y <= b.y` or unordered | [x] |
-| 5 | `c2Maxv` | `a.x <= b.x` or unordered, `a.y > b.y` | [x] |
-| 6 | `c2Maxv` | Both comparisons false (less, equal, or unordered) | [x] |
-| 7 | `c2Minv` | `a.x < b.x`, `a.y < b.y` | [x] |
-| 8 | `c2Minv` | `a.x < b.x`, `a.y >= b.y` or unordered | [x] |
-| 9 | `c2Minv` | `a.x >= b.x` or unordered, `a.y < b.y` | [x] |
-| 10 | `c2Minv` | Both comparisons false (greater, equal, or unordered) | [x] |
-| 11 | `c2Clampv` | x low, y low, ordered bounds | [x] |
-| 12 | `c2Clampv` | x low, y inside, ordered bounds | [x] |
-| 13 | `c2Clampv` | x low, y high, ordered bounds | [x] |
-| 14 | `c2Clampv` | x inside, y low, ordered bounds | [x] |
-| 15 | `c2Clampv` | x inside, y inside, ordered bounds | [x] |
-| 16 | `c2Clampv` | x inside, y high, ordered bounds | [x] |
-| 17 | `c2Clampv` | x high, y low, ordered bounds | [x] |
-| 18 | `c2Clampv` | x high, y inside, ordered bounds | [x] |
-| 19 | `c2Clampv` | x high, y high, ordered bounds | [x] |
-| 20 | `c2Clampv` | Reversed/equal/non-finite bounds, exercising false comparison arms | [x] |
-| 21 | `c2Sub` | Arbitrary vectors; no data-dependent branch | [x] |
-| 22 | `c2Dot` | Arbitrary vectors, including cancellation and non-finite products | [x] |
-| 23 | `c2CircletoCircle` | squared distance `<` squared radius sum (overlap) | [x] |
-| 24 | `c2CircletoCircle` | squared distance `==` squared radius sum (tangent, false) | [x] |
-| 25 | `c2CircletoCircle` | squared distance `>` squared radius sum (separate) | [x] |
-| 26 | `c2CircletoAABB` | x low, y low; overlap | [x] |
-| 27 | `c2CircletoAABB` | x low, y low; tangent | [x] |
-| 28 | `c2CircletoAABB` | x low, y low; separate | [x] |
-| 29 | `c2CircletoAABB` | x low, y inside; overlap | [x] |
-| 30 | `c2CircletoAABB` | x low, y inside; tangent | [x] |
-| 31 | `c2CircletoAABB` | x low, y inside; separate | [x] |
-| 32 | `c2CircletoAABB` | x low, y high; overlap | [x] |
-| 33 | `c2CircletoAABB` | x low, y high; tangent | [x] |
-| 34 | `c2CircletoAABB` | x low, y high; separate | [x] |
-| 35 | `c2CircletoAABB` | x inside, y low; overlap | [x] |
-| 36 | `c2CircletoAABB` | x inside, y low; tangent | [x] |
-| 37 | `c2CircletoAABB` | x inside, y low; separate | [x] |
-| 38 | `c2CircletoAABB` | x inside, y inside; overlap | [x] |
-| 39 | `c2CircletoAABB` | x inside, y inside; tangent (`r = 0`) | [x] |
-| 40 | `c2CircletoAABB` | x inside, y inside; false result from NaN `r` (finite strict separation is impossible at zero distance) | [x] |
-| 41 | `c2CircletoAABB` | x inside, y high; overlap | [x] |
-| 42 | `c2CircletoAABB` | x inside, y high; tangent | [x] |
-| 43 | `c2CircletoAABB` | x inside, y high; separate | [x] |
-| 44 | `c2CircletoAABB` | x high, y low; overlap | [x] |
-| 45 | `c2CircletoAABB` | x high, y low; tangent | [x] |
-| 46 | `c2CircletoAABB` | x high, y low; separate | [x] |
-| 47 | `c2CircletoAABB` | x high, y inside; overlap | [x] |
-| 48 | `c2CircletoAABB` | x high, y inside; tangent | [x] |
-| 49 | `c2CircletoAABB` | x high, y inside; separate | [x] |
-| 50 | `c2CircletoAABB` | x high, y high; overlap | [x] |
-| 51 | `c2CircletoAABB` | x high, y high; tangent | [x] |
-| 52 | `c2CircletoAABB` | x high, y high; separate | [x] |
-| 53 | `c2CircletoCapsule` | `da < 0` (nearest endpoint A); overlap | [x] |
-| 54 | `c2CircletoCapsule` | `da < 0` (nearest endpoint A); tangent | [x] |
-| 55 | `c2CircletoCapsule` | `da < 0` (nearest endpoint A); separate | [x] |
-| 56 | `c2CircletoCapsule` | `da >= 0 && db < 0` (segment interior); overlap | [x] |
-| 57 | `c2CircletoCapsule` | `da >= 0 && db < 0` (segment interior); tangent | [x] |
-| 58 | `c2CircletoCapsule` | `da >= 0 && db < 0` (segment interior); separate | [x] |
-| 59 | `c2CircletoCapsule` | `da >= 0 && db >= 0` (nearest endpoint B); overlap | [x] |
-| 60 | `c2CircletoCapsule` | `da >= 0 && db >= 0` (nearest endpoint B); tangent | [x] |
-| 61 | `c2CircletoCapsule` | `da >= 0 && db >= 0` (nearest endpoint B); separate | [x] |
-| 62 | `c2CircletoCapsule` | Degenerate segment (`a == b`); overlap | [x] |
-| 63 | `c2CircletoCapsule` | Degenerate segment (`a == b`); tangent | [x] |
-| 64 | `c2CircletoCapsule` | Degenerate segment (`a == b`); separate | [x] |
-| 65 | `c2Collided` | `typeB = C2_TYPE_CIRCLE`, valid circle pointers, all contact outcomes | [x] |
-| 66 | `c2Collided` | `typeB = C2_TYPE_AABB`, valid circle/AABB pointers, all clamp/contact shapes | [x] |
-| 67 | `c2Collided` | `typeB = C2_TYPE_CAPSULE`, valid circle/capsule pointers, all region/contact shapes | [x] |
-| 68 | `circle_collide` | Fixed circle + AABB + capsule pipeline; randomized finite input circles and all observed result masks | [x] |
-| 69 | `c2CircletoCircle` | Signed zero, infinity, and NaN fields (unordered final comparison) | [x] |
-| 70 | `c2CircletoAABB` | Signed zero, infinity, NaN, and reversed/equal AABB bounds | [x] |
-| 71 | `c2CircletoCapsule` | Signed zero, infinity, NaN, and degenerate/non-finite segment fields | [x] |
-| 72 | `c2Collided`, `circle_collide` | Non-finite public inputs propagated through dispatch/full pipeline | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C01 | `c2V` | arbitrary finite components, including positive and negative values | [x] |
+| C02 | `c2V` | IEEE exceptional components: signed zero, infinities, and NaNs | [x] |
+| C03 | `c2Mulvs` | finite vector and positive finite scalar | [x] |
+| C04 | `c2Mulvs` | finite vector and negative or signed-zero scalar | [x] |
+| C05 | `c2Mulvs` | overflow, infinity, or NaN operands | [x] |
+| C06 | `c2Maxv` | `a.x > b.x` / `a.y > b.y` comparison true | [x] |
+| C07 | `c2Maxv` | comparison false because `a < b` or equal, including signed zero | [x] |
+| C08 | `c2Maxv` | unordered comparison because either operand is NaN | [x] |
+| C09 | `c2Minv` | `a.x < b.x` / `a.y < b.y` comparison true | [x] |
+| C10 | `c2Minv` | comparison false because `a > b` or equal, including signed zero | [x] |
+| C11 | `c2Minv` | unordered comparison because either operand is NaN | [x] |
+| C12 | `c2Clampv` | each component below its lower bound | [x] |
+| C13 | `c2Clampv` | each component inside inclusive bounds | [x] |
+| C14 | `c2Clampv` | each component above its upper bound | [x] |
+| C15 | `c2Clampv` | mixed below/inside/above states across x and y | [x] |
+| C16 | `c2Clampv` | reversed/equal bounds and NaN operands | [x] |
+| C17 | `c2Sub` | arbitrary finite operands, including cancellation and signed zero | [x] |
+| C18 | `c2Sub` | overflow, infinity, and NaN operands | [x] |
+| C19 | `c2Dot` | arbitrary finite operands and cancellation | [x] |
+| C20 | `c2Dot` | overflow, underflow, infinity, and NaN operands | [x] |
+| C21 | `c2CircletoCircle` | center distance strictly less than squared summed radius | [x] |
+| C22 | `c2CircletoCircle` | exact tangency (`d2 == r2`), which returns false | [x] |
+| C23 | `c2CircletoCircle` | separated circles (`d2 > r2`) | [x] |
+| C24 | `c2CircletoCircle` | zero/negative radii, overflow, or NaN values | [x] |
+| C25 | `c2CircletoAABB` | center inside/on AABB so clamped point equals center | [x] |
+| C26 | `c2CircletoAABB` | center outside one face/edge | [x] |
+| C27 | `c2CircletoAABB` | center outside a corner in both axes | [x] |
+| C28 | `c2CircletoAABB` | exact tangency, zero/negative radius, or degenerate/reversed bounds | [x] |
+| C29 | `c2CircletoAABB` | infinity or NaN in circle/AABB inputs | [x] |
+| C30 | `c2CircletoCapsule` | `da < 0`: closest to endpoint `a` | [x] |
+| C31 | `c2CircletoCapsule` | `da >= 0` and `db < 0`: closest to segment interior | [x] |
+| C32 | `c2CircletoCapsule` | `da >= 0` and `db >= 0`: closest to endpoint `b` | [x] |
+| C33 | `c2CircletoCapsule` | exact tangency and zero/negative radii | [x] |
+| C34 | `c2CircletoCapsule` | degenerate capsule (`a == b`) | [x] |
+| C35 | `c2CircletoCapsule` | overflow, infinity, or NaN inputs | [x] |
+| C36 | `c2Collided` | valid selector 0 with correctly shaped circle pointers | [x] |
+| C37 | `c2Collided` | valid selector 1 with circle/AABB pointers | [x] |
+| C38 | `c2Collided` | valid selector 2 with circle/capsule pointers | [x] |
+| C39 | `circle_collide` | finite x/y with positive radius across all three fixed target shapes | [x] |
+| C40 | `circle_collide` | zero/negative radius and IEEE exceptional x/y/r values | [x] |
+
+## Public call hierarchy
+
+```text
+circle_collide
+└── c2Collided (selectors 0, 1, 2)
+    ├── c2CircletoCircle
+    ├── c2CircletoAABB
+    └── c2CircletoCapsule
+
+collision functions
+└── c2V / c2Mulvs / c2Maxv / c2Minv / c2Clampv / c2Sub / c2Dot
+```

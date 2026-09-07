@@ -1,52 +1,58 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Source of truth: `nm -D --defined-only` on the C shared library
+`c_src/build/libharvest-work-18lsCO.so`, compared against the Rust cdylib
+`translation/target/release/libconfusion_lib.so`.
 
-* C  : `c_src/build/libharvest-work-lSH44j.so`  (built by `cmake`, `add_library(... SHARED src/lib.c)`)
-* Rust: `translation/target/{release,debug}/libconfusion_lib.so` (`crate-type = ["cdylib"]`)
+## C `.so` exported symbols (all)
 
-## Public (exported, `T`) symbols
+| # | symbol | C signature (`c_src/src/lib.c`) | exported by Rust `.so`? | Rust item |
+|---|--------|----------------------------------|--------------------------|-----------|
+| 1 | `create_state`   | `ProcessState* create_state(int initial_val, int capacity)` | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn create_state` |
+| 2 | `destroy_state`  | `void destroy_state(ProcessState* state)`                   | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn destroy_state` |
+| 3 | `process_buffer` | `int process_buffer(ProcessState* state, char target)`       | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn process_buffer` |
+| 4 | `update_flags`   | `void update_flags(ProcessState* state, int param)`          | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn update_flags` |
+| 5 | `confuse_types`  | `int confuse_types(ProcessState* state, int operation)`       | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn confuse_types` |
+| 6 | `confusion`      | `int confusion(int, int, int, int)` (the only symbol declared in `include/lib.h`) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn confusion` |
 
-| # | C symbol (`nm -D`) | C source | Rust `#[unsafe(no_mangle)] extern "C"` | exported by Rust `.so` |
-|---|--------------------|----------|----------------------------------------|------------------------|
-| 1 | `create_state`   | `lib.c:57`  | `create_state`   | YES |
-| 2 | `destroy_state`  | `lib.c:90`  | `destroy_state`  | YES |
-| 3 | `process_buffer` | `lib.c:99`  | `process_buffer` | YES |
-| 4 | `update_flags`   | `lib.c:126` | `update_flags`   | YES |
-| 5 | `confuse_types`  | `lib.c:143` | `confuse_types`  | YES |
-| 6 | `confusion`      | `lib.c:177` | `confusion`      | YES |
+No macro-generated exports exist: `STRINGIFY`, `DEBUG_VAR` and `LOG_OPERATION`
+are expression/statement macros that expand into `printf` calls inside existing
+functions; they define no symbols.
 
-Only `confusion` appears in the installed public header `include/lib.h`; the
-other five are *not* declared in the header but **are** exported with default
-visibility from the C `.so`, therefore they are part of the ABI surface and are
-tested directly.
+There are no `static` (internal-linkage) helpers in the C source, so the table
+above is the complete translation unit surface. Every C source file
+(`src/lib.c` is the only one) is fully translated — no module was skipped and
+no symbol is a stub.
 
-There are no macro-generated symbols: the only macros in `lib.c`
-(`STRINGIFY`, `DEBUG_VAR`, `LOG_OPERATION`) expand to `printf` call sites, not
-to definitions.
-
-### Symbol diff
+## Symbol diff
 
 ```
-comm -23 <(C exported)  <(Rust exported)   -> (empty)   # nothing missing in Rust
+$ comm -23 c_symbols.txt rust_symbols.txt      # in C, missing from Rust
+(empty)
 ```
 
-Verified by `tests/phase_d_symbols.rs::symbol_parity_c_so_vs_rust_so`, which
-runs `nm -D --defined-only` on both objects at test time and asserts the
-difference is empty. Result: **0 missing symbols.**
+**0 missing symbols.**
 
 ## Undefined (imported) symbols
 
-The C object imports `malloc`, `free`, `memchr`, `printf`, `puts`, `snprintf`,
-`strlen` from `libc.so.6` (`puts` is GCC's optimisation of
-`printf("literal\n")` — byte-identical output).
+The Rust `.so` imports only libc / libgcc-unwind / Rust-std runtime symbols
+(`malloc`, `free`, `printf`, `snprintf`, `strlen`, `memchr`, plus std runtime:
+`__cxa_*`, `_Unwind_*`, `pthread_key_*`, `mmap64`, ...). There are **0 undefined
+non-libc/non-runtime symbols**, i.e. nothing is left dangling.
 
-The Rust object imports the same seven glibc entry points (the translation
-calls the *real* libc `printf`/`snprintf`/`malloc`/`free`/`strlen`/`memchr`
-through `extern "C"`, which is what keeps `%f`/`%u`/`%d` formatting and the
-allocator ABI identical), plus the ordinary Rust runtime imports
-(`__errno_location`, `memcpy`, `mmap64`, `_Unwind_*`, …). All of those resolve
-against `libc.so.6` / `libgcc_s.so.1`.
+The C `.so` additionally imports `puts`: GCC rewrites the argument-less
+`printf("literal\n")` calls into `puts("literal")`. This is a compiler
+optimisation only — the bytes written to stdout are identical, which the
+stdout-capturing differential tests confirm.
 
-* Non-libc / non-libgcc undefined symbols in the Rust `.so`: **0**
-* `ldd -r` reports no unresolved symbols for either object.
+## Type layout parity (needed because `ProcessState` crosses the FFI boundary)
+
+| C type | layout | Rust model |
+|--------|--------|------------|
+| `PackedFlags` (bit-fields `flag1:1, flag2:1, flag3:1, counter:5, mode:3, status:5, reserved:16`) | one 32-bit allocation unit, SysV LE order: flag1@0, flag2@1, flag3@2, counter@3..8, mode@8..11, status@11..16, reserved@16..32 | `#[repr(C)] struct PackedFlags { bits: u32 }` + `bitfield!` accessors |
+| `TypeConfusion` (`union { int; float; unsigned; char[4] }`) | 4 bytes, align 4 | `#[repr(C)] struct TypeConfusion { raw: u32 }` + reinterpreting accessors |
+| `ProcessState` | `sizeof == 24`, `alignof == 8`; offsets flags 0, data 4, buffer 8, capacity 16 | `#[repr(C)] struct ProcessState { flags, data, buffer: *mut c_char, capacity: c_int }` |
+
+Verified at runtime by `tests/differential.rs::phase_a_struct_layout_parity`,
+which has C `create_state` build a state and reads the fields back through the
+Rust-side layout (and vice versa).

@@ -1,63 +1,69 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — public-symbol parity
 
 Derived mechanically from `nm -D` on both shared objects.
 
-- C `.so`: `c_src/build/libharvest-work-QWzLbB.so` (built by `c_src/CMakeLists.txt`,
-  single translation unit `src/lib.c`, no `CMAKE_BUILD_TYPE` set → `-O0`).
-- Rust `.so`: `translation/target/release/libhsl_to_rgb_lib.so`
-  (`crate-type = ["cdylib"]`, `name = "hsl_to_rgb_lib"`).
+* C `.so`:    `c_src/build/libharvest-work-tFkHTu.so`
+* Rust `.so`: `translation/target/release/libhsl_to_rgb_lib.so`
 
-## Regeneration
+## C source inventory
+
+`c_src/CMakeLists.txt` compiles exactly one translation unit:
+
+```
+add_library(${project_name} SHARED src/lib.c)
+```
+
+`c_src/include/lib.h` declares exactly one function:
+
+```c
+void hsl_to_rgb(float *dest, const float *src);
+```
+
+There are no namespacing/renaming macros, no `#ifdef` feature gates, no
+additional `.c` files, and no macro-generated symbol families. So the expected
+defined-symbol surface is a single name: `hsl_to_rgb`.
+
+## `nm -D` on the C `.so`
+
+```
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U fmodf@GLIBC_2.2.5
+0000000000001109 T hsl_to_rgb
+```
+
+Defined (`T`) non-libc symbols: **`hsl_to_rgb`** (1).
+`U fmodf` is an undefined import from libm/libc, not part of the surface.
+The `w` entries are the standard glibc/gcc crt weak hooks, not library API.
+
+## Parity table
+
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `hsl_to_rgb` | `T` (defined) | `T` (defined) | MATCH |
+
+## Missing-symbol analysis
+
+None. There is no C source file left untranslated: `src/lib.c` is the only
+translation unit and its only function is `hsl_to_rgb`, which
+`translation/src/lib.rs` exports via `#[unsafe(no_mangle)] pub unsafe extern "C" fn`.
+
+## Verification command
 
 ```sh
-nm -D --defined-only c_src/build/libharvest-work-QWzLbB.so
-nm -D --defined-only translation/target/release/libhsl_to_rgb_lib.so
+diff <(nm -D --defined-only c_src/build/libharvest-work-tFkHTu.so \
+        | awk '{print $3}' | grep -v '^_' | sort) \
+     <(nm -D --defined-only translation/target/release/libhsl_to_rgb_lib.so \
+        | awk '{print $3}' | grep -v '^_' | sort)
 ```
 
-## Defined (exported) symbols
+Result: empty diff (see `check_symbols.sh`).
 
-| # | C symbol (`nm -D --defined-only`) | type | present in Rust `.so` | Rust definition |
-|---|-----------------------------------|------|-----------------------|-----------------|
-| 1 | `hsl_to_rgb`                      | `T`  | YES                   | `#[unsafe(no_mangle)] pub unsafe extern "C" fn hsl_to_rgb` in `src/lib.rs` |
+## Feature combinations
 
-`c_src/include/lib.h` declares exactly one prototype, `void hsl_to_rgb(float *dest, const float *src);`.
-There are no namespace/renaming macros, no macro-generated symbol families, no
-`#ifdef`-gated additional entry points, and no additional `.c` files in
-`CMakeLists.txt`. So the C `.so` exports exactly one non-libc symbol and the
-translation is complete at file granularity — no C module was skipped.
-
-**Missing-from-Rust count: 0.** No `#[no_mangle]` wrapper had to be added and no
-untranslated C module was found.
-
-## Undefined symbols (imports)
-
-C `.so` imports, excluding weak toolchain stubs
-(`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`):
-
-| symbol | source |
-|--------|--------|
-| `fmodf@GLIBC_2.2.5` | libc/libm |
-
-Rust `.so` imports: only libc (`malloc`, `free`, `memcpy`, `mmap64`, `open64`,
-`read`, `write`, `pthread_key_*`, `__errno_location`, `abort`, …) and libgcc
-unwinder symbols (`_Unwind_*`). These come from the Rust standard library that
-`cdylib` links in; they are all platform runtime symbols.
-
-**Undefined non-libc / non-runtime symbols in the Rust `.so`: 0.**
-
-Note: Rust's `f32 % f32` lowers to LLVM `frem`, which the backend expands
-inline for `f32` in this build, so `fmodf` does not appear as an import name in
-the Rust `.so`. The differential tests in `tests/differential.rs` verify the
-numeric result matches glibc `fmodf` bit-for-bit over the tested domain rather
-than relying on symbol identity.
-
-## Symbol diff
-
-```
-$ comm -3 <(nm -D --defined-only C.so   | awk '{print $NF}' | sort) \
-          <(nm -D --defined-only RUST.so | awk '{print $NF}' | sort)
-(empty)
-```
-
-Symbol diff is EMPTY. Phase D symbol-parity gate: PASS.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only build
+configuration is the default one. `cargo check --no-default-features` and
+`cargo check` are the same build. There is likewise no `#ifdef` in the C, so
+there is no conditional symbol surface to cross-check.

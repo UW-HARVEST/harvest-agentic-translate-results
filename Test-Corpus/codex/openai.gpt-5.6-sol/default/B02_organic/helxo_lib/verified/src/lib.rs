@@ -651,8 +651,8 @@ pub unsafe extern "C" fn stbds_hmput_key(
     if item as usize + 1 > array_capacity(raw_array) {
         raw_array = stbds_arrgrowf(raw_array, element_size, 1, 0);
     }
-    raw_visible = array_to_hash(raw_array, element_size);
     assert!(item as usize + 1 <= array_capacity(raw_array));
+    raw_visible = array_to_hash(raw_array, element_size);
     (*header(raw_array)).length = item as usize + 1;
 
     let bucket = (*table).storage.add(position >> BUCKET_SHIFT);
@@ -728,7 +728,6 @@ pub unsafe extern "C" fn stbds_hmdel_key(
     (*table).used_count -= 1;
     (*table).tombstone_count += 1;
     (*header(raw_array)).temp = 1;
-    // The C assertion `used_count >= 0` is tautological because this field is size_t.
     (*bucket).hash[bucket_item] = HASH_DELETED;
     (*bucket).index[bucket_item] = INDEX_DELETED;
 

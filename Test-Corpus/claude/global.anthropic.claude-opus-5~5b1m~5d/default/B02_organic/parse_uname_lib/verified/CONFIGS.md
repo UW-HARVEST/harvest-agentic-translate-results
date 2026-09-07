@@ -1,77 +1,89 @@
-# CONFIGS.md — Configuration surface table (Phase A)
+# CONFIGS.md — Phase A: configuration / valid-input surface table
 
-Mechanically derived from the branches the C actually takes.
+Mechanically derived from the branches the C actually takes in
+`c_src/src/lib.c`. There are **no runtime option flags, no modes, no
+`#ifdef`s, and no global state** in this library — the only "configuration"
+axes are (a) which public entry point is called, and (b) the *shape* of the
+input string. So the table below enumerates the cross-product of the input
+shapes the C distinguishes.
 
-## Public entry points (all three, lowest-level first)
+## Axes the C branches on
 
-| entry point | signature (`c_src`) | level |
-|-------------|---------------------|-------|
-| `get_os_arch`        | `char *get_os_arch(char *os_header)` (`lib.c:17`) | lowest — pure lookup, no dependencies |
-| `w_regexec`          | `int w_regexec(const char *pattern, const char *string, size_t nmatch, regmatch_t *pmatch)` (`lib.c:32`) | lowest — thin POSIX-regex wrapper |
-| `parse_uname_string` | `void parse_uname_string(char *uname, os_data *osd)` (`lib.h:13`, `lib.c:57`) | composed pipeline: calls both of the above 0–4 times |
+**Entry points (all three, including the low-level ones — `get_os_arch` and
+`w_regexec` are NOT in the public header but ARE exported and are called
+directly here, not only via the `parse_uname_string` wrapper):**
 
-`parse_uname_string` is the only header-declared function, but `get_os_arch` and
-`w_regexec` are exported and are therefore part of the tested surface and are
-driven **directly**, not only through the wrapper.
+| entry point | branch points in C |
+|---|---|
+| `get_os_arch` | 12-iteration first-match-wins loop over `ARCHS[]` (line 22) |
+| `w_regexec` | NULL guard (36), `regcomp` result (40), `regexec` result (45), `nmatch` passed through (45) |
+| `parse_uname_string` | `!osd` (64), `" [Ver: "` (68), 3 regexes (75/82/89), `" ["` (98), `": "` (102), `" ("` (109), `"|"` (135), 2 regexes (117/124), `get_os_arch` (142) |
 
-## Branch axes the C distinguishes
+**Input-shape axes**
 
-| axis | values the C code distinguishes | source |
-|------|---------------------------------|--------|
-| `X` — top-level branch selector | `" [Ver: "` found (Windows path) / not found (POSIX path). Note `" [Ver: "` *contains* `" ["`, so the Windows path shadows the POSIX path. | `lib.c:68` vs `lib.c:97-98` |
-| `V` — `[Ver: …]` payload shape | empty / non-numeric / `M` / `M.m` / `M.m.b` / `M.m.b.r` / `M.m.b.r.s` / leading zeros / huge ints / digits+junk / junk+digits / trailing dots | `lib.c:75,82,89` (3 regexes) |
-| `B` — `" ["` present (POSIX path) | yes / no | `lib.c:98` |
-| `C` — `": "` present in the post-`" ["` text | yes (version path) / no (trim-last-byte path) | `lib.c:102` vs `lib.c:130-132` |
-| `K` — `" ("` present in the version text | yes (codename extracted) / no | `lib.c:109` |
-| `P` — `"\|"` present in `os_name` | yes (`os_platform` from suffix) / no | `lib.c:135` |
-| `A` — architecture token in the (truncated) `uname` | none / each of the 12 / several (ARCHS-order precedence, **not** string order) / near-miss substrings | `lib.c:18-27`, called only at `lib.c:142` |
-| `N` — `nmatch` | 0 / 1 / 2 / 3 / 8 / 64 | `lib.c:45` |
-| `G` — capture-group count/nesting in the pattern | 0 / 1 / 2 / nested / non-participating | `lib.c:45` |
-| `O` — match offset | at 0 (anchored) / > 0 (unanchored) | `lib.c:45` |
-| `S` — input shape | empty / 1 byte / separator-only / typical / long (≥ 512 B) / non-ASCII high bytes / embedded separators repeated | `strstr`/`strlen` throughout |
-| `D` — caller's pre-state of `os_data` | all-`NULL` / pre-filled with non-null garbage (the C **never** zeroes `osd`, so untouched fields must survive verbatim) | absence of any init in `lib.c:57-66` |
+* A1 `ARCHS` index hit: 0..11 (`x86_64 i386 i686 sparc amd64 i86pc ia64 AIX armv6 armv7 aarch64 arm64`) / none
+* A2 arch position: prefix / infix / suffix / multiple archs present (order priority matters)
+* B1 regex pattern: the 3 literal patterns used internally, plus arbitrary valid EREs with 0/1/2 capture groups, anchored/unanchored, alternation, nested groups, non-participating groups
+* B2 `nmatch`: 0 / 1 / 2 / > `re_nsub+1`
+* B3 subject string: empty / matching / non-matching / matching at offset > 0 / very long
+* C1 separator present: `" [Ver: "` / `" ["` / neither / both
+* C2 within Windows branch: version has 0 / 1 / 2 / 3 / 4+ dotted numeric components; leading non-digits; trailing junk; `]` present or absent
+* C3 within Unix branch: `": "` present / absent
+* C4 within Unix branch: `" ("` present / absent (codename)
+* C5 within Unix branch: `"|"` present / absent (platform) — and `"|"` before vs. after where `": "` was
+* C6 arch present in the *truncated* `uname` prefix (only the part before `" ["` is searched, because C NUL-terminates there first)
+* C7 multiple occurrences of a separator (`strstr` finds the FIRST)
+* C8 `osd` pre-populated with non-NULL garbage (C never clears fields ⇒ untouched fields must survive)
 
-Every row is checked with **many randomized inputs** (fixed seed `0x5EED_1234`,
-xorshift64* PRNG), comparing, byte-for-byte: the return value, every one of the
-9 `os_data` pointer fields (NULL-ness *and* full string bytes), the `regmatch_t`
-array contents, **and the caller's mutated `uname` buffer**.
+## Table (one row per combination the C treats differently)
 
-## Table
-
-| #  | entry point(s) | configuration (options set + input shape) | test | [ ] |
-|----|----------------|--------------------------------------------|------|-----|
-| C1  | `get_os_arch` | `A` = each of the 12 ARCHS tokens, alone (`S`=exact) | `c1_arch_each_alone` | [x] |
-| C2  | `get_os_arch` | `A` = one token embedded at start / middle / end of a random filler string | `c2_arch_embedded_positions` | [x] |
-| C3  | `get_os_arch` | `A` = 2–4 tokens present at once → ARCHS-array order decides, not string order (e.g. `"aarch64 x86_64"` → `x86_64`) | `c3_arch_precedence` | [x] |
-| C4  | `get_os_arch` | `A` = near-miss substrings only (`x86`, `86_64`, `I386`, `i38`, `sparc64`⊃`sparc`, `amd6`, `arm`, `armv8`, `aarch6`, `arm6`, `ia6`, `aix`, `i86p`) | `c4_arch_near_misses` | [x] |
-| C5  | `get_os_arch` | `S` = fully random byte strings (printable + high bytes), 0–128 B, 3000 iterations | `c5_arch_random_fuzz` | [x] |
-| C6  | `w_regexec` | the 3 hard-coded parser patterns × random version-like subjects × `N`=2 | `c6_regexec_parser_patterns` | [x] |
-| C7  | `w_regexec` | `G`=0 groups, `N` ∈ {0,1,2,3,8,64}, `O`=0 and `O`>0 | `c7_regexec_no_groups_nmatch_sweep` | [x] |
-| C8  | `w_regexec` | `G`=1..3 groups + nested groups, `N` ∈ {1,2,3,8,64} — surplus slots must be `{-1,-1}` | `c8_regexec_groups_nmatch_sweep` | [x] |
-| C9  | `w_regexec` | `O`>0 unanchored patterns, random subjects — `rm_so`/`rm_eo` offsets must agree | `c9_regexec_unanchored_offsets` | [x] |
-| C10 | `w_regexec` | ERE feature matrix: alternation, `{n,m}`, `[[:digit:]]`, `[^…]`, `.`, `$`, `\|`, escapes, `+`/`?`/`*`, long 512 B subjects | `c10_regexec_ere_features` | [x] |
-| C11 | `w_regexec` | random *pattern* fuzz (valid and invalid mixed) × random subject, `N`=4 | `c11_regexec_random_pattern_fuzz` | [x] |
-| C12 | `parse_uname_string` | `X`=Ver, `V`=`M` only, random majors incl. 0/leading zeros/huge | `c12_ver_major_only` | [x] |
-| C13 | `parse_uname_string` | `X`=Ver, `V`=`M.m`, random | `c13_ver_major_minor` | [x] |
-| C14 | `parse_uname_string` | `X`=Ver, `V`=`M.m.b`, random | `c14_ver_major_minor_build` | [x] |
-| C15 | `parse_uname_string` | `X`=Ver, `V`=`M.m.b.r[.s]` — multi-dot build via the `(\.[0-9]+)*` group, 2–5 components | `c15_ver_multidot_build` | [x] |
-| C16 | `parse_uname_string` | `X`=Ver, `V`= digits followed by junk / junk followed by digits / trailing dots | `c16_ver_mixed_junk` | [x] |
-| C17 | `parse_uname_string` | `X`=Ver, prefix (→`os_name`) empty / random / contains `"\|"` / contains an arch token (arch must **not** be extracted on this path) | `c17_ver_prefix_shapes` | [x] |
-| C18 | `parse_uname_string` | `X`=Ver, `" [Ver: "` occurs 2–3 times → first occurrence wins | `c18_ver_repeated_marker` | [x] |
-| C19 | `parse_uname_string` | `X`=Ver where the payload itself contains `" ["`, `": "`, `" ("`, `"\|"` (must stay on the Windows path and ignore them) | `c19_ver_payload_contains_posix_separators` | [x] |
-| C20 | `parse_uname_string` | POSIX path `B`=y, `C`=y, `K`=n, `P`=n, `A`=n — plain `"host [Distro: 1.2]"` | `c20_posix_plain` | [x] |
-| C21 | `parse_uname_string` | POSIX `B`=y, `C`=y, `K`=**y**, `P`=n — codename extracted | `c21_posix_codename` | [x] |
-| C22 | `parse_uname_string` | POSIX `B`=y, `C`=y, `K`=n, `P`=**y** — `os_name\|platform` split | `c22_posix_pipe` | [x] |
-| C23 | `parse_uname_string` | POSIX `B`=y, `C`=y, `K`=y, `P`=y — full cross-product of codename + pipe | `c23_posix_codename_and_pipe` | [x] |
-| C24 | `parse_uname_string` | POSIX `B`=y, `C`=**n** (no `": "`) × `P` ∈ {y,n} — `lib.c:131` trim path | `c24_posix_no_colon_pipe_cross` | [x] |
-| C25 | `parse_uname_string` | POSIX `B`=y, `A`=**y**: each of the 12 arch tokens in the prefix, plus arch appearing only *after* `" ["` (→ must NOT be found, prefix is truncated) | `c25_posix_arch_each_and_after_bracket` | [x] |
-| C26 | `parse_uname_string` | POSIX `B`=**n** (no `" ["` at all) × `A` ∈ {y,n} — only `os_arch` may be written | `c26_posix_no_bracket_arch_cross` | [x] |
-| C27 | `parse_uname_string` | POSIX, `"\|"` located *after* the `": "` split point → must NOT be found (os_name already truncated) | `c27_posix_pipe_after_colon` | [x] |
-| C28 | `parse_uname_string` | POSIX, multiple `" ["` / multiple `": "` / multiple `" ("` → first occurrence of each wins | `c28_posix_repeated_separators` | [x] |
-| C29 | `parse_uname_string` | POSIX, version `M`-only and `M.m.p.q` shapes → `os_major`/`os_minor` regex behaviour (**no** `os_build` on this path) | `c29_posix_version_shapes` | [x] |
-| C30 | `parse_uname_string` | `D` = `os_data` pre-filled with non-null sentinel pointers, over `X` ∈ {Ver, POSIX-full, POSIX-no-bracket} → untouched fields must keep the caller's values | `c30_prefilled_osdata` | [x] |
-| C31 | `parse_uname_string` | `S` = long inputs (≥ 512 B) on both paths; and non-ASCII high bytes in name/version/codename/arch regions | `c31_long_and_non_ascii` | [x] |
-| C32 | `parse_uname_string` | `S` = fully random byte strings (0–160 B) drawn from an alphabet rich in `' '`, `'['`, `']'`, `':'`, `'('`, `')'`, `'\|'`, digits, `'.'`, `'V'`, `'e'`, `'r'` — 6000 iterations, structure-aware fuzz that hits every branch combination by construction | `c32_full_random_fuzz` | [x] |
-| C33 | `parse_uname_string` | end-to-end realistic corpus: real Wazuh-style uname strings (Windows, Ubuntu, CentOS, macOS, AIX, Solaris, Alpine, arm64 …) | `c33_realistic_corpus` | [x] |
-| C35 | `parse_uname_string`, `get_os_arch` | allocation-size sweep: `match_size`/`strlen` = 1..120 across every 16-byte malloc bin boundary, for `os_major`/`os_minor`/`os_build` (`malloc(match_size + 1)`) and every `strdup`ed field | `c35_allocation_size_boundaries`, `alloc_sizes_match_in_lockstep_subprocesses` | [x] |
-| C34 | `parse_uname_string` | `S` = 1-byte and separator-only inputs: `""`, `" "`, `"["`, `" ["`, `" [Ver: "`, `" [: "`, `" [ ("`, `"\|"`, `" [\|"` … | `c34_degenerate_separator_only` | [x] |
+| #  | entry point(s) | configuration (options set + input shape) | [x] |
+|----|----------------|--------------------------------------------|-----|
+| 1  | `get_os_arch` | each of the 12 ARCHS alone, exactly (`"x86_64"`, …, `"arm64"`) — 12 sub-cases | [x] |
+| 2  | `get_os_arch` | arch as prefix / infix / suffix of a longer random string (randomized position + padding) | [x] |
+| 3  | `get_os_arch` | **two or more** archs present ⇒ first-in-`ARCHS`-order wins, not left-most-in-string (e.g. `"sparc x86_64"` → `x86_64`) — randomized pairs | [x] |
+| 4  | `get_os_arch` | no arch present (randomized alphabet excluding arch substrings) | [x] |
+| 5  | `get_os_arch` | empty string; 1-char string; string shorter than the shortest arch | [x] |
+| 6  | `get_os_arch` | overlapping/near-miss tokens: `"i86"`, `"arm"`, `"aarch"`, `"x86"`, `"64"`, `"aix"` (lower-case ⇒ no match, C is case-sensitive) | [x] |
+| 7  | `get_os_arch` | very long input (4 KiB) with the arch at the very end | [x] |
+| 8  | `w_regexec` | the 3 internal patterns × matching subjects, `nmatch=2`, `pmatch[2]` — randomized version strings | [x] |
+| 9  | `w_regexec` | pattern with 0 capture groups, `nmatch=2` ⇒ `pmatch[1]` untouched by regexec (must agree incl. leftovers) | [x] |
+| 10 | `w_regexec` | pattern with 1 group, `nmatch=1` ⇒ only `pmatch[0]` filled | [x] |
+| 11 | `w_regexec` | pattern with 1 group, `nmatch=0` ⇒ nothing filled, return still reflects match | [x] |
+| 12 | `w_regexec` | pattern with 2 groups, `nmatch=8` (> `re_nsub+1`) with an 8-slot buffer ⇒ tail slots set to `{-1,-1}` | [x] |
+| 13 | `w_regexec` | non-participating group (`"^(a)|(b)$"` style / `"([0-9]+(\\.[0-9]+)*)"` with no second component) ⇒ `{-1,-1}` for that group | [x] |
+| 14 | `w_regexec` | unanchored pattern matching at a nonzero offset (`rm_so > 0`) | [x] |
+| 15 | `w_regexec` | empty subject `""` with a pattern that matches empty (`"^.*"`) and one that doesn't (`"^a"`) | [x] |
+| 16 | `w_regexec` | ERE metacharacters exercised: `+ * ? | () [] {} . ^ $ \\.` — randomized valid patterns | [x] |
+| 17 | `w_regexec` | long subject (4 KiB) with match near the end (unanchored) | [x] |
+| 18 | `parse_uname_string` | **Windows branch**, full `"<name> [Ver: MAJ.MIN.BUILD]"` — randomized MAJ/MIN/BUILD digits | [x] |
+| 19 | `parse_uname_string` | Windows branch, 4+ dotted components `"[Ver: 10.0.19041.1234]"` ⇒ `os_build` captures the whole multi-dot tail via the optional group | [x] |
+| 20 | `parse_uname_string` | Windows branch, 2 components `"[Ver: 6.1]"` ⇒ build NULL | [x] |
+| 21 | `parse_uname_string` | Windows branch, 1 component `"[Ver: 10]"` ⇒ minor+build NULL | [x] |
+| 22 | `parse_uname_string` | Windows branch with an arch token also present ⇒ `os_arch` stays NULL (branch skips `get_os_arch`) | [x] |
+| 23 | `parse_uname_string` | Windows branch, name part contains `"|"` and/or `" ("` ⇒ those are NOT parsed in this branch (`os_platform` is forced to `"windows"`) | [x] |
+| 24 | `parse_uname_string` | Windows branch, `uname` also contains `" ["` later ⇒ `" [Ver: "` wins | [x] |
+| 25 | `parse_uname_string` | Windows branch, multiple `" [Ver: "` ⇒ first occurrence used | [x] |
+| 26 | `parse_uname_string` | Windows branch, version with leading zeros / very large numbers (`"[Ver: 0007.0000.99999999999]"`) | [x] |
+| 27 | `parse_uname_string` | Windows branch, trailing char that is not `]` (C blindly deletes the last char whatever it is) | [x] |
+| 28 | `parse_uname_string` | **Unix branch**, `"<pfx> [<name>: <maj>.<min> (<codename>)]"` — full form, randomized | [x] |
+| 29 | `parse_uname_string` | Unix branch, `"<pfx> [<name>: <ver>]"` — no codename | [x] |
+| 30 | `parse_uname_string` | Unix branch, `"<pfx> [<name>]"` — no `": "` ⇒ trim-last-char path on `os_name` | [x] |
+| 31 | `parse_uname_string` | Unix branch, `"<pfx> [<name>|<platform>: <ver>]"` ⇒ `os_platform` from after `"|"`, `os_name` truncated at `"|"` | [x] |
+| 32 | `parse_uname_string` | Unix branch, `"<pfx> [<name>|<platform>]"` (no `": "`) ⇒ trim-last then split on `"|"` | [x] |
+| 33 | `parse_uname_string` | Unix branch, `"|"` located in the *version* part ⇒ NOT found in `os_name` (already truncated at `": "`) ⇒ `os_platform` NULL | [x] |
+| 34 | `parse_uname_string` | Unix branch, arch token before `" ["` ⇒ `os_arch` set | [x] |
+| 35 | `parse_uname_string` | Unix branch, arch token only *after* `" ["` ⇒ `os_arch` NULL (uname was NUL-terminated at `" ["` before `get_os_arch` runs) | [x] |
+| 36 | `parse_uname_string` | Unix branch, multiple `" ["` ⇒ first used; multiple `": "` ⇒ first used; multiple `" ("` ⇒ first used | [x] |
+| 37 | `parse_uname_string` | Unix branch, codename containing `"("`/`")"`/spaces | [x] |
+| 38 | `parse_uname_string` | Unix branch, version = `"maj.min.patch"` (3 components) ⇒ `os_major`,`os_minor` only (no build regex in this branch) | [x] |
+| 39 | `parse_uname_string` | Unix branch, version starting with digits then letters (`"20.04LTS"`) | [x] |
+| 40 | `parse_uname_string` | **Neither separator**: `"Linux x86_64 5.4.0"` ⇒ only `os_arch` set | [x] |
+| 41 | `parse_uname_string` | Neither separator and no arch ⇒ every field left untouched | [x] |
+| 42 | `parse_uname_string` | `osd` pre-filled with non-NULL sentinel pointers ⇒ untouched fields must keep the sentinel identically in C and Rust (proves which fields each branch writes) | [x] |
+| 43 | `parse_uname_string` | `os_uname` never written in any branch (checked on every row via the sentinel) | [x] |
+| 44 | `parse_uname_string` | in-place mutation of the caller's `uname` buffer compared byte-for-byte (all branches) | [x] |
+| 45 | `parse_uname_string` | fully randomized fuzz: random separators/tokens/archs/digits assembled from the grammar, seeded PRNG, 20 000 cases | [x] |
+| 46 | `parse_uname_string` | empty `uname` `""` ⇒ no separator, no arch, all fields untouched | [x] |
+| 47 | `parse_uname_string` | long `uname` (4 KiB) with separators near the end | [x] |
+| 48 | composed pipeline | `w_regexec` used with the exact 5 internal call-sites' arguments, then the resulting `pmatch` fed through the `malloc`+`snprintf("%.*s")` duplication, compared against `parse_uname_string`'s field output | [x] |

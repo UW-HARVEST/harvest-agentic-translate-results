@@ -121,8 +121,16 @@ impl Flags {
 }
 
 /// Read the bitfield byte out of a `struct ConfigFlags *` supplied by a caller.
+///
+/// `ptr::read` is used rather than a `*ptr` dereference on purpose. The C
+/// dereferences the caller's pointer with no null check, so a null argument is
+/// a hardware fault (SIGSEGV) there; a plain `*ptr` in Rust is intercepted by
+/// rustc's `debug_assertions` null-pointer check and turns into a panic/SIGABRT
+/// instead, which would make the debug-profile `.so` diverge from the C on that
+/// input. `ptr::read` carries no such check and faults exactly like the C does,
+/// in every build profile.
 unsafe fn read_flags(flags: *const ConfigFlags) -> Flags {
-    Flags::from_byte(unsafe { *(flags as *const u8) })
+    Flags::from_byte(unsafe { core::ptr::read(flags as *const u8) })
 }
 
 /// Store the bitfield byte into a `struct ConfigFlags *`.
@@ -130,8 +138,12 @@ unsafe fn read_flags(flags: *const ConfigFlags) -> Flags {
 /// All six bitfields together cover the whole low byte, so writing that single
 /// byte is equivalent to the sequence of bitfield assignments the C performs
 /// and leaves the upper three padding bytes untouched.
+///
+/// `ptr::write` is used rather than `*ptr = ...` for the same reason as in
+/// `read_flags`: it keeps a null argument a SIGSEGV in every build profile,
+/// matching the C.
 unsafe fn write_flags(flags: *mut ConfigFlags, value: Flags) {
-    unsafe { *(flags as *mut u8) = value.to_byte() };
+    unsafe { core::ptr::write(flags as *mut u8, value.to_byte()) };
 }
 
 // ---------------------------------------------------------------------------

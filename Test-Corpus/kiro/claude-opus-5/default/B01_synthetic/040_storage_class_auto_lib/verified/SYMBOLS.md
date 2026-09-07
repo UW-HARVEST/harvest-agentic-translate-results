@@ -1,49 +1,74 @@
-# SYMBOLS.md — public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared libraries.
+Derived mechanically from `nm -D` on both shared objects.
 
-Commands used:
+Build commands used:
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-nm -D --undefined-only <each .so>
+```
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd translation && cargo build --release
 ```
 
-## Defined (exported) symbols
+* C `.so`:    `c_src/build/libdriver.so`
+* Rust `.so`: `translation/target/release/libdriver.so`
 
-| # | symbol | C `.so` | Rust `.so` | type | source |
-|---|--------|---------|------------|------|--------|
-| 1 | `driver` | `T` (0x1109) | `T` (0x116c0) | `void driver(int x)` | `c_src/src/driver.c` |
+## Complete public (exported / defined dynamic) symbol list of the C `.so`
 
-The C library declares exactly one public entry point (`c_src/include/driver.h`
-contains only `void driver(int x);`). There are no macro-generated symbols, no
-exported globals/data symbols, and no additional translation units in
-`CMakeLists.txt` (`add_library(driver SHARED src/driver.c)` — a single `.c`
-file). Therefore no C module was left untranslated.
+`nm -D --defined-only c_src/build/libdriver.so`
 
-**Missing from Rust `.so`: none.** Symbol diff is empty.
+| # | symbol | type | present in Rust `.so`? |
+|---|--------|------|------------------------|
+| 1 | `driver` | `T` (global text) | YES — `T driver` |
+
+That is the *entire* exported surface. `c_src/src/driver.c` is the only
+translation unit in `c_src/CMakeLists.txt` (`add_library(driver SHARED src/driver.c)`),
+it defines exactly one non-static function, and `c_src/include/driver.h`
+declares exactly one prototype (`void driver(int x);`). There are no
+macro-generated symbols, no exported data objects, and no additional C source
+files, so nothing was skipped by the translation.
+
+## Symbol diff
+
+```
+comm -23 <(nm -D --defined-only c_src/build/libdriver.so   | awk '{print $NF}' | sort) \
+         <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort)
+```
+
+Result: **empty** — 0 symbols missing from the Rust `.so`.
+
+No `#[no_mangle]` wrapper had to be added and no C module had to be translated:
+the single symbol `driver` was already implemented and exported (via
+`#[unsafe(no_mangle)] pub extern "C" fn driver`).
 
 ## Undefined (imported) symbols
 
-C `.so` imports: `printf@GLIBC_2.2.5` plus the usual weak
-`_ITM_*`/`__cxa_finalize`/`__gmon_start__` stubs.
+Both objects import `printf@GLIBC_2.2.5` plus the usual weak
+`_ITM_*` / `__gmon_start__` / `__cxa_finalize` entries. The Rust `.so`
+additionally imports only libc and `libgcc`/unwind runtime symbols pulled in by
+the Rust standard library (`malloc`, `memcpy`, `_Unwind_*`, `dl_iterate_phdr`,
+…). There are **0 missing/undefined non-libc symbols** in the Rust `.so`:
+every non-libc/non-unwind undefined entry is absent, i.e. nothing references a
+Rust-side function that was never translated.
 
-Rust `.so` imports the same `printf@GLIBC_2.2.5` (the translation calls libc
-`printf` directly, so formatting and stdio buffering are shared with the C
-build), plus the standard Rust runtime set: `libgcc_s` unwinder (`_Unwind_*`)
-and libc/pthread routines used by `std` (`malloc`, `free`, `memcpy`, `write`,
-`dl_iterate_phdr`, `pthread_key_*`, …).
+## Extra symbols exported by Rust but not C
 
-**0 missing/undefined non-libc symbols:** every `U`/`w` entry in the Rust `.so`
-resolves through `libc.so.6` / `libgcc_s.so.1`, both of which `ldd` reports as
-found. No unresolved crate-local or project symbols remain.
+None (`comm -13` on the same lists is also empty). The Rust `.so` exports
+exactly `driver`, matching the C `.so` one-for-one.
 
-## Feature combinations
+## Verification result (Phase D)
 
-`translation/Cargo.toml` has no `[features]` table, so the only build
-configuration is the default one. Verified with:
+`tests/symbols.rs` re-runs this comparison as an executable check:
 
-```sh
-grep -n '\[features\]' translation/Cargo.toml   # no match
-```
+| test | asserts |
+|------|---------|
+| `every_c_symbol_is_exported_by_rust` | `nm -D --defined-only` set difference C → Rust is empty |
+| `c_and_rust_symbols_are_distinct_implementations` | the two `dlsym`-resolved `driver` addresses differ, so the differential tests are not comparing one library with itself |
+| `rust_symbol_is_callable_and_matches_c_signature_shape` | `driver(7)` produces `314\n` from both `.so`s |
+| `rust_so_has_no_unresolved_non_libc_symbols` | every `nm -D -u` entry belongs to libc / the unwinder / the loader — nothing untranslated is referenced |
+
+`test result: ok. 4 passed; 0 failed`, under the default feature set and under
+`--no-default-features`, in both the `dev` and `release` profiles.
+
+Nothing was stubbed and no `unimplemented!()` exists anywhere in `src/`: the C
+library's whole implementation is 4 statements in one function, all of which are
+present in `src/lib.rs`.

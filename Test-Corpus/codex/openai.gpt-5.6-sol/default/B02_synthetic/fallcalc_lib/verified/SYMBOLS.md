@@ -1,32 +1,35 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Reference library:
-`../c_src/build/libharvest-work-yo8lXq.so`
+Source library: `../c_src/build/libharvest-work-cp21cR.so`
 
-Rust library:
-`target/release/libfallcalc_lib.so`
+Collected mechanically with:
 
-The table is derived from `nm -D --defined-only` on the reference library.
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-cp21cR.so
+nm -D --defined-only target/release/libfallcalc_lib.so
+```
 
-| # | C symbol | C type | Rust export | Status |
-|---|----------|--------|-------------|--------|
-| 1 | `allocate_and_compute` | `T` | `allocate_and_compute` | present |
-| 2 | `fallcalc` | `T` | `fallcalc` | present |
-| 3 | `foreach_sum` | `T` | `foreach_sum` | present |
-| 4 | `process_array_reverse` | `T` | `process_array_reverse` | present |
-| 5 | `safe_double_to_int` | `T` | `safe_double_to_int` | present |
-| 6 | `switch_fallthrough_calculator` | `T` | `switch_fallthrough_calculator` | present |
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `allocate_and_compute` | `T` | `allocate_and_compute` | present |
+| `fallcalc` | `T` | `fallcalc` | present |
+| `foreach_sum` | `T` | `foreach_sum` | present |
+| `process_array_reverse` | `T` | `process_array_reverse` | present |
+| `safe_double_to_int` | `T` | `safe_double_to_int` | present |
+| `switch_fallthrough_calculator` | `T` | `switch_fallthrough_calculator` | present |
 
-Missing defined symbols: **0**
+Missing defined C symbols in Rust: **0**
 
-The reference library's undefined dynamic symbols are `free` and `malloc`
-(libc), plus the weak toolchain symbols `_ITM_deregisterTMCloneTable`,
-`_ITM_registerTMCloneTable`, `__cxa_finalize`, and `__gmon_start__`. They are
-not library API exports.
+The C library's undefined dynamic references are only `malloc` and `free`
+(libc), plus the usual weak toolchain hooks. The Rust cdylib has additional
+Rust runtime/libc/libgcc dependencies, but no undefined project-library
+symbols.
 
-## Completion Gate
+## Completion gate
 
-- [x] Every defined C dynamic symbol is defined by the Rust cdylib.
-- [x] The symbol diff has zero missing and zero extra API exports.
-- [x] Differential tests pass with default features and
-  `--no-default-features` (the manifest declares no named features).
+- [x] Defined dynamic-symbol diff is empty.
+- [x] All 162 `CONFIGS.md` rows pass randomized differential tests.
+- [x] The project has no C or Rust executable target to compare.
+- [x] All 17 `ERRORS.md` rows pass differential tests.
+- [x] Default and `--no-default-features` builds both pass; `Cargo.toml`
+  declares no named features.

@@ -1,100 +1,86 @@
-# ERRORS.md — error / rejection surface table
+# ERRORS.md — error-surface table
 
-Derived mechanically from `c_src/src/lib.c`. There is exactly one function and
-exactly one error sentinel (`-1`); the C code contains **no** `assert`, no error
-enum, no `RETURN_ERROR` macro, and no `NULL`-pointer validation of `bin`/`hex`.
+Derived mechanically from `c_src/src/lib.c`. There are **no** `assert`s, **no**
+null-pointer checks, **no** error enums and **no** min/max constants in the C.
+Every rejection funnels through the single local `int ret`, and the function
+returns `ret` (always exactly `-1`) instead of `(int)bin_pos` whenever `ret != 0`.
 
-Grep of every control-flow site that can reject input (line numbers from
-`c_src/src/lib.c`):
+Grep-identified rejection sites (line numbers in `c_src/src/lib.c`):
 
-```
-22:  if ((c_num0 | c_alpha0) == 0U)        -> non-hex character detected
-23:  if (ignore != NULL && state == 0U &&
-24:      strchr(ignore, c) != NULL)        -> skip, else fall through to
-28:      break;                            -> stop parsing at this character
-31:  if (bin_pos >= bin_maxlen)
-32:      ret = -1;                         -> ERROR: output buffer exhausted
-33:      break;
-43:  if (state != 0U)
-45:      ret = -1;                         -> ERROR: trailing odd nibble
-47:  if (ret != 0) bin_pos = 0;            -> on error the length is zeroed
-50:  if (hex_end_p != NULL) *hex_end_p = &hex[hex_pos];
-52:  else if (hex_pos != hex_len)
-53:      ret = -1;                         -> ERROR: unconsumed input & no
-                                              hex_end_p to report it through
-55:  if (ret != 0) return ret;             -> returns -1
-58:  return (int)bin_pos;                  -> success: number of bytes written
-```
+* L31–L33 `if (bin_pos >= bin_maxlen) { ret = -1; break; }`
+* L43–L46 `if (state != 0U) { hex_pos--; ret = -1; }`
+* L52–L53 `else if (hex_pos != hex_len) { ret = -1; }`
+* L22–L28 `break` on a non-hex byte that is not ignorable (not itself an error,
+  but it is the *rejection of input* that feeds L52)
+* L55–L56 `if (ret != 0) return ret;`
+* L47–L48 `if (ret != 0) bin_pos = 0;` — side effect of every rejection
 
-Three distinct `ret = -1` assignments ⇒ three primary rejection rows; the
-remaining rows are the distinct *triggers* that reach them plus the generic
-FFI-boundary boundaries required by the task.
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| 1 | `hex2bin` | Output buffer full: a valid hex digit is reached while `bin_pos >= bin_maxlen` (`bin_maxlen` smaller than `floor(valid_digits/2)`), `hex_end_p != NULL` | returns `-1`; `*hex_end_p == &hex[i]` where `i` is the index of the first digit that did not fit; bytes already written to `bin[0..bin_maxlen)` are **left in place** (not rolled back) | [x] |
+| 2 | `hex2bin` | `bin_maxlen == 0` with at least one valid hex digit at `hex[0]` | returns `-1`; `*hex_end_p == &hex[0]`; nothing written to `bin` | [x] |
+| 3 | `hex2bin` | Odd number of valid hex digits consumed, i.e. `state != 0U` when the loop exits (L43) | `hex_pos` is **decremented by one**, returns `-1`; `*hex_end_p == &hex[last_digit_index]` (points *at* the unpaired digit, not past it) | [x] |
+| 4 | `hex2bin` | `hex_end_p == NULL` and the scan stopped early on a non-hex, non-ignorable byte (`hex_pos != hex_len`, L52) | returns `-1` | [x] |
+| 5 | `hex2bin` | `hex_end_p == NULL`, `ignore == NULL`, and `hex` contains any byte outside `[0-9A-Fa-f]` | returns `-1` (the L22 `break` cannot be skipped because `ignore` is NULL) | [x] |
+| 6 | `hex2bin` | `hex_end_p == NULL`, `ignore != NULL`, and an *ignorable* byte appears at an **odd** nibble position (`state != 0U`, so the L23 `state == 0U` guard fails and L28 `break` runs) | returns `-1` — ignorable bytes are only skippable on byte boundaries | [x] |
+| 7 | `hex2bin` | `hex_end_p == NULL` and an odd number of valid hex digits (both L45 and L52 fire) | returns `-1` (single sentinel; the two conditions do not compound into a different value) | [x] |
+| 8 | `hex2bin` | Any rejection at all (L47) | `bin_pos` is forced to `0` before the return, so the caller can never observe a partial count — the return value is exactly `-1`, never a short positive length | [x] |
+| 9 | `hex2bin` | `bin_maxlen` exhausted **and** `hex_end_p == NULL` (L31 sets `ret=-1`, then L50 takes the `else if` branch which cannot clear it) | returns `-1` | [x] |
+| 10 | `hex2bin` | Buffer-full rejection where the offending digit is a **high** nibble (`state == 0U`): the `bin_pos >= bin_maxlen` check runs for high nibbles too even though a high nibble writes nothing | returns `-1` (i.e. `hex_len` of `2*bin_maxlen + 1` valid digits still fails, not "succeeds then truncates") | [x] |
 
-| #  | function  | trigger (exact invalid input/condition)                                                                                             | expected C result                                                                                                    | [x] |
-|----|-----------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|-----|
-| 1  | `hex2bin` | `bin_maxlen == 0` and `hex` starts with a hex digit (`bin_pos >= bin_maxlen` on the very first digit, line 31)                        | `-1`; nothing written to `bin`; `*hex_end_p == &hex[0]`                                                                | [x] |
-| 2  | `hex2bin` | `bin_maxlen < hex_len/2`: buffer fills, another hex digit follows (line 31)                                                          | `-1`; `bin` holds the first `bin_maxlen` decoded bytes (written before the error); `*hex_end_p == &hex[2*bin_maxlen]`  | [x] |
-| 3  | `hex2bin` | odd number of hex digits consumed, i.e. `state != 0U` at loop exit (line 43) — e.g. `hex = "abc"`, `hex_len = 3`                       | `-1`; `hex_pos` decremented by 1 so `*hex_end_p == &hex[hex_len-1]` (points at the *last* digit, not one past it)      | [x] |
-| 4  | `hex2bin` | odd digit count caused by a delimiter mid-byte: valid `ignore` char appearing while `state != 0U` (line 23 `state == 0U` fails)       | `-1` via row 3 path; `*hex_end_p` points at the digit preceding the delimiter                                          | [x] |
-| 5  | `hex2bin` | `hex_end_p == NULL` and a non-hex character stops parsing early, so `hex_pos != hex_len` (line 52)                                    | `-1`; return value is *not* the partial length                                                                        | [x] |
-| 6  | `hex2bin` | `hex_end_p == NULL` and buffer-full error (`hex_pos != hex_len`, line 52 reached with `ret` already `-1`)                              | `-1`                                                                                                                  | [x] |
-| 7  | `hex2bin` | `hex_end_p == NULL` and odd digit count (rows 3+52 combined)                                                                          | `-1`                                                                                                                  | [x] |
-| 8  | `hex2bin` | non-hex character with `ignore == NULL` (line 23 first conjunct fails) → `break` at line 28                                          | `break`; then `-1` if `hex_end_p == NULL`, else `bin_pos` (possibly `0`) with `*hex_end_p` at the offending byte        | [x] |
-| 9  | `hex2bin` | non-hex character **not** contained in `ignore` (line 24 `strchr` returns `NULL`) → `break`                                          | same as row 8                                                                                                         | [x] |
-| 10 | `hex2bin` | *first* character is non-hex and non-ignorable, `hex_end_p != NULL`                                                                  | returns `0` (success, zero bytes) with `*hex_end_p == &hex[0]` — **not** an error                                      | [x] |
-| 11 | `hex2bin` | byte `0x00` inside `hex` with `ignore != NULL` and `state == 0U`: `strchr(ignore, 0)` matches the NUL **terminator** of `ignore`      | the NUL byte is silently *skipped* (`continue`) even for `ignore = ""` — quirk, reproduced verbatim                    | [x] |
-| 12 | `hex2bin` | byte `0x00` inside `hex` with `ignore == NULL`                                                                                       | `break` at the NUL (rows 5/8/10 apply)                                                                                | [x] |
-| 13 | `hex2bin` | byte `0x00` inside `hex` with `ignore != NULL` and `state != 0U`                                                                      | `break` → `-1` via row 3                                                                                              | [x] |
-| 14 | `hex2bin` | high bytes `0x80..=0xFF` in `hex` (never hex digits; `c & ~32U` arithmetic wraps in `unsigned int`)                                   | treated as non-hex → rows 8/9/10; matched against `ignore` byte-wise (signed-`char` comparison in `strchr`)            | [x] |
-| 15 | `hex2bin` | characters that are *adjacent* to the hex ranges and must be rejected: `'/'`(0x2F) `':'`(0x3A) `'@'`(0x40) `'G'`(0x47) `'\``(0x60) `'g'`(0x67) | all non-hex → rows 8/9/10                                                                                        | [x] |
-| 16 | `hex2bin` | `hex_len == 0` (loop never entered)                                                                                                 | returns `0`; `*hex_end_p == &hex[0]`; `hex` may even be `NULL`                                                         | [x] |
-| 17 | `hex2bin` | `hex == NULL` with `hex_len == 0` and `hex_end_p != NULL`                                                                            | returns `0`; `*hex_end_p == NULL` (`&hex[0]` on a null pointer)                                                        | [x] |
-| 18 | `hex2bin` | `bin == NULL` with `bin_maxlen == 0` and at least one hex digit                                                                      | `-1` via row 1 — `bin` is never dereferenced                                                                          | [x] |
-| 19 | `hex2bin` | `bin == NULL`, `bin_maxlen == 0`, `hex_len == 0`                                                                                     | returns `0`                                                                                                           | [x] |
-| 20 | `hex2bin` | oversized `bin_maxlen` (`SIZE_MAX`) with a short even hex string                                                                     | success; returns `hex_len/2`; the `bin_pos >= bin_maxlen` check never trips                                            | [x] |
-| 21 | `hex2bin` | oversized `bin_maxlen` (`SIZE_MAX`) with an odd hex string                                                                           | `-1` via row 3 (the two error paths are independent)                                                                  | [x] |
-| 22 | `hex2bin` | `ignore` is the empty string `""` and `hex` contains a non-hex, non-NUL byte                                                          | `strchr("", c) == NULL` → `break` (rows 5/8/10); only `c == 0` is skipped (row 11)                                      | [x] |
-| 23 | `hex2bin` | `ignore` contains characters that *are* valid hex digits (e.g. `"abc0"`)                                                             | no effect whatsoever — line 22 is only reached for non-hex bytes, so those `ignore` entries are unreachable            | [x] |
-| 24 | `hex2bin` | every byte of `hex` is ignorable (e.g. `hex = "::::"`, `ignore = ":"`), `hex_end_p != NULL`                                            | returns `0`, `*hex_end_p == &hex[hex_len]` (all consumed, `hex_pos == hex_len`)                                        | [x] |
-| 25 | `hex2bin` | every byte of `hex` is ignorable and `hex_end_p == NULL`                                                                             | returns `0` (**not** `-1`: `hex_pos == hex_len`, so line 52 does not fire)                                             | [x] |
+## Generic FFI boundary cases (not distinct C branches, tested anyway)
 
-## Notes on unreachable / non-applicable rejection classes
+| # | condition | expected C result | [x] |
+|---|-----------|-------------------|-----|
+| G1 | `hex == NULL`, `hex_len == 0`, `hex_end_p != NULL` | loop never runs; returns `0`; `*hex_end_p == NULL` (`&hex[0]` on a null pointer) | [x] |
+| G2 | `bin == NULL`, `bin_maxlen == 0`, `hex_len == 0` | returns `0`; `bin` never dereferenced | [x] |
+| G3 | `hex_len == 0` with `hex` non-NULL | returns `0`; `*hex_end_p == hex` | [x] |
+| G4 | `ignore == ""` (empty, non-NULL) — `strchr("", c)` still matches `c == 0` | a NUL byte in `hex` is treated as ignorable at even nibbles; any other non-hex byte breaks | [x] |
+| G5 | Embedded NUL byte in `hex` with `ignore != NULL` at an **even** nibble | skipped as ignorable (the `strchr` NUL-terminator quirk), scan continues past it | [x] |
+| G6 | Embedded NUL byte in `hex` with `ignore == NULL` | `break` immediately (no ignore set to consult) | [x] |
+| G7 | Bytes one step outside every accepted range: `/`(0x2F) `:`(0x3A) `@`(0x40) `G`(0x47) `` ` ``(0x60) `g`(0x67) | all rejected as non-hex (`break`) | [x] |
+| G8 | High-bit bytes `0x80..0xFF`, incl. `0xC1..0xC6` and `0xE1..0xE6` (which would alias to `A..F`/`a..f` if bit 7 were ignored) | all rejected as non-hex — `c & ~32U` preserves bit 7 | [x] |
+| G9 | Oversized `bin_maxlen` (`usize::MAX`) with a short `hex` | succeeds, returns digit count / 2 | [x] |
+| G10 | Oversized `hex_len` is **not** testable safely (the C reads `hex[hex_pos]` unconditionally, so a length past the allocation is UB in both languages) — covered instead by "`hex_len` shorter than the buffer", i.e. the scan must stop at `hex_len` and not at a NUL | `*hex_end_p == &hex[hex_len]` on full consumption | [x] |
+| G11 | Every one of the 256 byte values, in nibble position 0, 1 and 2, crossed with `ignore ∈ {NULL, "", " \t", "\x00\xFF"}` × `hex_end_p ∈ {NULL, non-NULL}` × `bin_maxlen ∈ {0,1,8}` | identical behaviour in both implementations (12 288 cases) | [x] |
 
-* **Out-of-range enum values across the FFI boundary**: the API declares **no
-  enum, no flag word, and no mode parameter** (`c_src/include/lib.h` has a
-  single function taking two pointers, two `size_t`, one `const char *` and one
-  `const char **`). There is therefore no enum-like integer whose out-of-range
-  value could be mishandled. The nearest analogue — an arbitrary out-of-domain
-  *byte* value in `hex` — is covered by rows 11–15, which sweep the full
-  `0x00..=0xFF` domain exhaustively in `tests/differential.rs`.
-* **`hex_pos--` underflow (line 44)**: `state != 0U` requires at least one hex
-  digit to have been consumed *and* `hex_pos++` to have run, so `hex_pos >= 1`
-  whenever line 44 executes. The Rust translation still uses
-  `wrapping_sub(1)` so the ABI would agree even if it were reachable.
-* **`bin`/`hex` non-null validation**: absent from the C. Passing a garbage
-  non-null pointer is UB in both languages and is therefore not a testable
-  rejection; only the `NULL` + zero-length combinations (rows 17–19), which the
-  C provably never dereferences, are exercised.
+## Notes on the enum-parity requirement
 
-All 25 rows are implemented and passing — see `tests/errors.rs`
-(`errors_md_row_XX_*` test names map 1:1 to the `#` column).
+`hex2bin` takes **no enum parameters** (`uint8_t*`, `size_t`, `const char*`,
+`size_t`, `const char*`, `const char**`) and returns a plain `int` sentinel, not
+an error enum — there is no out-of-range-enum input class for this API. The
+equivalent "any bit pattern is a legal input" class here is the `hex` byte
+values, which is covered exhaustively: every one of the 256 possible byte values
+is driven through both implementations (see `configs` row 24 and
+`error_paths::all_256_bytes_*`).
 
-## Suite-adequacy evidence (mutation check)
+## Where each row is tested
 
-Passing tests only mean something if the tests can fail. `scripts/mutation_check.sh`
-injects 15 behaviour-changing edits into `translation/src/lib.rs`, rebuilds the
-cdylib and re-runs the suite for each. **All 15 are detected.** It also injects 3
-edits that are *provably* unobservable and confirms those still pass, so the
-suite is not over-fitted to implementation detail:
+`tests/error_paths.rs`, one test per row (every test loads BOTH `.so`s via
+`libloading` and asserts the same sentinel, the same `hex_end_p` and the same
+output-window bytes — not merely "both failed"):
 
-```
-mutants caught: 15   missed: 0   skipped: 0
-equivalent mutants confirmed: 3   unexpected: 0
-MUTATION CHECK: PASS
-```
+| row | test |
+|-----|------|
+| 1 | `e01_buffer_full_midstream` |
+| 2 | `e02_bin_maxlen_zero` |
+| 3 | `e03_odd_digit_count_decrements_hex_pos` |
+| 4 | `e04_null_hex_end_early_stop` |
+| 5 | `e05_null_hex_end_null_ignore_nonhex` (incl. all 246 non-hex byte values) |
+| 6 | `e06_ignorable_at_odd_nibble` |
+| 7 | `e07_null_hex_end_and_odd_count` |
+| 8 | `e08_no_partial_count_ever` |
+| 9 | `e09_buffer_full_with_null_hex_end` |
+| 10 | `e10_buffer_full_on_high_nibble` (plus the succeeding `2*maxlen` boundary) |
+| G1–G3 | `g01_g03_null_and_zero_lengths` |
+| G4–G6 | `g04_g06_nul_byte_quirk` |
+| G7 | `g07_one_past_each_range_boundary` |
+| G8 | `g08_high_bit_bytes_rejected` |
+| G9 | `g09_oversized_bin_maxlen` |
+| G10 | `g10_hex_len_bounds_the_scan` |
+| G11 | `g11_exhaustive_byte_space_all_positions` |
 
-The behaviour-changing mutants cover each error path in this table: dropping
-`hex_pos--` (rows 3, 4, 21), dropping the `hex_pos != hex_len` branch (rows
-5–7), the off-by-one on `bin_pos >= bin_maxlen` (rows 1, 2), dropping the
-`strchr` NUL quirk (rows 11, 13), dropping the `state == 0U` guard (rows 4, 13),
-and returning `bin_pos` instead of `ret` on error (all rows).
+Reproduce: `cd translation && cargo build && cargo test --test error_paths`
+(the `cargo build` is required — `cargo test` does **not** rebuild a
+`crate-type = ["cdylib"]` artifact, and the harness refuses to run against a
+stale `.so`).

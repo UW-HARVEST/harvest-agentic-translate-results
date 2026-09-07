@@ -2,8 +2,8 @@
 //!
 //! Public ABI: `float half2float(uint16_t h)`
 //!
-//! The three lookup tables below are copied verbatim from the C source so the
-//! conversion is bit-for-bit identical.
+//! The three lookup tables below are extracted mechanically from the C source
+//! by tools/gen_lib_rs.py, so the conversion is bit-for-bit identical.
 
 #![allow(non_upper_case_globals)]
 
@@ -379,7 +379,48 @@ static M__EXPONENT: [u32; 64] = [
     0x8e000000, 0x8e800000, 0x8f000000, 0xc7800000,
 ];
 
-/// Translation of:
+/// The literal translation of the C body, for a `h` already narrowed to 16 bits.
+///
+/// `n` is in 0..=63 because `h` is 16 bits, and `(h & 0x3ff) + m__offset[n]` is
+/// at most 0x3ff + 0x400 = 0x7ff, so both table accesses are in bounds. The
+/// masks make that provable to the compiler, so no panic path is emitted.
+///
+/// The C addition of the mantissa and exponent words is plain `uint32_t`
+/// arithmetic, which wraps; `wrapping_add` reproduces that exactly. The result
+/// is type-punned through a union in C, which is `f32::from_bits` here -- not a
+/// numeric conversion.
+#[inline]
+fn half2float_impl(h: u16) -> f32 {
+    let n = ((h >> 10) & 0x3f) as usize;
+    let idx = (((h & 0x3ff) as usize) + (M__OFFSET[n] as usize)) & 0x7ff;
+    let num = M__MANTISSA[idx].wrapping_add(M__EXPONENT[n]);
+    f32::from_bits(num)
+}
+
+/// `float half2float(uint16_t h)`.
+///
+/// The parameter is declared as the full-width argument slot (`c_uint`) and
+/// truncated here on purpose, because that is what the C function is observably
+/// compiled to do:
+///
+/// * gcc's `half2float` opens with `movzwl`, i.e. the callee itself narrows the
+///   incoming register to 16 bits. C therefore reads only bits 0..15 of the
+///   argument slot and returns a defined value for *any* register contents.
+/// * A Rust `extern "C"` `u16` parameter instead carries LLVM's `zeroext`
+///   attribute, which says the caller already zero-extended. LLVM then shifts
+///   the whole 32-bit register and, having proved `n < 64` from the `u16` type,
+///   removes the `M__OFFSET`/`M__EXPONENT` bounds checks -- and it also folds
+///   away an explicit `& 0x3f` written in the source. A caller that left junk in
+///   the high half of the slot would thus read out of bounds, and the surviving
+///   mantissa bounds check would abort, where C simply truncates and returns.
+///
+/// On every ABI of interest a `uint16_t` argument occupies a >= 32-bit slot
+/// (`%edi` on x86-64 SysV, `w0` on AArch64), so taking `c_uint` here is the same
+/// ABI footprint as `uint16_t`. For a conforming caller the mask is a no-op and
+/// the result is identical; for a non-conforming one it matches C's truncation
+/// bit-for-bit instead of reading out of bounds.
+///
+/// C body being translated:
 /// ```c
 /// float half2float(uint16_t h) {
 ///     union { float flt; uint32_t num; } out;
@@ -388,43 +429,7 @@ static M__EXPONENT: [u32; 64] = [
 ///     return out.flt;
 /// }
 /// ```
-///
-/// # Argument width
-///
-/// The parameter is declared `c_uint` and truncated with `as u16`, rather than
-/// declared `c_ushort`, in order to reproduce the C callee's behaviour exactly.
-/// On the C ABI a `uint16_t` parameter occupies a full argument register and the
-/// *caller* is nominally responsible for zero-extending it, so the upper bits
-/// are unspecified. The compiled C spills the incoming register as a 16-bit
-/// store and reloads it zero-extended:
-///
-/// ```text
-/// mov    %edi,%eax
-/// mov    %ax,-0x14(%rbp)     ; truncate to 16 bits
-/// movzwl -0x14(%rbp),%eax    ; reload zero-extended
-/// ```
-///
-/// i.e. `half2float(x)` behaves as `half2float(x & 0xFFFF)` for any register
-/// value. Declaring the Rust parameter as `c_ushort` instead lets LLVM assume
-/// the caller already zero-extended, so garbage in the upper bits would flow
-/// into `h >> 10`, push the table index out of range and panic — a divergence
-/// from the C, which quietly truncates. Taking the wide value and masking is
-/// ABI-compatible for well-behaved callers and bit-identical to the C for
-/// ill-behaved ones.
-///
-/// # Bounds
-///
-/// After truncation `n` is in `0..=63` because `h` is 16 bits, and
-/// `(h & 0x3ff) + m__offset[n]` is at most `0x3ff + 0x400 = 0x7ff`, so both
-/// table accesses are in bounds for every possible input.
-///
-/// The C addition of the mantissa and exponent words is plain `uint32_t`
-/// arithmetic, which wraps; `wrapping_add` reproduces that exactly.
 #[unsafe(no_mangle)]
 pub extern "C" fn half2float(h: c_uint) -> c_float {
-    let h = h as u16;
-    let n = (h >> 10) as usize;
-    let num = M__MANTISSA[((h & 0x3ff) as usize) + (M__OFFSET[n] as usize)]
-        .wrapping_add(M__EXPONENT[n]);
-    f32::from_bits(num)
+    half2float_impl((h & 0xffff) as u16)
 }

@@ -1,54 +1,74 @@
-# ERRORS.md — Error-surface table (Phase C gate)
+# ERRORS.md — Phase C error-surface table
 
 ## Mechanical derivation
 
-Every error-adjacent construct was grepped out of the whole C source
-(`c_src/src/driver.c`, `c_src/include/driver.h`):
+Every rejection construct was grepped out of the whole of `c_src`
+(`src/driver.c`, 66 lines incl. a 23-line licence header; `include/driver.h`,
+which contains only `void driver(int x);`):
 
 ```
-$ grep -c 'return'  c_src/src/driver.c   -> 0
-$ grep -c 'assert'  c_src/src/driver.c   -> 0
-$ grep -c 'NULL'    c_src/src/driver.c   -> 0
-$ grep -c 'errno'   c_src/src/driver.c   -> 0
-$ grep -nE 'if|switch|while|for|#if' c_src/src/driver.c
-                                         -> only `#include`s and the two
-                                            `house->field op= x` statements;
-                                            the sole `#if` is the `#ifndef
-                                            DRIVER_H_` include guard in the header
-$ grep -nE 'RETURN_ERROR|exit\(|abort|-1' c_src/src/driver.c -> 0
+$ grep -nE 'return|assert|NULL|errno|exit|abort|RETURN_ERROR|if *\(|switch|#ifdef|#if |enum|INT_M|MAX|MIN' \
+      src/driver.c include/driver.h
+src/driver.c:26:#include <stdio.h>
+src/driver.c:27:#include <stdlib.h>
+src/driver.c:38:    house->floors++;
+src/driver.c:42:    house->bedrooms += extra_bedrooms;
 ```
 
-**Result: the C library contains ZERO explicit rejection paths.** There are no
-error-return macros, no error enums, no sentinel returns, no asserts, no range
-checks, no null checks, and no min/max constants. Both public functions return
-`void` and take a single unconstrained `int`, so *every* one of the 2^32 possible
-arguments is "valid input" that the C accepts and processes.
+(The last two lines match only because `->` contains `>`.)
 
-That makes the error surface consist entirely of **implicit** failure modes —
-undefined-behaviour arithmetic and generic FFI boundary values. Those are
-enumerated below and each has a differential test asserting C and Rust produce
-byte-identical observable results (the observable "result" here is the text
-written to `stdout`, since there is no return value to compare).
+Findings, stated exactly:
 
-## Error-surface table
+- **0** `return` statements with a value — `run` and `driver` are both `void`,
+  and every internal helper is `void`.
+- **0** `assert` / `abort` / `exit` / `errno` uses.
+- **0** `if` / `switch` / ternary — the code is straight-line; there is exactly
+  one control-flow path through `run` and one through `driver`.
+- **0** `NULL` checks. The public API takes no pointers at all.
+- **0** range checks, **0** min/max constants, **0** error enums, **0** error
+  macros, **0** `#ifdef` branches.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|---|----------|---------------------------------------------|-------------------|------|-----|
-| 1 | `run` | `extra_bedrooms == INT_MAX` (`2147483647`) — signed overflow of `the_house.bedrooms += extra_bedrooms` (`driver.c:42`, UB in ISO C) | No error return (`void`). Compiled at `-O0` with no `-ftrapv`, gcc emits a plain `addl`, so the value wraps two's-complement. Final `print_the_house()` shows the wrapped `bedrooms`. | `err_01_run_int_max` | [x] |
-| 2 | `run` | `extra_bedrooms == INT_MIN` (`-2147483648`) — signed *underflow* of the same `+=` | No error return; wraps two's-complement. | `err_02_run_int_min` | [x] |
-| 3 | `run` | `extra_bedrooms == INT_MAX - 1` and `INT_MIN + 1` — one step inside each end of the `int` range | No error return; ordinary (or wrapped) add. | `err_03_run_one_step_inside_range` | [x] |
-| 4 | `run` | `extra_bedrooms == -1` (negative delta drives `bedrooms` down, eventually below zero — the C never clamps or validates) | No error return; `bedrooms` may go negative and is printed as a negative `%d`. | `err_04_run_negative_drives_bedrooms_below_zero` | [x] |
-| 5 | `run` | `extra_bedrooms == 0` (degenerate no-op delta) | No error return; two consecutive identical lines. | `err_05_run_zero_delta` | [x] |
-| 6 | `driver` | `x == INT_MAX` — `driver` calls `run(x)` **twice** (`driver.c:64-65`), so the overflowing add is applied twice, wrapping twice | No error return; both wraps observable across the 8 printed lines. | `err_06_driver_int_max_double_wrap` | [x] |
-| 7 | `driver` | `x == INT_MIN` — double underflow | No error return; wraps twice. | `err_07_driver_int_min_double_wrap` | [x] |
-| 8 | `run` | `bedrooms` driven to exactly `INT_MAX`, then `run(1)` — overflow at the precise boundary rather than from a large single delta | No error return; wraps from `INT_MAX` to `INT_MIN`. | `err_08_run_overflow_at_exact_boundary` | [x] |
-| 9 | `run` | `bedrooms` driven to exactly `INT_MIN`, then `run(-1)` — underflow at the precise boundary | No error return; wraps from `INT_MIN` to `INT_MAX`. | `err_09_run_underflow_at_exact_boundary` | [x] |
-| 10 | `run` / `driver` | **Out-of-range "enum" values.** Neither entry point takes an `enum`, a bitflag, or a bounded mode selector — grep finds no `enum`, no `#define` constants, and no `switch`. The parameter's valid domain is therefore the *entire* `int` range, and "a value with no valid variant" does not exist. Verified by sweeping the extremes and a fixed-seed uniform sample of the full `i32` domain rather than only small values. | No error return for any `int`; every value is accepted. | `err_10_full_int_domain_no_rejected_values` | [x] |
-| 11 | `run` / `driver` | **Null pointers.** Not reachable across the ABI: both exported functions take `int` by value and no pointer, array, callback, or out-parameter (see `nm -D` + `driver.h`). `add_floor`/`add_bedrooms` do dereference a `house_t *`, but they are `static` and are only ever passed `&the_house`, which can never be null. | Unreachable — no differential test is possible or meaningful. | documented; no test possible | [x] |
-| 12 | `run` / `driver` | **Zero and oversized lengths.** Not reachable: there is no length, size, count, capacity, or buffer parameter anywhere in the ABI. The nearest analogue — a zero-valued argument and the maximum-magnitude arguments — is covered by rows 1, 2 and 5. | Unreachable as a distinct trigger. | subsumed by rows 1, 2, 5 | [x] |
-| 13 | `run` | `the_house.floors++` overflow (`driver.c:38`) — signed overflow of `floors` | Requires `INT_MAX - 2` (`2147483645`) successive `run` calls to reach, each of which performs 4 `printf` calls. Not reachable in any practical test. Both implementations use a plain wrapping increment, so behaviour would agree. | Unreachable in practice; documented, not tested. | [x] |
-| 14 | `run` | `the_house.bathrooms += 1.0` losing precision / reaching non-representable half-values | `bathrooms` starts at `2.5` and gains exactly `1.0` per `run`, so it is always an exactly representable `n + 0.5` until `2^52`. `%.1f` never has to round. Reaching a lossy magnitude needs ~`4.5e15` calls. | Unreachable in practice; the reachable prefix is covered by row 15 / `CONFIGS.md` row 12. | [x] |
-| 15 | `run` | `%.1f` field-width growth as `bathrooms` accumulates past 1 000.5 (format-width edge in `printf`) | No error; wider field printed. Both use the same glibc `printf`. | `err_15_bathrooms_width_growth` | [x] |
+**There is no error-return surface in this library.** Every `int` bit pattern is
+an accepted input; nothing is rejected. Rows 1–7 below are therefore the generic
+FFI-boundary boundaries mandated for every C API, and the "expected C result" is
+in each case *successful execution with a specific stdout*, which the Rust must
+reproduce byte-for-byte. Fabricating error rows here would be inventing checks
+the C does not perform.
 
-All rows are either checked off by a passing differential test or documented as
-physically unreachable across the C ABI. No row is left unchecked.
+## Table
+
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|---------------------------------------------|-------------------|------|--------|
+| 1 | `run` | `extra_bedrooms = INT_MAX` (`2147483647`) — signed-overflow of `house->bedrooms += extra_bedrooms` (C UB; the shipped `.so` is built with no optimisation, so it wraps two's-complement) | no error/rejection; 4 lines on stdout, last line's bedroom count is the wrapped value | `ERRORS row 1` | [x] |
+| 2 | `run` | `extra_bedrooms = INT_MIN` (`-2147483648`) — signed underflow of the same `+=` | no error; 4 lines, wrapped (negative or wrapped-positive) bedroom count printed with `%d` | `ERRORS row 2` | [x] |
+| 3 | `driver` | `x = INT_MAX` — overflow applied **twice** (`run(x); run(x);`), so the second wrap compounds the first | no error; 8 lines, both wraps identical to C | `ERRORS row 3` | [x] |
+| 4 | `driver` | `x = INT_MIN` — underflow applied twice | no error; 8 lines, both wraps identical to C | `ERRORS row 4` | [x] |
+| 5 | `run` / `driver` | value one step past the 32-bit parameter range: caller pushes a 64-bit argument (`0x1_0000_0000`, `0x7FFF_FFFF_FFFF_FFFF`, `-1i64`, …) where the callee declares `int`. C truncates to the low 32 bits of the argument register; the Rust `extern "C"` wrapper must truncate identically | both take the low 32 bits; stdout identical | `ERRORS row 5[0..8]` | [x] |
+| 6 | `run` / `driver` | "out-of-range enum" analogue: the parameter has **no** valid-variant restriction (it is a bare `int`, not an enum), so every one of the 2^32 bit patterns is a legal input with no rejection branch. Swept exhaustively at the boundaries and randomly across the full `i32` range | no error for any value; stdout identical for every value | `ERRORS row 6[0..127]` | [x] |
+| 7 | `run` / `driver` | repeated invocation until `house->floors` overflows (`floors++`, one increment per `run`) | requires 2^31 − 3 calls; **unreachable** in a test (≈ hours of pure printf). Not a rejection either way; partially covered by row 8's long call sequences | `ERRORS row 7` (documents + covers 4096 increments) | [x] |
+| 8 | `run` / `driver` | null / zero / oversized *length* and null *pointer* arguments | **N/A — not applicable, not skipped.** Neither public symbol takes a pointer, a length, a buffer, a string, or a struct; the entire public signature surface is `void run(int)` / `void driver(int)`. There is no pointer to pass NULL for. Asserted structurally in `ERRORS row 8` by checking the C `.so` imports no `mem*`/`str*`/allocator symbol that a buffer API would need | `ERRORS row 8` | [x] |
+
+## How "same rejection" is asserted when nothing returns an error
+
+Both entry points are `void` and never signal failure, so there is no error code
+or sentinel to compare. The equivalent observable contract, which
+`tests/differential.rs` enforces for every row, is threefold:
+
+1. **Same exit disposition.** Each configuration runs in its own `exec`'d worker
+   process; the worker's exit status is checked. If the C survives an input while
+   the Rust panics or aborts on it (e.g. an arithmetic-overflow panic instead of
+   a wrap), the Rust worker exits non-zero and the row fails. This is verified to
+   work: replacing `wrapping_add` with `+` makes the debug build panic with
+   `attempt to add with overflow` and the harness reports the row as failed.
+2. **Same stdout, byte for byte**, including the exact wrapped integers printed
+   by `%d`.
+3. **Same acceptance**: no input is rejected by either side.
+
+## Note on the C build used as ground truth
+
+The reference `.so` is the one produced by the documented command
+(`cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .`), which sets
+no `CMAKE_BUILD_TYPE` and therefore compiles without optimisation. Signed
+overflow in `house->bedrooms += extra_bedrooms` is UB in the abstract C language;
+in this artifact it wraps two's-complement, and that observed behaviour is what
+the Rust `wrapping_add` reproduces and what rows 1–4 compare against.

@@ -1,41 +1,49 @@
 # Error surface
 
-The C API has no error enum and no `RETURN_ERROR` macro. Its recoverable
-rejections use null/unchanged pointers or index `-1`; invariant violations use
-`assert` and abort. Rows 7-13 are internal invariants reachable only after
-allocator failure or caller memory corruption, not ordinary well-formed FFI
-inputs. Rows 14-25 are the assertions in the exported `hm_geti` self-test.
+Mechanically derived from every `STBDS_ASSERT`, sentinel return, explicit null
+check, range check, and named minimum/maximum in `c_src/src/lib.c`. Internal
+invariant assertions are retained because assertion failure is part of the C
+observable behavior, even where ordinary API-created state cannot trigger it.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | |
-|---|----------|---------------------------------------------|-------------------|---|
-| 1 | `stbds_hmget_key_ts` | `a == NULL` (empty map lookup) | allocate the default element, set `*temp = -1`, return map pointer | [x] |
-| 2 | `stbds_hmget_key_ts` | map exists but `hash_table == NULL` | set `*temp = -1`, return the unchanged map pointer | [x] |
-| 3 | `stbds_hm_find_slot` via get/delete | suffix scan reaches `STBDS_HASH_EMPTY` before finding key | return slot `-1`; public get reports index `-1`, delete reports not deleted | [x] |
-| 4 | `stbds_hm_find_slot` via get/delete | wrapped prefix scan reaches `STBDS_HASH_EMPTY` before finding key | return slot `-1`; public get reports index `-1`, delete reports not deleted | [x] |
-| 5 | `stbds_hmdel_key` | `a == NULL` | return `NULL` | [x] |
-| 6 | `stbds_hmdel_key` | map exists but has no hash table, or key is absent | return unchanged pointer and leave header `temp = 0` | [x] |
-| 7 | `stbds_make_hash_index` | `used_count_threshold + tombstone_count_threshold >= slot_count` | assertion failure (`SIGABRT`) | [x] |
-| 8 | `stbds_hmput_key` | post-growth `i + 1 > capacity` | assertion failure (`SIGABRT`) | [x] |
-| 9 | `stbds_hmdel_key` | located `slot >= table->slot_count` | assertion failure (`SIGABRT`) | [x] |
-| 10 | `stbds_hmdel_key` | decrement would make `used_count < 0` | assertion failure (`SIGABRT`) | [x] |
-| 11 | `stbds_hmdel_key` | moved final element cannot be found (`slot < 0`) | assertion failure (`SIGABRT`) | [x] |
-| 12 | `stbds_hmdel_key` | moved element's bucket index is not `final_index` | assertion failure (`SIGABRT`) | [x] |
-| 13 | `stbds_stralloc` | normal-block path ends with `len > remaining` | assertion failure (`SIGABRT`) | [x] |
-| 14 | `hm_geti` | initial empty lookup does not return `-1` | assertion failure (`SIGABRT`) | [x] |
-| 15 | `hm_geti` | lookup after setting default does not return `-1` | assertion failure (`SIGABRT`) | [x] |
-| 16 | `hm_geti` | missing key does not return default value `-2` | assertion failure (`SIGABRT`) | [x] |
-| 17 | `hm_geti` | odd key after first insertion pass does not return `-2` | assertion failure (`SIGABRT`) | [x] |
-| 18 | `hm_geti` | even key after first insertion pass does not return `i * 5` | assertion failure (`SIGABRT`) | [x] |
-| 19 | `hm_geti` | thread-safe odd-key lookup does not return `-2` | assertion failure (`SIGABRT`) | [x] |
-| 20 | `hm_geti` | thread-safe even-key lookup does not return `i * 5` | assertion failure (`SIGABRT`) | [x] |
-| 21 | `hm_geti` | odd key after update pass does not return `-2` | assertion failure (`SIGABRT`) | [x] |
-| 22 | `hm_geti` | even key after update pass does not return `i * 3` | assertion failure (`SIGABRT`) | [x] |
-| 23 | `hm_geti` | key not divisible by four after selective deletes does not return `-2` | assertion failure (`SIGABRT`) | [x] |
-| 24 | `hm_geti` | key divisible by four after selective deletes does not return `i * 3` | assertion failure (`SIGABRT`) | [x] |
-| 25 | `hm_geti` | any key remains after full delete pass | assertion failure (`SIGABRT`) | [x] |
-
-Generic FFI boundaries that are undefined in C (for example a null string,
-null output pointer, `stbds_arrfreef(NULL)`, or a positive length with a null
-byte pointer) are not rejection paths: C dereferences invalid memory. They are
-covered only where C defines a result (rows 1, 2, 5, and 6).
-
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|---|
+| 1 | `stbds_arrfreef` | `a == NULL` (generic null boundary; this function has no null guard) | invalid header dereference; process faults | [x] |
+| 2 | `stbds_hash_string` | `str == NULL` | process faults while reading `*str` | [x] |
+| 3 | `stbds_hash_bytes` | `p == NULL && len == 0` | accepted; returns the zero-length hash for `seed` | [x] |
+| 4 | `stbds_hash_bytes` | `p == NULL && len > 0` | process faults while reading input bytes | [x] |
+| 5 | `stbds_hmfree_func` | `a == NULL` | returns immediately | [x] |
+| 6 | `stbds_hmget_key_ts` | `a == NULL` | creates the one-element default slot, stores `STBDS_INDEX_EMPTY` (`-1`) in `*temp`, returns hash view | [x] |
+| 7 | `stbds_hmget_key_ts` | non-null map with `table == NULL` | stores `-1` in `*temp`, returns the same map | [x] |
+| 8 | `stbds_hmget_key_ts` / `stbds_hm_find_slot` | key absent and first probe scan reaches `STBDS_HASH_EMPTY` | stores `-1` in `*temp` | [x] |
+| 9 | `stbds_hmget_key_ts` / `stbds_hm_find_slot` | wrapped probe scan reaches `STBDS_HASH_EMPTY` | stores `-1` in `*temp` | [x] |
+| 10 | `stbds_hmget_key_ts` | `temp == NULL` | process faults when writing the result | [x] |
+| 11 | `stbds_hmget_key` | missing key | returns map and stores `-1` in header `temp` | [x] |
+| 12 | `stbds_hmput_default` | `a == NULL` | allocates a zeroed default slot and returns hash view | [x] |
+| 13 | `stbds_hmput_default` | non-null map whose raw array length is `0` | creates/zeros the default slot | [x] |
+| 14 | `stbds_hmdel_key` | `a == NULL` | returns `NULL` | [x] |
+| 15 | `stbds_hmdel_key` | map exists but `table == NULL` | returns same map and leaves header `temp == 0` | [x] |
+| 16 | `stbds_hmdel_key` | requested key is absent (`slot < 0`) | returns same map and leaves header `temp == 0` | [x] |
+| 17 | `stbds_make_hash_index` | `used_count_threshold + tombstone_count_threshold >= slot_count` | `STBDS_ASSERT` abort; generated slot counts must preserve the invariant | [x] |
+| 18 | `stbds_hmput_key` | post-growth `i + 1 > capacity` remains true | `STBDS_ASSERT(i + 1 <= capacity)` abort | [x] |
+| 19 | `stbds_hmdel_key` | found slot is outside `[0, table->slot_count)` | `STBDS_ASSERT(slot < slot_count)` abort | [x] |
+| 20 | `stbds_hmdel_key` | decrement would make `used_count < 0` | `STBDS_ASSERT(table->used_count >= 0)`; with unsigned `size_t`, the C expression remains true after wrap | [x] |
+| 21 | `stbds_hmdel_key` | moved final entry cannot be found after compaction | `STBDS_ASSERT(slot >= 0)` abort | [x] |
+| 22 | `stbds_hmdel_key` | moved entry's bucket index is not `final_index` | `STBDS_ASSERT(b->index[i] == final_index)` abort | [x] |
+| 23 | `stbds_stralloc` | post-allocation `len > a->remaining` on the normal-block path | `STBDS_ASSERT(len <= remaining)` abort | [x] |
+| 24 | `stbds_stralloc` | string length crosses `STBDS_STRING_ARENA_BLOCKSIZE_MIN` (`512`) | select normal block when it fits, otherwise a dedicated allocation | [x] |
+| 25 | `stbds_stralloc` | arena growth reaches `STBDS_STRING_ARENA_BLOCKSIZE_MAX` (`1<<20`) | stop incrementing `a->block`; future normal blocks remain at the maximum | [x] |
+| 26 | `stbds_shmode_func` / map APIs | mode is outside enum values `0..=3` | accepted as an `int`, stored after unsigned-char conversion; later behavior follows the C comparisons/switch default | [x] |
+| 27 | `hm_geti` | initial lookup of key `1` returns anything other than `-1` | assertion abort | [x] |
+| 28 | `hm_geti` | lookup of key `1` after setting default returns an index other than `-1` | assertion abort | [x] |
+| 29 | `hm_geti` | missing key after setting default returns value other than `-2` | assertion abort | [x] |
+| 30 | `hm_geti` | after first insertion pass, odd key lookup returns value other than `-2` | assertion abort | [x] |
+| 31 | `hm_geti` | after first insertion pass, even key lookup returns value other than `i*5` | assertion abort | [x] |
+| 32 | `hm_geti` | thread-safe lookup after first pass returns wrong default for odd key | assertion abort | [x] |
+| 33 | `hm_geti` | thread-safe lookup after first pass returns value other than `i*5` for even key | assertion abort | [x] |
+| 34 | `hm_geti` | after update pass, odd key lookup returns value other than `-2` | assertion abort | [x] |
+| 35 | `hm_geti` | after update pass, even key lookup returns value other than `i*3` | assertion abort | [x] |
+| 36 | `hm_geti` | after deleting keys `2 mod 4`, non-multiple-of-four lookup returns value other than `-2` | assertion abort | [x] |
+| 37 | `hm_geti` | after partial deletion, multiple-of-four lookup returns value other than `i*3` | assertion abort | [x] |
+| 38 | `hm_geti` | after deleting every key, any lookup returns value other than `-2` | assertion abort | [x] |
+| 39 | all pointer-taking APIs | malformed non-null pointer, undersized element, invalid key pointer, or inconsistent map metadata | no C validation; behavior is undefined and may fault rather than returning an error code | [x] |
+| 40 | length-taking APIs | zero lengths and lengths one past natural boundaries (`7/8`, capacity, block size) | accepted; branch-specific result must match C exactly | [x] |

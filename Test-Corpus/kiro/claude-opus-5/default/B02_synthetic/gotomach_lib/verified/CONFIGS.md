@@ -1,147 +1,133 @@
-# CONFIGS.md — Configuration-surface table (Phase A → gates Phase B)
+# CONFIGS.md — configuration-surface table
 
-Mechanically derived from the branches the C source actually takes.
+Derived mechanically from `c_src/src/lib.c` and `c_src/include/lib.h`: the axes
+below are exactly the things the C code `if`s / `switch`es on. There are no
+`#ifdef`s, no global/runtime configuration state, no environment variables and
+no `[features]` in `translation/Cargo.toml`, so the only configuration is the
+argument tuple passed across the FFI boundary.
 
-## Axes the C code branches on
+## Axes the C actually branches on
 
-Public entry points (`nm -D`, and `include/lib.h` declares only the last one):
+* **Entry point** (all four exported symbols, including the three low-level
+  operation callbacks that `gotomach` merely composes):
+  `gotomach`, `process_value`, `double_value`, `triple_value`.
+* **`mode`** — `switch (mode)`: `0` ⇒ `process_value`, `1` ⇒ `double_value`,
+  `2` ⇒ `triple_value`, `default` ⇒ warning + `process_value`. Four distinct
+  paths; the `default` arm is reachable from below (`< 0`) and above (`> 2`).
+* **`iterations`** — shape/count axis. Special-cased values: `0` (loop never
+  runs, and `malloc(0)`), `1` (single iteration), "many", and the upper bound
+  `65535` (also the only value that can make the line-178 max-count `break`
+  fire).
+* **`seed`** — the initial `current_value`, range-checked to `[0, 65535]`.
+  Special values `0`, `1`, `65535`; the value matters because it feeds a
+  data-dependent chain (`current_value = produced % 1000`).
+* **`threshold`** — selects, per iteration, whether the produced value is
+  stored (`produced < threshold`, strict). Distinct regimes: below every
+  produced value (nothing stored ⇒ result 0), above every produced value
+  (everything stored), straddling (some stored — the interesting mixed case),
+  and exactly equal to a produced value (boundary of the strict `<`).
+* **Callback argument shape** — `unused_param` (any `int`) and
+  `unused_context` (`NULL` vs non-`NULL`); the C ignores both, so both must be
+  ignored identically. Plus the `value` axis: `0`, positive, negative, and the
+  signed-overflow extremes `INT_MIN` / `INT_MAX`.
 
-- `process_value(int value, int unused_param, void *unused_context)` — lowest level
-- `double_value(int value, int unused_param, void *unused_context)` — lowest level
-- `triple_value(int value, int unused_param, void *unused_context)` — lowest level
-- `gotomach(int iterations, int seed, int mode, int threshold)` — composed pipeline
+## Rows
 
-There are no compile-time options: `c_src/CMakeLists.txt` defines no macros and
-`lib.c` contains no `#ifdef` other than header guards inside libc. The Rust crate
-declares **no `[features]`**, so the only feature configuration is the default
-(empty) one — see the "feature combinations" section at the bottom.
-
-Runtime "option" axes:
-
-| axis | source of the branch | distinct values |
-|---|---|---|
-| `mode` | `switch (mode)` in `gotomach` selects `state->operation` | `0` → `process_value`, `1` → `double_value`, `2` → `triple_value`, `default` → `process_value` + `[WARNING]` |
-| `iterations` | `if (iterations < 0 \|\| iterations > UINT16_MAX)`; `malloc(iterations*4)` twice; loop trip count; `state->capacity` | `0` (empty), `1` (one), `2..65534` (many), `65535` (max) |
-| `seed` | `if (seed < 0 \|\| seed > UINT16_MAX)`; initial `current_value` | `0`, `1`, mid, `65535` |
-| `threshold` | `if (temp_buffer[i] < threshold)` decides whether a value is appended to `state->results`, i.e. how much of `count` fills up | `INT_MIN` (store none), low (store none), interleaving (store some), high (store all), `INT_MAX` (store all) |
-| `state->count` ceiling | `if (state->count >= UINT16_MAX) break;` | not reached vs reached |
-| fixed-point / cycle shape of `current_value` | `current_value = temp_buffer[i] % 1000` feeding the next `state->operation` call | per-`mode` orbit: `+10` walks and wraps mod 1000; `*2` doubles mod 1000; `*3` triples mod 1000 — each has different cycles and different negative/positive behaviour |
-| `unused_param` / `unused_context` of the op functions | `(void)`-cast, never read | `0` / arbitrary int; `NULL` / arbitrary non-null pointer |
-| `value` of the op functions | plain arithmetic, C signed overflow wraps in practice | `0`, `±1`, small, `INT_MAX`, `INT_MIN`, random full-range |
-
-## Table — one row per meaningful combination
-
-Each row is exercised with **many randomized inputs** (fixed-seed xorshift PRNG,
-so runs are reproducible) over the free variables of that row, comparing the C
-`.so` and the Rust `.so` return values byte-for-byte through `libloading`.
+Each row is exercised with **many randomized inputs from a fixed seed**
+(deterministic xorshift PRNG in the test), and both the return value **and the
+byte-exact stdout** of the C and Rust `.so`s are compared.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C1 | `process_value` | `value` = full `i32` range, randomized; `unused_param` randomized; `unused_context` = `NULL` | [x] |
-| C2 | `process_value` | `value` at boundaries `{0, 1, -1, 9, 10, INT_MAX-10, INT_MAX-9, INT_MAX, INT_MIN, INT_MIN+1}`; `unused_context` = non-null garbage | [x] |
-| C3 | `double_value` | `value` = full `i32` range, randomized; `unused_context` = `NULL` | [x] |
-| C4 | `double_value` | `value` at overflow boundaries `{INT_MAX, INT_MAX/2, INT_MAX/2+1, INT_MIN, INT_MIN/2, INT_MIN/2-1}`; `unused_context` = non-null garbage | [x] |
-| C5 | `triple_value` | `value` = full `i32` range, randomized; `unused_context` = `NULL` | [x] |
-| C6 | `triple_value` | `value` at overflow boundaries `{INT_MAX, INT_MAX/3, INT_MAX/3+1, INT_MIN, INT_MIN/3, INT_MIN/3-1}`; `unused_context` = non-null garbage | [x] |
-| C7 | all three ops | same `value` fed to all three; `unused_param` swept over `{INT_MIN, -1, 0, 1, INT_MAX}` to prove it is ignored identically | [x] |
-| C8 | `gotomach` | `mode = 0`, `iterations = 0` (empty shape), random `seed`, random `threshold` | [x] |
-| C9 | `gotomach` | `mode = 1`, `iterations = 0`, random `seed`, random `threshold` | [x] |
-| C10 | `gotomach` | `mode = 2`, `iterations = 0`, random `seed`, random `threshold` | [x] |
-| C11 | `gotomach` | `mode` = out-of-range (default branch), `iterations = 0`, random `seed`/`threshold` | [x] |
-| C12 | `gotomach` | `mode = 0`, `iterations = 1` (one shape), random `seed`, random `threshold` | [x] |
-| C13 | `gotomach` | `mode = 1`, `iterations = 1`, random `seed`, random `threshold` | [x] |
-| C14 | `gotomach` | `mode = 2`, `iterations = 1`, random `seed`, random `threshold` | [x] |
-| C15 | `gotomach` | `mode` out-of-range, `iterations = 1`, random `seed`, random `threshold` | [x] |
-| C16 | `gotomach` | `mode = 0`, `iterations` random in `2..=512` (many), random `seed`, `threshold = INT_MIN` (append **none**, `count == 0`) | [x] |
-| C17 | `gotomach` | `mode = 0`, `iterations` random in `2..=512`, random `seed`, `threshold = INT_MAX` (append **all**) | [x] |
-| C18 | `gotomach` | `mode = 0`, `iterations` random in `2..=512`, random `seed`, `threshold` random in the *interleaving* band `-2000..=4000` (append **some**) | [x] |
-| C19 | `gotomach` | `mode = 1`, `iterations` random in `2..=512`, `threshold = INT_MIN` | [x] |
-| C20 | `gotomach` | `mode = 1`, `iterations` random in `2..=512`, `threshold = INT_MAX` | [x] |
-| C21 | `gotomach` | `mode = 1`, `iterations` random in `2..=512`, interleaving `threshold` | [x] |
-| C22 | `gotomach` | `mode = 2`, `iterations` random in `2..=512`, `threshold = INT_MIN` | [x] |
-| C23 | `gotomach` | `mode = 2`, `iterations` random in `2..=512`, `threshold = INT_MAX` | [x] |
-| C24 | `gotomach` | `mode = 2`, `iterations` random in `2..=512`, interleaving `threshold` | [x] |
-| C25 | `gotomach` | `mode` out-of-range (randomized invalid ints incl. `INT_MIN`/`INT_MAX`), `iterations` random in `2..=512`, `threshold` random full-range | [x] |
-| C26 | `gotomach` | fully randomized valid tuple: `mode ∈ {0,1,2}`, `iterations ∈ 0..=65535`, `seed ∈ 0..=65535`, `threshold` = full `i32` range | [x] |
-| C27 | `gotomach` | `iterations = 65535` (**max capacity**), each `mode`, `threshold = INT_MAX` → drives the `state->count >= UINT16_MAX` `[WARNING] Reached maximum count` early `break` | [x] |
-| C28 | `gotomach` | `iterations = 65535`, each `mode`, `threshold = INT_MIN` → max trip count with `count == 0` (ceiling never reached) | [x] |
-| C29 | `gotomach` | `iterations = 65535`, each `mode`, interleaving `threshold` → partial fill at max capacity | [x] |
-| C30 | `gotomach` | `iterations = 65534` (one below the ceiling-triggering count), `threshold = INT_MAX`, each `mode` → `count == 65534`, ceiling **not** reached | [x] |
-| C31 | `gotomach` | `seed` boundary sweep `{0, 1, 999, 1000, 1001, 65534, 65535}` × each `mode`, `iterations = 64`, `threshold = INT_MAX` — exercises the `% 1000` orbit entry points | [x] |
-| C32 | `gotomach` | `threshold` boundary sweep around the exact values the ops emit: `{9,10,11}` (`+10`), `{0,1,2}`, `{1998,1999,2000,2001}` (`*2`), `{2997,2998,2999,3000}` (`*3`) × each `mode`, `seed ∈ {0,1,999,1000}` | [x] |
-| C33 | `gotomach` | repeated back-to-back calls in one process (state must not leak between calls): 200 randomized valid tuples called alternately on C then Rust, and interleaved C/Rust/C to detect cross-call state | [x] |
-| C34 | `gotomach` | stdout byte-for-byte: log line sequence captured via `dup2` for each of the reachable log paths (valid run, invalid iterations, invalid seed, invalid mode, max count) | [x] |
-| C35 | `gotomach` + ops | mixed usage: the exported op functions called directly with the same values `gotomach` feeds them internally (`seed`, then `x % 1000` orbit values), verifying the low-level entry points agree with the composed pipeline | [x] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `process_value` | `value` random over the full `int` range; `unused_param` random; `unused_context` `NULL` | [x] |
+| 2 | `process_value` | `value` ∈ {0, 1, -1, 10, -10, `INT_MAX`, `INT_MAX-9`, `INT_MIN`} (overflow boundaries of `value + 10`); `unused_context` non-`NULL` garbage | [x] |
+| 3 | `double_value` | `value` random over the full `int` range; `unused_param` random; `unused_context` `NULL` | [x] |
+| 4 | `double_value` | `value` ∈ {0, 1, -1, `INT_MAX`, `INT_MAX/2`, `INT_MIN`, `INT_MIN/2`} (overflow boundaries of `value * 2`); `unused_context` non-`NULL` garbage | [x] |
+| 5 | `triple_value` | `value` random over the full `int` range; `unused_param` random; `unused_context` `NULL` | [x] |
+| 6 | `triple_value` | `value` ∈ {0, 1, -1, `INT_MAX`, `INT_MAX/3`, `INT_MIN`, `INT_MIN/3`} (overflow boundaries of `value * 3`); `unused_context` non-`NULL` garbage | [x] |
+| 7 | `gotomach` | `mode = 0`, `iterations = 0` (loop body never executes, `malloc(0)`), `seed`/`threshold` randomized | [x] |
+| 8 | `gotomach` | `mode = 0`, `iterations = 1`, `seed`/`threshold` randomized | [x] |
+| 9 | `gotomach` | `mode = 0`, `iterations` random in `[2, 4096]`, `threshold` in the *straddling* regime (some values stored, some not), `seed` randomized | [x] |
+| 10 | `gotomach` | `mode = 0`, `iterations` random, `threshold = INT_MIN` (nothing ever stored, `count` stays 0, sum is 0) | [x] |
+| 11 | `gotomach` | `mode = 0`, `iterations` random, `threshold = INT_MAX` (every produced value stored, `count == iterations`) | [x] |
+| 12 | `gotomach` | `mode = 1` (`double_value`), `iterations = 0` | [x] |
+| 13 | `gotomach` | `mode = 1`, `iterations = 1` | [x] |
+| 14 | `gotomach` | `mode = 1`, `iterations` random in `[2, 4096]`, straddling `threshold`, randomized `seed` | [x] |
+| 15 | `gotomach` | `mode = 1`, `iterations` random, `threshold = INT_MIN` | [x] |
+| 16 | `gotomach` | `mode = 1`, `iterations` random, `threshold = INT_MAX` | [x] |
+| 17 | `gotomach` | `mode = 2` (`triple_value`), `iterations = 0` | [x] |
+| 18 | `gotomach` | `mode = 2`, `iterations = 1` | [x] |
+| 19 | `gotomach` | `mode = 2`, `iterations` random in `[2, 4096]`, straddling `threshold`, randomized `seed` | [x] |
+| 20 | `gotomach` | `mode = 2`, `iterations` random, `threshold = INT_MIN` | [x] |
+| 21 | `gotomach` | `mode = 2`, `iterations` random, `threshold = INT_MAX` | [x] |
+| 22 | `gotomach` | `mode` in the `default` arm from above (`mode` random in `[3, INT_MAX]`), full randomized `iterations`/`seed`/`threshold` — must log the warning and behave as `mode = 0` | [x] |
+| 23 | `gotomach` | `mode` in the `default` arm from below (`mode` random in `[INT_MIN, -1]`), full randomized `iterations`/`seed`/`threshold` | [x] |
+| 24 | `gotomach` | `seed` boundary values `{0, 1, 65535}` × `mode` `{0,1,2,default}`, `iterations` small, `threshold` randomized | [x] |
+| 25 | `gotomach` | `threshold` set *exactly* to a produced value (strict-`<` boundary): `mode` 0/1/2 with `iterations = 1` and `threshold ∈ {f(seed), f(seed)+1, f(seed)-1}` | [x] |
+| 26 | `gotomach` | `iterations = 65535` (upper bound) × `mode` `{0,1,2}` × `threshold ∈ {INT_MIN, INT_MAX, straddling}` — the only shape that can reach the line-178 `[WARNING] Reached maximum count` `break` | [x] |
+| 27 | `gotomach` | fully unconstrained random fuzz: all four `int` parameters drawn from the full `int` range (mixes valid and invalid, exercises the interaction of the range checks with the `switch`) | [x] |
+| 28 | `gotomach` | repeated back-to-back invocations in one process (state must not leak between calls: `count`/`capacity` are per-call heap state) | [x] |
 
-## Feature combinations (Phase D)
+## Feature combinations
 
-`translation/Cargo.toml` declares no `[features]` table, so the complete set of
-feature combinations is:
+`translation/Cargo.toml` declares **no `[features]`** table and no optional
+dependencies, so the complete set of feature combinations is the single empty
+combination. `cargo test --no-default-features` is therefore identical to
+`cargo test`; both are run by `run_all.sh` for completeness. There is likewise
+**no `[[bin]]`/binary driver target** in the crate and no `add_executable` in
+`c_src/CMakeLists.txt`, so the "compare binary stdout" gate is satisfied by the
+per-call stdout capture used in every row above.
 
-| combo | command |
-|---|---|
-| default (no features) | `cargo test --release` |
-| `--no-default-features` | `cargo test --release --no-default-features` |
-| `--all-features` | `cargo test --release --all-features` |
+## Row → test mapping and results
 
-All three are identical configurations here, and all three are run by
-`tests/run_all_features.sh`. The `.so` under test is always the **release**
-`cdylib` (`crate-type = ["cdylib"]`, `panic = "abort"`), matching how an external
-consumer links it; a debug `.so` is additionally built and diffed for symbols.
+Every row is checked off above only because the named test passed against both
+`.so`s. Each `diff_gotomach` / `diff_op` call compares **the return value and
+the byte-exact stdout** of the two libraries.
 
-## Row → test mapping (Phase B)
+| rows | test file | test name(s) |
+|------|-----------|--------------|
+| 1 | `tests/configs.rs` | `row01_process_value_random_null_ctx` |
+| 2 | `tests/configs.rs` | `row02_process_value_overflow_boundaries_garbage_ctx` |
+| 3 | `tests/configs.rs` | `row03_double_value_random_null_ctx` |
+| 4 | `tests/configs.rs` | `row04_double_value_overflow_boundaries_garbage_ctx` |
+| 5 | `tests/configs.rs` | `row05_triple_value_random_null_ctx` |
+| 6 | `tests/configs.rs` | `row06_triple_value_overflow_boundaries_garbage_ctx` |
+| 7–11 | `tests/configs.rs` | `row07_mode0_zero_iterations` … `row11_mode0_threshold_int_max` |
+| 12–16 | `tests/configs.rs` | `row12_mode1_zero_iterations` … `row16_mode1_threshold_int_max` |
+| 17–21 | `tests/configs.rs` | `row17_mode2_zero_iterations` … `row21_mode2_threshold_int_max` |
+| 22 | `tests/configs.rs` | `row22_mode_default_from_above` |
+| 23 | `tests/configs.rs` | `row23_mode_default_from_below` |
+| 24 | `tests/configs.rs` | `row24_seed_boundaries_all_modes` |
+| 25 | `tests/configs.rs` | `row25_threshold_exactly_at_produced_value` |
+| 26 | `tests/configs.rs` | `row26_max_iterations` |
+| 27 | `tests/configs.rs` | `row27_full_random_fuzz` |
+| 28 | `tests/configs.rs` | `row28_repeated_invocations_are_independent` |
 
-Rows C1–C33 and C35 are in `tests/phase_b_valid.rs`; row C34 lives in its own
-binary, `tests/phase_b_stdout.rs`, because its fd-1 redirection is process-wide
-and must not run concurrently with tests that make the libraries log.
+## Beyond the table: exhaustive sweeps
 
-| row | test |
-|---|---|
-| C1 | `c1_process_value_random_full_range` |
-| C2 | `c2_process_value_boundaries` |
-| C3 | `c3_double_value_random_full_range` |
-| C4 | `c4_double_value_boundaries` |
-| C5 | `c5_triple_value_random_full_range` |
-| C6 | `c6_triple_value_boundaries` |
-| C7 | `c7_all_ops_same_value_unused_param_swept` |
-| C8 | `c8_empty_mode0` |
-| C9 | `c9_empty_mode1` |
-| C10 | `c10_empty_mode2` |
-| C11 | `c11_empty_mode_invalid` |
-| C12 | `c12_one_mode0` |
-| C13 | `c13_one_mode1` |
-| C14 | `c14_one_mode2` |
-| C15 | `c15_one_mode_invalid` |
-| C16 | `c16_many_mode0_threshold_min` |
-| C17 | `c17_many_mode0_threshold_max` |
-| C18 | `c18_many_mode0_threshold_interleaving` |
-| C19 | `c19_many_mode1_threshold_min` |
-| C20 | `c20_many_mode1_threshold_max` |
-| C21 | `c21_many_mode1_threshold_interleaving` |
-| C22 | `c22_many_mode2_threshold_min` |
-| C23 | `c23_many_mode2_threshold_max` |
-| C24 | `c24_many_mode2_threshold_interleaving` |
-| C25 | `c25_many_mode_invalid_threshold_any` |
-| C26 | `c26_fully_randomized_valid_domain` |
-| C27 | `c27_max_capacity_threshold_max_triggers_ceiling` |
-| C28 | `c28_max_capacity_threshold_min` |
-| C29 | `c29_max_capacity_threshold_interleaving` |
-| C30 | `c30_one_below_ceiling` |
-| C31 | `c31_seed_boundary_sweep` |
-| C32 | `c32_threshold_boundary_sweep` |
-| C33 | `c33_repeated_and_interleaved_calls` |
-| C34 | `c34_stdout_byte_identical` (`tests/phase_b_stdout.rs`) |
-| C35 | `c35_low_level_ops_match_composed_pipeline` |
+`tests/exhaustive.rs` goes past random sampling and compares return values over
+contiguous ranges (stdout is pinned separately — see the file's module comment):
 
-**Status: 35/35 `CONFIGS.md` rows pass across their randomized inputs, under
-every feature combination and both build profiles.**
+| test | space covered |
+|------|---------------|
+| `exhaustive_all_valid_seeds` | **all 65 536 valid `seed` values** × 5 mode paths × 6 threshold regimes (≈ 2.0 M call pairs) |
+| `exhaustive_contiguous_iteration_counts` | **every `iterations` value in `[0, 4096]`** × 4 mode paths × 5 (seed, threshold) pairs |
+| `exhaustive_range_check_boundaries` | ±3 around every range-check edge, in `iterations` × `seed` simultaneously × 5 modes × 4 thresholds |
+| `exhaustive_contiguous_thresholds` | **every `threshold` in `[-5, 3010]`** (the full span of reachable produced values) × 4 modes × 8 seeds |
+| `exhaustive_operation_callbacks` | every `value` in `[-70000, 70000]` plus every power-of-two edge and both overflow extremes, for all three callbacks |
 
-## How to run
+## Suite sensitivity (mutation testing)
 
-```bash
-# one profile / one feature set
-cd translation && cargo test --release
+Passing tests only mean something if they can fail. `mutation_check.sh` injects
+19 realistic translation bugs into `src/lib.rs` one at a time, rebuilds, and runs
+the suite. **All 19 were caught; 0 survived.** Mutations covered wrong
+arithmetic constants, `>` vs `>=` on both range checks, swapped check order,
+swapped/wrong mode dispatch, `<` vs `<=` on the store predicate, a changed
+modulus, an off-by-one max-count cutoff, wrong error codes, an off-by-one
+summation bound, three dropped log lines and one altered log message.
 
-# the whole matrix (rebuilds the C .so, diffs symbols, runs every combo)
-cd translation && ./tests/run_all_features.sh
-```
+## Final result
+
+Run `./run_all.sh` to reproduce. Result: **52 tests pass in all 4
+configurations** (`{release, dev}` × `{--no-default-features, default}`), and the
+`nm -D` symbol diff is empty.

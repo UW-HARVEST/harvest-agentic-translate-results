@@ -22,14 +22,6 @@
 //!     `wrapping_shr`, which mask the count to 5 bits exactly like the x86
 //!     shift instructions that the C compiler emits.
 //!   * Reads/writes past the ends of `grbuf` and `bs->buf` are performed as-is.
-//!
-//! All pointer arithmetic uses `wrapping_offset` rather than `offset`. The C
-//! computes addresses far outside its objects (`grbuf + group_size * j` with a
-//! negative or NULL `grbuf`, `bs->buf + (pos >> 3)` with a huge or negative
-//! `pos`, `bitalloc[i]` for `i` up to 509), which `offset` forbids as a UB
-//! precondition — a debug-profile build of this crate aborts on it even though
-//! the computed address, and the release-profile behaviour, are identical.
-//! `wrapping_offset` computes the same address without that precondition.
 
 #![allow(non_camel_case_types)]
 
@@ -105,7 +97,7 @@ unsafe fn get_bits(bs: *mut bs_t, n: c_int) -> u32 {
     // `int shl = n + s;`  (s converts to int here)
     let mut shl: c_int = n.wrapping_add(s as c_int);
     // `const uint8_t *p = bs->buf + (bs->pos >> 3);`
-    let mut p: *const u8 = (*bs).buf.wrapping_offset(((*bs).pos >> 3) as isize);
+    let mut p: *const u8 = (*bs).buf.offset(((*bs).pos >> 3) as isize);
 
     // `if ((bs->pos += n) > bs->limit) return 0;`
     (*bs).pos = (*bs).pos.wrapping_add(n);
@@ -115,7 +107,7 @@ unsafe fn get_bits(bs: *mut bs_t, n: c_int) -> u32 {
 
     // `next = *p++ & (255 >> s);`
     let mut next: u32 = ((*p as c_int) & (255 >> s)) as u32;
-    p = p.wrapping_offset(1);
+    p = p.offset(1);
 
     // `while ((shl -= 8) > 0) { cache |= next << shl; next = *p++; }`
     loop {
@@ -125,7 +117,7 @@ unsafe fn get_bits(bs: *mut bs_t, n: c_int) -> u32 {
         }
         cache |= next.wrapping_shl(shl as u32);
         next = *p as u32;
-        p = p.wrapping_offset(1);
+        p = p.offset(1);
     }
 
     // `return cache | (next >> -shl);`
@@ -152,7 +144,7 @@ pub unsafe extern "C" fn dequantize_granule(
     let mut j: c_int = 0;
     while j < 4 {
         // `float *dst = grbuf + group_size * j;`
-        let mut dst: *mut f32 = grbuf.wrapping_offset(group_size.wrapping_mul(j) as isize);
+        let mut dst: *mut f32 = grbuf.offset(group_size.wrapping_mul(j) as isize);
 
         // `for (i = 0; i < 2 * sci->total_bands; i++)` -- the bound is re-read
         // from the struct on every iteration, as in the C source.
@@ -163,7 +155,7 @@ pub unsafe extern "C" fn dequantize_granule(
             // Unchecked, so that `i >= 64` reads past `bitalloc` into the
             // adjacent struct bytes exactly like the C does.
             let bitalloc: *const u8 = std::ptr::addr_of!((*sci).bitalloc) as *const u8;
-            let ba: c_int = *bitalloc.wrapping_offset(i as isize) as c_int;
+            let ba: c_int = *bitalloc.offset(i as isize) as c_int;
 
             if ba != 0 {
                 if ba < 17 {
@@ -173,7 +165,7 @@ pub unsafe extern "C" fn dequantize_granule(
                     while k < group_size {
                         // `dst[k] = (float)((int)get_bits(bs, ba) - half);`
                         let v = (get_bits(bs, ba) as c_int).wrapping_sub(half);
-                        *dst.wrapping_offset(k as isize) = v as f32;
+                        *dst.offset(k as isize) = v as f32;
                         k += 1;
                     }
                 } else {
@@ -187,7 +179,7 @@ pub unsafe extern "C" fn dequantize_granule(
                         // `dst[k] = (float)((int)(code % mod - mod / 2));`
                         // Unsigned subtraction wraps before the cast to int.
                         let v = (code % m).wrapping_sub(m / 2) as c_int;
-                        *dst.wrapping_offset(k as isize) = v as f32;
+                        *dst.offset(k as isize) = v as f32;
                         // `k++, code /= mod`
                         k += 1;
                         code /= m;
@@ -196,7 +188,7 @@ pub unsafe extern "C" fn dequantize_granule(
             }
 
             // `dst += choff; choff = 18 - choff;`
-            dst = dst.wrapping_offset(choff as isize);
+            dst = dst.offset(choff as isize);
             choff = 18 - choff;
 
             i += 1;

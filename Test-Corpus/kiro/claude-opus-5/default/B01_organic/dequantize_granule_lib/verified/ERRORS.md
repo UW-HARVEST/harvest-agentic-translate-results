@@ -1,102 +1,102 @@
-# ERRORS.md — error / rejection surface table (Phase A, gates Phase C)
+# ERRORS.md — Error / rejection surface table (Phase C gate)
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`. Every
+`return`, every conditional, and every implicit guard was enumerated:
 
-## Mechanical inventory of the C source
+```
+$ grep -n 'return|assert|NULL|RETURN_ERROR|errno|-1' src/lib.c include/lib.h
+src/lib.c:8:        return 0;                       <- the ONLY error return
+src/lib.c:14:    return cache | (next >> -shl);
+src/lib.c:42:    return group_size * 4;
 
-Grep for every rejection / error construct:
+$ grep -n 'if (|while (|for (|switch|#if' src/lib.c
+7:    if ((bs->pos += n) > bs->limit)     <- guard
+10:   while ((shl -= 8) > 0)              <- loop guard
+20:   for (j = 0; j < 4; j++)
+22:   for (i = 0; i < 2 * sci->total_bands; i++)   <- guard on total_bands
+24:   if (ba != 0)                        <- guard: skip band
+25:   if (ba < 17)                        <- mode split
+27:   for (k = 0; k < group_size; k++)    <- guard on group_size
+33:   for (k = 0; k < group_size; k++, code /= mod)
+```
 
-| construct | occurrences in `c_src/` |
-|---|---|
-| `RETURN_ERROR`-style macro | 0 (none defined) |
-| `assert` / `NDEBUG` | 0 |
-| `return NULL` | 0 |
-| `return -1` / negative sentinel | 0 |
-| error `enum` / `typedef enum` | 0 (**no enums exist in this API at all**) |
-| explicit NULL check | 0 |
-| named min/max constant (`#define`) | 0 |
-| `return 0` (early-out / rejection) | **1** — `get_bits`, line 8 |
-| conditional branch that *skips* work | 3 — `if (ba != 0)`, `if (ba < 17)`, `while ((shl -= 8) > 0)` |
-| loop guard that can reject all work | 3 — `j < 4`, `i < 2 * sci->total_bands`, `k < group_size` |
-| unconditional success return | 1 — `return group_size * 4;` |
+**There is no `RETURN_ERROR` macro, no error enum, no `assert`, no `NULL`
+check, no explicit range check and no `errno` use anywhere in this library.**
+`dequantize_granule` has exactly one `return` and it is unconditional
+(`group_size * 4`); it can never signal failure. The only in-band rejection in
+the whole library is `get_bits`'s bitstream-exhaustion guard, which is
+*silent*: it returns `0` bits and still advances `bs->pos`.
 
-**Key finding:** `dequantize_granule` has **no error return path at all**. It
-always returns `group_size * 4`. The *entire* error surface of this library is
-(a) `get_bits`'s bitstream-exhaustion early-out, (b) branches that skip work,
-and (c) undefined-behaviour classes the C nevertheless executes deterministically
-at `-O0` (out-of-bounds `bitalloc` reads, over-wide shifts, signed overflow,
-unsigned wraparound). Each of these is a row below because the Rust must
-reproduce it bit-for-bit.
+Consequently the "error surface" of this library is (a) that one guard, (b) the
+guards that cause work to be *skipped*, and (c) the out-of-nominal-range /
+undefined-behaviour inputs the C nevertheless accepts and processes. Rows below
+are one per distinct rejection/guard branch plus the generic FFI boundaries
+required by Phase C. `expected C result` is what the C `.so` actually does — it
+is asserted by comparing against the C `.so`, never against a guess.
 
-There are **no C enums** in the public header, so "out-of-range enum value across
-FFI" has no direct instance. Its closest analogue — an integer field with no
-valid variant — is `bitalloc[i]`, a `uint8_t` whose meaningful domain the code
-splits at `0`, `1..16`, `17..`; values `17..255` include many that a real MPEG
-bitstream never produces. Rows 9–13 cover that full `0..=255` domain.
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| E1 | `get_bits` (via `dequantize_granule`) | `(bs->pos += n) > bs->limit` — bitstream exhausted on the very first `get_bits` call (`limit == 0`, `pos == 0`, `n >= 1`) | returns `0`; `bs->pos` is **still advanced** by `n`; caller writes `0 - half` | [x] |
+| E2 | `get_bits` | exhausted *mid-run*: `limit` set so the first few reads succeed and later ones trip the guard | prefix decoded from `buf`, suffix all `0` bits; `bs->pos` ends at `initial_pos + Σn` | [x] |
+| E3 | `get_bits` | exact boundary `bs->pos + n == bs->limit` (guard is `>`, not `>=`) | guard **not** taken — bits are read normally | [x] |
+| E4 | `get_bits` | one step past the boundary `bs->pos + n == bs->limit + 1` | guard taken — returns `0` | [x] |
+| E5 | `get_bits` | `bs->limit < 0` (negative limit, e.g. `-1`) | every call trips the guard; all bits `0` | [x] |
+| E6 | `get_bits` | `bs->pos != 0` at entry and not byte aligned (`pos & 7 != 0`); first byte masked with `255 >> s` | high `s` bits of the first byte are discarded | [x] |
+| E7 | `get_bits` | `bs->pos` already `> bs->limit` before the call | guard taken immediately, `0` | [x] |
+| E8 | `get_bits` | `shl -= 8` never `> 0` (i.e. `n + (pos&7) <= 8`), so the `while` body never runs and `cache` stays `0` | result is `(*p & (255>>s)) >> -shl` only | [x] |
+| E9 | `dequantize_granule` | `sci->total_bands == 0` → `i < 0` false on entry, inner loop never runs | no writes to `grbuf`, `bs` untouched, returns `group_size * 4` | [x] |
+| E10 | `dequantize_granule` | `sci->bitalloc[i] == 0` for all `i` (`ba != 0` guard rejects every band) | no `get_bits` call, no `grbuf` write, `bs->pos` unchanged, returns `group_size*4` | [x] |
+| E11 | `dequantize_granule` | `group_size == 0` → `k < 0` false, both `k` loops empty | `ba<17`: no `get_bits`; `ba>=17`: **one** `get_bits` still consumed per band; returns `0` | [x] |
+| E12 | `dequantize_granule` | `group_size < 0` (e.g. `-1`, `-7`) | `k` loops empty, `dst` starts *before* `grbuf`, no writes; returns `group_size*4` (negative) | [x] |
+| E13 | `dequantize_granule` | `group_size` far larger than any real granule (e.g. `64`, `256`) — no clamp exists | writes `group_size` floats per active band, walking `grbuf` well past 576 | [x] |
+| E14 | `dequantize_granule` | `ba == 16` — largest value still taking the `ba < 17` branch; `half = 0x7FFF` | linear path with `1<<15 - 1` bias | [x] |
+| E15 | `dequantize_granule` | `ba == 17` — smallest value taking the grouped branch; `mod = 3`, `n = 5` | grouped path | [x] |
+| E16 | `dequantize_granule` | `ba` in `18..=31`: `2 << (ba-17)` still in range but `n = mod+2-(mod>>3)` grows past 32 bits requested → `next << shl` with `shl >= 32` is **C UB** | x86 masks the shift count to 5 bits; Rust must reproduce it (`wrapping_shl`) | [x] |
+| E17 | `dequantize_granule` | `ba >= 49`: `2 << (ba-17)` has a shift count `>= 32` — **C UB** | x86 masks count to 5 bits, so `ba` wraps mod 32 (`ba=49` ≡ `ba=17`) | [x] |
+| E18 | `dequantize_granule` | `ba == 48`: shift count `31`, `2 << 31` overflows to `0`, so `mod == 1` | `code % 1 - 1/2 == 0` → every sample is `0.0`, `n == 3` | [x] |
+| E19 | `dequantize_granule` | `ba` so large that `n` exceeds the buffer (`ba` ≈ 40, `n` ≈ 7.3e6 bits) | `bs->pos += n` trips the `limit` guard before any deref → `0`; no OOB read | [x] |
+| E20 | `dequantize_granule` | `code % mod < mod / 2` in the grouped path — `unsigned` subtraction **wraps** before the cast to `int` | huge `unsigned` → negative `int` → negative float (must not be a saturating/checked sub) | [x] |
+| E21 | `dequantize_granule` | `ba` read at `i >= 64`, i.e. `total_bands > 32`: `sci->bitalloc[i]` runs **off the 64-byte array** into `scfcod` | C reads the adjacent struct bytes; Rust must read the same bytes | [x] |
+| E22 | `dequantize_granule` | `ba` read at `i >= 128`, i.e. `total_bands > 64`: index runs **past the end of `L12_scale_info`** (max `i` = 509 at `total_bands == 255`) | C reads whatever follows the struct; Rust must read the same bytes | [x] |
+| E23 | `dequantize_granule` | `sci->total_bands == 255` (max `uint8_t`) → 510 bands per granule | full 510-band walk, `choff` returns to 576 each `j` (even count) | [x] |
+| E24 | `dequantize_granule` | out-of-range "enum"-like ints across FFI: `group_size` = `INT_MIN`-ish / large; `ba` sweeping the **entire** `0..=255` byte domain (no valid-variant check exists) | all 256 `ba` values accepted and processed; no rejection | [x] |
+| E25 | `get_bits` | `bs->buf` points at all-`0x00` bytes / all-`0xFF` bytes (degenerate content, not a rejection but the extreme of the value domain) | `0x00`: all samples `-half`; `0xFF`: all bits set | [x] |
+| E26 | `dequantize_granule` | NULL pointers (`grbuf`, `bs`, `sci`) | C **has no null check** → dereference → `SIGSEGV`. Behaviour is a crash, identical in both; asserted out-of-process where the guards make the deref unreachable (`total_bands==0` + `grbuf==NULL`, `group_size<=0`) | [x] |
 
-## Error-surface table
+Notes on rows deliberately **not** present: there is no invalid `stereo_bands`
+(the field is never read), no invalid `scf` (never read), and no division-by-zero
+row for `code % mod` / `mod / 2` because `mod = (2 << k) + 1` is always odd and
+therefore never `0`.
 
-| # | function | trigger (exact invalid input/condition) | expected C result | test | [x] |
-|---|----------|------------------------------------------|-------------------|------|-----|
-| 1 | `get_bits` | `bs->limit == 0`, `bs->pos == 0`, any `n > 0` → `(bs->pos += n) > bs->limit` | returns `0`; `bs->pos` **is still advanced** by `n`; `bs->buf` is **not read** | `row01_limit_zero_rejects_every_read` | [x] |
-| 2 | `get_bits` | `bs->pos > bs->limit` already on entry (exhausted stream, e.g. after row 1) | every subsequent call returns `0` and keeps advancing `bs->pos`; `dequantize_granule` therefore writes `-half` (linear path) / `0 - mod/2` (grouped path) | `row02_pos_already_past_limit` | [x] |
-| 3 | `get_bits` | `bs->pos + n == bs->limit` exactly (one step *inside* the range) | **no** early-out — the read is performed; boundary is `>`, not `>=` | `row03_row04_limit_boundary_is_strictly_greater` | [x] |
-| 4 | `get_bits` | `bs->pos + n == bs->limit + 1` (one step past the valid range) | early-out, returns `0` | `row03_row04_limit_boundary_is_strictly_greater` | [x] |
-| 5 | `get_bits` | grouped path yields a huge `n`: `ba` with `(ba-17)&31 == 24` → `mod == 0x0200_0001` → `n == 29_360_131`, against `limit == 1000` | every call returns `0`; `bs->pos` ends at exactly `16 * n`; buffer never read | `row05_huge_grouped_n_is_rejected` | [x] |
-| 6 | `get_bits` | `bs->limit < 0` (`-1`, `-1000`, `INT_MIN+1`, `INT_MIN`) | first call already early-outs, returns `0` | `row06_negative_limit` | [x] |
-| 7 | `get_bits` | `bs->pos < 0` (`-64`, `-1`) and `bs->pos + n <= bs->limit` | `bs->pos >> 3` is an **arithmetic** shift → `p = bs->buf + negative` reads *before* the buffer; `s = bs->pos & 7` is still `0..7` | `row07_negative_pos_reads_before_buffer` | [x] |
-| 8 | `get_bits` | `n + s >= 40`, i.e. loop reaches `shl >= 32` in `cache \|= next << shl` (`ba == 22` → `mod == 65` → `n == 59`) | shift-count overflow (UB). At `-O0` gcc emits `shl %cl`, so the count is **masked to 5 bits**; the hand-computed sample value is `28.0` | `row08_over_wide_shift_is_masked` | [x] |
-| 9 | `dequantize_granule` | `bitalloc[i] == 0` | band is **skipped entirely**: `grbuf` untouched, `bs->pos == 0`, but `dst += choff; choff = 18 - choff` still executes | `row09_zero_bitalloc_skips_band` | [x] |
-| 10 | `dequantize_granule` | `bitalloc[i] == 17` (first grouped value) | `mod = (2 << 0) + 1 = 3`, `n = 3 + 2 - 0 = 5` | `row10_ba_17_smallest_grouped` | [x] |
-| 11 | `dequantize_granule` | `bitalloc[i]` with `(ba-17)&31 == 30` (`ba == 47, 79, 111, 143, 175, 207, 239`) | `2 << 30` **overflows `int`** (UB) → `0x80000000` → `+1` → `mod == 0x80000001u`; `mod/2 == 0x40000000`; every sample is `-1_073_741_824.0` | `row11_signed_overflow_in_mod` | [x] |
-| 12 | `dequantize_granule` | `bitalloc[i]` with `(ba-17)&31 == 31` (`ba == 48, 80, …, 240`) | `2 << 31` == `0` (masked shift) → `mod == 1` → `code % 1 == 0`, `mod/2 == 0` → every `dst[k] = 0.0f`; `n = 3` | `row12_mod_one_yields_zero_samples` | [x] |
-| 13 | `dequantize_granule` | `bitalloc[i] >= 49` up to `255` — the *shift count* `ba-17` exceeds 31 (UB) | count masked to 5 bits, so behaviour is **periodic with period 32** in `ba`; asserted by comparing `ba` and `ba + 32k` byte-for-byte for every residue; no rejection, no error code | `row13_shift_count_wraps_with_period_32` | [x] |
-| 14 | `dequantize_granule` | grouped path where `code % mod < mod / 2` | `code % mod - mod / 2` is computed in **`unsigned`** and cast to `int`; both signs appear and every sample lies in `[-mod/2, mod-1-mod/2]` | `row14_unsigned_difference_cast_to_int` | [x] |
-| 15 | `dequantize_granule` | `sci->total_bands` such that `i >= 64` (any `total_bands >= 33`) | `sci->bitalloc[i]` reads **out of bounds**: `i` in `64..127` reads `scfcod[i-64]`, `i` in `128..129` the trailing padding, `i >= 130` **past the end of the object** (max `i` = `509` → offset `1279`, 380 B past `sizeof == 900`). Proven by placing the allocation only at index ≥ 64 / ≥ 130 and checking the exact bit consumption. No bounds check, no error | `row15_out_of_bounds_bitalloc_read` | [x] |
-| 16 | `dequantize_granule` | `sci->total_bands == 0` | `i` loop never entered for any `j`; returns `group_size * 4`; `grbuf` untouched; `bs->pos == 0`; `choff` stays `576` | `row16_total_bands_zero` | [x] |
-| 17 | `dequantize_granule` | `group_size == 0` | `k` loop never entered → no writes. **Linear** path consumes nothing; **grouped** path still consumes `n` bits per band because `get_bits` precedes the `k` loop. Returns `0` | `row17_group_size_zero` | [x] |
-| 18 | `dequantize_granule` | `group_size < 0` (`-1`, `-2`, `-18`, `-576`, `-100000`, `-0x40000000`, `INT_MIN`, `INT_MIN+1`) | `k < group_size` false → no writes; `dst = grbuf + group_size * j` is a wild (negative) pointer but never dereferenced; returns `group_size * 4` **wrapped** (`INT_MIN * 4 == 0`) | `row18_negative_group_size` | [x] |
-| 19 | `dequantize_granule` | `grbuf == NULL` with `total_bands == 0`, all-zero `bitalloc`, `group_size == 0` (both paths), or `group_size < 0` (both paths) | no dereference occurs → returns `group_size * 4` without faulting | `row19_null_grbuf_when_never_dereferenced` | [x] |
-| 20 | `dequantize_granule` | `bs == NULL` with `total_bands == 0`, all-zero `bitalloc`, or a linear path with `group_size <= 0`; also both pointers null at once | `bs` never dereferenced → returns `group_size * 4` without faulting | `row20_null_bs_when_never_dereferenced` | [x] |
-| 21 | `dequantize_granule` | `group_size * 4` overflows `int` (`0x40000000`, `0x20000000`, `0x60000000`, `0x7FFFFFFF`, `INT_MIN`) | signed overflow (UB); at `-O0` wraps — `0x40000000*4 == 0`, `0x20000000*4 == INT_MIN`. Tested with `total_bands == 0` and `grbuf == NULL` so no 4 GiB buffer is needed | `row21_return_value_overflow` | [x] |
-| 22 | `get_bits` | `bs->pos & 7 != 0` (all of `s = 0..7`) | first byte is masked with `255 >> s`, discarding the `s` already-consumed high bits; the resulting sample is hand-recomputed for each `s` | `row22_unaligned_first_byte_is_masked` | [x] |
+## Status
 
-All rows are implemented in `tests/phase_c_error_paths.rs`, which asserts both
-that the two libraries agree **and** that the result is the specific documented
-sentinel — not merely that both "failed somehow".
+All 26 rows have a passing differential test in
+`tests/phase_c_errors.rs` (26 tests, `26 passed; 0 failed`). Every test builds
+the exact triggering condition, calls both `.so`s through `dlsym`, and asserts
+the same outcome *and* the same rejection mechanism -- not merely "both failed".
 
-### Generic boundaries beyond the table
+Each row's test also asserts its own premise, so a row cannot pass vacuously:
+E3 proves at-limit and one-past-limit actually differ; E11 proves the grouped
+path really does consume `n` bits with `group_size == 0` while the linear path
+consumes none; E16/E18/E19 assert the computed `n` before testing it; E20 proves
+a negative sample was actually produced by the unsigned wrap; E21/E22 assert
+that `ba` really was fetched from beyond `bitalloc[64]` / beyond the struct;
+E24 asserts that some `ba` values really do fault in *both* libraries (and that
+most do not).
 
-`generic_boundaries_one_step_past_ranges` additionally covers, for both
-implementations:
+### The one divergence found, and the fix
 
-* `ba` at `0, 1, 15, 16, 17, 18` — one step either side of the `ba != 0` and
-  `ba < 17` branch boundaries;
-* `total_bands` at `0, 1, 32, 33, 64, 65, 129, 130, 254, 255` — one step either
-  side of the `bitalloc` array end (32/33) and the struct end (129/130);
-* `group_size` at `0, 1, 2, 575, 576, 577, 1024` — zero, one, and oversized;
-* `bs->limit` at exactly `n` and `n - 1` for every linear `ba` in `1..=16`;
-* `bs->pos` at `-400000, -100000, -1, 0, 1, 500000`.
+`e26_null_pointers` failed against the **debug**-profile Rust `.so`: on a NULL
+`sci` the C dies with `SIGSEGV` (11) while the Rust died with `SIGABRT` (6),
+because Rust's `debug_assertions`-gated UB check reported "null pointer
+dereference occurred" at `src/lib.rs:152`. Since this translation must reproduce
+accesses that are UB by Rust's rules, those checks are now switched off in both
+profiles (`Cargo.toml`); `src/lib.rs` was not changed. The release profile
+always matched.
 
-`generic_boundaries_full_uint8_domains` sweeps the **entire** `0..=255` domain of
-both `uint8_t` mode selectors (`bitalloc[i]` and `total_bands`) across the FFI
-boundary. The public header declares **no `enum`**, so there is no literal
-"out-of-range enum variant" to pass; `bitalloc[i]` is the closest analogue (a
-C-side mode selector whose meaningful values are `0`, `1..16`, `17..`, but which
-accepts any of 256 byte values), and every one of its 256 values is tested — as
-is every `total_bands`, including the values that push the read 380 bytes past
-the end of the struct.
+### Extra confirmation
 
-### Rows deliberately NOT differential-tested (documented instead)
-
-* **`group_size * 4` overflow with real writes** — needs a >4 GiB buffer. The
-  *return value* half of row 21 **is** tested.
-* **`sci == NULL`** — `2 * sci->total_bands` is evaluated as the very first loop
-  condition, so *both* C and Rust segfault unconditionally. A crash is not a
-  comparable "same error code" result and there is no branch to verify. Noted
-  for completeness, not tested.
-* **`k >= 25` grouped reads with a finite `limit`** — `bs->pos += n` is
-  unconditional, so two such calls overflow `int` and the **C itself** then
-  dereferences `bs->buf + 234 MB`. Rows 11 and 63–68 cover this `ba` range with
-  `limit = INT_MIN`, which keeps `get_bits` on its early-out path; see the note
-  in `CONFIGS.md`.
+The whole suite also passes against a C library rebuilt with `-O3 -DNDEBUG`
+(built from a copy outside `c_src/`, which was never modified), so the
+translation's reproduction of the C's undefined shift counts and signed
+overflow does not depend on how aggressively the C is optimised.

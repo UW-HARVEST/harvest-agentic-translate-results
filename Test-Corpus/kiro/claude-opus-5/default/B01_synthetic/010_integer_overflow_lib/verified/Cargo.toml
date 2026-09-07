@@ -11,15 +11,17 @@ path = "src/lib.rs"
 [dev-dependencies]
 libloading = "0.8"
 
-# `harness = false`: the differential tests redirect the process-wide stdout file
-# descriptor around each call in order to capture what `printf` writes from
-# inside the loaded `.so`s. libtest's default harness runs test functions on
-# several threads and writes its own progress output to fd 1, which lands inside
-# those capture windows and corrupts the comparison. A custom single-threaded
-# runner makes capture deterministic.
+# `harness = false`: these binaries redirect the process-global fd 1 to capture
+# what the two `.so`s print. libtest's own parallel progress output would land
+# in that capture, so each phase runs its rows sequentially from its own `main`.
 [[test]]
-name = "differential"
-path = "tests/differential.rs"
+name = "phase_b_valid_paths"
+path = "tests/phase_b_valid_paths.rs"
+harness = false
+
+[[test]]
+name = "phase_c_error_paths"
+path = "tests/phase_c_error_paths.rs"
 harness = false
 
 [profile.release]

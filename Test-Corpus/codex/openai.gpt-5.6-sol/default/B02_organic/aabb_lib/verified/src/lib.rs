@@ -219,11 +219,7 @@ pub unsafe extern "C" fn c2BBVerts(out: *mut C2v, bb: *mut C2Aabb) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2MakeProxy(
-    shape: *const c_void,
-    shape_type: C2Type,
-    p: *mut C2Proxy,
-) {
+pub unsafe extern "C" fn c2MakeProxy(shape: *const c_void, shape_type: C2Type, p: *mut C2Proxy) {
     match shape_type {
         C2_TYPE_CIRCLE => {
             let c = shape.cast::<C2Circle>();
@@ -398,13 +394,9 @@ pub unsafe extern "C" fn c2D(s: *mut C2Simplex) -> C2v {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2Support(
-    verts: *const C2v,
-    count: c_int,
-    d: C2v,
-) -> c_int {
+pub unsafe extern "C" fn c2Support(verts: *const C2v, count: c_int, d: C2v) -> c_int {
     let mut imax = 0;
-    let mut dmax = c2Dot(std::ptr::read_volatile(verts), d);
+    let mut dmax = c2Dot(*verts, d);
     for i in 1..count {
         let dot = c2Dot(*verts.add(i as usize), d);
         if dot > dmax {
@@ -597,11 +589,7 @@ pub unsafe extern "C" fn c2GJK(
         if c2Dot(d, d) < c_float::EPSILON * c_float::EPSILON {
             break;
         }
-        let iA = c2Support(
-            pA.verts.as_ptr(),
-            pA.count,
-            c2MulrvT(ax.r, c2Neg(d)),
-        );
+        let iA = c2Support(pA.verts.as_ptr(), pA.count, c2MulrvT(ax.r, c2Neg(d)));
         let sA = c2Mulxv(ax, pA.verts[iA as usize]);
         let iB = c2Support(pB.verts.as_ptr(), pB.count, c2MulrvT(bx.r, d));
         let sB = c2Mulxv(bx, pB.verts[iB as usize]);
@@ -792,12 +780,7 @@ pub unsafe extern "C" fn c2Collided(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aabb(
-    min_x: c_float,
-    min_y: c_float,
-    max_x: c_float,
-    max_y: c_float,
-) -> c_int {
+pub extern "C" fn aabb(min_x: c_float, min_y: c_float, max_x: c_float, max_y: c_float) -> c_int {
     let aabb_in = C2Aabb {
         min: c2V(min_x, min_y),
         max: c2V(max_x, max_y),

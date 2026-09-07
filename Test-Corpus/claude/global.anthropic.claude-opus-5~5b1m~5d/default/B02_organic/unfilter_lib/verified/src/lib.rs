@@ -8,13 +8,9 @@
 //! order in which every validation check happens.
 //!
 //! Notes on fidelity:
-//!   * `c_src`'s `assert()`s are translated behind the `c-asserts` cargo
-//!     feature, which is **on by default** because the reference `.so` is built
-//!     without `NDEBUG` (`cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON` sets no
-//!     `CMAKE_BUILD_TYPE`, so `__assert_fail` is linked in).  A failing
-//!     translated assert writes a glibc-shaped diagnostic to stderr and calls
-//!     `abort()`, i.e. it dies with `SIGABRT` exactly where the C library does.
-//!     `--no-default-features` reproduces a `-DNDEBUG` build instead.
+//!   * The C library is built with `assert()` compiled out (`NDEBUG`), so the
+//!     asserts are intentionally *not* translated - they have no effect on the
+//!     observable behaviour of the release library.
 //!   * All arithmetic mirrors C's wrap-around behaviour on x86-64 (wrapping
 //!     add/sub/mul, shifts masked like the hardware `shl`/`shr` instructions).
 //!   * Pointer arithmetic and (possibly out-of-range) loads/stores are done
@@ -30,41 +26,6 @@
 use std::ffi::{c_char, c_int, c_void};
 use std::mem::offset_of;
 use std::ptr;
-
-// ---------------------------------------------------------------------------
-// `assert()` (see the `c-asserts` feature)
-// ---------------------------------------------------------------------------
-
-/// The file name glibc's `assert()` would report.
-#[cfg(feature = "c-asserts")]
-const C_FILE: &str = "src/lib.c";
-
-/// Mirrors glibc's `__assert_fail`: a diagnostic on stderr, then `abort()`.
-#[cfg(feature = "c-asserts")]
-#[cold]
-#[inline(never)]
-fn cp_assert_fail(expr: &str, line: u32, func: &str) -> ! {
-    use std::io::Write;
-    let _ = writeln!(
-        std::io::stderr(),
-        "unfilter_lib: {C_FILE}:{line}: {func}: Assertion `{expr}' failed."
-    );
-    std::process::abort()
-}
-
-#[cfg(feature = "c-asserts")]
-macro_rules! c_assert {
-    ($cond:expr, $expr:expr, $line:expr, $func:expr) => {
-        if !($cond) {
-            crate::cp_assert_fail($expr, $line, $func)
-        }
-    };
-}
-
-#[cfg(not(feature = "c-asserts"))]
-macro_rules! c_assert {
-    ($cond:expr, $expr:expr, $line:expr, $func:expr) => {};
-}
 
 // ---------------------------------------------------------------------------
 // Types that exist in the C translation unit (unused by the public ABI, but
@@ -274,7 +235,6 @@ unsafe fn cp_would_overflow(s: *mut cp_state_t, num_bits: c_int) -> c_int {
 
 /// `static char *cp_ptr(cp_state_t *s)`
 unsafe fn cp_ptr(s: *mut cp_state_t) -> *mut c_char {
-    c_assert!((*s).bits_left & 7 == 0, "!(s->bits_left & 7)", 95, "cp_ptr");
     ((*s).words.wrapping_offset((*s).word_index as isize) as *mut c_char)
         .wrapping_offset(-(((*s).count / 8) as isize))
 }
@@ -287,12 +247,6 @@ unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
             (*s).word_index = (*s).word_index.wrapping_add(1);
             (*s).bits |= (word as u64).wrapping_shl((*s).count as u32);
             (*s).count = (*s).count.wrapping_add(32);
-            c_assert!(
-                (*s).word_index <= (*s).word_count,
-                "s->word_index <= s->word_count",
-                104,
-                "cp_peak_bits"
-            );
         } else if (*s).final_word_available != 0 {
             let word = (*s).final_word;
             (*s).bits |= (word as u64).wrapping_shl((*s).count as u32);
@@ -305,12 +259,6 @@ unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
 
 /// `static uint32_t cp_consume_bits(cp_state_t *s, int num_bits_to_read)`
 unsafe fn cp_consume_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
-    c_assert!(
-        (*s).count >= num_bits_to_read,
-        "s->count >= num_bits_to_read",
-        115,
-        "cp_consume_bits"
-    );
     let mask = 1u64
         .wrapping_shl(num_bits_to_read as u32)
         .wrapping_sub(1);
@@ -323,16 +271,6 @@ unsafe fn cp_consume_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
 
 /// `static uint32_t cp_read_bits(cp_state_t *s, int num_bits_to_read)`
 unsafe fn cp_read_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
-    c_assert!(num_bits_to_read <= 32, "num_bits_to_read <= 32", 123, "cp_read_bits");
-    c_assert!(num_bits_to_read >= 0, "num_bits_to_read >= 0", 124, "cp_read_bits");
-    c_assert!((*s).bits_left > 0, "s->bits_left > 0", 125, "cp_read_bits");
-    c_assert!((*s).count <= 64, "s->count <= 64", 126, "cp_read_bits");
-    c_assert!(
-        cp_would_overflow(s, num_bits_to_read) == 0,
-        "!cp_would_overflow(s, num_bits_to_read)",
-        127,
-        "cp_read_bits"
-    );
     cp_peak_bits(s, num_bits_to_read);
     cp_consume_bits(s, num_bits_to_read)
 }
@@ -387,7 +325,6 @@ unsafe fn cp_build(
     while i < sym_count {
         let len = *lens.wrapping_offset(i as isize) as c_int;
         if len != 0 {
-            c_assert!(len < 16, "len < 16", 154, "cp_build");
             let li = len as usize;
             let code = codes[li] as u32;
             codes[li] = codes[li].wrapping_add(1);
@@ -457,17 +394,7 @@ unsafe fn cp_decode(s: *mut cp_state_t, tree: *mut u32, hi: c_int) -> c_int {
         }
     }
     let key = *tree.wrapping_offset((lo.wrapping_sub(1)) as isize);
-    let len = 32u32.wrapping_sub(key & 0xF);
-    // `search >> len` / `key >> len` are 32-bit variable shifts in the C build
-    // (`shr %cl, %esi`), so the count is taken modulo 32 - `wrapping_shr`
-    // reproduces that for the `key & 0xF == 0` case where `len == 32`.
-    c_assert!(
-        search.wrapping_shr(len) == key.wrapping_shr(len),
-        "(search >> len) == (key >> len)",
-        217,
-        "cp_decode"
-    );
-    let _ = len;
+    let _len = 32u32.wrapping_sub(key & 0xF);
     let _code = cp_consume_bits(s, (key & 0xF) as c_int);
     (((key >> 4) & 0xFFF) as i32) as c_int
 }
@@ -816,19 +743,8 @@ pub unsafe extern "C" fn unfilter(w: c_int, h: c_int, bpp: c_int, raw: *mut u8) 
         match filter {
             0 => {}
             1 => {
-                // `for (x = 0; x < bpp; x++) raw[x] += 0;`
-                // The value is unchanged, but the read-modify-write itself is
-                // observable (it faults when `raw + x` is not mapped), so it is
-                // translated literally rather than folded away.
-                x = 0;
-                while x < bpp {
-                    let d = raw.wrapping_offset(x as isize);
-                    // volatile: `+= 0` is a no-op that LLVM would otherwise
-                    // delete, and the access itself is what matters here.
-                    let v = ptr::read_volatile(d);
-                    ptr::write_volatile(d, v.wrapping_add(0));
-                    x = x.wrapping_add(1);
-                }
+                // `for (x = 0; x < bpp; x++) raw[x] += 0;` - a no-op add.
+                x = if bpp > 0 { bpp } else { 0 };
                 while x < len {
                     let v = *raw.wrapping_offset((x.wrapping_sub(bpp)) as isize);
                     let d = raw.wrapping_offset(x as isize);

@@ -1,78 +1,74 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-* C `.so`:    `c_src/build/libharvest-work-AVx3r9.so`
-* Rust `.so`: `translation/target/{debug,release}/libwcscat_lib.so`
+## C shared library
 
-## C source inventory (completeness check)
-
-`c_src/CMakeLists.txt` compiles exactly one translation unit:
+`c_src/build/libharvest-work-CWGPNw.so` (built from the single translation unit
+`c_src/src/lib.c`; the only declaration in `c_src/include/lib.h` is `wcscat`).
 
 ```
-add_library(${project_name} SHARED
-    src/lib.c)
+$ nm -D --defined-only c_src/build/libharvest-work-CWGPNw.so
+00000000000010f9 T wcscat
 ```
 
-`c_src/src/lib.c` (21 lines) defines exactly one function, `wcscat`, declared in
-`c_src/include/lib.h`. There is no untranslated module: the whole C surface is
-one function, and `translation/src/lib.rs` implements it. No `unimplemented!()`,
-`todo!()` or stub exists in the Rust crate (verified by grep).
+## Rust shared library
 
-## `nm -D --defined-only` on the C `.so`
+`translation/target/release/libwcscat_lib.so` (`crate-type = ["cdylib"]`).
 
-| # | symbol | type | also exported by Rust `.so`? |
-|---|--------|------|------------------------------|
-| 1 | `wcscat` | `T` (global text) | YES — `T wcscat` |
+```
+$ nm -D --defined-only translation/target/release/libwcscat_lib.so
+0000000000011690 T wcscat
+```
 
-No macro-generated symbols exist in the C source (no function-generating macros
-are used in `lib.c`/`lib.h`).
+## Parity table
 
-## Weak/implicit symbols present in the C `.so` (toolchain-generated, not API)
-
-These come from the CRT/compiler, not from `lib.c`, and are *undefined weak*
-references rather than exports. They are also present in the Rust `.so`:
-
-| symbol | C `.so` | Rust `.so` |
-|--------|---------|------------|
-| `_ITM_deregisterTMCloneTable` | `w` (undef weak) | `w` (undef weak) |
-| `_ITM_registerTMCloneTable`   | `w` (undef weak) | `w` (undef weak) |
-| `__cxa_finalize@GLIBC_2.2.5`  | `w` (undef weak) | `w` (undef weak) |
-| `__gmon_start__`              | `w` (undef weak) | `w` (undef weak) |
+| # | symbol   | type in C `.so` | exported by Rust `.so` | notes |
+|---|----------|-----------------|------------------------|-------|
+| 1 | `wcscat` | `T` (global text) | yes (`T`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn wcscat` in `src/lib.rs` |
 
 ## Symbol diff
 
 ```
-comm -23 <(nm -D --defined-only C.so   | awk '{print $NF}' | sort -u) \
-         <(nm -D --defined-only RUST.so | awk '{print $NF}' | sort -u)
+$ diff <(nm -D --defined-only <C .so>  | awk '{print $NF}' | sort) \
+       <(nm -D --defined-only <Rust .so> | awk '{print $NF}' | sort)
+(empty)
 ```
 
-Result: **empty**. Every symbol exported by the C `.so` is exported by the Rust
-`.so` under the exact same name.
+**Missing from Rust: none.** No C module/file was left untranslated: `c_src` has
+exactly one source file (`src/lib.c`, 21 lines) defining exactly one function.
 
-## Undefined non-libc symbols in the Rust `.so`
+## Undefined (imported) non-libc symbols in the Rust `.so`
 
-`nm -D --undefined-only` on the Rust `.so` lists only:
+`nm -D --undefined-only` on the Rust `.so` resolves entirely against glibc and
+the Rust runtime — after filtering the `__*`/`_*` runtime and unwinder imports
+the remainder is:
 
-* glibc imports (`malloc`, `free`, `memcpy`, `memmove`, `memset`, `realloc`,
-  `calloc`, `posix_memalign`, `strlen`, `bcmp`, `abort`, `getenv`, `getcwd`,
-  `readlink`, `realpath`, `open64`, `close`, `read`, `write`, `writev`,
-  `lseek64`, `fstat64`, `stat64`, `statx`, `mmap64`, `munmap`,
-  `dl_iterate_phdr`, `syscall`, `__errno_location`, `__tls_get_addr`,
-  `pthread_key_*`, `pthread_setspecific`, `__cxa_thread_atexit_impl`, `gettid`)
-* the platform unwinder (`_Unwind_*@GCC_*`), pulled in by `libstd`'s panic
-  machinery.
+```
+fstat64@GLIBC_2.33  getcwd@GLIBC_2.2.5  gettid@GLIBC_2.30  lseek64@GLIBC_2.2.5
+realpath@GLIBC_2.3  stat64@GLIBC_2.33   statx@GLIBC_2.28
+```
 
-Both groups are provided by the system at load time; the Rust `.so` loads
-successfully via `dlopen` in the integration tests, which is the operational
-proof there is no unresolved non-libc symbol.
+All libc. **0 unresolved project symbols.** Independently confirmed by
+`libloading::Library::new` succeeding and a call through the loaded symbol
+returning correct results (`phase_d_symbols::rust_so_has_no_unresolved_project_symbols`).
 
-**0 missing symbols, 0 unresolved non-libc symbols.** ✅
+## Harness self-check (mutation / negative control)
+
+To prove the differential suite has real detection power rather than passing
+vacuously, three mutants of the Rust source were built and run against the
+unmodified C `.so`; each was caught:
+
+| mutant | change | caught by |
+|--------|--------|-----------|
+| `m1` | `return 22` → `return 23` | all 6 Phase C null/zero-length rows + the absolute-code anchor test |
+| `m2` | drop `*dst = 0` on the `34` overflow path | 9 Phase B rows (10, 13–17, 19–21) |
+| `m3` | `end = dst + numElem` → `dst + numElem - 1` (off-by-one bound) | 7 Phase B rows (04–06, 08–11) |
+
+`src/lib.rs` was restored byte-identically afterwards (verified with `diff`).
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one (`--no-default-features` is equivalent to the
-default). The symbol table above therefore holds for every feature combination;
-`ci/check_features.sh` enumerates the (single) combination mechanically rather
-than by assumption.
+`translation/Cargo.toml` declares no `[features]` table, so the only build
+configuration is the default one. There is no `src/main.rs` / `[[bin]]`, so the
+project builds no driver executable (nothing to compare on stdout).

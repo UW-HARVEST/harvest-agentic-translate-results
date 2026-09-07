@@ -1,145 +1,133 @@
-# CONFIGS.md — configuration / valid-input surface table (Phase A, gates Phase B)
+# CONFIGS.md — Phase B configuration surface table
 
-## Axes, derived from the C source
+Derived mechanically from `c_src/src/lib.c` and `c_src/include/lib.h`.
 
-**Compile-time configuration axes: none.** `grep '#if\|#ifdef\|#ifndef' c_src/src/lib.c`
-→ no matches, and `translation/Cargo.toml` has no `[features]` section, so the
-default (feature-less) build is the *only* configuration. `cargo check
---no-default-features` and the default build compile the same code (verified by
-`scripts/check_feature_combos.sh`).
+## Axes the C actually branches on
 
-**Runtime option/mode axes.** The library exposes no init/config struct. Its
-"mode" is carried by two pieces of hidden state plus a function-pointer
-parameter:
+There are **no runtime option/mode/flag setters** in the API, and no `#ifdef`,
+`switch`, or `enum` anywhere in the source (verified by grep — see `ERRORS.md`).
+The axes that the C code genuinely distinguishes are therefore:
 
-* A1 — `global_counter` (`static int`, lib.c:30). Set only via
-  `increment_counter`. Read by `complex_calc` (lib.c:56) and `hatch` (lib.c:174).
-  States: `0` (pristine), positive, negative, wrapped past `INT_MAX`.
-* A2 — `global_accumulator` (`static int`, lib.c:31). Set only via
-  `update_accumulator`, which *doubles* it each call. Read by
-  `process_pointer_data` (lib.c:75) and `hatch` (lib.c:174). States: `0`,
-  positive, negative, wrapped.
-* A3 — the `operation_func` passed to `apply_operation` (lib.c:43). Selectable
-  values in the library: `add_three`, `multiply_add`, `complex_calc`. Because
-  it is a plain C function pointer, a *caller-supplied* function and a
-  *cross-library* function are also legal inputs.
+1. **Hidden mutable state** — the two file-scope `static int`s
+   (`global_counter`, `global_accumulator`). Three of the entry points read them
+   (`complex_calc`, `process_pointer_data`, `hatch`) and three write them
+   (`increment_counter`, `update_accumulator`, `hatch`). So *the same call with
+   the same arguments returns different values depending on call history*. Every
+   row is therefore tested both from a pristine library and from an accumulated
+   state.
+2. **Function-pointer dispatch** — `apply_operation(operation_func, ...)` takes
+   one of three concrete callees (`add_three`, `multiply_add`, `complex_calc`);
+   `hatch` also dispatches through `modifier_func`. `complex_calc` additionally
+   couples dispatch to axis 1.
+3. **Shift-vs-size relation** — the guards `shift_by > 0 && shift_by < size`
+   (`shift_array_data`) and `shift > 0 && shift < num_records`
+   (`manipulate_records`) split the input space into "shift applied" and
+   "silently skipped". `manipulate_records` splits *again*, because its summation
+   loop bound `num_records - shift` is **not** gated by that guard.
+4. **Element count / buffer shape** — `0`, `1`, `many`, and the `malloc`-driven
+   sizes in `compute_with_dynamic_memory(base, count)`; `int` arrays vs
+   `DataRecord` (48-byte, `time_t`- and `char[32]`-containing) arrays.
+5. **Value magnitude** — small values vs `INT_MIN`/`INT_MAX` neighbourhoods,
+   which selects between plain arithmetic and two's-complement wrap in every
+   arithmetic function, and in `get_time_based_value`'s `seed * 3600`.
+6. **Entry-point level** — the header exports only `hatch`, but the `.so`
+   exports 11 more lower-level functions. Rows exercise all 11 **directly**, and
+   `hatch` as the composed pipeline, and mixed interleavings of the two.
 
-**Input-shape axes.**
+## Rows
 
-* A4 — `shift_array_data(arr, size, shift_by)` branch at lib.c:67: the sign of
-  `shift_by` and its position relative to `size` (`<0`, `0`, `1`, interior,
-  `size-1`, `size`, `>size`), and `size` itself (`0`, `1`, small, large).
-* A5 — `manipulate_records(records, num_records, shift)` branch at lib.c:111 and
-  the *independent* loop bound at lib.c:116 (`num_records - shift`), which is
-  reached whether or not the guard fired. Shapes: `shift<0`, `0`, `1`,
-  interior, `num_records-1`, `num_records`, `>num_records`; `num_records` `0`,
-  `1`, many.
-* A6 — `compute_with_dynamic_memory(base, count)` loop counts at lib.c:81/86:
-  `count` `<0`, `0`, `1`, small, large; `base` sign and overflow proximity.
-* A7 — `get_time_based_value(seed)`: `seed` `0`, small ±, magnitude where
-  `seed*3600` stays in `int`, magnitude where it overflows, `INT_MIN`/`INT_MAX`.
-* A8 — the pure `int` triples for `add_three` / `multiply_add` / `complex_calc`
-  and the pair for `process_pointer_data`: full `i32` domain incl. `INT_MIN`,
-  `INT_MAX`, `0`, `-1`.
-* A9 — `hatch(param1..param4)`: full `i32` domain, *and* the number of prior
-  calls (its result depends on A1/A2, which it itself mutates), *and* whether
-  A1/A2 were pre-mutated by direct `increment_counter`/`update_accumulator`
-  calls.
+Every row is driven with many randomized inputs from a fixed-seed PRNG
+(`SplitMix64`, seed `0x5EED_1234_ABCD_0001`), not a single hand-picked value.
+Both `.so`s are always called in identical order so that axis 1 stays in lockstep.
 
-**Entry points.** All 12 exported symbols are in scope, including the lowest
-level ones. `hatch` is the only entry point in the public header, i.e. the
-"convenience one-shot wrapper"; the other 11 are the low-level API and are
-driven **directly**, not only through `hatch`.
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `add_three` | pristine state; random `(a,b,c)` over full `i32` incl. boundary triples | [x] |
+| 2 | `multiply_add` | pristine state; random `(a,b,c)` over full `i32` incl. boundary triples | [x] |
+| 3 | `complex_calc` | `global_counter == 0`; random `(a,b,c)` full `i32` | [x] |
+| 4 | `complex_calc` | `global_counter` non-zero (pre-driven by random `increment_counter` calls); random `(a,b,c)` | [x] |
+| 5 | `increment_counter` | random value sequence, effect read back through `complex_calc(0,0,0)` after each call; includes accumulation past `INT_MAX` | [x] |
+| 6 | `update_accumulator` | random value sequence, effect read back through `process_pointer_data(&0, 0)` after each call; includes `*2` overflow | [x] |
+| 7 | `apply_operation` | `op = add_three` (same-library pointer), random `(a,b,c)` | [x] |
+| 8 | `apply_operation` | `op = multiply_add` (same-library pointer), random `(a,b,c)` | [x] |
+| 9 | `apply_operation` | `op = complex_calc` (same-library pointer) + `global_counter != 0`, random `(a,b,c)` | [x] |
+| 10 | `apply_operation` | **cross-library** dispatch: C's `apply_operation` given Rust's `add_three`/`multiply_add` pointer and vice versa (pure callees, so results must still match) | [x] |
+| 11 | `shift_array_data` | guard true: random `size ∈ 1..=64`, random `shift_by ∈ 1..size`, random `i32` array contents; full buffer compared | [x] |
+| 12 | `shift_array_data` | guard true, `shift_by == size - 1` (max valid) and `shift_by == 1` (min valid), `size ∈ {2,3,64}` | [x] |
+| 13 | `shift_array_data` | guard false: `shift_by ∈ {0, -1, size, size+1, INT_MIN}`; buffer must be untouched | [x] |
+| 14 | `shift_array_data` | degenerate shapes `size ∈ {0, 1}` with every `shift_by ∈ {-1,0,1,2}` | [x] |
+| 15 | `process_pointer_data` | `global_accumulator == 0`; random `*ptr`, random `multiplier`, full `i32` range (overflow) | [x] |
+| 16 | `process_pointer_data` | `global_accumulator != 0`; random `*ptr`, `multiplier` | [x] |
+| 17 | `compute_with_dynamic_memory` | `count == 0` and `count == 1`, random `base` | [x] |
+| 18 | `compute_with_dynamic_memory` | `count ∈ 2..=64` random, random `base` full `i32` (sum overflow) | [x] |
+| 19 | `compute_with_dynamic_memory` | large `count ∈ 1_000..=200_000` random, random `base` (heap path + heavy wrap) | [x] |
+| 20 | `compute_with_dynamic_memory` | `base` at `INT_MIN`/`INT_MAX` with `count == 8` (the value `hatch` uses) | [x] |
+| 21 | `get_time_based_value` | `seed == 0`; and random `seed` with `|seed| <= 596_523` (no `int` overflow in `seed*3600`) | [x] |
+| 22 | `get_time_based_value` | random `seed` with `|seed| > 596_523` so `seed*3600` wraps, plus `INT_MIN`/`INT_MAX` | [x] |
+| 23 | `manipulate_records` | guard true: random `num_records ∈ 2..=32`, random `shift ∈ 1..num_records`, random `id`/`value`/`timestamp`/`name` bytes; return value **and** the whole post-memmove buffer compared byte-for-byte | [x] |
+| 24 | `manipulate_records` | `shift == 0` (no memmove, sums all `num_records`), random contents | [x] |
+| 25 | `manipulate_records` | `shift == num_records - 1` (max valid) and `shift == 1` (min valid), `num_records ∈ {2, 5, 32}` | [x] |
+| 26 | `manipulate_records` | `num_records == 5, shift == 2` — the exact shape `hatch` uses — random `value`s | [x] |
+| 27 | `manipulate_records` | `value` fields near `INT_MAX`/`INT_MIN` so the running `total` wraps | [x] |
+| 28 | `manipulate_records` | degenerate `num_records ∈ {0, 1}` × `shift ∈ {0, 1}` | [x] |
+| 29 | `hatch` | pristine library, single call, random `(p1,p2,p3,p4)` full `i32` | [x] |
+| 30 | `hatch` | pristine library, single call, boundary params: all 4 params drawn from `{0, 1, -1, INT_MIN, INT_MAX, INT_MIN+1, INT_MAX-1}` (cross-product sample) | [x] |
+| 31 | `hatch` | **stateful repetition**: 200 consecutive calls with random params, every intermediate return compared (exercises `global_accumulator`'s `*2` growth to saturation and `global_counter` accumulation) | [x] |
+| 32 | `hatch` | interleaved with direct `increment_counter` / `update_accumulator` calls between `hatch` invocations | [x] |
+| 33 | all 12 entry points | **mixed random operation stream**: 2 000 randomly chosen calls across every exported function with random valid arguments, applied to both libraries in identical order; every return value and every mutated buffer compared | [x] |
 
-## Configuration table
+Note on row 10: `complex_calc` is deliberately **excluded** from cross-library
+dispatch, because it reads its own library's `global_counter` — a C→Rust
+cross-call there would legitimately mix two independent statics and is not a
+translation-correctness signal.
 
-One row per combination the C actually distinguishes. Every row is exercised
-with many randomized inputs (SplitMix64, fixed seed `0x5EED_1234_ABCD_0001`)
-against both `.so`s, plus the named boundary values.
+Note on `hatch` and `time()`: `hatch` calls `time()` (via
+`get_time_based_value` and when filling `DataRecord::timestamp`), but the
+returned value never reaches the result — `get_time_based_value` only uses
+`difftime(current, current - seed*3600)`, which is exactly `seed*3600`
+independent of the clock, and `timestamp` is never summed. So `hatch` is
+deterministic and byte-comparable.
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `add_three` | full `i32` domain, randomized triples | [x] |
-| 2 | `add_three` | boundary triples: `0`/`-1`/`INT_MIN`/`INT_MAX` cross-product (overflow wrap) | [x] |
-| 3 | `multiply_add` | full `i32` domain, randomized triples | [x] |
-| 4 | `multiply_add` | boundary triples incl. `INT_MIN * -1`, `INT_MAX * INT_MAX` | [x] |
-| 5 | `increment_counter` | A1 pristine → positive `value`, repeated calls (accumulation) | [x] |
-| 6 | `increment_counter` | A1 negative `value`s, and `value`s driving A1 past `INT_MAX` (wrap) | [x] |
-| 7 | `increment_counter` | `unused_param` varied (must be ignored — incl. `INT_MIN`/`INT_MAX`) | [x] |
-| 8 | `update_accumulator` | A2 pristine → single call, then 40 successive calls (doubling → guaranteed wrap) | [x] |
-| 9 | `update_accumulator` | `unused_param` varied (must be ignored) | [x] |
-| 10 | `complex_calc` | A1 = 0 (pristine), randomized `(a,b,c)` | [x] |
-| 11 | `complex_calc` | A1 positive, randomized `(a,b,c)` — global read-back | [x] |
-| 12 | `complex_calc` | A1 negative / wrapped, randomized `(a,b,c)` | [x] |
-| 13 | `complex_calc` | A1 arbitrary + boundary `(a,b,c)` (`INT_MIN`/`INT_MAX`) | [x] |
-| 14 | `process_pointer_data` | A2 = 0, randomized `*ptr` and `multiplier` | [x] |
-| 15 | `process_pointer_data` | A2 non-zero / wrapped, randomized `*ptr`, `multiplier` | [x] |
-| 16 | `process_pointer_data` | boundary `*ptr`/`multiplier` (`INT_MIN`, `INT_MAX`, `0`, `-1`) | [x] |
-| 17 | `apply_operation` | A3 = `add_three` from the *same* library, randomized args | [x] |
-| 18 | `apply_operation` | A3 = `multiply_add` from the same library, randomized args | [x] |
-| 19 | `apply_operation` | A3 = `complex_calc` from the same library (also reads A1), randomized args, A1 varied | [x] |
-| 20 | `apply_operation` | A3 = **cross-library** pointer (C's `add_three` into Rust's `apply_operation` and vice versa) | [x] |
-| 21 | `apply_operation` | A3 = a **caller-supplied** `extern "C"` fn defined in the test binary (proves it is a real indirect call, not inlined) | [x] |
-| 22 | `shift_array_data` | interior shift `0 < shift_by < size`, randomized `size` (2..64), `shift_by`, contents | [x] |
-| 23 | `shift_array_data` | `shift_by == 1` (minimum moving shift), randomized size/contents | [x] |
-| 24 | `shift_array_data` | `shift_by == size - 1` (maximum moving shift: 1 element moved, `size-1` zeroed) | [x] |
-| 25 | `shift_array_data` | `size == 1` (no `shift_by` can satisfy the guard) | [x] |
-| 26 | `shift_array_data` | `size == 2`, `shift_by == 1` (smallest non-degenerate move) | [x] |
-| 27 | `shift_array_data` | large `size` (4096) with random interior `shift_by` (bulk `memmove`/`memset`) | [x] |
-| 28 | `shift_array_data` | `size` smaller than the real buffer, non-zero trailing slack — asserts bytes past `size` are untouched by both | [x] |
-| 29 | `manipulate_records` | interior `0 < shift < num_records`, randomized `num_records` (2..32), `shift`, record contents | [x] |
-| 30 | `manipulate_records` | `shift == 1`, randomized `num_records`/contents (overlapping `memmove` of `num_records-1` records) | [x] |
-| 31 | `manipulate_records` | `shift == num_records - 1` (single record moved, sum of 1 element) | [x] |
-| 32 | `manipulate_records` | `shift == 0` (guard skipped, sums all `num_records`), randomized contents | [x] |
-| 33 | `manipulate_records` | `num_records == 1`, `shift == 0` | [x] |
-| 34 | `manipulate_records` | large `num_records` (512) with random interior `shift` | [x] |
-| 35 | `manipulate_records` | full struct payload varied — `id`, `timestamp`, and `name[32]` bytes randomized, asserting `memmove` relocates all 48 bytes identically (not just `.value`) | [x] |
-| 36 | `compute_with_dynamic_memory` | `count > 0` randomized (1..4096), randomized `base` | [x] |
-| 37 | `compute_with_dynamic_memory` | `count == 1` (single element) | [x] |
-| 38 | `compute_with_dynamic_memory` | `count` large (65536) — bulk allocation path | [x] |
-| 39 | `compute_with_dynamic_memory` | `base` at `INT_MIN`/`INT_MAX` with `count` in 1..64 (per-element and sum wrap) | [x] |
-| 40 | `get_time_based_value` | `seed == 0` | [x] |
-| 41 | `get_time_based_value` | `seed > 0`, no `seed*3600` overflow (`1..596523`), randomized | [x] |
-| 42 | `get_time_based_value` | `seed < 0`, no overflow (negative truncation direction), randomized | [x] |
-| 43 | `get_time_based_value` | `seed` large enough that `seed*3600` overflows `int`, randomized full `i32` | [x] |
-| 44 | `get_time_based_value` | `seed` = `INT_MIN`, `INT_MAX`, `±596523`, `±596524` (exact overflow threshold) | [x] |
-| 45 | `hatch` | A1/A2 pristine, randomized `(p1..p4)` full `i32` — lockstepped so both libraries see the same call count | [x] |
-| 46 | `hatch` | repeated back-to-back calls (A1/A2 accumulate; `global_accumulator` doubles each call → wraps) — 64 successive calls | [x] |
-| 47 | `hatch` | boundary params: `0`, `1`, `-1`, `INT_MIN`, `INT_MAX` combinations | [x] |
-| 48 | `hatch` | A1/A2 pre-mutated by direct `increment_counter`/`update_accumulator` calls before `hatch` (option-state × entry-point interaction) | [x] |
-| 49 | composed pipeline | mutate A1/A2 → `apply_operation(complex_calc)` → `process_pointer_data` → `shift_array_data` → `manipulate_records` → `hatch`, all on shared buffers, randomized, asserting every intermediate result **and** final buffer bytes (bugs in the composed pipeline are invisible to per-function tests) | [x] |
-| 50 | composed pipeline vs `hatch` | the exact call sequence `hatch` performs, driven manually through the 11 low-level exports, compared against the **other** library's real `hatch` (C pipeline == Rust `hatch`, and Rust pipeline == C `hatch`) — stronger than `hatch`-vs-`hatch`, which a consistently-wrong translation would pass | [x] |
+## Row → test mapping
 
-Rows 1–48 live in `translation/tests/differential.rs` as `row01_…`–`row48_…`
-(one `#[test]` per row). Row 49 is `row49_composed_pipeline_low_level` in the
-same file; row 50 is `translation/tests/pipeline_vs_hatch.rs`, which gives each
-of the four roles a private on-disk copy of the `.so` so it gets independent
-`global_counter` / `global_accumulator` state.
+Every row has a differential test in `tests/phase_b_valid.rs`, named
+`row<NN>_...` matching the row number. All 33 pass.
 
-`translation/tests/fuzz_walk.rs` adds a 1,500,000-step random walk that
-interleaves all twelve exports in random order from the same fixed seed,
-re-probing both hidden globals every 64 steps. That covers combinations across
-rows that the per-row tests visit only in isolation.
+Because the two `.so`s carry *mutable global state* and `dlopen` de-duplicates by
+path (one copy of each library, and therefore one copy of each `static`, per test
+process), the harness:
 
-## Feature combinations
+- serialises every test on a process-wide mutex, and
+- zeroes both libraries' statics before each test via exported symbols only
+  (`increment_counter(-counter)`, and `update_accumulator(-(2*acc))`, which
+  cancels because `acc*2 + (-(acc*2)) == 0` under two's-complement wrapping),
+  asserting afterwards that both really read back 0.
 
-`translation/Cargo.toml` declares no features, so the set of combinations is
-`{default}` ≡ `{--no-default-features}`.
-`translation/scripts/verify_all.sh` enumerates them mechanically from
-`Cargo.toml` (it computes the power set, so it keeps working if features are
-added later) and runs `cargo check` plus the full suite for each. It also widens
-the matrix along two axes that genuinely change generated code:
+Without this, parallel tests interleave their mutations of the two libraries
+differently and produce spurious "divergences" — which is exactly what the first
+run of this suite reported before the harness was corrected.
 
-| Rust cdylib profile | C build | result |
-|---|---|---|
-| `release` (opt, no UB checks) | default (`-O0`, the documented build) | PASS |
-| `release` | `-DCMAKE_BUILD_TYPE=Release` (`-O3`) | PASS |
-| `debug` (`overflow-checks = true`, UB checks on) | default (`-O0`) | PASS |
-| `debug` | `-O3` | PASS |
+## Beyond the table
 
-The `debug` rows matter: with `overflow-checks = true`, any arithmetic in the
-translation that is *not* explicitly wrapping aborts instead of silently
-matching, so those runs prove every `int` operation was translated as a wrapping
-operation. The `-O3` C rows confirm the C's signed-overflow-heavy paths land on
-the same values under optimization. The optimized C build is written to
-`translation/target/c_build_release/`, so nothing inside `c_src/` is modified.
+`tests/soak.rs` adds volume and exhaustiveness on top of the per-row sampling:
+
+| test | coverage |
+|------|----------|
+| `soak_mixed_stream_many_seeds` | 16 independent seeds × 20 000 mixed calls across all 12 entry points (320 000 operations) |
+| `soak_shift_array_exhaustive_small_grid` | every `(size, shift_by)` in `[-2,24] × [-4,28]`, 3 random buffers each |
+| `soak_manipulate_records_exhaustive_small_grid` | every `(num_records, shift)` in `[-2,12] × [-12,16]`, return value *and* full buffer bytes |
+| `soak_dynamic_memory_exhaustive_small_grid` | every `count` in `[-8,72]` × 8 random bases |
+| `soak_pure_ops_exhaustive_small_grid` | all 13³ small-integer triples through `add_three` / `multiply_add` / `complex_calc` |
+| `soak_get_time_based_value_overflow_boundary` | ±40 around every `seed*3600` int-overflow threshold |
+| `soak_hatch_grid_and_state` | all 7⁴ small-parameter `hatch` combinations from pristine state, comparing the return value **and both statics afterwards** |
+
+## Completion gate
+
+- [x] All 33 rows pass across randomized inputs (`cargo test --test phase_b_valid`: 33 passed).
+- [x] Low-level entry points are driven directly, not only through `hatch`
+      (rows 1–28 call the 11 non-header functions; rows 29–33 exercise the
+      composed pipeline and mixed interleavings).
+- [x] Binary/stdout comparison: **not applicable** — `c_src/CMakeLists.txt`
+      declares only `add_library(... SHARED ...)` and the crate declares only a
+      `cdylib`. Enforced by `phase_d_project_builds_no_binary_executable`, which
+      fails if an executable target is ever added.

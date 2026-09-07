@@ -1,62 +1,30 @@
-# Configuration Surface
+# Configuration-Surface Table
 
-The only public entry point is `jumpnode`. Modes `0001`, `0002`, and `0004`
-are valid selectors but necessarily take rejection paths because the private
-node store cannot be initialized through the public API; they are covered in
-`ERRORS.md`. Unknown selectors are also error configurations.
+Mechanical branch inventory:
 
-Mode `0003` is the complete reachable valid surface. Its two `%d` inputs each
-have three formatting shapes (negative, zero, positive). The flags input is
-partitioned by every materially distinct interaction with `flags & 0177`:
-zero; nonzero low-seven bits only; nonzero high bits only (masked result zero);
-positive mixed high/low bits; and negative mixed high/low bits. Every row uses
-many values and decimal widths within its stated shape, including `INT_MIN`
-and `INT_MAX`.
+- Public entry points: `jumpnode` only.
+- `operation_mode`: `0001`, `0002`, `0003`, `0004`, and default. Modes
+  `0001`, `0002`, `0004`, and default reject in the shipped state and are
+  covered by `ERRORS.md`.
+- Valid mode `0003` formats both integer inputs with `%d`, computes twice the
+  resulting byte length plus octal `010`, then adds only `flags & 0177`.
+- No Cargo features are declared. The default and `--no-default-features`
+  builds are still both exercised.
+
+For every row, randomized values cover the full signed `int` domain with a
+fixed seed and a mandatory boundary corpus containing zero, positive and
+negative one-/multi-digit values, `INT_MIN`, and `INT_MAX`. The rows are the
+cross-product classes that the only explicit valid-path option expression,
+`flags & 0177`, distinguishes with respect to low and ignored high bits.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `jumpnode` | mode `0003`; node ID negative; depth negative; flags zero | [x] |
-| 2 | `jumpnode` | mode `0003`; node ID negative; depth negative; flags low-only nonzero | [x] |
-| 3 | `jumpnode` | mode `0003`; node ID negative; depth negative; flags high-only | [x] |
-| 4 | `jumpnode` | mode `0003`; node ID negative; depth negative; flags positive mixed | [x] |
-| 5 | `jumpnode` | mode `0003`; node ID negative; depth negative; flags negative mixed | [x] |
-| 6 | `jumpnode` | mode `0003`; node ID negative; depth zero; flags zero | [x] |
-| 7 | `jumpnode` | mode `0003`; node ID negative; depth zero; flags low-only nonzero | [x] |
-| 8 | `jumpnode` | mode `0003`; node ID negative; depth zero; flags high-only | [x] |
-| 9 | `jumpnode` | mode `0003`; node ID negative; depth zero; flags positive mixed | [x] |
-| 10 | `jumpnode` | mode `0003`; node ID negative; depth zero; flags negative mixed | [x] |
-| 11 | `jumpnode` | mode `0003`; node ID negative; depth positive; flags zero | [x] |
-| 12 | `jumpnode` | mode `0003`; node ID negative; depth positive; flags low-only nonzero | [x] |
-| 13 | `jumpnode` | mode `0003`; node ID negative; depth positive; flags high-only | [x] |
-| 14 | `jumpnode` | mode `0003`; node ID negative; depth positive; flags positive mixed | [x] |
-| 15 | `jumpnode` | mode `0003`; node ID negative; depth positive; flags negative mixed | [x] |
-| 16 | `jumpnode` | mode `0003`; node ID zero; depth negative; flags zero | [x] |
-| 17 | `jumpnode` | mode `0003`; node ID zero; depth negative; flags low-only nonzero | [x] |
-| 18 | `jumpnode` | mode `0003`; node ID zero; depth negative; flags high-only | [x] |
-| 19 | `jumpnode` | mode `0003`; node ID zero; depth negative; flags positive mixed | [x] |
-| 20 | `jumpnode` | mode `0003`; node ID zero; depth negative; flags negative mixed | [x] |
-| 21 | `jumpnode` | mode `0003`; node ID zero; depth zero; flags zero | [x] |
-| 22 | `jumpnode` | mode `0003`; node ID zero; depth zero; flags low-only nonzero | [x] |
-| 23 | `jumpnode` | mode `0003`; node ID zero; depth zero; flags high-only | [x] |
-| 24 | `jumpnode` | mode `0003`; node ID zero; depth zero; flags positive mixed | [x] |
-| 25 | `jumpnode` | mode `0003`; node ID zero; depth zero; flags negative mixed | [x] |
-| 26 | `jumpnode` | mode `0003`; node ID zero; depth positive; flags zero | [x] |
-| 27 | `jumpnode` | mode `0003`; node ID zero; depth positive; flags low-only nonzero | [x] |
-| 28 | `jumpnode` | mode `0003`; node ID zero; depth positive; flags high-only | [x] |
-| 29 | `jumpnode` | mode `0003`; node ID zero; depth positive; flags positive mixed | [x] |
-| 30 | `jumpnode` | mode `0003`; node ID zero; depth positive; flags negative mixed | [x] |
-| 31 | `jumpnode` | mode `0003`; node ID positive; depth negative; flags zero | [x] |
-| 32 | `jumpnode` | mode `0003`; node ID positive; depth negative; flags low-only nonzero | [x] |
-| 33 | `jumpnode` | mode `0003`; node ID positive; depth negative; flags high-only | [x] |
-| 34 | `jumpnode` | mode `0003`; node ID positive; depth negative; flags positive mixed | [x] |
-| 35 | `jumpnode` | mode `0003`; node ID positive; depth negative; flags negative mixed | [x] |
-| 36 | `jumpnode` | mode `0003`; node ID positive; depth zero; flags zero | [x] |
-| 37 | `jumpnode` | mode `0003`; node ID positive; depth zero; flags low-only nonzero | [x] |
-| 38 | `jumpnode` | mode `0003`; node ID positive; depth zero; flags high-only | [x] |
-| 39 | `jumpnode` | mode `0003`; node ID positive; depth zero; flags positive mixed | [x] |
-| 40 | `jumpnode` | mode `0003`; node ID positive; depth zero; flags negative mixed | [x] |
-| 41 | `jumpnode` | mode `0003`; node ID positive; depth positive; flags zero | [x] |
-| 42 | `jumpnode` | mode `0003`; node ID positive; depth positive; flags low-only nonzero | [x] |
-| 43 | `jumpnode` | mode `0003`; node ID positive; depth positive; flags high-only | [x] |
-| 44 | `jumpnode` | mode `0003`; node ID positive; depth positive; flags positive mixed | [x] |
-| 45 | `jumpnode` | mode `0003`; node ID positive; depth positive; flags negative mixed | [x] |
+| C1 | `jumpnode` | mode `0003`; `flags == 0` (low 7 bits zero, no high bits); randomized `node_id` and `depth` signed-int shapes | [x] |
+| C2 | `jumpnode` | mode `0003`; flags use only low 7 bits and `flags & 0177 != 0`; randomized low-bit values plus randomized `node_id` and `depth` signed-int shapes | [x] |
+| C3 | `jumpnode` | mode `0003`; at least one high bit set but `flags & 0177 == 0`, including positive and negative flags; randomized `node_id` and `depth` signed-int shapes | [x] |
+| C4 | `jumpnode` | mode `0003`; both ignored high bits and nonzero low 7 bits set, including positive and negative flags; randomized `node_id` and `depth` signed-int shapes | [x] |
+
+There is no executable target in either build description, so binary stdout
+comparison is not applicable.
+
+All rows pass under the default build and `--no-default-features`.

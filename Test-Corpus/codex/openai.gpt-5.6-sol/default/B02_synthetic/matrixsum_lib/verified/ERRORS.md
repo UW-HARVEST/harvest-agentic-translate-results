@@ -1,25 +1,23 @@
-# Error-surface table
+# Error surface
 
-This table is derived from every error return and explicit null check in
-`c_src/src/lib.c`. There are no assertions, enums, min/max constants, or
-explicit numeric range checks in the C source.
+Mechanically derived from every `if` guarding a rejection/no-op and every
+error sentinel in `../c_src/src/lib.c`. Rows 9-10 are the additional generic
+zero/oversized-length boundary checks required for the FFI API.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
-|---|----------|----------------------------------------------|-------------------|--------|
-| E1 | `init_array` | allocation of the `DynamicArray` object returns `NULL` (`if (!arr)`) | return `NULL` | [x] |
-| E2 | `init_array` | object allocation succeeds but allocation of `initial_capacity * sizeof(int)` returns `NULL` (`if (!arr->data)`) | free the object and return `NULL` | [x] |
-| E3 | `expand_array` | `arr == NULL` | return `0` | [x] |
-| E4 | `expand_array` | `realloc(arr->data, arr->capacity * 2 * sizeof(int))` returns `NULL` | leave fields unchanged and return `0` | [x] |
-| E5 | `add_element` | `arr == NULL` | return `0` | [x] |
-| E6 | `add_element` | `arr->size >= arr->capacity` and the nested `expand_array(arr)` returns `0` | do not append and return `0` | [x] |
-| E7 | `free_array` | `arr == NULL` (the explicit `if (arr)` null guard) | no-op and return normally | [x] |
-| E8 | `matrixsum` | its internal `init_array(2)` returns `NULL` | return `-1` | [x] |
+| # | function | trigger (exact invalid input/condition) | expected C result | status |
+|---|----------|-----------------------------------------|-------------------|--------|
+| 1 | `init_array` | allocation of the `DynamicArray` object returns `NULL` | returns `NULL` | [x] |
+| 2 | `init_array` | object allocation succeeds, but allocation of `initial_capacity * sizeof(int)` returns `NULL` | frees the object and returns `NULL` | [x] |
+| 3 | `expand_array` | `arr == NULL` | returns `0` | [x] |
+| 4 | `expand_array` | `realloc(arr->data, arr->capacity * 2 * sizeof(int))` returns `NULL` | returns `0`; original allocation and fields remain valid | [x] |
+| 5 | `add_element` | `arr == NULL` | returns `0` | [x] |
+| 6 | `add_element` | `arr->size >= arr->capacity` and the nested `expand_array(arr)` returns `0` | returns `0`; no element is appended | [x] |
+| 7 | `free_array` | `arr == NULL` | returns normally without freeing or dereferencing anything | [x] |
+| 8 | `matrixsum` | its `init_array(2)` call returns `NULL` | returns `-1` | [x] |
+| 9 | `init_array` | generic zero-length boundary: `initial_capacity == 0` | returns the same null/non-null sentinel as C; on this glibc build it is non-null with size/capacity zero | [x] |
+| 10 | `init_array` | generic oversized-length boundary: `initial_capacity == SIZE_MAX` | data allocation fails and the function returns `NULL` | [x] |
 
-Generic FFI boundaries not represented by C enums:
+There are no enum-typed parameters, explicit range checks, assertions, error
+enums, or documented integer min/max ranges in this C API. All pointer-taking
+entry points' null-pointer cases are represented above.
 
-- `size_t` zero is accepted by `init_array`; its allocator-dependent shape is
-  covered in `CONFIGS.md`.
-- Oversized `size_t` values exercise E2, E4, and E6.
-- `process_flags` accepts every `int`; unknown/high bits and negative values are
-  ignored except for the four recognized low bits.
-- There are no enum parameters, so an out-of-range enum test is not applicable.

@@ -193,9 +193,6 @@ unsafe fn make_hash_index(slot_count: usize, old: *mut HashIndex) -> *mut HashIn
     if slot_count <= BUCKET_LENGTH {
         (*table).used_count_shrink_threshold = 0;
     }
-    assert!(
-        (*table).used_count_threshold + (*table).tombstone_count_threshold < (*table).slot_count
-    );
 
     if old.is_null() {
         (*table).string = StringArena {
@@ -622,7 +619,6 @@ pub unsafe extern "C" fn stbds_hmput_key(
     if index as usize + 1 > (*header(a)).capacity {
         a = stbds_arrgrowf(a, elemsize, 1, 0);
     }
-    assert!(index as usize + 1 <= (*header(a)).capacity);
     raw_a = arr_to_hash(a, elemsize);
     (*header(a)).length = index as usize + 1;
     let bucket = (*table).storage.add(pos >> BUCKET_SHIFT);
@@ -691,7 +687,6 @@ pub unsafe extern "C" fn stbds_hmdel_key(
     let mut bucket_slot = slot as usize & BUCKET_MASK;
     let old_index = (*bucket).index[bucket_slot];
     let final_index = (*header(raw_a)).length as isize - 2;
-    assert!(slot < (*table).slot_count as isize);
     (*table).used_count -= 1;
     (*table).tombstone_count += 1;
     (*header(raw_a)).temp = 1;
@@ -714,10 +709,8 @@ pub unsafe extern "C" fn stbds_hmdel_key(
             destination.add(keyoffset).cast()
         };
         slot = find_slot(a, elemsize, moved_key, keysize, keyoffset, mode);
-        assert!(slot >= 0);
         bucket = (*table).storage.add(slot as usize >> BUCKET_SHIFT);
         bucket_slot = slot as usize & BUCKET_MASK;
-        assert!((*bucket).index[bucket_slot] == final_index);
         (*bucket).index[bucket_slot] = old_index;
     }
     (*header(raw_a)).length -= 1;
@@ -795,7 +788,6 @@ pub unsafe extern "C" fn stbds_stralloc(
         (*arena).remaining = blocksize;
     }
 
-    assert!(len <= (*arena).remaining);
     let result = ((*arena).storage as *mut u8)
         .add(size_of::<*mut StringBlock>())
         .add((*arena).remaining - len)

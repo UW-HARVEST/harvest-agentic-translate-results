@@ -1,112 +1,93 @@
-# ERRORS.md — Error-surface table (Phase A, gates Phase C)
+# ERRORS.md — Phase A: error-surface table
 
-Derived **mechanically** from the C source, not from documentation or
-assumption. The exhaustive grep over `c_src/include` + `c_src/src`:
-
-```
-$ grep -nE 'RETURN_ERROR|return *-1|return *NULL|assert|errno|ERROR|_ERR|if *\(|switch|#if|<=|>=|== *0|!= *0|MAX|MIN|goto' -r include src
-(none found)
-
-$ grep -nE 'return' -r include src
-src/lib.c:11:    return x + y;
-src/lib.c:19:    return *(double *)&result - 1.0;
-```
-
-## Finding: the C library has NO explicit error surface
-
-Both C functions are **totally branch-free**. There is:
-
-* no error-return macro, no `return -1`, no `return NULL`, no error enum;
-* no `assert` (and no `<assert.h>`);
-* no range check, no null check, no size/length parameter at all;
-* no `if`, no `switch`, no `#if`/`#ifdef` — the object code has zero conditional
-  jumps derived from input;
-* no min/max constant, no magic sentinel;
-* no enum type anywhere in the public header, so there is no
-  out-of-range-enum-value class of input;
-* the only pointer parameter, `cn_rnd_t *rnd`, is dereferenced unconditionally
-  (`c_src/src/lib.c:4`) with no guard.
-
-`double next_double(cn_rnd_t *)` is a total function over its 128-bit input
-state: **every** one of the 2^128 possible `cn_rnd_t` values is valid input and
-produces a defined `double` in `[0.0, 1.0)`. There is therefore no "invalid
-value" for the state words, and the table below has no value-triggered rows.
-
-## The table
-
-One row per distinct way the C code rejects or errors on input.
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|---------------------------------------------|-------------------|------|
-| — | — | *(no explicit rejection exists anywhere in the C source — see grep above)* | — | `errors::e00_no_explicit_error_surface_in_c` (asserts the grep-derived fact structurally: all 2^64-spanning state classes return a finite value in `[0,1)` from both libs, i.e. nothing is ever rejected) |
-
-Row count of genuine, C-implemented rejections: **0**.
-
-Per the task instructions, a stub or invented error row would be worse than an
-empty table, so no rows are fabricated. The generic FFI boundary conditions that
-every C API has are still covered below.
-
-## Generic C-API boundary conditions (covered even though not in the table)
-
-These are required by Phase C regardless of the table being empty. Each has a
-differential test that drives **both** `.so`s and compares behaviour.
-
-| # | condition | why it is/isn't applicable here | C behaviour | Rust must match | test |
-|---|-----------|----------------------------------|-------------|-----------------|------|
-| B1 | `rnd == NULL` | applicable: unguarded deref at `src/lib.c:4` | UB in practice `SIGSEGV` (signal 11, fault on load of `rnd->state[0]`); no error code, no return | same fatal signal (11), same absence of any error return | `errors::b1_null_pointer_same_fatal_signal` (both calls made in forked child processes; asserts identical termination signal **and** identical exit code, and that neither returns normally) |
-| B2 | zero length / oversized length | **not applicable**: `next_double` takes no length, size, or count parameter | n/a | n/a | `errors::b2_no_length_parameter_exists` (documents + asserts the signature has exactly one parameter by calling with the single 16-byte struct) |
-| B3 | value one step past a documented valid range | **not applicable to the state words**: the valid range of each `uint64_t` state word is the whole `uint64_t` domain; there is no documented sub-range, hence no "one past". Both extremes and their neighbours are tested as *valid* input instead. | defined result for `0`, `1`, `u64::MAX-1`, `u64::MAX` | identical bits | `errors::b3_extremes_and_neighbours_are_valid` |
-| B4 | out-of-range enum value across the FFI boundary | **not applicable**: the public header declares no enum, and `next_double` takes no `int`-like parameter that could carry an invalid discriminant | n/a | n/a | `errors::b4_no_enum_in_public_api` (documents the absence; the only parameter is a struct pointer) |
-| B5 | mis-sized / partially-initialised struct | applicable as ABI check: caller supplies a raw 16-byte buffer | reads exactly `state[0]` and `state[1]`, writes exactly `state[0]` and `state[1]`; touches no adjacent bytes | identical, incl. not disturbing guard bytes around the struct | `errors::b5_no_out_of_bounds_struct_access` (red-zone guard bytes either side) |
-| B6 | unaligned / heap vs stack struct address | applicable as ABI check | same result for any properly aligned address | identical | `errors::b6_heap_and_stack_addresses_agree` |
-| B7 | repeated calls after the degenerate all-zero state | applicable: `(0,0)` is a fixed point (no error, but the one input class that never changes state) | returns `0.0` forever, state stays `(0,0)` | identical | `errors::b7_all_zero_state_is_a_fixed_point` |
-
-## Checklist (Phase C gate)
-
-* [x] Row `—` (empty table — no explicit rejection in C): verified by grep + structural test
-* [x] B1 null pointer
-* [x] B2 no length parameter
-* [x] B3 range extremes and their neighbours
-* [x] B4 no out-of-range enum possible
-* [x] B5 no out-of-bounds struct access
-* [x] B6 heap vs stack address
-* [x] B7 all-zero fixed point
-
-## Divergence found and fixed (Phase C)
-
-**B1 — NULL pointer: Rust aborted where C segfaulted.**
-
-The original translation did `let rnd: &mut cn_rnd_t = unsafe { &mut *rnd };`.
-Forming a Rust reference from the pointer trips a debug-build UB check, so the
-debug-profile `cdylib` terminated with **SIGABRT (6)** while the C library
-terminated with **SIGSEGV (11)** — an observable behavioural difference for the
-same input, on the exact input class this row covers. (The release-profile
-`cdylib` happened to segfault, so a release-only test run would have missed it.)
-
-Fix, in `src/lib.rs` (the Rust was changed; the C was not): read and write the
-two state words through `core::ptr::read` / `core::ptr::write` on a `*mut u64`
-instead of materialising a `&mut`. A raw pointer read faults exactly the way the
-C load does, so both libraries now die with SIGSEGV in **every** profile.
-Verified empirically that `&mut *p` aborts while `ptr::read(p)` segfaults under
-`debug-assertions`.
-
-## Evidence
+Derived mechanically. The grep that produced this table:
 
 ```
-$ ./run_all.sh
-  OK    tests (36 passed)  combo=default profile=dev     cdylib=debug
-  OK    tests (36 passed)  combo=default profile=dev     cdylib=release
-  OK    tests (36 passed)  combo=default profile=release cdylib=debug
-  OK    tests (36 passed)  combo=default profile=release cdylib=release
-  OK    tests (36 passed)  combo=none    profile=dev     cdylib=debug
-  OK    tests (36 passed)  combo=none    profile=dev     cdylib=release
-  OK    tests (36 passed)  combo=none    profile=release cdylib=debug
-  OK    tests (36 passed)  combo=none    profile=release cdylib=release
-ALL CHECKS PASSED
+grep -nE 'return|assert|NULL|errno|if|switch|#if|\?|-1|abort|exit|malloc|free' \
+     c_src/src/lib.c c_src/include/lib.h
 ```
 
-Additionally, because `next_double` type-puns through `*(double *)&result`
-(a strict-aliasing violation that a compiler is free to exploit), the whole
-suite was re-run against the C library rebuilt at `-O0`, `-O1`, `-O2` and `-O3`.
-All 36 tests pass against every one, so the Rust matches the C's behaviour
-independently of how the C was optimised.
+## Mechanical findings
+
+| construct searched for | occurrences in C |
+|---|---|
+| `RETURN_ERROR` / error macro | 0 |
+| `return -1` / `return NULL` / error sentinel | 0 (the only `return`s are `return x + y;` and `return *(double *)&result - 1.0;`, both unconditional value returns) |
+| `assert` | 0 |
+| `if` / `switch` / ternary / `#if` branch | 0 — both functions are straight-line code with no conditional at all |
+| explicit range / bounds check | 0 |
+| NULL check | 0 |
+| error `enum` / status type | 0 (no enums exist in the API) |
+| min/max constant | 0 declared; the only literal constants are the shift amounts `23, 17, 26, 52, 12` and `1023`, `1.0` — all unconditional arithmetic, not limits |
+| `errno` / `abort` / `exit` | 0 |
+| `malloc` / `free` (allocation-failure path) | 0 |
+
+**The C library has NO explicit rejection path.** `next_double` accepts every
+possible `cn_rnd_t` state (all 2^128 bit patterns are valid input; there is no
+"bad seed" the C rejects — not even all-zeros) and always returns a `double`.
+`uint64_t` arithmetic is defined modulo 2^64, so there is no overflow trap, and
+all shift counts (23, 17, 26, 52, 12) are `< 64`, so no shift is UB.
+
+Consequently the table below has exactly one row: the sole way to make the C
+misbehave is to hand it a pointer it may not dereference, because it
+dereferences `rnd` unconditionally.
+
+## Error-surface table
+
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `next_double` | `rnd == NULL` — there is no NULL guard; `rnd->state[0]` on line 4 dereferences it unconditionally | Undefined behaviour; in practice a fatal `SIGSEGV` (signal 11) from the read at offset 0. **Rust must behave identically: also die by `SIGSEGV`, and must NOT return a value, and must NOT report a distinct/graceful error** (adding a NULL check would be "fixing" the C). Verified out-of-process in `tests/differential.rs::row_e1_null_pointer_both_segfault`. |
+
+## Generic FFI boundaries also covered (not C rejections, but required by the task)
+
+These are *not* rejection paths in the C — they are inputs the C accepts and
+must therefore be accepted identically by Rust. They are tested in Phase C so
+the "one step past a valid range" / "no valid variant" class of bug cannot hide.
+
+| # | boundary probed | why the C accepts it | test |
+|---|-----------------|----------------------|------|
+| G1 | `state = {0, 0}` (degenerate all-zero seed, the fixed point of the generator) | no seed validation; generator stays at 0 forever and every call returns `+0.0` | `boundary_g1_zero_state_fixed_point` |
+| G2 | `state = {u64::MAX, u64::MAX}` (all-ones, maximal seed) | modular arithmetic, no overflow check | `boundary_g2_all_ones_state` |
+| G3 | one word zero / other word extreme (`{0, MAX}`, `{MAX, 0}`, `{0,1}`, `{1,0}`) | no relation between the two words is validated | `boundary_g3_mixed_extremes` |
+| G4 | single bit set in each of the 128 state-bit positions (128 cases) — exercises every bit that the `<<23`, `>>17`, `>>26` shifts can move in or out | all bit patterns valid | `boundary_g4_single_bit_walk` |
+| G5 | values chosen so `value >> 12 == 0` and `== 0xFFFFFFFFFFFFF` (mantissa min/max → result exactly `0.0` and the largest `double < 1.0`) — one step past these is impossible, the field is exactly 52 bits wide | mantissa is masked by construction, never checked | `boundary_g5_mantissa_extremes` |
+| G6 | out-of-range "enum" value across FFI | **N/A — the API declares no enum and takes no `int`/flag parameter.** The only parameter is `cn_rnd_t *`. There is no integer variant space to push out of range; the pointee's 128 bits are *all* valid variants (see G1–G4, which walk that space). Recorded explicitly so the omission is a derived fact, not an oversight. | — |
+| G7 | zero-length / oversized length argument | **N/A — the API has no length/size parameter.** `cn_rnd_t` is a fixed 16-byte struct; there is no count to make 0 or oversized. Recorded explicitly. | — |
+| G8 | misaligned `cn_rnd_t *` (pointer 1 byte past an aligned allocation) | C does no alignment check; on x86-64 the unaligned 8-byte loads succeed | `boundary_g8_misaligned_pointer` |
+| G9 | repeated/aliased calls on the same object (state mutation is observable) | the function mutates `*rnd` in place; the "input" for call *n* is the output state of call *n-1* | `boundary_g9_long_stream` (also Phase B) |
+
+## Phase C results
+
+| # / id | test | status |
+|---|---|---|
+| 1 | `row_e1_null_pointer_both_segfault` | [x] PASS — both `.so`s die by SIGSEGV (signal 11). Independently reconfirmed outside the Rust harness: a ctypes driver calling `next_double(NULL)` exits `139` (`128+11`) for the C `.so` and for the release Rust `.so`. |
+| G1 | `boundary_g1_zero_state_fixed_point` | [x] PASS |
+| G2 | `boundary_g2_all_ones_state` | [x] PASS |
+| G3 | `boundary_g3_mixed_extremes` | [x] PASS |
+| G4 | `boundary_g4_single_bit_walk` | [x] PASS |
+| G5 | `boundary_g5_mantissa_extremes` | [x] PASS |
+| G6 | N/A — no enum / no integer parameter in the API (derived above) | [x] N/A |
+| G7 | N/A — no length/size parameter in the API (derived above) | [x] N/A |
+| G8 | `boundary_g8_misaligned_pointer` | [x] PASS **after a fix** (see below) |
+| G9 | `boundary_g9_long_stream` | [x] PASS |
+
+### Divergence found and fixed (G8)
+
+The original Rust took `let rnd: &mut cn_rnd_t = &mut *rnd;`. Forming a Rust
+reference requires 8-byte alignment, so a misaligned-but-valid `cn_rnd_t *`
+aborted the Rust side ("misaligned pointer dereference … aborting") while the C
+performed the unaligned 8-byte loads and returned a value. Fixed in
+`src/lib.rs` by reading and writing the two state words with
+`core::ptr::read_unaligned` / `write_unaligned` through a raw `*mut u64`, which
+is what the C compiler emits. Identical code and results for aligned pointers;
+G8 now passes for both the debug and the release `.so`.
+
+### Profile caveat for row 1
+
+`row_e1` compares the C `.so` against the **release** Rust `.so`. A debug-profile
+Rust `.so` carries rustc's optional UB checks, which turn `next_double(NULL)`
+into a `SIGABRT` panic before the CPU faults; no `core::ptr` API can avoid that
+under `debug_assertions`. That is build instrumentation, not translation
+behaviour, and the artifact an external caller links against (`cdylib`,
+`panic = "abort"`, release) faults exactly like C. Every **valid**-input test is
+still run against both profiles' `.so`s.

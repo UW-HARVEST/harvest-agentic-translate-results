@@ -1,101 +1,113 @@
-# CONFIGS.md — configuration / valid-input surface table
-
-Derived mechanically from `c_src/src/lib.c` and `c_src/include/lib.h`.
+# CONFIGS.md — configuration surface table (valid inputs)
 
 ## Axes the C code actually branches on
 
-There are **no** compile-time options: no `#ifdef` other than the include
-guards implied by the standard headers, no build flags in
-`c_src/CMakeLists.txt` beyond `SHARED`, and no `[features]` in
-`translation/Cargo.toml`. Every axis below is therefore a **runtime input**
-axis.
+Derived from `c_src/src/lib.c` (`switch`, `if`, `%`, and the constants). The
+library has no build-time configuration: no `#ifdef` other than the standard
+header guards, no runtime option struct, no global mode flag. Its
+"configuration" is therefore entirely (a) which operation is selected and
+(b) the shape/state of the history buffer.
 
-| axis | values the C distinguishes | where |
-|------|----------------------------|-------|
-| A1 `Operation` selector | `1 OP_ADD`, `2 OP_MULTIPLY`, `3 OP_SUBTRACT`, `4 OP_DIVIDE`, `5 OP_MODULO`, and *anything else* → `default:` | `select_operation` `switch` (lines 89-102) |
-| A2 divisor zero-ness | `b == 0` vs `b != 0` | `divide_operation` / `modulo_operation` line 75 / 82 |
-| A3 operand sign / magnitude | positive, negative, `0`, `INT_MIN`, `INT_MAX`, `-1` (C `/` and `%` truncate toward zero, so sign matters) | `a / b`, `a % b`, `% 5`, `% 128`, `% 100` |
-| A4 history-pointer state | `*history == NULL` (bootstrap) vs already allocated | line 122 |
-| A5 history fill level | `*history_count < 10` vs `>= 10` | line 127 |
-| A6 `allocate_results` count | `0`, `1`, `< 10`, `10`, `> 10`, negative, `INT_MAX` | line 113 |
-| A7 `is_valid_operation` char class | `0`, `< '1'`, `'1'`..`'5'`, `> '5'`, negative (`char` is signed) | line 53 |
-| A8 `mathop` `param1` | selects the (dead) validation char via `% 128`, and is the first operand | lines 141-144, 150 |
-| A9 `mathop` `param3` | `param3 % 5 + 1` picks `selected_op`; negative `param3` yields an out-of-range op | line 147 |
-| A10 `mathop` `param4` | `(param4 + 1) % 5 + 1` picks `second_op`, **and** `param4` is the second operand of the second computation | lines 154-157 |
-| A11 call sequence position | mathop's `static` history accumulates 2 entries per call, saturating at 10 (i.e. call #1..#5 fill, #6+ saturate) | lines 138-139 |
-| A12 `time_t` shift result | `time() >> 29`, then `% 100` | `get_computation_timestamp`, line 168 |
+* **A — operation selector** (`Operation`, an `int`): the 5 valid enumerators
+  `OP_ADD=1, OP_MULTIPLY=2, OP_SUBTRACT=3, OP_DIVIDE=4, OP_MODULO=5`, plus the
+  `default:` bucket (`0`, `6`, negative, `INT_MIN`, `INT_MAX`).
+* **B — operand shape**: `b == 0` vs `b != 0` (only `divide`/`modulo` branch on
+  it), sign of each operand, and the boundary values `0, ±1, INT_MIN, INT_MAX`
+  (overflow of `+`, `-`, `*`; truncation-toward-zero of `/` and `%`).
+* **C — history state** at entry to `perform_computation_with_history`:
+  `*history == NULL` (lazy allocate + count reset) vs non-NULL; and
+  `*history_count` relative to the cap 10: `0`, `1..9`, exactly `10`, `>10`.
+* **D — number of history entries recorded per `mathop` call**: `mathop` calls
+  `perform_computation_with_history` twice, so the process-wide static count
+  goes 2, 4, 6, 8, 10, 10, 10 … across successive `mathop` calls (a
+  call-ordering axis, observable only on stdout).
+* **E — `mathop` validation-char branch**: `param1 % 128` inside `49..53`
+  (`'1'..'5'`, `is_valid == true`) vs outside (`is_valid == false`).
+* **F — `mathop` operation pair**: `selected_op = param3 % 5 + 1` (5 positive
+  residues + negative residues) × `second_op = (param4+1) % 5 + 1`, i.e. the
+  cross product of first and second operation, with `param4` doubling as the
+  second operand.
+* **G — `is_valid_operation` char domain**: the full signed-`char` range
+  `-128..127`, with `'1'..'5'` accepted.
+* **H — `allocate_results` count**: `0`, `1`, `10` (the value `mathop` uses),
+  other small positive.
+* **I — struct-layout observation**: `ComputationResult` is written through the
+  returned pointer, so its 24-byte layout (`int` value, 4 pad, `time_t`, `int`
+  status, 4 tail pad) is part of the ABI and is compared byte-for-byte.
 
-## Entry points (all 12, lowest level first)
+## Public entry points
 
-`add_operation`, `multiply_operation`, `subtract_operation`,
-`divide_operation`, `modulo_operation` (leaf arithmetic) →
-`is_valid_operation`, `get_operation_priority`, `get_computation_timestamp`,
-`allocate_results`, `select_operation` (leaf helpers) →
-`perform_computation_with_history` (composes selector + history) →
-`mathop` (the only header-declared entry point; composes everything twice
-over shared `static` state).
+All 12 exported symbols are in scope. `mathop` is the only one declared in
+`include/lib.h` (the convenience / one-shot wrapper); the other 11 are the
+lower-level entry points and are driven **directly**, not only through
+`mathop`.
 
-`select_operation` is exercised by **calling the returned function pointer**
-and by **identifying** it against each library's own exported
-`{add,multiply,subtract,divide,modulo}_operation` address — a raw pointer
-comparison across the two `.so`s would be meaningless.
+## Table
 
-## Table — one row per combination the C treats differently
+| #  | entry point(s) | configuration (options set + input shape) | [x] |
+|----|----------------|-------------------------------------------|-----|
+| 1  | `is_valid_operation` | axis G: exhaustive over all 256 `char` bit patterns (`-128..127`), raw return byte compared | [x] |
+| 2  | `get_operation_priority` | axis A: each valid enumerator 1..5 | [x] |
+| 3  | `get_operation_priority` | axis A: `default` bucket + boundaries `0, -1, 6, INT_MIN, INT_MAX`, plus randomized `int`s (wrapping `*10`) | [x] |
+| 4  | `add_operation` | axis B: `{0, ±1, INT_MIN, INT_MAX}²` boundary grid + randomized pairs; third param varied (must be ignored) | [x] |
+| 5  | `multiply_operation` | axis B: same grid + randomized pairs (overflow wrap) | [x] |
+| 6  | `subtract_operation` | axis B: same grid + randomized pairs (overflow wrap) | [x] |
+| 7  | `divide_operation` | axis B, `b != 0`: boundary grid + randomized pairs, incl. mixed signs (truncation toward zero), `INT_MIN/1`, `INT_MAX/-1` | [x] |
+| 8  | `modulo_operation` | axis B, `b != 0`: boundary grid + randomized pairs, incl. negative dividend (C remainder sign) | [x] |
+| 9  | `select_operation` | axis A: each of 1..5 → the returned fn-pointer's *identity* (which of the 5 exported ops it equals) compared C vs Rust | [x] |
+| 10 | `select_operation` | axis A: `default` bucket `{0, 6, 7, -1, -5, INT_MIN, INT_MAX}` + randomized ints → must resolve to `add_operation` on both | [x] |
+| 11 | `select_operation` | axis A×B: the returned pointer *invoked* with randomized `(a,b,unused)` and results compared (verifies dispatch, not just identity) | [x] |
+| 12 | `get_computation_timestamp` | no inputs; value compared C vs Rust (arithmetic `>>29` of `time()`) | [x] |
+| 13 | `allocate_results` | axis H: `count = 1` → NULL-ness compared, 24 bytes/elem all zero, writable | [x] |
+| 14 | `allocate_results` | axis H: `count = 10` (the value `mathop` uses) → NULL-ness + 240 zero bytes | [x] |
+| 15 | `allocate_results` | axis H: `count = 0` → NULL-ness compared | [x] |
+| 16 | `allocate_results` | axis H: randomized `count ∈ 1..=64` → NULL-ness + all-zero payload | [x] |
+| 17 | `allocate_results` + axis I | struct layout probe: write `{value, timestamp, status}` into slot *k* of a C-allocated and a Rust-allocated buffer via `perform_computation_with_history`, compare all 24·n bytes | [x] |
+| 18 | `perform_computation_with_history` | axis C=`NULL` history: caller passes `*history == NULL` and a *nonzero* `*history_count`; both must allocate and reset count to 0, then record at slot 0. Return value, final count, and full buffer bytes compared | [x] |
+| 19 | `perform_computation_with_history` | axis C=non-NULL, count `0` → record lands in slot 0; op axis A ∈ 1..5, operands randomized | [x] |
+| 20 | `perform_computation_with_history` | axis C=non-NULL, count `1..9` (mid-buffer) × op axis A ∈ 1..5 × randomized operands; buffer bytes + count compared | [x] |
+| 21 | `perform_computation_with_history` | axis C=non-NULL, count `9` → last legal slot, count becomes 10 | [x] |
+| 22 | `perform_computation_with_history` | axis A `default` bucket (op ∉ 1..5) × randomized operands → `add_operation` behaviour recorded | [x] |
+| 23 | `perform_computation_with_history` | axis A ∈ {4,5} with `b == 0` → value `0` recorded, `STATUS_SUCCESS` | [x] |
+| 24 | `perform_computation_with_history` | repeated calls on one buffer: 12 sequential calls (2 past the cap) with randomized ops/operands; the whole 10-slot buffer and the count trajectory compared after every call | [x] |
+| 25 | `mathop` | axis E=valid (`param1 % 128 ∈ 49..53`) × axis F: `param3 % 5 ∈ 0..4` × `param4` randomized — return value **and** stdout bytes compared | [x] |
+| 26 | `mathop` | axis E=invalid × axis F: full 5×5 cross product of (`param3 mod 5`, `param4 mod 5`) with randomized magnitudes — return value + stdout | [x] |
+| 27 | `mathop` | axis F with negative `param3`/`param4` (out-of-range `Operation` from `%`), incl. `param3 = -1..-5`, `param4 = -1..-6` | [x] |
+| 28 | `mathop` | axis B boundaries as parameters: `param1, param2, param4 ∈ {0, ±1, INT_MIN, INT_MAX}` (division-by-zero and overflow paths reached through the wrapper) | [x] |
+| 29 | `mathop` | axis D: 8 consecutive calls in one process → stdout `History entries:` trajectory 2,4,6,8,10,10,10,10 compared side by side | [x] |
+| 30 | `mathop` | axis A×B fully randomized: 400 random `(param1..param4)` quadruples, return value + stdout compared | [x] |
+| 31 | binary driver | *not applicable* — `c_src/CMakeLists.txt` builds only `add_library(SHARED)`; there is no executable target, and `translation/Cargo.toml` declares `crate-type = ["cdylib"]` with no `[[bin]]`. Nothing to compare stdout-for-stdout at the binary level. | [x] |
+| 32 | feature combinations | *not applicable* — `translation/Cargo.toml` has no `[features]` section, so the only configuration is the default (empty) feature set. Verified by grepping the manifest. | [x] |
 
-Every row is driven with **many randomized inputs** (`SplitMix64`, fixed
-seed `0x5EED_1234_ABCD_F00D`) plus the boundary values named in the row.
+## Test mapping
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `add_operation` | randomized full-range `a`,`b`; boundaries `0/1/-1/INT_MIN/INT_MAX`; overflow pairs; `unused_param` varied (must be ignored) | [x] |
-| 2 | `multiply_operation` | randomized full-range; boundaries; overflowing products; `unused_param` varied | [x] |
-| 3 | `subtract_operation` | randomized full-range; boundaries; `INT_MIN - 1` / `INT_MAX - (-1)` overflow; `unused_param` varied | [x] |
-| 4 | `divide_operation` | `b != 0`, randomized full range incl. mixed signs (truncation toward zero); `a == INT_MIN` with `b != -1`; `b == 1`, `b == -1` with `a != INT_MIN` | [x] |
-| 5 | `divide_operation` | `b == 0` sentinel path, `a` randomized (see ERRORS row 4) | [x] |
-| 6 | `modulo_operation` | `b != 0`, randomized full range incl. mixed signs (result takes sign of `a`); `a == INT_MIN` with `b != -1`; `b == 1`, `b == -1` with `a != INT_MIN` | [x] |
-| 7 | `modulo_operation` | `b == 0` sentinel path, `a` randomized (see ERRORS row 5) | [x] |
-| 8 | `is_valid_operation` | **all 256** `char` bit patterns (`-128..=127`), i.e. every class of axis A7 exhaustively | [x] |
-| 9 | `get_operation_priority` | in-range ops `1..=5` | [x] |
-| 10 | `get_operation_priority` | out-of-range / negative / overflowing ops: `0`, `6`, `-1`, `-3`, `INT_MIN`, `INT_MAX`, randomized full range (`op * 10` wraps) | [x] |
-| 11 | `get_computation_timestamp` | no inputs; both libs called back-to-back, values must agree (`time() >> 29`) | [x] |
-| 12 | `allocate_results` | `count` = `1`, `10`, `11`, `100`: non-NULL, and all `count*24` bytes zeroed | [x] |
-| 13 | `select_operation` | each in-range op `1..=5`: returned pointer identified against the exporting library's own symbol, **and** invoked on randomized `(a,b)` with results compared | [x] |
-| 14 | `select_operation` | out-of-range op (`0`, `6`, `-1`, `INT_MIN`, `INT_MAX`, randomized): must identify as `add_operation` and behave as addition | [x] |
-| 15 | `perform_computation_with_history` | A4 = bootstrap (`*history == NULL`), each op `1..=5`, randomized `(a,b)`: return value **and** all 10 freshly-callocated slots compared byte-for-byte | [x] |
-| 16 | `perform_computation_with_history` | A4 = caller-allocated buffer, A5 = `count` `0`, then repeatedly appended `1..9`; op cycled `1..=5`; whole 10-slot buffer compared byte-for-byte after each call | [x] |
-| 17 | `perform_computation_with_history` | A4 = caller-allocated, A5 = `count == 10` exactly (boundary: guard fails, nothing written, count unchanged) | [x] |
-| 18 | `perform_computation_with_history` | A4 = caller-allocated, A5 = `count > 10` (`11`, `100`): still no write, count unchanged | [x] |
-| 19 | `perform_computation_with_history` | A1 out-of-range op with A4 bootstrap and with caller buffer (silently adds) | [x] |
-| 20 | `perform_computation_with_history` | op = `OP_DIVIDE`/`OP_MODULO` with `b == 0`: `0` recorded in the slot, `status = 0` | [x] |
-| 21 | `perform_computation_with_history` | full 10-append sequence from a bootstrap history, op driven by randomized data, buffer + count compared after **every** step (saturation reached in-sequence) | [x] |
-| 22 | `mathop` | A9: `param3 % 5 + 1` == each of `1..=5` (positive `param3` = `0,1,2,3,4` + multiples), other params randomized | [x] |
-| 23 | `mathop` | A9 negative: `param3` = `-1,-2,-3,-4,-5,-6,INT_MIN` → out-of-range `selected_op` in `-3..=0` → negative priority + addition | [x] |
-| 24 | `mathop` | A10: `(param4+1) % 5 + 1` == each of `1..=5`; includes `param4 == -1` (→ `second_op == 1`) and `param4 == INT_MAX` (overflow) | [x] |
-| 25 | `mathop` | A8: `param1` chosen so `(char)(param1 % 128)` is **valid** (`'1'`..`'5'`, i.e. 49..53 and 49..53 + 128k) | [x] |
-| 26 | `mathop` | A8: `param1` chosen so `(char)(param1 % 128)` is **invalid** (0, `'0'`, `'6'`, 127, negative) | [x] |
-| 27 | `mathop` | A2 inside `mathop`: `selected_op == OP_DIVIDE`/`OP_MODULO` with `param2 == 0`; `second_op == OP_DIVIDE`/`OP_MODULO` with `param4 == 0` | [x] |
-| 28 | `mathop` | A3 boundaries: `param1`/`param2`/`param4` at `INT_MIN`, `INT_MAX`, `0`, `-1`, `1` in a cross-product (excluding the `SIGFPE` pair, covered by ERRORS row 24) | [x] |
-| 29 | `mathop` | A11: 12 consecutive calls in one process on each library, so the shared static history bootstraps, fills, and saturates; every return value compared | [x] |
-| 30 | `mathop` | 2000 fully randomized `(param1..param4)` quadruples, `SIGFPE` pair filtered | [x] |
-| 31 | full pipeline | `select_operation` → returned pointer → `perform_computation_with_history` on the **same** library, chained over randomized data, i.e. the composed path rather than per-wrapper calls | [x] |
-| 32 | `ComputationResult` ABI | 24-byte size / 8-byte align / field offsets `0,8,16`, padding bytes stay zero after a write (verified through the FFI buffer, byte-for-byte) | [x] |
+Rows 1–24 → `tests/phase_b_valid.rs`, one `#[test] fn rowNN_…` per row.
+Rows 25–30 → `tests/phase_b_mathop.rs::phase_b_mathop_all_rows` (a single test
+fn, in its own test binary: each `.so` owns a `static history_count` that only
+stays in step if C and Rust are called the same number of times, and the fd-1
+redirection used to capture `printf` output must not race with libtest's own
+progress writes).
+Rows 31–32 (both N/A) → asserted by `verify.sh`, which greps `Cargo.toml` for
+`[features]` / `[[bin]]` and `c_src/CMakeLists.txt` for `add_executable`.
 
-## How the rows are driven
+Each row runs its configuration against many inputs from a fixed-seed
+xorshift64\* generator (`Rng::new(<constant>)`), biased to include `0`, `±1`,
+`INT_MIN`, `INT_MAX` and small magnitudes alongside the full 32-bit range, so a
+row is only checked off after passing across randomized inputs rather than one
+hand-picked value.
 
-`tests/phase_b_leaf.rs` covers rows 1-14, `tests/phase_b_composed.rs` covers
-rows 15-32. Every row uses the fixed-seed `SplitMix64` in `tests/common/mod.rs`
-(`SEED = 0x5EED_1234_ABCD_F00D`, per-row seed = `SEED ^ row`), drawing from a
-mixed distribution: small values, values near `INT_MIN`/`INT_MAX`, values in
-`0..128` (the `% 128` band), a `±500` band, and the unbiased full `i32` range.
+Where a row's inputs would hit `INT_MIN / -1` — genuine UB that raises SIGFPE in
+the C code — the value is nudged and the trap is instead asserted
+out-of-process in `ERRORS.md` rows 7–8.
 
-Both libraries are reached only through `dlopen`/`dlsym` on their `.so` files —
-no Rust function is called directly, so the `#[unsafe(no_mangle)] extern "C"`
-wrappers are part of what is under test.
+## Run
 
-## Build-configuration caveat
+```
+cd translation && ./verify.sh
+```
 
-`cargo test` does **not** rebuild the `cdylib`, because the integration tests
-`dlopen` it instead of linking it. Running `cargo test` after editing
-`src/lib.rs` would otherwise verify a stale `.so`; `tests/common/mod.rs`
-compares mtimes and fails loudly instead. `scripts/verify_all.sh` always builds
-before testing.
+Rebuilds both `.so` files, diffs `nm -D`, and runs all 48 tests against the dev
+**and** release Rust artifacts (`MATHOP_RUST_SO` selects which one the harness
+loads). `cargo test` alone is not sufficient: it does not rebuild a
+`crate-type = ["cdylib"]` artifact, so the harness refuses to run against a
+`.so` older than `src/lib.rs`.

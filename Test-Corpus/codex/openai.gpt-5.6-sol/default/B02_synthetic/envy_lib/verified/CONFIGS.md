@@ -1,280 +1,108 @@
-# Configuration Surface
+# Configuration surface
+
+Legend for `envy` rows:
+
+- `V`, `D`, `O`: resulting verbose/debug/optimize flag is on; `v`, `d`, `o`: off.
+- `3Z`/`3N`: `param3` is zero/nonzero. `4Z`/`4N`: `param4` is zero/nonzero.
+- `R+`/`R-`: result immediately before `if (result < 0)` is nonnegative/negative.
+- Every `envy` row is exercised with all four
+  `(PROG_BASE_OFFSET unset/set) × (PROG_MULTIPLIER unset/set)` combinations.
+  This covers the parser-source branches inside the composed operation without
+  duplicating each end-to-end branch row four times.
+- Randomized scalar inputs include zero, positive, negative, odd/even, and
+  near-boundary values where the corresponding C operation is defined.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `parse_env_numeric` | variable absent; randomized `default_val` | [x] |
-| 2 | `parse_env_numeric` | variable present; valid `atoi` input shapes (empty/non-numeric, signed, whitespace, numeric suffix) | [x] |
-| 3 | `init_config_from_env` | verbose=0, debug=0, optimize=0; absent/present-without-`1` representations randomized for false states | [x] |
-| 4 | `init_config_from_env` | verbose=0, debug=0, optimize=1; absent/present-without-`1` representations randomized for false states | [x] |
-| 5 | `init_config_from_env` | verbose=0, debug=1, optimize=0; absent/present-without-`1` representations randomized for false states | [x] |
-| 6 | `init_config_from_env` | verbose=0, debug=1, optimize=1; absent/present-without-`1` representations randomized for false states | [x] |
-| 7 | `init_config_from_env` | verbose=1, debug=0, optimize=0; absent/present-without-`1` representations randomized for false states | [x] |
-| 8 | `init_config_from_env` | verbose=1, debug=0, optimize=1; absent/present-without-`1` representations randomized for false states | [x] |
-| 9 | `init_config_from_env` | verbose=1, debug=1, optimize=0; absent/present-without-`1` representations randomized for false states | [x] |
-| 10 | `init_config_from_env` | verbose=1, debug=1, optimize=1; absent/present-without-`1` representations randomized for false states | [x] |
-| 11 | `perform_operation` | optimize=0, debug=0; randomized signed operands and raw non-field flag bits | [x] |
-| 12 | `perform_operation` | optimize=0, debug=1; randomized signed operands and raw non-field flag bits | [x] |
-| 13 | `perform_operation` | optimize=1, debug=0; randomized signed operands and raw non-field flag bits | [x] |
-| 14 | `perform_operation` | optimize=1, debug=1; randomized signed operands and raw non-field flag bits | [x] |
-| 15 | `apply_bit_operations` | verbose=0, cache_enabled=0; randomized signed values and raw non-field flag bits | [x] |
-| 16 | `apply_bit_operations` | verbose=0, cache_enabled=1; randomized signed values and raw non-field flag bits | [x] |
-| 17 | `apply_bit_operations` | verbose=1, cache_enabled=0; randomized signed values and raw non-field flag bits | [x] |
-| 18 | `apply_bit_operations` | verbose=1, cache_enabled=1; randomized signed values and raw non-field flag bits | [x] |
-| 19 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 20 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 21 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 22 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 23 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 24 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 25 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 26 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 27 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 28 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 29 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 30 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 31 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 32 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 33 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 34 | `envy` | verbose=0, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 35 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 36 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 37 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 38 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 39 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 40 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 41 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 42 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 43 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 44 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 45 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 46 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 47 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 48 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 49 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 50 | `envy` | verbose=0, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 51 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 52 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 53 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 54 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 55 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 56 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 57 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 58 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 59 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 60 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 61 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 62 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 63 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 64 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 65 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 66 | `envy` | verbose=0, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 67 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 68 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 69 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 70 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 71 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 72 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 73 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 74 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 75 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 76 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 77 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 78 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 79 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 80 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 81 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 82 | `envy` | verbose=0, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 83 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 84 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 85 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 86 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 87 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 88 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 89 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 90 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 91 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 92 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 93 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 94 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 95 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 96 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 97 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 98 | `envy` | verbose=0, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 99 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 100 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 101 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 102 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 103 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 104 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 105 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 106 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 107 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 108 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 109 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 110 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 111 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 112 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 113 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 114 | `envy` | verbose=0, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 115 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 116 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 117 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 118 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 119 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 120 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 121 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 122 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 123 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 124 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 125 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 126 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 127 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 128 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 129 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 130 | `envy` | verbose=0, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 131 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 132 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 133 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 134 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 135 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 136 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 137 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 138 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 139 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 140 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 141 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 142 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 143 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 144 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 145 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 146 | `envy` | verbose=0, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 147 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 148 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 149 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 150 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 151 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 152 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 153 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 154 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 155 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 156 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 157 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 158 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 159 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 160 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 161 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 162 | `envy` | verbose=1, debug=0, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 163 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 164 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 165 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 166 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 167 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 168 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 169 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 170 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 171 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 172 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 173 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 174 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 175 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 176 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 177 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 178 | `envy` | verbose=1, debug=0, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 179 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 180 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 181 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 182 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 183 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 184 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 185 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 186 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 187 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 188 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 189 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 190 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 191 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 192 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 193 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 194 | `envy` | verbose=1, debug=0, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 195 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 196 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 197 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 198 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 199 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 200 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 201 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 202 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 203 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 204 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 205 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 206 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 207 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 208 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 209 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 210 | `envy` | verbose=1, debug=0, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 211 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 212 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 213 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 214 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 215 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 216 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 217 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 218 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 219 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 220 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 221 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 222 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 223 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 224 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 225 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 226 | `envy` | verbose=1, debug=1, optimize=0; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 227 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 228 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 229 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 230 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 231 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 232 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 233 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 234 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 235 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 236 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 237 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 238 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 239 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 240 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 241 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 242 | `envy` | verbose=1, debug=1, optimize=0; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 243 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 244 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 245 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 246 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 247 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 248 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 249 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 250 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 251 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 252 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 253 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 254 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 255 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 256 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 257 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 258 | `envy` | verbose=1, debug=1, optimize=1; base_offset=default, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 259 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 260 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 261 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 262 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 263 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 264 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 265 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 266 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=default, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 267 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 268 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 269 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 270 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=zero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-| 271 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=nonnegative; randomized values | [x] |
-| 272 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=zero, pre-fallback result=negative; randomized values | [x] |
-| 273 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=nonnegative; randomized values | [x] |
-| 274 | `envy` | verbose=1, debug=1, optimize=1; base_offset=explicit, multiplier=explicit, param3=nonzero, param4=nonzero, pre-fallback result=negative; randomized values | [x] |
-
-Rows cover all five dynamic entry points. `ConfigFlags` is exercised as its four-byte C ABI storage, including all 3-bit `log_level` values, the one-step-past encoding that spills into `reserved`, and unrelated high bits. There are no Cargo features; the sole feature combination is both the default invocation and `--no-default-features`.
+| 1 | `parse_env_numeric` | Named environment variable unset; randomized default | [x] |
+| 2 | `parse_env_numeric` | Named environment variable set to a valid `atoi` string: zero/positive/negative, whitespace/sign, numeric prefix/trailing text | [x] |
+| 3 | `init_config_from_env` | verbose absent; debug absent; optimize absent | [x] |
+| 4 | `init_config_from_env` | verbose absent; debug absent; optimize present | [x] |
+| 5 | `init_config_from_env` | verbose absent; debug present without `1`; optimize absent | [x] |
+| 6 | `init_config_from_env` | verbose absent; debug present without `1`; optimize present | [x] |
+| 7 | `init_config_from_env` | verbose absent; debug present containing `1`; optimize absent | [x] |
+| 8 | `init_config_from_env` | verbose absent; debug present containing `1`; optimize present | [x] |
+| 9 | `init_config_from_env` | verbose present without `1`; debug absent; optimize absent | [x] |
+| 10 | `init_config_from_env` | verbose present without `1`; debug absent; optimize present | [x] |
+| 11 | `init_config_from_env` | verbose present without `1`; debug present without `1`; optimize absent | [x] |
+| 12 | `init_config_from_env` | verbose present without `1`; debug present without `1`; optimize present | [x] |
+| 13 | `init_config_from_env` | verbose present without `1`; debug present containing `1`; optimize absent | [x] |
+| 14 | `init_config_from_env` | verbose present without `1`; debug present containing `1`; optimize present | [x] |
+| 15 | `init_config_from_env` | verbose present containing `1`; debug absent; optimize absent | [x] |
+| 16 | `init_config_from_env` | verbose present containing `1`; debug absent; optimize present | [x] |
+| 17 | `init_config_from_env` | verbose present containing `1`; debug present without `1`; optimize absent | [x] |
+| 18 | `init_config_from_env` | verbose present containing `1`; debug present without `1`; optimize present | [x] |
+| 19 | `init_config_from_env` | verbose present containing `1`; debug present containing `1`; optimize absent | [x] |
+| 20 | `init_config_from_env` | verbose present containing `1`; debug present containing `1`; optimize present | [x] |
+| 21 | `perform_operation` | optimize off; debug off; log level 0..7; randomized val1 and odd/even val2 signs | [x] |
+| 22 | `perform_operation` | optimize off; debug on; log level 0..7; randomized val1 and odd/even val2 signs | [x] |
+| 23 | `perform_operation` | optimize on; debug off; log level 0..7 ignored; randomized val1/val2 signs | [x] |
+| 24 | `perform_operation` | optimize on; debug on; log level 0..7 ignored; randomized val1/val2 signs | [x] |
+| 25 | `apply_bit_operations` | verbose off; cache off; randomized negative/zero/positive value | [x] |
+| 26 | `apply_bit_operations` | verbose off; cache on; randomized negative/zero/positive value | [x] |
+| 27 | `apply_bit_operations` | verbose on; cache off; randomized safely shiftable negative/zero/positive value | [x] |
+| 28 | `apply_bit_operations` | verbose on; cache on; randomized safely shiftable negative/zero/positive value | [x] |
+| 29 | `envy` | `v d o 3Z 4Z R+` | [x] |
+| 30 | `envy` | `v d o 3Z 4Z R-` | [x] |
+| 31 | `envy` | `v d o 3Z 4N R+` | [x] |
+| 32 | `envy` | `v d o 3Z 4N R-` | [x] |
+| 33 | `envy` | `v d o 3N 4Z R+` | [x] |
+| 34 | `envy` | `v d o 3N 4Z R-` | [x] |
+| 35 | `envy` | `v d o 3N 4N R+` | [x] |
+| 36 | `envy` | `v d o 3N 4N R-` | [x] |
+| 37 | `envy` | `v d O 3Z 4Z R+` | [x] |
+| 38 | `envy` | `v d O 3Z 4Z R-` | [x] |
+| 39 | `envy` | `v d O 3Z 4N R+` | [x] |
+| 40 | `envy` | `v d O 3Z 4N R-` | [x] |
+| 41 | `envy` | `v d O 3N 4Z R+` | [x] |
+| 42 | `envy` | `v d O 3N 4Z R-` | [x] |
+| 43 | `envy` | `v d O 3N 4N R+` | [x] |
+| 44 | `envy` | `v d O 3N 4N R-` | [x] |
+| 45 | `envy` | `v D o 3Z 4Z R+` | [x] |
+| 46 | `envy` | `v D o 3Z 4Z R-` | [x] |
+| 47 | `envy` | `v D o 3Z 4N R+` | [x] |
+| 48 | `envy` | `v D o 3Z 4N R-` | [x] |
+| 49 | `envy` | `v D o 3N 4Z R+` | [x] |
+| 50 | `envy` | `v D o 3N 4Z R-` | [x] |
+| 51 | `envy` | `v D o 3N 4N R+` | [x] |
+| 52 | `envy` | `v D o 3N 4N R-` | [x] |
+| 53 | `envy` | `v D O 3Z 4Z R+` | [x] |
+| 54 | `envy` | `v D O 3Z 4Z R-` | [x] |
+| 55 | `envy` | `v D O 3Z 4N R+` | [x] |
+| 56 | `envy` | `v D O 3Z 4N R-` | [x] |
+| 57 | `envy` | `v D O 3N 4Z R+` | [x] |
+| 58 | `envy` | `v D O 3N 4Z R-` | [x] |
+| 59 | `envy` | `v D O 3N 4N R+` | [x] |
+| 60 | `envy` | `v D O 3N 4N R-` | [x] |
+| 61 | `envy` | `V d o 3Z 4Z R+` | [x] |
+| 62 | `envy` | `V d o 3Z 4Z R-` | [x] |
+| 63 | `envy` | `V d o 3Z 4N R+` | [x] |
+| 64 | `envy` | `V d o 3Z 4N R-` | [x] |
+| 65 | `envy` | `V d o 3N 4Z R+` | [x] |
+| 66 | `envy` | `V d o 3N 4Z R-` | [x] |
+| 67 | `envy` | `V d o 3N 4N R+` | [x] |
+| 68 | `envy` | `V d o 3N 4N R-` | [x] |
+| 69 | `envy` | `V d O 3Z 4Z R+` | [x] |
+| 70 | `envy` | `V d O 3Z 4Z R-` | [x] |
+| 71 | `envy` | `V d O 3Z 4N R+` | [x] |
+| 72 | `envy` | `V d O 3Z 4N R-` | [x] |
+| 73 | `envy` | `V d O 3N 4Z R+` | [x] |
+| 74 | `envy` | `V d O 3N 4Z R-` | [x] |
+| 75 | `envy` | `V d O 3N 4N R+` | [x] |
+| 76 | `envy` | `V d O 3N 4N R-` | [x] |
+| 77 | `envy` | `V D o 3Z 4Z R+` | [x] |
+| 78 | `envy` | `V D o 3Z 4Z R-` | [x] |
+| 79 | `envy` | `V D o 3Z 4N R+` | [x] |
+| 80 | `envy` | `V D o 3Z 4N R-` | [x] |
+| 81 | `envy` | `V D o 3N 4Z R+` | [x] |
+| 82 | `envy` | `V D o 3N 4Z R-` | [x] |
+| 83 | `envy` | `V D o 3N 4N R+` | [x] |
+| 84 | `envy` | `V D o 3N 4N R-` | [x] |
+| 85 | `envy` | `V D O 3Z 4Z R+` | [x] |
+| 86 | `envy` | `V D O 3Z 4Z R-` | [x] |
+| 87 | `envy` | `V D O 3Z 4N R+` | [x] |
+| 88 | `envy` | `V D O 3Z 4N R-` | [x] |
+| 89 | `envy` | `V D O 3N 4Z R+` | [x] |
+| 90 | `envy` | `V D O 3N 4Z R-` | [x] |
+| 91 | `envy` | `V D O 3N 4N R+` | [x] |
+| 92 | `envy` | `V D O 3N 4N R-` | [x] |

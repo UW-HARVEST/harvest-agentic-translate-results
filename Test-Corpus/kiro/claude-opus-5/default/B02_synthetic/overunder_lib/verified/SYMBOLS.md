@@ -1,72 +1,75 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — Public symbol surface
 
-Derived mechanically from:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
+
+- C  `.so`: `c_src/build/libharvest-work-XMGpqW.so`
+- Rust `.so`: `translation/target/release/liboverunder_lib.so`
+
+## C exported symbols (text/data, libc-independent)
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-l7Jx3E.so
-nm -D --defined-only translation/target/release/liboverunder_lib.so
+$ nm -D --defined-only c_src/build/libharvest-work-XMGpqW.so | grep -v ' [aAwWuUvV] '
+T copy_data_block
+T handle_pointer_operations
+T overunder
+T process_with_fallthrough
+T safe_double_to_int
 ```
 
-The C library is built from exactly one translation unit (`c_src/src/lib.c`,
-per `c_src/CMakeLists.txt`). `c_src/include/lib.h` declares only `overunder`,
-but the four helper functions in `lib.c` are not `static`, so they are all
-dynamic symbols and all part of the ABI surface that must be matched.
+Note: only `overunder` is declared in `include/lib.h`; the other four have
+external linkage in `src/lib.c` (no `static`), so they are part of the ABI
+surface and are covered here and in the differential tests.
 
-## Symbol table
+## Parity table
 
-| # | symbol | C `.so` | Rust `.so` | C signature | notes |
-|---|--------|---------|------------|-------------|-------|
-| 1 | `safe_double_to_int`       | T | T | `int (double)`                              | non-static helper; not in `lib.h` |
-| 2 | `process_with_fallthrough` | T | T | `int (int, int)`                             | non-static helper; not in `lib.h` |
-| 3 | `copy_data_block`          | T | T | `void (DataBlock *, const DataBlock *)`      | non-static helper; `DataBlock` is TU-local |
-| 4 | `handle_pointer_operations`| T | T | `int (int)`                                  | non-static helper; not in `lib.h` |
-| 5 | `overunder`                | T | T | `int (int, int, int, int)`                    | the only symbol declared in `lib.h` |
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `safe_double_to_int`        | T | T | [x] present |
+| 2 | `process_with_fallthrough`  | T | T | [x] present |
+| 3 | `copy_data_block`           | T | T | [x] present |
+| 4 | `handle_pointer_operations` | T | T | [x] present |
+| 5 | `overunder`                 | T | T | [x] present |
 
-Symbols exported by C but missing from Rust: **0**
-Symbols exported by Rust but missing from C: **0** (Rust exports no extra
-non-libc, non-toolchain globals)
+Missing from Rust: **none**. No module of `c_src` is untranslated
+(`src/lib.c` is the only C source file listed in `CMakeLists.txt`).
 
-No macro-generated symbols exist: `MAKE_VAR_NAME` and `PRINT_VAR` expand only
-inside function bodies (local variable names / string literals), so they create
-no linker-visible names.
+## Undefined (imported) symbols in the Rust `.so`
 
-## Undefined (imported) symbols
-
-Every undefined symbol in the Rust `.so` is libc or toolchain runtime
-(`_Unwind_*`, `__cxa_*`, `malloc`, `memcpy`, `printf`, `putchar`, ...).
-**0 missing/undefined non-libc symbols.**
-
-The C `.so` imports `sqrt`, `strncpy` and `memcpy`; the Rust `.so` imports
-`memcpy` (it calls libc `memcpy` deliberately — see below) but not `sqrt` or
-`strncpy`, because LLVM lowers `sqrt` to the `sqrtsd` instruction
-(bit-identical, IEEE-754 correctly rounded) and inlines the fixed-length
-`strncpy("Source", 19)` into stores. These are code-generation differences, not
-ABI differences — no exported symbol is affected, and the differential suite
-confirms identical results including the printed `label`.
-
-## Fix applied during verification
-
-`copy_data_block` originally used `std::ptr::copy_nonoverlapping`. That is
-value-identical to C for valid pointers, but `copy_nonoverlapping` carries
-debug-profile precondition assertions that convert a NULL argument into a Rust
-panic (SIGABRT), whereas the C `memcpy` faults with SIGSEGV — a divergence in
-the *fault mode* that only appears in the `dev` profile. Both copies in the
-translation now call libc `memcpy` directly, matching the C source
-instruction-for-instruction and matching its fault mode in **both** profiles.
-Verified by `err12_copy_data_block_has_no_null_check`, which forks a child per
-implementation and compares the termination signal.
+All non-libc undefined symbols must be empty. Rust imports only libc/libm:
+`printf`, `sqrt`, `memcpy`, plus the usual glibc/`unwind` boilerplate.
+The C `.so` imports `printf`, `sqrt`, `strncpy`, `memcpy`. No non-libc
+undefined symbols on either side.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only
-build configuration is the default one. There are no additional
-`--no-default-features --features <combo>` permutations to verify; the
-automation script `check_features.sh` enumerates the `[features]` table
-mechanically, confirms it is empty, and then runs cargo check + build + symbol
-diff + the full differential suite for the single resulting configuration.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+build configuration is the default one. `cargo test --no-default-features`
+is therefore equivalent to `cargo test`; both are exercised in Phase D.
 
-Because the C library is built at `-O0` (no `CMAKE_BUILD_TYPE`) while the Rust
-`cdylib` ships at `-O3`, the suite is additionally run against the `dev`-profile
-Rust `.so` (`RUST_SO=target/debug/liboverunder_lib.so cargo test --release`),
-which enables Rust's arithmetic-overflow checks and disables LLVM optimization.
-Both profiles pass all 53 tests.
+## Binary executable
+
+`CMakeLists.txt` builds only `add_library(... SHARED ...)` — there is no
+driver executable, and `Cargo.toml` declares only `crate-type = ["cdylib"]`
+with no `[[bin]]`. The "compare binary stdout" gate is therefore N/A;
+stdout is instead compared by capturing the libraries' `printf` output
+through a redirected `fd 1` in the differential tests.
+
+## Verification (run `./verify.sh` from the crate root)
+
+```
+=== 1. symbol parity (nm -D --defined-only) ===
+C exports:    5
+Rust exports: 5
+PASS  0 C symbols missing from the Rust .so
+
+=== 2. undefined non-libc symbols in the Rust .so ===
+PASS  no unexpected undefined symbols (only libc/libm/CRT)
+```
+
+The Rust `.so` additionally imports `putchar` — LLVM lowers the
+`printf("\n")` call site to `putchar('\n')`. This is an optimization of an
+identical write; the byte-exact stdout comparison in Phase B confirms the
+output is unchanged.
+
+No symbol was ever stubbed: all five implementations are real translations of
+`c_src/src/lib.c`, which is the only C source file in `CMakeLists.txt`.

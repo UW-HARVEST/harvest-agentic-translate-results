@@ -1,32 +1,31 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
 Source command:
 
-```text
-nm -D --defined-only ../c_src/build/libharvest-work-exQmBS.so
+```sh
+nm -D --defined-only ../c_src/build/libharvest-work-3isVJH.so
 ```
 
-| C symbol | Rust export | Status |
-|----------|-------------|--------|
-| `arr_push` | `arr_push` | [x] |
-| `stbds_arrfreef` | `stbds_arrfreef` | [x] |
-| `stbds_arrgrowf` | `stbds_arrgrowf` | [x] |
-| `stbds_hash_bytes` | `stbds_hash_bytes` | [x] |
-| `stbds_hash_string` | `stbds_hash_string` | [x] |
-| `stbds_hmdel_key` | `stbds_hmdel_key` | [x] |
-| `stbds_hmfree_func` | `stbds_hmfree_func` | [x] |
-| `stbds_hmget_key` | `stbds_hmget_key` | [x] |
-| `stbds_hmget_key_ts` | `stbds_hmget_key_ts` | [x] |
-| `stbds_hmput_default` | `stbds_hmput_default` | [x] |
-| `stbds_hmput_key` | `stbds_hmput_key` | [x] |
-| `stbds_rand_seed` | `stbds_rand_seed` | [x] |
-| `stbds_shmode_func` | `stbds_shmode_func` | [x] |
-| `stbds_stralloc` | `stbds_stralloc` | [x] |
-| `stbds_strreset` | `stbds_strreset` | [x] |
-| `strkey` | `strkey` | [x] |
+Only defined dynamic symbols are listed; toolchain/runtime imports are excluded.
 
-Missing C symbols in Rust: **0**.
+| # | C symbol | Rust export |
+|---|----------|-------------|
+| 1 | `arr_push` | [x] |
+| 2 | `stbds_arrfreef` | [x] |
+| 3 | `stbds_arrgrowf` | [x] |
+| 4 | `stbds_hash_bytes` | [x] |
+| 5 | `stbds_hash_string` | [x] |
+| 6 | `stbds_hmdel_key` | [x] |
+| 7 | `stbds_hmfree_func` | [x] |
+| 8 | `stbds_hmget_key` | [x] |
+| 9 | `stbds_hmget_key_ts` | [x] |
+| 10 | `stbds_hmput_default` | [x] |
+| 11 | `stbds_hmput_key` | [x] |
+| 12 | `stbds_rand_seed` | [x] |
+| 13 | `stbds_shmode_func` | [x] |
+| 14 | `stbds_stralloc` | [x] |
+| 15 | `stbds_strreset` | [x] |
+| 16 | `strkey` | [x] |
 
-`stbds_unit_tests` is declared `extern` in the C source but has no definition
-and is not present in the C dynamic symbol table, so it is not part of the
-shared-library ABI.
+Missing from Rust: none.
+

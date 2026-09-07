@@ -1,34 +1,28 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Derived with:
+Mechanically derived from:
 
-```sh
-nm -D --defined-only ../c_src/build/libharvest-work-R81tG0.so
-nm -D --defined-only target/release/libmathop_lib.so
+```text
+nm -D --defined-only --format=posix ../c_src/build/libharvest-work-phwjKh.so
+nm -D --defined-only --format=posix target/release/libmathop_lib.so
 ```
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `add_operation` | `T` | `add_operation` | present |
-| `allocate_results` | `T` | `allocate_results` | present |
-| `divide_operation` | `T` | `divide_operation` | present |
-| `get_computation_timestamp` | `T` | `get_computation_timestamp` | present |
-| `get_operation_priority` | `T` | `get_operation_priority` | present |
-| `is_valid_operation` | `T` | `is_valid_operation` | present |
-| `mathop` | `T` | `mathop` | present |
-| `modulo_operation` | `T` | `modulo_operation` | present |
-| `multiply_operation` | `T` | `multiply_operation` | present |
-| `perform_computation_with_history` | `T` | `perform_computation_with_history` | present |
-| `select_operation` | `T` | `select_operation` | present |
-| `subtract_operation` | `T` | `subtract_operation` | present |
+The C library exports 12 public functions. The Rust library exports all 12
+under the same unmangled names.
 
-The C library's strong undefined symbols are the libc functions `calloc`,
-`printf`, and `time`. The Rust library resolves the same three functions
-through libc. There are no missing C-defined symbols.
+| # | C symbol | Rust symbol present |
+|---|----------|---------------------|
+| 1 | `add_operation` | [x] |
+| 2 | `allocate_results` | [x] |
+| 3 | `divide_operation` | [x] |
+| 4 | `get_computation_timestamp` | [x] |
+| 5 | `get_operation_priority` | [x] |
+| 6 | `is_valid_operation` | [x] |
+| 7 | `mathop` | [x] |
+| 8 | `modulo_operation` | [x] |
+| 9 | `multiply_operation` | [x] |
+| 10 | `perform_computation_with_history` | [x] |
+| 11 | `select_operation` | [x] |
+| 12 | `subtract_operation` | [x] |
 
-## Completion Gate
-
-- [x] All 12 C-defined dynamic symbols are defined by the Rust shared object.
-- [x] No C API symbol is undefined by the Rust shared object.
-- [x] `ldd -r` reports no unresolved Rust relocations.
-- [x] Symbol parity holds for the default and no-default-feature builds.
+Missing C symbols in Rust: **0**.

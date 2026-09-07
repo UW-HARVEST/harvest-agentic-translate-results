@@ -1,96 +1,120 @@
-# CONFIGS.md — Phase A configuration-surface table
+# CONFIGS.md — Phase A: configuration-surface table
 
-Derived **mechanically** from the C source, headers and `CMakeLists.txt`.
+Mechanically derived from `c_src/src/driver.c`, `c_src/include/driver.h` and
+`c_src/CMakeLists.txt`.
 
 ## Axes the C code actually distinguishes
 
-**Runtime options / modes / flags:** *none.* The public header declares one
-function and no state, no context struct, no init/config call, no globals, no
-`#ifdef` other than the header guard. `grep` for `if`/`switch`/`#if` finds zero
-real branches (see `ERRORS.md`). So there is exactly **one** mode.
+**Runtime options / modes / flags:** none. Grepping the public header and the
+source for `if`, `switch`, `#ifdef`, `#if`, and any setter/global yields nothing
+— there is no configuration state, no global variable, no init/teardown, and no
+flag argument anywhere. `driver.h` declares a single function.
 
-**Public entry points (the FULL set, including the lowest level):**
+```
+$ grep -nE '#if|#ifdef|switch|if *\(|static|extern|global' c_src/src/driver.c
+(nothing outside the include guard / license header)
+```
 
-| entry point | exported? | declared in `driver.h`? | role |
-|-------------|-----------|-------------------------|------|
-| `printHexCharLine(char)` | yes (`nm -D` → `T`) | **no** — header-private but ABI-public | the low-level formatter/printer |
-| `driver(char)` | yes (`nm -D` → `T`) | yes | the convenience wrapper: `data + 1` then calls the low-level one |
+**Public entry points (full set, including the lowest level):**
 
-`driver` is the one-shot wrapper; `printHexCharLine` is the lowest-level entry
-point and is therefore tested **directly**, not only through `driver`.
+| entry point | declared in header? | exported from `.so`? | level |
+|---|---|---|---|
+| `printHexCharLine(char)` | no | **yes** (`T`) | lowest level — the formatting primitive |
+| `driver(char)` | yes | yes (`T`) | one-shot wrapper: `printHexCharLine(data + 1)` |
 
-**Input shapes the code effectively special-cases** (via the `char`→`int`
-promotion and the `%02x` conversion, which is where all value-dependent
-behaviour lives):
+Both are exercised **directly** below; `driver` is not used as a proxy for
+`printHexCharLine`.
 
-* S1 `charHex == 0` — `%02x` pads both digits → `00`
-* S2 `0x01..0x0f` — one significant digit, `%02x` pads one → `0f`
-* S3 `0x10..0x7f` — exactly two digits, no padding → `7f`
-* S4 `0x80..0xff` (negative signed `char`) — sign-extends to negative `int`,
-  `%x` reinterprets as `unsigned` → **eight** digits, `ffffff80`…`ffffffff`
-* S5 the `0x7f`/`0x80` transition — signed-overflow boundary of `data + 1`
-* S6 the `0xff`→`0x00` transition — wrap-around boundary of `data + 1`
-* S7 exhaustive: **all 256** bit patterns (the domain is finite, so the
-  cross-product can be covered exhaustively, not just sampled)
-* S8 ABI shape: value delivered in a full 32-bit register with non-zero upper
-  bits (caller-declared-as-`int`), which the callee truncates
-* S9 call *sequence* / repetition shape: many calls in a row, so that stdio
-  buffering, output interleaving and ordering across the two `.so`s are
-  compared, not just a single isolated call
-* S10 byte-order / width: not applicable — the only datum is 1 byte wide, so
-  there is no endianness axis (documented here for completeness)
+**Input shapes the code / ABI special-cases** (the only argument is one `char`):
 
-## Configuration surface (cross-product, pruned to what C distinguishes)
+* `A1` element type / width: exactly one 8-bit `char`; on the x86-64 Linux
+  target `char` is **signed**, so the promotion in the `printf` call is a *sign*
+  extension. This is the single most behaviour-defining axis.
+* `A2` sign of the value: non-negative (`0x00`–`0x7f`) → 2 hex digits, vs.
+  negative (`0x80`–`0xff`) → 8 hex digits after sign extension.
+* `A3` magnitude vs. the `%02x` zero-pad width: value `< 0x10` (1 significant
+  digit → padded to `00`..`0f`) vs. `>= 0x10` (no padding).
+* `A4` boundary values: `0x00`, `0x0f`/`0x10` (pad boundary), `0x7f`/`0x80`
+  (sign boundary), `0xfe`, `0xff`.
+* `A5` for `driver` only: whether `data + 1` overflows `char` (`data == 0x7f`),
+  crosses the sign boundary downward (`data == 0xff` → `0x00`), or crosses the
+  pad boundary (`data == 0x0f` → `0x10`).
+* `A6` ABI over-wide argument: the caller pushes a full register; passing an
+  `int` outside `[-128,127]` (`0x100`, `0x1ff`, `-1000`, `INT_MIN`, `INT_MAX`)
+  exercises whether the callee truncates to 8 bits identically in C and Rust.
+* `A7` call count / sequencing: one call vs. many calls vs. **interleaved** C and
+  Rust calls sharing the process's `stdout` — the only observable state in the
+  whole library is stdio buffering, so ordering/flush behaviour is an axis.
+* `A8` output destination shape: `stdout` connected to a regular file / pipe
+  (fully buffered, the mode used by the harness) — the format string ends in
+  `\n` but `printf` does not force a flush when `stdout` is not a tty, so the
+  test must `fflush` and compare captured bytes.
 
-Every row is exercised against **both** `.so`s via `libloading`, with
-randomized inputs (fixed seed `0x5EED_D1FF`) inside the row's value class in
-addition to the listed boundary values.
+Cross-product pruned to the combinations the code actually distinguishes:
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `printHexCharLine` | S1: `charHex = 0` — double zero padding | [x] |
-| 2 | `printHexCharLine` | S2: `charHex` random in `0x01..=0x0f` — single zero padding | [x] |
-| 3 | `printHexCharLine` | S3: `charHex` random in `0x10..=0x7f` — no padding, two digits | [x] |
-| 4 | `printHexCharLine` | S4: `charHex` random in `0x80..=0xff` — negative, sign-extended, eight digits | [x] |
-| 5 | `printHexCharLine` | S3/S4 boundary pair: `0x7f` then `0x80` | [x] |
-| 6 | `printHexCharLine` | S7: exhaustive sweep over all 256 bit patterns, one call per capture | [x] |
-| 7 | `printHexCharLine` | S8: symbol re-declared as `fn(c_int)`, random full-width 32-bit values incl. `i32::MIN`, `i32::MAX`, `0x1234_5678`, `256`, `-1` | [x] |
-| 8 | `printHexCharLine` | S9: 256 calls in one capture (exhaustive, ascending) — ordering + buffering | [x] |
-| 9 | `printHexCharLine` | S9: 1000 randomized calls in one capture — bulk interleaving | [x] |
-| 10 | `driver` | S1 input: `data = 0` → `result = 1` → `01` | [x] |
-| 11 | `driver` | S2 input: `data` random in `0x00..=0x0e` (result stays single-digit) | [x] |
-| 12 | `driver` | S3 input: `data` random in `0x0f..=0x7e` (result two digits, no wrap) | [x] |
-| 13 | `driver` | S4 input: `data` random in `0x80..=0xfe` (negative, result still negative → eight digits) | [x] |
-| 14 | `driver` | S5 boundary: `data = 0x7f` → signed-overflow narrowing → `result = -128` → `ffffff80` | [x] |
-| 15 | `driver` | S6 boundary: `data = 0xff` (`-1`) → `result = 0` → `00` | [x] |
-| 16 | `driver` | S7: exhaustive sweep over all 256 bit patterns, one call per capture | [x] |
-| 17 | `driver` | S8: symbol re-declared as `fn(c_int)`, random full-width 32-bit values incl. `i32::MIN`, `i32::MAX`, `0x1234_5678`, `256`, `-1` | [x] |
-| 18 | `driver` | S9: 256 calls in one capture (exhaustive, ascending) — ordering + buffering | [x] |
-| 19 | `driver` | S9: 1000 randomized calls in one capture — bulk interleaving | [x] |
-| 20 | `driver` + `printHexCharLine` | S9 composed pipeline: interleaved random calls to *both* entry points in a single capture, so the wrapper and the low-level function are exercised together in one output stream | [x] |
-| 21 | `driver` vs `printHexCharLine` | consistency of the composition the C performs internally: for every `d`, `driver(d)` output must equal `printHexCharLine(d.wrapping_add(1))` output, checked on both libraries | [x] |
-| 22 | both | S10: single-byte datum — no endianness/width axis; asserted by checking the captured output contains no bytes beyond the ASCII hex + `\n` set over the exhaustive sweep | [x] |
-| 23 | `driver` (→ `printHexCharLine`) | S11 **link-time/ABI axis**: `printHexCharLine` is a non-`static` global, so gcc emits `call printHexCharLine@plt` inside `driver` — an *interposable* call. Probed by a C consumer that `dlopen`s each `.so` with and without an `LD_PRELOAD`ed replacement `printHexCharLine`, for BOTH the `debug` and `release` Rust artifacts. | [x] |
+## Configuration-surface table
 
-### Row → test mapping (Phase B)
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `printHexCharLine` | `0x00` — zero, non-negative, needs zero-padding (A2+,A3<,A4) | [x] |
+| 2 | `printHexCharLine` | randomized `0x01`–`0x0f` — non-negative, 1 significant digit, zero-padded | [x] |
+| 3 | `printHexCharLine` | `0x10` — pad boundary, first value needing no padding | [x] |
+| 4 | `printHexCharLine` | randomized `0x11`–`0x7e` — non-negative, 2 digits, no padding | [x] |
+| 5 | `printHexCharLine` | `0x7f` — `CHAR_MAX`, last non-negative | [x] |
+| 6 | `printHexCharLine` | `0x80` — `CHAR_MIN`, first negative, sign-extends to `ffffff80` | [x] |
+| 7 | `printHexCharLine` | randomized `0x81`–`0xfe` — negative, sign-extended 8-digit output | [x] |
+| 8 | `printHexCharLine` | `0xff` — `-1`, sign-extends to `ffffffff` | [x] |
+| 9 | `printHexCharLine` | **exhaustive** sweep of all 256 `char` bit patterns, one call per value | [x] |
+| 10 | `driver` | `0x00` — no wrap, result `0x01`, zero-padded | [x] |
+| 11 | `driver` | randomized `0x01`–`0x0e` — result stays in `0x02`–`0x0f`, zero-padded | [x] |
+| 12 | `driver` | `0x0f` — result crosses the pad boundary to `0x10` | [x] |
+| 13 | `driver` | randomized `0x10`–`0x7d` — result non-negative, 2 digits | [x] |
+| 14 | `driver` | `0x7e` — result `0x7f` = `CHAR_MAX`, still non-negative | [x] |
+| 15 | `driver` | `0x7f` — **signed overflow of `data + 1`**, wraps to `-128`, prints `ffffff80` | [x] |
+| 16 | `driver` | `0x80` — most negative input, result `0x81`, prints `ffffff81` | [x] |
+| 17 | `driver` | randomized `0x81`–`0xfd` — negative in, negative out, 8-digit output | [x] |
+| 18 | `driver` | `0xfe` — result `-1`, prints `ffffffff` | [x] |
+| 19 | `driver` | `0xff` — result crosses the sign boundary downward to `0x00`, prints `00` | [x] |
+| 20 | `driver` | **exhaustive** sweep of all 256 `char` bit patterns, one call per value | [x] |
+| 21 | `printHexCharLine` | A6: over-wide `int` argument (`0x100`, `0x1ff`, `-1000`, `INT_MIN`, `INT_MAX`, randomized `i32`) called through an `extern "C" fn(c_int)` view of the symbol | [x] |
+| 22 | `driver` | A6: over-wide `int` argument, same set, through an `fn(c_int)` view | [x] |
+| 23 | both, interleaved | A7: long randomized sequence alternating `driver` and `printHexCharLine` on the same library, comparing the whole concatenated stdout stream in one capture | [x] |
+| 24 | both, interleaved | A7+A8: C and Rust calls interleaved 1:1 within a single captured stdout region, asserting the two streams are byte-identical line-for-line and that neither library flushes differently | [x] |
+| 25 | `driver` then `printHexCharLine` | A7: composed pipeline — `driver(x)` must equal `printHexCharLine(x+1)` in **both** libraries (cross-library composition check, randomized) | [x] |
+| 26 | both | A8: repeated calls with no intervening flush (buffered `stdout` to a pipe), flushed once at the end — verifies identical byte stream, not just identical per-call text | [x] |
 
-Rows 1–22 are `cfg_row01_…` … `cfg_row22_…` in
-`translation/tests/phase_b_configs.rs` (one test per row, same numbering).
-Row 23 is `sym_internal_call_is_interposable_like_the_c` in
-`translation/tests/phase_d_symbols.rs`, because it needs an out-of-process
-consumer and therefore lives with the other ABI-level checks.
+## Divergence found and fixed by this table
 
-### Note on axis S11
+**Row 21** (`printHexCharLine` with an over-wide `int`) failed — but **only in the
+`--release` profile**:
 
-This axis is not a runtime *option*, but it is a configuration the C code
-genuinely branches on at the link level, and it turned up a real divergence —
-see "Divergence found and fixed" in `SYMBOLS.md`. It is the reason the test
-suite is run against every built profile rather than just the one matching the
-test binary.
+```
+printHexCharLine(128i32 / 0x00000080): C printed "ffffff80\n" but Rust printed "80\n"
+```
 
-## Feature combinations
+Cause: GCC re-narrows the incoming argument register in the prologue —
 
-`Cargo.toml` has **no `[features]` section**, so `default`, `--all-features`
-and `--no-default-features` all compile the identical crate. Rows above are
-therefore complete for every feature combination; the runner script
-`run_all.sh` still executes all three explicitly.
+```
+printHexCharLine:
+    mov    %edi,%eax
+    mov    %al,-0x4(%rbp)      ; keep only the low 8 bits
+    movsbl -0x4(%rbp),%eax     ; sign-extend them back to int
+```
+
+— so the C callee ignores bits 8..31. Rust's `extern "C" fn(c_char)` lowers the
+parameter with LLVM's `signext i8` attribute, which lets an optimised build
+*assume* the caller already sign-extended and forward `%edi` unchanged. At `-O0`
+the truncation happened incidentally, which is why the debug profile passed and
+only the release profile exposed the bug.
+
+Fix (`translation/src/lib.rs`): both exports now take `c_int` and narrow
+explicitly with `as u8 as c_char`, reproducing GCC's `mov %al` + `movsbl`. The
+release codegen is now byte-level, matching the C:
+
+```
+driver:            inc %dil ; movsbl %dil,%esi ; ... jmp printf
+printHexCharLine:  movsbl %dil,%esi ; ... jmp printf
+```
+
+All 26 rows pass in **both** profiles after the fix; reverting the fix makes
+row 21 fail again in release (verified).

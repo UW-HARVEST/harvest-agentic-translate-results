@@ -1,75 +1,56 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — Phase A error-surface table
 
-Derived mechanically from the C source, not from docs or assumptions.
+Mechanically derived from the complete C source (`c_src/src/driver.c`,
+`c_src/include/driver.h`). The greps used, and their results:
 
-## Mechanical extraction
+| grep over `c_src/src` + `c_src/include`        | hits |
+|------------------------------------------------|------|
+| `return`                                       | 0    |
+| `assert`                                       | 0    |
+| `NULL`                                         | 0    |
+| `err\|fail\|invalid\|exit\|abort` (-i)         | 0    |
+| `if\|switch\|#if\|#ifdef\|?`                   | 1 — only the `#ifndef DRIVER_H_` include guard |
+| `MIN\|MAX\|limits`                             | 0    |
+| `enum`, `struct`, `typedef`                    | 0    |
 
-```sh
-grep -nE 'return|assert|NULL|errno|exit\(|if *\(|switch|#if|==|!=|-1|RETURN_ERROR' \
-     c_src/src/driver.c c_src/include/driver.h
-```
+So the library contains **no error-return macro, no `return` statement of any
+kind (both functions are `void`), no sentinel value, no `assert`, no range
+check, no null check, no error enum, and no min/max constant.** The only
+conditional in the entire library is the `i < len` loop bound of the
+`for` loop in `print_hex`, with `len` hard-wired by the caller to
+`sizeof(int)`.
 
-Output (after dropping the license comment block and the header guard):
+Consequently the error-surface table below has **zero rows derived from the C's
+own rejection logic**. The rows that follow are the generic FFI-boundary
+boundaries the task mandates be covered even when absent from the table; each
+one states what the C *actually* does (never rejects — it always prints
+`sizeof(int)` hex bytes and a newline) so the Rust must do the same rather than
+panicking, aborting, or returning early.
 
-```
-c_src/src/driver.c:29:    for (int i = 0; i < len; i++) {
-c_src/include/driver.h:24:#ifndef DRIVER_H_
-```
+| #  | function      | trigger (the exact invalid input/condition)                                            | expected C result |
+|----|---------------|----------------------------------------------------------------------------------------|-------------------|
+| E1 | `driver`      | `x = INT_MIN` (`-2147483648`), i.e. one step past the negative end of the value range   | no rejection: prints `00000080` (LE), newline; returns void |
+| E2 | `driver`      | `x = INT_MAX` (`2147483647`), one step past which `int` would overflow                 | no rejection: prints `ffffff7f`, newline |
+| E3 | `driver`      | `x = -1` — every object byte is `0xFF`, i.e. all bits set / "all-ones sentinel"         | no rejection: prints `ffffffff`, newline |
+| E4 | `driver`      | `x = 0` — the "zero length / zero value" boundary                                       | no rejection: prints `00000000`, newline |
+| E5 | `driver`      | object byte `>= 0x80` in any position (e.g. `0x80808080`) — the sign-extension trap: `%02x` receives the byte *promoted from `unsigned char`*, so it must NOT become `ffffff80` | prints exactly two hex digits per byte, e.g. `80808080`, newline |
+| E6 | `driver`      | out-of-range value for the parameter's type: an out-of-range *enum-style* int is impossible (the API declares no enum), so the analogous case is a **too-wide argument** — call through the signature `extern "C" fn(u64)` so the 64-bit register carries garbage in bits 32..63 (`0xDEADBEEF_00000001`) | ABI truncation: only the low 32 bits are read; identical output to `driver(1)` |
+| E7 | `driver`      | out-of-range value, wider *signed* form: call through `extern "C" fn(i64)` with `i64::MIN` | ABI truncation to `0x00000000`; identical output to `driver(0)` |
+| E8 | `driver`      | null pointer / oversized length: **not reachable.** `driver` takes no pointer and no length; `print_hex`'s `p` is always `&x` (never null) and `len` is always `sizeof(int)` (never 0, never oversized). No test can construct this through the public ABI. | N/A — documented as unreachable, not stubbed |
+| E9 | `driver`      | repeated invocation without an intervening flush (state-corruption / buffering boundary): 1000 back-to-back calls | 1000 lines, no separator, no truncation, no extra bytes |
 
-That is the **complete** set of conditional constructs in the library.
+Every reachable row (E1–E7, E9) has a differential test in
+`translation/tests/differential.rs`; E8 is proven unreachable from the public
+ABI by inspection of the C source above rather than by a test.
 
-Therefore the following are all genuinely ABSENT from this C library:
+## Row status
 
-| construct searched for | occurrences |
-|------------------------|-------------|
-| `return <error>` / `return -1` / `return NULL` | 0 (both functions are `void`) |
-| `RETURN_ERROR`-style macro | 0 |
-| `assert` / `NDEBUG` | 0 |
-| error enum / status code type | 0 |
-| explicit range check on a parameter | 0 |
-| null-pointer check | 0 |
-| min/max constant, magic limit | 0 |
-| `errno` use, `exit()`, `abort()` | 0 |
-| `switch` / `#ifdef` behaviour toggle | 0 |
-
-`driver` takes a single `int` by value and returns `void`. **Every** `int`
-bit pattern is a valid input; the function has no way to reject anything and no
-channel (return value, out-param, errno) on which to report a rejection. So the
-error-surface table has no rejection rows.
-
-## Error-surface table
-
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
-| — | `driver` | *(none — no rejection path exists in the C source)* | n/a |
-
-## Generic-boundary rows tested anyway
-
-The task requires covering the boundaries every C API has even when the table is
-empty. These are the ones that are *expressible* for this ABI
-(`void driver(int)`), so each gets a differential test. "Expected C result" is
-whatever the C `.so` actually does — the tests assert Rust matches it, they do
-not assert a guessed value.
-
-| # | function | trigger | expected C result | test |
-|---|----------|---------|-------------------|------|
-| E1 | `driver` | `x = 0` (zero / all-bytes-zero) | prints `00000000\n`; no error | `err_zero` |
-| E2 | `driver` | `x = INT_MAX` (`0x7fffffff`, one below overflow) | prints LE object repr `ffffff7f\n` | `err_int_max` |
-| E3 | `driver` | `x = INT_MIN` (`0x80000000`, most negative) | prints `00000080\n` | `err_int_min` |
-| E4 | `driver` | `x = -1` (all bits set) | prints `ffffffff\n` | `err_minus_one` |
-| E5 | `driver` | `x = INT_MAX` + 1 step past the range, i.e. the wrapped value `INT_MIN` reached via `(int)0x80000000u` | identical to E3 — C `int` has no trap repr | `err_one_past_int_max` |
-| E6 | `driver` | `x = INT_MIN` - 1 step, i.e. `(int)0x7fffffffu` reached by wrapping | identical to E2 | `err_one_before_int_min` |
-| E7 | `driver` | out-of-range "enum" value: an `int` with no valid variant in any enum. There is no enum parameter in this API, so the closest real input is an arbitrary sentinel-looking `int` (`0xdeadbeef`, `-999999`, `0x7f7f7f7f`) passed where a caller might pass a bogus enum | prints the object representation; no validation, no rejection | `err_bogus_enum_like_values` |
-| E8 | `driver` | 64-bit garbage in the upper half of the argument register (caller passes a value wider than `int`; the C ABI says only the low 32 bits are significant) | upper bits ignored; same output as the low 32 bits alone | `err_dirty_upper_register_bits` |
-| E9 | `driver` | called repeatedly / re-entrantly many times in a row (no state to corrupt, but verifies no hidden static buffer) | each call independent, output is the concatenation | `err_repeated_calls_no_state` |
-
-Null-pointer and zero/oversized-length rows are **not expressible**: `driver`
-has no pointer parameter and no length parameter. The only length in the library
-is `sizeof(x)` — a compile-time constant `4` passed to the `static` `print_hex`,
-which is unreachable from outside the `.so` (confirmed absent from `nm -D`).
-Test `err_no_pointer_or_length_params_reachable` asserts that inexpressibility
-by checking `print_hex` is not loadable from either `.so`.
-
-## Completion gate item
-
-- [x] EVERY row above has a passing error-path differential test.
+- [x] E1 — `err_e1_int_min`
+- [x] E2 — `err_e2_int_max`
+- [x] E3 — `err_e3_minus_one_all_ones`
+- [x] E4 — `err_e4_zero`
+- [x] E5 — `err_e5_high_bit_bytes_no_sign_extension`
+- [x] E6 — `err_e6_oversized_unsigned_arg_abi_truncation`
+- [x] E7 — `err_e7_oversized_signed_arg_abi_truncation`
+- [x] E8 — unreachable by construction (no pointer/length in the public ABI)
+- [x] E9 — `err_e9_repeated_calls_no_state_corruption`

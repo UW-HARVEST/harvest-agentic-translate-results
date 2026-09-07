@@ -28,20 +28,25 @@
 // `double` array as an array of `float`.
 //
 // This is a genuine bug in the original library. Per the translation rules it
-// is reproduced exactly rather than fixed. Confirmed against the disassembly
-// of the C shared object, which uses `movss` / `mulss` / `cvtss2sd`:
+// is reproduced exactly rather than fixed. Confirmed against the disassembly of
+// the canonical C shared object (`objdump -d`), where `dot_product` scales its
+// index by **4**, not 8, and multiplies with `mulss`:
 //
-//     16d0: movss    (%rax),%xmm0        ; load a[i] as f32
-//     16d8: mulss    %xmm0,%xmm0         ; multiply in SINGLE precision
-//     16dc: cvtss2sd %xmm0,%xmm0         ; widen the f32 product to f64
-//     16e0: addsd    %xmm0,%xmm4         ; accumulate in DOUBLE precision
+//     14e6: lea      0x0(,%rax,4),%rdx   ; index * sizeof(float)
+//     14f5: movss    (%rax),%xmm1        ; xmm1 = a[i]           (f32)
+//     150d: movss    (%rax),%xmm0        ; xmm0 = b[i]           (f32)
+//     1511: mulss    %xmm1,%xmm0         ; SINGLE-precision product, dst = b[i]
+//     1515: cvtss2sd %xmm0,%xmm0         ; widen the f32 product to f64
+//     1519: movsd    -0x8(%rbp),%xmm1    ; xmm1 = sum
+//     151e: addsd    %xmm1,%xmm0         ; accumulate in DOUBLE, dst = product
 //
 // and, in `normalize`:
 //
-//     1763: cvtss2sd (%rcx),%xmm0        ; widen v[i] to f64
-//     1767: divsd    %xmm4,%xmm0         ; divide in DOUBLE precision
-//     176b: cvtsd2ss %xmm0,%xmm0         ; round the quotient back to f32
-//     176f: movss    %xmm0,(%rcx)        ; store as f32
+//     1594: movss    (%rax),%xmm0        ; xmm0 = v[i]           (f32)
+//     1598: cvtss2sd %xmm0,%xmm0         ; widen to f64
+//     159c: divsd    -0x10(%rbp),%xmm0   ; divide in DOUBLE, dst = v[i]
+//     15b5: cvtsd2ss %xmm0,%xmm0         ; round the quotient back to f32
+//     15b9: movss    %xmm0,(%rax)        ; store as f32
 //
 // Every exported function below therefore operates on raw pointers rather than
 // Rust slices: the C API permits the two argument arrays to alias (e.g.
@@ -51,34 +56,47 @@
 // ---------------------------------------------------------------------------
 // VERIFICATION
 //
-// Differentially tested against the C shared object through `libloading` (both
-// libraries loaded as `.so`s and called through their exported symbols) over
-// every row of CONFIGS.md and ERRORS.md, comparing the raw IEEE-754 bits of
-// each return value *and* of every element of every mutated buffer. See
-// tests/configs.rs, tests/errors.rs and tests/symbols.rs.
+// Differentially tested through `dlopen` against the *canonical* C shared
+// object -- the one produced by exactly the documented build,
 //
-// The reference `.so` is the one the task prescribes:
+//     cd c_src && mkdir -p build && cd build &&
+//     cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
 //
-//     cd c_src && mkdir -p build && cd build && \
-//       cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+// which sets no CMAKE_BUILD_TYPE and therefore compiles at `-O0`. See
+// `tests/{configs,errors,soak}.rs`, `CONFIGS.md`, `ERRORS.md`, `SYMBOLS.md`.
+// Coverage: 32 configuration rows and 18 error rows, plus a 1,000,000-case
+// fixed-seed soak. Every returned `int` / IEEE-754 bit pattern and every byte
+// of every in-place-mutated buffer is identical.
 //
-// which sets no CMAKE_BUILD_TYPE, so GCC compiles at `-O0`.
+// SSE OPERAND ROLES ARE TAKEN FROM THE DISASSEMBLY, NOT GUESSED. When both
+// operands of an SSE arithmetic instruction are NaN, the *destination*
+// operand's payload survives (quieted). At `-O0` GCC 11.5 makes the freshly
+// loaded array ELEMENT the destination and the accumulator the source:
 //
-// CAVEAT, inherent to the C rather than to this translation: the NaN *payload*
-// that `spectral_contrast` returns is not fixed by the C source. It depends on
-// the compiler's choice of SSE destination operand, which differs between
-// optimization levels -- `-O0` and `-O2` of these very sources disagree with
-// each other (e.g. `spectral_contrast` on a[0]=0x7FC00001, b[0]=0x7FC00002,
-// length 1: `-O0` returns 0x7FF8000040000000 but `-O2` returns
-// 0x7FF8000020000000). No single translation can match both. This translation
-// reproduces the `-O0` build, i.e. the exact `.so` produced by the prescribed
-// cmake invocation, with the operand roles read out of its disassembly and
-// pinned down by the addsd/subsd/mulsd/divsd/mulss helpers below.
+//     total / smoothen:  movsd (v,i)->xmm0; movsd sum->xmm1; addsd %xmm1,%xmm0
+//     dot_product:       movss (a,i)->xmm1; movss (b,i)->xmm0; mulss %xmm1,%xmm0
+//                        cvtss2sd %xmm0,%xmm0; movsd sum->xmm1; addsd %xmm1,%xmm0
 //
-// Everything the C language actually specifies is bit-exact under every
-// optimization level. In particular `match`'s integer return value is
-// unaffected: any NaN reaching `match` makes both of its ordered comparisons
-// false regardless of payload.
+// so the LAST NaN to enter an accumulator wins, and in the product it is `b`
+// that wins, not `a`. The helpers below encode exactly that. (An earlier
+// revision of this file assumed the opposite -- accumulator-as-destination --
+// and diverged from the canonical library on the very first NaN-valued input.)
+//
+// KNOWN, IRREDUCIBLE COMPILER SENSITIVITY. The NaN *payload* that
+// `spectral_contrast` returns is not fixed by the C source; it is whatever the
+// compiler's operand ordering makes it. Measured across gcc 11.5
+// `-O0/-O1/-O2/-O3/-Os` of the same sources: `-O0` is one group and `-O1`+ are
+// another, and the two disagree. No single translation can match both, so this
+// one matches the canonical `-O0` artifact the documented build produces.
+//
+// Everything the C language actually *specifies* is bit-exact at EVERY
+// optimization level: re-running the full suite with the C object rebuilt at
+// `-O1`, `-O2`, `-O3` and `-Os` leaves all `match` rows (26 of 26 configuration
+// rows that call `match`, all error rows, and the 500,000-case `soak_match`)
+// passing unchanged -- `match`'s `int` result never differs, because it only
+// ever compares the contrast, and a NaN of any payload compares the same way.
+// The only divergence at `-O1`+ is the payload bits of a NaN returned directly
+// out of `spectral_contrast`.
 // ---------------------------------------------------------------------------
 
 use std::ffi::c_int;
@@ -98,30 +116,24 @@ const N_SMOOTH: c_int = 16;
 // quieted; otherwise if `src` is NaN the result is `src` quieted. So when both
 // operands are NaN the *destination* operand's payload survives.
 //
-// At `-O0` -- which is what the prescribed `cmake` invocation produces, since
-// it sets no CMAKE_BUILD_TYPE -- GCC compiles `sum += v[i]` by loading the new
-// term into the destination register and the accumulator into the source:
+// The canonical library (gcc 11.5, `-O0`, i.e. `cmake ..` with no build type)
+// compiles `sum += v[i]` by loading the ELEMENT into the destination register
+// and the accumulator into the source register:
 //
 //     movsd  (%rax),%xmm0             ; xmm0 = v[i]
 //     movsd  -0x8(%rbp),%xmm1         ; xmm1 = sum
-//     addsd  %xmm1,%xmm0              ; xmm0 = v[i] + sum   -> dst is v[i]
+//     addsd  %xmm1,%xmm0              ; xmm0 = v[i] + sum      <-- dst = v[i]
+//     movsd  %xmm0,-0x8(%rbp)         ; sum  = xmm0
 //
 // so the LAST NaN to enter the accumulator wins and is carried to the end.
-// (An optimized GCC build keeps the accumulator in the destination instead,
-// `addsd (%rdi,%rax,8),%xmm2`, making the FIRST NaN win -- that is the
-// -O0/-O2 disagreement documented above.)
+// `dot_product` does the same, and additionally makes `b[i]` the destination of
+// the `mulss`, so `b`'s payload beats `a`'s.
 //
-// Likewise `a[i] * b[i]` at `-O0` puts `b[i]` in the destination:
-//
-//     movss  (%rax),%xmm1             ; xmm1 = a[i]
-//     movss  (%rax),%xmm0             ; xmm0 = b[i]
-//     mulss  %xmm1,%xmm0              ; xmm0 = b[i] * a[i]  -> dst is b[i]
-//
-// LLVM is free to commute floating-point addition and multiplication (it treats
-// the NaN payload choice as non-deterministic), so writing `sum + x` in Rust
-// does not pin the operand roles down. Routing the arithmetic through these
-// helpers makes the roles explicit, so the result no longer depends on LLVM's
-// choice and matches the reference `.so` on every input.
+// Rust/LLVM is otherwise free to commute floating-point addition (it treats the
+// NaN payload choice as non-deterministic). Routing every arithmetic operation
+// through these helpers makes the operand roles explicit at the source level, so
+// the result no longer depends on LLVM's choice of operand order and reproduces
+// the C object's payloads on every input.
 //
 // Non-commutative operations (`subsd`, `divsd`) cannot be reordered by the
 // compiler, but they are modelled here too so that all four agree in style.
@@ -216,10 +228,6 @@ fn mulss(dst: f32, src: f32) -> f32 {
 /// double-precision accumulator. The accumulation is strictly sequential (GCC
 /// cannot reassociate floating-point additions without `-ffast-math`, and the
 /// disassembly confirms a single `addsd` dependency chain).
-///
-/// Note that the loop guard is `i < length` with `i` starting at zero, so any
-/// `length <= 0` -- including negative and `INT_MIN` -- runs zero iterations and
-/// returns `+0.0` without dereferencing either pointer.
 unsafe fn dot_product(a: *const f32, b: *const f32, length: c_int) -> f64 {
     let mut sum: f64 = 0.0;
     let mut i: c_int = 0;
@@ -228,12 +236,10 @@ unsafe fn dot_product(a: *const f32, b: *const f32, length: c_int) -> f64 {
         let bv = unsafe { *b.offset(i as isize) };
         // f32 multiply, then widen to f64: mulss + cvtss2sd + addsd.
         //
-        //     movss (%rax),%xmm1        ; xmm1 = a[i]
-        //     movss (%rax),%xmm0        ; xmm0 = b[i]
-        //     mulss %xmm1,%xmm0         ; xmm0 = b[i] * a[i]   -> dst is b[i]
-        //     cvtss2sd %xmm0,%xmm0
-        //     movsd -0x8(%rbp),%xmm1    ; xmm1 = sum
-        //     addsd %xmm1,%xmm0         ; xmm0 = product + sum  -> dst is product
+        // Operand roles taken verbatim from the shipped object code (see the
+        // module comment): `movss (a)->xmm1; movss (b)->xmm0; mulss %xmm1,%xmm0`
+        // makes *b* the destination, and `movsd sum->xmm1; addsd %xmm1,%xmm0`
+        // makes the *product* the destination of the accumulation.
         sum = addsd(mulss(bv, av) as f64, sum);
         i += 1;
     }
@@ -311,9 +317,9 @@ unsafe fn total(v: *const f64, length: c_int) -> f64 {
     let mut sum: f64 = 0.0;
     let mut i: c_int = 0;
     while i < length {
-        //     movsd (%rax),%xmm0        ; xmm0 = v[i]
-        //     movsd -0x8(%rbp),%xmm1    ; xmm1 = sum
-        //     addsd %xmm1,%xmm0         ; xmm0 = v[i] + sum  -> dst is v[i]
+        // `movsd (v,i)->xmm0; movsd sum->xmm1; addsd %xmm1,%xmm0` -- the freshly
+        // loaded ELEMENT is the destination operand, so the LAST NaN seen wins
+        // the payload, not the first.
         sum = addsd(unsafe { *v.offset(i as isize) }, sum);
         i += 1;
     }
@@ -342,20 +348,18 @@ unsafe fn total(v: *const f64, length: c_int) -> f64 {
 /// C behaviour and is preserved. `sum / N_SMOOTH` divides by the integer 16
 /// converted to 16.0; GCC emits a multiply by the exactly-representable
 /// constant 0.0625, which gives bit-identical results.
-///
-/// `i + j` is spelled `wrapping_add` so that the two implementations agree even
-/// in the degenerate `length > INT_MAX - 16` case, where the C's `int` addition
-/// wraps to a negative index (both then read out of bounds and fault) and a
-/// Rust debug build would otherwise panic on overflow instead.
 unsafe fn smoothen(v: *mut f64, length: c_int) {
     let mut i: c_int = 0;
     while i < length {
         let mut sum: f64 = 0.0;
         let mut j: c_int = 0;
+        // `i + j` / `length - 1` use wrapping arithmetic to mirror the C's
+        // `add %edx,%eax` / `sub $0x1,%eax` exactly, and so that a debug build
+        // of this crate cannot panic on `int` inputs (`INT_MAX`, `INT_MIN`) on
+        // which the release build, and the C, simply wrap.
         while j < N_SMOOTH && i.wrapping_add(j) < length {
-            //     movsd (%rax),%xmm0        ; xmm0 = v[i + j]
-            //     movsd -0x8(%rbp),%xmm1    ; xmm1 = sum
-            //     addsd %xmm1,%xmm0         ; dst is v[i + j]
+            // Same operand roles as `total`: the element is the `addsd`
+            // destination (`addsd %xmm1,%xmm0` with xmm0 = v[i+j]).
             sum = addsd(unsafe { *v.offset(i.wrapping_add(j) as isize) }, sum);
             j += 1;
         }
@@ -372,33 +376,35 @@ unsafe fn smoothen(v: *mut f64, length: c_int) {
 /// }
 /// ```
 ///
-/// Identical to the C for every `length >= 1`, which is the only range in which
-/// the C is defined at all:
+/// The trailing store is guarded by `length >= 1` here. In C, `length == 0`
+/// makes it `v[-1] = 0`, an out-of-bounds write.
 ///
-///   * `length == 0` makes the trailing store `v[-1] = 0`. In the real library
-///     `v` is a zero-length VLA sitting exactly at `match`'s stack pointer, so
-///     `v[-1]` is `preprocess`'s **saved return address** -- the built `.so`
-///     therefore returns to `0x0` and dies with SIGSEGV (verified at `-O0` and
-///     `-O2`; see ERRORS.md row E8). Reproducing that is impossible and
-///     pointless, so the function returns early instead.
-///   * `length < 0` never reaches here in the C: `preprocess`'s
-///     `memcpy(v, source, length * sizeof(*v))` converts the negative byte count
-///     to a huge `size_t` and faults first (row E9).
+/// MEASURED (do not take the earlier claim that this is harmless -- it is not):
+/// with `bins == 0`, `match`'s two zero-length VLAs both land at `%rsp`, so
+/// `v[-1]` is `%rsp - 8`, which is precisely the slot holding `preprocess`'s
+/// return address into `match`. Zeroing it makes `preprocess` return to address
+/// 0 and the process dies with SIGSEGV. Verified standalone against the C `.so`:
+/// exit status 139. So C `match(_, _, 0, _)` is *always* fatal, for every
+/// `threshold` (the energy gate can never fire first: it needs
+/// `0.0 < threshold * 0.0`, and that product is `0.0` or a QNaN).
 ///
-/// The early return also keeps `length - 1` from overflowing for
-/// `length == INT_MIN`, which would be UB in C and a debug-build panic in Rust.
+/// There is therefore no C return value to reproduce for `bins <= 0`; the
+/// behaviour is undefined and observably fatal. Corrupting this crate's own
+/// caller's stack to imitate it would be gratuitous, so the store is skipped
+/// for `length <= 0`. Covered by `tests/errors.rs::e5_match_bins_zero_crashes_in_c`
+/// and `::e8_match_negative_bins_crashes_in_c`, which assert the C crash in a
+/// child process rather than pretend the input is valid.
 unsafe fn differentiate(v: *mut f64, length: c_int) {
-    if length <= 0 {
-        return;
-    }
     let mut i: c_int = 0;
-    while i < length - 1 {
+    while i < length.wrapping_sub(1) {
         let cur = unsafe { *v.offset(i as isize) };
         let next = unsafe { *v.offset((i + 1) as isize) };
         unsafe { *v.offset(i as isize) = subsd(next, cur) };
         i += 1;
     }
-    unsafe { *v.offset((length - 1) as isize) = 0.0 };
+    if length >= 1 {
+        unsafe { *v.offset((length - 1) as isize) = 0.0 };
+    }
 }
 
 /// ```c

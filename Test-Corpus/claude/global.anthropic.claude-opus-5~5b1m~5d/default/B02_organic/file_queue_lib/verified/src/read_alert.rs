@@ -179,11 +179,7 @@ pub unsafe extern "C" fn GetAlertData(flag: c_int, fp: *mut FILE) -> *mut alert_
                     continue;
                 }
 
-                // `z = strlen(p) - strlen(m);` -- `size_t` subtraction, which
-                // wraps in C. `m` always points inside `p` so it cannot
-                // actually underflow, but keep the wrapping semantics rather
-                // than risk a panic in an overflow-checked build.
-                z = strlen(p).wrapping_sub(strlen(m));
+                z = strlen(p) - strlen(m);
                 (*al_data).alertid = os_realloc(
                     (*al_data).alertid as *mut c_void,
                     (z + 1) * core::mem::size_of::<c_char>(),

@@ -1,25 +1,18 @@
-# Dynamic symbol surface
+# Exported Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
-
-Command used:
+Source command:
 
 ```text
 nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-The C shared object has exactly two globally defined dynamic symbols. Both are
-also present with the exact same name in `target/release/libdriver.so`.
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `driver` | `T` | `driver` | present |
+| `fma_array` | `T` | `fma_array` | present |
 
-| # | C symbol | C type | Rust symbol | Status |
-|---|----------|--------|-------------|--------|
-| 1 | `driver` | `T` | `driver` | [x] |
-| 2 | `fma_array` | `T` | `fma_array` | [x] |
+The C library's remaining dynamic-symbol entries are weak runtime hooks or
+undefined libc imports (`memcpy` and `printf`), not library exports.
 
-Undefined symbols in the C shared object are `memcpy` and `printf` plus normal
-weak ELF runtime symbols; these are libc/toolchain dependencies rather than
-library API symbols.
-
-Final Phase D verification: sorted `nm -D --defined-only` symbol names have an
-empty `comm -3` diff, and `ldd -r` reports no unresolved relocations for either
-shared object.
+- [x] Every C-defined dynamic symbol is exported by the Rust shared library.
+- [x] No C-defined dynamic symbol is missing from Rust.

@@ -1,18 +1,17 @@
-# Dynamic symbol surface
+# Exported symbol surface
 
-Generated from:
+Mechanically derived with:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-3Nv5PV.so
-nm -D --defined-only target/release/libaabb_lib.so
+nm -D --defined-only --format=posix \
+  ../c_src/build/libharvest-work-QmjZHd.so | awk '{print $1}' | sort -u
 ```
 
-The C shared object exports 38 public functions. The Rust shared object exports
-the same 38 names. `comm` over the sorted symbol-name sets reports no missing
-or extra API symbols.
+The C shared object exports 38 public symbols. The Rust status column was
+obtained from the same command against `target/release/libaabb_lib.so`.
 
-| # | C symbol | Rust export |
-|---:|----------|:-----------:|
+| # | C symbol | Rust `.so` |
+|---:|---|:---:|
 | 1 | `aabb` | [x] |
 | 2 | `c22` | [x] |
 | 3 | `c23` | [x] |
@@ -52,8 +51,5 @@ or extra API symbols.
 | 37 | `c2Witness` | [x] |
 | 38 | `c2xIdentity` | [x] |
 
-Completion checks:
+Missing C symbols in Rust: **0**.
 
-- [x] No C API symbol is missing from Rust.
-- [x] No Rust API symbol is extra relative to C.
-- [x] `ldd -r target/release/libaabb_lib.so` reports no unresolved symbol.

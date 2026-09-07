@@ -1,30 +1,18 @@
-# Error Surface
+# Error-Surface Table
 
-Mechanical source scan:
+Mechanically derived from every null/range/rejection branch in
+`c_src/src/driver.c`. The API has no error enums, error-return macros,
+assertions, lengths, or enum parameters.
 
-```sh
-rg -n 'return|assert|if|switch|case|NULL|MIN|MAX|ERROR|enum|#define|#ifdef|#if' \
-  ../c_src/include ../c_src/src
-```
+| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
+|---|----------|---------------------------------------------|-------------------|--------|
+| E1 | `printLine` | `line == NULL` | Return `void` without calling `printf`; emit zero bytes. | [x] |
+| E2 | `good` (through static `goodB2G`) | `!(fabs(data) > 0.000001)`, including `-0.000001 <= data <= 0.000001` and NaN | Emit `50\nThis would result in a divide by zero\n`; return `void`. | [x] |
+| E3 | `driver` (through `good`/static `goodB2G`) | `!(fabs(goodData) > 0.000001)`, including `-0.000001 <= goodData <= 0.000001` and NaN | Emit the normal driver framing, `50\n`, and the divide-by-zero warning for the good call; then continue to `bad(badData)`. | [x] |
 
-The C source has no error returns, assertions, enums, lengths, or min/max
-constants. Its two input-rejection paths are the null guard and the guarded
-division. Float zero and non-finite values passed to unguarded `bad` are not
-rejected by the C implementation and are therefore valid configuration cases.
+## Generic FFI boundary audit
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| [x] 1 | `printLine` | `line == NULL` | Return `void` without output. |
-| [x] 2 | `good` / internal `goodB2G` | `!(fabs(data) > 0.000001)`, comprising `fabs(data) <= 0.000001` and unordered `NaN` | Print `50\nThis would result in a divide by zero\n`, then return `void`. |
-| [x] 3 | `driver` through `good` / internal `goodB2G` | `!(fabs(goodData) > 0.000001)`, comprising `fabs(goodData) <= 0.000001` and unordered `NaN` | Print the normal driver framing, `50\n`, and the divide-by-zero warning before continuing through `bad`. |
-
-## Generic FFI Boundaries
-
-- [x] Null pointer: applicable to `printLine`; row 1.
-- [x] Zero and signed zero: applicable to float arguments; covered as guarded
-  rejection for `good`/`driver` and as valid input for `bad`.
-- [x] Integer minimum and maximum: applicable to `printIntLine`.
-- [x] Exact and one-step threshold boundaries: applicable to `good` and
-  `driver`.
-- [x] Oversized lengths: not applicable; no API accepts a length.
-- [x] Out-of-range enums: not applicable; no API accepts an enum.
+The only pointer parameter is covered by E1. There are no length or enum
+parameters. Float zero, infinities, NaNs, threshold-adjacent values, and
+division results outside the C `int` range are exercised by E2/E3 and the
+configuration rows.

@@ -1,44 +1,34 @@
-# Error Surface
+# Error surface
 
-Mechanical source scan:
+The only public entry point is `memchra2(int, int, int, int)`. It accepts four
+by-value C integers, has no error return contract, and contains no public input
+rejection. Consequently, null pointers, lengths, and enum discriminants cannot
+be supplied through this ABI.
 
-```text
-rg -n 'RETURN_ERROR|return\s+(-1|NULL)|assert\s*\(|if\s*\(|<=|>=|<|>|sizeof|min|max|NULL' ../c_src/src ../c_src/include
-```
+The table below is the complete mechanical inventory of rejection/skip checks
+in `c_src/src/lib.c`. Every row belongs to a `static` helper and is unreachable
+through the production dynamic ABI: `nm -D --defined-only` exports only
+`memchra2`. Phase C uses test-only C and Rust adapter shared libraries to expose
+the private helpers, loads both adapters with `libloading`, and compares every
+exact result. It also verifies that the helpers remain absent from both
+production dynamic symbol tables and compares all public boundary values.
 
-The only public entry point is `int memchra2(int, int, int, int)`. It has no
-pointer, length, enum, option, or rejection/error return contract: every
-possible FFI input is four valid C `int` values. The checks below are all in
-`static` functions, and `memchra2` invokes them only with fixed non-null,
-non-empty local data. They are tested through test-only C and Rust shared
-objects that include the unmodified implementations and export guard wrappers;
-the integration test loads both objects with `libloading`.
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| [x] E01 | `process_buffer` | `buffer == NULL` | returns `-1` |
+| [x] E02 | `process_buffer` | `*buffer == '\0'` | returns `-1` |
+| [x] E03 | `process_strings` | `strings == NULL` | returns `0` |
+| [x] E04 | `process_strings` | `count <= 0` | returns `0` |
+| [x] E05 | `process_strings` | current element `*i == NULL` | skips that element and continues |
+| [x] E06 | `process_strings` | current element `**i == '\0'` | skips that element and continues |
+| [x] E07 | `safe_sum_array` | `arr == NULL` | returns `0` |
+| [x] E08 | `safe_sum_array` | `size == 0` | returns `0` |
+| [x] E09 | `interpret_as_int` | `bytes == NULL` | returns `0` |
+| [x] E10 | `interpret_as_int` | `len < sizeof(int)` | returns `0` |
+| [x] E11 | `count_occurrences` | `text == NULL` | returns `0` |
+| [x] E12 | `count_occurrences` | `*text == '\0'` | returns `0` |
+| [x] E13 | `complex_iteration` | `data == NULL` | returns `-1` |
+| [x] E14 | `complex_iteration` | `count == 0` | returns `-1` |
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `process_buffer` (static) | `buffer == NULL` | `-1` | [x] |
-| 2 | `process_buffer` (static) | `*buffer == '\0'` | `-1` | [x] |
-| 3 | `process_strings` (static) | `strings == NULL` | `0` | [x] |
-| 4 | `process_strings` (static) | `count <= 0` | `0` | [x] |
-| 5 | `process_strings` (static) | current element `*i == NULL` | skip element; no increment | [x] |
-| 6 | `process_strings` (static) | current string `**i == '\0'` | skip element; no increment | [x] |
-| 7 | `safe_sum_array` (static) | `arr == NULL` | `0` | [x] |
-| 8 | `safe_sum_array` (static) | `size == 0` | `0` | [x] |
-| 9 | `interpret_as_int` (static) | `bytes == NULL` | `0` | [x] |
-| 10 | `interpret_as_int` (static) | `len < sizeof(int)` | `0` | [x] |
-| 11 | `count_occurrences` (static) | `text == NULL` | `0` | [x] |
-| 12 | `count_occurrences` (static) | `*text == '\0'` | `0` | [x] |
-| 13 | `complex_iteration` (static) | `data == NULL` | `-1` | [x] |
-| 14 | `complex_iteration` (static) | `count == 0` | `-1` | [x] |
-
-## Public FFI Boundary Coverage
-
-- [x] No nullable arguments exist.
-- [x] No length arguments exist, so zero/oversized lengths do not exist.
-- [x] No enum arguments exist, so out-of-range enum representations do not
-  exist.
-- [x] All four arguments are tested at `INT_MIN`, `INT_MAX`, zero, and broad
-  randomized values through both shared libraries.
-- [x] Every internal guard above is unreachable from `memchra2` by construction:
-  its buffer starts with `"test"`, arrays have four elements, and all local
-  pointers are non-null.
+No `assert`, error enum, `RETURN_ERROR`, public range check, public minimum or
+maximum, pointer parameter, length parameter, or enum parameter exists.

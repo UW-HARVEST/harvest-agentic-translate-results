@@ -53,16 +53,9 @@ type StringProcessor = unsafe extern "C" fn(*mut c_char, c_int);
 // ---------------------------------------------------------------------------
 
 /// `strlen` over a NUL-terminated C string.
-///
-/// `ptr::read` is used rather than `*s.add(n)` deliberately: a place-expression
-/// deref of a raw pointer picks up rustc's `debug_assertions` null/alignment
-/// check, which turns a NULL argument into a Rust panic (`SIGABRT`) in dev
-/// builds while the C segfaults (`SIGSEGV`). Reading through the intrinsic keeps
-/// the dev and release `.so`s byte-for-byte behaviourally identical to the C,
-/// including on the undefined-behaviour NULL input.
 unsafe fn c_strlen(s: *const c_char) -> usize {
     let mut n = 0usize;
-    while core::ptr::read(s.add(n)) != 0 {
+    while *s.add(n) != 0 {
         n += 1;
     }
     n
@@ -74,7 +67,7 @@ unsafe fn c_strlen(s: *const c_char) -> usize {
 unsafe fn c_memchr(haystack: *const c_char, needle: c_int, len: usize) -> Option<usize> {
     let target = needle as u8;
     for i in 0..len {
-        if core::ptr::read(haystack.add(i)) as u8 == target {
+        if *haystack.add(i) as u8 == target {
             return Some(i);
         }
     }
@@ -85,48 +78,15 @@ unsafe fn c_memchr(haystack: *const c_char, needle: c_int, len: usize) -> Option
 /// the NUL is appended here.
 unsafe fn c_strcpy_bytes(dest: *mut c_char, src: &[u8]) {
     for (i, b) in src.iter().enumerate() {
-        core::ptr::write(dest.add(i), *b as c_char);
+        *dest.add(i) = *b as c_char;
     }
-    core::ptr::write(dest.add(src.len()), 0);
+    *dest.add(src.len()) = 0;
 }
 
 /// Renders `printf("%o", v)`: the value is reinterpreted as `unsigned int`
 /// and printed in octal with no leading zero.
 fn format_octal(v: c_int) -> String {
     format!("{:o}", v as u32)
-}
-
-/// C's `a / b` for `int`, byte-for-byte including the corner cases.
-///
-/// Rust's `/` operator is *not* a faithful translation here: for
-/// `INT_MIN / -1` (signed-division overflow, UB in C) rustc emits an explicit
-/// check and panics, and `wrapping_div` silently yields `INT_MIN`. The C
-/// compiles to a bare `idiv`, which on x86-64 raises `SIGFPE` and kills the
-/// process. Emitting the same `idiv` reproduces that exactly, so the two
-/// libraries are indistinguishable even on the UB input.
-///
-/// The caller must uphold C's own precondition `b != 0` (`lib.c:54` guards it),
-/// which is also the `idiv` divide-by-zero precondition.
-#[cfg(target_arch = "x86_64")]
-#[inline(never)]
-unsafe fn c_idiv(a: c_int, b: c_int) -> c_int {
-    let quotient: c_int;
-    core::arch::asm!(
-        "cdq",             // sign-extend eax into edx:eax
-        "idiv {divisor:e}", // edx:eax / divisor -> eax (quotient), edx (rem)
-        divisor = in(reg) b,
-        inout("eax") a => quotient,
-        out("edx") _,
-    );
-    quotient
-}
-
-/// Portable fallback for non-x86-64 targets: matches C for every input except
-/// the `INT_MIN / -1` overflow, where C's behaviour is target-defined anyway.
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(never)]
-unsafe fn c_idiv(a: c_int, b: c_int) -> c_int {
-    a.wrapping_div(b)
 }
 
 // ---------------------------------------------------------------------------
@@ -157,9 +117,9 @@ pub unsafe extern "C" fn subtract_from_accumulator(a: c_int, b: c_int) -> c_int 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn divide_multiplier(_a: c_int, b: c_int) -> c_int {
     if b != 0 {
-        // C: `multiplier /= b`. `c_idiv` reproduces the raw `idiv` the C
-        // compiler emits, including the `INT_MIN / -1` hardware trap.
-        MULTIPLIER = c_idiv(MULTIPLIER, b);
+        // `wrapping_div` matches the hardware behaviour of C's `/` for the
+        // INT_MIN / -1 corner case instead of panicking.
+        MULTIPLIER = MULTIPLIER.wrapping_div(b);
     }
     OPERATION_COUNT = OPERATION_COUNT.wrapping_add(1);
     MULTIPLIER
@@ -181,7 +141,7 @@ pub unsafe extern "C" fn process_octal_string(dest: *mut c_char, octal_val: c_in
 pub unsafe extern "C" fn find_and_replace_char(s: *mut c_char, search_char: c_int) {
     let len = c_strlen(s);
     if let Some(idx) = c_memchr(s, search_char, len) {
-        core::ptr::write(s.add(idx), b'X' as c_char);
+        *s.add(idx) = b'X' as c_char;
     }
 }
 

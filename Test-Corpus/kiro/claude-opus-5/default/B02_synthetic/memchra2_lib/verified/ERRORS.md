@@ -1,88 +1,95 @@
-# ERRORS.md — Error-surface table (Phase A / Phase C)
+# ERRORS.md — Phase C error-surface table
 
-Every distinct rejection / error path in `c_src/src/lib.c`, obtained by grepping
-the source for *every* `return -1`, `return 0` guard, `continue` guard, `NULL`
-check, range check, `assert`, and size/`sizeof` comparison. Rows are derived
-from what the C **actually checks**, not from documentation.
-
-Grep census of the C source (`c_src/src/lib.c`, 174 lines):
+Derived mechanically from `c_src/src/lib.c`. Every rejection site was located
+with:
 
 ```
-$ grep -n 'NULL\|return -1\|return 0\|continue\|assert\|sizeof\|<= 0\|== 0\|== .\\0.' c_src/src/lib.c
+grep -n -E 'return\s+(-1|0|NULL)|assert|RETURN_ERROR|errno|exit\(' c_src/src/lib.c
+grep -n -E '\bif\b|\bswitch\b|#if|continue|break'                 c_src/src/lib.c
 ```
 
-yields 8 guard sites (rows 1–10 below; two sites contain two distinct
-disjuncts each that are listed separately). There are **no** `assert`s, **no**
-error enums, **no** `RETURN_ERROR`-style macros, and **no** `errno` use in this
-library.
+Results: **6 early-return sites** (lines 41, 63, 83, 97, 106, 115), each with a
+two-term `||` guard → **12 distinct rejection conditions**, plus **2 skip
+(`continue`) conditions** at line 69. There are **no** `assert`s, no
+`RETURN_ERROR`-style macros, no error enums, no `errno` use, and no `exit()`.
 
-## Reachability note (important, and itself verified)
+## Reachability note (important, and the reason this table is shaped this way)
 
-`memchra2` is the **only** exported symbol. Its signature is
-`int memchra2(int, int, int, int)` — four by-value `int`s. Consequently:
+The public ABI is exactly one function:
 
-* There is **no pointer parameter**, so no caller-supplied null pointer can
-  reach any of the `NULL` guards.
-* There is **no length/size parameter**, so no caller-supplied zero or
-  oversized length can reach any of the size guards.
-* There is **no enum parameter**, so there is no out-of-range-enum input class.
-* Every buffer, array, and count the helpers see is constructed **internally**
-  by `memchra2` with fixed shapes (`char buffer[64]`, `int values[4]`,
-  `char *test_strings[4]`, `unsigned char bytes[4]`, count/len literals `4`).
+```c
+int memchra2(int a, int b, int c, int d);
+```
 
-So each row below records both the trigger and whether an external caller can
-reach it. Rows marked *unreachable* are still tested: the differential test
-asserts that C and Rust agree on the **branch outcome the guard produces for
-the internally-constructed input** (i.e. that both take the same side of the
-guard), which is the only externally observable consequence. Rows marked
-*reachable* are driven directly from `memchra2`'s four `int` arguments.
+It takes four plain `int`s — **no pointers, no lengths, no enums, no
+out-parameters**. Every guarded helper is `static` and is called by `memchra2`
+with compile-time-fixed, always-valid arguments (a 64-byte local array that
+`snprintf` always fills with at least `"test"`, a 4-element `int` array, string
+literals, `count = 4`, `len = 4 == sizeof(int)`). Consequently **`memchra2`
+itself has no error return: it produces a defined result for every one of the
+2^128 input tuples.**
 
-## The table
+Rows below are therefore split into two groups:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | reachable from public API? | test |
-|---|----------|---------------------------------------------|-------------------|---------------------------|------|
-| 1 | `process_buffer` | `buffer == NULL` | `return -1` | no — caller always passes `char buffer[64]` (never null) | `err_row01_process_buffer_null_unreachable` |
-| 2 | `process_buffer` | `*buffer == '\0'` (empty string) | `return -1` | no — buffer always starts with `'t'` of `"test"` | `err_row02_process_buffer_empty_unreachable` |
-| 3 | `process_strings` | `strings == NULL` | `return 0` | no — caller passes a 4-element literal array | `err_row03_process_strings_null_unreachable` |
-| 4 | `process_strings` | `count <= 0` | `return 0` | no — caller passes literal `4` | `err_row04_process_strings_count_le_zero_unreachable` |
-| 5 | `process_strings` | element `*i == NULL` | `continue` (element skipped, not counted) | no — all 4 literals are non-null | `err_row05_process_strings_null_element_unreachable` |
-| 6 | `process_strings` | element `**i == '\0'` (empty string element) | `continue` (element skipped, not counted) | no — all 4 literals are non-empty | `err_row06_process_strings_empty_element_unreachable` |
-| 7 | `safe_sum_array` | `arr == NULL` | `return 0` | no — caller passes `int values[4]` | `err_row07_safe_sum_array_null_unreachable` |
-| 8 | `safe_sum_array` | `size == 0` | `return 0` | no — caller passes literal `4` | `err_row08_safe_sum_array_zero_size_unreachable` |
-| 9 | `interpret_as_int` | `bytes == NULL` | `return 0` | no — caller passes `unsigned char bytes[4]` | `err_row09_interpret_as_int_null_unreachable` |
-| 10 | `interpret_as_int` | `len < sizeof(int)` (i.e. `len < 4`) | `return 0` | no — caller passes literal `4`, and `sizeof(int) == 4` on the reference platform | `err_row10_interpret_as_int_short_len_unreachable` |
-| 11 | `count_occurrences` | `text == NULL` | `return 0` | no — caller passes `char buffer[64]` | `err_row11_count_occurrences_null_unreachable` |
-| 12 | `count_occurrences` | `*text == '\0'` (empty string) | `return 0` | no — buffer always starts with `'t'` | `err_row12_count_occurrences_empty_unreachable` |
-| 13 | `complex_iteration` | `data == NULL` | `return -1` | no — caller passes `int values[4]` | `err_row13_complex_iteration_null_unreachable` |
-| 14 | `complex_iteration` | `count == 0` | `return -1` | no — caller passes literal `4` | `err_row14_complex_iteration_zero_count_unreachable` |
-| 15 | `memchra2` | `snprintf` output would exceed `sizeof(buffer) - 1 == 63` → truncation | truncated, NUL-terminated buffer; `snprintf` return value is discarded so truncation is silent | no — worst case `"test"` + 4×`-2147483648` + 3 separators = 4 + 44 + 3 = **51** bytes < 63, so truncation is unreachable for every possible input | `err_row15_snprintf_never_truncates` |
-| 16 | `memchra2` | `f > 0.0f && f < 1000.0f` fails (branch rejected) — includes `a == 0` (+0.0), `a < 0` (negative / −NaN), `a >= 0x447A0000` (≥1000.0, +inf), positive NaN | the `result += (int)f` contribution is **skipped** | **yes** — driven directly by `a` | `err_row16_float_branch_rejected` |
-| 17 | `memchra2` | `buf_sum > 0` fails, i.e. `process_buffer` returned `-1` or a non-positive sum | the `result += buf_sum % 256` contribution is **skipped** | no — the buffer always contains printable ASCII with positive `(int)(char)` values and a non-empty first byte, so `buf_sum > 0` always holds | `err_row17_buf_sum_always_positive` |
+- **E1–E14** — the C code's intrinsic rejection conditions. Each row records the
+  trigger, the C result, and how the row is *observable*. Rows whose guard is
+  unreachable from the public ABI are verified by asserting that the Rust
+  `.so` takes the same *non*-rejecting path as the C `.so` (i.e. the guard must
+  be present-but-not-taken in both; if the Rust translation got a guard
+  backwards or dropped a `continue`, `memchra2`'s return value changes and the
+  differential test fails). The observable consequence is listed per row.
+- **B1–B7** — the generic FFI-boundary inputs that *are* reachable: extremes of
+  the `int` domain, one-step-past values around each internal value branch, and
+  reinterpretation across the FFI boundary. Since no parameter is a pointer,
+  length, or enum, these are the complete analogue of the
+  "null / zero length / oversized length / out-of-range enum" checklist.
 
-## Generic FFI-boundary boundary cases (mandated even though absent from the table)
+## Table
 
-`memchra2` takes no pointers, no lengths, and no enums, so the classic
-null-pointer / zero-length / oversized-length / out-of-range-enum inputs have
-**no parameter to occupy**. The corresponding boundary class for a
-4×`int` signature is the extremes and one-step-past values of `int` itself,
-plus the `unsigned int`/`char`/`float` reinterpretations the body performs.
-These are covered by:
+| # | function | trigger (the exact invalid input/condition) | expected C result | observable consequence used by the test |
+|---|----------|---------------------------------------------|-------------------|------------------------------------------|
+| E1 | `process_buffer` (line 40) | `buffer == NULL` | `return -1` | unreachable: caller passes `char buffer[64]`. Guard must not fire → `buf_sum > 0` holds and `result += buf_sum % 256`. If Rust fired it, `result` would lose the `% 256` term. |
+| E2 | `process_buffer` (line 40) | `*buffer == '\0'` (non-NULL but empty string) | `return -1` | unreachable: `snprintf` always writes `"test…"`, so `buffer[0] == 't'`. Same observable as E1. |
+| E3 | `process_strings` (line 62) | `strings == NULL` | `return 0` | unreachable: caller passes a 4-element array of literals. Guard must not fire → `matches == 3`, contributing `+15`. |
+| E4 | `process_strings` (line 62) | `count <= 0` | `return 0` | unreachable: caller passes `count = 4`. Same observable as E3. |
+| E5 | `process_strings` (line 69) | `*i == NULL` (a NULL element mid-array) | `continue` (element skipped, not counted) | unreachable: all 4 elements are non-NULL literals. Skip must not fire → `matches == 3` (`+15`). |
+| E6 | `process_strings` (line 69) | `**i == '\0'` (an empty-string element) | `continue` (element skipped) | unreachable: no element is empty. Same observable as E5. |
+| E7 | `safe_sum_array` (line 82) | `arr == NULL` | `return 0` | unreachable: caller passes `int values[4]`. Guard must not fire → `result += a+b+c+d` (wrapping). Detectable at every input. |
+| E8 | `safe_sum_array` (line 82) | `size == 0` | `return 0` | unreachable: caller passes `size = 4`. Same observable as E7. |
+| E9 | `interpret_as_int` (line 96) | `bytes == NULL` | `return 0` | unreachable: caller passes `unsigned char bytes[4]`. Guard must not fire → `result ^= LE32(b&0xFF, c&0xFF, d&0xFF, 0)`. |
+| E10 | `interpret_as_int` (line 96) | `len < sizeof(int)` i.e. `len ∈ {0,1,2,3}` | `return 0` | unreachable: caller passes `len = 4`, exactly the boundary that *passes*. `len == 4` is the one-step-inside value; `len == 3` is the one-step-outside value. Same observable as E9. |
+| E11 | `count_occurrences` (line 105) | `text == NULL` | `return 0` | unreachable: caller passes `buffer`. Guard must not fire → `result += dash_count * 10`. |
+| E12 | `count_occurrences` (line 105) | `*text == '\0'` | `return 0` | unreachable: `buffer[0] == 't'`. Same observable as E11. |
+| E13 | `complex_iteration` (line 114) | `data == NULL` | `return -1` | unreachable: caller passes `values`. Guard must not fire → `result += xor of low bytes`; if Rust fired it, `result` would be off by (xor + 1). |
+| E14 | `complex_iteration` (line 114) | `count == 0` | `return -1` | unreachable: caller passes `count = 4`. Same observable as E13. |
+| B1 | `memchra2` | `a = b = c = d = INT_MIN` (`-2147483648`) — most negative, and the value whose negation overflows | defined value, no rejection; `snprintf` writes 4 × 11-char signed decimals (`4 + 44 + 3 = 51 < 64`, so still no truncation) | direct return-value comparison |
+| B2 | `memchra2` | `a = b = c = d = INT_MAX` (`2147483647`) — most positive | defined value, no rejection | direct return-value comparison |
+| B3 | `memchra2` | `a = b = c = d = 0` — the "zero length"/empty analogue; `int_to_float_bits(0) == +0.0f` fails `f > 0.0f` | defined value; float term omitted | direct return-value comparison |
+| B4 | `memchra2` | `a` one step past each side of the float acceptance window: `a ∈ {0, 1, 1148846079, 1148846080}` (`1148846080 == 0x447A0000 == bits(1000.0f)`) | `f > 0.0f && f < 1000.0f` true only for `1 … 1148846079`; `(int)f` truncation applies | direct return-value comparison |
+| B5 | `memchra2` | `a` = bit patterns that are **not finite positive floats**: `0x7F800000` (`+inf`), `0xFF800000` (`-inf`), `0x7FC00000` (quiet NaN), `0x7F800001` (signalling NaN), `0x80000000` (`-0.0f`) | NaN makes both comparisons false; `±inf`/`-0.0` also rejected → float term omitted. No trap, no error. | direct return-value comparison |
+| B6 | `memchra2` | `a` = smallest positive subnormal `1` (`≈1.4e-45`) — passes `f > 0.0f` yet `(int)f == 0` | float term contributes `0`, not a rejection | direct return-value comparison |
+| B7 | `memchra2` | symbol invoked through a **differently-typed FFI signature**: `extern "C" fn(u32,u32,u32,u32) -> u32` instead of `(i32,…) -> i32` (the "out-of-range value with no valid variant" analogue — `int` has no invalid bit pattern, so the boundary case is unsigned reinterpretation of the same 4 words) | identical 32-bit result word from both `.so`s | raw 32-bit words compared |
 
-| # | boundary class | test |
-|---|----------------|------|
-| G1 | `INT_MIN` / `INT_MAX` in every argument position, and all 4^4 combinations of them | `boundary_int_extremes_cross_product` |
-| G2 | one step past the extremes (`INT_MIN+1`, `INT_MAX-1`) and around zero (`-1`, `0`, `1`) | `boundary_one_step_past` |
-| G3 | signed-overflow of `a+b+c+d` in `safe_sum_array` (C wraps at `-O0`; Rust must wrap identically) | `boundary_sum_overflow` |
-| G4 | low-byte extraction extremes (`x & 0xFF` == `0x00` and `0xFF`) feeding `interpret_as_int` and `complex_iteration` | `boundary_low_byte_extremes` |
-| G5 | `(char)c` sign-extension boundary in `memchra` / `count_occurrences` (byte `0x80`, `0x7F`, `0xFF`) | `boundary_char_sign_extension` |
-| G6 | every IEEE-754 class of `a` reinterpreted as `float`: ±0, subnormal, normal, ±inf, quiet/signalling NaN, and the exact `1000.0f` cut point ±1 ulp | `boundary_ieee754_classes` |
-| G7 | "out-of-range value with no valid variant" analogue: every `a` whose float reinterpretation has no meaningful numeric value (all 2^23 NaN payloads sampled) | `boundary_nan_payloads` |
+## Checklist
 
-## Status
-
-All 17 table rows and all 7 generic boundary classes have a passing
-differential test (`tests/errors.rs`); see the per-row checkboxes below.
-
-- [x] 1 [x] 2 [x] 3 [x] 4 [x] 5 [x] 6 [x] 7 [x] 8 [x] 9 [x] 10
-- [x] 11 [x] 12 [x] 13 [x] 14 [x] 15 [x] 16 [x] 17
-- [x] G1 [x] G2 [x] G3 [x] G4 [x] G5 [x] G6 [x] G7
+- [x] E1 — `phase_c_errors::e1_e2_process_buffer_guards`
+- [x] E2 — `phase_c_errors::e1_e2_process_buffer_guards`
+- [x] E3 — `phase_c_errors::e3_e6_process_strings_guards`
+- [x] E4 — `phase_c_errors::e3_e6_process_strings_guards`
+- [x] E5 — `phase_c_errors::e3_e6_process_strings_guards`
+- [x] E6 — `phase_c_errors::e3_e6_process_strings_guards`
+- [x] E7 — `phase_c_errors::e7_e8_safe_sum_array_guards`
+- [x] E8 — `phase_c_errors::e7_e8_safe_sum_array_guards`
+- [x] E9 — `phase_c_errors::e9_e10_interpret_as_int_guards`
+- [x] E10 — `phase_c_errors::e9_e10_interpret_as_int_guards`
+- [x] E11 — `phase_c_errors::e11_e12_count_occurrences_guards`
+- [x] E12 — `phase_c_errors::e11_e12_count_occurrences_guards`
+- [x] E13 — `phase_c_errors::e13_e14_complex_iteration_guards`
+- [x] E14 — `phase_c_errors::e13_e14_complex_iteration_guards`
+- [x] B1 — `phase_c_errors::b1_int_min_extremes`
+- [x] B2 — `phase_c_errors::b2_int_max_extremes`
+- [x] B3 — `phase_c_errors::b3_all_zero`
+- [x] B4 — `phase_c_errors::b4_float_window_boundaries`
+- [x] B5 — `phase_c_errors::b5_non_finite_float_bit_patterns`
+- [x] B6 — `phase_c_errors::b6_smallest_subnormal`
+- [x] B7 — `phase_c_errors::b7_unsigned_ffi_signature`

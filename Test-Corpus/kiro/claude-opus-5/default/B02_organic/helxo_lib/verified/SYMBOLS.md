@@ -1,125 +1,112 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
-Generated mechanically from:
+Derived mechanically from:
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-4g3ieR.so   | awk '{print $3}' | sort
-nm -D --defined-only translation/target/release/libhelxo_lib.so | awk '{print $3}' | sort
+nm -D --defined-only c_src/build/libharvest-work-9TiVI8.so
+nm -D --defined-only translation/target/release/libhelxo_lib.so
 ```
 
-The C library is built from the single translation unit `c_src/src/lib.c`
-(an `stb_ds.h` amalgamation plus the `strkey` / `helxo` demo drivers).
-`c_src/include/lib.h` declares only `void helxo(char num);`, but the `.so`
-exports every non-`static` definition in the TU.
+## Public (dynamic, defined) symbols of the C `.so`
 
-## Symbol table
+| # | symbol | C signature (from `c_src/src/lib.c`) | exported by Rust `.so`? |
+|---|--------|--------------------------------------|-------------------------|
+| 1 | `stbds_arrgrowf` | `void *stbds_arrgrowf(void *a, size_t elemsize, size_t addlen, size_t min_cap)` | YES |
+| 2 | `stbds_arrfreef` | `void stbds_arrfreef(void *a)` | YES |
+| 3 | `stbds_rand_seed` | `void stbds_rand_seed(size_t seed)` | YES |
+| 4 | `stbds_hash_string` | `size_t stbds_hash_string(char *str, size_t seed)` | YES |
+| 5 | `stbds_hash_bytes` | `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)` | YES |
+| 6 | `stbds_hmfree_func` | `void stbds_hmfree_func(void *a, size_t elemsize)` | YES |
+| 7 | `stbds_hmget_key_ts` | `void *stbds_hmget_key_ts(void *a, size_t elemsize, void *key, size_t keysize, ptrdiff_t *temp, int mode)` | YES |
+| 8 | `stbds_hmget_key` | `void *stbds_hmget_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | YES |
+| 9 | `stbds_hmput_default` | `void *stbds_hmput_default(void *a, size_t elemsize)` | YES |
+| 10 | `stbds_hmput_key` | `void *stbds_hmput_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | YES |
+| 11 | `stbds_shmode_func` | `void *stbds_shmode_func(size_t elemsize, int mode)` | YES |
+| 12 | `stbds_hmdel_key` | `void *stbds_hmdel_key(void *a, size_t elemsize, void *key, size_t keysize, size_t keyoffset, int mode)` | YES |
+| 13 | `stbds_stralloc` | `char *stbds_stralloc(stbds_string_arena *a, char *str)` | YES |
+| 14 | `stbds_strreset` | `void stbds_strreset(stbds_string_arena *a)` | YES |
+| 15 | `strkey` | `char *strkey(int n)` | YES |
+| 16 | `helxo` | `void helxo(char letter)` (the only symbol in `include/lib.h`) | YES |
 
-| # | symbol | C type | Rust `.so` | Rust definition site |
-|---|--------|--------|-----------|----------------------|
-| 1 | `helxo` | `T` | ✅ `T` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn helxo` |
-| 2 | `stbds_arrfreef` | `T` | ✅ `T` | `stbds_arrfreef` |
-| 3 | `stbds_arrgrowf` | `T` | ✅ `T` | `stbds_arrgrowf` |
-| 4 | `stbds_hash_bytes` | `T` | ✅ `T` | `stbds_hash_bytes` |
-| 5 | `stbds_hash_string` | `T` | ✅ `T` | `stbds_hash_string` |
-| 6 | `stbds_hmdel_key` | `T` | ✅ `T` | `stbds_hmdel_key` |
-| 7 | `stbds_hmfree_func` | `T` | ✅ `T` | `stbds_hmfree_func` |
-| 8 | `stbds_hmget_key` | `T` | ✅ `T` | `stbds_hmget_key` |
-| 9 | `stbds_hmget_key_ts` | `T` | ✅ `T` | `stbds_hmget_key_ts` |
-| 10 | `stbds_hmput_default` | `T` | ✅ `T` | `stbds_hmput_default` |
-| 11 | `stbds_hmput_key` | `T` | ✅ `T` | `stbds_hmput_key` |
-| 12 | `stbds_rand_seed` | `T` | ✅ `T` | `stbds_rand_seed` |
-| 13 | `stbds_shmode_func` | `T` | ✅ `T` | `stbds_shmode_func` |
-| 14 | `stbds_stralloc` | `T` | ✅ `T` | `stbds_stralloc` |
-| 15 | `stbds_strreset` | `T` | ✅ `T` | `stbds_strreset` |
-| 16 | `strkey` | `T` | ✅ `T` | `strkey` |
+## Symbols declared `extern` in the C but NOT defined / NOT exported
 
-**`comm -23 c_syms rust_syms` → empty. 16 / 16 symbols present. 0 missing.**
+These are declared in `lib.c` but never defined, so they do not appear in
+`nm -D --defined-only` for the C `.so`, and must NOT be exported by Rust:
 
-## Internal (`static`) C functions — intentionally not exported
+* `stbds_unit_tests` (declared at line 83, no definition)
 
-These are `static` in `lib.c`, so they are absent from the C `.so` too. They are
-translated as private Rust `fn`s; exporting them would be a *parity violation*.
+## `static` (internal, non-exported) C functions — correctly not exported
 
-| C `static` function | Rust counterpart |
-|---------------------|------------------|
-| `stbds_probe_position` | `stbds_probe_position` (private) |
-| `stbds_log2` | `stbds_log2` (private) |
-| `stbds_make_hash_index` | `stbds_make_hash_index` (private) |
-| `stbds_siphash_bytes` | `stbds_siphash_bytes` (private) |
-| `stbds_is_key_equal` | `stbds_is_key_equal` (private) |
-| `stbds_hm_find_slot` | `stbds_hm_find_slot` (private) |
-| `stbds_strdup` | `stbds_strdup` (private) |
-| `buffer` (`static char[256]`) | `static mut buffer: [c_char; 256]` (private) |
-| `stbds_hash_seed` (`static size_t`) | `static mut stbds_hash_seed` (private) |
+`stbds_probe_position`, `stbds_log2`, `stbds_make_hash_index`,
+`stbds_siphash_bytes`, `stbds_is_key_equal`, `stbds_hm_find_slot`,
+`stbds_strdup`. All present as private Rust `fn`s.
 
-`stbds_unit_tests` is only `extern`-declared in the C, never defined, so it
-appears in neither `.so` as a defined symbol.
+## Diff result
 
-## Undefined (imported) symbols
+```
+comm -23 <(nm -D --defined-only C.so  | awk '{print $3}' | sort) \
+         <(nm -D --defined-only RS.so | awk '{print $3}' | sort)
+```
 
-`nm -D --undefined-only` on both `.so`s yields only libc / compiler-runtime
-symbols. The C imports `malloc realloc free memset memcpy memmove memcmp
-strcmp strlen printf sprintf __assert_fail`. The Rust `.so` imports the same
-set (`memcmp` appears as glibc's `bcmp` alias) plus the Rust runtime's
-`_Unwind_*`, `dl_iterate_phdr`, `pthread_key_*`, `abort`, etc.
-**0 missing/undefined non-libc symbols in the Rust `.so`.**
+→ **EMPTY**. 0 symbols missing from the Rust `.so`.
+
+Undefined-symbol check on the Rust `.so`: all `U` entries are libc
+(`malloc`, `realloc`, `free`, `memset`, `memcpy`, `memmove`, `strcmp`,
+`strlen`, `printf`, `sprintf`, plus Rust-runtime/`std`/unwind imports:
+`_Unwind_*`, `pthread_*`, `dl_iterate_phdr`, `mmap64`, …).
+**0 missing/undefined non-libc symbols.**
 
 ## Feature combinations
 
 `translation/Cargo.toml` declares **no `[features]` section**, so the only
-build configuration is the default (no features). Verified with:
+build configuration is the default one. Verified with:
 
 ```
-grep -c '^\[features\]' Cargo.toml   # -> 0
+grep -n '^\[features\]' translation/Cargo.toml   # no match
 ```
 
-Consequently `--no-default-features` and the default build are the same code,
-and the whole matrix below collapses to a single column. This is checked
-mechanically by `tests/feature_matrix.rs` / `check_features.sh`.
+Phase D's "repeat B–C for every feature combination" therefore reduces to the
+single default configuration; additionally re-run with
+`--no-default-features` (equivalent, no features exist).
 
-## Struct-layout parity (required because the tests share memory across the two `.so`s)
-
-Measured with `gcc` on the C definitions vs. `size_of`/`offset_of` on the Rust
-`#[repr(C)]` clones:
-
-| struct | C size | Rust size | notable offsets |
-|--------|--------|-----------|-----------------|
-| `stbds_array_header` | 32 | 32 | length 0, capacity 8, hash_table 16, temp 24 |
-| `stbds_string_block` | 16 | 16 | next 0, storage 8 |
-| `stbds_string_arena` | 24 | 24 | storage 0, remaining 8, block 16, mode 17 |
-| `stbds_hash_bucket` | 128 | 128 | hash 0, index 64 |
-| `stbds_hash_index` | 104 | 104 | string 72, storage 96 |
-| `helxo` element `{char*;char;}` | 16 | 16 | key 0, value 8 |
-
-These are asserted at compile time in `tests/common/mod.rs`.
-
-## Verification commands
-
-```bash
-# build both libraries
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-
-# Phase D: symbol diff (exits non-zero on any missing symbol)
-./check_symbols.sh
-
-# Phases B + C + D across every feature combination
-./check_features.sh
-```
-
-Recorded output of `./check_symbols.sh`:
+## Verification (re-run 2026-09-05, after the `STBDS_ASSERT` fix)
 
 ```
-C   .so: .../c_src/build/libharvest-work-4g3ieR.so  (16 defined symbols)
-Rust.so: .../translation/target/release/libhelxo_lib.so (16 defined symbols)
-
-OK: 0 missing symbols (symbol diff is empty).
-OK: no C-private symbol is exported by the Rust .so.
+$ nm -D --defined-only c_src/build/libharvest-work-9TiVI8.so | wc -l
+16
+$ nm -D --defined-only translation/target/release/libhelxo_lib.so | wc -l
+16
+$ comm -3 <(nm -D --defined-only C.so  | awk '{print $3}' | sort) \
+          <(nm -D --defined-only RS.so | awk '{print $3}' | sort)
+        # (empty in BOTH directions)
 ```
 
-The same diff is enforced from inside the test suite by
-`tests/symbols.rs::phase_d_symbol_parity`, which additionally asserts that none
-of the C's `static` functions leaked into the Rust `.so` (exporting them would
-also be a parity violation) and that the Rust `.so` has no unresolved non-libc
-imports.
+Every one of the 23 functions in `c_src/src/lib.c` (16 external + 7 `static`)
+has a counterpart in `translation/src/lib.rs`; `grep` for
+`unimplemented!|todo!|panic!("not` finds nothing, so no symbol is a stub.
+
+Confirmed under all four build configurations by `translation/run_all.sh`
+(release/debug × default/`--no-default-features`).
+
+## External-caller sanity check
+
+Beyond the `libloading` suite, the same C driver was linked against each `.so`
+in turn and its stdout compared:
+
+```
+$ cat drv.c
+#include <stdio.h>
+void helxo(char);
+int main(void){ helxo('Z'); return 0; }
+
+$ gcc -o drv_c drv.c -L c_src/build            -l:libharvest-work-9TiVI8.so ...
+$ gcc -o drv_r drv.c -L translation/target/release -l:libhelxo_lib.so       ...
+$ diff <(./drv_c) <(./drv_r) && echo IDENTICAL
+IDENTICAL          # "bob h\nsally e\nfred l\njen Z\ndoug o\n"
+```
+
+This also confirms the Rust reproduces the C's `printf("%s %c\n", hash[z],
+hash[z].value)` — where the whole 16-byte element struct is passed as the `%s`
+argument, so under the SysV ABI `%s` consumes the `key` pointer from the first
+eightbyte and `%c` consumes the low byte of the second (the `value`), leaving the
+explicit third argument unused.

@@ -1,17 +1,13 @@
 # Error Surface
 
-The C implementation has no error return codes, error enums, assertions, range
-checks, or length parameters. Its one explicit rejection is the null check in
-`printLine`.
+Mechanically derived by inspecting every conditional, return, assertion, null
+check, range check, enum, and min/max constant in `c_src/include/driver.h` and
+`c_src/src/driver.c`.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
-| 1 | `printLine` | `line == NULL` | [x] Returns `void` without writing any bytes to stdout |
+| # | function | trigger (the exact invalid input/condition) | expected C result | Verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `printLine` | `line == NULL` | Returns normally without writing any bytes to stdout | [x] |
 
-Generic FFI boundaries were also reviewed mechanically:
-
-- `printLine`: `NULL` is row 1; an empty C string is valid and covered in
-  `CONFIGS.md`; there is no length, enum, or numeric range.
-- `printIntLine`: every value representable by C `int` is valid; there is no
-  pointer, length, enum, or narrower documented range.
-- `bad`, `good`, and `driver`: no parameters.
+There are no length parameters, range checks, enums, error-return statements,
+assertions, or min/max constants in the public C API. Consequently there are
+no zero/oversized-length, one-past-range, or invalid-enum cases to construct.

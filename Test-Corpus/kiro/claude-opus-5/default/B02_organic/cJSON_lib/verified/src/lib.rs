@@ -15,6 +15,24 @@
 use core::ffi::{c_char, c_double, c_float, c_int, c_void};
 use core::ptr;
 
+/* C's `(int)double` cast is undefined behaviour for NaN and for values outside
+ * the range of `int`; on the x86-64 / AArch64 targets this library is built for
+ * the compiler emits a truncating convert whose "invalid operand" result is
+ * INT_MIN (0x80000000).  Rust's `as` cast instead saturates (NaN -> 0), so the
+ * cast has to be spelled out to keep bit-identical `valueint` values. */
+#[inline]
+fn c_double_to_c_int(v: c_double) -> c_int {
+    if v.is_nan() {
+        c_int::MIN
+    } else if v >= c_int::MAX as c_double {
+        c_int::MAX
+    } else if v <= c_int::MIN as c_double {
+        c_int::MIN
+    } else {
+        v as c_int
+    }
+}
+
 mod driver;
 
 /* ------------------------------------------------------------------------- */
@@ -195,39 +213,16 @@ pub unsafe extern "C" fn cJSON_GetStringValue(item: *const cJSON) -> *mut c_char
     (*item).valuestring
 }
 
-/* `cJSON.c` is compiled with `-std=c89`, so glibc's C99 `NAN` from <math.h> is
- * *not* visible and cJSON's own fallback is used:
- *
- *     #ifndef NAN
- *     #define NAN 0.0/0.0
- *     #endif
- *
- * GCC constant-folds `0.0/0.0` with x86 SSE semantics, which yields the
- * "QNaN indefinite" value -- i.e. the sign bit is *set*. `f64::NAN` in Rust is
- * the positive quiet NaN, so the raw bits would differ. */
-const C_NAN: c_double = f64::from_bits(0xFFF8_0000_0000_0000u64);
-
-/* Truncating double -> int conversion with the semantics the C compiler
- * actually emits on x86-64 (`cvttsd2si`): NaN and out-of-range values become
- * the "integer indefinite" value `INT_MIN`. Rust's `as` cast saturates
- * instead, and maps NaN to 0, so it cannot be used directly.
- *
- * cJSON guards `>= INT_MAX` and `<= (double)INT_MIN` before converting, so in
- * practice only NaN reaches the out-of-range path -- but the helper is exact
- * for every input. */
-#[inline]
-fn c_double_to_int(d: c_double) -> c_int {
-    if c_isnan(d) || !(d > -2147483649.0 && d < 2147483648.0) {
-        c_int::MIN
-    } else {
-        d as c_int
-    }
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cJSON_GetNumberValue(item: *const cJSON) -> c_double {
     if cJSON_IsNumber(item) == 0 {
-        return C_NAN;
+        /* The C is compiled as C89, where glibc's <math.h> does not define
+         * NAN, so cJSON's own `#define NAN 0.0/0.0` is used and `(double) NAN`
+         * expands to `((double)0.0)/0.0`.  On x86-64 / AArch64 that division
+         * produces the hardware default NaN, which has the SIGN BIT SET
+         * (0xFFF8_0000_0000_0000) — unlike Rust's `f64::NAN` (0x7FF8_...).
+         * The exact bit pattern is observable through the FFI boundary. */
+        return f64::from_bits(0xFFF8_0000_0000_0000);
     }
 
     (*item).valuedouble
@@ -473,7 +468,7 @@ unsafe fn parse_number(item: *mut cJSON, input_buffer: *mut ParseBuffer) -> cJSO
     } else if number <= c_int::MIN as c_double {
         (*item).valueint = c_int::MIN;
     } else {
-        (*item).valueint = c_double_to_int(number);
+        (*item).valueint = c_double_to_c_int(number);
     }
 
     (*item).type_ = cJSON_Number;
@@ -494,7 +489,7 @@ pub unsafe extern "C" fn cJSON_SetNumberHelper(object: *mut cJSON, number: c_dou
     } else if number <= c_int::MIN as c_double {
         (*object).valueint = c_int::MIN;
     } else {
-        (*object).valueint = c_double_to_int(number);
+        (*object).valueint = c_double_to_c_int(number);
     }
 
     (*object).valuedouble = number;
@@ -2699,7 +2694,7 @@ pub unsafe extern "C" fn cJSON_CreateNumber(num: c_double) -> *mut cJSON {
         } else if num <= c_int::MIN as c_double {
             (*item).valueint = c_int::MIN;
         } else {
-            (*item).valueint = c_double_to_int(num);
+            (*item).valueint = c_double_to_c_int(num);
         }
     }
 

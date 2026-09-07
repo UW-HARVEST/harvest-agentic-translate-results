@@ -137,6 +137,15 @@ const T_BB: f32 = 0.12609070067115;
 // The three transforms (`static` in C, private here)
 // ---------------------------------------------------------------------------
 
+// The three loads/stores use `read_unaligned` / `write_unaligned` rather than
+// `*p`. The C compiles each access to a plain `movss`, which imposes no
+// alignment requirement, so the C library happily accepts a `float*` that is not
+// 4-byte aligned. A plain Rust `*p` on a misaligned pointer is undefined
+// behaviour and aborts under `-C debug-assertions`, which would be a divergence
+// from the C for that input class (see CONFIGS.md C16 / ERRORS.md E10). The
+// unaligned accessors compile to the same `movss` for aligned pointers, so this
+// costs nothing and matches the C for every pointer the C accepts.
+
 /// `static void Protanopia(float *Red, float *Green, float *Blue)`
 ///
 /// # Safety
@@ -144,7 +153,13 @@ const T_BB: f32 = 0.12609070067115;
 /// `f32`, exactly as the C function requires of its arguments.
 unsafe fn protanopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
     // float R = *Red, G = *Green, B = *Blue;
-    let (r, g, b) = unsafe { (*red, *green, *blue) };
+    let (r, g, b) = unsafe {
+        (
+            red.read_unaligned(),
+            green.read_unaligned(),
+            blue.read_unaligned(),
+        )
+    };
 
     // *Red = P_RR * R + P_RG * G + P_RB * B;
     let out_r = {
@@ -173,9 +188,9 @@ unsafe fn protanopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
     };
 
     unsafe {
-        *red = out_r;
-        *green = out_g;
-        *blue = out_b;
+        red.write_unaligned(out_r);
+        green.write_unaligned(out_g);
+        blue.write_unaligned(out_b);
     }
 }
 
@@ -186,7 +201,13 @@ unsafe fn protanopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
 /// `f32`, exactly as the C function requires of its arguments.
 unsafe fn deuteranopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
     // float R = *Red, G = *Green, B = *Blue;
-    let (r, g, b) = unsafe { (*red, *green, *blue) };
+    let (r, g, b) = unsafe {
+        (
+            red.read_unaligned(),
+            green.read_unaligned(),
+            blue.read_unaligned(),
+        )
+    };
 
     // *Red = D_RR * R + D_RG * G + D_RB * B;
     let out_r = {
@@ -215,9 +236,9 @@ unsafe fn deuteranopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
     };
 
     unsafe {
-        *red = out_r;
-        *green = out_g;
-        *blue = out_b;
+        red.write_unaligned(out_r);
+        green.write_unaligned(out_g);
+        blue.write_unaligned(out_b);
     }
 }
 
@@ -228,7 +249,13 @@ unsafe fn deuteranopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
 /// `f32`, exactly as the C function requires of its arguments.
 unsafe fn tritanopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
     // float R = *Red, G = *Green, B = *Blue;
-    let (r, g, b) = unsafe { (*red, *green, *blue) };
+    let (r, g, b) = unsafe {
+        (
+            red.read_unaligned(),
+            green.read_unaligned(),
+            blue.read_unaligned(),
+        )
+    };
 
     // *Red = R + T_RG * G - T_RB * B;
     let out_r = {
@@ -257,9 +284,9 @@ unsafe fn tritanopia(red: *mut f32, green: *mut f32, blue: *mut f32) {
     };
 
     unsafe {
-        *red = out_r;
-        *green = out_g;
-        *blue = out_b;
+        red.write_unaligned(out_r);
+        green.write_unaligned(out_g);
+        blue.write_unaligned(out_b);
     }
 }
 

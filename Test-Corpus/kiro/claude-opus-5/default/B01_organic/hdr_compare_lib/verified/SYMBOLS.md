@@ -1,68 +1,53 @@
-# SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — public ABI surface parity
 
-Artifacts compared:
+Source of truth: `nm -D` on the C shared object built from `c_src/`.
 
-- C:    `c_src/build/libharvest-work-H33xBf.so`
-  (built with `cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .`)
-- Rust: `translation/target/release/libhdr_compare_lib.so`
-  (built with `cd translation && cargo build --release`)
+C library: `c_src/build/libharvest-work-kpTOZu.so`
+Rust library: `translation/target/release/libhdr_compare_lib.so`
 
-## Complete C source surface
+## C source inventory (completeness check)
 
-The entire C library is two files:
+The whole C project is two files:
 
-| file | contents |
-|------|----------|
-| `c_src/include/lib.h` | one declaration: `int hdr_compare(const uint8_t *h1, const uint8_t *h2);` |
-| `c_src/src/lib.c` | `static int hdr_valid(const uint8_t *h)` (file-local, **not** exported) and `int hdr_compare(...)` |
+| C file | lines | functions defined |
+|--------|-------|-------------------|
+| `c_src/include/lib.h` | 3 | (declaration only) `hdr_compare` |
+| `c_src/src/lib.c` | 13 | `static int hdr_valid(const uint8_t*)`, `int hdr_compare(const uint8_t*, const uint8_t*)` |
 
-`CMakeLists.txt` compiles exactly one translation unit (`src/lib.c`) into the
-shared library. There is no second module, no macro-generated symbol family, and
-no conditional compilation (`#ifdef`) anywhere in the C sources. Therefore the
-public ABI surface is a single function, and **no C source was left
-untranslated** — `translation/src/lib.rs` contains both `hdr_valid` (as a private
-`unsafe fn`, matching the C `static`) and `hdr_compare` (as
-`#[unsafe(no_mangle)] pub unsafe extern "C" fn`).
+`c_src/CMakeLists.txt` builds exactly one target (`SHARED` library from
+`src/lib.c`). There is **no** second module, no binary/driver target, and no
+conditional compilation, so there is no un-translated C source. Both C functions
+are present in `translation/src/lib.rs`.
 
-## `nm -D --defined-only` — exported symbols
+## Defined (exported) symbols
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|-----------|--------|
-| 1 | `hdr_compare` | `T` (0x1190) | `T` (0x11690) | **present in both** |
+`nm -D` defined-symbol rows, filtered to non-weak, non-libc entries:
 
-Raw output:
+| symbol | C `.so` | Rust `.so` | notes |
+|--------|---------|-----------|-------|
+| `hdr_compare` | `T` (0x1190) | `T` (0x11690) | exported by `#[unsafe(no_mangle)] pub unsafe extern "C" fn hdr_compare` |
 
-```
-$ nm -D --defined-only c_src/build/libharvest-work-H33xBf.so
-0000000000001190 T hdr_compare
+`hdr_valid` is `static` in C, therefore has **no** dynamic symbol and must NOT
+appear in the Rust `.so` either. It is a private `unsafe fn` in Rust — correct.
+Confirmed absent from both `nm -D` outputs.
 
-$ nm -D --defined-only translation/target/release/libhdr_compare_lib.so
-0000000000011690 T hdr_compare
-```
+Weak/toolchain symbols present in both and irrelevant to ABI parity:
+`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
+`__gmon_start__`.
 
-### Symbol diff
+## Symbol diff
 
 ```
-C-exported symbols missing from Rust .so :  (none)
+comm -23 <(c defined symbols) <(rust defined symbols)   ->   (empty)
 ```
 
-The diff is **empty**. `hdr_valid` is `static` in C, so it is deliberately absent
-from both `.so` files (confirmed: it does not appear in either `nm -D` listing);
-keeping it private in Rust is the correct parity choice, not a gap.
+Reproduce with `translation/check_symbols.sh`.
 
-## `nm -D -u` — undefined (imported) symbols
+**Missing/undefined non-libc symbols in the Rust `.so`: 0.**
 
-| side | non-libc / non-runtime undefined symbols |
-|------|------------------------------------------|
-| C    | none (only the weak `_ITM_*`, `__cxa_finalize`, `__gmon_start__` glibc/ITM stubs) |
-| Rust | none — every entry is glibc (`malloc`, `memcpy`, `open64`, `pthread_key_create`, …) or the C++/Rust unwinder (`_Unwind_*` from `libgcc`), both pulled in by Rust `std`'s panic/backtrace machinery, not by untranslated code |
+The Rust `.so` additionally carries `U` (undefined) imports for libc and the
+unwinder (`malloc`, `memcpy`, `_Unwind_*`, `pthread_key_create`, …). These come
+from the Rust standard library and are all libc/`libgcc_s` runtime imports, not
+missing translated symbols.
 
-**0 missing / undefined non-libc symbols in the Rust `.so`.** ✅
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one (`--no-default-features` is equivalent to the
-default here). Phase D's "every feature combination" therefore collapses to the
-single combination, which is verified explicitly by
-`tests/feature_matrix.sh` / the commands recorded in `VERIFICATION.md`.
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.

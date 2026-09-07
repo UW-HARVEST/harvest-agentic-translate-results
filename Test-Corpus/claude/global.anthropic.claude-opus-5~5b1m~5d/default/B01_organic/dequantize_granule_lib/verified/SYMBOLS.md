@@ -1,90 +1,92 @@
 # SYMBOLS.md — Phase A symbol surface
 
-## Source inventory
-
-The whole C library is two files:
-
-| C file | contents |
-|--------|----------|
-| `c_src/include/lib.h` | `bs_t`, `L12_scale_info` typedefs; declaration of `dequantize_granule` |
-| `c_src/src/lib.c` | `static uint32_t get_bits(bs_t*, int)`, `int dequantize_granule(float*, bs_t*, L12_scale_info*, int)` |
-
-No other translation unit exists, so no C module can have been skipped by the
-translation. `translation/src/lib.rs` contains a translation of **both**
-functions (`get_bits` private, `dequantize_granule` exported) plus both
-`#[repr(C)]` structs.
-
-## `nm -D` on the C shared library
+Derived mechanically from:
 
 ```
-$ nm -D --defined-only c_src/build/libharvest-work-GGsW52.so
-00000000000011d1 T dequantize_granule
+nm -D --defined-only c_src/build/libharvest-work-bn22YD.so
+nm -D --defined-only translation/target/release/libdequantize_granule_lib.so
 ```
 
-(the `.so` basename is derived from the parent directory name by
-`CMakeLists.txt`: `cmake_path(GET parent FILENAME project_name)`)
+## C source inventory
 
-## `nm -D` on the Rust shared library
+`c_src` contains exactly two files that carry code:
+
+| file | contents |
+|------|----------|
+| `c_src/include/lib.h` | `bs_t`, `L12_scale_info` typedefs, `dequantize_granule` prototype. No macros, no inline functions. |
+| `c_src/src/lib.c` | `static uint32_t get_bits(bs_t*, int)` (internal, **not** exported), `int dequantize_granule(float*, bs_t*, L12_scale_info*, int)` (exported). |
+
+No other translation unit exists, so no C module was skipped in translation.
+`CMakeLists.txt` builds exactly one target (`SHARED` library from `src/lib.c`);
+there is **no binary/driver executable**, so the "compare stdout of the two
+binaries" gate is not applicable.
+
+## Exported (dynamic, defined) symbols
+
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `dequantize_granule` | `T` (0x11d1) | `T` (0x116d0) | **present in both** |
+
+## Internal (non-exported) symbols
+
+| symbol | C | Rust | note |
+|--------|---|------|------|
+| `get_bits` | `static` → local `t`, not in `nm -D` | private `unsafe fn get_bits` | Correctly *not* exported on either side. Exercised indirectly through `dequantize_granule`. |
+
+## Symbol diff
 
 ```
-$ nm -D --defined-only translation/target/debug/libdequantize_granule_lib.so
-00000000000129f0 T dequantize_granule
-
-$ nm -D --defined-only translation/target/release/libdequantize_granule_lib.so
-0000000000011c70 T dequantize_granule
+$ diff <(nm -D --defined-only .../libharvest-work-bn22YD.so        | awk '{print $3}' | sort) \
+       <(nm -D --defined-only .../libdequantize_granule_lib.so | awk '{print $3}' | sort)
+(empty)
 ```
 
-## Parity table
-
-| # | symbol | C `.so` | Rust `.so` (debug) | Rust `.so` (release) | status |
-|---|--------|---------|--------------------|----------------------|--------|
-| 1 | `dequantize_granule` | `T` | `T` | `T` | ✅ exported by both |
-
-### Symbols intentionally NOT exported
-
-| symbol | reason |
-|--------|--------|
-| `get_bits` | `static` in `c_src/src/lib.c`; has internal linkage, absent from the C `.so` dynamic symbol table. The Rust translation keeps it as a private `unsafe fn`, which matches. Exporting it would be a *divergence*. |
-
-### Diff
-
-```
-symbols in C .so but not in Rust .so : (none)
-symbols in Rust .so but not in C .so : (none — after filtering the linker /
-                                        libc boilerplate that both objects
-                                        carry, see scripts/symbol_diff.sh)
-```
-
-**Result: 0 missing symbols. No C source was left untranslated.**
+**Missing from Rust `.so`: 0.**
+**Undefined non-libc symbols in Rust `.so`: 0.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` has **no `[features]` section** and no optional
-dependencies, so the crate has exactly one configuration (the default, which is
-also `--no-default-features`). Both are verified in
-`scripts/check_feature_combos.sh`.
+`translation/Cargo.toml` declares **no `[features]` section** and no optional
+dependencies, therefore the only build configuration is the default one.
+`--no-default-features` is equivalent to the default build. The Phase D
+"every feature combination" gate collapses to a single combination, which is
+verified by `scripts/check_all.sh` (which iterates the powerset of `[features]`,
+falling back to `default` + `--no-default-features` when the table is absent).
 
-## Phase D completion gate
+## Type layout parity
 
-| gate | evidence | status |
-|------|----------|--------|
-| `nm -D`: 0 symbols missing from the Rust `.so` | `scripts/symbol_diff.sh` (exit 0), `tests/layout.rs::symbol_parity_between_c_and_rust_shared_objects` | ✅ |
-| 0 undefined non-libc symbols in the Rust `.so` | `scripts/symbol_diff.sh` | ✅ |
-| no C module left untranslated | `c_src` is 2 files / 2 functions, both present in `src/lib.rs`; no stubs, no `unimplemented!()` | ✅ |
-| ABI layout of both public structs matches the C header | `tests/layout.rs::struct_offsets_match_the_c_header` (`bs_t` = 16 B; `L12_scale_info` = 900 B, fields at 0/768/769/770/834) | ✅ |
-| every `CONFIGS.md` row passes over randomized inputs | `cargo test --test phase_b` — 41/41 | ✅ |
-| every `ERRORS.md` row has a passing error-path test | `cargo test --test phase_c` — 28/28 | ✅ |
-| holds under every feature combination x profile | `scripts/check_feature_combos.sh` — no `[features]` declared, so `{<default>, --no-default-features}` x `{debug, release}` = 4 configurations, all pass | ✅ |
-| the suite actually has power (would catch a real mistranslation) | `scripts/mutation_check.py` — 15/15 injected mistranslations caught; the 1 provably-equivalent mutation survives as expected | ✅ |
-| robust to a differently-optimised C build | whole suite re-run with `C_SO=` a `-O2` build of `c_src` — all pass | ✅ |
+| type | C | Rust | checked |
+|------|---|------|---------|
+| `bs_t` | `{ const uint8_t*; int; int; }` → size 16, align 8 | `#[repr(C)] { *const u8, c_int, c_int }` | yes (`layout_parity` test) |
+| `L12_scale_info` | `{ float[192]; uint8_t; uint8_t; uint8_t[64]; uint8_t[64]; }` → size 900, align 4 | `#[repr(C)] { [f32;192], u8, u8, [u8;64], [u8;64] }` | yes (`layout_parity` test) |
 
-### Grep evidence that nothing was skipped
+## Verification matrix (actual results)
+
+`./scripts/check_all.sh` builds the C `.so`, then for every
+(profile x feature-combination) pair rebuilds the Rust `cdylib`, diffs the
+exported symbol sets, and runs the whole differential suite:
+
+| profile | features | symbol diff | tests |
+|---------|----------|-------------|-------|
+| debug   | default              | empty | 58 passed, 0 failed |
+| debug   | no-default-features  | empty | 58 passed, 0 failed |
+| release | default              | empty | 58 passed, 0 failed |
+| release | no-default-features  | empty | 58 passed, 0 failed |
+
+(58 = 24 Phase B + 28 Phase C + 6 Phase D.)
+
+The `debug` profile matters independently of `release`: it enables integer
+overflow checks, so it also proves that no arithmetic in the translation relies
+on an implicit wrap that Rust would panic on. Every wrapping operation in
+`src/lib.rs` is spelled out with `wrapping_*`.
+
+## Undefined symbols in the Rust `.so`
 
 ```
-$ grep -c 'unimplemented!\|todo!\|unreachable!\|panic!' translation/src/lib.rs
-0
-$ grep -c '^\(static\|int\) ' c_src/src/lib.c      # 2 function definitions
-2
-$ grep -c 'fn get_bits\|fn dequantize_granule' translation/src/lib.rs
-2
+$ nm -D --undefined-only translation/target/release/libdequantize_granule_lib.so
 ```
+
+yields only glibc-versioned imports (`memcpy@GLIBC_*`, `mmap64@GLIBC_*`,
+`__errno_location@GLIBC_*`, …) pulled in by the Rust standard library.
+**0 undefined non-libc symbols** — asserted by
+`phase_d_parity::no_unresolved_non_libc_symbols_in_rust_so`.

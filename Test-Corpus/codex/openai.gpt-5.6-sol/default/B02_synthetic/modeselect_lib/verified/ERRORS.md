@@ -1,37 +1,22 @@
 # Error Surface
 
-The following mechanical source scan was used:
+Derived mechanically from every conditional return, switch default, null use,
+assertion, explicit range check, and error-return pattern in
+`../c_src/src/lib.c` and `../c_src/include/lib.h`.
 
-```sh
-rg -n 'RETURN_ERROR|return\s+-1|return\s+NULL|assert\s*\(|NULL|enum|\
-#if|#ifdef|#ifndef|\b(min|max|MIN|MAX)\b|\bif\s*\(|\bswitch\s*\(' \
-  ../c_src/include ../c_src/src
-```
+The C source contains no `assert`, explicit null check, length parameter, enum
+parameter, `RETURN_ERROR`, `return -1`, or `return NULL`.
 
-The C source has no error-return macro, `return -1`, `return NULL`, assertion,
-explicit range check, null check, error enum, length parameter, or min/max
-constant. Its `if` statements only classify strings and its `switch` maps
-multiplier levels, with `0xDEAD` as a normal default result.
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `classify_mode` | non-null NUL-terminated string unequal to `"standard"`, `"enhanced"`, `"turbo"`, and `"extreme"` | returns `0x00` | [x] |
+| 2 | `apply_multiplier` | `level < 0` or `level > 4` (the `default` switch arm) | returns `0xDEAD` | [x] |
+| 3 | `classify_mode` | generic FFI null-pointer boundary: `mode == NULL`; C performs `strcmp(NULL, ...)` without a null check | process terminates with a fault signal | [x] |
 
-## Source-Defined Rejections
+Generic-boundary applicability:
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| - | - | No source-defined rejection paths | - |
-
-## Generic FFI Boundaries
-
-The mandatory generic checks add the only pointer boundary. It is not a C
-rejection path: passing null to `strcmp` is undefined behavior. On the target
-x86-64/glibc platform, it deterministically terminates the process with
-`SIGSEGV` (shell status 139), so it must be tested in isolated child processes.
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
-|---|----------|----------------------------------------------|-------------------|-----|
-| G1 | `classify_mode` | `mode == NULL` | process terminates with `SIGSEGV` | [x] |
-
-There are no length-taking APIs or enum-taking APIs, so zero/oversized lengths
-and out-of-range enum discriminants are not applicable. Scalar zero, extreme,
-and out-of-switch-range values return ordinary results and are covered by
-`CONFIGS.md`.
+- There are no length/count arguments, so zero/oversized lengths do not apply.
+- There are no C enum arguments, so invalid enum discriminants do not apply.
+- Zero and extreme integer values are exercised in `CONFIGS.md` and the
+  differential suite.
 

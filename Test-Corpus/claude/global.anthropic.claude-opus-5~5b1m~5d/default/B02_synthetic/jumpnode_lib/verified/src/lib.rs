@@ -81,7 +81,10 @@ unsafe fn find_node_by_id(id: c_int) -> *mut Node {
 
 /// static int add_node(int id, int parent_id, double value)
 unsafe fn add_node(id: c_int, parent_id: c_int, value: c_double) -> c_int {
-    if unsafe { NODE_COUNT } as usize >= MAX_NODES {
+    // C: `if (node_count >= MAX_NODES)` — a **signed** `int` comparison.
+    // Casting to `usize` first would map a negative `node_count` onto a huge
+    // unsigned value and wrongly reject the insert; the C proceeds instead.
+    if unsafe { NODE_COUNT } >= MAX_NODES as c_int {
         return STATUS_ERROR;
     }
 
@@ -358,6 +361,118 @@ fn fmt_int(v: c_int) -> IntStr {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jumpnode_initialize_test_data() {
     unsafe { initialize_test_data() }
+}
+
+// ---------------------------------------------------------------------------
+// Additional test-only probes, all behind the same non-default feature.
+//
+// `c_src/src/lib.c` keeps `find_node_by_id`, `add_node`, `process_backward`,
+// `compute_size_metric` and `safe_double_to_int` `static`, and the only caller
+// of `add_node`/`initialize_test_data` is dead code, so none of them are
+// reachable through the shipped `.so`. These hooks let the differential tests
+// drive each one directly; `tests/c_harness/harness.c` exposes byte-identical
+// hooks over the original C by `#include`ing it, so both sides are compared
+// fairly. None of this is compiled into the default build.
+// ---------------------------------------------------------------------------
+
+/// `add_node(id, parent_id, value)`
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_add_node(
+    id: c_int,
+    parent_id: c_int,
+    value: c_double,
+) -> c_int {
+    unsafe { add_node(id, parent_id, value) }
+}
+
+/// `node_count = n`
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_set_node_count(n: c_int) {
+    unsafe { NODE_COUNT = n };
+}
+
+/// `return node_count`
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_get_node_count() -> c_int {
+    unsafe { NODE_COUNT }
+}
+
+/// `find_node_by_id(id)`, returned as an index into `node_storage` (`-1` for NULL)
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_find_node_index(id: c_int) -> c_int {
+    let p = unsafe { find_node_by_id(id) };
+    if p.is_null() {
+        return -1;
+    }
+    let base = node_storage_base();
+    unsafe { p.offset_from(base) as c_int }
+}
+
+/// `compute_size_metric(s)`
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_compute_size_metric(s: *const c_char) -> c_int {
+    unsafe { compute_size_metric(s) }
+}
+
+/// `safe_double_to_int(v)`
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_safe_double_to_int(v: c_double) -> c_int {
+    safe_double_to_int(v)
+}
+
+/// `process_backward(array, size, start_offset)`
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_process_backward(
+    array: *mut c_int,
+    size: usize,
+    start_offset: c_int,
+) -> c_int {
+    unsafe { process_backward(array, size, start_offset) }
+}
+
+/// Reads `node_storage[index]` into the caller's out-params.
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_get_node(
+    index: c_int,
+    id: *mut c_int,
+    parent_id: *mut c_int,
+    value: *mut c_double,
+    data_out: *mut c_int,
+) -> c_int {
+    if index < 0 || index as usize >= MAX_NODES {
+        return -1;
+    }
+    let base = node_storage_base();
+    unsafe {
+        let n = base.offset(index as isize);
+        *id = (*n).id;
+        *parent_id = (*n).parent_id;
+        *value = (*n).value;
+        for k in 0..4usize {
+            *data_out.add(k) = (*n).data[k];
+        }
+    }
+    0
+}
+
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_sizeof_node() -> c_int {
+    core::mem::size_of::<Node>() as c_int
+}
+
+#[cfg(feature = "expose_init_test_data")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jumpnode_test_max_nodes() -> c_int {
+    MAX_NODES as c_int
 }
 
 unsafe fn initialize_test_data() {

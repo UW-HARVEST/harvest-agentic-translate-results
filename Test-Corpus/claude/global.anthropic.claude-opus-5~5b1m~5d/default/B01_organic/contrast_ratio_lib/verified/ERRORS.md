@@ -1,58 +1,68 @@
-# ERRORS.md — Phase C error / rejection surface table
+# ERRORS.md — error / rejection surface table (Phase C)
 
-Derived mechanically from the C source. Exhaustive grep of `c_src/` for every
-rejection mechanism:
+Mechanically derived from `c_src/src/lib.c` and `c_src/include/lib.h`.
+
+## Grep audit of every rejection mechanism the C source could use
 
 ```
-grep -nE 'RETURN_ERROR|return *-1|return *NULL|assert|errno|goto|_MIN|_MAX' \
-     src/lib.c include/lib.h   ->  no matches
-grep -nE '\*'    src/lib.c include/lib.h  ->  only the float multiplications on
-                                              line 9; NO pointer type anywhere
-grep -nE 'enum'  src/lib.c include/lib.h  ->  no matches
+$ grep -nE 'return -1|return NULL|RETURN_ERROR|assert|errno|abort|exit\(|if \(|\?|<|>|==|!=' c_src/src/lib.c
 ```
 
-**Findings — the API has no conventional error surface:**
+Findings:
 
-- no error-return macro, no `-1` / `NULL` sentinel, no error enum, no `errno` use
-- no `assert`, no explicit range check, no min/max constant
-- no pointer parameter anywhere → **no null-pointer path exists**
-- no `enum` parameter → **no out-of-range-enum path exists**
-- `contrast_ratio` takes two `cb_rgb_255` **by value**; the members are
-  `unsigned char`, so **every** one of the 2^24 bit patterns per argument is a
-  valid, in-range input. There is no "oversized length" or "invalid value".
-- the only `return` statements (`src/lib.c` lines 10, 22, 28) are unconditional
-  success returns.
+* `return -1` / `return NULL` / `RETURN_ERROR` / error enums / status codes: **none**.
+* `assert` / `abort` / `exit` / `errno`: **none**.
+* pointer parameters (⇒ possible null checks): **none** — `cb_rgb_255` is passed
+  **by value**, so there is no null-pointer input to reject.
+* length / count / size parameters: **none**.
+* enum parameters: **none** (no `enum` in the header, so there is no
+  out-of-range-enum input class for this API).
+* explicit range checks: **none**. `A.R/G/B` are `unsigned char`, so every one
+  of the 256 values per channel is in range by construction; the C code performs
+  no validation.
+* min/max constants: **none**.
 
-Consequently the entire "rejection" surface of this library is **degenerate
-floating-point outcomes** — the C code deliberately does *not* guard the
-division `High / Low` (no WCAG `+0.05` offset), so it can divide by zero. Those
-are enumerated below, one row per distinct condition the C actually produces,
-and each is asserted **bit-for-bit** (`to_bits()`), not merely "both are
-non-finite" — the NaN payload/sign must match too.
+The only conditionals in the source are *value-dependent branches*, not
+rejections:
 
-`Lum((0,0,0)) == +0.0f` exactly (each channel takes the `x/12.92` branch giving
-`+0.0`, and `0.2126f*0 + 0.7152f*0 + 0.0722f*0 == +0.0f`), and pure black is the
-*only* input with zero luminance (any channel `n >= 1` contributes a strictly
-positive term). So `Low == 0` exactly when an operand is pure black.
+| location | conditional | nature |
+|----------|-------------|--------|
+| `cbLuminance` (×3) | `X > 0.04045 ? pow(...) : X / 12.92` | sRGB transfer-curve branch (valid path, tracked in `CONFIGS.md`) |
+| `cbContrastRatio` | `if (High < Low) { swap }` | ordering branch (valid path, tracked in `CONFIGS.md`) |
+
+`contrast_ratio` therefore has a **total** domain: it cannot fail and returns no
+error sentinel. Its only "degenerate" outputs are IEEE-754 special values
+produced by the unguarded division `High / Low`. Those are the rows below: they
+are the C library's *de facto* rejection/degenerate surface and the Rust must
+reproduce them bit-for-bit (including the sign of infinity and the exact NaN
+payload class).
 
 ## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✅ |
-|---|----------|----------------------------------------------|-------------------|------|----|
-| E1 | `contrast_ratio` | `A == (0,0,0)`, `B != (0,0,0)` → `LumA=0 < LumB`, `High<Low` **true** → swap → `Low = LumA = +0.0`, `High = LumB > 0` → `High/Low` | `+inf` (`0x7F800000`), no trap, no error code | `err_e1_black_a_nonblack_b` | [x] |
-| E2 | `contrast_ratio` | `A != (0,0,0)`, `B == (0,0,0)` → `Low = LumB = +0.0`, `High = LumA > 0`; `High<Low` **false** (no swap) → `High/Low` | `+inf` (`0x7F800000`) | `err_e2_nonblack_a_black_b` | [x] |
-| E3 | `contrast_ratio` | `A == (0,0,0)` **and** `B == (0,0,0)` → `High = Low = +0.0`; `0<0` false → `+0.0/+0.0` | NaN, **exact bit pattern** (x86 SSE `divss` indefinite QNaN) must match | `err_e3_both_black_nan_bits` | [x] |
-| E4 | `contrast_ratio` | `A == B` and non-black → `High == Low`, `High<Low` false → `x/x` | exactly `1.0f` (`0x3F800000`) | `err_e4_identical_colors_exact_one` | [x] |
-| E5 | `contrast_ratio` | value one step past the sRGB branch boundary: channel `10` (`10/255 = 0.0392 > 0.04045` **false** → `x/12.92`) vs channel `11` (`0.0431` **true** → `pow`). Off-by-one here silently changes the branch. | both branches taken identically by C and Rust | `err_e5_branch_boundary_10_11` | [x] |
-| E6 | `contrast_ratio` | extremal in-range channel values `0` and `255` (the "zero and oversized length" analogue for this API — the full domain endpoints), all 8 corner colors | finite ratio, bit-identical | `err_e6_domain_endpoints` | [x] |
-| E7 | `contrast_ratio` | ABI edge: the 3-byte by-value struct is read out of a larger buffer whose 4th byte is garbage (`0xFF`/`0xAA`); the padding byte in the register must be ignored by both | result independent of the garbage padding byte | `err_e7_struct_padding_garbage` | [x] |
-| E8 | `contrast_ratio` | every remaining bit pattern of the argument pair is in-range by construction; verified by exhaustive sweep of all 2^24 colors (rows C65/C66) that no input produces a divergence or a spurious non-finite value | no rejection path; only E1–E3 are non-finite | `exhaustive_all_colors_vs_white`, `exhaustive_all_colors_vs_black` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|---------------------------------------------|-------------------|
+| 1 | `contrast_ratio` | `B == {0,0,0}` (black), `A` non-black ⇒ `Low == 0.0f`, `High > 0` — division by zero, **no guard** in C | `+inf` (`0x7F800000`) |
+| 2 | `contrast_ratio` | `A == {0,0,0}` (black), `B` non-black ⇒ swap taken (`High < Low` true), then `Low == 0` | `+inf` (`0x7F800000`) |
+| 3 | `contrast_ratio` | `A == B == {0,0,0}` ⇒ `0.0f / 0.0f` | `NaN` (quiet, `0x7FC00000`) |
+| 4 | `contrast_ratio` | `A == B` (any equal non-black pair) ⇒ `High == Low`, swap not taken, exact self-division | exactly `1.0f` (`0x3F800000`) |
+| 5 | `contrast_ratio` | boundary of the sRGB transfer branch: channel byte `10` ⇒ `10/255 = 0.039215688f ≤ 0.04045` (linear arm) vs channel byte `11` ⇒ `0.043137256f > 0.04045` (`pow` arm). The comparison is done in `double` after promotion, so the *exact* branch point must match | branch-identical result; no error |
+| 6 | `contrast_ratio` | every channel at its maximum `255` for both args ⇒ `High = Low = 1.0f` (largest representable luminance) | exactly `1.0f` |
+| 7 | `contrast_ratio` | `A` = black, `B` = the *smallest* non-black colour `{0,0,1}` ⇒ `Low` is the smallest non-zero luminance (`0.0722f * (1/255)/12.92`), producing the largest finite ratio | large finite `float`, no overflow to `inf` |
+| 8 | `contrast_ratio` | argument-order asymmetry: `contrast_ratio(A,B)` vs `contrast_ratio(B,A)` — the `if (High < Low)` swap must make the function exactly symmetric, **including** for the `0`/`NaN` cases (NaN compares false ⇒ no swap) | identical bits for both orders (except row 3, where both are NaN) |
+| 9 | `contrast_ratio` | struct padding / trailing garbage: `cb_rgb_255` is 3 bytes with align 1 but is passed in a register; a caller that leaves the 4th…8th register bytes non-zero must not change the result (C reads only 3 bytes) | result independent of the padding bytes |
+| 10 | `contrast_ratio` | out-of-"range" byte values: there are none — `unsigned char` inputs are exhaustively valid. Passing e.g. `256` wraps to `0` at the C ABI level | wrap-around to `0`; no rejection |
 
-**Generic boundaries required by Phase C, and why they are or are not applicable**
+Rows 1–10 are all covered by `tests/differential.rs` (Phase C section); every
+row is asserted on **raw `u32` bit patterns**, so `+inf` vs `-inf` vs `NaN` vs a
+finite value are distinguished, not merely "both failed".
 
-| generic boundary | applicable? | handling |
-|---|---|---|
-| null pointers | **no** — API takes no pointers (both args by value) | n/a, documented above |
-| zero length / oversized length | **no** — API takes no length/buffer | closest analogue = domain endpoints `0`/`255`, covered by E6 |
-| value one past valid range | **n/a for the type** (all 256 `unsigned char` values valid) but the *internal* threshold has a one-past boundary → covered by E5; and out-of-range struct **padding** covered by E7 |
-| out-of-range enum across FFI | **no** — API declares no enum | n/a, documented above |
+## Status
+
+All 10 rows have a passing differential test (`tests/differential.rs`,
+`phase_c_row_1_*` … `phase_c_row_10_*`, plus `phase_c_generic_boundaries` for
+the generic FFI boundaries: extremes, one-step-past-branch-point values, wide
+integers truncated at the ABI, and the structural proof that there is no
+pointer/length/enum parameter and therefore no null / oversized-length /
+invalid-enum input class). Verified against the C library built at `-O0`,
+`-O2`, `-O3`, and via CMake defaults, and against both the debug and release
+Rust `cdylib`. [x] ×10

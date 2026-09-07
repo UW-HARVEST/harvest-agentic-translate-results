@@ -1,46 +1,74 @@
-# ERRORS.md — Error / rejection surface table
+# ERRORS.md — Phase A: error / rejection surface table
 
-Derived mechanically from `c_src/src/driver.c`. Every function in this library
-returns `void` and reports exclusively through `stdout`, so "expected C result"
-is the exact byte sequence written to `stdout` (captured by redirecting fd 1).
+Mechanically derived from `c_src/src/driver.c`. Every function in this library
+returns `void`, so there are **no error codes, no sentinel returns, no
+`RETURN_ERROR` macros, no `assert`s, and no error enums**. Grep confirms it:
 
-The C source contains exactly **two** literal conditional rejection branches
-(`grep -n 'return\|assert\|NULL\|exit\|abort\|errno\|#if\|else'` yields only
-line 32 `if(line != NULL)` and line 66 `else`). There are no error return
-codes, no error enums, no `assert`s, no length parameters and no allocation
-failures. Rows E1–E2 are those two literal branches; rows E3–E13 are the
-remaining rejection-shaped / degenerate boundary conditions the C code actually
-reaches — chiefly the `double`→`int` conversion whose result is out of range,
-which on x86-64 (`cvttsd2si`) yields the "integer indefinite" value `INT_MIN`
-(`-2147483648`) rather than trapping.
+```
+$ grep -nE 'return|assert|RETURN_ERROR|NULL|errno|-1' c_src/src/driver.c
+32:    if(line != NULL)
+$ grep -nE 'if|switch|\?|#if' c_src/src/driver.c
+32:    if(line != NULL)          <-- guard 1
+61:    if (fabs(data) > 0.000001) <-- guard 2
+```
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | [x] |
-|----|----------|---------------------------------------------|-------------------|-----|
-| E1  | `printLine` | `line == NULL` (line 32 null check fails) | **no output at all** (0 bytes); silent no-op, does not crash | [x] |
-| E2  | `good` → `goodB2G` | `fabs(data) > 0.000001` is false (line 61 `else`, line 66) | `50\n` from `goodG2B`, then `This would result in a divide by zero\n` | [x] |
-| E3  | `bad` | `data == 0.0f` → `100.0/0.0` = `+inf` → `(int)+inf` out of range | `-2147483648\n` | [x] |
-| E4  | `bad` | `data == -0.0f` → `100.0/-0.0` = `-inf` → `(int)-inf` out of range | `-2147483648\n` | [x] |
-| E5  | `bad` | `data` is `NaN` → `100.0/NaN` = `NaN` → `(int)NaN` invalid | `-2147483648\n` | [x] |
-| E6  | `bad` | `data` positive but tiny (e.g. `1e-30f`, subnormal `1e-45f`) → quotient `> INT_MAX` | `-2147483648\n` | [x] |
-| E7  | `bad` | `data` negative but tiny (e.g. `-1e-30f`) → quotient `< INT_MIN` | `-2147483648\n` | [x] |
-| E8  | `bad` | `data` exactly at the overflow edge: quotient `>= 2147483648.0` (one step past valid range) | `-2147483648\n` | [x] |
-| E9  | `bad` | `data` one step *inside* the edge: quotient `< 2147483648.0` | truncated quotient, **not** `INT_MIN` (proves E8 is a real boundary, not blanket saturation) | [x] |
-| E10 | `bad` | `data` is `+inf` / `-inf` → `100.0/inf` = `±0.0` → `(int)` of zero | `0\n` (**not** an error; must not be conflated with E3–E8) | [x] |
-| E11 | `good` → `goodB2G` | `data` is `NaN`: `fabs(NaN) > 0.000001` is false (NaN compares false) | `50\n` then `This would result in a divide by zero\n` | [x] |
-| E12 | `good` → `goodB2G` | `data == 1e-6f`: `(double)1e-6f` = `9.99999997475e-07` `< 1e-06`, so `>` is **false** | `50\n` then the divide-by-zero message — the literal `0.000001` is a `double`, so the float threshold lands *below* it | [x] |
-| E13 | `printLine` | `line` points at a string containing `%d`/`%s`/`%n` conversion specifiers | the string is printed **verbatim** (it is the `%s` argument, never the format) — no format-string interpretation | [x] |
+So the C library has exactly **two explicit guards** plus a set of
+*unguarded* paths where the input drives the code into C undefined /
+implementation-defined behaviour. The observable behaviour of those unguarded
+paths is part of the ground truth and is enumerated here too, because a caller
+can reach them and the Rust must match byte-for-byte.
 
-## Generic FFI-boundary conditions also covered
+The single magic constant in the source is `0.000001` (line 61). There are no
+other min/max constants, no length limits, and no allocation.
 
-Even though they are not distinct branches in the C, these are exercised by
-`tests/differential.rs` because they are the classic blind spots:
+Observable "result" for every row = the exact bytes written to `stdout`.
 
-| condition | covered by |
-|-----------|------------|
-| NULL pointer into `printLine` | E1 |
-| zero-length input (`""`, empty NUL-terminated string) | `test_e13_and_empty_and_percent_strings` (`""` → `"\n"`) |
-| oversized input (8 KiB string, > any internal buffer) | `test_printline_oversized` |
-| full `int` range incl. `INT_MIN`/`INT_MAX` across the FFI boundary | `test_printintline_boundaries` |
-| values one step past a valid range | E8 / E9 (int-conversion edge), E12 (threshold edge) |
-| out-of-range enum values | **N/A** — this library declares no `enum` and takes no `int`-tagged mode/flag parameter. The only integer parameter is `printIntLine`'s payload, whose entire 32-bit domain is valid and is tested at both extremes plus randomized values. |
-| non-UTF-8 bytes in `printLine` (Rust `str` would reject these; the C does not) | `test_printline_non_utf8` |
+`INT_MIN` below means the four-byte-decimal text `-2147483648`.
+
+## Explicit guards
+
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `printLine` | `line == NULL` (`if(line != NULL)` fails, line 32) | returns immediately, writes **nothing** (0 bytes) |
+| 2 | `goodB2G` (reached via `good`, `driver`) | `fabs((double)data) > 0.000001` is false, i.e. `data == 0.0f` | takes `else`, prints `This would result in a divide by zero\n` |
+| 3 | `goodB2G` via `good`/`driver` | `data == -0.0f` (`fabs` → `+0.0`, not `> 1e-6`) | `This would result in a divide by zero\n` |
+| 4 | `goodB2G` via `good`/`driver` | `data` = NaN — every `>` comparison with NaN is false, so the guard *fails* | `This would result in a divide by zero\n` (NOT the division path) |
+| 5 | `goodB2G` via `good`/`driver` | `data == 1e-6f` = `9.99999997475e-7` as `double`, which is `< 0.000001` — the exact off-by-one-ULP boundary *below* the threshold | `This would result in a divide by zero\n` |
+| 6 | `goodB2G` via `good`/`driver` | `data == 1.0000001e-6f` (bits `0x358637BE`, = `nextafter(1e-6f, +inf)`) — one ULP *past* the threshold, guard passes | division path, prints `99999988\n` (verified against the compiled C `.so`) |
+| 7 | `goodB2G` via `good`/`driver` | `data` = smallest positive subnormal `1e-45f`, guard fails | `This would result in a divide by zero\n` |
+| 8 | `goodB2G` via `good`/`driver` | `data == -1e-7f` (negative, magnitude under threshold) | `This would result in a divide by zero\n` |
+
+## Unguarded paths (`bad` has **no** guard — this is the injected defect)
+
+`bad` computes `(int)(100.0 / data)` with no check at all (lines 43–47).
+Division by zero and out-of-range float→int conversion are C UB; the ground
+truth is whatever the compiled C `.so` does on this target (x86-64,
+`cvttsd2si`, which yields the "integer indefinite" value `INT_MIN`).
+
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 9  | `bad` | `data == 0.0f` → `100.0/0.0` = `+inf`, `(int)+inf` out of range | prints `-2147483648\n` (`INT_MIN`) |
+| 10 | `bad` | `data == -0.0f` → `-inf` | prints `-2147483648\n` |
+| 11 | `bad` | `data` = NaN → quotient NaN, `(int)NaN` | prints `-2147483648\n` |
+| 12 | `bad` | `data` = tiny subnormal `1e-45f` → `~1e47`, overflows `int` | prints `-2147483648\n` |
+| 13 | `bad` | `data == 4.65661287e-8f` (bits `0x33480000`) → quotient exactly `2147483648.0` = `INT_MAX+1`, one step past the representable range | prints `-2147483648\n` (indefinite). One ULP up (`0x33480001`, q `2147483484.16`) prints `2147483484\n` — the guard is exact |
+| 14 | `bad` | `data == -4.65661287e-8f` (bits `0xB3480000`) → quotient exactly `-2147483648.0`, the lowest *still-valid* value (boundary from the other side) | prints `-2147483648\n` (in-range, genuine result — must not be treated as overflow) |
+| 15 | `bad` | `data == +inf` → `100.0/inf` = `+0.0` | prints `0\n` |
+| 16 | `bad` | `data == -inf` → `-0.0`, `(int)-0.0` | prints `0\n` (not `-0`) |
+| 17 | `bad` | `data` = negative NaN / signalling NaN bit patterns (e.g. `0xFFC00000`, `0x7FA00000`) | prints `-2147483648\n` |
+| 18 | `bad` | truncation-toward-zero of a negative quotient, `data == -3.0f` → `-33.333…` | prints `-33\n` (truncate, not floor `-34`) |
+| 19 | `driver` | `badData` invalid (any of rows 9–17) while `goodData` valid | the `good` output is still produced first, then the `bad` line; ordering must match |
+| 20 | `driver` | both `goodData` and `badData` invalid | rows 2–8 output followed by rows 9–17 output, in C's order |
+
+## Generic FFI boundary cases (covered even though not in the C source)
+
+| # | function | trigger | expected C result |
+|---|----------|---------|-------------------|
+| 21 | `printLine` | `line` = `""` (pointer to a lone NUL) — zero length | prints a single `\n` |
+| 22 | `printLine` | `line` containing `%d`, `%s`, `%n` — format specifiers in the *argument*, which `printf("%s\n", line)` must NOT interpret | prints the literal text + `\n` |
+| 23 | `printLine` | very long string (oversized length, 64 KiB) crossing `stdio` buffer boundaries | prints the whole string + `\n` |
+| 24 | `printLine` | non-ASCII / high bytes `0x80`–`0xFF` (invalid UTF-8) — Rust must not validate | prints the raw bytes + `\n` |
+| 25 | `printIntLine` | `INT_MIN` and `INT_MAX` — extremes of the value range | prints `-2147483648\n` / `2147483647\n` |
+| 26 | `printIntLine` | `0` | prints `0\n` |
+| 27 | *(enums)* | the public API declares **no enum type** — `driver.h` exposes only `float`/`int`/`const char*`. The analogue of "out-of-range enum value" here is an out-of-range/non-canonical *float* bit pattern, covered by rows 11, 12, 13, 17. | n/a |
+| 28 | *(null)* | `printLine` is the only pointer-taking entry point; its NULL case is row 1. No other function accepts a pointer, so there is no further null-pointer surface. | n/a |

@@ -1,82 +1,71 @@
-# SYMBOLS.md — dynamic-symbol parity between the C and Rust shared objects
+# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
 
-Generated mechanically from:
+Derived mechanically from:
 
-```sh
+```
 nm -D --defined-only c_src/build/libdriver.so
 nm -D --defined-only translation/target/release/libdriver.so
-nm -D -u   <each>
 ```
 
-## Public (defined, dynamic) symbols exported by the C `libdriver.so`
+## C source inventory
 
-| # | symbol | C type/binding | source | exported by Rust `.so`? |
-|---|--------|----------------|--------|-------------------------|
-| 1 | `encode_base64` | `T` (global text) | `c_src/src/lib.c:29`, declared in `c_src/include/lib.h:1` | YES — `translation/src/lib.rs`, `#[unsafe(no_mangle)] pub unsafe extern "C" fn encode_base64` |
+`c_src` contains exactly one translation unit, `src/lib.c` (83 lines), and one
+public header, `include/lib.h` (1 line):
 
-That is the complete list. The C `.so` exports exactly **one** defined dynamic
-symbol; there are no macro-generated symbols, no exported data objects, and no
-weak aliases.
-
-`encode()` (`c_src/src/lib.c:6`) is `static`, therefore **not** part of the ABI.
-It appears in neither `.so`'s dynamic symbol table, so the Rust translation
-correctly keeps it a private `fn encode`.
-
-## Missing-symbol diff
-
-```
-C defined dyn syms      : encode_base64
-Rust defined dyn syms   : encode_base64
---------------------------------------------
-missing from Rust .so   : (none)
-extra in Rust .so       : (none)
+```c
+char *encode_base64(int size, const char *src);
 ```
 
-**0 missing symbols.** No `#[no_mangle]` wrapper had to be added and no C
-module was left untranslated: `c_src` contains a single translation unit
-(`src/lib.c`, 83 lines) and a single-line public header, and both are fully
-translated in `translation/src/lib.rs`.
+`src/lib.c` defines two functions:
 
-## Undefined (imported) symbols
+| C function      | linkage           | exported? |
+|-----------------|-------------------|-----------|
+| `encode`        | `static char`     | no (file-static) |
+| `encode_base64` | external          | yes |
 
-The C `.so` imports only `calloc@GLIBC_2.2.5` and `strlen@GLIBC_2.2.5`, plus
-the usual weak CRT hooks (`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
+No other `.c` files, no macro-generated symbol families, no `#ifdef`-gated
+modules. So the complete expected public ABI is a single symbol.
 
-The Rust `.so` imports those same two libc symbols and additionally pulls in
-the Rust runtime's libc/unwinder dependencies (`_Unwind_*`, `malloc`, `free`,
-`memcpy`, `mmap64`, `dl_iterate_phdr`, `pthread_key_*`, …). All of these are
-libc / libgcc symbols satisfied by the platform, so:
+## Defined (exported) symbols
 
-**0 missing/undefined non-libc symbols in the Rust `.so`.**
+| # | symbol          | C `.so` | Rust `.so` | status |
+|---|-----------------|---------|------------|--------|
+| 1 | `encode_base64` | `T`     | `T`        | OK — present in both, exact name |
 
-## Feature combinations
+`encode` is correctly absent from both (it is `static` in C, and a private
+`fn` in Rust).
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only
-build configuration is the default (empty) feature set. `--no-default-features`
-and the default build are therefore the same code, and symbol parity above
-holds for every configuration that exists (verified by `check_features.sh`).
+**Symbol diff (C-defined minus Rust-defined): EMPTY.**
 
-## Verification transcript
+No symbol needed a new `#[no_mangle]` wrapper, and no C module was left
+untranslated — the single translation unit is fully translated.
 
-```
-$ ./check_features.sh
-Cargo.toml declares no [features]; the only configuration is the default.
+## Undefined symbols in the Rust `.so`
 
-=== default ===
-  symbol parity: OK (1 C symbol(s), 0 missing)
-  undefined in Rust .so (all must be libc/libgcc): 42 symbols
-  tests: 4 suites ok, 49 tests passed
+Every undefined symbol in `translation/target/release/libdriver.so` resolves to
+libc / the platform unwinder; there are **0 missing or undefined non-libc
+symbols**:
 
-=== --no-default-features ===
-  symbol parity: OK (1 C symbol(s), 0 missing)
-  undefined in Rust .so (all must be libc/libgcc): 42 symbols
-  tests: 4 suites ok, 49 tests passed
+* libc: `calloc`, `strlen`, `free`, `malloc`, `realloc`, `posix_memalign`,
+  `memcpy`, `memmove`, `memset`, `bcmp`, `abort`, `getenv`, `getcwd`,
+  `readlink`, `realpath`, `open64`, `close`, `read`, `write`, `writev`,
+  `lseek64`, `stat64`, `fstat64`, `statx`, `mmap64`, `munmap`, `syscall`,
+  `gettid`, `__errno_location`, `dl_iterate_phdr`,
+  `pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`,
+  `__tls_get_addr`, `__cxa_finalize`, `__cxa_thread_atexit_impl`
+* platform unwinder (`libgcc`): `_Unwind_*`
+* standard weak link-time hooks: `_ITM_*TMCloneTable`, `__gmon_start__`
 
-===============================
-ALL COMBINATIONS PASS
-```
+`calloc` and `strlen` are the only two the C `.so` also imports; the Rust
+`.so`'s extra imports come from the Rust runtime (panic machinery, allocator
+shim, std's lazy backtrace support) and are not part of the library's own ABI.
 
-The 42 undefined symbols in the Rust `.so` are the Rust runtime's libc /
-libgcc imports (`_Unwind_*`, `malloc`, `free`, `memcpy`, `mmap64`,
-`dl_iterate_phdr`, `pthread_key_*`, `calloc`, `strlen`, …) — all resolved by
-the platform, none belonging to this library.
+The two ABI-relevant imports match the C exactly, which matters for the
+memory-ownership contract: the returned buffer comes from libc `calloc` in both
+implementations, so a caller may release it with libc `free` either way.
+
+## Verification
+
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+- [x] Every symbol the C `.so` exports is exported by the Rust `.so` with the
+      exact same name.

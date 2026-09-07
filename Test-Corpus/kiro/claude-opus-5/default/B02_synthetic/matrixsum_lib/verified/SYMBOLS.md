@@ -1,63 +1,97 @@
-# SYMBOLS.md — dynamic symbol parity
+# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
 
 Derived mechanically from:
 
-```sh
-nm -D --defined-only  c_src/build/libharvest-work-4VJzNR.so
-nm -D --undefined-only c_src/build/libharvest-work-4VJzNR.so
-nm -D --defined-only  translation/target/release/libmatrixsum_lib.so
-nm -D --undefined-only translation/target/release/libmatrixsum_lib.so
+```
+nm -D --defined-only c_src/build/libharvest-work-AqtBW3.so
+nm -D --defined-only translation/target/release/libmatrixsum_lib.so
 ```
 
-## C `.so` exported (defined) dynamic symbols
+The whole C library is a single translation unit (`c_src/src/lib.c`, 178 lines);
+`c_src/include/lib.h` declares only `matrixsum`, but the `.so` exports every
+non-`static` definition in the file, so the export surface is 7 functions + 1
+data object.
 
-| # | symbol | type | C declaration | present in Rust `.so` | notes |
-|---|--------|------|---------------|-----------------------|-------|
-| 1 | `init_array`                | T (text) | `DynamicArray* init_array(size_t)` | YES | `#[no_mangle] extern "C"` |
-| 2 | `expand_array`              | T (text) | `int expand_array(DynamicArray*)` | YES | `#[no_mangle] extern "C"` |
-| 3 | `add_element`               | T (text) | `int add_element(DynamicArray*, int)` | YES | `#[no_mangle] extern "C"` |
-| 4 | `free_array`                | T (text) | `void free_array(DynamicArray*)` | YES | `#[no_mangle] extern "C"` |
-| 5 | `process_flags`             | T (text) | `int process_flags(int)` | YES | `#[no_mangle] extern "C"` |
-| 6 | `calculate_matrix_checksum` | T (text) | `int calculate_matrix_checksum()` | YES | `#[no_mangle] extern "C"` |
-| 7 | `matrixsum`                 | T (text) | `int matrixsum(int,int,int,int)` | YES | the only symbol in `include/lib.h` |
-| 8 | `matrix`                    | D (data, size `0x30` = 48 B) | `int matrix[3][4]` | YES (D, size `0x30`) | exported as `pub static mut matrix: [[c_int;4];3]` |
+## Defined (exported) symbols
 
-**Missing from the Rust `.so`: NONE.** No `#[no_mangle]` wrapper had to be
-added and no C module was untranslated — `c_src/src/lib.c` is the only C
-translation unit in `CMakeLists.txt` and every one of its external definitions
-has a Rust counterpart with an identical name.
+| # | symbol | type | C `.so` | Rust `.so` | notes |
+|---|--------|------|---------|------------|-------|
+| 1 | `init_array` | `T` (func) | yes | yes | `DynamicArray* init_array(size_t)` |
+| 2 | `expand_array` | `T` (func) | yes | yes | `int expand_array(DynamicArray*)` |
+| 3 | `add_element` | `T` (func) | yes | yes | `int add_element(DynamicArray*, int)` |
+| 4 | `free_array` | `T` (func) | yes | yes | `void free_array(DynamicArray*)` |
+| 5 | `process_flags` | `T` (func) | yes | yes | `int process_flags(int)` |
+| 6 | `calculate_matrix_checksum` | `T` (func) | yes | yes | `int calculate_matrix_checksum(void)` |
+| 7 | `matrixsum` | `T` (func) | yes | yes | `int matrixsum(int,int,int,int)` — the only header-declared symbol |
+| 8 | `matrix` | `D` (mutable data) | yes | yes | `int matrix[3][4]`, GLOBAL OBJECT, **48 bytes in both** (verified with `readelf -sW`) |
 
-Object type and size match for the one data symbol (`matrix`, `D`, 48 bytes in
-both), so a caller resolving `matrix` through `dlsym` sees the same
-row-major 3x4 `int` layout in both libraries.
+Symbol diff (C-defined minus Rust-defined): **EMPTY**.
+Symbol diff (Rust-defined minus C-defined): **EMPTY** (no extra exports; the
+crate is `crate-type = ["cdylib"]` so Rust-internal symbols are not exported).
 
-## Undefined (imported) symbols
+No symbol required a new export wrapper and no C module was left untranslated:
+`lib.c` is the only source file in `CMakeLists.txt`, and every definition in it
+has a real (non-stub) Rust counterpart in `translation/src/lib.rs`.
 
-C imports only `malloc`, `realloc`, `free` (plus the standard weak
-`_ITM_*` / `__cxa_finalize` / `__gmon_start__` glibc/ELF boilerplate).
+## Undefined symbols
 
-The Rust `.so` imports the same three allocator entry points — it deliberately
-declares `extern "C" { malloc/realloc/free }` rather than using Rust's global
-allocator, because `init_array` hands raw allocations across the ABI and
-`free_array` gives them back, so both libraries must share one heap
-implementation.
+C `.so` imports: `malloc`, `realloc`, `free` (+ the usual weak
+`_ITM_*`/`__cxa_finalize`/`__gmon_start__` glibc glue).
 
-The remaining Rust undefined symbols are all libc / libgcc-unwind runtime
-support pulled in by `std` (`_Unwind_*`, `memcpy`, `memset`, `memmove`, `bcmp`,
-`calloc`, `posix_memalign`, `abort`, `__errno_location`, `__tls_get_addr`,
-`pthread_key_*`, `dl_iterate_phdr`, `open64`/`read`/`write`/`writev`/`close`/
-`lseek64`/`fstat64`/`stat64`/`statx`/`mmap64`/`munmap`/`readlink`/`realpath`/
-`getcwd`/`getenv`/`strlen`/`syscall`/`gettid`, and the weak
-`__cxa_thread_atexit_impl`).
+Rust `.so` imports: the same three allocator symbols — the translation
+deliberately calls libc `malloc`/`realloc`/`free` rather than Rust's allocator,
+because `init_array` hands the raw pointer across the ABI and `free_array`
+takes it back — plus libc/`libgcc` runtime imports pulled in by the Rust
+standard library (`memcpy`, `memset`, `_Unwind_*`, `dl_iterate_phdr`, thread
+keys, etc.).
 
-**Non-libc undefined symbols in the Rust `.so`: 0.**
+**0 missing / 0 undefined non-libc symbols in the Rust `.so`.**
 
-## Verification checklist
+## Configurations
 
-- [x] Every C-exported symbol is exported by the Rust `.so` under the exact same name.
-- [x] `matrix` is exported as a data (`D`) object of the same size in both.
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in the Rust `.so`.
-- [x] No stubs / `unimplemented!()` were introduced to fake parity.
-- [x] `Cargo.toml` declares **no** `[features]` section, so the default build is
-      the only feature configuration (Phase D feature-combo sweep is a single
-      combination; verified explicitly by `combos.sh`).
+`translation/Cargo.toml` has **no `[features]` section**, so the only build
+configuration is the default one; `--no-default-features` and the empty feature
+set are the same build. There is no `[[bin]]` target and no `main.rs`, so there
+is no driver executable whose stdout could be compared.
+
+## Completion gate (Phase D)
+
+- [x] `nm -D`: 0 missing symbols in the Rust `.so`, and 0 undefined non-libc
+      symbols. The diff is empty in **both** directions. Enforced mechanically
+      by `tests/phase_d_symbol_parity.rs`, not just checked by hand.
+- [x] Phase B: all 20 `CONFIGS.md` rows pass (`tests/phase_b_valid_paths.rs`,
+      20/20) across randomized inputs from fixed SplitMix64 seeds.
+- [x] Binary/driver stdout comparison: **N/A** — neither tree builds an
+      executable (`CMakeLists.txt` declares only `add_library(... SHARED)`;
+      `Cargo.toml` has only `[lib] crate-type = ["cdylib"]`, no `[[bin]]`).
+- [x] Phase C: all 15 `ERRORS.md` rows covered
+      (`tests/phase_c_error_paths.rs`, 16/16). 13 rows have a passing
+      differential test; rows 1 and 12 are fixed-size `malloc` failures that are
+      unreachable across the FFI boundary and are documented as such.
+- [x] Every configuration: `scripts/verify_all_features.sh` enumerates the
+      feature power set and re-runs build + symbol diff + all phases per
+      combination. There are no declared features, so it verifies the 2
+      configurations that exist (`default`, `--no-default-features`) — both pass.
+
+Additional robustness checks run beyond the required matrix:
+
+- The suite also passes with the Rust `.so` built in the **debug** profile
+  (`MATRIXSUM_RUST_SO=target/debug/...`). Because `debug` enables
+  `overflow-checks`, this additionally proves the translation uses wrapping
+  arithmetic everywhere the C relies on `int` wraparound — an
+  `INT_MIN`/`INT_MAX` input would otherwise panic instead of returning a value.
+- The suite also passes against the C `.so` built at `-O2`/`-O3`
+  (`CMAKE_BUILD_TYPE=Release` and `RelWithDebInfo`, via `MATRIXSUM_C_SO=`), so
+  the agreement does not depend on the compiler's treatment of the signed
+  overflow in `sum * 0x10`.
+
+Two divergences surfaced during verification; both were defects in the test
+harness, not in the translation, and both are documented at the code:
+
+1. `matrix` is an exported *mutable* object and `libtest` runs tests as threads
+   in one process, so tests mutating it corrupted concurrent ones. Fixed with a
+   process-wide lock held by `Pair` (`tests/common/mod.rs`).
+2. Probing multi-gigabyte `init_array` capacities held the C and Rust buffers
+   simultaneously, exceeding a ~6 GiB process ceiling and making whichever ran
+   second return `NULL` spuriously. Fixed with `probe_init_sequential`, which
+   allocates, snapshots, and frees one implementation before the other.

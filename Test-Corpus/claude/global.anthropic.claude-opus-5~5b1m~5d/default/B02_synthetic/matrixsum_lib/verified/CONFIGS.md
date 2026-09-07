@@ -1,101 +1,85 @@
-# CONFIGS.md — Phase A: configuration-surface table
+# CONFIGS.md — Configuration-surface table (Phase A, gates Phase B)
+
+Derived mechanically from the branches in `c_src/src/lib.c`. The public header
+`c_src/include/lib.h` declares only `matrixsum`, but the `.so` exports **8**
+symbols (see `SYMBOLS.md`), so all 7 functions *and* the mutable `matrix` data
+object are treated as public entry points and driven directly — not just the
+one-shot `matrixsum` wrapper.
 
 ## Axes the C code actually branches on
 
-Derived from `c_src/src/lib.c` (the only translation unit) and
-`c_src/include/lib.h`.
+* **A1 `process_flags` bitmask** — 4 independent `if`-free `!!(flags & FLAG_x)`
+  tests on bits 0,1,2,3 ⇒ 16 distinct results; bits ≥4 and the sign bit are
+  ignored (a 5th axis value: "unmodelled bits set").
+* **A2 `matrixsum` validity quadruple** — `!!param1..!!param4` select 4 `|=`
+  branches ⇒ 16 distinct `permissions` values, each feeding `process_flags`.
+* **A3 `matrixsum` magnitude** — `sum * 0x10` and the two `+` are `int`
+  arithmetic: small values vs. values that overflow/wrap.
+* **A4 array capacity shape** — `init_array` capacity `0` / `1` / `2` (the value
+  `matrixsum` uses) / large; `size >= capacity` is the growth branch in
+  `add_element`, so capacity determines how many `expand_array` doublings occur.
+* **A5 element count vs. capacity** — 0 elements, fewer than capacity, exactly
+  capacity (boundary: next add triggers growth), many (repeated doublings).
+* **A6 `matrix` global state** — `calculate_matrix_checksum` reads the exported
+  mutable `matrix`; default contents vs. externally overwritten contents, and
+  `matrixsum` masks the checksum with `& 0xFFF` so a checksum > 0xFFF is a
+  distinct path.
+* **A7 element values** — the `int` values stored/summed: zeros, negatives,
+  `INT_MIN`/`INT_MAX` (wrapping sum).
 
-**Cargo features:** `translation/Cargo.toml` declares **no `[features]` table**,
-so the only feature configuration is the default (empty) one. There are no
-`#ifdef`s in the C source either — there is exactly one compile-time
-configuration. Verified by script (`check_features.sh`); Phases B/C are run for
-`--no-default-features` and default, which are identical here.
+There are no runtime option/mode/flag setters, no `switch`, and no `#ifdef` in
+the C source; `Cargo.toml` declares **no `[features]`**, so the default feature
+set is the only feature combination (Phase D notes this).
 
-**Runtime "options" / mode words** (there is no init/context object; the mode is
-carried in `int` flag words):
-
-* A1 `process_flags(flags)` — 4 independently tested bits:
-  `FLAG_READ 0b0001`, `FLAG_WRITE 0b0010`, `FLAG_EXECUTE 0b0100`,
-  `FLAG_DELETE 0b1000`. Branch-free (`!!`), but the value space is
-  {16 low-nibble combos} × {reserved high bits clear / set} × {sign}.
-* A2 `matrixsum(p1..p4)` — each parameter's *zero-ness* selects a flag bit
-  (`!!paramN`), so 2^4 = 16 distinct `permissions` configurations, crossed with
-  the *magnitude* of the parameters (which only feeds `sum`).
-* A3 global mutable state: the exported `matrix[3][4]` data object. Default
-  initializer vs. caller-mutated contents changes
-  `calculate_matrix_checksum()` and hence `matrixsum`'s
-  `(matrix_sum & 0xFFF)` term.
-
-**Input shapes / sizes** (the `DynamicArray` allocator API):
-
-* A4 `init_array(initial_capacity)` — `capacity == 0`, `1`, `2` (the value
-  `matrixsum` uses), small, large, byte-count-wrapping (`2^62`), un-servicable.
-* A5 `add_element` — `size < capacity` (no growth), `size == capacity`
-  (exactly one growth), and many pushes (repeated doubling: 1→2→4→…).
-* A6 element values — `0`, `±1`, `INT_MIN`, `INT_MAX`, random full-range
-  (drives signed-overflow wrapping of `sum` in `matrixsum`).
-* A7 call-order / lifecycle — `init` → `add*` → read `data[]` → `free`;
-  `init` → `expand*` → `add*`; `expand` before any `add`; `free` twice-safe
-  variants (NULL); caller-constructed struct.
-
-## Configuration rows (cross-product, pruned to what the C distinguishes)
-
-Every row is exercised against BOTH `.so`s with **many** seeded-random inputs
-(seed `0x5EED_1234_ABCD_0001`, xorshift64\*), not a single hand-picked value.
+## Rows (each = one meaningful combination, checked off when it passes randomized inputs)
 
 | #  | entry point(s) | configuration (options set + input shape) | [x] |
 |----|----------------|--------------------------------------------|-----|
-| C1  | `process_flags` | exhaustive `flags` = 0..=255 (all 16 low-nibble combos × 16 reserved-bit patterns) | [x] |
-| C2  | `process_flags` | 4096 seeded-random full-range `i32` (negatives, high bits set) | [x] |
-| C3  | `process_flags` | boundary words: `0`, `1`, `2`, `4`, `8`, `15`, `16`, `-1`, `i32::MIN`, `i32::MAX`, `i32::MIN+1`, `i32::MAX-1`, `0xF0`, `!0xF` | [x] |
-| C4  | `calculate_matrix_checksum` | pristine `matrix` (default initializer) — must be 916 in both | [x] |
-| C5  | `calculate_matrix_checksum` + `matrix` (data symbol) | `matrix` overwritten with 512 seeded-random `i32[12]` patterns in both `.so`s (proves the global is really loaded, not folded) | [x] |
-| C6  | `calculate_matrix_checksum` + `matrix` | `matrix` filled with overflow-inducing extremes (`i32::MAX` ×12, `i32::MIN` ×12, mixed) → signed wrap of `sum` | [x] |
-| C7  | `init_array` + field inspection | `capacity` ∈ {0,1,2,3,4,7,8,16,63,64,1000,65536,1<<20} — check returned struct layout (`data != NULL`, `size == 0`, `capacity` echoed) | [x] |
-| C8  | `init_array` + `free_array` | round-trip lifecycle for each capacity of C7, no leak/crash, `free_array` on a live array | [x] |
-| C9  | `init_array` + `add_element` (no growth) | `capacity = n`, push `k < n` seeded-random values, read back `data[0..k]`, compare buffers byte-for-byte + `size`/`capacity` | [x] |
-| C10 | `init_array` + `add_element` (exactly one growth) | `capacity = n`, push exactly `n+1` values → one doubling; compare `size`, `capacity == 2n`, and all `n+1` elements | [x] |
-| C11 | `init_array` + `add_element` (many growths) | `capacity = 1` or `2`, push 1..=257 values → repeated doubling chain; compare full buffer + final `capacity` | [x] |
-| C12 | `init_array` + `expand_array` directly | `expand_array` called 0..=8 times on a fresh array before/between `add_element`s; compare return code + `capacity` sequence | [x] |
-| C13 | `add_element` | element values from the extremes set {0, 1, -1, `i32::MIN`, `i32::MAX`} and random full-range, stored/read back exactly | [x] |
-| C14 | `matrixsum` | all 16 zero/non-zero parameter combos (`permissions` = 0b0000..0b1111) with representative non-zero magnitudes | [x] |
-| C15 | `matrixsum` | 8192 seeded-random full-range `(p1,p2,p3,p4)` — signed-overflow wrapping of `sum` and `sum * 0x10` | [x] |
-| C16 | `matrixsum` | extreme quadruples from {0, ±1, `i32::MIN`, `i32::MAX`, `i32::MIN+1`, `i32::MAX-1`, `0x08000000`, `-0x08000000`} — full 8^4 = 4096 cross-product | [x] |
-| C17 | `matrixsum` + `matrix` | `matrixsum` after mutating `matrix` in both `.so`s (256 random matrices × random params) — exercises the `(matrix_sum & 0xFFF)` masking with negative/large checksums | [x] |
-| C18 | `matrixsum` (repeat / statefulness) | same call repeated 1000× to confirm no residual state and that the internal `init_array`/`free_array` cycle is clean | [x] |
-| C19 | full low-level pipeline | `init_array(cap)` → interleaved `add_element`/`expand_array` per a seeded random script → read `data`, `size`, `capacity` → `free_array`; 512 random scripts | [x] |
-| C20 | `matrix` (data symbol) | exported object identity: 48 bytes, same default contents in both `.so`s, writable, byte-for-byte comparison of the raw 48 bytes | [x] |
-| C21 | `matrix` (data symbol) — **as-linked initializer** | the 48 initializer bytes compared BEFORE anything writes to the global, in a dedicated test process (`phase_b_pristine.rs`). Without this row a wrong initializer compiled into the Rust `.so` is masked by the test's own reset — `mutation_check.sh` proved it | [x] |
-| C22 | `calculate_matrix_checksum`, `matrixsum` on untouched globals | first-touch state of the process: checksum == 916 and 8 representative `matrixsum` calls, with nothing ever having written `matrix` | [x] |
-| C23 | `matrix` partial mutation | exactly one of the 12 slots overwritten (12 slots × 6 values) → proves all 12 are summed and in the right order | [x] |
-| C24 | `expand_array` — byte-count wrap to small non-zero | `capacity` ∈ {2^61+1, 2^62+1, 2^61+2, 2^62+2, 2^63+1} → `realloc` succeeds on a wrapped tiny size; the absurd doubled capacity must be stored verbatim | [x] |
-| C25 | `init_array` — byte-count wrap to small non-zero, then used | `capacity = 2^62+n` (n = 1..4) → real `4n`-byte buffer, huge recorded capacity, `n` `add_element`s written and read back | [x] |
-| C26 | `calculate_matrix_checksum` via the unprototyped `int f()` ABI | called through `extern "C" fn(c_int,c_int,c_int,c_int)` with 256 random argument sets; result must equal the zero-arg form in both | [x] |
-| C27 | `init_array` + `add_element` — long doubling chain | `capacity` ∈ {1,2,3,5}, 10 000 pushes each → 12–14 reallocations, full 10 000-element buffer compared | [x] |
-| C28 | ALL seven entry points + `matrix`, interleaved | 20 000-step randomized script over `init_array`/`add_element`/`expand_array`/`free_array`/`process_flags`/`matrix` writes/`calculate_matrix_checksum`/`matrixsum` with up to 24 live arrays; every observable compared after every step | [x] |
-| C29 | allocator accounting | `free_array`/`matrixsum`/`expand_array` churn measured with `mallinfo2()`; net footprint must match (see the L-rows in `ERRORS.md`) | [x] |
+| 1  | `process_flags` | all 16 exhaustive combinations of bits 0-3, mask = exactly the flag bits (A1) | [x] |
+| 2  | `process_flags` | flag bits 0-3 combined with unmodelled high bits set (`\|0x10`, `\|0xF0`, `\|0x7FFF_FF00`) — 16×N (A1) | [x] |
+| 3  | `process_flags` | negative inputs incl. `INT_MIN`, `-1`, and 4096 uniformly random `i32` (A1, seeded) | [x] |
+| 4  | `calculate_matrix_checksum` | default `matrix` contents, called repeatedly (A6) | [x] |
+| 5  | `calculate_matrix_checksum` + `matrix` | `matrix` overwritten through the exported data symbol with random `i32[3][4]` (incl. negatives / `INT_MAX` wrap), then checksum read; restored afterwards (A6, A7) | [x] |
+| 6  | `init_array` | capacity `0` — `malloc(0)` shape; inspect returned `size`/`capacity`/NULL-ness (A4) | [x] |
+| 7  | `init_array` | capacity `1` and `2` (the `matrixsum` value) (A4) | [x] |
+| 8  | `init_array` | capacity random in `1..=1024` (A4, seeded) | [x] |
+| 9  | `init_array` | capacity large-but-satisfiable (`1<<16`, `1<<20`) (A4) | [x] |
+| 10 | `init_array` + `free_array` | allocate/free round-trip at each capacity in row 6-9 (A4) | [x] |
+| 11 | `expand_array` | fresh `init_array(k)`, one `expand_array` ⇒ capacity `2k`; k = 1,2,3,7,64 (A4) | [x] |
+| 12 | `expand_array` | fresh `init_array(k)`, repeated `expand_array` ×1..6 ⇒ capacity `k·2^n`, verifying contents preserved across each realloc (A4, A5) | [x] |
+| 13 | `expand_array` | array already holding `n` elements, then expand, then read all `n` back (contents survive realloc) (A5, A7) | [x] |
+| 14 | `add_element` | capacity `k`, add exactly `k` elements — no growth branch taken (A5) | [x] |
+| 15 | `add_element` | capacity `k`, add `k` then one more — boundary `size == capacity` triggers exactly one doubling (A5) | [x] |
+| 16 | `add_element` | capacity `1`, add 64 elements — 6 consecutive doublings; verify `size`, `capacity`, and every stored value (A4, A5) | [x] |
+| 17 | `add_element` | capacity `2` (matrixsum shape), add 4 elements = exactly one doubling (A4, A5) | [x] |
+| 18 | `add_element` | values = random `i32` incl. `0`, `INT_MIN`, `INT_MAX`, `-1` (A7, seeded) | [x] |
+| 19 | `add_element` | full low-level pipeline: `init_array(cap)` → random mix of `add_element`/`expand_array` calls → read `size`/`capacity`/`data[..]` → `free_array`; 512 random programs (A4, A5, A7, seeded) | [x] |
+| 20 | `matrixsum` | all 16 zero/non-zero patterns of the 4 params (A2) — non-zero components randomized | [x] |
+| 21 | `matrixsum` | all params small positive (no overflow), 1024 random in `-1000..=1000` (A2, A3) | [x] |
+| 22 | `matrixsum` | overflow shapes: `INT_MAX`, `INT_MIN`, `INT_MAX/2`, mixed signs — `sum` and `sum*0x10` wrap (A3) | [x] |
+| 23 | `matrixsum` | 4096 uniformly random `i32` quadruples — full-range, exercises A2 × A3 × A7 jointly (seeded) | [x] |
+| 24 | `matrixsum` + `matrix` | `matrix` overwritten so `calculate_matrix_checksum()` exceeds `0xFFF` and so it is negative, exercising the `& 0xFFF` mask branch, then `matrixsum` compared (A6) | [x] |
+| 25 | interleaved | `matrix` mutation + `matrixsum` + direct low-level array pipeline in one sequence, asserting no cross-call state leaks between the two libraries (A4-A7) | [x] |
 
-| C30 | caller-supplied pointer alignment | `DynamicArray *` at an odd address, and `data` 4-byte-misaligned, through `add_element`/`expand_array`/`free_array` — the C makes no alignment promise (see the Z-rows in `ERRORS.md`) | [x] |
-| C31 | `matrixsum` call structure | the helper chain must be reached through real, interposable calls so that both `malloc`s, the `realloc` and both `free`s actually happen (see the T-rows in `ERRORS.md`) | [x] |
+## Binary executable
 
-Every row is verified against BOTH cdylib profiles (`debug` and `release`) and
-against the C compiled at every `CMAKE_BUILD_TYPE` (default/`-O0`, `Release`,
-`RelWithDebInfo`, `MinSizeRel`, `Debug`) — 10 combinations, all passing.
+`c_src/CMakeLists.txt` builds `add_library(... SHARED src/lib.c)` only — there is
+no `add_executable` and no `main()` anywhere in `c_src`. The Rust crate is
+`crate-type = ["cdylib"]` with no `[[bin]]`. **No driver binary exists, so the
+"compare stdout of the C and Rust binaries" gate is not applicable.**
 
-## Suite self-validation
+## Harness self-check (does the suite actually detect divergence?)
 
-`mutation_check.sh` injects 35 deliberate bugs into a COPY of the Rust crate
-(`c_src/` and `translation/src/` are never touched), builds that copy in BOTH
-profiles, points the suite at each via `RUST_SO`, and requires the suite to FAIL.
-Result: **33 killed, 2 survivors, both provably semantics-preserving** (`!!x`
-removed where `x` is already 0/1, and `!!x` removed where the value is only
-consumed as `if x != 0`). Real blind spots found and closed this way:
+Because "all tests pass" is only meaningful if the tests can fail, four
+deliberate mutations were injected into `src/lib.rs`, the `cdylib` rebuilt, and
+the suite re-run (all mutations reverted afterwards; `src/lib.rs` is byte-identical
+to its pre-mutation state):
 
-1. the `matrix` **initializer** was never compared (the harness reset the global
-   to its own constant first) → added `phase_b_pristine.rs` (C21–C22);
-2. a missing `free()` in `free_array` was invisible to every return-value
-   comparison → added `phase_c_leak.rs` (C29 / L1–L3);
-3. crash modes and side-effect ordering were invisible because the process dies
-   → added `phase_c_crash.rs` (C30 / Z1–Z5);
-4. the release inliner elided an allocation → added
-   `phase_d_alloc_traffic.rs` (C31 / T1–T4).
+| mutation in the Rust source | detected by |
+|---|---|
+| `matrix_sum & 0xFFF` → `& 0xFFFF` | rows 24, 25 (2 tests failed) |
+| `capacity * 2` → `capacity * 2 + 1` in `expand_array` | rows 11, 12, 13, 15, 16, 19 |
+| `process_flags` stops testing `FLAG_DELETE` | rows 1, 2, 3, 20, 21, 22, 23 |
+| `wrapping_mul` → `saturating_mul` in `init_array` | Phase C row 3 + the size-edge sweep |
+
+4/4 killed, so the differential assertions are live rather than vacuous.

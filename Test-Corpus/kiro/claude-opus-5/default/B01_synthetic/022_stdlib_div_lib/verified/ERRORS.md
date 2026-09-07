@@ -1,74 +1,83 @@
 # ERRORS.md — Error-surface table
 
-Mechanically derived from the **whole** C source. The library is one file,
-`c_src/src/driver.c`, whose only non-comment content is:
+## How this table was derived
+
+Mechanical grep over the whole of `c_src` (2 files, 1 translation unit) for
+every rejection mechanism a C library can use:
+
+```
+grep -nE 'return|assert|RETURN_ERROR|NULL|errno|exit|abort|<|>|==|!=|if|switch|\?' \
+     c_src/src/driver.c c_src/include/driver.h
+```
+
+Result: the only line that matches at all is `c_src/include/driver.h:29:
+#endif //DRIVER_H_`, a false positive on the substring `if`. **Zero real
+matches** for `return` with a value, `assert`, `errno`, `exit`, `abort`, any
+error enum, any `if` / `switch` / ternary, any comparison operator, any null
+check, and any min/max constant. The complete body is:
 
 ```c
-#include "driver.h"
-#include <stdio.h>
-#include <stdlib.h>
-
 void driver(int x, int y) {
     div_t result = div(x, y);
     printf("quotient: %d, remainder: %d\n", result.quot, result.rem);
 }
 ```
 
-Grep results over `c_src/` for every rejection construct:
+`driver` returns `void`, so there is no error code and no sentinel value to
+compare. There are no pointer parameters, so there is no null-pointer path.
+There are no enum parameters, so there is no out-of-range-enum path. Both
+parameters are `int`, and **every one of the 2^64 `(int, int)` pairs is an
+accepted input** as far as the source is concerned.
 
-| construct grepped | hits |
-|---|---|
-| `RETURN_ERROR` / `*_ERROR*` macro | 0 |
-| `return -1` / `return 0` / any `return <value>` | 0 (function is `void`, has no `return` at all) |
-| `return NULL` | 0 |
-| error `enum` / status codes | 0 |
-| `assert` | 0 |
-| explicit range check (`if (... < ...)`, `if (... > ...)`) | 0 |
-| null-pointer check | 0 (no pointer parameters exist) |
-| min/max constant (`INT_MAX`, `*_MIN`, `LIMIT`, `MAX_`) | 0 |
-| `errno` inspection | 0 |
-| `#ifdef` / conditional compilation in the body | 0 (only the `DRIVER_H_` include guard) |
+That means the error surface is not in the source text — it is in the two
+operations the source delegates to:
 
-So `driver` has **no in-band error channel whatsoever**: it returns `void`,
-takes two by-value `int`s, validates nothing, and the `printf` return value is
-discarded. There is no input value it *rejects*.
+1. `div()` (glibc, imported: `U div@GLIBC_2.2.5`), which performs `numer / denom`
+   and `numer % denom` on `int`. These are *undefined behavior* for two operand
+   pairs, and on x86-64 the `idiv` instruction signals `#DE` (divide error) for
+   both, delivered to the process as **SIGFPE**. That is the library's only
+   observable rejection: the process dies on signal 8 and prints nothing.
+2. `printf()` — whose return value the C **discards**, so a write failure (e.g.
+   fd 1 closed, `EPIPE`, ENOSPC) is *not* an error path: `driver` ignores it and
+   returns normally. This is deliberate in the C and must be replicated: the
+   Rust also discards `printf`'s return value. Listed as row 3 so the
+   "no rejection happens here" behavior is actually tested rather than assumed.
 
-It does, however, have three distinct **fatal rejection** conditions, and they
-are real: `div()` in glibc is
-`div_t result; result.quot = numer / denom; result.rem = numer % denom;`, which
-on x86-64 lowers to a single `idiv` instruction. `idiv` raises `#DE`
-(divide error) — delivered as `SIGFPE`, signal 8 — for both of its
-non-representable operand classes. Those are the rows below. Each is a distinct
-hardware/UB trigger, so each gets its own row.
+## The table
 
-| # | function | trigger (exact invalid input/condition) | expected C result |
-|---|----------|------------------------------------------|-------------------|
-| 1 | `driver` | `y == 0`, `x != 0` (e.g. `x=5, y=0`) — division by zero | process terminated by `SIGFPE` (8); wait status `128+8 = 136`; **no** bytes written to stdout (fault precedes the `printf`) |
-| 2 | `driver` | `y == 0`, `x == 0` (`0/0`) — indeterminate form, a *separate* operand class from row 1 | process terminated by `SIGFPE` (8); no stdout output |
-| 3 | `driver` | `x == INT_MIN (-2147483648)` and `y == -1` — quotient `2147483648` is not representable in `int`; `idiv` overflow | process terminated by `SIGFPE` (8); no stdout output |
+Every row is a *distinct* rejection/termination condition. "expected C result"
+is the exact observable, not "fails somehow".
 
-## Generic C-API boundaries (checked even though absent from the table above)
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|---------------------------------------------|-------------------|
+| 1 | `driver` | `y == 0`, any `x` (tested with `x` = 0, 1, -1, 7, -7, `INT_MAX`, `INT_MIN`, and randomized) — `idiv` divide-by-zero | process killed by **SIGFPE (signal 8)**; **no** stdout output (the `printf` is never reached); no normal return, so no exit code |
+| 2 | `driver` | `x == INT_MIN && y == -1` — quotient `2147483648` is not representable in `int`; `idiv` signed overflow | process killed by **SIGFPE (signal 8)**; **no** stdout output |
+| 3 | `driver` | `printf` fails: fd 1 closed / redirected to a closed pipe, so the eventual write returns `-1` | **NOT an error**: return value discarded, `driver` returns normally, process exits 0. Nothing is observable to the caller. |
+| 4 | `driver` | value one step past the boundary of row 2 on each axis: `(INT_MIN, -2)`, `(INT_MIN, 1)`, `(INT_MIN+1, -1)`, `(INT_MAX, -1)` | **NOT an error**: all four are representable, so normal return with the printed quotient/remainder. Confirms the trap in row 2 is exactly one point, not a range. |
+| 5 | `driver` | out-of-range "enum" value across the FFI boundary — N/A by construction, but the closest analogue is the full `int` domain being accepted: the extreme bit patterns `INT_MIN`, `INT_MAX`, `-1`, `0` passed in either position | **NOT an error** except where rows 1–2 apply; every other bit pattern is a valid input and must print. Tested exhaustively over the 7×7 grid of extremes. |
 
-The task asks for the generic boundary classes every C API has. For this API
-most are **not applicable**, and that non-applicability is itself derived from
-the signature `void driver(int, int)`:
+Rows 3–5 are "negative" rows: the point of each is that the C **does not**
+reject, and the Rust must therefore not reject either (a Rust translation that
+returned early, panicked, or validated would diverge). They are included
+because the anti-blind-spot rule is about every *distinct rejection decision*
+the C makes, including the decisions to accept.
 
-| generic boundary class | applicability here | how it is covered |
-|---|---|---|
-| null pointers | N/A — no pointer parameters, no pointer return | nothing to test |
-| zero length / oversized length | N/A — no buffer or length parameters | nothing to test |
-| out-of-range enum value across FFI | N/A — no `enum` parameter. The nearest analogue is that `int` accepts *any* 32-bit value with no "valid variant" restriction, so the entire `2^32 × 2^32` domain is legal input. Covered by treating both parameters as full-range random `i32` in `CONFIGS.md` rows 14–16, plus every extremal value in rows 11–13, 17. | `tests/difftest.rs` rows 11–17 |
-| one step past a documented valid range | The header documents no range. The only *behavioural* range edges are the three fatal triggers above and the `INT_MIN`/`INT_MAX` extremes; "one step past" them is tested as `INT_MIN+1`, `INT_MAX-1`, `y = ±1`, `y = ±2` around each fatal case. | rows 1–3 here + `CONFIGS.md` rows 12, 17 |
-| return-value / errno contract | N/A — `void` return, `errno` never read or set by `driver` | nothing to test |
+## Why rows 1–2 are the hard part of this translation
 
-## Checklist
+Idiomatic Rust `x / y` and `x % y` do not trap — they **panic**, which unwinds
+or (with `panic = "abort"`, as this crate sets) prints
+`thread '<unnamed>' panicked at ... attempt to divide by zero` to **stderr**
+and raises **SIGABRT (signal 6)**. `wrapping_div` is worse for row 2: it
+*returns* `INT_MIN` and prints a line where C printed nothing. Either is a
+visible divergence in both the signal number and the stdout bytes. The Rust
+translation therefore emits `cdq; idiv` through `core::arch::asm!` on x86-64 so
+that the same `#DE` fault is raised at the same point.
 
-- [x] Row 1 — `y == 0, x != 0` → both `.so`s die with `SIGFPE`, both produce empty stdout
-- [x] Row 2 — `y == 0, x == 0` → both `.so`s die with `SIGFPE`, both produce empty stdout
-- [x] Row 3 — `x == INT_MIN, y == -1` → both `.so`s die with `SIGFPE`, both produce empty stdout
+Checklist (checked only when the differential test for the row passes against
+both `.so`s):
 
-Each row asserts the *same specific* termination signal (8 / `SIGFPE`) from
-both libraries, not merely "both failed somehow", and additionally asserts the
-stdout byte streams are identical (both empty). Tests:
-`error_row_1_div_by_zero_nonzero_numer`, `error_row_2_zero_over_zero`,
-`error_row_3_int_min_over_minus_one` in `tests/difftest.rs`.
+- [x] 1 — `test_row1_divide_by_zero_signals_identically`
+- [x] 2 — `test_row2_int_min_div_neg_one_signals_identically`
+- [x] 3 — `test_row3_printf_failure_is_ignored`
+- [x] 4 — `test_row4_one_step_past_the_overflow_point`
+- [x] 5 — `test_row5_full_extreme_value_grid`

@@ -1,72 +1,63 @@
-# ERRORS.md — error / rejection surface table
+# ERRORS.md — Error / rejection surface table
 
-Mechanically derived from `c_src/`, then **verified against the compiled C
-shared object** (every `SIGSEGV` below was reproduced with a standalone C driver
-and is re-verified in `tests/errors.rs` by running the faulting call in an
-isolated child process).
+Derived mechanically from the C source. The library declares **no** error enum,
+uses **no** `assert`, **no** `RETURN_ERROR` macro, **no** `NULL` check and
+returns **no** negative sentinel. `grep -n 'return\|assert\|NULL\|-1' c_src/src
+c_src/include` yields exactly the statements listed below, so the complete
+rejection surface consists of:
 
-**The C library contains no error-handling machinery at all.** Grepping the whole
-tree finds
+1. the single explicit rejection branch in `match` (`return 0`);
+2. the implicit degenerate paths taken when a loop bound makes the loop body
+   execute zero times (`length <= 0`);
+3. the out-of-bounds / division-by-zero / non-finite arithmetic conditions the C
+   walks into without checking.
 
-* `0` occurrences of `assert`, `errno`, `RETURN_ERROR`, `goto`, `exit`,
-* `0` `NULL` / range / size / divide-by-zero checks,
-* `0` `enum` declarations — so there is no "out-of-range enum value" input class
-  to cross the FFI boundary. The only non-pointer, non-float parameter is a
-  plain `int` count, and every out-of-range `int` value is covered by rows 3–8.
-* exactly `4` `return` statements in total (`total`, `dot_product`, and the two
-  in `match`), and
-* exactly `1` named constant: `#define N_SMOOTH 16`.
+Every row below is one distinct rejection or degenerate branch, with the exact
+result the compiled C produces (verified differentially in
+`tests/error_paths.rs`).
 
-The rejection surface is therefore made of (a) the two value-based rejections
-`match` performs and (b) the *implicit* degenerate/undefined paths the unguarded
-code falls into.
+| # | function | trigger (exact invalid input/condition) | expected C result | test |
+|---|----------|------------------------------------------|-------------------|------|
+| 1 | `match` (`match.c:37`) | energy gate fails: `total(test,bins) < threshold * total(reference,bins)` | returns `0`, **no** preprocessing and **no** call to `spectral_contrast`; `test`/`reference` left untouched | `err01_energy_gate_rejects` |
+| 2 | `match` (`match.c:37`) | gate comparison is *unordered*: `threshold` is NaN, or `threshold*total(ref)` is NaN (`0 * ±inf`), or `total(test)` is NaN | `comisd` unordered ⇒ `jbe` taken ⇒ gate does **not** reject; falls through to `spectral_contrast` | `err02_gate_unordered_falls_through` |
+| 3 | `match` (`match.c:40`) | final comparison unordered: `spectral_contrast(...)` is NaN or `threshold` is NaN | `setae` after unordered `comisd` (CF=1) ⇒ returns `0` | `err03_final_compare_unordered_returns_0` |
+| 4 | `match` (`match.c:36-40`) | `bins == 0` — GCC allocates zero-length VLAs, so `rsp` is unchanged and `t` aliases the stack top. `differentiate` then executes `v[length-1] = 0`, i.e. **`v[-1] = 0`**, which lands exactly on `preprocess`'s saved return address | **UB: the C reproducibly SIGSEGVs** (returns to address 0). Verified out-of-process. Documented divergence: the Rust has no VLA to overrun and returns `(0.0 >= threshold)` | `err04_bins_zero` |
+| 5 | `match` (`match.c:36`) | `bins < 0` — VLA with negative element count: `size = (bins*8 + 15) / 16 * 16` computed with **unsigned** division, so `rsp` is decremented by ~2^64, corrupting the stack | undefined behaviour; process crashes (SIGSEGV). Not reproducible by definition — documented and probed out-of-process only, never asserted for value equality | `err05_bins_negative_out_of_process` |
+| 6 | `total` (`match.c:7`) | `length <= 0` | loop body never runs, returns `+0.0`. Only reachable via `bins <= 0` (rows 4/5 UB); the structurally identical `dot_product` zero-trip accumulator IS reachable and returns exactly `+0.0` | `err06_total_nonpositive_length` |
+| 7 | `smoothen` (`match.c:14`) | `length <= 0` | outer loop never runs, buffer untouched (only reachable via `bins <= 0`, which is row 4/5 UB; the structurally identical zero-trip loop in `normalize` is reachable and verified) | `err04_bins_zero`, `err15_spectral_contrast_nonpositive_length` |
+| 8 | `smoothen` (`match.c:16-18`) | tail window truncation: `i + N_SMOOTH > length`, so fewer than `N_SMOOTH` samples are summed but the divisor is **still `N_SMOOTH`** (never renormalised) | tail values are systematically attenuated; for `length < 16` *every* output is attenuated | `err08_smoothen_tail_divisor` |
+| 9 | `differentiate` (`match.c:24-25`) | `length == 0` ⇒ `for(i = 0; i < -1; i++)` never runs and `v[-1] = 0` writes out of bounds | the store clobbers the caller's saved return address ⇒ SIGSEGV (same event as row 4) | `err04_bins_zero` |
+| 10 | `differentiate` (`match.c:24-25`) | `length == 1` ⇒ loop never runs, `v[0] = 0` | sole element forced to `0.0` | `err10_differentiate_length_one` |
+| 11 | `differentiate` (`match.c:24`) | `v[i+1]` and `v[i]` both `+inf` (or both `-inf`) ⇒ `subsd` of equal infinities | element becomes NaN (x86 indefinite `-nan`, `0xFFF8…`) and propagates through the second `smoothen` | `err11_inf_minus_inf_nan` |
+| 12 | `normalize` (`spectral_contrast.c:11-13`) | `magnitude == 0.0` (every lane is `±0`; via `match` this means the all-zero `double` vector) ⇒ `v[i] /= 0.0` | `0/0 → -nan` (`0xFFF8…`, truncated to `float` `0xFFC00000`), `x/0 → ±inf`; `dot_product` then returns NaN, so `match` returns `0` for every threshold | `err12_zero_magnitude`, `err03_final_compare_unordered_returns_0` |
+| 13 | `normalize` (`spectral_contrast.c:11`) | `dot_product(v,v)` is NaN (a NaN or an `inf*0` lane) ⇒ `sqrt(NaN)` | glibc `sqrt` = `sqrtsd`: returns the input NaN quieted, payload preserved; all elements become NaN | `err13_sqrt_of_nan` |
+| 14 | `normalize` (`spectral_contrast.c:11`) | `dot_product(v,v)` overflows to `+inf` (large `float` lanes) ⇒ `magnitude = +inf` | every `v[i] /= inf → ±0`; `dot_product` then returns `+0.0` | `err14_magnitude_infinite` |
+| 15 | `spectral_contrast` (`spectral_contrast.c:16-19`) | `length <= 0` (`0`, `-1`, `INT_MIN`) | all three loops execute zero times; `sqrt(0.0) = 0.0`; returns `+0.0`; **no** memory is dereferenced, so even `NULL` pointers are accepted | `err15_spectral_contrast_nonpositive_length` |
+| 16 | `spectral_contrast` (`spectral_contrast.c:16-19`) | `a == b` (aliased pointers) | `a` is normalised twice: the second `normalize` divides the already-unit vector by its own magnitude (`≈1`), then `dot_product(a,a)` ⇒ `≈1.0` | `err16_spectral_contrast_aliased` |
+| 17 | `match` (`match.c:38-40`) | the `float_t` mismatch itself: `spectral_contrast` receives `bins` **as a `float` count** for buffers holding `bins` **doubles**, so it walks them with a 4-byte stride — lane `2k` is the low half of `double` `k`, lane `2k+1` its high half — covering only the first `ceil(bins/2)` doubles and writing normalised `float`s back over those bytes | not a rejection, but the defining wrong-type condition; must be reproduced exactly | `err17_float_t_mismatch_is_reproduced` + every `CONFIGS.md` row |
+| 18 | `match` / `spectral_contrast` | `NULL` pointer with a positive length | dereferences `NULL` ⇒ SIGSEGV in both implementations; probed out-of-process only | `err18_null_with_positive_length_out_of_process` |
+| 19 | `match` (`match.c:36`) | `bins` so large the VLA exceeds the stack (`bins ≥ ~10^6` on an 8 MiB stack) | stack overflow ⇒ SIGSEGV in C. The Rust uses heap `Vec`, so this is a deliberate, documented divergence in *crash* behaviour only (C UB); values are never compared there | `err19_huge_bins_documented` |
+| 20 | `spectral_contrast` "enum"/out-of-range integer | there is no enum in this API; the only integer parameter is `int length` / `int bins`. Values one past every boundary are covered: `INT_MIN`, `-1`, `0`, `1`, `2`, `15`, `16`, `17`, `INT_MAX` (the last two only for `spectral_contrast`, whose non-positive/valid split is the whole domain) | see rows 4, 5, 10, 15 | `err20_integer_boundaries` |
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | [x] |
-|----|----------|---------------------------------------------|-------------------|-----|
-| 1  | `match`  | `total(test,bins) < threshold * total(reference,bins)` — energy gate rejects (`match.c:37`; compiled as `mulsd -0x70(%rbp),%xmm1` with `%xmm1 = total(reference)`, then `comisd -0x78(%rbp),%xmm0` / `jbe`) | `= 0`, and `preprocess` / `spectral_contrast` are **never called** | [x] |
-| 2  | `match`  | gate passes but `spectral_contrast(t,r,bins) < threshold` (`match.c:40`, `comisd` + `setae`) | `= 0` | [x] |
-| 3  | `match`  | **`bins == 0`** → `SIGSEGV`. The zero-length VLAs `t`/`r` are both placed at `align_up(%rsp, 8)` (size rounds to `0`, so `sub $0x0,%rsp`), and `differentiate`'s `v[length-1] = 0` becomes `v[-1]` = `%rsp - 8` — **exactly the slot holding the return address pushed by `call preprocess`**. `preprocess` then returns to address `0`. | `SIGSEGV` for *every* `threshold` (both totals of an empty array are `+0.0`, so the gate can never reject: `0.0 < ±0.0` and `0.0 < NaN` are both false) | [x] |
-| 4  | `differentiate` | `length == 0`: loop bound `i < length - 1` is `0 < -1` → zero iterations; then the unconditional `v[length - 1] = 0` store (`lea -0x8(%rax),%rdx`) writes 8 bytes *below* the buffer | the out-of-bounds store itself; it is what makes row 3 fault | [x] |
-| 5  | `match`  | **`bins < 0`** → `SIGSEGV`. Gate cannot reject (row 3), then `preprocess` calls `memcpy(v, source, (size_t)(bins * 8))` — `movslq` sign-extends `bins` and `lea 0x0(,%rax,8)` yields ≈ `2^64 - 8|bins|` | `SIGSEGV` | [x] |
-| 6  | `match`  | **`bins` huge** (e.g. `10^9`, `INT_MAX`): two VLAs of `bins*8` bytes via `sub %rax,%rsp`, allocated *before* the gate is evaluated | `SIGSEGV` (stack exhaustion) | [x] |
-| 7  | `match`  | **`bins == INT_MIN`**: `movslq` then `*8` wraps, `sub %rax,%rsp` moves `%rsp` by a nonsense amount | `SIGSEGV` | [x] |
-| 8  | `match`  | `test == NULL` with `bins >= 1` → `total` dereferences `v[0]` (`movsd (%rax),%xmm0`) | `SIGSEGV` | [x] |
-| 9  | `match`  | `reference == NULL` with `bins >= 1` → same, on the second `total` call | `SIGSEGV` | [x] |
-| 10 | `match`  | `test == NULL` **and** `reference == NULL` with `bins == 0`: no dereference happens, but row 3 still applies | `SIGSEGV` (from row 3, not from the null pointers) | [x] |
-| 11 | `match`  | `threshold = NaN` (quiet or signalling, either sign): the gate is `x < NaN` → `comisd` sets CF=ZF=PF=1 → `jbe` taken → **does not reject**; all the preprocessing runs; the final `contrast >= NaN` is false | `= 0` | [x] |
-| 12 | `match`  | `threshold = +inf` with `total(reference) == 0.0` → `+inf * 0.0 = NaN` → gate does not reject; `contrast >= +inf` is false | `= 0` | [x] |
-| 13 | `match`  | `threshold = -inf` → `-inf * total(reference)` is `∓inf` (or `NaN` when the total is `0`); the gate rejects only if that exceeds `total(test)`; the final `contrast >= -inf` is **true unless `contrast` is `NaN`** | `= 1` iff the gate passed and `contrast` is not `NaN`, else `0` | [x] |
-| 14 | `match`  | `total(test)` or `total(reference)` is `NaN` (`NaN` input, or an `+inf`/`-inf` mix) → gate comparison is unordered → **does not reject** | proceeds; result decided by row 2 | [x] |
-| 15 | `spectral_contrast` | `length <= 0`: all three loops are `for(i = 0; i < length; i++)` → zero-trip; `dot_product` returns `+0.0`; `sqrt(+0.0) = +0.0`; `normalize` writes nothing. **The pointers are never dereferenced, so `NULL` is safe.** | `= +0.0` (bit pattern `0x0000000000000000`) | [x] |
-| 16 | `spectral_contrast` | `NULL` pointer (either argument) with `length >= 1` → `movss (%rax),%xmm1` inside `dot_product`, reached from `normalize` | `SIGSEGV` | [x] |
-| 17 | `normalize` | `magnitude == 0.0` (all-zero input, or every lane flushing to `0.0f`): `v[i] /= 0.0` with **no divide-by-zero check** → `0.0/0.0` is the SSE indefinite `-NaN` (`0xFFC00000`), `x/0.0` is `±inf` | every lane becomes `-NaN`; `dot_product` then returns `NaN`, so `spectral_contrast` returns `NaN` and `match` returns `0` (unordered `comisd`) | [x] |
-| 18 | `normalize` | `magnitude` is `NaN` (input contains `NaN`, or `Σx²` produces `inf - inf`) → every `v[i] / NaN` is `NaN` | `spectral_contrast` returns `NaN`; `match` returns `0` | [x] |
-| 19 | `normalize` | `magnitude == +inf` (input contains `±inf`, or `Σx²` overflows `double`) → `v[i]/inf` is `±0.0` for finite `v[i]`, `NaN` for `±inf` | all-finite case leaves zeros → `dot_product` returns `+0.0` | [x] |
-| 20 | `normalize` | `cvtsd2ss` writeback **overflow**: `abs(v[i]/magnitude) > FLT_MAX` (reachable with subnormal `magnitude`) → `±inf` stored into the `float` lane | silent `±inf`, no error | [x] |
-| 21 | `normalize` | `cvtsd2ss` writeback **underflow**: quotient below `FLT_TRUE_MIN` → `±0.0` (sign preserved) or a subnormal `float` | silent, no error | [x] |
-| 22 | `dot_product` | `Σ a[i]*b[i]` overflows to `±inf`, then adding the opposite infinity → `-NaN` | silent `NaN` | [x] |
-| 23 | `dot_product` | `a[i] == 0.0f` and `b[i] == ±inf` → `mulss` invalid operation → `-NaN` | silent `NaN` | [x] |
-| 24 | `spectral_contrast` | **aliased arguments** `a == b` (`include/match.h` has no `restrict`): `normalize(a)` then `normalize(b)` normalise the *same* buffer twice; the second pass sees an already-unit vector | returns `dot_product(a,a)` of the twice-normalised buffer (≈ `1.0`, not exactly), and leaves the buffer twice-normalised | [x] |
-| 25 | `match`  | aliased `test == reference`: legal; both totals are equal and `t`/`r` receive identical preprocessed data | gate becomes `x < threshold*x`; `contrast` is `dot_product(u,u)` for a unit vector | [x] |
-| 26 | `smoothen` | tail rows `i > length - N_SMOOTH`: fewer than `N_SMOOTH` samples are summed but the divisor is **still 16**, never renormalised (`match.c:18`; `divsd` against the `16.0` constant in `.rodata`) | tail is attenuated; reproduced verbatim, not "fixed" | [x] |
-| 27 | `match`  | `bins` odd: `spectral_contrast` reads `bins` 4-byte lanes out of `bins` 8-byte slots, so the last lane is the **low half** of `t[(bins-1)/2]` and that slot's high half is never read | silent; part of normal operation | [x] |
-| 28 | `match`  | `bins == 1`: `differentiate` immediately writes `v[0] = 0` (its loop is zero-trip), then `smoothen` gives `0/16 = 0` → both vectors are `{0.0}` → `magnitude = 0` → row 17 → `contrast = NaN` | `= 0` for every non-`-inf` threshold that passes the gate | [x] |
-| 29 | both | preprocessed `double`s whose **low 32 bits** form a `float` `NaN`/`inf`/subnormal — routine, since those are a `double`'s low mantissa bits | silent `NaN`/`inf` inside `spectral_contrast`; must be bit-reproduced | [x] |
-| 30 | both | **signalling `NaN`** in the input: `cvtss2sd` / `mulss` / `addsd` quiet it (set the significand MSB) and propagate the payload. For two `NaN` operands x86 returns the **destination** operand quieted, and GCC at `-O0` makes `b[i]` the `mulss` destination and the *product* the `addsd` destination | payload-exact `NaN` bits, observable in `spectral_contrast`'s return value and buffers | [x] |
+## Checklist
 
-## Rows 3, 5, 6, 7, 10 — a documented, intentional divergence
-
-These five rows are pointer/size **undefined behaviour whose only "result" is a
-fault**. There is no defined C semantics to match: the C program's behaviour for
-`bins <= 0`, `bins` huge, or `bins == INT_MIN` is not merely surprising, it is
-absent — the abstract machine has no meaning for a negative-length VLA or for a
-store through `v[-1]` that lands on a return address.
-
-The Rust translation therefore clamps `bins <= 0` to an empty buffer, which is
-exactly what every loop in `match.c`'s translation unit already does
-(`for(i = 0; i < length; i++)`), and returns `(0.0 >= threshold) as c_int`.
-`tests/errors.rs` verifies in an isolated child process that the **C really does
-fault** on each of these inputs, and asserts the Rust side's documented
-alternative, so the divergence is pinned rather than hidden. Rows 8, 9 and 16
-*are* reproduced faithfully: Rust dereferences the same null pointer and faults
-the same way.
+- [x] 1 `err01_energy_gate_rejects`
+- [x] 2 `err02_gate_unordered_falls_through`
+- [x] 3 `err03_final_compare_unordered_returns_0`
+- [x] 4 `err04_bins_zero`
+- [x] 5 `err05_bins_negative_out_of_process`
+- [x] 6 `err06_total_nonpositive_length`
+- [x] 7 `err04_bins_zero`
+- [x] 8 `err08_smoothen_tail_divisor`
+- [x] 9 `err04_bins_zero`
+- [x] 10 `err10_differentiate_length_one`
+- [x] 11 `err11_inf_minus_inf_nan`
+- [x] 12 `err12_zero_magnitude`
+- [x] 13 `err13_sqrt_of_nan`
+- [x] 14 `err14_magnitude_infinite`
+- [x] 15 `err15_spectral_contrast_nonpositive_length`
+- [x] 16 `err16_spectral_contrast_aliased`
+- [x] 17 `err17_float_t_mismatch_is_reproduced`
+- [x] 18 `err18_null_with_positive_length_out_of_process`
+- [x] 19 `err19_huge_bins_documented`
+- [x] 20 `err20_integer_boundaries`

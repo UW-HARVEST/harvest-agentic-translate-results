@@ -1,49 +1,66 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — Phase A symbol map
 
-Source of truth: `nm -D --defined-only` on the C shared library
-`c_src/build/libdriver.so`, compared against `translation/target/release/libdriver.so`.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Regenerate with:
+Build commands:
 
-```sh
-nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort > /tmp/c.syms
-nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/r.syms
-comm -23 /tmp/c.syms /tmp/r.syms   # must be EMPTY
+```
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd translation && cargo build --release
 ```
 
-## Defined (exported) symbols
+## C `.so` exported symbols (`c_src/build/libdriver.so`)
 
-| # | symbol | C `.so` | Rust `.so` | C signature | notes |
-|---|--------|---------|------------|-------------|-------|
-| 1 | `printLine`    | T | T | `void printLine(const char *line)` | NULL-guarded `printf("%s\n", line)` |
-| 2 | `printIntLine` | T | T | `void printIntLine(int intNumber)`  | `printf("%d\n", intNumber)` |
-| 3 | `bad`          | T | T | `void bad(void)`                    | `alloca(10)` under-allocation (CWE-806) |
-| 4 | `good`         | T | T | `void good(void)`                  | `alloca(10*sizeof(int))` |
-| 5 | `driver`       | T | T | `void driver(int useGood)`          | only symbol declared in `include/driver.h` |
+```
+0000000000001192 T bad
+00000000000012e8 T driver
+0000000000001239 T good
+000000000000116b T printIntLine
+0000000000001149 T printLine
+```
 
-**Missing from Rust `.so`: none.** The whole C translation unit (`c_src/src/driver.c`,
-the project's only source file) is translated in `src/lib.rs`; there is no skipped
-module and no stubbed symbol.
+## Rust `.so` exported symbols (`translation/target/release/libdriver.so`)
 
-Note: in the optimized Rust build the linker/ICF folds `bad` and `good` onto the
-same address because after translation both have identical observable behaviour
-(copy ten zeroed `int`s, then `printIntLine(0)`). Both names are still exported
-and both are individually resolvable via `dlsym`, which is what the differential
-tests assert.
+```
+00000000000117e0 T bad
+0000000000011800 T driver
+00000000000117e0 T good
+0000000000011820 T printIntLine
+0000000000011840 T printLine
+```
+
+(`bad` and `good` share an address in the Rust build because the optimizer
+performs identical-code folding; both symbols are still exported and both are
+independently resolvable via `dlsym`.)
+
+## Parity table
+
+| # | symbol | C signature (from `c_src/src/driver.c` / `include/driver.h`) | in C `.so` | in Rust `.so` | status |
+|---|--------|--------------------------------------------------------------|-----------|---------------|--------|
+| 1 | `printLine`    | `void printLine(const char *line)` | yes | yes | OK |
+| 2 | `printIntLine` | `void printIntLine(int intNumber)` | yes | yes | OK |
+| 3 | `bad`          | `void bad(void)`                   | yes | yes | OK |
+| 4 | `good`         | `void good(void)`                  | yes | yes | OK |
+| 5 | `driver`       | `void driver(int useGood)`         | yes | yes | OK |
+
+`bad`/`good` are not declared in `driver.h` but have external linkage in
+`driver.c`, so they are part of the exported ABI surface and are tested directly.
 
 ## Undefined (imported) symbols
 
-The C `.so` imports only `printf`, `puts` (gcc's `printf("%s\n",x)` →
-`puts(x)` transform) plus the usual weak CRT hooks.
+C `.so` imports: `printf`, `puts`, `__stack_chk_fail` (libc / compiler runtime).
+Rust `.so` imports: `printf` plus the usual libc/`std` set. No non-libc
+undefined symbols in the Rust `.so`.
 
-The Rust `.so` imports the same `printf`/`puts` plus libc/`libgcc` runtime
-symbols pulled in by the Rust standard library (`malloc`, `memcpy`, `mmap64`,
-`_Unwind_*`, `pthread_key_*`, …).
+## Result
 
-**Non-libc / non-runtime undefined symbols in the Rust `.so`: 0.** Every
-undefined entry resolves out of `libc.so.6` / `libgcc_s.so.1`, so the Rust
-`.so` loads with no unresolved dependency:
+* Missing from Rust `.so`: **none**
+* Extra non-libc symbols in Rust `.so`: **none**
+* Symbol diff: **empty** ✅
 
-```sh
-nm -D -u translation/target/release/libdriver.so   # all glibc/GCC_* versioned or weak CRT
-```
+## Feature combinations
+
+`translation/Cargo.toml` declares no `[features]` section, so the only
+configuration is the default (empty) feature set. Phase B/C therefore have a
+single feature combination to cover; this is verified by
+`tests/feature_matrix.rs` / the `scripts` loop described in `CONFIGS.md`.

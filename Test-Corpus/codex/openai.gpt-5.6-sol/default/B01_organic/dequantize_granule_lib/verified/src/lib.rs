@@ -59,6 +59,9 @@ pub unsafe extern "C" fn dequantize_granule(
     for j in 0..4_isize {
         let mut dst = unsafe { grbuf.offset((group_size as isize) * j) };
         for i in 0..(2 * usize::from(unsafe { (*sci).total_bands })) {
+            // Match C pointer indexing exactly, including its observable
+            // continuation into adjacent struct storage when total_bands is
+            // one past the 64-entry bitalloc capacity.
             let bitalloc = unsafe { std::ptr::addr_of!((*sci).bitalloc).cast::<u8>() };
             let ba = c_int::from(unsafe { *bitalloc.add(i) });
             if ba != 0 {

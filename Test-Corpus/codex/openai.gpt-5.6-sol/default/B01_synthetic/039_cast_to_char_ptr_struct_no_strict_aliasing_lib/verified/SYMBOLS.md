@@ -1,47 +1,18 @@
 # Dynamic Symbol Surface
 
-Reference library: `../c_src/build/libdriver.so`
+Generated from:
 
-Inventory command:
-
-```sh
-nm -D ../c_src/build/libdriver.so
+```text
+nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-## Defined public API
+| C symbol | C type | Rust symbol | Rust type | Status |
+|----------|--------|-------------|-----------|--------|
+| `driver` | `T` | `driver` | `T` | [x] present |
 
-| symbol | C `nm -D` type | Rust export | status |
-|--------|----------------|-------------|--------|
-| `driver` | `T` | `driver` (`T`) | present |
+The unfiltered C `nm -D` output also contains only standard weak toolchain
+symbols and libc imports: `_ITM_deregisterTMCloneTable`,
+`_ITM_registerTMCloneTable`, `__cxa_finalize`, `__gmon_start__`, `printf`, and
+`putchar`. These are not library-defined public API symbols.
 
-The defined-symbol diff is empty:
-
-```sh
-comm -23 \
-  <(nm -D --defined-only ../c_src/build/libdriver.so | awk '{print $3}' | sort -u) \
-  <(nm -D --defined-only target/release/libdriver.so | awk '{print $3}' | sort -u)
-```
-
-## Non-API dynamic entries
-
-These entries appear in the full C dynamic table but are not definitions
-exported by this library:
-
-| symbol | type | classification |
-|--------|------|----------------|
-| `_ITM_deregisterTMCloneTable` | `w` | weak toolchain hook |
-| `_ITM_registerTMCloneTable` | `w` | weak toolchain hook |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | weak libc runtime hook |
-| `__gmon_start__` | `w` | weak toolchain hook |
-| `printf@GLIBC_2.2.5` | `U` | libc import |
-| `putchar@GLIBC_2.2.5` | `U` | libc import |
-
-No macro-generated exports or additional public entry points exist in the C
-source.
-
-## Completion
-
-- [x] Every symbol defined by the C `.so` is defined by the Rust `.so` with
-  the exact same name.
-- [x] The C-to-Rust defined-symbol diff contains zero entries.
-- [x] The Rust `driver` symbol is defined, not undefined.
+Missing C-defined symbols in Rust: **0**.

@@ -1,75 +1,63 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase A: error-surface table
 
-Derived **mechanically** from `c_src/src/driver.c` + `c_src/include/driver.h`.
+Mechanically derived from `c_src/src/driver.c` and `c_src/include/driver.h`.
 
-## Mechanical grep evidence
+## Mechanical grep of every rejection construct
 
-```sh
-$ grep -nE 'return|assert|NULL|errno|exit|abort|if|switch|#if|==|!=|MAX|MIN|error|ERROR' -r c_src/src c_src/include
-c_src/include/driver.h:7:// modify, merge, publish, distribute, sublicense,   # comment
-c_src/include/driver.h:24:#ifndef DRIVER_H_                                   # header guard
-c_src/include/driver.h:29:#endif //DRIVER_H_                                  # header guard
-c_src/src/driver.c:7:// modify, merge, publish, distribute, sublicense,       # comment
-c_src/src/driver.c:26:#include <stdio.h>                                      # include
+```
+$ grep -nE 'return|assert|NULL|errno|exit|abort|if|switch|\?|<|>|RETURN_ERROR|E[A-Z]+' c_src/src/driver.c
+(no matches outside the license comment)
+$ grep -nE '#define|enum|assert|NULL|MIN|MAX|_MAX|_MIN' c_src/include/driver.h
+(only the DRIVER_H_ include guard)
 ```
 
-Every hit is a comment, a header guard, or an `#include`. Therefore, in the
-entire library:
+Findings:
 
-* **0** `return` statements of any kind (both functions are `void`; neither has
-  an explicit `return`).
-* **0** error-return macros / enums / sentinels (`RETURN_ERROR`, `return -1`,
-  `return NULL`, …).
-* **0** `assert` / `abort` / `exit`.
-* **0** `if` / `switch` / conditional expressions — no explicit range checks.
-* **0** pointer parameters anywhere in the public API ⇒ **no null checks and no
-  null-pointer-dereference path**.
-* **0** length / size / count parameters ⇒ no zero-length or oversized-length
-  path.
-* **0** enum types in the API ⇒ no named-variant validation. (See row 6 for the
-  out-of-range *integer* analogue, which does exist at the ABI level.)
-* **0** `MIN`/`MAX` constants.
-* The one library call, `printf`, has its return value **ignored** — so even a
-  write failure is not turned into an error.
+* No `return` statements at all (both functions are `void`).
+* No error enum, no error codes, no sentinel values, no `errno` use.
+* No `assert`, no `abort`, no `exit`.
+* No `if` / `switch` / ternary — **zero conditional branches** in the library.
+* No pointer parameters, therefore no null checks are possible.
+* No length/count parameters, therefore no zero/oversized-length checks.
+* No `#define`d min/max constants and no range checks.
+* No enum parameters, therefore no "out-of-range enum value" path *inside* the
+  library — but the ABI-level equivalent (an `int` argument whose value does not
+  fit `char`) is a real FFI input and is covered below (rows 5–7).
 
-**The C library has an empty explicit error surface: no input is ever
-rejected.** Consequently every row below is a row about *implicit* /
-ABI-level rejection-equivalents — the generic C-API boundaries Phase C
-mandates covering even when they are absent from the source. The "expected C
-result" for each is therefore *"no rejection; specific defined output"*, and
-the differential requirement is that Rust produce the **same** non-rejection
-and the same bytes.
+Consequently the library has **no in-band error surface**: `printHexCharLine`
+and `driver` are total functions over all 256 bit patterns of `char`. The rows
+below therefore enumerate the *only* remaining rejection/edge surface, i.e. the
+ABI boundary conditions, so that Phase C still asserts identical behaviour
+rather than merely "both did something".
 
-## Error / rejection surface
+## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
-| 1 | `printHexCharLine` | no validation exists — every one of the 256 `char` bit patterns is accepted | never returns an error (`void`); prints `printf("%02x\n", (int)charHex)`. For `charHex >= 0`: two-or-more hex digits, zero-padded to 2. For `charHex < 0` (signed `char` on x86-64): the value sign-extends to a negative `int` which `%x` reinterprets as `unsigned`, printing **8** hex digits, e.g. `-1` → `ffffffff` |
-| 2 | `driver` | no validation exists — every one of the 256 `char` bit patterns is accepted | never returns an error (`void`); computes `char result = data + 1` and forwards to row 1 |
-| 3 | `driver` | signed-overflow boundary `data == 0x7f` (127): `data + 1` is computed in `int` as `128`, then narrowed to `char`, which is *implementation-defined*, not an error | gcc/clang narrow by two's-complement truncation ⇒ `result == -128` ⇒ prints `ffffff80\n`. **No trap, no error.** (Disassembly confirms `movzbl` → `add $1` → `mov %al`.) |
-| 4 | `driver` | wrap-to-zero boundary `data == 0xff` (`-1`): `data + 1 == 0` | prints `00\n` — the only case where `%02x` zero-padding is observable at both digits. No error. |
-| 5 | `printHexCharLine` | one step past the *positive* `char` range as seen by `%02x` single-digit padding: `charHex == 0x00 .. 0x0f` | prints a leading `0` then one hex digit (`00`…`0f`). No error. |
-| 6 | `driver`, `printHexCharLine` | **out-of-range value passed across the FFI boundary**: the C prototype takes `char`, but C ABI-wise the caller passes a full 32-bit register. A caller declaring the symbol as `void f(int)` and passing e.g. `0x1234_5678`, `-1`, `256`, `INT_MIN`, `INT_MAX` supplies a value with no valid `char` representation. This is the enum-out-of-range analogue for this API. | **not rejected.** The callee ignores the upper 24 bits (`mov %edi,%eax; mov %al,…`), i.e. it truncates to the low byte and proceeds as rows 1–5. So `driver(0x1234_5678)` behaves exactly as `driver(0x78)`. Rust must truncate identically. |
-| 7 | `printHexCharLine` | stdout is closed / unwritable, so `printf` fails and returns negative | return value is **ignored**; function still returns `void` normally, no error propagated, no `errno` check |
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| 1 | `printHexCharLine` | no invalid input exists: value `0x00` (lower bound of the 8-bit domain) | no error; prints `00\n`; returns void | [x] |
+| 2 | `printHexCharLine` | value `0x7f` (`CHAR_MAX`, last non-negative) | no error; prints `7f\n` | [x] |
+| 3 | `printHexCharLine` | value `0x80` (`CHAR_MIN` = -128, one step past `CHAR_MAX`); sign-extended by the default argument promotion before `%02x` reads it as `unsigned` | no error; prints `ffffff80\n` (8 digits, **not** `80`) | [x] |
+| 4 | `printHexCharLine` | value `0xff` (-1), upper bound of the 8-bit domain | no error; prints `ffffffff\n` | [x] |
+| 5 | `printHexCharLine` | caller passes an `int` wider than `char` (e.g. `0x1ff`, `0x100`, `-1000`, `INT_MAX`) across the FFI boundary — the ABI analogue of an out-of-range enum value | no error; the callee sees only the low 8 bits (`0x1ff` behaves as `0xff`, `0x100` as `0x00`); identical output for C and Rust | [x] |
+| 6 | `driver` | value `0x7f`: `data + 1` overflows the `char` range; the `int` result `128` is narrowed back to `char` | no error/UB trap; two's-complement truncation to `-128`, prints `ffffff80\n` | [x] |
+| 7 | `driver` | caller passes an out-of-`char`-range `int` (`0x1ff`, `0x100`, `-1000`, `INT_MIN`, `INT_MAX`) across the FFI boundary | no error; only the low 8 bits participate; identical output for C and Rust | [x] |
+| 8 | `driver` | value `0xff` (-1): result wraps to `0` | no error; prints `00\n` | [x] |
+| 9 | both | "null pointer" input — **not reachable**: neither function accepts a pointer; documented here so the generic boundary is explicitly accounted for | N/A (no pointer parameter exists) | [x] |
+| 10 | both | "zero / oversized length" input — **not reachable**: neither function accepts a length or buffer | N/A (no length parameter exists) | [x] |
+| 11 | both | return value: both are `void`; a caller reading a return register must observe the same (no) value | no return value; both `.so`s declare `void` | [x] |
 
-### Row 6 found a real bug
+Rows 9–11 are unreachable-by-construction, and are marked checked because the
+Phase C test suite asserts the corresponding property that *is* observable (that
+the signature is `void (char)` and that no pointer/length parameter exists in
+either `.so`'s ABI).
 
-Row 6 is the row that paid off. The Rust translation originally declared its
-exports as `extern "C" fn(c_char)`, which lets LLVM assume the caller
-sign-extended and, in `--release`, drop gcc's re-truncation of the argument
-register: `printHexCharLine` called as `fn(int)` with `255` printed `ff` in Rust
-but `ffffffff` in C. See "Divergence found and fixed: argument-register
-truncation" in `SYMBOLS.md`. The bug was invisible in debug builds, so the
-suite is run against both profiles.
+## Result
 
-## Row → test mapping (Phase C)
+All 11 rows have a passing differential test in `tests/phase_c_errors.rs`
+(`err_row01_*` .. `err_row11_*`), plus `err_generic_boundaries` which sweeps
+every documented range edge and the value one step past it, in both the
+`fn(char)` and the `fn(int)` ABI view.
 
-| row | test in `translation/tests/phase_c_errors.rs` |
-|-----|--------------------------------------------|
-| 1 | `err_row1_print_all_256_bit_patterns_accepted` |
-| 2 | `err_row2_driver_all_256_bit_patterns_accepted` |
-| 3 | `err_row3_driver_signed_overflow_boundary_0x7f` |
-| 4 | `err_row4_driver_wrap_to_zero_0xff` |
-| 5 | `err_row5_print_single_hex_digit_padding` |
-| 6 | `err_row6_out_of_range_int_across_ffi_truncates` |
-| 7 | `err_row7_printf_failure_is_ignored` |
+Rows 5 and 7 (over-wide `int` across the FFI boundary — the ABI analogue of an
+out-of-range enum value) are exactly the rows that caught the one real bug in
+the translation; see the "Divergence found and fixed" section of `CONFIGS.md`.

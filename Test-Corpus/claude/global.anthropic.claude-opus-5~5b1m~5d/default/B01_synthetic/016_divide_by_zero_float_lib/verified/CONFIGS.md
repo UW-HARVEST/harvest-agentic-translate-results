@@ -1,69 +1,93 @@
-# CONFIGS.md — Configuration / valid-input surface table
+# CONFIGS.md — Phase A: configuration surface table (valid inputs)
 
-Mirror of `ERRORS.md`, for **valid** inputs. Derived mechanically from what
-`c_src/src/driver.c` actually branches on.
+Mechanically derived from `c_src/include/driver.h` (the full public API) and the
+branches actually present in `c_src/src/driver.c`.
 
-## Axes the C code actually distinguishes
+## Axes the C code branches on
 
-This library exposes **no runtime options, modes or flags** — there is no
-config struct, no setter, no `enum`, no global state, and no `#ifdef` in
-`driver.c`. Grepping the source for `#if`/`#ifdef` returns nothing, and
-`Cargo.toml` declares no `[features]`. So the configuration surface is entirely
-the **cross-product of entry point × input shape**:
+**Runtime options / modes / flags:** none. The library has no global state, no
+init/teardown, no setters, no `#ifdef`, no environment lookups. Grep confirms
+there is no `static` mutable state and no preprocessor conditional other than
+the header include guard:
 
-- **Axis 1 — entry point (all 5 exported symbols, low-level first):**
-  `printLine` and `printIntLine` (lowest level, the output primitives) →
-  `bad` and `good` (mid level, the arithmetic) → `driver` (top-level composed
-  pipeline). The mid/low-level symbols are driven **directly**, not only via
-  the `driver` wrapper, because a bug in the composed pipeline (wrong call
-  order, missing line) is invisible to per-wrapper tests and vice versa.
-- **Axis 2 — `const char *` shape** (`printLine`): NULL / empty / 1 byte /
-  short ASCII / oversized (8 KiB) / contains `printf` conversion specifiers /
-  contains embedded newlines / non-UTF-8 bytes.
-- **Axis 3 — `int` shape** (`printIntLine`): `0` / `±1` / `INT_MAX` / `INT_MIN`
-  / randomized full-range.
-- **Axis 4 — `float` shape** (`bad`, `good`, `driver`): the classes the
-  `100.0/data` division and the subsequent `(int)` cast treat differently —
-  exact quotient / truncating quotient / negative (truncation toward zero) /
-  quotient magnitude `< 1` (rounds to 0) / quotient overflowing `int` /
-  `±0.0` / `±inf` / `NaN` / subnormal.
-- **Axis 5 — `goodB2G` threshold branch** (`good`, `driver`): `fabs(data) >
-  0.000001` true vs false, plus the two values straddling the threshold.
+```
+$ grep -nE '#if|#ifdef|#ifndef|getenv|static [^v]' c_src/src/driver.c c_src/include/driver.h
+c_src/include/driver.h:24:#ifndef DRIVER_H_
+```
 
-## Configuration rows
+The only "configuration" is therefore the **input shape** at each entry point.
 
-Each row is exercised with **many randomized inputs** (fixed seed
-`0x5EED_D1FF_1234_5678`, deterministic xorshift64\*) where the row describes a
-value *class* rather than a single constant, and asserted byte-for-byte against
-the C `.so`.
+**Full set of public entry points** (all 5 exported symbols, i.e. including the
+lowest-level primitives, not just the `driver` one-shot wrapper):
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|------------------------------------------|-----|
-| C1  | `printLine` | short printable ASCII strings, randomized length 1..64 and randomized bytes | [x] |
-| C2  | `printLine` | empty string `""` (zero length, NUL-terminated) | [x] |
-| C3  | `printLine` | single-byte strings, every value `0x01..0xFF` (incl. non-UTF-8) | [x] |
-| C4  | `printLine` | oversized: 8 KiB string, exceeds any plausible internal buffer | [x] |
-| C5  | `printLine` | string containing `%d %s %n %%` conversion specifiers (must print verbatim) | [x] |
-| C6  | `printLine` | string containing embedded `\n` and `\t` (output has multiple lines) | [x] |
-| C7  | `printIntLine` | boundary integers: `0`, `1`, `-1`, `INT_MAX`, `INT_MIN`, `±2147483647` | [x] |
-| C8  | `printIntLine` | randomized full 32-bit range, 512 samples | [x] |
-| C9  | `bad` | `data` giving an **exact** quotient (`2.0` → `50`, `4.0` → `25`, `100.0` → `1`) | [x] |
-| C10 | `bad` | `data` giving a **truncating** positive quotient (`3.0` → `33`, `7.0` → `14`) | [x] |
-| C11 | `bad` | `data` **negative** — truncation toward zero (`-3.0` → `-33`, `-2.0` → `-50`) | [x] |
-| C12 | `bad` | `\|quotient\| < 1` so the cast yields `0` (`data` = `1e3`, `1e6`, `1e30`; also negative) | [x] |
-| C13 | `bad` | quotient **overflows** `int` (tiny `data`: `1e-8`..`1e-45`, both signs) | [x] |
-| C14 | `bad` | `data` = `±0.0`, `±inf`, `NaN`, `FLT_MIN`, `FLT_MAX`, `±1.0`, subnormals | [x] |
-| C15 | `bad` | randomized normal floats across ~20 decades, 1024 samples, both signs | [x] |
-| C16 | `bad` | randomized **bit patterns** reinterpreted as `f32` (512 samples) — covers NaN payloads, subnormals and infinities without bias | [x] |
-| C17 | `good` | threshold branch **TRUE**: `fabs(data) > 0.000001` — prints `50` then the quotient | [x] |
-| C18 | `good` | threshold branch **FALSE**: `data` = `0.0`, `-0.0`, `1e-9`, `NaN` — prints `50` then the message | [x] |
-| C19 | `good` | threshold **straddle**: `1e-6f`, `1.0000001e-6f`, `9.9e-7f`, `1.1e-6f`, `-1e-6f` | [x] |
-| C20 | `good` | randomized floats (mixed magnitudes) so both branches are hit repeatedly, 1024 samples | [x] |
-| C21 | `good` | randomized raw bit patterns as `f32`, 512 samples | [x] |
-| C22 | `driver` | composed pipeline, `goodData` branch TRUE × `badData` normal — full 6-line transcript, verifies call **order** | [x] |
-| C23 | `driver` | `goodData` branch FALSE × `badData` normal | [x] |
-| C24 | `driver` | `goodData` branch TRUE × `badData` = `0.0` (the CWE-369 divide-by-zero path) | [x] |
-| C25 | `driver` | `goodData` branch FALSE × `badData` = `0.0` / `NaN` / `±inf` | [x] |
-| C26 | `driver` | full cross-product of a 12-value "interesting float" set × itself (144 combinations) | [x] |
-| C27 | `driver` | randomized `(goodData, badData)` pairs, 512 samples | [x] |
-| C28 | interleaving | `printLine` / `printIntLine` / `bad` / `good` / `driver` called **repeatedly in one capture**, verifying no cross-call state, ordering or buffering divergence | [x] |
+| level | entry point | signature |
+|-------|-------------|-----------|
+| lowest | `printLine`    | `void printLine(const char *)` |
+| lowest | `printIntLine` | `void printIntLine(int)` |
+| mid    | `bad`          | `void bad(float)` |
+| mid    | `good`         | `void good(float)` — internally calls `static goodG2B()` + `static goodB2G(data)` |
+| top    | `driver`       | `void driver(float, float)` — calls `good` then `bad` |
+
+**Input-shape axes the code distinguishes:**
+
+* `printLine`: NULL vs non-NULL (line 32); string length 0 / 1 / many /
+  buffer-crossing; byte content ASCII / format-specifier / high-bit / embedded
+  control chars.
+* `printIntLine`: sign and magnitude as rendered by `%d` (0, +, −, `INT_MAX`,
+  `INT_MIN`).
+* float argument classes for `bad` / `good` / `driver`, because
+  `100.0/data` then `(int)` truncation is value-dependent:
+  normal ≥1, normal <1, quotient magnitude <1 (truncates to 0), negative
+  (truncation toward zero), `|quotient|` near `INT_MAX`, out-of-range,
+  ±0, ±inf, NaN, subnormal.
+* `goodB2G` threshold branch: `fabs(data) > 0.000001` (line 61) — above,
+  below, and exactly at the boundary.
+* `driver`: cross product of the `good` branch × the `bad` value class, plus
+  output *ordering* across the four `printLine` calls.
+
+## Rows
+
+Each row is exercised with many randomized inputs (fixed seed, xorshift PRNG in
+`tests/common/mod.rs`) unless the row names one exact value, and both the C and
+the Rust `.so` are called through `libloading` with `stdout` captured and
+compared byte-for-byte.
+
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1  | `printLine` | non-NULL, length 1..64 random printable ASCII | [x] |
+| 2  | `printLine` | non-NULL, length 0 (empty string) | [x] |
+| 3  | `printLine` | non-NULL, length 1 (single byte, every value `0x01`–`0xFF`) | [x] |
+| 4  | `printLine` | non-NULL, random bytes `0x01`–`0xFF` incl. invalid UTF-8 and control chars, length 1..256 | [x] |
+| 5  | `printLine` | non-NULL, contains `printf` format specifiers (`%d %s %n %%`) as data | [x] |
+| 6  | `printLine` | non-NULL, large string 4 KiB / 64 KiB / 1 MiB (crosses `stdio` buffer) | [x] |
+| 7  | `printLine` | non-NULL, embedded newlines and `\r`, `\t` | [x] |
+| 8  | `printLine` | NULL (guard branch — also `ERRORS.md` row 1) | [x] |
+| 9  | `printIntLine` | random full-range `i32` (uniform over all 2^32 bit patterns) | [x] |
+| 10 | `printIntLine` | boundary set: `0`, `1`, `-1`, `INT_MAX`, `INT_MIN`, `±10^k` | [x] |
+| 11 | `bad` | normal float, quotient in `int` range, positive (random `0.001..1e6`) | [x] |
+| 12 | `bad` | normal float, quotient in `int` range, negative — truncation toward zero | [x] |
+| 13 | `bad` | `data` with `100.0/data` magnitude `<1` → truncates to `0` (`|data| > 100`) | [x] |
+| 14 | `bad` | `data` such that quotient is within one ULP of `INT_MAX+1` (`≈4.6566128e-8`), both signs | [x] |
+| 15 | `bad` | `data` out of range → quotient overflows `int` (subnormals, `1e-30f`..`1e-45f`) | [x] |
+| 16 | `bad` | `data` special: `+0.0`, `-0.0`, `+inf`, `-inf`, quiet NaN, signalling NaN, `-NaN` | [x] |
+| 17 | `bad` | fully random `f32` bit patterns (uniform over all 2^32 patterns, incl. subnormals/NaNs) | [x] |
+| 18 | `good` | `fabs(data) > 0.000001` → division branch; random normal floats, both signs | [x] |
+| 19 | `good` | `fabs(data) <= 0.000001` → message branch; `±0.0`, subnormals, `±1e-7`, NaN | [x] |
+| 20 | `good` | exactly at the threshold: `1e-6f`, `1.0000001e-6f`, `9.99999e-7f`, `-1e-6f`, `nextafter` neighbours of `1e-6` | [x] |
+| 21 | `good` | verifies the constant `goodG2B()` line (`data = 2.0F` → `50`) is emitted first, before the `goodB2G` line, for every above shape | [x] |
+| 22 | `driver` | `good` division branch × `bad` in-range quotient (random pairs) | [x] |
+| 23 | `driver` | `good` division branch × `bad` invalid (`0.0`, `inf`, `NaN`, subnormal) | [x] |
+| 24 | `driver` | `good` message branch × `bad` in-range quotient | [x] |
+| 25 | `driver` | `good` message branch × `bad` invalid — both defect paths at once | [x] |
+| 26 | `driver` | fully random `(f32, f32)` bit-pattern pairs — exercises the whole composed pipeline and the 4 fixed `printLine` labels | [x] |
+| 27 | *sequencing* | many mixed calls (`printLine`, `printIntLine`, `bad`, `good`, `driver`) in one captured `stdout` session — checks interleaving/buffering of the composed pipeline, not per-wrapper isolation | [x] |
+| 28 | *feature combos* | default build, and `--no-default-features` (identical: no `[features]` exist) | [x] |
+
+## Binary executable
+
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)` —
+there is **no `add_executable`**, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]` with no `[[bin]]`. There is no driver binary, so
+the "compare C and Rust binary stdout" gate is not applicable; the equivalent
+end-to-end coverage is row 26/27 (the `driver` top-level entry point driven
+through the `.so`).

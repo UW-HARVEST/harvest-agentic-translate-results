@@ -1,22 +1,32 @@
-# Error Surface
+# Error and rejection surface
 
-The C source has no error macro, assertion, error enum, null check, or
-length/count argument. The rows below are the complete set of explicit
-range/special-value rejection branches and sentinel-return branches.
+Mechanically derived from every explicit `if`/`else if` range or special-value
+check, every error-style `switch` default, and the pointer-only ABI boundary in
+`src/lib.c`. There are no `assert` calls, error enums, length parameters,
+explicit null checks, `RETURN_ERROR` uses, `return NULL`, or `return -1`
+statements outside the `process_with_fallthrough` default branch.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Status |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `safe_double_to_int` | `d > (double)INT_MAX`, including positive infinity | `INT_MAX` | [x] |
-| 2 | `safe_double_to_int` | `d < (double)INT_MIN`, including negative infinity | `INT_MIN` | [x] |
+The null-pointer rows are required generic FFI-boundary cases. The C source
+does not reject them explicitly: its `memcpy` call has undefined C-language
+semantics, so the differential test isolates each call in a subprocess and
+requires Rust to reproduce the actual C shared object's process result on this
+platform.
+
+| # | function | trigger (the exact invalid input/condition) | expected C result | |
+|---|----------|----------------------------------------------|-------------------|-|
+| 1 | `safe_double_to_int` | `d > (double)INT_MAX` (including `+INFINITY`) | `INT_MAX` | [x] |
+| 2 | `safe_double_to_int` | `d < (double)INT_MIN` (including `-INFINITY`) | `INT_MIN` | [x] |
 | 3 | `safe_double_to_int` | `isnan(d)` after both range comparisons are false | `0` | [x] |
-| 4 | `process_with_fallthrough` | `code` is not one of `0`, `1`, `2`, `3`, `4`, or `5` | `-1` | [x] |
+| 4 | `process_with_fallthrough` | `code < 0` or `code > 5` (the `default` branch; includes `-1` and `6`, one step beyond the accepted cases) | `-1` | [x] |
+| 5 | `copy_data_block` | `dest == NULL`, `src` points to a valid `DataBlock` | abnormal process termination matching the C `.so` | [x] |
+| 6 | `copy_data_block` | `src == NULL`, `dest` points to a valid `DataBlock` | abnormal process termination matching the C `.so` | [x] |
+| 7 | `copy_data_block` | `dest == NULL && src == NULL` | abnormal process termination matching the C `.so` | [x] |
 
-`copy_data_block` passes both pointers directly to `memcpy` for 40 bytes.
-Null, dangling, undersized, or overlapping storage is not rejected by C and
-has undefined behavior, so there is no C error result to put in this table.
-The generic null-pointer boundary is tested out of process by comparing
-termination behavior.
+Generic boundary applicability:
 
-The remaining functions take only fixed-width scalar arguments. They have no
-lengths, enums, pointer arguments, documented ranges, or explicit rejection
-paths.
+- Zero and oversized lengths: not applicable; no exported function accepts a
+  length.
+- Out-of-range enum representations: not applicable; the ABI contains no enum.
+  The unrestricted integer `code` default is covered by row 4.
+- Null pointers: only `copy_data_block` accepts pointers; rows 5-7 cover all
+  null combinations.

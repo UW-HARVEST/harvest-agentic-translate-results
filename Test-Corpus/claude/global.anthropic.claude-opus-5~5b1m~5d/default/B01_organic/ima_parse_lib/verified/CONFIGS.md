@@ -1,6 +1,6 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Phase A configuration-surface table (valid inputs)
 
-## Public entry points (complete)
+## Public entry points
 
 `c_src/include/lib.h` declares exactly one function:
 
@@ -8,100 +8,114 @@
 int ima_parse(struct ima_info *info, const void *data);
 ```
 
-There are no convenience wrappers and no additional exported functions — the
-whole C library is one translation unit whose only external symbol is
-`ima_parse` (see `SYMBOLS.md`).  The lower-level routines
-(`ima_bswap16/32/64`, `ima_btoh16/32/64`) are `static`, so the only way to reach
-them is through `ima_parse`; they are therefore driven *individually and
-exhaustively* by feeding each field they convert:
+There is no options struct, no init/free pair, no mode flag, no `#ifdef` in the
+C source, and the crate declares **no cargo features** (`Cargo.toml` has no
+`[features]` section). Therefore the configuration surface is entirely the
+*shape of the input byte buffer* `data`, plus the `struct ima_info` output
+layout. The axes below are derived from every `if` / `else if` / loop-update in
+`ima_parse`, and from every field the function loads.
 
-| static routine | driven through | coverage |
-|----------------|----------------|----------|
-| `ima_btoh16` / `ima_bswap16` | `header->version` | **exhaustive**, all 65 536 values (row 3) |
-| `ima_btoh32` / `ima_bswap32` | `header->type`, `chunk->type`, `desc->format_id`, `desc->channels_per_frame` | 4 × randomized 32-bit fuzz (rows 1, 17, 18 and ERRORS rows 12-14) |
-| `ima_btoh64` / `ima_bswap64` | `chunk->size`, `pakt->frame_count` | randomized 64-bit fuzz + extremes (rows 13, 15) |
-| the `(ima_u64_t)double` value conversion at `lib.c:127` | `desc->sample_rate` | random bit patterns + biased magnitudes + curated hard doubles (rows 19, 19b, 20) |
+## Axes the C actually branches on
 
-## Axes the C code actually branches on
+| axis | values the C distinguishes |
+|---|---|
+| A1 `header->type` (BE FourCC @0) | `caff` (pass) / anything else (`-1`) |
+| A2 `header->version` (BE u16 @4) | `1` (pass) / anything else (`-2`) |
+| A3 `header->flags` (BE u16 @6) | **never read** — must be ignored (fuzz it) |
+| A4 chunk type (BE FourCC @chunk+0) | `desc` / `pakt` / `data` (breaks) / anything else (skipped) |
+| A5 `chunk->size` (BE s64 @chunk+8) | 0 / positive / negative (cursor moves backwards) / huge |
+| A6 chunk **stride** | `sizeof(struct caf_chunk)` == **16** (not 12) because of the 4-byte padding after `type`; cursor advance is `chunk + 16 + size` |
+| A7 chunk order / multiplicity | `desc`→`pakt`→`data`, `pakt`→`desc`→`data`, duplicate `desc` (last wins), duplicate `pakt` (last wins), unknown chunks interleaved, 0 unknown / 1 / many |
+| A8 `desc->format_id` (BE @desc+8) | `ima4` (pass) / else `-3` |
+| A9 `desc->sample_rate` (raw 8 bytes @desc+0) | fed through native `double` load → `(u64)` value conversion → `bswap64` → bit-reinterpret. Distinguished sub-ranges: `[0,1)`→0, `[1,2^63)`→truncation, `>= 2^63`→`subsd`+`xor` path, negative in `(-1,0]`→0, `<= -1`→`cvttsd2si` negative, `< -2^63`/`+Inf`/`-Inf`/`NaN`→`0x8000000000000000` |
+| A10 `desc->channels_per_frame` (BE u32 @desc+24) | 0 / 1 / 2 / large / `0xFFFFFFFF` |
+| A11 `pakt->frame_count` (BE s64 @pakt+8) | 0 / positive / negative / `i64::MIN` / `u64::MAX` |
+| A12 `blocks` output pointer | always `data_chunk + 16 + sizeof(caf_data)==4` → `+20`; must be byte-identical pointer |
+| A13 `info->size` output | the **`data` chunk's** `chunk_size` (the loop variable at break), reinterpreted as `u64` |
+| A14 buffer/`data` alignment | `data` 8-aligned / 4-aligned / 2-aligned / 1-aligned (odd address) — the C reads through casts, so unaligned loads must behave the same |
+| A15 fields never read | `chunk` types other than the three; `desc->format_flags`, `bytes_per_packet`, `frames_per_packet`, `bits_per_channel`; `pakt->packet_count`, `priming_frames`, `remainder_frames`; `caf_data->edit_count`; `ima_block` contents — all must be ignored (fuzz them) |
 
-Derived from every `if` / `else if` / `for` / conversion in `ima_parse`:
+## Row table (pruned cross-product — combinations the C treats differently)
 
-| axis | values the C distinguishes | source |
-|------|----------------------------|--------|
-| A. `header->type` | `== 'ffac'` (bytes `"caff"`) / `!=` | `lib.c:87` |
-| B. `header->version` | `== 1` / `!=` | `lib.c:92` |
-| C. `header->flags` | **never read** (bytes 6..8 are don't-care) | absence of any read |
-| D. `chunk->type` | `'csed'`(`"desc"`) / `'tkap'`(`"pakt"`) / `'atad'`(`"data"`) / any of the other 2^32−3 values | `lib.c:97,102,107` |
-| E. chunk ordering | `desc` before/after `data`; `pakt` before/after `data`; `desc` before/after `pakt` | control flow of `for(;;)` |
-| F. chunk multiplicity | 0 / 1 / many `desc`, 0 / 1 / many `pakt` (**the last one before `data` wins**); 1 / many `data` (**the first one wins**, `break`) | overwriting assignment + `break` |
-| G. unknown chunks skipped | 0 / 1 / many | loop iteration count |
-| H. `chunk->size` | `0`, positive, **negative (the scan walks backwards)**, `-16` (self-loop), `i64::MIN`, `i64::MAX` | `lib.c:115` pointer arithmetic |
-| I. chunk stride | **`16 + size`**, because `sizeof(struct caf_chunk) == 16` (4 bytes of padding between `type` and `size`) — *not* the 12 bytes real CAF uses.  Bytes 4..8 of every chunk are don't-care, and a declared size smaller than the payload makes the next chunk header **overlap** the previous payload. | `sizeof(struct caf_chunk)` |
-| J. `desc->format_id` | `== '4ami'` (bytes `"ima4"`) / `!=` | `lib.c:118` |
-| K. `desc->sample_rate` (`double`) | the `(ima_u64_t)double` **value** conversion has three hardware paths: `x >= 2^63` (bias + `xor 2^63`), ordered `x < 2^63` (plain `cvttsd2si`), and unordered / out-of-range (`0x8000000000000000` "integer indefinite").  Sub-cases: `+0.0`, `-0.0`, small positive, small negative, fractional (truncation toward zero), subnormal, exactly `2^63`, `> 2^63`, `< -2^63`, `+inf`, `-inf`, qNaN, sNaN, arbitrary bit patterns. | `lib.c:127` (`comisd`/`jae`/`subsd`/`cvttsd2si`/`xor`) |
-| L. `desc->channels_per_frame` | any `u32` | `lib.c:126` |
-| M. `pakt->frame_count` | any `u64` | `lib.c:125` |
-| N. `data` pointer alignment | offsets 0..7 — the C casts the buffer to `struct caf_*` with no alignment guarantee | `lib.c:76` |
-| O. unread fields | `desc->format_flags / bytes_per_packet / frames_per_packet / bits_per_channel`, `pakt->packet_count / priming_frames / remainder_frames`, `caf_data->edit_count`, `ima_block` contents | absence of reads |
-| P. `info->blocks` output | must equal `&data_chunk + 16 + 4` exactly | `lib.c:111` |
-| Q. `info->size` output | the **`data`** chunk's `chunk_size`, `s64` → `u64` reinterpreted (*not* the last chunk scanned) | `lib.c:124` |
+Every row is driven with **many randomized inputs** (fixed seed, `SplitMix64`),
+not a single hand-picked value, and asserts the full 40-byte `struct ima_info`
+plus the `int` return are byte-identical between the C `.so` and the Rust `.so`.
 
-Axes C, I(padding) and O are "don't-care" axes: **every** row below fills those
-bytes with seeded pseudo-random noise, so any accidental Rust read of them
-diverges.  Row 14 additionally proves it by re-running the same semantic file
-with a different noise filling.
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `ima_parse` | minimal valid: `desc`(ima4) → `pakt` → `data`; all sizes = real payload size; randomized `flags`, `format_flags`, `bytes/frames_per_packet`, `bits_per_channel`, `packet_count`, `priming`, `remainder`, `edit_count` (A3, A15) | [x] |
+| 2 | `ima_parse` | reordered: `pakt` → `desc` → `data` (A7) | [x] |
+| 3 | `ima_parse` | unknown chunks interleaved: 0, 1, 2, 8 unknown chunks with random FourCCs (excluding the 3 known) before/between/after `desc`/`pakt` (A4, A7) | [x] |
+| 4 | `ima_parse` | duplicate `desc` chunks (second, later one must win — `desc` is overwritten) (A7) | [x] |
+| 5 | `ima_parse` | duplicate `pakt` chunks (later one wins) (A7) | [x] |
+| 6 | `ima_parse` | unknown chunk with `size == 0` → cursor advances by exactly 16 (A5, A6) | [x] |
+| 7 | `ima_parse` | unknown chunk with large positive `size` (skips a big padded region) (A5) | [x] |
+| 8 | `ima_parse` | **negative** `chunk_size` on an unknown chunk → cursor walks backwards and re-visits an earlier chunk; laid out so the scan still terminates at `data` (A5, ERRORS row 7) | [x] |
+| 9 | `ima_parse` | `data` chunk `size` = 0 / small / large / `0x7FFF_FFFF_FFFF_FFFF` / negative / `0xFFFF_FFFF_FFFF_FFFF` → `info->size` (A5, A13) | [x] |
+| 10 | `ima_parse` | `sample_rate` raw bytes = the big-endian encoding of a *realistic* rate (8000, 11025, 22050, 32000, 44100, 48000, 96000, 192000) — the usual case, where the mis-read subnormal truncates to 0 (A9) | [x] |
+| 11 | `ima_parse` | `sample_rate` raw bytes chosen so the **native** load lands in `[1, 2^63)` → non-zero truncation path (A9) | [x] |
+| 12 | `ima_parse` | `sample_rate` raw bytes chosen so the native load is `>= 2^63` → `subsd`/`xor 1<<63` path (A9) | [x] |
+| 13 | `ima_parse` | `sample_rate` raw bytes = negative double: `(-1,0)`, `[-2^63,-1]`, `< -2^63` (A9) | [x] |
+| 14 | `ima_parse` | `sample_rate` raw bytes = `+Inf`, `-Inf`, quiet NaN, signalling NaN, `-0.0`, subnormals, `f64::MAX`, `f64::MIN_POSITIVE` (A9) | [x] |
+| 15 | `ima_parse` | `sample_rate` = fully random 64 bits (10 000 iterations) — the exhaustive sweep of A9 | [x] |
+| 16 | `ima_parse` | `channels_per_frame` = 0 / 1 / 2 / 6 / 0x7FFFFFFF / 0xFFFFFFFF / random (A10) | [x] |
+| 17 | `ima_parse` | `frame_count` = 0 / 1 / `i64::MAX` / `-1` / `i64::MIN` / random 64 bits (A11) | [x] |
+| 18 | `ima_parse` | `blocks` pointer identity: same buffer address passed to both libraries, assert both return the *same* `blocks` pointer value = `&data_chunk + 20` (A12) | [x] |
+| 19 | `ima_parse` | misaligned `data`: buffer offset by 1..7 bytes from an 8-aligned address, full valid parse (A14) | [x] |
+| 20 | `ima_parse` | `ima_block` payload region filled with random bytes; `data` chunk followed by 0 / 1 / many blocks — contents must be ignored, `blocks` pointer only (A12, A15) | [x] |
+| 21 | `ima_parse` | full random valid document: random chunk order, random unknown-chunk count/sizes, random every unread field, random `sample_rate` bits — 5 000 iterations, structural fuzz (all axes) | [x] |
+| 22 | `ima_parse` | `desc` chunk present but `data` chunk found **first** in file order while `desc` appears later — reached via a negative-size back-jump so `desc` *is* set before `data` is hit (A5, A7) | [x] |
+| 23 | `ima_parse` | `info` struct pre-filled with a random poison pattern before the call → on the `-1`/`-2`/`-3` paths the struct must be left byte-identical to the poison in both libraries (A1, A2, A8) | [x] |
+| 24 | `ima_parse` | called repeatedly on the same `info` (statelessness): 100 alternating valid/invalid calls, comparing `info` after each (no hidden global state in either library) | [x] |
 
-## Configuration rows
+## Feature combinations
 
-Every row drives **both** `.so`s via `libloading` with the **same** input
-pointer and compares the `int` return value *and* all 40 bytes of
-`struct ima_info` (tail padding included; `sample_rate` compared as raw bits so
-that NaNs are distinguished).  Every row uses many seeded randomized inputs, and
-each row additionally asserts the C return value it is supposed to be exercising
-so that it can never pass vacuously.
+`translation/Cargo.toml` declares **no `[features]`** section, so the only
+build configurations are: default features, `--no-default-features`, and
+`--all-features` — all three are identical. All are run by
+`run_all_features.sh` for completeness.
 
-Tests live in `tests/phase_b_valid.rs`.
+## Binary executable
 
-| #  | entry point | configuration (options set + input shape) | iters | test | [x] |
-|----|-------------|-------------------------------------------|-------|------|-----|
-| 0  | — | both `.so`s really are two distinct files with two distinct `ima_parse` addresses | 1 | `cfg00_libraries_are_distinct_shared_objects` | [x] |
-| 1  | `ima_parse` | A✗: random non-`"caff"` magic, random version, random trailing bytes | 20 000 | `cfg01_bad_magic_randomized` | [x] |
-| 2  | `ima_parse` | A✓ + B✗: valid magic, random `version != 1` | 20 000 | `cfg02_bad_version_randomized` | [x] |
-| 3  | `ima_parse` | A✓ + B: **exhaustive** over all 65 536 `version` values behind an otherwise valid file (only `1` proceeds) | 65 536 | `cfg03_version_exhaustive` | [x] |
-| 4  | `ima_parse` | minimal valid: `desc`(size 32), `pakt`(size 24), `data`; random K/L/M/Q | 5 000 | `cfg04_minimal_valid` | [x] |
-| 5  | `ima_parse` | E: order `pakt`, `desc`, `data` | 5 000 | `cfg05_order_pakt_desc_data` | [x] |
-| 6  | `ima_parse` | G=1: one unknown chunk before `desc` | 5 000 | `cfg06_one_unknown_chunk_first` | [x] |
-| 7  | `ima_parse` | G=1..8 unknown chunks inserted at random positions around `desc`/`pakt` (D fall-through) | 5 000 | `cfg07_many_unknown_chunks_interleaved` | [x] |
-| 8  | `ima_parse` | F: 2..4 `desc` chunks with different values — the **last** before `data` wins | 5 000 | `cfg08_multiple_desc_last_wins` | [x] |
-| 8b | `ima_parse` | F+J: 2..4 `desc` chunks where only the **last** has a valid `format_id` (earlier ones invalid) ⇒ still `0` | 3 000 | `cfg08b_multiple_desc_only_last_format_id_matters` | [x] |
-| 9  | `ima_parse` | F: 2..4 `pakt` chunks with different `frame_count` — the **last** wins | 5 000 | `cfg09_multiple_pakt_last_wins` | [x] |
-| 10 | `ima_parse` | E+F: two `data` chunks (plus a second `desc`/`pakt` after the first `data`) — the **first** `data` wins and the later chunks must be ignored | 2 000 | `cfg10_two_data_chunks_first_wins` | [x] |
-| 11 | `ima_parse` | H+I: runs of 1..6 skipped chunks with declared sizes `0..=96`, i.e. strides `16..=112` (size 0 packs chunks back-to-back at the bare 16-byte stride) | 5 000 | `cfg11_positive_skip_sizes` | [x] |
-| 12 | `ima_parse` | H: a chunk with size `+80` jumps *forward* over `pakt`/`data`, then a chunk with size `-96` jumps **backwards** onto `pakt`; the scan then reaches `data` | 3 000 | `cfg12_negative_chunk_size_walks_backwards` | [x] |
-| 12b| `ima_parse` | H: a `-80` chunk jumps **backwards** directly onto the `data` chunk, which physically precedes the jump chunk | 3 000 | `cfg12b_negative_chunk_size_jumps_back_onto_data` | [x] |
-| 13 | `ima_parse` | H+Q: `data` chunk size = `0, ±1, ±2, ±16, i64::MIN(+1), i64::MAX(−1), ±2^32, 0x00FF…, ±0x7F00…` then random; asserts `info->size == ds as u64` | 5 000 | `cfg13_data_chunk_size_extremes` | [x] |
-| 14 | `ima_parse` | C+I+O: two files identical except in every byte the C never reads; both libraries must give identical results for both fillings | 5 000 ×2 | `cfg14_unread_bytes_are_ignored` | [x] |
-| 15 | `ima_parse` | M: `frame_count` = `0, 1, 2, u64::MAX(−1), i64::MAX, i64::MIN, 0x00FF…, 0xFF00…, 0x0102…, 0x8080…, 2^63(+1), 0xDEADBEEFCAFEBABE` then random | 5 000 | `cfg15_frame_count_values` | [x] |
-| 16 | `ima_parse` | N: `data` base pointer at every alignment offset 0..7 | 8 × 2 000 | `cfg16_misaligned_buffer` | [x] |
-| 17 | `ima_parse` | J✗: `format_id` = curated near-misses (`ima3`, `ima5`, `IMA4`, `4ami`, …) then random ⇒ `-3` with `*info` provably untouched | 20 000 | `cfg17_bad_format_id_randomized` | [x] |
-| 18 | `ima_parse` | L: `channels_per_frame` = `0,1,2,3,4,6,8, 0xFFFFFFFF(−1), 0x7FFFFFFF, 0x80000000, 0x000000FF, 0xFF000000, 0x01020304, 0xDEADBEEF` then random; asserts `info->channel_count == ch` | 5 000 | `cfg18_channel_count_values` | [x] |
-| 19 | `ima_parse` | K: `sample_rate` = arbitrary random `u64` bit patterns reinterpreted as `double` (NaN / inf / subnormal / astronomically large) | 30 000 | `cfg19_sample_rate_random_bit_patterns` | [x] |
-| 19b| `ima_parse` | K: `sample_rate` biased to the *interesting* magnitudes uniform bit patterns never reach — small ±, fractional, straddling `±2^63` at double granularity, `(0,1)` and `(−1,0)` (truncate to `0`/`-0`) | 30 000 | `cfg19b_sample_rate_biased_magnitudes` | [x] |
-| 20 | `ima_parse` | K: 37 curated hard doubles + 15 curated hard bit patterns (`±0.0`, `±1.0`, `±0.5`, `±1.5`, `0.999…`, `44100`, `8000`, `22050`, `±48000.5`, `1e18`, `9.2e18`, `9.3e18`, `1.9e19`, `2^64`, **exactly `2^63`**, largest double `< 2^63`, just above `2^63`, `±2^63`, just below `−2^63`, `±1e300`, `f64::MAX/MIN`, `±MIN_POSITIVE`, `±5e-324`, `±inf`, qNaN, sNaN, NaN payloads), each × 8 noise fillings × alignments 0..7 | 52 × 8 | `cfg20_sample_rate_hard_doubles` | [x] |
-| 21 | `ima_parse` | K × L × M × Q cross-product (4 × 3 × 3 × 4 value classes) inside a randomly shaped chunk stream at a random alignment | 20 000 | `cfg21_cross_product` | [x] |
-| 22 | `ima_parse` | P: `info->blocks` must equal `data_ptr + data_chunk_offset + 20`, with the `data` chunk pushed to a different offset every iteration by 0..6 random skipped chunks, at random alignment | 5 000 | `cfg22_blocks_pointer_identity` | [x] |
-| 23 | `ima_parse` | end-to-end fuzz of the composed pipeline: random magic (5 % invalid), random version (5 % invalid), random `format_id` (12 % invalid), random ordering, 0..5 unknown chunks, random sizes and alignment | 30 000 | `cfg23_whole_file_fuzz` | [x] |
-| 24 | `ima_parse` | E × J interaction: `desc` present with an **invalid** `format_id` **and no `pakt` at all** ⇒ `-3` is returned before the NULL `pakt` would be dereferenced | 3 000 | `cfg24_bad_format_id_without_pakt` | [x] |
-| 25 | `ima_parse` | I: **overlapping** chunk headers — the `desc` chunk declares size 8 but has a 32-byte payload, so the next chunk header is parsed *out of the desc payload* (type = `format_id` = `"ima4"`, size = the `bytes_per_packet`/`frames_per_packet` pair) and lands exactly after it | 3 000 | `cfg25_overlapping_chunk_headers` | [x] |
+`c_src/CMakeLists.txt` builds only `add_library(... SHARED src/lib.c)`. There is
+no `add_executable`, and `translation/Cargo.toml` declares no `[[bin]]`.
+**No driver binary exists**, so the "compare stdout" gate is not applicable.
 
-**Total: ~430 000 differential `ima_parse` invocation pairs.**
+---
 
-## Result
+## Phase B results
 
-```
-$ cargo test --release --test phase_b_valid
-test result: ok. 29 passed; 0 failed
-```
+All 24 rows pass. `cargo test --release` → `phase_b_configs`: **24 passed, 0 failed**.
+Total randomized cases driven through both `.so`s across the rows: ~25 000
+documents, each compared on the `int` return value **and** all 40 bytes of
+`struct ima_info` (twice, with two different poison patterns for the output
+struct). No divergence was found on any valid-path row.
 
-All rows pass under both the `dev` and `release` profiles and under all three
-Cargo feature configurations (see `verify.sh`).
+Notable properties confirmed byte-for-byte against the C:
+
+* the chunk stride really is `sizeof(struct caf_chunk) == 16` (row 6), not the
+  12 bytes the CAF file format specifies — the C's struct padding is reproduced;
+* `blocks` is exactly `&data_chunk + 16 + 4` (rows 18, 22);
+* `info->size` is the `data` chunk's size field, sign-extended through
+  `ima_s64_t` and re-widened to `ima_u64_t` (row 9);
+* the `double -> unsigned long long` *value* conversion of the raw sample-rate
+  bits (not a bit-reinterpret) matches GCC's x86-64 lowering
+  (`comisd 2^63 / jae / subsd / cvttsd2si / xor 1<<63`) for every input class,
+  including NaN, ±Inf, ≥2^63 and < −2^63 (rows 11–15, 10 000 random bit
+  patterns);
+* negative `chunk_size` walking the cursor *backwards* is followed, not rejected
+  (rows 8, 22);
+* unaligned `data` pointers behave identically (row 19).
+
+## Phase D results
+
+`./run_all_features.sh` builds **4 C variants** (CMake default / Release −O3 /
+RelWithDebInfo −O2 / Debug −g) × **3 feature combos** (default,
+`--no-default-features`, `--all-features`) × **2 Rust profiles**
+(release, dev) = **24 configurations**, and for each one runs the entire Phase B
++ Phase C suite plus the `nm -D` symbol diff and an `ldd -r` unresolved-symbol
+check.
+
+Result: `ALL CONFIGURATIONS PASSED`, reproduced on 3 consecutive full runs.
+Symbol diff is empty in every configuration (1 exported symbol, `ima_parse`);
+`ldd -r` reports 0 unresolved symbols.

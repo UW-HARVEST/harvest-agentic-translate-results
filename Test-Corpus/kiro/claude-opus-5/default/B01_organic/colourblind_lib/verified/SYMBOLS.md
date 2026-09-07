@@ -1,92 +1,64 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — exported-symbol parity
 
 Derived mechanically from `nm -D` on both shared objects.
 
-## Build commands
+- C:    `c_src/build/libharvest-work-5ZGKZ6.so`
+- Rust: `translation/target/release/libcolourblind_lib.so`
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-Iix8pd.so
+## C `.so` defined (`T`) symbols
 
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libcolourblind_lib.so
-```
+| # | symbol | C binding | present in Rust `.so`? | notes |
+|---|--------|-----------|------------------------|-------|
+| 1 | `colourblind` | `T` (global text) | YES — `T colourblind` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn colourblind` in `src/lib.rs` |
 
-## C `.so` — `nm -D`
+## C `.so` weak / undefined symbols
 
-```
-                 w _ITM_deregisterTMCloneTable
-                 w _ITM_registerTMCloneTable
-                 w __cxa_finalize@GLIBC_2.2.5
-                 w __gmon_start__
-00000000000013d2 T colourblind
-```
+These are toolchain/CRT artifacts, not library API. They are not part of the
+translation surface but are listed for completeness.
 
-`nm -D --defined-only` on the C `.so` yields exactly one entry:
+| symbol | C | Rust | notes |
+|--------|---|------|-------|
+| `_ITM_deregisterTMCloneTable` | `w` | `w` | ELF boilerplate, both |
+| `_ITM_registerTMCloneTable` | `w` | `w` | ELF boilerplate, both |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | `w` | ELF boilerplate, both |
+| `__gmon_start__` | `w` | `w` | ELF boilerplate, both |
 
-```
-00000000000013d2 T colourblind
-```
+## Symbols `static` in C (deliberately NOT exported by either object)
 
-## Rust `.so` — `nm -D --defined-only`
+`nm` on the C object file shows these as local (`t`); they are absent from
+`nm -D` output of the `.so`. The Rust translation keeps them private too, so
+the exported ABI matches exactly.
 
-```
-00000000000116e0 T colourblind
-```
+| C symbol | C linkage | Rust counterpart | Rust linkage |
+|----------|-----------|------------------|--------------|
+| `Protanopia`   | `static` (local `t`) | `protanopia`   | private `unsafe fn` |
+| `Deuteranopia` | `static` (local `t`) | `deuteranopia` | private `unsafe fn` |
+| `Tritanopia`   | `static` (local `t`) | `tritanopia`   | private `unsafe fn` |
 
-## Parity table
+## Extra symbols in the Rust `.so`
 
-Every non-libc symbol defined by the C `.so`, and its status in the Rust `.so`.
+Every additional entry in the Rust `nm -D` output is an **undefined** (`U`) or
+**weak-undefined** (`w`) import pulled in by the Rust standard library
+(`libc`/`libgcc_s` unwinder), never a defined export:
 
-| # | C symbol | C bind/type | in Rust `.so`? | notes |
-|---|----------|-------------|----------------|-------|
-| 1 | `colourblind` | `T` (global text) | YES — `T colourblind` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn colourblind` in `src/lib.rs`. Signature `(c_int, *mut f32, *mut f32, *mut f32) -> ()` matches `void colourblind(cb_impairment, float*, float*, float*)`; `cb_impairment` has no explicit enumerator values and no `__attribute__((packed))`, so it is passed as a plain `int` in `edi` (confirmed in the disassembly: `mov %edi,-0x4(%rbp)`). |
+`_Unwind_*` (10 × `U`), `__cxa_thread_atexit_impl` (`w`), `__errno_location`,
+`__tls_get_addr`, `abort`, `bcmp`, `calloc`, `close`, `dl_iterate_phdr`, `free`,
+`fstat64`, `getcwd`, `getenv`, `gettid` (`w`), `lseek64`, `malloc`, `memcpy`,
+`memmove`, `memset`, `mmap64`, `munmap`, `open64`, `posix_memalign`,
+`pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, `read`,
+`readlink`, `realloc`, `realpath`, `stat64`, `statx` (`w`), `strlen`,
+`syscall`, `write`, `writev`.
 
-**Missing symbols: 0. Symbol diff is EMPTY.**
+They add no API surface: the only defined text symbol the Rust `.so` exports is
+`colourblind`, matching the C `.so`.
 
-## Symbols deliberately NOT exported
+## Verdict
 
-These are `static` in `c_src/src/lib.c`, therefore absent from the C `.so`'s
-dynamic symbol table. They must NOT be exported from Rust either, or the Rust
-`.so` would have a *larger* surface than the C one. They are translated as
-private `unsafe fn`s.
+Symbol diff (defined non-libc exports, C → Rust): **EMPTY**.
+No missing symbol, no untranslated C module. `src/lib.c` is the only C
+translation unit in `CMakeLists.txt`, and all four of its functions
+(`Protanopia`, `Deuteranopia`, `Tritanopia`, `colourblind`) are translated.
 
-| C symbol | linkage in C | Rust counterpart | exported? |
-|----------|--------------|------------------|-----------|
-| `Protanopia`   | `static` | `protanopia`   | no (correct) |
-| `Deuteranopia` | `static` | `deuteranopia` | no (correct) |
-| `Tritanopia`   | `static` | `tritanopia`   | no (correct) |
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
 
-Confirmed absent from the C `.so`: `nm -D libharvest-work-Iix8pd.so | grep -c
--E 'Protanopia|Deuteranopia|Tritanopia'` → 0. Same for the Rust `.so`.
-
-Because these three are unreachable across the FFI boundary, all differential
-coverage of their arithmetic in Phases B and C is driven **through**
-`colourblind`, selecting each one via the `Impairment` argument.
-
-## Undefined (imported) symbols
-
-C `.so` imports only the libc/CRT weak symbols shown above. The Rust `.so`
-imports only libc symbols (`memcpy`, `__cxa_thread_atexit_impl`, and similar
-`std` runtime hooks). No non-libc undefined symbols in either object.
-
-## Completeness of the translation
-
-`c_src` contains exactly one translation unit (`src/lib.c`, 35 lines) and one
-public header (`include/lib.h`, 7 lines); `CMakeLists.txt` lists `src/lib.c` as
-the sole source. Every function in that translation unit (`Protanopia`,
-`Deuteranopia`, `Tritanopia`, `colourblind`) has a corresponding Rust
-implementation. No C module was skipped, so no additional translation work was
-required for symbol parity. Nothing is stubbed or `unimplemented!()`.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one (`--no-default-features` is equivalent to the
-default here). Verified with `cargo metadata`: the feature map for the package
-is empty. Phase D's "every feature combination" therefore reduces to the single
-default configuration, and the automation script re-runs the suite under both
-`--all-features` and `--no-default-features` to prove they are identical.
+Automated check: `translation/check_symbols.sh` (exits non-zero on any diff).

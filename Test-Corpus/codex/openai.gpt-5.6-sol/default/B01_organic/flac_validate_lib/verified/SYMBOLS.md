@@ -1,17 +1,19 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Source command:
+Derived mechanically with:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-d9nDAf.so
+nm -D --defined-only ../c_src/build/libharvest-work-QAS72x.so
 ```
 
-Only global text symbols (`T`) are public API symbols. Toolchain-generated
-local/runtime symbols are not reported by `nm -D --defined-only`.
+Only globally defined project symbols are listed; undefined libc/loader symbols
+are not implementations supplied by this library.
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `flac_validate` | `T` | `flac_validate` | present |
-| `tflac_size_memory` | `T` | `tflac_size_memory` | present |
+| C symbol | C type | Rust `.so` export | Status |
+|----------|--------|-------------------|--------|
+| `flac_validate` | `T` | `flac_validate` | [x] |
+| `tflac_size_memory` | `T` | `tflac_size_memory` | [x] |
 
-Missing C symbols in Rust: **0**.
+Completion requirement verified: the exact-name C-minus-Rust symbol diff is
+empty, there are no extra Rust exports, and `ldd -r` reports no unresolved
+relocations.

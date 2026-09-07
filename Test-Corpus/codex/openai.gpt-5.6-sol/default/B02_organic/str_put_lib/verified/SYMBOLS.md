@@ -1,15 +1,13 @@
-# Dynamic symbol surface
+# Exported Symbol Surface
 
-Source library:
-`../c_src/build/libharvest-work-gSZO9L.so`
-
-The table is the complete set produced by:
+Derived from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-gSZO9L.so
+nm -D --defined-only ../c_src/build/libharvest-work-vRYfpk.so
+nm -D --defined-only target/release/libstr_put_lib.so
 ```
 
-| # | C symbol | Rust export | Status |
+| # | C symbol | Rust export | status |
 |---|----------|-------------|--------|
 | 1 | `stbds_arrgrowf` | `stbds_arrgrowf` | present |
 | 2 | `stbds_arrfreef` | `stbds_arrfreef` | present |
@@ -28,13 +26,5 @@ nm -D --defined-only ../c_src/build/libharvest-work-gSZO9L.so
 | 15 | `strkey` | `strkey` | present |
 | 16 | `str_put` | `str_put` | present |
 
-Missing symbols: **0**
+Missing C symbols in Rust: **0**
 
-Cargo features: none declared. The applicable build configurations are the
-default invocation and `--no-default-features`.
-
-## Completion
-
-- [x] Default release build: all 16 C symbols are exported by Rust.
-- [x] `--no-default-features` release build: all 16 C symbols are exported by Rust.
-- [x] Missing C symbols: 0.

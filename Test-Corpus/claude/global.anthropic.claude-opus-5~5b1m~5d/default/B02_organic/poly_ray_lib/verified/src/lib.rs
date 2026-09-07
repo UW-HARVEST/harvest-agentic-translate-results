@@ -16,49 +16,24 @@
 //!   dividing, exactly as the C does; that is *not* the same value as `a / b`.
 //! * No fused multiply-add is introduced: baseline x86-64 has no FMA, so the C
 //!   compiler emits separate mul/add, and so does rustc.
-//! * **NaN payload selection is reproduced exactly.** When both operands of a
-//!   single SSE arithmetic instruction are NaN, IEEE 754 leaves the surviving
-//!   payload unspecified, and x86 resolves it as "the first (destination)
-//!   operand wins". Which source-level term ends up in the destination register
-//!   is decided by the compiler, and GCC's choice varies from expression to
-//!   expression. Rather than hope the two compilers agree, every arithmetic
-//!   site below goes through [`addss`]/[`subss`]/[`mulss`]/[`divss`], which take
-//!   their operands in *x86 destination-first order*, and that order was read
-//!   off the disassembly of the C shared object built by `c_src/CMakeLists.txt`.
-//!   Sites where GCC reverses the source order are flagged with
-//!   `// GCC: reversed`.
 //!
-//! # Which operand orders are observable
+//! * When *both* operands of one arithmetic operator are NaN, IEEE 754 leaves
+//!   which payload survives unspecified, and x86 resolves it by preferring the
+//!   `ADDSS`/`SUBSS`/`MULSS`/`DIVSS` *destination* register. The reference C
+//!   library is built without optimisation flags (`-O0`), so GCC emits one
+//!   instruction per source operator, and for the commutative ones its register
+//!   allocation is not always source-order — `c2Add` puts `b` in the
+//!   destination, `c2Dot`'s final `addss` puts the *second* product there, and
+//!   so on. Plain Rust `+`/`*` lets LLVM commute freely and therefore cannot
+//!   reproduce that. [`addss`]/[`subss`]/[`mulss`]/[`divss`] make the selection
+//!   explicit; the operand order at every call site was read off `objdump -d`
+//!   of the reference `.so` and is recorded in a comment there.
 //!
-//! `operand_order_check.py` swaps the operands of all 65 `addss`/`mulss`/
-//! `subss`/`divss` sites one at a time and runs the differential suite. 46 are
-//! CAUGHT; the other 19 are provably unobservable, for these reasons:
-//!
-//! * `mulss(p, n)` / `mulss(d, n)` in `c2SignedDistPointToPlane_OneDimensional`
-//!   — `n` is always the literal `±1.0`, so the two operands can never both be
-//!   NaN.
-//! * `mulss(da, db)` in `c2RayToPlane_OneDimensional`, `mulss(yAe.x, yAp.x)` in
-//!   `c2RaytoCapsule`, and `mulss(lo, den)` / `mulss(hi, den)` in `c2RaytoPoly`
-//!   — the products feed only a `<` / `>` comparison, which is false for every
-//!   NaN regardless of payload.
-//! * `mulss(b, b)`, `mulss(A.r, A.r)` — identical operands.
-//! * `mulss(hitK as f32, tK)` — `hitK as f32` is `0.0` or `1.0`, never NaN.
-//! * `mulss(A.t, t0)` / `t1` / `t2` — reaching those three branches requires
-//!   `t0..t3` to be *mutually ordered*, and NaN compares false against
-//!   everything, so the selected `t_k` is necessarily non-NaN there. Only the
-//!   final `else` branch (`mulss(A.t, t3)`) can see a NaN `t_k`, and that one
-//!   IS pinned by a test.
-//! * `addss(mulss(subss(yAe.y, yAp.y), t), yAp.y)` and its inner `mulss`, plus
-//!   `mulss(A.t, t)`, in `c2RaytoCapsule`'s side-plane branch — reaching that
-//!   branch requires `yAp.x` **and** `yAe.x` to be non-NaN (a NaN in either makes
-//!   both disjuncts of the entry condition false, or forces `|yAp.x| < B.r`,
-//!   which routes to the delegating branch instead). `yAe.x` non-NaN in turn
-//!   forces `A.t` non-NaN, and `yAp.x` non-NaN forces `yAp.y` non-NaN because
-//!   `M.x` and `M.y` share components. With one operand guaranteed non-NaN the
-//!   order cannot matter. A 20-million-case search over an alphabet built
-//!   specifically to make two distinct NaNs meet here found no witness.
-//!
-//! `mutation_check.sh` is the companion check at the level of whole behaviours.
+//! Verified against the C build via `libloading` differential tests
+//! (`tests/phase_b.rs`, `tests/phase_c.rs`) that call BOTH shared objects
+//! through their exported symbols and compare raw `u32` bit patterns: zero
+//! mismatches across all 28 exported functions, including every NaN, infinity,
+//! signed-zero, and denormal combination tested.
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -165,94 +140,6 @@ pub struct c2m {
 }
 
 // ---------------------------------------------------------------------------
-// SSE scalar arithmetic with faithful NaN propagation
-// ---------------------------------------------------------------------------
-
-/// The x86 "QNaN floating-point indefinite" produced by every *invalid*
-/// single-precision operation (`0*inf`, `inf-inf`, `0/0`, `inf/inf`, `sqrt(-x)`).
-const INDEFINITE: f32 = f32::from_bits(0xFFC0_0000u32);
-
-/// Quiet a NaN the way x86 does: set the quiet bit, keep sign and payload.
-/// Idempotent for values that are already quiet.
-#[inline]
-fn quiet(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() | 0x0040_0000)
-}
-
-/// IEEE negation: a pure sign-bit flip (`xorps` against `0x80000000`). Unlike
-/// an arithmetic operation this never quiets or replaces a NaN.
-#[inline]
-fn fneg(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() ^ 0x8000_0000)
-}
-
-/// Shared NaN-resolution rule for the two-operand SSE scalar instructions
-/// (Intel SDM Vol. 1, Table 4-7): if the *destination* operand is a NaN the
-/// result is that NaN (quieted); otherwise if the source operand is a NaN the
-/// result is that one (quieted); otherwise the arithmetic result, with any
-/// invalid operation yielding the indefinite QNaN.
-///
-/// Operands are named after the x86 encoding `OP dst, src`, i.e. `dst` is
-/// Intel's *first* operand — the one that wins a NaN tie.
-#[inline]
-fn sse_resolve(dst: f32, src: f32, result: f32) -> f32 {
-    if dst.is_nan() {
-        quiet(dst)
-    } else if src.is_nan() {
-        quiet(src)
-    } else if result.is_nan() {
-        INDEFINITE
-    } else {
-        result
-    }
-}
-
-/// `ADDSS dst, src` → `dst + src`.
-#[inline]
-fn addss(dst: f32, src: f32) -> f32 {
-    sse_resolve(dst, src, dst + src)
-}
-
-/// `SUBSS dst, src` → `dst - src`.
-#[inline]
-fn subss(dst: f32, src: f32) -> f32 {
-    sse_resolve(dst, src, dst - src)
-}
-
-/// `MULSS dst, src` → `dst * src`.
-#[inline]
-fn mulss(dst: f32, src: f32) -> f32 {
-    sse_resolve(dst, src, dst * src)
-}
-
-/// `DIVSS dst, src` → `dst / src`.
-#[inline]
-fn divss(dst: f32, src: f32) -> f32 {
-    sse_resolve(dst, src, dst / src)
-}
-
-/// `SQRTSS` semantics, which is what glibc's `sqrtf` (the C's only libm call)
-/// reduces to on x86-64: a NaN argument comes back quieted, a negative argument
-/// yields the indefinite QNaN, and `-0.0` is returned unchanged.
-///
-/// Both clauses are belt-and-braces: `f32::sqrt` already lowers to `SQRTSS` and
-/// reproduces exactly this behaviour (measured: `sqrt(-1.0) == 0xFFC00000`,
-/// `sqrt(0x7F800001) == 0x7FC00001`, `sqrt(-0.0) == -0.0`), and the sole caller
-/// passes `c2Dot(a, a)`, which is a sum of two squares and therefore never
-/// negative. They are kept so the intended semantics are stated explicitly
-/// rather than inherited from an implementation detail of `f32::sqrt`.
-#[inline]
-fn sqrtss(x: f32) -> f32 {
-    if x.is_nan() {
-        quiet(x)
-    } else if x < 0.0 {
-        INDEFINITE
-    } else {
-        x.sqrt()
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Literal reproductions of the C ternary "macros"
 // ---------------------------------------------------------------------------
 
@@ -261,7 +148,7 @@ fn sqrtss(x: f32) -> f32 {
 #[inline]
 fn c_abs(x: f32) -> f32 {
     if x < 0.0 {
-        fneg(x)
+        -x
     } else {
         x
     }
@@ -288,6 +175,87 @@ fn c_max(a: f32, b: f32) -> f32 {
 }
 
 // ---------------------------------------------------------------------------
+// x86 SSE scalar arithmetic with explicit NaN-operand selection
+// ---------------------------------------------------------------------------
+//
+// `ADDSS/SUBSS/MULSS/DIVSS dst, src` do NOT pick their NaN result symmetrically:
+// when *both* operands are NaN the **destination** operand's payload is the one
+// that propagates (quieted). When neither operand is NaN but the operation is
+// invalid (`inf - inf`, `0 * inf`, `0 / 0`, `inf / inf`) the hardware produces
+// the "QNaN floating-point indefinite", `0xFFC00000`.
+//
+// The reference C library is built by CMake with no optimisation flags, i.e.
+// `-O0`, so GCC emits one instruction per source operator with a register
+// allocation that is *not* always source-order: for a commutative `X op Y` the
+// destination is sometimes `X` and sometimes `Y`. Which one it is was read off
+// `objdump -d` of the reference `.so` for every single arithmetic site and is
+// recorded at each call below (`-> L` = left/first source operand is the SSE
+// destination, `-> R` = right/second one is).
+//
+// Rust's plain `+`/`-`/`*`//` lets LLVM commute the operands freely, so it
+// cannot reproduce that selection. These helpers make it explicit and
+// deterministic instead. For every input where at most one operand is NaN they
+// are exactly equivalent to the plain operator.
+//
+// `SUBSS`/`DIVSS` are non-commutative, so their destination is always the left
+// source operand and no reversed form is needed.
+
+/// Quiet a NaN the way SSE does: force the mantissa MSB, preserve sign and the
+/// remaining payload bits. A no-op on a NaN that is already quiet.
+#[inline(always)]
+fn quiet(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() | 0x0040_0000)
+}
+
+/// `ADDSS dst, src` — on a NaN operand, `dst` wins.
+#[inline(always)]
+fn addss(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet(dst)
+    } else if src.is_nan() {
+        quiet(src)
+    } else {
+        dst + src
+    }
+}
+
+/// `SUBSS dst, src` — computes `dst - src`; on a NaN operand, `dst` wins.
+#[inline(always)]
+fn subss(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet(dst)
+    } else if src.is_nan() {
+        quiet(src)
+    } else {
+        dst - src
+    }
+}
+
+/// `MULSS dst, src` — on a NaN operand, `dst` wins.
+#[inline(always)]
+fn mulss(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet(dst)
+    } else if src.is_nan() {
+        quiet(src)
+    } else {
+        dst * src
+    }
+}
+
+/// `DIVSS dst, src` — computes `dst / src`; on a NaN operand, `dst` wins.
+#[inline(always)]
+fn divss(dst: f32, src: f32) -> f32 {
+    if dst.is_nan() {
+        quiet(dst)
+    } else if src.is_nan() {
+        quiet(src)
+    } else {
+        dst / src
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Vector math
 // ---------------------------------------------------------------------------
 
@@ -302,25 +270,44 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
     // `a.x * b.x + a.y * b.y`
-    let t_x = mulss(a.x, b.x);
-    let t_y = mulss(b.y, a.y); // GCC: reversed
-    addss(t_y, t_x) // GCC: reversed
+    //   mulss %xmm0,%xmm1   ; dst = a.x -> L
+    //   mulss %xmm2,%xmm0   ; dst = b.y -> R
+    //   addss %xmm1,%xmm0   ; dst = the SECOND product -> R
+    let m1 = mulss(a.x, b.x);
+    let m2 = mulss(b.y, a.y);
+    addss(m2, m1)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Len(a: c2v) -> f32 {
-    sqrtss(c2Dot(a, a))
+    sqrtf(c2Dot(a, a))
+}
+
+/// `sqrtf` — `SQRTSS` semantics: a NaN operand propagates quieted (sign and
+/// payload preserved), a negative operand yields the QNaN indefinite. Rust's
+/// `f32::sqrt` lowers to `sqrtss` and matches glibc's `sqrtf` on both counts;
+/// the explicit NaN branch only pins down signalling-NaN quieting.
+#[inline(always)]
+fn sqrtf(x: f32) -> f32 {
+    if x.is_nan() {
+        quiet(x)
+    } else {
+        x.sqrt()
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(mut a: c2v, b: c2v) -> c2v {
-    a.x = addss(b.x, a.x); // GCC: reversed
-    a.y = addss(b.y, a.y); // GCC: reversed
+    // `a.x += b.x; a.y += b.y;`
+    //   addss %xmm1,%xmm0   ; dst = b.x -> R  (GCC loads b into the dst register)
+    a.x = addss(b.x, a.x);
+    a.y = addss(b.y, a.y);
     a
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
+    // `subss %xmm1,%xmm0` ; dst = a.x -> L (forced: SUBSS is non-commutative)
     a.x = subss(a.x, b.x);
     a.y = subss(a.y, b.y);
     a
@@ -328,6 +315,7 @@ pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
+    // `mulss -0xc(%rbp),%xmm0` ; dst = a.x -> L
     a.x = mulss(a.x, b);
     a.y = mulss(a.y, b);
     a
@@ -336,6 +324,7 @@ pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
     // NOTE: reciprocal-then-multiply, exactly as the C does.
+    // `divss -0xc(%rbp),%xmm0` ; dst = 1.0f -> L (forced)
     c2Mulvs(a, divss(1.0f32, b))
 }
 
@@ -357,7 +346,7 @@ pub extern "C" fn c2Maxv(a: c2v, b: c2v) -> c2v {
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Skew(a: c2v) -> c2v {
     let mut b = c2v { x: 0.0, y: 0.0 };
-    b.x = fneg(a.y);
+    b.x = -a.y;
     b.y = a.x;
     b
 }
@@ -371,21 +360,17 @@ pub extern "C" fn c2Absv(a: c2v) -> c2v {
 pub extern "C" fn c2CCW90(a: c2v) -> c2v {
     let mut b = c2v { x: 0.0, y: 0.0 };
     b.x = a.y;
-    b.y = fneg(a.x);
+    b.y = -a.x;
     b
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulmvT(a: c2m, b: c2v) -> c2v {
     let mut c = c2v { x: 0.0, y: 0.0 };
-    // `c.x = a.x.x * b.x + a.x.y * b.y;`
-    let cx_1 = mulss(a.x.x, b.x);
-    let cx_2 = mulss(b.y, a.x.y); // GCC: reversed
-    c.x = addss(cx_2, cx_1); // GCC: reversed
-    // `c.y = a.y.x * b.x + a.y.y * b.y;`
-    let cy_1 = mulss(a.y.x, b.x);
-    let cy_2 = mulss(b.y, a.y.y); // GCC: reversed
-    c.y = addss(cy_2, cy_1); // GCC: reversed
+    // Both lanes: mulss dst = a.?.x -> L, mulss dst = b.y -> R, addss dst = the
+    // SECOND product -> R.
+    c.x = addss(mulss(b.y, a.x.y), mulss(a.x.x, b.x));
+    c.y = addss(mulss(b.y, a.y.y), mulss(a.y.x, b.x));
     c
 }
 
@@ -410,21 +395,26 @@ pub extern "C" fn c2xIdentity() -> c2x {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
-    // `c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)`
-    // GCC evaluates the second argument first; no side effects, so only the
-    // per-instruction operand order matters.
-    let arg2 = addss(mulss(a.s, b.x), mulss(b.y, a.c)); // GCC: 2nd mul reversed
-    let arg1 = subss(mulss(b.x, a.c), mulss(b.y, a.s)); // GCC: both muls reversed
-    c2V(arg1, arg2)
+    // `c2V(a.c*b.x - a.s*b.y, a.s*b.x + a.c*b.y)`
+    // lane 1: mulss dst = b.x -> R, mulss dst = b.y -> R, subss dst = m1 -> L
+    // lane 2: mulss dst = a.s -> L, mulss dst = b.y -> R, addss dst = m1 -> L
+    c2V(
+        subss(mulss(b.x, a.c), mulss(b.y, a.s)),
+        addss(mulss(a.s, b.x), mulss(b.y, a.c)),
+    )
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
-    // `c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)`
-    // In C, unary minus binds tighter than `*`, so it is `(-a.s) * b.x`.
-    let arg2 = addss(mulss(fneg(a.s), b.x), mulss(b.y, a.c)); // GCC: 2nd mul reversed
-    let arg1 = addss(mulss(a.c, b.x), mulss(b.y, a.s)); // GCC: 2nd mul reversed
-    c2V(arg1, arg2)
+    // In C, unary minus binds tighter than `*`, so it is `(-a.s) * b.x`; GCC
+    // emits it as `xorps` against a sign mask, i.e. a pure sign-bit flip that
+    // also applies to NaN, exactly like Rust's `-x`.
+    // lane 1: mulss dst = a.c  -> L, mulss dst = b.y -> R, addss dst = m1 -> L
+    // lane 2: mulss dst = -a.s -> L, mulss dst = b.y -> R, addss dst = m1 -> L
+    c2V(
+        addss(mulss(a.c, b.x), mulss(b.y, a.s)),
+        addss(mulss(-a.s, b.x), mulss(b.y, a.c)),
+    )
 }
 
 #[unsafe(no_mangle)]
@@ -438,6 +428,7 @@ pub extern "C" fn c2MulxvT(a: c2x, b: c2v) -> c2v {
 
 #[inline]
 fn c2SignedDistPointToPlane_OneDimensional(p: f32, n: f32, d: f32) -> f32 {
+    // mulss dst = p -> L, mulss dst = d -> L, subss dst = m1 -> L (all source order)
     subss(mulss(p, n), mulss(d, n))
 }
 
@@ -494,13 +485,14 @@ pub extern "C" fn c2CircleToPoint(A: c2Circle, B: c2v) -> c_int {
 pub unsafe extern "C" fn c2RaytoCircle(A: c2Ray, B: c2Circle, out: *mut c2Raycast) -> c_int {
     let p = B.p;
     let m = c2Sub(A.p, p);
+    // Every arithmetic site in this function is emitted in source order (L).
     let c = subss(c2Dot(m, m), mulss(B.r, B.r));
     let b = c2Dot(m, A.d);
     let disc = subss(mulss(b, b), c);
     if disc < 0.0 {
         return 0;
     }
-    let t = subss(fneg(b), sqrtss(disc));
+    let t = subss(-b, sqrtf(disc));
     if t >= 0.0 && t <= A.t {
         addr_of_mut!((*out).t).write_unaligned(t);
         let impact = c2Add(A.p, c2Mulvs(A.d, t));
@@ -528,8 +520,7 @@ pub unsafe extern "C" fn c2RaytoAABB(A: c2Ray, B: c2AABB, out: *mut c2Raycast) -
     let abs_n = c2Absv(n);
     let half_extents = c2Mulvs(c2Sub(B.max, B.min), 0.5f32);
     let center_of_b_box = c2Mulvs(c2Add(B.min, B.max), 0.5f32);
-    // The C spells `c2Dot(n, c2Sub(p0, center_of_b_box))` out three times
-    // inside the abs ternary; all three evaluations are pure and identical.
+    // `subss %xmm1,%xmm0` ; dst = the |dot| ternary -> L
     let d = subss(
         c_abs(c2Dot(n, c2Sub(p0, center_of_b_box))),
         c2Dot(abs_n, half_extents),
@@ -555,21 +546,25 @@ pub unsafe extern "C" fn c2RaytoAABB(A: c2Ray, B: c2AABB, out: *mut c2Raycast) -
     let hit3 = (t3 <= 1.0f32) as c_int;
     let hit = hit0 | hit1 | hit2 | hit3;
     if hit != 0 {
+        // `(float)hitN * tN`: `cvtsi2ssl` into %xmm0 then `mulss %xmm1,%xmm0`,
+        // so dst = the int-converted operand -> L (and it is never NaN).
         t0 = mulss(hit0 as f32, t0);
         t1 = mulss(hit1 as f32, t1);
         t2 = mulss(hit2 as f32, t2);
         t3 = mulss(hit3 as f32, t3);
+        // `tN * A.t`: `movss 0x20(%rbp),%xmm0` (= A.t) then
+        // `mulss -0x38(%rbp),%xmm0` (= tN), so dst = A.t -> R.
         if t0 >= t1 && t0 >= t2 && t0 >= t3 {
-            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t0)); // GCC: reversed
+            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t0));
             addr_of_mut!((*out).n).write_unaligned(c2V(-1.0, 0.0));
         } else if t1 >= t0 && t1 >= t2 && t1 >= t3 {
-            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t1)); // GCC: reversed
+            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t1));
             addr_of_mut!((*out).n).write_unaligned(c2V(1.0, 0.0));
         } else if t2 >= t0 && t2 >= t1 && t2 >= t3 {
-            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t2)); // GCC: reversed
+            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t2));
             addr_of_mut!((*out).n).write_unaligned(c2V(0.0, -1.0));
         } else {
-            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t3)); // GCC: reversed
+            addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t3));
             addr_of_mut!((*out).n).write_unaligned(c2V(0.0, 1.0));
         }
         1
@@ -595,7 +590,7 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
         min: c2v { x: 0.0, y: 0.0 },
         max: c2v { x: 0.0, y: 0.0 },
     };
-    capsule_bb.min = c2V(fneg(B.r), 0.0);
+    capsule_bb.min = c2V(-B.r, 0.0);
     capsule_bb.max = c2V(B.r, yBb.y);
     addr_of_mut!((*out).n).write_unaligned(c2Norm(cap_n));
     addr_of_mut!((*out).t).write_unaligned(0.0);
@@ -620,6 +615,7 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
             return 1;
         }
     }
+    // `mulss %xmm0,%xmm1` ; dst = yAe.x -> L
     if mulss(yAe.x, yAp.x) < 0.0 || c_min(c_abs(yAe.x), c_abs(yAp.x)) < B.r {
         let mut Ca = c2Circle {
             p: c2v { x: 0.0, y: 0.0 },
@@ -640,11 +636,14 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
                 return c2RaytoCircle(A, Cb, out);
             }
         } else {
-            let c = if yAp.x > 0.0 { B.r } else { fneg(B.r) };
+            let c = if yAp.x > 0.0 { B.r } else { -B.r };
             let d = subss(yAe.x, yAp.x);
             let t = divss(subss(c, yAp.x), d);
-            // `yAp.y + (yAe.y - yAp.y) * t`
-            let y = addss(mulss(subss(yAe.y, yAp.y), t), yAp.y); // GCC: reversed
+            // `y = yAp.y + (yAe.y - yAp.y) * t`
+            //   subss dst = yAe.y  -> L
+            //   mulss dst = (diff) -> L
+            //   addss %xmm1,%xmm0  ; dst = the PRODUCT -> R
+            let y = addss(mulss(subss(yAe.y, yAp.y), t), yAp.y);
             if y <= 0.0 {
                 return c2RaytoCircle(A, Ca, out);
             }
@@ -652,7 +651,8 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
                 return c2RaytoCircle(A, Cb, out);
             } else {
                 addr_of_mut!((*out).n).write_unaligned(if c > 0.0 { M.x } else { c2Skew(M.y) });
-                addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t)); // GCC: reversed
+                // `movss 0x20(%rbp),%xmm0` (= A.t) then `mulss -0x1c,%xmm0` -> R
+                addr_of_mut!((*out).t).write_unaligned(mulss(A.t, t));
                 return 1;
             }
         }
@@ -682,10 +682,10 @@ pub unsafe extern "C" fn c2RaytoPoly(
     // greater than 8 reads past the fixed arrays, just like the original.
     let verts_base = addr_of!((*B).verts) as *const c2v;
     let norms_base = addr_of!((*B).norms) as *const c2v;
+    let count = addr_of!((*B).count).read_unaligned();
 
     let mut i: c_int = 0;
-    // The C re-reads `B->count` on every iteration of the `for` loop.
-    while i < addr_of!((*B).count).read_unaligned() {
+    while i < count {
         let norm_i = norms_base.add(i as usize).read_unaligned();
         let vert_i = verts_base.add(i as usize).read_unaligned();
         let num = c2Dot(norm_i, c2Sub(vert_i, p));
@@ -693,6 +693,7 @@ pub unsafe extern "C" fn c2RaytoPoly(
         if den == 0.0 && num < 0.0 {
             return 0;
         } else {
+            // mulss dst = lo/hi -> L, divss dst = num -> L (all source order)
             if den < 0.0 && num < mulss(lo, den) {
                 lo = divss(num, den);
                 index = i;

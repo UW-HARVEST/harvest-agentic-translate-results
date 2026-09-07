@@ -11,11 +11,13 @@ crate-type = ["cdylib"]
 [dev-dependencies]
 libloading = "0.8"
 
+# `harness = false`: the tests capture process file descriptor 1 to compare the
+# stdout of the two shared objects. libtest's own progress output also goes to
+# fd 1 from other threads, which would contaminate those captures, so this test
+# provides its own strictly sequential runner.
 [[test]]
 name = "differential"
 path = "tests/differential.rs"
-# Custom sequential runner: `driver` reports on stdout, so captures redirect
-# fd 1 process-wide and cannot tolerate libtest's parallel progress writes.
 harness = false
 
 [profile.release]

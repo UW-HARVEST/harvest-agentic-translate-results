@@ -1,98 +1,49 @@
 # ERRORS.md — Error-surface table
 
-Derived mechanically from `c_src/src/lib.c` (22 lines) and
-`c_src/include/lib.h` (1 line).
-
-Grep used to enumerate every rejection construct:
+Mechanically derived. Every line of `c_src/src/lib.c` that could reject,
+error, assert, or range-check was grepped:
 
 ```sh
-grep -nE 'return|assert|NULL|-1|if|else|switch|#if|error|ERROR|errno|<|>|==|!=' \
-    c_src/src/lib.c c_src/include/lib.h
+grep -nE 'return|assert|NULL|-1|errno|ERROR|if *\(|switch|#if' c_src/src/lib.c c_src/include/lib.h
 ```
 
-Complete set of matches:
+Result: the library has **no error-return channel at all**. There is no
+`RETURN_ERROR` macro, no error enum, no `assert`, no `return -1`, no
+`return NULL`, no `errno` write, no explicit range/null check, and no
+min/max constant. `tool_basename` has exactly one `return` statement
+(`return path;`) and it always returns a non-NULL pointer *into the caller's
+buffer* whenever the input is a valid NUL-terminated string.
 
-```
-src/lib.c:3:#include <string.h>
-src/lib.c:13:  if(s1 && s2) {
-src/lib.c:14:    path = (s1 > s2) ? s1 + 1 : s2 + 1;
-src/lib.c:16:  else if(s1)
-src/lib.c:18:  else if(s2)
-src/lib.c:21:  return path;
-```
+Consequently the "rejection surface" consists only of *implicit* / contractual
+failures: inputs that violate the documented precondition. Each is listed as a
+row, with the C behaviour that the Rust MUST reproduce bit-for-bit.
 
-## Findings
+| # | function | trigger (the exact invalid input/condition) | expected C result | status |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `tool_basename` | `path == NULL` | No null check exists. `strrchr(NULL, '/')` dereferences address 0 → **SIGSEGV** (fault, not an error code). Rust must fault identically, i.e. must NOT "helpfully" return NULL or a sentinel. | [x] |
+| 2 | `tool_basename` | `path` points at an empty string `""` (length 0, valid but the degenerate minimum) | Neither separator found → both `s1` and `s2` NULL → falls through all three branches → returns `path` **unchanged** (same pointer value as the argument). | [x] |
+| 3 | `tool_basename` | `path` ends in a separator, e.g. `"a/"` — the returned component is zero-length | Returns pointer to the NUL terminator, i.e. an **empty string**, not NULL and not `"a"`. Callers get `""`. | [x] |
+| 4 | `tool_basename` | `path` is **all** separators, e.g. `"///"`, `"\\\\"`, `"/\\/\\"` | Last separator wins; returns pointer to the terminator → empty string. | [x] |
+| 5 | `tool_basename` | `path` contains no separator at all, e.g. `"file.txt"` | Both `strrchr` calls return NULL; returns the **input pointer itself** (identity), not a copy. | [x] |
+| 6 | `tool_basename` | `path` contains only `/` (no `\`) | `s1` non-NULL, `s2` NULL → 2nd branch → `s1 + 1`. | [x] |
+| 7 | `tool_basename` | `path` contains only `\` (no `/`) | `s2` non-NULL, `s1` NULL → 3rd branch → `s2 + 1`. | [x] |
+| 8 | `tool_basename` | `path` contains **both** separators, last `/` **after** last `\` (e.g. `"a\\b/c"`) | `s1 && s2` true, ternary `s1 > s2` true → `s1 + 1`. | [x] |
+| 9 | `tool_basename` | `path` contains **both** separators, last `\` **after** last `/` (e.g. `"a/b\\c"`) | `s1 && s2` true, ternary `s1 > s2` false → `s2 + 1`. | [x] |
+| 10 | `tool_basename` | `path` contains both separators **at the same relative order but adjacent**, e.g. `"a/\\b"` and `"a\\/b"` | Exercises the `>` comparison on pointers one byte apart; whichever separator is at the higher address wins. Note the C compares *pointers*, so this is address order, i.e. string order. | [x] |
+| 11 | `tool_basename` | `path` whose only separator is the **first** byte, e.g. `"/x"`, `"\\x"` | Returns `path + 1`; no underflow guard is needed or present. | [x] |
+| 12 | `tool_basename` | `path` containing embedded high-bit / non-ASCII bytes (`0x80`–`0xFF`) around the separators | `char` is **signed** on x86-64 Linux, so `strrchr`'s comparison is against a sign-extended `char`. Bytes ≥ 0x80 must NOT be mistaken for `/` (0x2F) or `\` (0x5C); result is unaffected by them. Rust's `c_char` is `i8`, matching. | [x] |
+| 13 | `tool_basename` | `path` containing byte `0x00` early (so the "string" is shorter than the buffer) — trailing garbage after the NUL | `strrchr` stops at the NUL, so trailing bytes past the terminator are **ignored**, even if they contain separators. | [x] |
+| 14 | `tool_basename` | very long `path` (e.g. 64 KiB) with separators near the end | No length limit / no `MAX_PATH` constant exists in the C. Must succeed, no truncation. | [x] |
+| 15 | `tool_basename` | `path` where a separator is the **last byte before** a multi-separator run, e.g. `"a//b//"` | Only the *last* occurrence matters (`strrchr`, not `strchr`); earlier runs ignored. | [x] |
 
-The C implementation contains:
+## Out-of-range enum values
 
-* **0** error-return macros (`RETURN_ERROR`, `CURLE_*`, `goto fail`, …)
-* **0** `return -1` / `return NULL` / error-enum returns — the single `return`
-  statement (line 21) unconditionally returns a valid `char *` derived from the
-  caller's own pointer
-* **0** `assert` / `abort` / `errno` assignments
-* **0** explicit range checks, length checks, or min/max constants
-* **0** NULL checks on the `path` argument
-* **0** enum parameters (the only parameter is `char *`), so there is no
-  out-of-range-enum class of input for this API
+The public API has **no enum, flag, mode, or `int` parameter** — the single
+parameter is `char *`. There is therefore no out-of-range-enum row to write.
+The pointer-validity rows (#1) and the byte-value rows (#12, #13) are the FFI
+analogue: they cover every representable input the C accepts for its only
+argument, including the ones with no "valid" meaning.
 
-The three `if` branches at lines 13/16/18 are **not** rejections: they are
-valid-path dispatch on which separator was found, and every branch falls through
-to the same successful `return path`. Those branches are therefore enumerated in
-`CONFIGS.md`, not here.
-
-## Error-surface table
-
-The only way to make this function *not* return normally is to violate its
-implicit precondition (`path` must be a readable NUL-terminated string), which
-is undefined behaviour in C rather than a diagnosed rejection. Both rows below
-are still tested differentially (in an isolated child process, comparing the
-fatal signal), because they are the only rejection-shaped behaviour that exists.
-
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `tool_basename` | `path == NULL` — no NULL check exists, so `strrchr(NULL, '/')` dereferences the null page | Undefined behaviour; observably the process dies with `SIGSEGV` (signal 11). No error code is returned. Rust must die the same way — it must **not** return NULL, must **not** panic with a Rust message, and must **not** "handle" the NULL. |
-| 2 | `tool_basename` | `path` points to a buffer with **no NUL terminator** (unterminated / non-readable tail) — no length parameter and no bound exists, so the scan runs off the end of the allocation | Undefined behaviour; observably reads past the buffer and, when the tail is unmapped, dies with `SIGSEGV` (signal 11). Rust must exhibit the same unbounded scan and same fatal signal. |
-
-### Generic FFI boundaries also covered by tests (not distinct C rejections)
-
-| boundary | why it is not a table row | where tested |
-|----------|---------------------------|--------------|
-| zero length (`""`, i.e. `path[0] == '\0'`) | Accepted, not rejected: `strrchr` returns NULL twice, all three `if`s are false, `path` is returned unchanged. This is a *valid* configuration. | `CONFIGS.md` row 1 |
-| oversized length (multi-megabyte string) | Accepted; no length limit exists. | `CONFIGS.md` row 16 |
-| "one step past a valid range" for the separator bytes — i.e. `'/'-1 = 0x2E ('.')`, `'/'+1 = 0x30 ('0')`, `'\\'-1 = 0x5B ('[')`, `'\\'+1 = 0x5D (']')` | Accepted; these are ordinary non-separator bytes. Included because an off-by-one in the Rust `strrchr` comparison would show up exactly here. | `CONFIGS.md` row 13 |
-| out-of-range enum value across FFI | **Not applicable** — the API takes no enum, no `int` mode, and no flags. Confirmed by the 1-line header. | n/a |
-| signed-vs-unsigned `char` handling of bytes `0x80..=0xFF` | Accepted; but on x86-64 Linux `c_char` is signed `i8`, so a naive Rust comparison could mis-handle high bytes. | `CONFIGS.md` rows 3 and 15 |
-| byte `0x00` as the searched character | Not reachable: the C only ever searches for `'/'` and `'\\'`, both non-zero. The private Rust `strrchr` still replicates C's rule that the terminator is part of the searched string. | n/a (private helper) |
-
-## Status
-
-| # | test | status |
-|---|------|--------|
-| 1 | `err_row1_null_pointer_same_fatal_signal` | [x] PASSES — both C and Rust die with SIGSEGV |
-| 2 | `err_row2_unterminated_buffer_same_fatal_signal` | [x] PASSES — both C and Rust die with SIGSEGV |
-
-## Divergence found and fixed by row 1
-
-Row 1 initially FAILED in the **dev/test** profile: C died with `SIGSEGV` (11)
-while the Rust `.so` died with `SIGABRT` (6). Cause: Rust debug builds enable
-`cfg(ub_checks)` (it follows `debug-assertions`), which turns the NULL
-dereference inside `strrchr` into a panic instead of a fault. The C compiler
-emits no such instrumentation, so this was a genuine behavioural divergence from
-the ground truth — visible only on the error path, which is exactly why Phase C
-exists (the release profile matched all along, and every Phase B test passed).
-
-Fix (in `translation/Cargo.toml`, not in `c_src/`):
-
-```toml
-[profile.dev]
-debug-assertions = false
-overflow-checks = false
-panic = "abort"
-
-[profile.test]
-debug-assertions = false
-overflow-checks = false
-```
-
-Row 1 now passes in both profiles. The translated logic in `src/lib.rs` was
-correct and was not changed.
+Row #1 (NULL) is verified by a **subprocess** differential test: both libraries
+are called with NULL in a forked child and the resulting termination signal is
+compared, since neither side can be expected to return.

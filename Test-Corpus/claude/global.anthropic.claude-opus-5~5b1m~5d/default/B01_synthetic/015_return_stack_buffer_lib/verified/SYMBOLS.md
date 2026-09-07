@@ -1,49 +1,31 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Phase A: public symbol surface
 
-## Source inventory (mechanical)
+Derived mechanically from `nm -D` on both shared libraries.
 
-`c_src/CMakeLists.txt` builds exactly **one** translation unit into
-`libdriver.so`:
-
-```
-add_library(driver SHARED src/driver.c)
-```
-
-So the whole C library is `c_src/src/driver.c` (68 lines) + `c_src/include/driver.h`.
-There is **no** untranslated module: `translation/src/lib.rs` covers every
-function in `driver.c`.
-
-| C source entity | linkage in C | present in Rust? | Rust item |
-|---|---|---|---|
-| `void printLine(const char *line)` | external (`T`) | yes | `#[no_mangle] pub unsafe extern "C" fn printLine` |
-| `static char *helperBad()`         | **internal** (`static`, not exported) | yes | private `fn helperBad()` |
-| `void bad()`                       | external (`T`) | yes | `#[no_mangle] pub unsafe extern "C" fn bad` |
-| `static char *helperGood1()`       | **internal** (`static`, not exported) | yes | private `fn helperGood1()` |
-| `void good()`                      | external (`T`) | yes | `#[no_mangle] pub unsafe extern "C" fn good` |
-| `void driver(int useGood)`          | external (`T`) | yes | `#[no_mangle] pub unsafe extern "C" fn driver` |
-
-There are no macros that generate symbols, no `#ifdef`-guarded extra
-definitions, and no global/static data with external linkage in the C source.
-
-## `nm -D --defined-only` — C `.so` (ground truth)
-
-Command: `nm -D --defined-only c_src/build/libdriver.so`
+Build commands:
 
 ```
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd translation && cargo build --release
+```
+
+## C `.so` — `nm -D c_src/build/libdriver.so`
+
+```
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
 0000000000001186 T bad
 00000000000011c5 T driver
 00000000000011ac T good
 0000000000001139 T printLine
+                 U puts@GLIBC_2.2.5
 ```
 
-4 exported symbols. (`nm -D` additionally lists the weak/undefined entries
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
-`__cxa_finalize@GLIBC_2.2.5`, `__gmon_start__`, `puts@GLIBC_2.2.5` — these are
-toolchain/libc artifacts, not part of the library's API surface.)
+`nm -D --defined-only` (the actual exported ABI): **4 symbols**.
 
-## `nm -D --defined-only` — Rust `.so`
-
-Command: `nm -D --defined-only translation/target/release/libdriver.so`
+## Rust `.so` — `nm -D --defined-only translation/target/release/libdriver.so`
 
 ```
 0000000000011780 T bad
@@ -52,49 +34,53 @@ Command: `nm -D --defined-only translation/target/release/libdriver.so`
 00000000000117c0 T printLine
 ```
 
-## Parity result
+## Parity table
 
-| C symbol | exported by Rust `.so`? |
-|---|---|
-| `bad`       | ✅ |
-| `driver`    | ✅ |
-| `good`      | ✅ |
-| `printLine` | ✅ |
+| # | C symbol | type | C source | exported by Rust `.so`? | Rust item |
+|---|----------|------|----------|-------------------------|-----------|
+| 1 | `printLine` | `T` (global text) | `src/driver.c:28` `void printLine(const char *line)` | YES | `#[no_mangle] pub unsafe extern "C" fn printLine` |
+| 2 | `bad`       | `T` (global text) | `src/driver.c:42` `void bad(void)`                  | YES | `#[no_mangle] pub unsafe extern "C" fn bad` |
+| 3 | `good`      | `T` (global text) | `src/driver.c:53` `void good(void)`                  | YES | `#[no_mangle] pub unsafe extern "C" fn good` |
+| 4 | `driver`    | `T` (global text) | `src/driver.c:58` `void driver(int useGood)`         | YES | `#[no_mangle] pub unsafe extern "C" fn driver` |
 
-**Missing symbols: 0.** The set difference `C_defined \ Rust_defined` is empty.
-The Rust `.so` exports no *extra* C-API symbols either — the sets are exactly
-equal — so no accidental over-export.
+**Missing symbols: 0.** No `#[no_mangle]` wrapper had to be added; no C module was
+left untranslated. `c_src` contains exactly one translation unit (`src/driver.c`,
+68 lines) and one header (`include/driver.h`), both fully translated in
+`translation/src/lib.rs`.
 
-`tests/symbols.rs::phase_d_symbol_parity_c_minus_rust_is_empty` re-derives both
-lists at test time with `nm -D --defined-only` and asserts the difference is
-empty, so this table cannot silently rot.
+## Deliberately NOT exported (must stay internal, matching the C)
 
-## Undefined (imported) symbols in the Rust `.so`
+| C entity | why not in the ABI | Rust counterpart |
+|----------|--------------------|------------------|
+| `static char *helperBad()` (`driver.c:36`)    | `static` linkage → internal to the TU, absent from `nm -D` | private `fn helperBad()` |
+| `static char *helperGood1()` (`driver.c:47`)  | `static` linkage → internal to the TU, absent from `nm -D` | private `fn helperGood1()` |
+| `static char charString[] = "helperGood1 string";` (`driver.c:49`) | function-scope `static` object, no external linkage | `static mut HELPER_GOOD1_CHAR_STRING` (mangled, `LOCAL` binding) |
 
-All undefined/weak entries resolve to libc / libgcc-unwind and are therefore
-acceptable (0 missing non-libc symbols):
+Verified: `nm -D --defined-only` on the Rust `.so` exports **only** the 4 C
+symbols — `HELPER_GOOD1_CHAR_STRING` is a `LOCAL` symbol (`readelf -sW`) and is
+not in the dynamic symbol table, so the Rust ABI is neither missing nor
+over-exporting relative to the C ABI.
 
-```
-_Unwind_*@GCC_*            (libgcc_s — panic unwinding machinery)
-__cxa_finalize, __cxa_thread_atexit_impl, __errno_location, __tls_get_addr,
-__gmon_start__, _ITM_*TMCloneTable, gettid, statx        (glibc / toolchain)
-abort bcmp calloc close dl_iterate_phdr free fstat64 getcwd getenv lseek64
-malloc memcpy memmove memset mmap64 munmap open64 posix_memalign
-pthread_key_create pthread_key_delete pthread_setspecific puts read readlink
-realloc realpath stat64 strlen syscall write writev            (glibc)
-```
+## Undefined (imported) symbols
 
-Note `puts@GLIBC_2.2.5`: the Rust translation writes its output with
-`printf("%s\n", line)` and LLVM applies the same `printf`→`puts` builtin
-transformation GCC applies to the C source, so both libraries end up importing
-the identical libc entry point. Output bytes are identical either way
-(`puts(s)` ≡ `printf("%s\n", s)` for any NUL-terminated `s`).
+C imports `puts@GLIBC_2.2.5` — GCC rewrites `printf("%s\n", line)` into
+`puts(line)`. The Rust build independently arrives at the same call
+(`jmp *puts@GOT`), so the *bytes written to `stdout` and the stdio buffering
+mode used are identical*, not merely equivalent.
 
-## Feature combinations
+Rust additionally imports the usual `libstd`/`libunwind` set
+(`_Unwind_*`, `malloc`, `memcpy`, `dl_iterate_phdr`, `pthread_key_create`, …).
+All are libc/`libgcc_s` symbols supplied by the platform; `nm -D -u` shows
+**0 missing/undefined non-libc symbols**, i.e. the library loads and resolves
+cleanly under `dlopen(RTLD_NOW)` (asserted by the test suite, which opens the
+Rust `.so` and resolves all 4 symbols).
 
-`translation/Cargo.toml` declares **no `[features]` table**, so there is exactly
-one build configuration (the default). `scripts/check_features.sh` enumerates
-the feature list from `cargo metadata` and loops over every combination; with an
-empty feature set the only combination is `--no-default-features` ≡ default.
-Phases B–D therefore cover 100% of configurations. See `FEATURES.md` for the
-recorded run.
+## Object layout parity
+
+| object | C | Rust |
+|--------|---|------|
+| `helperGood1`'s `static charString` | `.data` (`WA`), size `0x13` = 19 bytes | `.data` (`WA`), size 19 bytes |
+
+Both are in *writable* memory (the C object is a mutable `char[]` initialised
+from a literal, not a `.rodata` string literal), so the pointer returned by
+`good()`'s helper has the same storage class and mutability in both builds.

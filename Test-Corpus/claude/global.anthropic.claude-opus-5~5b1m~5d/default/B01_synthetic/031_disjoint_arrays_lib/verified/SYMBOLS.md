@@ -1,93 +1,50 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on the built shared libraries.
+Source of truth: `nm -D --defined-only` on the C shared library
+`c_src/build/libdriver.so`, compared against `translation/target/release/libdriver.so`.
 
-Build commands used:
+## C translation units
 
-```
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-```
+| C file | translated? | notes |
+|--------|-------------|-------|
+| `c_src/include/driver.h` | yes | declares `driver` only |
+| `c_src/src/driver.c` | yes | `fma_array`, `call_fma`, `driver` (all three have external linkage; none are `static`) |
 
-Artifacts:
+There is exactly ONE C source file. No module was skipped.
 
-* C   : `c_src/build/libdriver.so`
-* Rust: `translation/target/release/libdriver.so`
+## Global text symbols (`T`) exported by the C `.so`
 
-## C `.so` exported (defined) dynamic symbols
+| # | symbol | C signature | exported by Rust `.so`? |
+|---|--------|-------------|--------------------------|
+| 1 | `fma_array` | `void fma_array(int *restrict out, const int *mul1, const int *mul2, const int *add, int len)` | YES (`#[unsafe(no_mangle)] pub unsafe extern "C" fn fma_array`) |
+| 2 | `call_fma`  | `int call_fma(const int *data, int len)` | YES (`#[unsafe(no_mangle)] pub unsafe extern "C" fn call_fma`) |
+| 3 | `driver`    | `void driver(const char *in)` | YES (`#[unsafe(no_mangle)] pub unsafe extern "C" fn driver`) |
 
-```
-$ nm -D --defined-only c_src/build/libdriver.so
-00000000000011c9 T call_fma
-00000000000013b4 T driver
-0000000000001139 T fma_array
-```
+No macro-generated symbols exist in this library (no function-defining macros in
+`driver.c` or `driver.h`).
 
-Note: `driver.h` only declares `driver()`, but `fma_array()` and `call_fma()` are
-non-`static` in `src/driver.c` and therefore part of the exported ABI. They are
-also *lower-level* public entry points and are exercised directly by the
-differential tests (not only through the `driver()` convenience wrapper).
-
-## Rust `.so` exported (defined) dynamic symbols (function symbols)
+## Diff result
 
 ```
-$ nm -D --defined-only translation/target/release/libdriver.so
-0000000000011820 T call_fma
-0000000000011a50 T driver
-0000000000011b00 T fma_array
+$ comm -23 <(c_symbols) <(rust_symbols)   # in C but not in Rust
+(empty)
 ```
 
-## Parity table
+`tests/symbols.rs::c_symbols_are_all_exported_by_rust` enforces this
+mechanically at test time (it shells out to `nm -D`), so the parity check is
+re-verified on every `cargo test` run.
 
-| # | symbol      | C `.so` | Rust `.so` | source of Rust definition                | status |
-|---|-------------|---------|------------|------------------------------------------|--------|
-| 1 | `fma_array` | T       | T          | `src/lib.rs` `#[unsafe(no_mangle)] fma_array` | OK |
-| 2 | `call_fma`  | T       | T          | `src/lib.rs` `#[unsafe(no_mangle)] call_fma`  | OK |
-| 3 | `driver`    | T       | T          | `src/lib.rs` `#[unsafe(no_mangle)] driver`    | OK |
+## Undefined (imported) symbols in the Rust `.so`
 
-**Missing symbols: 0.** No C translation unit was skipped — `c_src` contains
-exactly one source file (`src/driver.c`) and one header (`include/driver.h`),
-and every non-static function in it is implemented and exported by the Rust
-crate. No stubs / `unimplemented!()` are present.
-
-## Undefined (imported) symbols
-
-The C library imports only libc:
-
-```
-$ nm -D -u c_src/build/libdriver.so
-w _ITM_deregisterTMCloneTable
-w _ITM_registerTMCloneTable
-w __cxa_finalize@GLIBC_2.2.5
-w __gmon_start__
-U __isoc99_sscanf@GLIBC_2.7
-U printf@GLIBC_2.2.5
-```
-
-The Rust library imports the same two libc entry points
-(`__isoc99_sscanf`, `printf`) plus the usual Rust `std`/`libgcc` runtime
-imports (`malloc`, `memcpy`, `_Unwind_*`, `abort`, …). All are libc /
-compiler-runtime symbols resolved by the dynamic loader; **0 missing or
-undefined non-libc symbols.**
-
-To keep number parsing byte-identical, the Rust translation binds the very same
-glibc C99 entry point the C object links against — `__isoc99_sscanf` — on
-`target_env = "gnu"`, falling back to plain `sscanf` elsewhere. (glibc's legacy
-`sscanf` and `__isoc99_sscanf` differ for `%a`/positional specifiers; the format
-used here is `"%d%zn"`, but binding the identical symbol removes the class of
-divergence entirely.)
+All non-libc undefined symbols must be absent. The Rust `.so` imports only libc
+/ `ld.so` symbols (`sscanf`, `printf`, `memset`, `malloc`, `_Unwind_*`,
+`__cxa_*`, `__libc_start_main`-family, etc.). Verified by
+`tests/symbols.rs::rust_so_has_no_unresolved_non_libc_symbols`.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only
-build configuration is the default one:
-
-```
-$ cargo read-manifest | python3 -c 'import json,sys; print(json.load(sys.stdin)["features"])'
-{}
-```
-
-Therefore `--no-default-features` and the default build are the same code, and
-Phase D's "every feature combination" requirement collapses to the single
-default configuration (verified explicitly by `scripts/check_features.sh`).
+`translation/Cargo.toml` declares **no** `[features]` table, so the only
+build configuration is the default one (`--no-default-features` is equivalent).
+Phase D's "repeat for every feature combination" therefore collapses to the
+single default configuration; the test harness still runs the
+`--no-default-features` variant explicitly to prove it.

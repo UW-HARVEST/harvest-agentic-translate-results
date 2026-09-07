@@ -1,147 +1,92 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Phase A configuration-surface table
 
 Mirror of `ERRORS.md` for **valid** inputs. Derived mechanically from the axes
-`c_src/src/lib.c` actually branches on, not from what looks important.
+`c_src/src/lib.c` actually branches on.
 
-## Axis inventory (from the source)
+## Axes the C distinguishes
 
-There is no init/config object, no flags word, and no `#ifdef` in `lib.c`, and
-`translation/Cargo.toml` has no `[features]` table. The "runtime options" of this
-library are therefore the two **writable exported data objects** plus the
-argument shapes:
+**A1 — runtime options/modes.** The library has no flags, no `#ifdef`s, and no
+setters. Its only mutable configuration is the two exported data objects:
+`node_count` (int) and `node_table` (`TreeNode[50]`). These *are* the option
+surface: every lower-level entry point reads them, so tests set them directly
+through the `.so`'s data symbols in both libraries.
 
-- **A1 — `node_count` (exported, writable)**: the library's only mode switch. It
-  bounds every `find_node_by_id` scan (line 74) and the `inreftree` label scan
-  (line 172), and gates `add_tree_node` (line 83). Distinct states:
-  `0` / `1` / `2..48` / `49` / `50` (full).
-- **A2 — `node_table` contents (exported, writable)**: `id`s unique vs.
-  duplicated (line 75 returns the *first* match), `left_child_id` /
-  `right_child_id` set vs. `-1` (lines 122, 126), `value` zero vs. non-zero
-  (line 180), label containing `'l'` vs. not (line 173).
-- **A3 — `add_tree_node` `parent_id` shape**: `-1` (root, skips the whole
-  linking block, line 96) vs. an existing id vs. a *duplicated* existing id.
-- **A4 — parent's child slots**: both free -> fills `left_child_id`; left taken
-  -> fills `right_child_id`; both taken -> **neither is written and the call
-  still succeeds** (line 102/104 have no `else`).
-- **A5 — `label` length**: `""` (empty), 1, 4 ("root"), 30, exactly 31, 32, and
-  > 32 — the `strncpy(.., 31)` + `label[31]=0` boundary (lines 92-93).
-- **A6 — tree shape for `calculate_tree_sum`**: absent node, single leaf, one
-  child (left only / right only), two children, deep chain, wide tree, the
-  4-node shape `inreftree` builds.
-- **A7 — `parse_operation` string shape**: which operator chars are present and
-  in what position; the check order `+`, `*`, `-`, `/`, `%` (lines 134-148) means
-  a string with several operators resolves to the *earliest check*, not the
-  earliest character.
-- **A8 — `get_operation_func` op value**: each of `1..=5`, plus the `default:`
-  fallback set.
-- **A9 — operand magnitude for the five `*_op` functions**: zeros, positives,
-  negatives, mixed signs, `INT_MIN` / `INT_MAX` (wrapping overflow), and the
-  `b == 0` / `b == -1` special cases.
-- **A10 — `inreftree` parameter shape**: which of the four params are zero
-  (only `param2` changes control flow, line 180), and the value of
-  `tree_sum % 4` in `{0, 1, 2, 3, -1, -2, -3}` (line 189), plus sums that
-  overflow `int`.
+**A2 — the operation mode.** `Operation` ∈ {`OP_ADD`=1, `OP_MULTIPLY`=2,
+`OP_SUBTRACT`=3, `OP_DIVIDE`=4, `OP_MODULO`=5}, selected two ways:
+`parse_operation` (first matching char, checked in the order `+ * - / %`) and
+`get_operation_func` (`switch` on `(int)op` with a `default`). Note `inreftree`'s
+`op_string` is `"+*-%"` — it can never select `OP_DIVIDE`.
 
-Entry points: **all 11** exported functions are covered, driven directly through
-the `.so`, not only through the `inreftree` one-shot wrapper.
+**A3 — input shapes.** Operand values (zero / positive / negative / `INT_MIN` /
+`INT_MAX` / overflow-producing pairs); table population (empty / one / many / full
+= 50); node position within the scan (first / middle / last / absent); duplicate
+ids; parent link state (no children / left only / both); child links (leaf / left
+only / right only / both / chain depth 3 / dangling); label length (0 / short /
+30 / 31 / >31) and label content (contains `'l'` or not); string content for
+`parse_operation` (each operator, operator not first, several operators,
+non-operator, empty); `node_count` relative to `MAX_NODES` (0, 1, 49, 50).
 
-Every row is exercised with **many randomized inputs** from a fixed-seed
-xorshift PRNG (`SEED = 0x5EED_1234_ABCD_F00D`), not one hand-picked value.
+**A4 — entry points.** All 11 exported functions, low-level first. `inreftree` is
+the only convenience/one-shot wrapper; the other 10 are driven directly.
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `add_op` | A9: randomized `(a,b)` over the full `i32` range, 20k pairs | [x] |
-| 2 | `add_op` | A9: boundary grid `{INT_MIN, -1, 0, 1, INT_MAX}²` — wrapping overflow both directions | [x] |
-| 3 | `add_op` | A9: `unused1`/`unused2` set to junk (`INT_MIN`, random) — must be ignored | [x] |
-| 4 | `multiply_op` | A9: randomized `(a,b)`, 20k pairs (wrapping multiply) | [x] |
-| 5 | `multiply_op` | A9: boundary grid `{INT_MIN,-1,0,1,INT_MAX}²` + large-magnitude pairs that overflow | [x] |
-| 6 | `subtract_op` | A9: randomized `(a,b)`, 20k pairs | [x] |
-| 7 | `subtract_op` | A9: boundary grid, incl. `0 - INT_MIN` and `INT_MIN - 1` | [x] |
-| 8 | `divide_op` | A9: randomized `(a,b)` with `b != 0`, mixed signs (C truncates toward zero) | [x] |
-| 9 | `divide_op` | A9: `b == ±1`, `a == INT_MIN` with `b != -1`, `a == INT_MAX`, `|a| < |b|` | [x] |
-| 10 | `modulo_op` | A9: randomized `(a,b)` with `b != 0`, mixed signs (C `%` keeps the dividend's sign) | [x] |
-| 11 | `modulo_op` | A9: `b == ±1`, `a == INT_MIN` with `b != -1`, `|a| < |b|`, exact multiples | [x] |
-| 12 | `find_node_by_id` | A1=0 (empty table) + randomized ids | [x] |
-| 13 | `find_node_by_id` | A1=1, A2 unique id: hit on the single entry, and misses | [x] |
-| 14 | `find_node_by_id` | A1=50 (full), A2 unique ids: hit at index 0, mid, 49; returned pointer's *offset* into `node_table` must match | [x] |
-| 15 | `find_node_by_id` | A1=50, A2 **duplicated** ids: must return the FIRST match (line 75) | [x] |
-| 16 | `find_node_by_id` | A1 truncated below the table's real contents (e.g. table filled to 50, `node_count` lowered to 10) — entries `>= node_count` must be invisible | [x] |
-| 17 | `add_tree_node` | A3=-1 (root), A5 random label: fresh table, sequential appends 0..49 | [x] |
-| 18 | `add_tree_node` | A3=existing parent, A4 both slots free -> writes `left_child_id` | [x] |
-| 19 | `add_tree_node` | A3=existing parent, A4 left taken -> writes `right_child_id` | [x] |
-| 20 | `add_tree_node` | A3=existing parent, A4 **both taken** -> succeeds, writes neither slot | [x] |
-| 21 | `add_tree_node` | A3=**duplicated** parent id -> links under the FIRST matching parent | [x] |
-| 22 | `add_tree_node` | A5: label `""` / 1 / 30 / 31 / 32 / 64 bytes — full 32-byte `label` field compared byte-for-byte incl. zero padding | [x] |
-| 23 | `add_tree_node` | A5: label written over a slot that already held a LONGER label — `strncpy` zero-padding must scrub the stale tail | [x] |
-| 24 | `add_tree_node` | A1: fill from 0 to 49 with randomized ids/values, comparing the whole 2600-byte `node_table` image + `node_count` after every call | [x] |
-| 25 | `add_tree_node` | A3=`-1` with a *self-referential* id already present (duplicate ids allowed) | [x] |
-| 26 | `calculate_tree_sum` | A6: absent id on a non-empty table | [x] |
-| 27 | `calculate_tree_sum` | A6: single leaf (both children `-1`), randomized `value` | [x] |
-| 28 | `calculate_tree_sum` | A6: left child only, and right child only | [x] |
-| 29 | `calculate_tree_sum` | A6: both children, 2 levels, randomized values incl. overflowing sums | [x] |
-| 30 | `calculate_tree_sum` | A6: deep left chain of 50 nodes (max depth the table allows) | [x] |
-| 31 | `calculate_tree_sum` | A6: child id pointing at a node that does NOT exist (`!= -1` but unresolvable) -> contributes 0 | [x] |
-| 32 | `calculate_tree_sum` | A6: randomized *forests* built via `add_tree_node`, summed from every root | [x] |
-| 33 | `calculate_tree_sum` | A6: child id pointing at a node with a DUPLICATE id -> resolves to the first | [x] |
-| 34 | `node_table` / `node_count` | A1/A2 as raw exported data: write the full 2600-byte image + `node_count` into both `.so`s and require identical reads back (defined range `0..=50` only) | [x] |
-| 35 | `parse_operation` | A7: single-char strings for each of `+ * - / %` | [x] |
-| 36 | `parse_operation` | A7: `""` and randomized strings drawn from a non-operator alphabet | [x] |
-| 37 | `parse_operation` | A7: operator not in first position (`"ab+cd"`), and at the last position | [x] |
-| 38 | `parse_operation` | A7: **multiple** operators — check-order precedence, e.g. `"%/-*+"` must give `OP_ADD`, `"%/-*"` -> `OP_MULTIPLY`, `"%/-"` -> `OP_SUBTRACT`, `"%/"` -> `OP_DIVIDE` | [x] |
-| 39 | `parse_operation` | A7: randomized strings over the alphabet `+*-/%a1 ` (length 0..16), 20k strings — exercises the precedence cross-product | [x] |
-| 40 | `get_operation_func` | A8: `op` in `1..=5` — identity of the returned fn ptr probed by calling it with a discriminating pair `(10, 3)` -> `13/30/7/3/1` | [x] |
-| 41 | `get_operation_func` | A8: returned fn ptr called with randomized operands, cross-checked against the directly-exported `*_op` symbol of the same `.so` | [x] |
-| 42 | `get_operation_func` | A8: randomized `op` over the full `i32` range (mostly the `default:` arm) | [x] |
-| 43 | `inreftree` | A10: randomized `(p1,p2,p3,p4)` over the full `i32` range, 20k tuples | [x] |
-| 44 | `inreftree` | A10: `tree_sum % 4` forced to each of `0,1,2,3` (positive sums) -> `add/mul/sub/mod` | [x] |
-| 45 | `inreftree` | A10: `tree_sum % 4` forced to each of `-1,-2,-3` (negative sums) -> `.rodata` under-read path | [x] |
-| 46 | `inreftree` | A10: `tree_sum == 0` exactly, via several different param combinations | [x] |
-| 47 | `inreftree` | A10: `param2 == 0` (retarget to id 1) crossed with each `tree_sum % 4` value | [x] |
-| 48 | `inreftree` | A10: params at `INT_MIN` / `INT_MAX` so the sum wraps, crossed with `param2 == 0` | [x] |
-| 49 | `inreftree` | A10: called repeatedly (state carry-over) and interleaved with `add_tree_node` calls that dirty `node_table` first | [x] |
-| 50 | `inreftree` | A10: post-conditions — full `node_table` image and `node_count` compared after the call, not just the return value | [x] |
-| 51 | composed pipeline | `add_tree_node`* -> `find_node_by_id` -> `calculate_tree_sum` -> `parse_operation` -> `get_operation_func` -> call, hand-assembled from the low-level exports on randomized 1..50-node trees (the pipeline `inreftree` composes, driven from outside) | [x] |
-| 52 | composed pipeline | randomized long op sequences (fuzz driver): random choice among all 11 entry points, 5k steps, comparing every return value + the whole `node_table`/`node_count` state after each step | [x] |
-| 53 | `add_tree_node` | A2: writes over a **poisoned** (non-zero) table — every field the C stores must be stored, incl. the forced `label[31] = '\0'`; label lengths 0/1/5/29/30/31/32/33/60 | [x] |
-| 54 | `add_tree_node` | A1 x A2: poisoned table with `node_count` at every index `0..=49`, one write per slot, full image compared | [x] |
-| 55 | `inreftree` | A2: run over a poisoned table (`inreftree` resets only `node_count`, never the bytes), with a randomized starting `node_count` | [x] |
+**Feature combinations.** `translation/Cargo.toml` declares no `[features]`
+table, so the only build configuration is the default. `enumerate_features.sh`
+re-derives this mechanically. There is no `[[bin]]` target and no binary in
+`CMakeLists.txt` (`add_library(... SHARED ...)` only), so no stdout comparison
+applies.
 
-## Rows 53-55: why "poison" matters
+## Configuration rows
 
-Rows 1-52 all start from a zeroed `node_table`, which cannot tell "stored a 0"
-apart from "stored nothing". Pre-filling both tables with a non-zero pattern
-(`Pair::poison_both`) makes every omitted store visible in the image comparison.
-This is not hypothetical: the mutation `label[31] NUL not forced` survives the
-entire zero-initialised suite and is caught only by rows 53-55. See
-`mutate.sh`.
+Every row is exercised with many randomized inputs (fixed seed, xorshift PRNG in
+`tests/common/mod.rs`), calling both `.so`s through `libloading` and comparing
+byte-for-byte.
 
-## Input shapes deliberately excluded
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `add_op` | randomized `(a,b)` over full `i32` range incl. overflow pairs, `INT_MIN`/`INT_MAX`, zeros; `unused1/2` randomized to prove they are ignored | [x] |
+| 2 | `multiply_op` | same shape; includes products that overflow `i32` | [x] |
+| 3 | `subtract_op` | same shape; includes `INT_MIN - positive` underflow | [x] |
+| 4 | `divide_op` | `b != 0`, randomized signs (4 sign quadrants) → C truncation toward zero; excludes `INT_MIN/-1` (ERRORS E1) | [x] |
+| 5 | `modulo_op` | `b != 0`, randomized signs → C remainder keeps dividend's sign; excludes `INT_MIN%-1` (ERRORS E2) | [x] |
+| 6 | `get_operation_func` + returned pointer | `op` = each of 1..5, then the returned `OperationFunc` invoked on randomized operands (`b != 0`) — identifies the function by behaviour, since raw pointers differ per `.so` | [x] |
+| 7 | `parse_operation` | strings containing exactly one operator, for each of `+ * - / %`, at randomized positions with randomized filler | [x] |
+| 8 | `parse_operation` | strings containing SEVERAL operators in randomized order — exercises the fixed check precedence (`+` wins over `*` wins over `-` …) regardless of textual position | [x] |
+| 9 | `parse_operation` | 1-byte strings for all 256 byte values, plus randomized non-operator strings and `""` | [x] |
+| 10 | `find_node_by_id` | `node_count` = 1 / 2 / 25 / 50 with the target at the first, a middle, and the last slot; ids randomized (incl. negative and `INT_MIN`/`INT_MAX`) | [x] |
+| 11 | `find_node_by_id` | duplicate ids present → first match wins; plus rows beyond `node_count` that would match (must be ignored) | [x] |
+| 12 | `add_tree_node` | `parent_id == -1` (root) into an empty table; label shapes 0/short/30/31/>31 bytes; verifies return value, all 5 int fields, all 32 label bytes, and `node_count` | [x] |
+| 13 | `add_tree_node` | `parent_id` names an existing node with **no** children → links `left_child_id`; then a second child → links `right_child_id`; then a third → parent full, appended unlinked | [x] |
+| 14 | `add_tree_node` | fill the table to exactly `MAX_NODES` (50) one call at a time, randomized ids/values/labels, chained parents — boundary 49 → 50 | [x] |
+| 15 | `calculate_tree_sum` | hand-built tables covering leaf / left-only / right-only / both-children / depth-3 chain / wide 50-node tree, randomized values incl. overflow-producing sums | [x] |
+| 16 | `inreftree` | randomized `(p1,p2,p3,p4)` covering all four `tree_sum % 4` non-negative residues **and** all three negative residues (the out-of-bounds `op_string` index), plus `INT_MIN`/`INT_MAX` and overflowing sums | [x] |
+| 17 | `inreftree` | `param2 == 0` → target reset path (`target_id` 2 → 1), crossed with each `tree_sum % 4` residue | [x] |
+| 18 | `inreftree` | repeated/interleaved calls — proves the reset of `node_count` to 0 and the stale `node_table` bytes left by the previous call produce identical results in both libraries | [x] |
+| 19 | `inreftree` then low-level calls | after `inreftree` returns, read `node_count`/`node_table` and call `find_node_by_id` / `calculate_tree_sum` / `add_tree_node` on the leftover state — the composed pipeline, invisible to per-function tests | [x] |
+| 20 | `node_table` / `node_count` data symbols | full 2600-byte `node_table` image plus `node_count` compared byte-for-byte between the two `.so`s after every mutating sequence above | [x] |
+| 21 | all 11 functions | long randomized **mixed command sequence** (add/find/sum/parse/dispatch/inreftree/table-poke) applied in lockstep to both libraries, comparing every return value and the whole table image after each step | [x] |
+| 22 | `add_tree_node` (+ `node_table` poke) | append over a **dirty** slot whose `label[31]` is already non-zero — the only configuration in which the explicit `node->label[31] = '\0'` store is observable, since `strncpy(...,31)` never writes that byte. Refines row 12; added after mutation testing showed row 12 alone could not see it. | [x] |
 
-A `left_child_id` / `right_child_id` that resolves back to an ancestor (reachable
-by giving two table entries the same `id` and chaining a parent through them, or
-by writing `node_table` directly) makes `calculate_tree_sum` recurse until the
-stack is exhausted. The Rust translation does exactly the same thing, so this is
-a property of the *input*, not a divergence — and it cannot be compared
-in-process because it kills the harness. `Lib::sum_terminates` mirrors the
-traversal with a step budget and the affected rows skip those inputs.
+## Row → test mapping
 
-Likewise `add_tree_node` is never called with a negative `node_count`: the C
-would evaluate `&node_table[node_count]` and write *before* the array. The two
-libraries place `node_count` on opposite sides of `node_table`
-(C: `node_table` then `node_count`; Rust: the reverse), so the corrupted bytes
-would be unrelated and the write could take out the test process.
+| rows | test |
+|------|------|
+| 1–11, 12, 13–21 | `tests/phase_b_valid.rs::configs_row_NN_*` (one `#[test]` per row) |
+| 22 | `tests/phase_b_valid.rs::configs_row_12b_label31_forced_nul_over_dirty_slot` |
 
-## Feature combinations
+All 22 tests pass under both build configurations enumerated by
+`enumerate_features.sh` (`DEFAULT` and `--no-default-features`).
 
-`translation/Cargo.toml` declares no `[features]`, so `cargo test` and
-`cargo test --no-default-features` cover the complete configuration space.
-`check_features.sh` parses the manifest, enumerates the power set of whatever
-features it finds, and runs the build + `check_symbols.sh` + the full suite for
-each; with no features declared that is 2 combinations, both passing.
+## Harness validation (why these rows are trusted)
 
-Both cargo **profiles** are also verified: `[profile.dev]` sets
-`debug-assertions = false` / `overflow-checks = false`, because Rust's debug-only
-UB checks would otherwise turn the C library's deliberate undefined behavior
-(the NULL-`label` fault) into a Rust panic in debug builds while release faulted
-correctly. The suite passes against both the release and the debug `.so`
-(`TRANSLATION_SO=target/debug/libinreftree_lib.so cargo test --release`).
+A differential suite that never fails proves nothing, so the harness was
+mutation-tested: six deliberate bugs were injected into `src/lib.rs` one at a
+time and the suite re-run.
+
+| mutant | outcome |
+|--------|---------|
+| `OP_STRING_OFFSET` 26 → 27 | **killed** (5 tests failed) |
+| `parse_operation` check order `+` ↔ `*` | **killed** (1 test) |
+| `add_tree_node` early-returns before writing the row (removes the C quirk) | **killed** (2 tests) |
+| `node_count >= MAX_NODES` → `>` | **killed** (3 tests) |
+| drop `label[31] = 0` | **killed** by row 22 (survived before row 22 was added) |
+| `strncpy(...,31)` → `strncpy(...,32)` | survived — provably **equivalent**: with `n=32`, `strncpy` writes indices 0..31 and the following `label[31]=0` overwrites index 31, so bytes 0..30 and byte 31 are identical either way |

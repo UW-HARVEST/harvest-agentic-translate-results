@@ -1,87 +1,77 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Phase A: configuration surface table (valid inputs)
 
-Mirror of `ERRORS.md` for **valid** inputs. Axes derived mechanically from the C
-source, not guessed.
+Derived mechanically from `c_src/src/driver.c` + `c_src/include/driver.h`.
 
-## Axes the C code actually distinguishes
+## Axes the C code actually branches on
 
-1. **Entry points (all five exported symbols, lowest-level first).** The public
-   header only declares `driver`, but `printLine`, `printIntLine`, `bad` and
-   `good` all have external linkage and are exported by the `.so`, so all five
-   are driven directly through `dlsym` — not just the `driver` one-shot wrapper.
-   Call hierarchy from the source:
-   - level 0 (leaf): `printLine`, `printIntLine` → libc `printf`
-   - level 1: `good`, `bad` → `printIntLine`
-   - level 2 (composed pipeline): `driver` → `printLine`, `good`, `bad`
-2. **Runtime options / modes / flags: none.** There are no setters, no globals,
-   no `static` state, no environment reads, and no `#ifdef`s in the C source, so
-   there is no option cross-product to enumerate. The only branch in the whole
-   library is `printLine`'s `line != NULL` (its false arm is `ERRORS.md` row E1).
-3. **Input shapes** — the only remaining axis, per parameter type:
-   - `const char *line`: NULL vs non-NULL; length 0 / 1 / many; content class
-     (printable ASCII, whitespace/control, embedded newlines, `printf` format
-     specifiers, high non-UTF-8 bytes 0x80–0xFF); length relative to the libc
-     stream buffer (4 KiB) — under, exactly at, over.
-   - `int intNumber`: sign (negative / zero / positive), decimal width 1–10
-     digits, and the `INT_MIN`/`INT_MAX` extremes.
-   - `bad`/`good`/`driver`: no parameters, so their shape axis is *invocation
-     pattern* — single call, repeated calls (checking there is no hidden state),
-     and interleaving with the leaf functions in one `stdout` buffer.
-4. **Byte order / element width / count / format:** the API has no
-   multi-byte-element, array, or endianness surface (no `struct`, no buffers, no
-   counts), so those axes collapse to the two scalar shapes above.
+**Runtime options / modes / flags:** none. The library has no init function, no
+context/handle struct, no global mutable state, no `setvbuf`/mode selection, no
+environment-variable lookup, and no `#ifdef` other than the header include
+guard. Grep for branches over the whole library yields a single `if`
+(`driver.c:31`, the `printLine` null check, an *error* axis → `ERRORS.md`).
 
-Comparison method for every row: redirect fd 1 to a file, call the symbol from
-the C `.so`, `fflush`, capture bytes; repeat identically with the Rust `.so`;
-assert the two byte vectors are equal. Randomized rows use a `SplitMix64` PRNG
-with a **fixed seed (0x5EED_1234_ABCD_EF01)** so failures reproduce.
+**Public entry points (all five exported symbols, lowest level first):**
 
-## Configuration table
+| level | entry point | signature |
+|-------|-------------|-----------|
+| 0 (lowest) | `printLine` | `void printLine(const char *)` |
+| 0 (lowest) | `printIntLine` | `void printIntLine(int)` |
+| 1 (composes level 0) | `good` | `void good(void)` |
+| 1 (composes level 0) | `bad` | `void bad(void)` |
+| 2 (composes levels 0+1) | `driver` | `void driver(void)` |
 
-| # | entry point(s) | configuration (options set + input shape) | cases | test | [x] |
-|---|----------------|-------------------------------------------|-------|------|-----|
-| 1 | `printLine` | non-NULL, empty string `""` | 1 | `cfg_01_print_line_empty` | [x] |
-| 2 | `printLine` | non-NULL, single character — every byte value `0x01`–`0xFF` | 255 | `cfg_02_print_line_single_byte` | [x] |
-| 3 | `printLine` | random printable ASCII (0x20–0x7E), random length 1–256 | 512 | `cfg_03_print_line_random_ascii` | [x] |
-| 4 | `printLine` | content containing `printf` format specifiers (`%s`, `%d`, `%n`, `%%`, `%99999999d`, `%p`), fixed + randomly assembled | 6 + 256 | `cfg_04_print_line_format_specifiers` | [x] |
-| 5 | `printLine` | content with embedded control/whitespace bytes: `\n`, `\r`, `\t`, `\x0b`, `\x0c`, `\x7f`, randomly placed | 256 | `cfg_05_print_line_embedded_control` | [x] |
-| 6 | `printLine` | random arbitrary bytes `0x01`–`0xFF` (non-UTF-8), random length 1–512 | 512 | `cfg_06_print_line_random_bytes` | [x] |
-| 7 | `printLine` | lengths straddling the libc 4 KiB stream buffer: 1, 2, 4095, 4096, 4097, 8191, 8192, 8193, 65535, 65536, 1 MiB | 11 | `cfg_07_print_line_buffer_boundaries` | [x] |
-| 8 | `printIntLine` | `0` | 1 | `cfg_08_print_int_zero` | [x] |
-| 9 | `printIntLine` | `1`, `-1` (sign axis at the smallest magnitude) | 2 | `cfg_09_print_int_plus_minus_one` | [x] |
-| 10 | `printIntLine` | `INT_MAX` (`2147483647`), `INT_MIN` (`-2147483648`) | 2 | `cfg_10_print_int_extremes` | [x] |
-| 11 | `printIntLine` | every decimal-width boundary: `±10^k` and `±(10^k - 1)` for k = 1..9 | 36 | `cfg_11_print_int_width_boundaries` | [x] |
-| 12 | `printIntLine` | uniform random `i32` over the full 32-bit range | 2048 | `cfg_12_int_random` | [x] |
-| 13 | `printIntLine` | random small-magnitude values (-1000..1000), where sign/width changes densely | 1024 | `cfg_13_print_int_random_small` | [x] |
-| 14 | `good` | single call (level-1 entry point, exercised directly) | 1 | `cfg_14_good_single` | [x] |
-| 15 | `bad` | single call (level-1; preserves the original's discarded-value bug) | 1 | `cfg_15_bad_single` | [x] |
-| 16 | `driver` | single call — the full composed pipeline `printLine` + `good` + `bad` | 1 | `cfg_16_driver_single` | [x] |
-| 17 | `good`, `bad`, `driver` | repeated invocation, 32× each in one capture (proves no hidden/carried state, and that repeat output is identical) | 3 | `cfg_17_repeated_invocations` | [x] |
-| 18 | all five, mixed | randomized sequences of 1–24 calls drawn from all five entry points with randomized arguments, captured as one `stdout` stream (exercises the composed pipeline and buffering interaction, not one call at a time) | 256 sequences | `cfg_18_random_mixed_sequences` | [x] |
+Only `driver` is declared in the public header; the other four are exported by
+the `.so` and are therefore part of the real ABI surface, so they are all
+driven directly rather than only through `driver`.
 
-Rows 1–7 and 18 also cover `printLine`'s true branch at `driver.c:31`; the false
-branch is `ERRORS.md` E1.
+**Input shapes the code distinguishes:**
 
-## Harness validation (negative controls)
+* `printLine`: string length (0, 1, small, page-sized, > 1 MiB); byte content
+  (ASCII, embedded `printf` directives `%s`/`%d`/`%n`, control bytes `\t \r \x0b`,
+  non-UTF-8 `0x80..=0xFF`, all byte values except `0x00`); trailing/leading
+  newline already present in the payload.
+* `printIntLine`: sign and magnitude (`0`, `±1`, single/multi digit, `INT_MIN`,
+  `INT_MAX`, `INT_MIN+1`, `INT_MAX-1`, random 32-bit values) — this is what
+  selects `printf`'s `%d` digit/sign path.
+* `bad` / `good` / `driver`: no inputs; the axis is *call multiplicity and
+  order*, because the only observable is the accumulated `stdout` byte stream
+  (`good` assigns `intSum`, `bad` discards `intOne + intTwo` — the two produce
+  different digits from otherwise identical code, so ordering matters).
 
-Passing tests only mean something if the harness can fail. Four deliberately
-broken Rust libraries were built and pointed at via `RUST_DRIVER_SO=…`, without
-touching the real crate. Each was caught, by the phase that should catch it:
+**Cargo feature axis:** `translation/Cargo.toml` has no `[features]` table →
+configurations are `--all-features` ≡ default ≡ `--no-default-features`. All
+rows are run under each of those invocations in Phase D.
 
-| mutant | injected defect | caught by |
-|---|---|---|
-| M1 | `bad()` assigns `intOne + intTwo` (i.e. "fixes" the original's discarded-value bug) | Phase B rows 15, 16, 16b, 17, 18 — `DIVERGENCE [bad()] at byte 2` |
-| M2 | `printLine` passes `line` as the `printf` **format string** instead of an argument | Phase B rows 1–7, 16–18 and 6 Phase C tests |
-| M3 | `printLine`'s NULL guard weakened to print an empty line for NULL | Phase C `err_e1_print_line_null` (`Rust printLine(NULL) unexpectedly wrote "\n"`), `err_g1_null_interleaved`, and Phase B row 18 |
-| M4 | `#[no_mangle]` removed from `good` so it is not exported | Phase D `phase_d_symbol_parity_is_exact` and `phase_d_every_c_symbol_is_dlsym_resolvable_in_rust` |
+## Rows (pruned cross-product of the axes above)
 
-The unmodified crate passes all 32 tests; each mutant fails. So the captures are
-comparing real bytes, not two empty buffers.
+Each row is exercised with many randomized inputs from a fixed-seed PCG32
+(`seed = 0x5EED_1234_ABCD_EF01`) where the row has a value axis, and both
+libraries' `stdout` is captured and compared byte-for-byte.
 
-## How to reproduce
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|--------------------------------------------|------|-----|
+| 1 | `printLine` | length 0 and 1; every single byte value `0x01..=0xFF` as a 1-byte payload | `cfg_row1_print_line_tiny_all_bytes` | [x] |
+| 2 | `printLine` | random ASCII-printable payloads, length 2..=64, 512 iterations | `cfg_row2_print_line_random_ascii` | [x] |
+| 3 | `printLine` | random arbitrary-byte payloads (`0x01..=0xFF`, non-UTF-8 included), length 1..=256, 512 iterations | `cfg_row3_print_line_random_bytes` | [x] |
+| 4 | `printLine` | payloads containing `printf` format directives (`%s %d %n %%  %1000000d`) — must be copied verbatim, never interpreted | `cfg_row4_print_line_format_directives` | [x] |
+| 5 | `printLine` | payloads containing embedded newlines / `\r` / `\t` / other control bytes, so the emitted stream has interior line breaks | `cfg_row5_print_line_control_bytes` | [x] |
+| 6 | `printLine` | large payloads: 4095, 4096, 4097, 8192, 65535, 65536, 1 048 576 bytes (straddling typical stdio buffer sizes) | `cfg_row6_print_line_large` | [x] |
+| 7 | `printIntLine` | boundary integers: `INT_MIN`, `INT_MIN+1`, `-100000`, `-10`, `-1`, `0`, `1`, `9`, `10`, `99`, `100`, `INT_MAX-1`, `INT_MAX` | `cfg_row7_print_int_line_boundaries` | [x] |
+| 8 | `printIntLine` | 4096 uniformly random `i32` values (full 32-bit range) | `cfg_row8_print_int_line_random` | [x] |
+| 9 | `printIntLine` | random values restricted to small magnitudes (`-999..=999`), 1024 iterations — exercises the short-digit path | `cfg_row9_print_int_line_small` | [x] |
+| 10 | `good` | single call, no input | `cfg_row10_good_single` | [x] |
+| 11 | `bad` | single call, no input (must reproduce the discarded-`intOne + intTwo` bug: two `0` lines) | `cfg_row11_bad_single` | [x] |
+| 12 | `driver` | single call, no input — the full end-to-end pipeline (`printLine`+`good`+`printLine`+`printLine`+`bad`+`printLine`) | `cfg_row12_driver_single` | [x] |
+| 13 | `good`, `bad` | both called repeatedly in a fixed-seed random interleaving, 256 calls, in one capture (composed pipeline, shared `stdout` stream) | `cfg_row13_good_bad_interleaved` | [x] |
+| 14 | `driver` | called 8 times back-to-back in a single capture (idempotence / no cross-call state) | `cfg_row14_driver_repeated` | [x] |
+| 15 | all five | fixed-seed random interleaving of `printLine`(random payload), `printIntLine`(random `i32`), `good`, `bad`, `driver` — 512 calls in one capture; the full cross-product of entry points in one stream | `cfg_row15_all_entry_points_interleaved` | [x] |
 
-```
-cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && ./scripts/verify_all.sh      # every feature combo × dev/release
-cd translation && cargo build && cargo test -- --test-threads=1
-```
+## Binary executable
+
+`c_src/CMakeLists.txt` builds **only** `add_library(driver SHARED src/driver.c)`
+— there is no `add_executable`, and `driver.c` has no `main`. The Rust
+`Cargo.toml` declares only `[lib] crate-type = ["cdylib"]` and has no
+`src/main.rs` / `[[bin]]`. **No binary is built by either side**, so the
+"compare C and Rust binary stdout" item of the completion gate is vacuous.
+The equivalent coverage is row 12 (`driver`, the top-level entry point that a
+driver `main` would call) plus the `driver_stdout_parity` end-to-end test.

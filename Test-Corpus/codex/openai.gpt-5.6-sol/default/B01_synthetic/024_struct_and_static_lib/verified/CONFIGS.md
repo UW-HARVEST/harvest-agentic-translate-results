@@ -1,23 +1,22 @@
 # Configuration Surface
 
-Mechanical source inspection found:
+The C source has no runtime flags, modes, options, conditional branches,
+switches, preprocessor feature branches, element types, formats, byte-order
+choices, pointer inputs, or variable-length buffers. Its observable axes are
+the selected exported entry point, the signed `int` value, and accumulated
+process-global house state.
 
-- Dynamic public entry points: `run(int)` and `driver(int)`.
-- Runtime modes, options, and flags: none.
-- Conditional branches, switches, or feature `#ifdef` paths: none.
-- Input shape: one by-value C `int`; negative, zero, and positive values all
-  follow the same path and are included in each randomized row.
-- Stateful axis: fresh initial state versus state accumulated by prior calls.
-- Call hierarchy: `driver(x)` invokes `run(x)` twice.
-- Cargo feature combinations: default only; `Cargo.toml` declares no features.
-
-The cross-product below contains every combination the implementation treats
-differently. Values are constrained to executions where C signed arithmetic is
-defined.
-
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | status |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `run` | Fresh library state; randomized negative, zero, and positive `int` arguments | [x] |
-| 2 | `run` | Accumulated state after one or more prior calls; randomized negative, zero, and positive `int` arguments | [x] |
-| 3 | `driver` | Fresh library state; randomized negative, zero, and positive `int` arguments; exercises both nested `run` calls | [x] |
-| 4 | `driver` | Accumulated state after prior `run`/`driver` calls; randomized negative, zero, and positive `int` arguments | [x] |
+| 1 | `run` | Fresh library state; one direct low-level call; randomized negative, zero, and positive `int` values, including arithmetic boundaries | [x] |
+| 2 | `run` | Fresh library state; many direct low-level calls in sequence; randomized signed values exercise accumulated floors, bathrooms, and bedrooms | [x] |
+| 3 | `driver` | Fresh library state; one wrapper call (exactly two internal `run` calls); randomized negative, zero, and positive `int` values, including arithmetic boundaries | [x] |
+| 4 | `driver` | Fresh library state; many wrapper calls in sequence; randomized signed values exercise accumulated state across repeated composed operations | [x] |
+| 5 | `run`, `driver` | Fresh library state; mixed low-level and wrapper calls in both orders with randomized signed values, exercising shared state across entry points | [x] |
+
+There are no Cargo features in `Cargo.toml`, so the default build is the only
+feature combination.
+
+Each row is covered by the correspondingly numbered test in
+`tests/differential.rs`, using a fixed-seed generator and loading both shared
+objects through `libloading`.

@@ -1,124 +1,65 @@
-# CONFIGS.md — Configuration surface table (valid inputs)
+# CONFIGS.md — Configuration-surface table (Phase A / gate for Phase B)
 
-## Axis enumeration (mechanically derived from the C source)
+## Axes the C code actually branches on
 
-### Public entry points
+Derived from `c_src/src/driver.c` + `c_src/include/driver.h`:
 
-`nm -D` on the C `.so` yields five exported functions. Note that `driver.h` only
-declares `driver()` — the "convenience / one-shot wrapper". The four *lower-level*
-entry points (`printLine`, `printIntLine`, `bad`, `good`) are non-`static` and
-therefore fully callable by any consumer through `dlsym`, so they are all
-exercised **directly**, not only via `driver()`.
+* **Runtime options / modes / flags:** *none*. There is no configuration struct,
+  no global variable, no setter, no `#ifdef` other than the header include
+  guard `DRIVER_H_`, and no environment lookup. `grep -c '#if\|#ifdef\|#ifndef'
+  c_src/src/driver.c` → 0.
+* **Cargo features:** `translation/Cargo.toml` declares **no `[features]`
+  section**, so the only build configuration is the default one. (Phase D
+  feature-combination sweep therefore has exactly one combination; it is still
+  run explicitly.)
+* **Control-flow branches:** exactly one — `if (line != NULL)` in `printLine`.
+* **Input shapes the code distinguishes:**
+  * `printLine`: NULL vs non-NULL pointer; then the *content* of the byte
+    string — empty, 1 byte, ASCII, embedded printf conversion specifiers,
+    embedded whitespace/newlines, non-UTF-8 high bytes, long (page-crossing)
+    buffers. Content matters because GCC lowers `printf("%s\n", s)` to
+    `puts(s)`, and because a naive Rust translation using `str` would reject
+    non-UTF-8.
+  * `printIntLine`: the `int` value — 0, +1, -1, small, large, `INT_MIN`,
+    `INT_MAX`, and random 32-bit values (sign and digit-count vary the
+    `printf("%d")` path).
+  * `bad` / `good` / `driver`: no inputs; the shape axis is *call composition*
+    (single call, repeated calls, interleaving with the leaf functions).
+* **Public entry points — the FULL set (5), not just the `driver` wrapper:**
+  the low-level leaves `printLine`, `printIntLine`; the mid-level
+  `bad`, `good`; the one-shot wrapper `driver`.
 
-| level | entry point | parameters |
-|-------|-------------|------------|
-| 0 (lowest) | `printLine`    | `const char *` |
-| 0 (lowest) | `printIntLine` | `int` |
-| 1 | `bad`  | none (calls `printIntLine` twice) |
-| 1 | `good` | none (calls `printIntLine` twice) |
-| 2 (wrapper) | `driver` | none (calls `printLine` ×4, `good`, `bad`) |
+## Configuration rows
 
-### Runtime options / modes / flags
+Every row is exercised with many randomized inputs (fixed seed, see
+`tests/differential.rs` `SEED`), both `.so`s loaded via `libloading`, stdout
+captured per call and compared byte-for-byte.
 
-Grep for option state:
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|--------------------------------------------|------|-----|
+| C1 | `printLine` | non-NULL, empty string (`""`, single NUL byte) | `cfg_c1_print_line_empty` | [x] |
+| C2 | `printLine` | non-NULL, 1-byte string, every value `0x01..=0xFF` (all 255 non-NUL bytes) | `cfg_c2_print_line_single_byte_all_values` | [x] |
+| C3 | `printLine` | non-NULL, random printable-ASCII strings, lengths 1..64 (randomized, 512 cases) | `cfg_c3_print_line_random_ascii` | [x] |
+| C4 | `printLine` | non-NULL, random arbitrary non-NUL bytes `0x01..=0xFF` incl. non-UTF-8 sequences, lengths 1..64 (randomized, 512 cases) | `cfg_c4_print_line_random_arbitrary_bytes` | [x] |
+| C5 | `printLine` | non-NULL, strings containing printf conversion specifiers (`%s %d %n %% %p %10000d`) | `cfg_c5_print_line_format_specifiers` | [x] |
+| C6 | `printLine` | non-NULL, strings containing embedded `\n`, `\r`, `\t`, `\0`-adjacent and trailing whitespace | `cfg_c6_print_line_whitespace_shapes` | [x] |
+| C7 | `printLine` | non-NULL, long buffers at buffering boundaries: 511, 512, 1023, 1024, 4095, 4096, 4097, 8192, 65537 bytes | `cfg_c7_print_line_long_boundaries` | [x] |
+| C8 | `printLine` | NULL pointer (the one branch the C has) — valid input per the C, prints nothing | `cfg_c8_print_line_null_branch` | [x] |
+| C9 | `printIntLine` | boundary values: `0`, `1`, `-1`, `9`, `10`, `-9`, `-10`, `99`, `100`, `INT_MIN`, `INT_MIN+1`, `INT_MAX`, `INT_MAX-1` | `cfg_c9_print_int_line_boundaries` | [x] |
+| C10 | `printIntLine` | random full-range `i32` values (randomized, 1024 cases) | `cfg_c10_print_int_line_random` | [x] |
+| C11 | `printIntLine` | random small-magnitude values `-1000..=1000` (digit-count/sign transitions, randomized, 512 cases) | `cfg_c11_print_int_line_random_small` | [x] |
+| C12 | `good` | single call, no arguments (must print `0\n2\n`) | `cfg_c12_good_single_call` | [x] |
+| C13 | `bad` | single call, no arguments (CWE-482 defect preserved: must print `0\n0\n`) | `cfg_c13_bad_single_call` | [x] |
+| C14 | `driver` | single call — the full composed pipeline (5 labels + `good` + `bad` output, in order) | `cfg_c14_driver_single_call` | [x] |
+| C15 | `driver` | repeated calls (8x) in one process — statelessness of the composed pipeline | `cfg_c15_driver_repeated` | [x] |
+| C16 | `good` + `bad` | interleaved sequence `good,bad,bad,good,good,bad` — mid-level composition without the wrapper | `cfg_c16_good_bad_interleaved` | [x] |
+| C17 | all 5 | randomized interleaving of all five entry points with randomized arguments (256 steps, seeded) — cross-entry-point composed pipeline | `cfg_c17_random_interleaving_all_entry_points` | [x] |
+| C18 | `printLine` + `printIntLine` | leaf functions called back-to-back so that the `puts`-lowered and `printf`-lowered paths share the same stdio stream (interleaving/buffering shape) | `cfg_c18_leaf_interleaving_puts_vs_printf` | [x] |
 
-```
-$ grep -n 'static\|extern\|#ifdef\|#if \|switch\|enum\|struct\|global' c_src/src/driver.c
-(no matches)
-```
+## Binary executable
 
-There is **no** runtime option, mode, flag, global variable, struct, enum,
-`switch` or `#ifdef` anywhere in the library. The only branch in the entire
-library is `printLine`'s `if(line != NULL)`. Therefore the configuration axes
-collapse onto **input shape** plus **entry point** plus **call sequencing**
-(stdio buffering state), and the ambient axis below.
-
-### Ambient axis the C code is sensitive to
-
-Both libraries write through the *same process-wide* libc `stdout`. The stream's
-buffering mode is therefore an axis that changes the observable byte ordering:
-
-* `A_pipe` — `stdout` redirected to a file/pipe ⇒ fully buffered,
-* `A_unbuf` — `setvbuf(stdout, NULL, _IONBF, 0)` ⇒ unbuffered,
-* `A_line` — `setvbuf(stdout, NULL, _IOLBF, ..)` ⇒ line buffered.
-
-Note: GCC rewrites the C `printf("%s\n", line)` into `puts(line)` while the Rust
-translation keeps `printf`. Under a *shared* buffer these must still produce an
-identical byte stream in every buffering mode — which is exactly what the
-`A_*` rows below pin down.
-
-### Input shapes the code distinguishes
-
-`const char *` (for `printLine`): non-NULL vs NULL (NULL → `ERRORS.md` E1);
-length 0 / 1 / many / huge; byte content ASCII / non-ASCII / format-specifier-
-looking / embedded control characters.
-
-`int` (for `printIntLine`): sign (negative / zero / positive), decimal digit
-count 1..10, and the two extremes `INT_MIN` / `INT_MAX`. The `%d` conversion
-branches on sign and on digit count, so all of those are distinct shapes.
-
-## Configuration table
-
-One row per meaningful combination the C actually treats differently. Every row
-is driven with **many randomised inputs (fixed seed `0x5EED_1234_ABCD_F00D`)**
-except where the row's input space is a singleton.
-
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C01 | `printIntLine` | `int` = `0` (singleton; digit-count 1, sign zero) | [x] |
-| C02 | `printIntLine` | `int` ∈ random positive 1-digit … 9-digit values (sign +, digit count 1‥9) | [x] |
-| C03 | `printIntLine` | `int` ∈ random positive 10-digit values (`1_000_000_000..=INT_MAX`) | [x] |
-| C04 | `printIntLine` | `int` ∈ random negative values, 1‥9 digits (sign −) | [x] |
-| C05 | `printIntLine` | `int` ∈ random negative values, 10 digits (`INT_MIN+1..=-1_000_000_000`) | [x] |
-| C06 | `printIntLine` | `int` = `INT_MAX` and `INT_MIN` (extremes) | [x] |
-| C07 | `printIntLine` | `int` = every `±1` neighbourhood of each power-of-ten digit boundary (`9`,`10`,`99`,`100`,…) and each power-of-two boundary | [x] |
-| C08 | `printIntLine` | `int` ∈ 4096 uniformly random `i32` values (full-range sweep) | [x] |
-| C09 | `printLine` | non-NULL, length 0 (`""` → pointer to lone `'\0'`) | [x] |
-| C10 | `printLine` | non-NULL, length 1, random printable ASCII byte | [x] |
-| C11 | `printLine` | non-NULL, random length 2‥64, random printable-ASCII content | [x] |
-| C12 | `printLine` | non-NULL, random length 1‥256, random content over the **full** `0x01..=0xFF` byte range (non-ASCII, invalid UTF-8) | [x] |
-| C13 | `printLine` | non-NULL, content is format-specifier-looking text (`%s`, `%d`, `%n`, `%%`, `%1000000d`) | [x] |
-| C14 | `printLine` | non-NULL, content contains embedded `\n` / `\r` / `\t` (multi-line payload) | [x] |
-| C15 | `printLine` | non-NULL, large payloads: lengths 4 KiB, 64 KiB, 1 MiB (crosses the stdio buffer size, forcing internal flushes) | [x] |
-| C16 | `bad` | no input (deterministic; asserts the CWE-482 defect is preserved: `0` then `0`) | [x] |
-| C17 | `good` | no input (deterministic: `0` then `2`) | [x] |
-| C18 | `driver` | no input (full composed pipeline: 4 × `printLine` + `good` + `bad`) | [x] |
-| C19 | mixed, low-level | randomised **sequences** of 1‥40 calls drawn from {`printLine`, `printIntLine`, `bad`, `good`, `driver`} with random arguments — exercises the composed pipeline & carried stdio buffer state, which per-function tests cannot see | [x] |
-| C20 | `driver` ×N | `driver` called repeatedly (8×) in one capture (idempotence / no hidden state) | [x] |
-| C21 | all 5 | ambient `A_unbuf`: `setvbuf(stdout, NULL, _IONBF, 0)` + randomised call sequence | [x] |
-| C22 | all 5 | ambient `A_line`: `setvbuf(stdout, NULL, _IOLBF, 1024)` + randomised call sequence | [x] |
-| C23 | all 5 | ambient `A_pipe` (default when fd 1 is a file): fully buffered + randomised call sequence — the baseline used by rows C01‥C20 | [x] |
-| C24 | `printLine`, `printIntLine` | **interleaving of the two libraries into one shared buffer**: alternate C-call / Rust-call on the *same* `stdout` without an intervening flush, then compare the merged stream against the doubled expectation (catches any per-library buffering divergence such as `puts` vs `printf`) | [x] |
-
-All 24 rows checked → Phase B complete.
-
-## Row → test mapping
-
-Every row is implemented by the identically-numbered test in
-`tests/phase_b_configs.rs`:
-
-| rows | tests |
-|------|-------|
-| C01‥C08 | `c01_print_int_line_zero` … `c08_print_int_line_full_range_sweep` |
-| C09‥C15 | `c09_print_line_empty` … `c15_print_line_large_payloads` |
-| C16‥C18, C20 | `c16_bad_preserves_cwe482_defect`, `c17_good`, `c18_driver_full_pipeline`, `c20_driver_repeated` |
-| C19 | `c19_random_mixed_sequences` (300 randomised scripts of 1‥40 mixed low-level calls) |
-| C21‥C23 | `c21_unbuffered_stdout`, `c22_line_buffered_stdout`, `c23_fully_buffered_stdout` |
-| C24 | `c24_interleaved_shared_buffer` (4 buffering modes × 40 scripts) |
-
-Each row asserts **two** things: (a) the C `.so` and the Rust `.so` produce
-byte-identical output, and (b) that output matches an independent reference model
-of the C semantics (`phase_b_configs.rs::model`), so a row cannot pass vacuously
-by both sides emitting nothing. `tests/phase_a_selfcheck.rs` contains the
-negative controls that prove the harness observes real output and does detect a
-deliberate divergence.
-
-## Run everything
-
-```
-bash translation/verify_all.sh
-```
-
-builds the C `.so`, enumerates the feature combinations out of `Cargo.toml`, and
-runs `cargo check` / `cargo build` / `nm -D` symbol-diff / `cargo test` for each
-combination in both the `debug` and `release` profiles.
+`c_src/CMakeLists.txt` builds `add_library(driver SHARED ...)` only — there is
+no `add_executable`, and `translation/Cargo.toml` has `crate-type =
+["cdylib"]` with no `[[bin]]`. **No driver binary exists**, so the
+"compare binary stdout" gate is not applicable. Row C14 covers the equivalent
+end-to-end `driver()` output comparison.

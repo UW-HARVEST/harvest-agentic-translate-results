@@ -1,16 +1,21 @@
 # Error Surface
 
-Mechanically derived from every `if`, `switch`, `return`, null/range check,
-assertion, and error-like sentinel in `c_src/src/lib.c`. The C source has no
-error macros, assertions, pointer checks, length parameters, min/max input
-constants, or error enums. Its collision comparisons return ordinary boolean
-results and are listed as valid configurations in `CONFIGS.md`.
+Mechanically derived from all explicit `return` branches, comparisons,
+`switch` defaults, assertions, null checks, and range checks in
+`c_src/src/lib.c`. There are no assertions, null checks, length parameters,
+error macros, error enums, `return -1`, or `return NULL` statements.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
-|---|----------|---------------------------------------------|-------------------|-----|
-| 1 | `c2Collided` | `typeB` is any integer other than `0`, `1`, or `2`; `-1` and `3` are the one-step boundary values. The default branch does not inspect `A` or `B`, including when either is null. | `0` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| E01 | `c2Collided` | `typeB` is not `C2_TYPE_CIRCLE` (0), `C2_TYPE_AABB` (1), or `C2_TYPE_CAPSULE` (2) | returns `0` without dereferencing `A` or `B` [x] |
 
-Null pointers with a valid `typeB` are dereferenced by C and have undefined
-behavior, not a C rejection result. No table row claims a result for undefined
-behavior. The only exported header API, `circle_collide`, has no pointer or
-length arguments.
+## Generic FFI boundaries
+
+- Null `A` or `B` with a valid `typeB` is not rejected by C; C dereferences the
+  pointer, so the behavior is undefined. Differential tests run these cases in
+  child processes and compare their observed termination behavior without
+  risking the test harness.
+- Null `A` and `B` with an invalid `typeB` is defined by E01 and returns `0`.
+- Zero/oversized lengths do not apply: no public function accepts a length.
+- One-past-enum and arbitrary C-enum integers are covered by E01, including
+  `-1`, `3`, `INT_MIN`, and `INT_MAX`.

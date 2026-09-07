@@ -59,7 +59,33 @@ pub extern "C" fn c2Sub(mut a: C2v, b: C2v) -> C2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: C2v, b: C2v) -> f32 {
-    a.x * b.x + a.y * b.y
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        let x_product = a.x;
+        let mut y_product = b.y;
+        // SAFETY: These scalar SSE operations use only register operands and
+        // reproduce the C library's observable NaN-payload propagation order.
+        unsafe {
+            core::arch::asm!(
+                "mulss {x_product}, {b_x}",
+                "mulss {y_product}, {a_y}",
+                "addss {y_product}, {x_product}",
+                x_product = inout(xmm_reg) x_product => _,
+                y_product = inout(xmm_reg) y_product,
+                b_x = in(xmm_reg) b.x,
+                a_y = in(xmm_reg) a.y,
+                options(pure, nomem, nostack),
+            );
+        }
+        return y_product;
+    }
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        let x_product = a.x * b.x;
+        let y_product = a.y * b.y;
+        y_product + x_product
+    }
 }
 
 #[unsafe(no_mangle)]

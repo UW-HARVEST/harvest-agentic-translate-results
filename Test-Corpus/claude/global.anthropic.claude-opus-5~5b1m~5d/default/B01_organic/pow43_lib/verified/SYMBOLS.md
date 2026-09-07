@@ -1,74 +1,97 @@
-# SYMBOLS.md — Phase A: public symbol surface
+# SYMBOLS.md — Phase A: exported-symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Build commands used:
+## Build commands
 
-```sh
+```
 # C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-NqWXYC.so   (name comes from the parent dir name,
-#                                             see CMakeLists.txt cmake_path GET FILENAME)
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+#   -> c_src/build/libharvest-work-6Ga2gD.so
+#      (CMake derives the project name from the parent directory of c_src,
+#       so the file name tracks the checkout directory name.)
 
 # Rust
 cd translation && cargo build --release
-# -> translation/target/release/libpow43_lib.so   (crate-type = ["cdylib"])
+#   -> translation/target/release/libpow43_lib.so
 ```
 
-## C source inventory (completeness check)
+## C `.so` exported (defined) symbols
 
-The whole library is a single translation unit. `CMakeLists.txt` lists exactly
-one source file, so there is no module that could have been skipped:
-
-| C file | contents | translated in Rust? |
-|--------|----------|---------------------|
-| `c_src/src/lib.c` | `static const float g_pow43[129 + 16]`, `float pow43(int)` | yes — `translation/src/lib.rs` (`g_pow43`, `pow43`) |
-| `c_src/include/lib.h` | `float pow43(int x);` (1 line, the only public declaration) | yes |
-
-There are no other `.c` files, no `#ifdef`-selected alternative
-implementations, and no name-mangling / namespacing macros in the public
-header, so the exported linker symbol is plainly `pow43`.
-
-## Defined dynamic symbols
-
-`nm -D --defined-only`:
-
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `pow43` | `T` (text, global) | `T` (text, global) | `#[unsafe(no_mangle)] pub extern "C" fn pow43(x: c_int) -> f32` |
-
-`g_pow43` is `static` in C, therefore *not* a dynamic symbol; the Rust `static`
-is likewise private. Correctly absent from both.
-
-### Symbol diff
+`nm -D --defined-only c_src/build/libharvest-work-6Ga2gD.so`
 
 ```
-$ comm -3 <(nm -D --defined-only c_src/build/libharvest-work-NqWXYC.so   | awk '{print $NF}' | sort) \
-          <(nm -D --defined-only translation/target/release/libpow43_lib.so | awk '{print $NF}' | sort)
-<empty>
+00000000000010f9 T pow43
 ```
 
-**0 symbols missing from the Rust `.so`.** No `#[no_mangle]` wrapper had to be
-added and no C module had to be translated after the fact; nothing is stubbed
-or `unimplemented!()`.
+Total: **1** exported symbol.
 
-## Undefined symbols (imports)
+`g_pow43` is `static const`, so it is a *local* symbol (`nm` type `r`, not in
+`.dynsym`) and is deliberately **not** part of the public surface.
 
-| `.so` | undefined non-libc symbols |
-|-------|----------------------------|
-| C | none (only weak CRT hooks: `_ITM_*`, `__cxa_finalize`, `__gmon_start__`) |
-| Rust | none — every `U` entry is glibc (`malloc`, `memcpy`, `open64`, `pthread_key_create`, …) or the platform unwinder (`_Unwind_*`), pulled in by `libstd`; all are satisfied by `libc`/`libgcc_s` at load time |
+## Rust `.so` exported (defined) symbols
 
-`dlopen(RTLD_NOW)` of both objects succeeds, which confirms every import
-resolves.
+`nm -D --defined-only translation/target/release/libpow43_lib.so`
+
+```
+0000000000011a60 T pow43
+```
+
+Total: **1** exported symbol.
+
+## Symbol parity table
+
+| # | symbol | C `.so` | Rust `.so` | signature | status |
+|---|--------|---------|------------|-----------|--------|
+| 1 | `pow43` | `T` (global text) | `T` (global text) | `float pow43(int x)` / `extern "C" fn(c_int) -> f32` | **MATCH** |
+
+### Diff
+
+```
+$ diff <(nm -D --defined-only <c.so>  | awk '{print $3}' | sort) \
+       <(nm -D --defined-only <rs.so> | awk '{print $3}' | sort)
+(empty)
+```
+
+**Missing from Rust: none. Extra in Rust: none. The symbol diff is empty.**
+
+No symbol required translating a skipped module: the C library is a single
+translation unit (`c_src/src/lib.c`, 49 lines) with a single public function,
+and that function is fully translated in `translation/src/lib.rs` — no stubs,
+no `unimplemented!()`, no `todo!()`.
+
+```
+$ grep -nE 'unimplemented!|todo!|panic!\("stub' translation/src/lib.rs
+(no matches)
+```
+
+## Undefined (imported) symbols in the Rust `.so`
+
+`nm -D --undefined-only translation/target/release/libpow43_lib.so` lists only
+libc / libgcc-unwind / weak ELF housekeeping imports pulled in by the Rust
+runtime, and **no** unresolved project symbols:
+
+* `_Unwind_*@GCC_*` (13) — panic unwinder
+* `__errno_location`, `__cxa_finalize`, `__cxa_thread_atexit_impl`,
+  `__tls_get_addr`, `__gmon_start__`, `_ITM_*` — runtime/TLS/weak stubs
+* `abort`, `bcmp`, `calloc`, `close`, `dl_iterate_phdr`, `free`, `fstat64`,
+  `getcwd`, `getenv`, `gettid`, `lseek64`, `malloc`, `memcpy`, `memmove`,
+  `memset`, `mmap64`, `munmap`, `open64`, `posix_memalign`,
+  `pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, `read`,
+  `readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`, `syscall`,
+  `write`, `writev` — glibc
+
+**0 missing / undefined non-libc symbols.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only
-configuration that exists is the default one. `scripts/check_all_features.sh`
-enumerates the feature powerset from `Cargo.toml` and runs
-`cargo check`/`cargo test` for each; with no features declared it degenerates
-to the four canonical variants (default, `--no-default-features`,
-`--all-features`, and `--no-default-features --all-features`), all of which
-are exercised.
+`translation/Cargo.toml` declares **no `[features]` table** and no
+`cfg(feature = ...)` appears anywhere in `src/`, so there is exactly one
+build configuration (the default). `--no-default-features` is therefore
+equivalent to the default build; both are exercised in
+`tests/feature_combos.rs` / by the `run_all.sh` loop.
+
+There is no `[[bin]]` target in `Cargo.toml` and no `add_executable` in
+`c_src/CMakeLists.txt` (and no `main(` in the C sources), so the
+"compare binary stdout" requirement is **not applicable** to this project.

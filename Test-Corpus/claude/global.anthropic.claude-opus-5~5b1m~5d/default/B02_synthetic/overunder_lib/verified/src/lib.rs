@@ -25,7 +25,7 @@
 
 #![allow(non_snake_case)]
 
-use core::ffi::{c_char, c_double, c_int, c_void};
+use core::ffi::{c_char, c_double, c_int};
 
 // The C translation unit performs all of its output through the C standard
 // library's `printf`. We call the very same function here so that byte-for-byte
@@ -33,17 +33,6 @@ use core::ffi::{c_char, c_double, c_int, c_void};
 // (and therefore the same interleaving) as any C code linked alongside us.
 unsafe extern "C" {
     fn printf(fmt: *const c_char, ...) -> c_int;
-
-    /// The C translation unit copies bytes with `memcpy`, so we call the very
-    /// same libc routine.
-    ///
-    /// This matters for fidelity: `core::ptr::copy_nonoverlapping` carries
-    /// debug-only preconditions (pointers non-null, ranges non-overlapping)
-    /// that make it *panic* on inputs `memcpy` merely passes through — a NULL
-    /// argument, or `dest == src`. The C has no such checks, so using `memcpy`
-    /// keeps the observable behaviour (including the SIGSEGV on a NULL
-    /// pointer) identical in debug and release builds alike.
-    fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
 }
 
 /// `typedef struct { int id; double value; char label[20]; } DataBlock;`
@@ -142,14 +131,22 @@ pub extern "C" fn process_with_fallthrough(code: c_int, base_value: c_int) -> c_
 //
 // memcpy(dest, src, sizeof(DataBlock))
 // ---------------------------------------------------------------------------
+// The C calls `memcpy(dest, src, sizeof(DataBlock))` with no NULL guard and no
+// overlap guard. A caller is therefore free to pass `dest == src` -- and glibc's
+// `memcpy` handles that fine, because for a 32..64-byte length it loads the
+// whole source into registers *before* storing anything.
+//
+// `core::ptr::copy_nonoverlapping` would be the literal transliteration, but it
+// carries a hard "must not overlap" precondition that Rust checks under
+// `debug_assertions` and turns into an abort -- an observable divergence from the
+// C, which returns normally. Reading the 40 bytes into a temporary and then
+// storing them reproduces glibc's load-then-store behaviour exactly for every
+// input, overlapping or not.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn copy_data_block(dest: *mut DataBlock, src: *const DataBlock) {
     unsafe {
-        memcpy(
-            dest.cast::<c_void>(),
-            src.cast::<c_void>(),
-            size_of::<DataBlock>(),
-        );
+        let tmp: [u8; size_of::<DataBlock>()] = core::ptr::read_unaligned(src.cast());
+        core::ptr::write_unaligned(dest.cast::<[u8; size_of::<DataBlock>()]>(), tmp);
     }
 }
 
@@ -276,11 +273,10 @@ pub extern "C" fn overunder(a: c_int, b: c_int, c: c_int, d: c_int) -> c_int {
     let array1: [c_int; 5] = [a, b, c, d, a.wrapping_add(b)];
     let mut array2: [c_int; 5] = [0; 5];
 
-    // memcpy(array2, array1, sizeof(array1))
     unsafe {
-        memcpy(
-            array2.as_mut_ptr().cast::<c_void>(),
-            array1.as_ptr().cast::<c_void>(),
+        core::ptr::copy_nonoverlapping(
+            array1.as_ptr().cast::<u8>(),
+            array2.as_mut_ptr().cast::<u8>(),
             size_of::<[c_int; 5]>(),
         );
     }

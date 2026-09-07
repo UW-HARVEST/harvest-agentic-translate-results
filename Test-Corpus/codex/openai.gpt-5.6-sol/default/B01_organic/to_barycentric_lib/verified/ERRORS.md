@@ -1,18 +1,17 @@
-# Error Surface
+# Error surface
 
-Mechanical scans of `../c_src/include/` and `../c_src/src/` found no
-`RETURN_ERROR`, `return -1`, `return NULL`, error enum, `assert`, `if`,
-`switch`, preprocessor branch, explicit range check, null check, or min/max
-constant. The sole API takes four `lm_vec2` values by value and always returns
-an `lm_vec2`.
+Mechanical searches of `../c_src/include/` and `../c_src/src/` found no
+`RETURN_ERROR`, negative/sentinel returns, null returns, error enums, asserts,
+conditionals, switches, null checks, range checks, or min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|---------------------------------------------|-------------------|--------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
+|---|----------|---------------------------------------------|-------------------|-----|
 
-There are no pointer, length, enum, or documented-range parameters, so the
-generic null-pointer, zero/oversized-length, out-of-range-enum, and one-past-
-range cases are not applicable. Degenerate and non-finite floating-point
-inputs are not rejected; they are valid arithmetic configurations covered in
-`CONFIGS.md`.
+There are **0 explicit C rejection paths**.
 
-- [x] Phase C confirms there are zero applicable rejection rows.
+Error-path table: [x] complete (no rows).
+
+The generic pointer, length, and enum boundary cases are not applicable:
+`to_barycentric` accepts four fixed-size `lm_vec2` structs by value and has no
+pointer, length, option, or enum arguments. Every possible pair of `float` bit
+patterns is accepted across the ABI and evaluated by the same arithmetic path.

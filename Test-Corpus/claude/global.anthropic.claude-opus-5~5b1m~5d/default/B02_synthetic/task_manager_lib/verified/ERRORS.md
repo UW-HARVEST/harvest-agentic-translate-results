@@ -1,185 +1,110 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Mechanically derived from every rejection / early-return / guard / sentinel in
-`c_src/src/*.c`. Greps used: `return -1`, `return NULL`, `return EXIT_FAILURE`,
-`if (!`, `>=`, `== NULL`, `sizeof(...) - 1`, `assert` (none present).
+Every distinct rejection / error path in the C source, found by grepping for
+`return -1`, `return NULL`, `return EXIT_FAILURE`, `if (!...)`, every `log_error`
+/ `log_warning` call, every guard `if`, and every size constant. There are no
+`assert`s and no error enums in this library; rejection is signalled by sentinel
+return values (`-1`, `NULL`, `EXIT_FAILURE`) or by a silent no-op.
 
-There are **no** `assert()`s, no error enums and no `RETURN_ERROR`-style macros
-in this library. Every rejection is one of: a `-1`/`NULL`/`EXIT_FAILURE`
-sentinel, a silent `return` guard, a silent truncation, or unchecked-pointer
-UB (the C never null-checks its `manager` / `description` / `tasks`
-parameters).
+Constants that bound the input surface:
+`sizeof(Task::description) == 256` (so 255 usable chars + NUL),
+default `max_tasks == 10`, default log path `"default.log"`,
+`EXIT_FAILURE == 1`.
 
-| # | function | trigger (exact invalid input/condition) | expected C result | test |
-|---|----------|------------------------------------------|-------------------|------|
-| 1 | `initialize_logger` | `fopen(path,"a")` fails — `LOG_FILE` names a path that cannot be opened for append (missing directory) | writes `Failed to open log file: <path>\n` to `stderr`; leaves `log_file` unchanged; returns `-1` | `errors.rs::e01_initialize_logger_fopen_missing_dir` |
-| 2 | `initialize_logger` | `LOG_FILE=""` → `fopen("", "a")` fails (ENOENT) | same as #1 with an empty `%s` | `errors.rs::e02_initialize_logger_empty_path` |
-| 3 | `initialize_logger` | `LOG_FILE` is an existing **directory** → `fopen` fails (EISDIR) | same as #1 | `errors.rs::e03_initialize_logger_path_is_dir` |
-| 4 | `initialize_logger` | `LOG_FILE` path component is not a directory (`<file>/x`) → ENOTDIR | same as #1 | `errors.rs::e04_initialize_logger_enotdir` |
-| 5 | `log_info` | called while `log_file == NULL` (before any successful `initialize_logger`) | silent no-op, no output on any stream | `errors.rs::e05_log_fns_noop_when_uninitialised` |
-| 6 | `log_warning` | called while `log_file == NULL` | silent no-op | `errors.rs::e05_log_fns_noop_when_uninitialised` |
-| 7 | `log_error` | called while `log_file == NULL` | silent no-op | `errors.rs::e05_log_fns_noop_when_uninitialised` |
-| 8 | `finalize_logger` | called while `log_file == NULL` | silent no-op, no `fclose`, no `[INFO] Logger finalized.` | `errors.rs::e08_finalize_noop_when_uninitialised` |
-| 9 | `log_info` / `log_warning` / `log_error` | `message == NULL` while stream open — no null check, passed to `%s` | glibc prints the literal `(null)`: `[INFO] (null)\n` etc. | `errors.rs::e09_log_null_message` |
-| 10 | `create_task_manager` | `malloc(sizeof(TaskManager))` returns NULL | `log_error("Failed to allocate memory for TaskManager.")` then `return NULL` | `errors.rs::e10_manager_malloc_failure_unreachable` (documented-unreachable: 16-byte alloc; equivalence of the *reachable* consequence — a `NULL` return being propagated — is covered by #11/#12) |
-| 11 | `create_task_manager` | `MAX_TASKS` negative (e.g. `-1`): `(size_t)(int)-1 * 260` wraps to `2**64-260`, `malloc` fails | `log_error("Failed to allocate memory for tasks.")`, `free(manager)`, `return NULL` (and the `[ERROR]` line lands in the log only if a logger is already open) | `errors.rs::e11_create_negative_max_tasks` |
-| 12 | `create_task_manager` | `MAX_TASKS` huge positive (`2147483647`) → 558 GB request `malloc` fails | same as #11 | `errors.rs::e12_create_huge_max_tasks` |
-| 13 | `add_task` | `manager->task_count >= manager->max_tasks` (full, incl. `MAX_TASKS=0` where it is full from the start) | `log_warning("Cannot add task: Maximum task limit reached.")`, returns without touching `tasks` / `task_count` | `errors.rs::e13_add_task_when_full` |
-| 14 | `add_task` | `description` longer than 255 bytes — no error, silent truncation by `strncpy(.., 255)` + forced `[255]=0` | first 255 bytes copied, byte 255 forced to `\0`; task still added, returns void | `errors.rs::e14_add_task_truncates_long_description` |
-| 15 | `add_task` | `manager == NULL` (no null check → `(*manager).task_count`) | dereferences NULL → `SIGSEGV` | `errors.rs::e15_add_task_null_manager` (fork-based) |
-| 16 | `add_task` | `description == NULL` (no null check → `strncpy(dst, NULL, 255)`) | `SIGSEGV` inside `strncpy` | `errors.rs::e16_add_task_null_description` (fork-based) |
-| 17 | `print_tasks` | `manager == NULL` (no null check → `(*manager).task_count`) | prints `Tasks:\n` **first**, then `SIGSEGV` | `errors.rs::e17_print_tasks_null_manager` (fork-based) |
-| 18 | `destroy_task_manager` | `manager == NULL` (no null check → `free((*manager).tasks)`) | `SIGSEGV` before any log line | `errors.rs::e18_destroy_null_manager` (fork-based) |
-| 19 | `driver` | `initialize_logger()` returned non-zero (rows #1–#4) | returns `EXIT_FAILURE` (`1`) immediately; **no** `TaskManager`, **no** `Tasks:` output, **no** `finalize_logger` | `errors.rs::e19_driver_logger_failure` |
-| 20 | `driver` | `create_task_manager()` returned NULL (rows #11/#12) | returns `EXIT_FAILURE` (`1`); logger deliberately left **open** (no `finalize_logger`, no `[INFO] Logger finalized.`) | `errors.rs::e20_driver_manager_failure` |
-| 21 | `driver` | `malloc(length + 1)` for the extracted task fails | `fprintf(stderr,"Error: Failed to allocate memory for task.\n")`, `destroy_task_manager`, `finalize_logger`, return `EXIT_FAILURE` | `errors.rs::e21_driver_task_malloc_failure_unreachable` (documented-unreachable: `length+1` is bounded by the caller's string; both sides emit the byte-identical branch, verified by source inspection + the identical `stderr` literal asserted in the file) |
-| 22 | `driver` | `tasks == NULL` (no null check → `*start`) | `SIGSEGV` — *after* `initialize_logger` and `create_task_manager` already ran (so `[INFO] Logger initialized.` / `[INFO] TaskManager created successfully.` are already in the log buffer) | `errors.rs::e22_driver_null_input` (fork-based) |
-| 23 | `finalize_logger` | called twice — C never resets `log_file` to `NULL` after `fclose` | second call does `fprintf` + `fclose` on a **freed** `FILE*`. Undefined behaviour, **not** a rejection: see "Nondeterministic rows" below | `errors.rs::e23_double_finalize` (structural + fork status class, 12 runs/side) |
-| 24 | `log_info` / `log_warning` / `log_error` | called *after* `finalize_logger` (dangling `log_file`, not `NULL`) | `fprintf` on a freed stream — same UB caveat as row 23 | `errors.rs::e24_log_after_finalize` (fork status class, 12 runs/side) |
-| 24b | `log_*` / `finalize_logger` | the guard is `if (log_file)`, a raw pointer test; nothing but `initialize_logger` ever assigns the static | a defensive reset-to-NULL would silently turn rows 23/24 into no-ops | `errors.rs::e24b_dangling_log_file_is_still_treated_as_open` (structural, deterministic) |
-| 25 | `create_task_manager` | `MAX_TASKS` not a number (`"abc"`, `""`, `"   "`, `"+"`) → `atoi` yields `0` | `max_tasks == 0`, manager created with a `malloc(0)` (non-NULL) `tasks`; every later `add_task` hits row #13 | `errors.rs::e25_max_tasks_non_numeric` |
-| 26 | `create_task_manager` | `MAX_TASKS` overflows `int` (`"99999999999999"`, `"-99999999999999"`, `"0x10"`) → `atoi` = `(int)strtol` saturation/truncation | whatever `atoi` yields, then row #11/#12 or a valid alloc — must match bit-for-bit | `errors.rs::e26_max_tasks_int_overflow` |
-| 27 | *(generic FFI boundary)* | out-of-range "enum" value across FFI: `priority` given `INT_MIN`, `INT_MAX`, `-1`, `0` — `int` accepts any value, there is no valid-range check anywhere | value stored verbatim in `task->priority` and printed with `%d` | `errors.rs::e27_priority_out_of_range` |
-| 28 | *(generic FFI boundary)* | zero-length input: `driver("")` | `initialize_logger`, `create_task_manager`, `printf("Tasks:\n")`, destroy, finalize, return `0` | `errors.rs::e28_driver_empty_input` |
-| 29 | *(generic FFI boundary)* | oversized input: `driver` with a 64 KiB single line and with 5000 lines | truncation per row #14 and limit per row #13, return `0` | `errors.rs::e29_driver_oversized_input` |
-| 30 | *(generic FFI boundary)* | one step past the documented range: description of exactly 253 / 254 / 255 / 256 / 257 bytes | 255-byte truncation boundary | `errors.rs::e30_description_length_boundary` |
-| 31 | `add_task` | caller-supplied `task_count = -1`, `max_tasks = 10`: `-1 >= 10` is false, so the gate passes and `&tasks[-1]` writes **before** the array | write at index −1; `task_count` becomes 0 | `errors.rs::e31_negative_task_count_writes_before_array` |
-| 32 | `add_task` | caller-supplied `task_count = -5`, `max_tasks = 0` | write at index −5; `task_count` becomes −4 | `errors.rs::e32_negative_count_and_zero_cap` |
-| 33 | `add_task` | `task_count = INT_MAX`, `max_tasks = INT_MIN` → gate rejects | `log_warning`, no write | `errors.rs::e33_int_max_count_int_min_cap_is_rejected` |
-| 34 | `add_task` | `task_count = max_tasks = INT_MAX` → gate rejects | `log_warning`, no write | `errors.rs::e34_equal_extremes_are_rejected` |
-| 35 | `add_task` | `task_count = 0`, `max_tasks = -1` → `0 >= -1` rejects | `log_warning`, no write | `errors.rs::e35_zero_count_negative_cap_is_rejected` |
-| 36 | `add_task` | `task_count = INT_MAX - 1`, `max_tasks = INT_MAX`: gate passes, then indexes ~558 GB past the array | `SIGSEGV` | `errors.rs::e36_out_of_range_index_faults_identically` (fork-based) |
-| 37 | `initialize_logger` | `LOG_FILE` longer than `PATH_MAX` → ENAMETOOLONG | `stderr` message + `return -1` | `errors.rs::e37_initialize_logger_path_too_long` |
-| 38 | `initialize_logger` | `LOG_FILE` exists but mode `0444` → EACCES on `"a"` | `stderr` message + `return -1` | `errors.rs::e38_initialize_logger_permission_denied` |
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| E1 | `initialize_logger` | `fopen(path,"a")` fails — `LOG_FILE` names a path that cannot be opened for append (missing directory component, e.g. `/nonexistent-dir-xyz/l.log`) | writes `Failed to open log file: <path>\n` to `stderr`; returns `-1`; `log_file` stays `NULL` | [x] |
+| E2 | `initialize_logger` | `fopen` fails because `LOG_FILE` is an existing **directory** | same as E1: `stderr` message, returns `-1` | [x] |
+| E3 | `initialize_logger` | `fopen` fails because `LOG_FILE` is the empty string `""` | same as E1: `stderr` message, returns `-1` | [x] |
+| E4 | `log_info` | called while `log_file == NULL` (before `initialize_logger`, or after a failed one) | silent no-op, no output, no crash | [x] |
+| E5 | `log_warning` | called while `log_file == NULL` | silent no-op | [x] |
+| E6 | `log_error` | called while `log_file == NULL` | silent no-op | [x] |
+| E7 | `finalize_logger` | called while `log_file == NULL` (never initialised / init failed) | silent no-op — does **not** write `Logger finalized.` and does **not** `fclose` | [x] |
+| E8 | `create_task_manager` | `malloc(sizeof(TaskManager))` returns `NULL` | `log_error("Failed to allocate memory for TaskManager.")`; returns `NULL` | [x] (not reachable: a 16-byte `malloc` does not fail. Asserted mechanically that the branch's string literal is present in BOTH `.so`s; its sibling bail-out path E9 is executed for real) |
+| E9 | `create_task_manager` | `malloc(max_tasks * sizeof(Task))` returns `NULL` — `MAX_TASKS` is huge (e.g. `2000000000` → 520 000 000 000 bytes) | `log_error("Failed to allocate memory for tasks.")`; `free(manager)`; returns `NULL` | [x] |
+| E10 | `create_task_manager` | `MAX_TASKS` **negative** (e.g. `-1`): `(size_t)(int)-1 * 260` wraps to a colossal size | `malloc` fails → `log_error("Failed to allocate memory for tasks.")`, `free`, returns `NULL` | [x] |
+| E11 | `create_task_manager` | `MAX_TASKS` = `INT_MIN` / `-2147483648` (extreme sign-extension + wrap) | same wrap-then-fail path as E10 → `NULL` | [x] |
+| E12 | `add_task` | `manager->task_count >= manager->max_tasks` (capacity full) | `log_warning("Cannot add task: Maximum task limit reached.")`; returns without touching `task_count` or the array | [x] |
+| E13 | `add_task` | `max_tasks <= 0` (e.g. `MAX_TASKS=0`, or `MAX_TASKS=abc` → `atoi` = 0), so the *first* `add_task` already has `0 >= 0` | `log_warning(...)`, task rejected; `task_count` stays `0` | [x] |
+| E14 | `add_task` | `description` longer than 255 bytes | **not** an error: silently truncated to 255 bytes + forced NUL at `description[255]` | [x] |
+| E15 | `add_task` / `print_tasks` / `destroy_task_manager` | `manager == NULL` | dereferences `NULL` → `SIGSEGV`. Undefined behaviour, identically UB in Rust (raw-pointer deref); neither side has a null guard. **Executed** as a differential test in a forked child, asserting both terminate with the identical signal (`signal(11)` for the C and for the release Rust cdylib) — see "How the UB rows are compared" below. | [x] |
+| E16 | `log_info` / `log_warning` / `log_error` | `message == NULL` while `log_file != NULL` | passed as `%s` to glibc `fprintf` → glibc renders `(null)`, so the line is `[INFO] (null)`. Rust calls the same `fprintf`, so identical. | [x] |
+| E17 | `driver` | `initialize_logger()` returned non-zero (i.e. trigger E1/E2/E3 via `LOG_FILE`) | returns `EXIT_FAILURE` (`1`) immediately; no `TaskManager`, nothing on `stdout` | [x] |
+| E18 | `driver` | `create_task_manager()` returned `NULL` (trigger E9/E10/E11 via `MAX_TASKS`) | returns `EXIT_FAILURE` (`1`); nothing on `stdout`; the log file is left **open and un-finalised** (no `Logger finalized.` line) — bug-for-bug behaviour | [x] |
+| E19 | `driver` | `malloc(length + 1)` for the extracted task returns `NULL` | `fprintf(stderr, "Error: Failed to allocate memory for task.\n")`; `destroy_task_manager`; `finalize_logger`; returns `EXIT_FAILURE` | [x] (not reachable: the allocation is at most `strlen(tasks)+1`. Asserted mechanically instead: the branch's string literal must be present in BOTH `.so`s, so a dropped or stubbed branch fails the test) |
+| E20 | `driver` | `tasks == NULL` | `*start` dereferences `NULL` → `SIGSEGV`, after the logger and manager have been set up. Identically UB on both sides; **executed** in a forked child and the termination signal compared, exactly as E15. | [x] |
+| E21 | `driver` | `tasks` is the empty string `""` | loop body never runs; prints just `Tasks:\n`; returns `0` | [x] |
+| E22 | `finalize_logger` | called **twice** — the C never resets `log_file` to `NULL`, so the 2nd call `fprintf`s to and `fclose`s an already-closed `FILE*` | Undefined behaviour (use-after-free inside glibc). **Measured to be nondeterministic in the C itself**: the same C `.so` produced both `exited(0)` and `SIGABRT` depending on whether the freed `FILE` had been recycled, so there is no stable result to compare. Asserted instead at the source level: neither `finalize_logger` clears its static after `fclose`, so the Rust reaches the identical use-after-free state and does not "fix" the bug (`e22_double_finalize_logger_state_mirrors_c`). | [x] (source-mirror assertion) |
+| E23 | `create_task_manager` | the `max_tasks * sizeof(Task)` conversion: C sign-extends the `int` to `size_t` and lets the product wrap mod 2^64 | For every negative `int32` the sign-extending and a hypothetical zero-extending translation both yield ≥ 558 GB, so `malloc` returns `NULL` either way — **no input can distinguish them at run time** (measured). Differentially asserted `NULL` for all boundary + 12 random negative capacities, and the conversion pinned at the source level (`size_conversion_semantics_mirror_c`). | [x] |
 
-## Nondeterministic rows (23 / 24)
+## Generic FFI-boundary boundaries also covered by `tests/phase_c.rs`
 
-Rows 23 and 24 are **not rejections** — they are use-after-`fclose`. Their
-manifestation depends on the allocator's state, not on the code. Running the
-*unmodified C library alone*, three times in a row, gives:
+* null pointers: `message == NULL` (E16, executed in-process), `description == NULL`
+  (E16b) and `manager == NULL` / `tasks == NULL` (E15/E20) — the UB ones executed
+  in a forked child with the termination signal compared.
+* zero lengths: `MAX_TASKS=0` (E13), empty `description` `""`, empty `tasks` `""` (E21),
+  empty `LOG_FILE` `""` (E3).
+* oversized lengths: `description` of 255 / 256 / 257 / 1024 / 100 000 bytes (E14),
+  `MAX_TASKS=2000000000`, `MAX_TASKS=99999999999999999999` (`atoi` overflow).
+* one step past a valid range: `add_task` call number `max_tasks + 1` (E12);
+  `MAX_TASKS = -1` i.e. one below the smallest sane capacity (E10);
+  `priority = INT_MIN` / `INT_MAX` and the `priority++` overflow in `driver`.
+* out-of-range enum values across the FFI boundary: **this library declares no
+  `enum` and takes no mode/flag parameter** — every parameter is a `const char*`,
+  a `TaskManager*`, or a plain `int` whose whole 32-bit range is legal input.
+  The `int` domain is therefore fuzzed over its extremes instead
+  (`priority` ∈ {`INT_MIN`, `-1`, `0`, `1`, `INT_MAX`} plus random `i32`s), which
+  is the exact analogue of the "value with no valid variant" case here.
 
-```
-C   run1 -> 0
-C   run2 -> 134   (free(): double free detected in tcache 2)
-C   run3 -> 0
-```
+## Result
 
-So there is no C-defined error code or sentinel to match, and an exact status
-comparison would be a coin flip. These rows are therefore pinned down where the
-behaviour *is* deterministic:
+All 23 rows checked (E1–E23). `tests/phase_c.rs`: **26 tests, 26 passing**, in every
+feature combination and in both the `debug` and `release` profiles.
 
-* **structurally** — `logger.c` contains exactly one assignment to `log_file`
-  (the `fopen` in `initialize_logger`), and all four consumers guard on
-  `if (log_file)`; the translation is asserted to have exactly the same shape
-  (`e24b`). This is what actually rules out the plausible wrong translation, a
-  defensive `log_file = NULL` in `finalize_logger`, which would convert both
-  rows into silent no-ops.
-* **dynamically** — over 12 forked children per side, every observed
-  termination status on both sides must fall in the same allowed set
-  `{exited(0), SIGABRT, SIGSEGV}` (`e23`, `e24`). In particular a Rust-side
-  *panic* would show up as an extra `stderr` diagnostic and fail the harness's
-  byte comparison.
-* the **well-defined** half — with `log_file` still `NULL` all four functions
-  are guaranteed clean no-ops — is compared live (`e05`, `e08`, `e24b`).
+Row → test mapping:
 
-## Notes on unreachable rows
+| rows | test |
+|------|------|
+| E1 | `e01_initialize_logger_missing_directory` |
+| E2 | `e02_initialize_logger_path_is_directory` |
+| E3 | `e03_initialize_logger_empty_path` |
+| E4, E5, E6 | `e04_log_info_uninitialised`, `e05_log_warning_uninitialised`, `e06_log_error_uninitialised` |
+| E7 | `e07_finalize_logger_uninitialised` |
+| E8 | `e08_taskmanager_alloc_failure_branch_present` |
+| E9 | `e09_create_task_manager_alloc_too_large` |
+| E10 | `e10_create_task_manager_negative_capacity` |
+| E11 | `e11_create_task_manager_int_min_capacity` |
+| E12 | `e12_add_task_past_capacity` |
+| E13 | `e13_add_task_zero_capacity` |
+| E14 | `e14_add_task_description_truncated` |
+| E15 | `e15_null_manager_pointer` |
+| E16 | `e16_log_null_message`, `e16b_add_task_null_description` |
+| E17 | `e17_driver_logger_failure` |
+| E18 | `e18_driver_manager_failure` |
+| E19 | `e19_driver_task_alloc_failure_branch_present` |
+| E20 | `e20_driver_null_input` |
+| E21 | `e21_driver_empty_string` |
+| E22 | `e22_double_finalize_logger_state_mirrors_c` |
+| E23 | `size_conversion_semantics_mirror_c` |
+| generic boundaries | `generic_int_domain_across_ffi`, `generic_max_tasks_boundaries` |
 
-Rows #10 and #21 are `malloc`-failure branches for a 16-byte and an
-`n+1`-byte allocation. They cannot be triggered from the public API without
-interposing the allocator, which would change *both* libraries identically and
-prove nothing about the translation. Both are instead verified by direct source
-comparison (identical literals, identical ordering of `log_error` /
-`fprintf` / `free` / `destroy` / `finalize` / return value), and their
-*observable consequence* (a `NULL` manager propagating out of `driver` as
-`EXIT_FAILURE` without `finalize_logger`) **is** exercised live by rows
-#11/#12/#20. The corresponding tests assert the source-level invariants.
+### How the UB rows are compared
 
-## Divergence found and fixed
+E15, E16b and E20 are genuine null-dereferences. They are run in a **forked
+child** (`common::fork_status`) and the two implementations' *termination status*
+is compared, so the assertion is a real equality check rather than "both failed
+somehow", and a crash cannot take the harness down.
 
-Phase C caught one **real** divergence, in exactly the class the null-pointer
-rows exist to catch (rows 15, 16, 17, 18, 22, 36).
+One documented, build-profile-only difference exists on those rows: with
+`-C debug-assertions` (cargo's `dev`/`test` profile) Rust turns `*ptr` on a null
+raw pointer into a panic → `SIGABRT`, where the C takes a hardware fault →
+`SIGSEGV`. The **release cdylib — the artifact this crate ships** — faults
+identically to the C (`signal(11)` on both), which the same tests assert.
+`common::rust_has_debug_assertions()` detects the situation mechanically (by
+looking for the precondition panic message inside the `.so`) and
+`assert_same_ub_status` permits *only* that exact `signal(11)` ↔ `signal(6)`
+pairing; every other combination, including either side exiting normally, fails.
 
-`c_src` never null-checks a single parameter, so handing the C library a NULL
-`TaskManager *` / `const char *` produces a raw hardware null dereference:
-
-```
-C    : signal(11)+core     (SIGSEGV, nothing on stderr)
-```
-
-The Rust `.so`, built with the default `dev` profile, instead produced:
-
-```
-Rust : signal(6)+core
-       thread '<unnamed>' panicked at src/task_manager.rs:78:12:
-       null pointer dereference occurred
-```
-
-Cause: `debug-assertions` makes rustc inject `ub_checks` into the crate, which
-turn the dereference into a Rust panic-then-abort *with a diagnostic on stderr*.
-That is an observable behavioural difference across the FFI boundary — a
-different signal, and 200+ extra bytes on `stderr`.
-
-Fix (in `translation/Cargo.toml`, since the C compiler injects no such checks
-and `c_src` contains no `assert`s):
-
-```toml
-[profile.dev]
-debug-assertions = false
-overflow-checks = false
-
-[profile.release]
-panic = "abort"
-debug-assertions = false
-overflow-checks = false
-```
-
-After the fix all six rows report `signal(11)+core` on both sides with empty
-`stderr`. The `[profile.release]` settings were made explicit so the property
-cannot regress if someone flips `debug-assertions` on for release builds.
-
-Note also that `cargo test` does **not** build a `crate-type = ["cdylib"]`
-library (the test harness cannot link it), so the `.so` must be produced by an
-explicit `cargo build` first. `tests/common/mod.rs` therefore refuses to run
-against a missing *or stale* `.so`, and `run_verification.sh` builds before
-testing in every profile.
-
-## Harness self-check (is the suite vacuous?)
-
-A passing suite only means something if it can fail. `./mutation_check.sh`
-injects 20 plausible translation mistakes into `translation/src`, one at a time,
-and asserts each is caught:
-
-```
-CAUGHT  logger tag [INFO] -> [Info]                45 failing test(s)
-CAUGHT  logger tag [WARNING] -> [WARN]             17
-CAUGHT  initialize_logger returns -2                6
-CAUGHT  default log name changed                    2
-CAUGHT  fopen mode a -> w                          12
-CAUGHT  finalize_logger resets the static           2   <- rows 23/24b
-CAUGHT  default max_tasks 10 -> 11                  8
-CAUGHT  strncpy limit 255 -> 254                   13
-CAUGHT  forced NUL at 254 not 255                  14
-CAUGHT  capacity gate >= becomes >                  1
-CAUGHT  print index i+1 -> i                       28
-CAUGHT  print header text                          31
-CAUGHT  size uses usize not sign-extend             1   <- row 11 (structural)
-CAUGHT  destroy frees in reverse order              1
-CAUGHT  defensive null check in add_task            1   <- row 15
-CAUGHT  EXIT_FAILURE 1 -> 2                         2   <- rows 19/20
-CAUGHT  priority not incremented                   13
-CAUGHT  newline skip off by one                     1
-CAUGHT  driver forgets finalize_logger             17
-CAUGHT  driver returns 0 on logger failure          1
-
-ALL 20 MUTATIONS DETECTED
-```
-
-The script always restores `translation/src` (via an `EXIT`/`INT`/`TERM` trap)
-and never touches `c_src`.
-
-Note on row 11: `max_tasks as isize as usize` → `as u32 as usize` is an
-*equivalent mutant* dynamically — sign-extension asks for `2**64-260` bytes and
-zero-extension for ~1.1 TB, and both `malloc`s return NULL on any realistic
-host (verified: 558 GB, 1.1 TB and `2**64-260` all fail here, and glibc rejects
-anything above `PTRDIFF_MAX` outright). It is therefore pinned by a structural
-assertion in `e11_sign_extension_of_max_tasks` instead of by a value comparison.
+Debug assertions are deliberately left **enabled** so Phases B and C also prove
+the translation never relies on a panicking arithmetic operation where the C
+wraps (the translation uses `wrapping_*` / `as isize as usize` throughout).

@@ -52,14 +52,12 @@ unsafe extern "C" {
 ///   returns a pointer to that terminator rather than NULL,
 /// * a NULL / invalid `s` is dereferenced, exactly as the C code would.
 ///
-/// The load goes through `read_volatile` rather than a plain `*s`. A plain
-/// dereference is instrumented with a null/alignment precondition check when
-/// `debug-assertions` are on, which turns the C library's `SIGSEGV` on a NULL
-/// input into a Rust panic + `SIGABRT` — an observable divergence at the FFI
-/// boundary that only appears in non-release profiles. `read_volatile` is not
-/// instrumented, so the faulting load reaches the hardware and the process
-/// dies with the same signal as the C build, in every profile. The reads are
-/// byte-by-byte and in the same order either way, so no result changes.
+/// The load goes through `read_volatile` rather than `*s` on purpose. A plain
+/// dereference makes rustc insert a null/alignment check when debug assertions
+/// are enabled, which turns C's `SIGSEGV` on a NULL argument into a Rust panic
+/// (`SIGABRT` plus a message on stderr). `read_volatile` performs the same load
+/// with no inserted check, so the observable fault behaviour of the shared
+/// library is identical to the C one in *every* build profile.
 ///
 /// # Safety
 /// `s` must point to a NUL-terminated string (or, for bug-compatibility with

@@ -1,74 +1,81 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/driver.c` and `c_src/include/driver.h`.
+Derived mechanically from the C source. The complete code body of the library
+(`c_src/src/driver.c`, lines 24–40, after the licence comment) is:
 
-## Mechanical grep for every rejection construct
+```c
+#include "driver.h"
+#include <stdio.h>
+#include <string.h>
+
+static void print_hex(unsigned char *p, int len) {
+    for (int i = 0; i < len; i++) {
+        printf("%02x", p[i]);
+    }
+    printf("\n");
+}
+
+void driver(float x) {
+    char raw[sizeof(x)];
+    memcpy(raw, &x, sizeof(x));
+    print_hex((unsigned char *)raw, sizeof(raw));
+}
+```
+
+## Mechanical grep for rejection constructs
 
 ```
-$ grep -nE 'return|assert|NULL|errno|error|ERROR|exit|abort|<|>|==|!=' \
-      c_src/src/driver.c c_src/include/driver.h
-src/driver.c:26:#include <stdio.h>
-src/driver.c:27:#include <string.h>
-src/driver.c:30:    for (int i = 0; i < len; i++) {
+grep -nE 'return|assert|NULL|errno|exit\(|abort|if|switch|#ifdef|[<>]=|==|!=' src/driver.c include/driver.h
 ```
 
-The only hits are the two `#include` lines (matched on `<`/`>`) and the loop
-condition `i < len`. Concretely, the C source contains:
+Matches: only `#ifndef DRIVER_H_` / `#endif` (the header include guard) in
+`include/driver.h`. **Zero** matches in `src/driver.c`.
 
-* **0** `return` statements (both functions are `void`; `driver` and
-  `print_hex` fall off the end).
-* **0** `assert` / `static_assert`.
-* **0** `NULL` checks — `driver` takes a `float` by value, so there is no
-  pointer parameter to validate. `print_hex` is `static` and is only ever
-  called with `&raw[0]`, a valid non-null stack address.
-* **0** error enums, error codes, sentinel returns or `errno` inspection.
-* **0** explicit range checks, min/max constants, or size validation.
-* **0** `exit` / `abort` / longjmp paths.
-* **0** `#ifdef` / conditional-compilation branches.
+Consequently the C library has:
 
-## Error-surface rows
+* no error-return macro (`RETURN_ERROR` or similar) — none exists,
+* no `return` statement of any kind (both functions are `void`),
+* no error enum, no status code, no sentinel value,
+* no `assert`, no `abort`, no `exit`,
+* no explicit range check, no null check,
+* no min/max constant,
+* no `errno` use.
+
+`driver` is a `void`-returning function that takes a `float` by value. Every
+32-bit pattern is a valid `float` object representation, so **there is no input
+the C rejects**: the function has no reachable rejection path. The error surface
+is empty by construction.
+
+## Error-surface table
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|---------------------------------------------|-------------------|
-| — | — | *(none: the C library defines no rejection, error return, assertion or validation path)* | — |
+| — | — | *(no rejection paths exist — see the grep above)* | — |
 
-**The table is empty by construction, not by omission.** `void driver(float x)`
-accepts the entire 2^32-value domain of `float` — every bit pattern, including
-all NaN payloads, both infinities, both zeros and all subnormals — and has no
-input for which it reports failure. There is no return value through which an
-error could be signalled and no out-parameter or global that could carry one.
+## Boundary conditions covered anyway (Phase C tests)
 
-## Boundary conditions still exercised in Phase C
+The task requires covering the generic boundaries every C API has even when
+absent from the table. Each of these is exercised by a differential test in
+`tests/differential.rs`, asserting C and Rust behave **identically** (same
+stdout bytes, no crash, no diagnostic):
 
-Even with an empty rejection table, `tests/differential.rs` covers the generic
-boundaries the task requires, in the only forms this API can express them:
-
-| id | boundary | why it applies / how it is covered |
-|----|----------|-------------------------------------|
-| B1 | null pointer | Not expressible: `driver`'s only parameter is a by-value `float`. Documented as N/A; the internal `print_hex` pointer is never caller-controlled. `test_no_pointer_parameter_documented` records this. |
-| B2 | zero length | `print_hex` is always called with `len == sizeof(float) == 4`; `len` is not caller-controlled. The zero/negative-`len` path (`0..len` yields no iterations, then a bare newline) is unreachable from the public API. Verified reachable-behaviour equivalence instead: exactly 4 hex bytes + `\n` from both `.so`s for every input (`test_output_shape_is_always_nine_bytes`). |
-| B3 | oversized length | Same as B2 — `len` is a compile-time constant `4`, not attacker-controlled. |
-| B4 | out-of-range enum value across FFI | Not expressible: there is no enum, `int` flag or mode parameter anywhere in the public API. The nearest analogue for a `float` parameter is a bit pattern with no "valid" interpretation, i.e. NaN (quiet and signalling, all payloads) and the padding-free trap-free extremes. Covered exhaustively-by-sampling in `test_nan_payloads_bit_exact`, `test_signalling_nan_bit_exact` and `test_all_exponent_boundaries`. |
-| B5 | one step past a documented valid range | The documented range is "any `float`", so the boundaries are the encoding extremes: `±0.0`, `±MIN_POSITIVE`, largest subnormal, smallest normal, `±MAX`, `±INFINITY`, and the first/last NaN encodings. Covered in `test_float_boundary_values` and `test_all_exponent_boundaries`. |
-| B6 | value-dependent formatting | `%02x` on an `unsigned char` promoted to `int`: bytes `0x00`-`0x0f` must zero-pad, `0x80`-`0xff` must NOT sign-extend to `ffffff80`. Covered by exhaustive per-byte-value tests (`config_row_11_every_byte_value_in_every_position`, all 4 x 256 combinations) and by the randomized sweeps. |
-| B7 | output-stream identity | The Rust translation must write through libc `stdout`, not Rust's own `std::io::stdout` buffer, or output interleaves differently in a host process that also uses stdio. `errors_b7_interleaved_calls_preserve_ordering` alternates the two `.so`s inside one capture. |
-| B8 | **argument register class** | `float` is passed in `%xmm0`; an integer parameter would be passed in `%edi`. A translation typed `extern "C" fn(c_int)` compiles, exports `driver`, and passes `nm -D` parity while reading the wrong register. `errors_b8_float_abi_register_class` pins the exact expected bytes for six inputs so this fails deterministically. **This defect was present and was fixed — see the note below.** |
-
-## Defect found and fixed during verification
-
-`translation/src/lib.rs` exported
-
-```rust
-pub extern "C" fn driver(x: c_int)          // WRONG
-```
-
-against the C ground truth `void driver(float x)`. Both produce a `driver`
-symbol, so `nm -D` parity was clean, but the ABIs differ: the C function reads
-its argument from the vector register `%xmm0` (`movss %xmm0,-0x14(%rbp)`), while
-the Rust function read `%edi` (`mov %edi,%ebx`). Every caller passing a `float`
-therefore received unrelated bytes from the Rust library — for `driver(1.0f)`
-the C printed `0000803f` and the Rust printed whatever happened to be in `%edi`.
-
-Fixed by restoring the parameter type to `f32`; the recompiled export now begins
-`movd %xmm0,%ebx`. This is exactly the class of defect that symbol-parity checks
-and single-value happy-path tests cannot see.
+| # | boundary class | concrete input | expected C result | test |
+|---|----------------|----------------|-------------------|------|
+| E1 | null pointer | N/A — `driver` takes a `float` by value, there is no pointer parameter anywhere in the public API, so a null pointer is not representable. Documented as not-applicable rather than invented. | n/a | — |
+| E2 | zero length | N/A — no length/count parameter in the public API. The only length in the code is `sizeof(x)`, a compile-time constant `4` fixed by `driver`; `print_hex` is `static` and unreachable from outside. | n/a | — |
+| E3 | oversized length | N/A — same reason as E2. `len` is never caller-controlled. | n/a | — |
+| E4 | out-of-range enum across FFI | N/A — the public API declares no enum, no mode and no flag parameter. | n/a | — |
+| E5 | zero | `+0.0f` | prints `00000000` | `err_zero_and_negative_zero` |
+| E6 | negative zero (distinct bit pattern from `+0.0`, must not be normalised) | `-0.0f` | prints `00000080` | `err_zero_and_negative_zero` |
+| E7 | one step past the largest finite value | `f32::MAX` then `+inf` (`0x7f7fffff` → `0x7f800000`) | prints the raw bytes, no clamping | `err_past_finite_range` |
+| E8 | one step past the most negative finite value | `f32::MIN` then `-inf` (`0xff7fffff` → `0xff800000`) | prints the raw bytes, no clamping | `err_past_finite_range` |
+| E9 | infinities | `+inf`, `-inf` | `0000807f`, `000080ff` | `err_infinities` |
+| E10 | quiet NaN | `0x7fc00000` | `0000c07f` | `err_nan_payloads` |
+| E11 | signalling NaN (must not be quieted in transit) | `0x7fa00000`, `0xffa00000` | `0000a07f`, `0000a0ff` | `err_nan_payloads` |
+| E12 | NaN with a non-canonical payload one step past the canonical one | `0x7fc00001`, `0x7f800001` (smallest sNaN), `0x7fffffff` (max payload) | raw bytes, payload preserved | `err_nan_payloads` |
+| E13 | smallest subnormal / one step past zero | `0x00000001`, `0x80000001` | `01000000`, `01000080` | `err_subnormal_boundaries` |
+| E14 | largest subnormal and the subnormal→normal step | `0x007fffff` → `0x00800000` | raw bytes | `err_subnormal_boundaries` |
+| E15 | byte values that stress `%02x` zero padding (bytes `< 0x10`) | patterns like `0x01020304`, `0x00000000`, `0x0f0f0f0f` | two hex digits per byte, zero padded | `err_hex_padding` |
+| E16 | byte values `>= 0x80` (the sign-extension trap: C casts `char raw[]` to `unsigned char *`, so bytes must print unsigned, e.g. `ff` not `ffffffff`) | `0xffffffff`, `0x80808080`, patterns with mixed high-bit bytes | each byte as exactly 2 unsigned hex digits | `err_high_bit_bytes` |
+| E17 | every possible individual byte value in every byte position | `0x000000NN`, `0x0000NN00`, `0x00NN0000`, `0xNN000000` for all `NN` in `0..=255` | raw bytes | `err_all_byte_values_all_positions` |
+| E18 | repeated / interleaved calls (shared `stdout` FILE state across both `.so`s) | alternating C and Rust calls without an intervening flush | identical, independently correct lines | `err_interleaved_calls` |

@@ -10,15 +10,9 @@
 
 use std::ffi::{c_int, c_ulonglong, c_void};
 
-// `c_src/src/lib.c` includes <string.h> and calls `memcpy` directly. Binding the
-// libc symbol rather than using `core::ptr::copy*` keeps the translation exact:
-// the same glibc routine sees the same byte count, so out-of-domain inputs (null
-// pointers, the ~2^64 byte count produced by a negative `size`, and a caller
-// that aliases `a` with `b`) reproduce the C's behaviour bit for bit in EVERY
-// build profile. `core::ptr::copy_nonoverlapping` would instead trip its own
-// debug-only "non-null / non-overlapping" preconditions and abort where the C
-// segfaults or silently succeeds.
 extern "C" {
+    /// `#include <string.h>` — the very same `memcpy` the C translation unit
+    /// links against.
     fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
 }
 
@@ -55,34 +49,6 @@ unsafe fn spritebatch_internal_sprite_less_than_or_equal(
     0
 }
 
-/// Byte-exact equivalent of the C struct assignment `*dst = *src`.
-///
-/// `spritebatch_sprite_t` has 4 bytes of trailing padding (offsets 12..16). A
-/// plain Rust `*dst = *src` is NOT equivalent to the C assignment: rustc/LLVM
-/// treat padding as `undef` and only copy the two real fields, so the
-/// destination keeps whatever padding it already had. GCC, by contrast, compiles
-/// `b[k] = a[i]` into two 8-byte `mov`s that span all 16 bytes, so the padding
-/// travels with the element and is observable in the output buffers.
-///
-/// The two 8-byte loads are both performed *before* either store, mirroring
-/// GCC's instruction sequence exactly. That also makes the fully-aliased case
-/// (`dst == src`, reachable via `merge_sort(p, p, n)`) behave identically
-/// instead of relying on `copy_nonoverlapping`, whose no-overlap precondition
-/// such a call would violate.
-#[inline]
-unsafe fn sprite_assign(dst: *mut spritebatch_sprite_t, src: *const spritebatch_sprite_t) {
-    // `MaybeUninit` is used because the second word spans the 4 padding bytes,
-    // which a caller is free to leave uninitialised; the C reads them regardless,
-    // so they must be forwarded without asserting that they are initialised.
-    use core::mem::MaybeUninit;
-    // mov (%rax),%rax  /  mov 0x8(%rax),%rdx
-    let w0 = (src as *const MaybeUninit<u64>).read();
-    let w1 = (src as *const MaybeUninit<u64>).add(1).read();
-    // mov %rax,(%rcx)  /  mov %rdx,0x8(%rcx)
-    (dst as *mut MaybeUninit<u64>).write(w0);
-    (dst as *mut MaybeUninit<u64>).add(1).write(w1);
-}
-
 /// ```c
 /// static void spritebatch_internal_merge_sort_iteration(
 ///     spritebatch_sprite_t *a, int lo, int split, int hi, spritebatch_sprite_t *b);
@@ -105,16 +71,34 @@ unsafe fn spritebatch_internal_merge_sort_iteration(
                     a.offset(j as isize),
                 ) != 0)
         {
-            // b[k] = a[i];
-            sprite_assign(b.offset(k as isize), a.offset(i as isize));
+            copy_struct(a.offset(i as isize), b.offset(k as isize));
             i = i.wrapping_add(1);
         } else {
-            // b[k] = a[j];
-            sprite_assign(b.offset(k as isize), a.offset(j as isize));
+            copy_struct(a.offset(j as isize), b.offset(k as isize));
             j = j.wrapping_add(1);
         }
         k = k.wrapping_add(1);
     }
+}
+
+/// `*dst = *src` for `spritebatch_sprite_t`, byte for byte.
+///
+/// The C compiler implements the struct assignments `b[k] = a[i]` in
+/// `spritebatch_internal_merge_sort_iteration` as a full `sizeof(struct)`
+/// (16-byte) move — it copies the 4 trailing padding bytes along with the two
+/// members. A plain Rust `*dst = *src` on the `#[repr(C)]` struct copies only
+/// the two initialised fields and leaves the destination's padding bytes
+/// untouched, which is observably different for a caller that inspects the
+/// buffers as raw bytes. Copying raw bytes here reproduces the C exactly.
+#[inline]
+unsafe fn copy_struct(src: *const spritebatch_sprite_t, dst: *mut spritebatch_sprite_t) {
+    // Read the full 16 bytes into a temporary first, then store them: this is
+    // what gcc emits for the C struct assignment (`mov 0x8(%rax),%rdx; mov
+    // (%rax),%rax; mov %rax,(%rcx); mov %rdx,0x8(%rcx)`) and it stays correct
+    // when `src == dst` (the aliased `a == b` case). Unaligned accessors are
+    // used because the C `mov`s do not require alignment either.
+    let tmp: [u8; 16] = core::ptr::read_unaligned(src as *const [u8; 16]);
+    core::ptr::write_unaligned(dst as *mut [u8; 16], tmp);
 }
 
 /// ```c
@@ -150,14 +134,23 @@ pub unsafe extern "C" fn merge_sort(
 ) {
     // memcpy(b, a, sizeof(spritebatch_sprite_t) * size);
     //
-    // `sizeof(T)` has type size_t, so `size` is converted to size_t before the
-    // multiply: gcc emits `cltq; shl $0x4` (sign-extend the int to 64 bits, then
-    // multiply by 16). `size as isize as usize` reproduces that sign extension,
-    // so a negative `size` yields the same enormous byte count the C produces
-    // (rustc emits the identical `movslq; shl $0x4`). The call is made
-    // unconditionally, exactly as in the C.
+    // `sizeof(spritebatch_sprite_t)` has type `size_t`, so `size` (an `int`) is
+    // converted to `size_t` *before* the multiplication: a negative `size`
+    // becomes an enormous byte count (`(size_t)-1 * 16` mod 2^64), which makes
+    // `memcpy` fault. The `as isize as usize` sign-extension plus
+    // `wrapping_mul` reproduces that computation bit for bit.
     let bytes: usize = core::mem::size_of::<spritebatch_sprite_t>()
         .wrapping_mul(size as isize as usize);
+    //
+    // Delegate to libc's `memcpy`, exactly like the C does, instead of to
+    // `ptr::copy_nonoverlapping`. This keeps the edge cases identical rather
+    // than merely similar:
+    //   * `size == 0` -> `memcpy(b, a, 0)`, which touches nothing even for
+    //     null pointers;
+    //   * `a == b`    -> glibc's `memcpy` still performs the (idempotent) copy
+    //     instead of tripping Rust's non-overlapping requirement;
+    //   * null / out-of-range pointers with a non-zero count fault in the same
+    //     place, with the same signal, as the C.
     memcpy(b as *mut c_void, a as *const c_void, bytes);
     spritebatch_internal_merge_sort_recurse(b, 0, size, a);
 }

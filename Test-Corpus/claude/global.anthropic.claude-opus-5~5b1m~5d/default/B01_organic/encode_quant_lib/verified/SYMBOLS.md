@@ -1,84 +1,71 @@
-# SYMBOLS.md — Phase A symbol map
+# SYMBOLS.md — Phase A symbol surface
 
-Mechanically derived from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-## Build commands used
+## Build commands
 
 ```
-# C
 cd c_src && mkdir -p build && cd build && \
   cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-s8YUb3.so   (name comes from the parent dir name,
-#    see cmake_path(GET parent FILENAME project_name) in CMakeLists.txt)
+# -> c_src/build/libharvest-work-jLNDdo.so   (name derives from parent dir)
 
-# Rust
 cd translation && cargo build --release
-# -> translation/target/release/libencode_quant_lib.so  ([lib] name = "encode_quant_lib",
-#    crate-type = ["cdylib"])
+# -> translation/target/release/libencode_quant_lib.so
 ```
 
-## C source inventory (completeness check)
+## C `.so` exported symbols (`nm -D --defined-only`)
 
-`c_src/CMakeLists.txt` compiles exactly one translation unit:
+| addr | type | symbol |
+|------|------|--------|
+| `00000000000010f9` | `T` | `encode_quant` |
 
-| C source file | translated in Rust? | Rust location |
-|---|---|---|
-| `c_src/src/lib.c` | yes | `translation/src/lib.rs` |
+Total: **1** defined global text symbol.
 
-Public header `c_src/include/lib.h` declares exactly one prototype (the whole
-file is 1 line, 78 bytes):
+## Rust `.so` exported symbols (`nm -D --defined-only`)
 
-```c
-int encode_quant(int uni, int step, int pred, int tgt, int tgt2, int lsbit);
-```
+| addr | type | symbol |
+|------|------|--------|
+| `00000000000116d0` | `T` | `encode_quant` |
 
-There are **no** other `.c` / `.h` files, no macro-generated symbol families,
-no `#ifdef`-gated alternate entry points (`grep -cE '^#if' c_src/src/lib.c` = 0),
-and no `enum`/`struct`/`typedef` declarations in either file. So no C module was
-skipped by the translation step.
+Total: **1** defined global text symbol.
 
-## Exported (defined) dynamic symbols
+## Parity table
 
-`nm -D --defined-only <so> | awk '$2 ~ /^[TWDBRi]$/ {print $3}' | sort`
+| # | C symbol | present in Rust `.so`? | how exported from Rust | status |
+|---|----------|------------------------|------------------------|--------|
+| 1 | `encode_quant` | YES | `#[unsafe(no_mangle)] pub extern "C" fn encode_quant` in `src/lib.rs` | OK |
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|-----------|-------|
-| 1 | `encode_quant` | `T` (present) | `T` (present) | `#[unsafe(no_mangle)] pub extern "C" fn` in `src/lib.rs` |
+## Missing symbols
 
-**Total C exported symbols: 1. Total present in Rust: 1.**
-
-## Symbol diff
+**None.** The symbol diff is empty in both directions:
 
 ```
-$ comm -23 c_syms.txt r_syms.txt      # exported by C but missing from Rust
-(empty)
+diff <(nm -D --defined-only c_src/build/*.so        | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libencode_quant_lib.so \
+                                                    | awk '{print $3}' | sort)
+# (no output)
 ```
 
-**0 symbols missing from the Rust `.so`.** No `#[no_mangle]` wrapper had to be
-added and no C module had to be translated — the single C translation unit is
-fully covered. Nothing is stubbed or `unimplemented!()`.
+No implementation was absent, so no additional C module needed translating and
+no `#[no_mangle]` wrapper needed adding. No stubs exist in the Rust crate
+(`grep -rn 'unimplemented!\|todo!\|panic!' src/` returns nothing).
 
-## Undefined symbols (imports)
+## Undefined (imported) symbols
 
-| library | undefined symbols |
-|---|---|
-| C `.so` | `_ITM_deregisterTMCloneTable` (w), `_ITM_registerTMCloneTable` (w), `__cxa_finalize@GLIBC_2.2.5` (w), `__gmon_start__` (w) |
-| Rust `.so` | the same 4 weak toolchain symbols, plus only libc/`libgcc` unwinder imports pulled in by `std`: `__errno_location`, `__tls_get_addr`, `__cxa_thread_atexit_impl`, `abort`, `bcmp`, `calloc`, `close`, `dl_iterate_phdr`, `free`, `fstat64`, `getcwd`, `getenv`, `gettid`, `lseek64`, `malloc`, `memcpy`, `memmove`, `memset`, `mmap64`, `munmap`, `open64`, `posix_memalign`, `pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, `read`, `readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`, `syscall`, `write`, `writev`, `_Unwind_*@GCC_*` |
-
-**0 missing/undefined non-libc symbols in the Rust `.so`.** Every `U`/`w` entry
-above resolves against `libc.so.6` / `libgcc_s.so.1` at load time; `libloading`
-opens the object successfully in the Phase B/C/D tests, which is the runtime
-proof that nothing is unresolved.
+The C `.so` imports nothing but the usual glibc/ELF boilerplate
+(`__cxa_finalize`, `_ITM_*`, `__gmon_start__`). The Rust `.so` imports only
+libc/`std` runtime symbols. **0 missing/undefined non-libc symbols in the Rust
+`.so`** — the crate has no external dependency edges of its own; `encode_quant`
+is leaf, pure, integer-only code.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only build
-configuration is the default (empty) feature set. `--no-default-features` and
-the default build are therefore the same code. Verified by
-`tests/phase_d_symbols.rs::features_declared_in_cargo_toml` and by
-`scripts/check_all_features.sh`.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only build
+configuration is the default one. Enumerated mechanically:
 
-## Automated re-check
+```
+$ grep -n '^\[features\]' translation/Cargo.toml   # -> no match
+```
 
-`tests/phase_d_symbols.rs` re-runs this whole comparison at test time (shelling
-out to `nm -D`) so the parity claim above cannot silently rot.
+Therefore "every feature combination" == `{default}`, and the `--no-default-features`
+build is byte-identical in surface to the default build (verified in Phase D).

@@ -1,93 +1,136 @@
-# CONFIGS.md — Phase A configuration-surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-The mirror of `ERRORS.md`: every **valid** configuration the C code treats
-differently.
+Derived mechanically from `c_src/include/lib.h` (the complete public header) and
+`c_src/src/lib.c`.
 
-## Axis enumeration (derived from the C source, not guessed)
+## Axes the C actually branches on
 
-### Axis 1 — runtime options / modes / flags
+### Runtime options / modes / flags
 
-**None.** `c_src/include/lib.h` exposes a single function with a single scalar
-argument and no context struct, no setter, no global mode variable, no
-environment lookup and no `#ifdef`. There is no state to configure, so this axis
-contributes exactly one (empty) setting to every row.
+```
+$ grep -nE '#if|#ifdef|#ifndef|#else' c_src/src/lib.c   -> (no matches)
+$ grep -nE '\bif\b|\bswitch\b|\?'      c_src/src/lib.c   -> (no matches)
+```
 
-### Axis 2 — public entry points
+**There are none.** The C has no options, no flags, no modes, no global state,
+no `#ifdef` variants, and no branches whatsoever. `half2float` is a pure,
+stateless, straight-line function: three table lookups, one wrapping add, one
+type-pun.
 
-**One, and it is also the lowest level one.** There is no convenience wrapper
-layered over a lower-level core to skip; `half2float` *is* the primitive:
+### Public entry points (complete set)
 
-| entry point | signature | notes |
-|-------------|-----------|-------|
-| `half2float` | `float half2float(uint16_t h)` | the only export; called directly via the `.so` in all tests |
+`c_src/include/lib.h` declares exactly one function, and it is simultaneously
+the highest- and lowest-level entry point — there is no wrapper/implementation
+split to test separately:
 
-### Axis 3 — input shapes the code actually special-cases
+| entry point | signature |
+|-------------|-----------|
+| `half2float` | `float half2float(uint16_t h)` |
 
-The C has no `if`/`switch`; its branching is *data-driven* through the two
-64-entry side tables indexed by `n = h >> 10`. Reading the literal contents of
-`m__offset` and `m__exponent` gives the regions the code genuinely distinguishes:
+No binary/driver executable is built (`c_src/CMakeLists.txt` declares only
+`add_library(... SHARED src/lib.c)`), so the "compare binary stdout" gate is
+not applicable.
 
-| `n = h >> 10` | `m__offset[n]` | `m__exponent[n]` | meaning of the region |
-|---------------|----------------|-------------------|-----------------------|
-| `0` | `0x0000` | `0x00000000` | positive zero / positive subnormal (mantissa table used at low half) |
-| `1 .. 30` | `0x0400` | `0x00800000 * n` | positive normal |
-| `31` | `0x0400` | `0x47800000` | positive infinity / positive NaN (the one "odd" exponent entry) |
-| `32` | `0x0000` | `0x80000000` | negative zero / negative subnormal (offset drops back to 0) |
-| `33 .. 62` | `0x0400` | `0x80000000 + 0x00800000*(n-32)` | negative normal |
-| `63` | `0x0400` | `0xC7800000` | negative infinity / negative NaN |
+### Input shapes the code distinguishes
 
-Crossed with the mantissa field `h & 0x3ff` (boundary values `0x000`, `0x001`,
-`0x200`, `0x3FF`, plus randomized values), and with the two distinct `m__offset`
-values that select the low vs. high half of `m__mantissa`.
+The single input `uint16_t h` is decomposed by the code into exactly two fields,
+which select the data-dependent path:
+
+- `n = h >> 10` — the 6-bit high field, index into `m__offset[64]` and
+  `m__exponent[64]`. **64 distinct values.**
+- `h & 0x3ff` — the 10-bit low field, offset into `m__mantissa[2048]`.
+  **1024 distinct values.**
+
+The interesting interaction is `m__offset[n]`, which is `0x0000` for exactly
+`n == 0` and `n == 32` (the subnormal/zero rows) and `0x0400` for all other
+`n`. That splits the mantissa table into the two halves at index 0..1023 and
+1024..2047, so the *combination* of `n` and `h & 0x3ff` is what selects a
+mantissa entry — this is the cross-product that must be covered.
 
 ## Configuration-surface table
 
-One row per meaningful combination of the axes above. Every row is driven
-through the `.so` export of **both** C and Rust and compared **bit-for-bit**
-(`f32::to_bits`, never `==`, so NaN payloads and signed zero are distinguished).
-Every row uses many randomized inputs from a fixed seed in addition to its
-boundary values.
+The full cross-product of the two axes is `64 × 1024 == 65536`, i.e. the entire
+input domain. Rather than sample it, the test suite covers it **exhaustively**,
+so every row below is verified over *all* of its members, not a random subset.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `half2float` | `n = 0`, mantissa `0x000` → exact `+0.0` (must keep sign bit clear) | [x] |
-| 2 | `half2float` | `n = 0`, mantissa `0x001` → smallest positive subnormal | [x] |
-| 3 | `half2float` | `n = 0`, mantissa `0x3FF` → largest positive subnormal | [x] |
-| 4 | `half2float` | `n = 0`, mantissa randomized over `0x000..0x3FF` → positive subnormal region, low half of `m__mantissa` (offset `0x0000`) | [x] |
-| 5 | `half2float` | `n = 1` (smallest positive normal exponent), mantissa boundaries + randomized | [x] |
-| 6 | `half2float` | `n ∈ 2..=29` randomized, mantissa randomized → interior positive normal, high half of `m__mantissa` (offset `0x0400`) | [x] |
-| 7 | `half2float` | `n = 30` (largest finite positive exponent), mantissa `0x3FF` → largest finite positive half (`0x7BFF`) | [x] |
-| 8 | `half2float` | `n = 31`, mantissa `0x000` → `+Inf` (`0x7C00`) | [x] |
-| 9 | `half2float` | `n = 31`, mantissa `0x001` → positive signalling-NaN pattern (`0x7C01`); payload bits must survive the register return unchanged | [x] |
-| 10 | `half2float` | `n = 31`, mantissa `0x200` → positive quiet NaN (`0x7E00`) | [x] |
-| 11 | `half2float` | `n = 31`, mantissa `0x3FF` → `0x7FFF`, top of the positive NaN range | [x] |
-| 12 | `half2float` | `n = 31`, mantissa randomized → whole positive NaN/Inf region | [x] |
-| 13 | `half2float` | `n = 32`, mantissa `0x000` → exact `-0.0` (sign bit set, must not compare equal to `+0.0`) | [x] |
-| 14 | `half2float` | `n = 32`, mantissa `0x001` → smallest negative subnormal | [x] |
-| 15 | `half2float` | `n = 32`, mantissa `0x3FF` → largest negative subnormal | [x] |
-| 16 | `half2float` | `n = 32`, mantissa randomized → negative subnormal region; verifies `m__offset` drops back to `0x0000` at `n = 32` (low half of `m__mantissa` reused with a negative exponent) | [x] |
-| 17 | `half2float` | `n = 33` (smallest negative normal exponent), mantissa boundaries + randomized | [x] |
-| 18 | `half2float` | `n ∈ 34..=61` randomized, mantissa randomized → interior negative normal | [x] |
-| 19 | `half2float` | `n = 62` (largest finite negative exponent), mantissa `0x3FF` → largest-magnitude finite negative half (`0xFBFF`) | [x] |
-| 20 | `half2float` | `n = 63`, mantissa `0x000` → `-Inf` (`0xFC00`) | [x] |
-| 21 | `half2float` | `n = 63`, mantissa `0x001` → negative signalling-NaN pattern (`0xFC01`) | [x] |
-| 22 | `half2float` | `n = 63`, mantissa `0x3FF` → `0xFFFF`, the maximum input value | [x] |
-| 23 | `half2float` | `n = 63`, mantissa randomized → whole negative NaN/Inf region; also the region where `m__mantissa + m__exponent` comes closest to `u32` overflow, so it pins down the wrapping-add semantics | [x] |
-| 24 | `half2float` | both `m__offset` values exercised back-to-back in one run (`n = 0` then `n = 1`, `n = 32` then `n = 33`) to catch a mis-shared index base | [x] |
-| 25 | `half2float` | fully randomized `h` over the whole `0x0000..=0xFFFF` domain, fixed seed, many iterations (unconstrained cross-product of both axes) | [x] |
-| 26 | `half2float` | **exhaustive**: all 65 536 inputs, bit-for-bit — the complete cross-product of Axis 2 × Axis 3, which subsumes rows 1–25 | [x] |
-| 27 | `half2float` | repeated / interleaved calls in a single loaded-library session (both `.so`s stay loaded), confirming the function is stateless and order-independent in both implementations | [x] |
+| 1 | `half2float` | `n == 0` (`offset 0x0000`, positive zero/subnormal row), all 1024 low-field values `h = 0x0000..0x03FF` | [x] |
+| 2 | `half2float` | `n == 32` (`offset 0x0000`, negative zero/subnormal row), all 1024 low-field values `h = 0x8000..0x83FF` | [x] |
+| 3 | `half2float` | `n` in `1..=30` (positive normals, `offset 0x0400`), all 1024 low-field values each — 30 × 1024 pairs | [x] |
+| 4 | `half2float` | `n in 33..=62` (negative normals, `offset 0x0400`), all 1024 low-field values each — 30 × 1024 pairs | [x] |
+| 5 | `half2float` | `n == 31` (positive Inf/NaN row, exponent `0x47800000`), all 1024 low-field values `h = 0x7C00..0x7FFF` | [x] |
+| 6 | `half2float` | `n == 63` (negative Inf/NaN row, exponent `0xC7800000`), all 1024 low-field values `h = 0xFC00..0xFFFF` | [x] |
+| 7 | `half2float` | low field `== 0` (exact powers of two / zero / Inf) across all 64 `n` values | [x] |
+| 8 | `half2float` | low field `== 0x3FF` (max mantissa) across all 64 `n` values | [x] |
+| 9 | `half2float` | boundary singletons: `0x0000`, `0x0001`, `0x03FF`, `0x0400`, `0x7BFF`, `0x7C00`, `0x7C01`, `0x7FFF`, `0x8000`, `0xFC00`, `0xFFFF` | [x] |
+| 10 | `half2float` | wrapping-add path: every `h` where `m__mantissa[i] + m__exponent[n]` carries into/past bit 31 (all `n >= 32`, plus `n == 31`) | [x] |
+| 11 | `half2float` | randomized property sweep, fixed seed (deterministic LCG), 200 000 draws over the full domain | [x] |
+| 12 | `half2float` | **exhaustive**: all 65536 inputs `0x0000..=0xFFFF`, bitwise-compared | [x] |
+| 13 | `half2float` | repeated / interleaved calls (statelessness & purity: same input after other inputs yields same output in both libs) | [x] |
+| 14 | `half2float` | NaN payload preservation: all NaN-producing inputs compared by raw `to_bits()`, not `==` | [x] |
+
+Rows 1–11, 13 and 14 are strict subsets or restatements of row 12, and are
+tested explicitly anyway so a divergence is reported against the specific
+configuration that failed rather than as one opaque exhaustive failure.
+
+## Comparison method
+
+All comparisons are on the **raw 32-bit pattern** (`f32::to_bits`), never on
+`==`, so that NaN results and `-0.0` vs `+0.0` are distinguished
+byte-for-byte. Both sides are called only through `libloading` symbols
+resolved from the two `.so` files.
+
+## Additional axis found during verification: build profile
+
+The crate has no Cargo features, but it *does* have a second real configuration
+axis that changes generated code semantics:
+
+| profile | `overflow-checks` | why it matters |
+|---------|-------------------|----------------|
+| `release` | off (and `panic = "abort"`) | matches C's silent unsigned wrap |
+| `debug`   | **on** | a plain `+` instead of `wrapping_add` would **panic** here |
+
+The C computes `m__mantissa[i] + m__exponent[n]` as a `uint32_t` addition that
+genuinely overflows for every `n >= 32` (those exponent entries have bit 31
+set). A translation using `+` would pass in release and abort in debug. The Rust
+correctly uses `wrapping_add`, and both artifacts are verified separately:
+`HALF2FLOAT_PROFILE=debug|release` selects which cdylib is `dlopen`ed, and all
+65536 inputs pass under **both** with no overflow panic.
+
+## Harness non-vacuity (mutation testing)
+
+To prove the differential harness can actually detect divergence rather than
+passing trivially, five mutants were injected into the Rust and each was caught:
+
+| mutant | result |
+|--------|--------|
+| one mantissa entry `0x37000000` → `0x37000001` | 5 tests FAILED ✅ caught |
+| drop the `m__offset[n]` term from the index | 14 tests FAILED ✅ caught |
+| `n = h >> 11` instead of `h >> 10` | 16 tests FAILED ✅ caught |
+| low-field mask `0x3ff` → `0x1ff` | 17 tests FAILED ✅ caught |
+| `wrapping_add` → `wrapping_sub` | 17 tests FAILED ✅ caught |
+
+`src/lib.rs` was restored afterwards and re-verified table-for-table against
+`c_src/src/lib.c` (2048/64/64 entries, zero differences).
+
+Two further guards keep specific tests from being vacuous: `signed_zero_bit_exact`
+asserts that `+0.0 == -0.0` under float equality (so only a bitwise comparison
+is meaningful), and `row14_nan_payloads_bit_exact` asserts `NaN != NaN` and fails
+if it never actually observes a NaN result.
 
 ## Feature combinations
 
-`Cargo.toml` has no `[features]` table, so the complete set of build
-configurations is:
+```
+$ grep -A5 '^\[features\]' translation/Cargo.toml   -> (no [features] section)
+```
 
-| # | cargo invocation | [ ] |
-|---|------------------|-----|
-| F1 | `cargo test` (default features — the empty set) | [x] |
-| F2 | `cargo test --no-default-features` | [x] |
-| F3 | `cargo test --all-features` | [x] |
+The crate declares **no** Cargo features and no optional dependencies, so there
+is exactly one feature combination (the default, which is also
+`--no-default-features`). Both are exercised by `run_all.sh`.
 
-All three are identical builds here, but all three are run so the claim is
-measured rather than assumed.
+## Completeness
+
+- [x] Every row passes, verified over the exhaustive input domain.
+- [x] No binary/driver is built, so no stdout comparison is required.
+- [x] Only one feature combination exists; it is covered.

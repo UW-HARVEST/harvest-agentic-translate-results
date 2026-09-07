@@ -1,136 +1,95 @@
-# Verification report — C ↔ Rust differential testing
+# Verification report
 
-The C in `c_src/` is the ground truth. Everything below was produced by loading
-**both** shared objects with `libloading` and calling them only through their
-exported C symbols (`dlsym`), so the `#[unsafe(no_mangle)] extern "C"` wrappers
-are part of what is tested. No Rust function is ever called directly.
+`bash translation/run_all.sh` → **ALL CHECKS PASSED**
 
-```
-c_src/build/libharvest-work-61Wh7J.so     <- gcc 11.5, -fPIC, no -O (cmake default)
-translation/target/release/libmaxnmin_lib.so
-```
+Everything below is driven through `libloading`: both the C `.so`
+(`c_src/build/libharvest-work-YYxvDp.so`) and the Rust cdylib
+(`translation/target/{release,debug}/libmaxnmin_lib.so`) are `dlopen`ed and
+called through their exported symbols. No Rust function is ever called directly,
+so the `#[unsafe(no_mangle)] extern "C"` wrappers are themselves under test.
 
-## How to reproduce
-
-```sh
-# 1. the C shared library
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-
-# 2. the Rust cdylib + the whole differential suite
-cd translation
-cargo build --offline --release
-cargo test  --offline --release          # 85 tests
-
-# 3. the phase-specific gates
-./check_symbols.sh      # Phase D: nm -D diff must be empty
-./check_features.sh     # Phase D: whole suite under every feature combination
-./check_coverage.sh     # Phase B/C completeness: gcov of the C driven by the suite
-./mutation_check.sh     # sanity: the suite must FAIL when the Rust is broken
-```
-
-Both `.so` paths can be overridden with `HARVEST_C_SO` / `HARVEST_RUST_SO`.
-
-## Test inventory (85 tests)
-
-| file | tests | what |
-|---|---|---|
-| `tests/common/mod.rs` | — | harness: dual `dlopen`, `Node` mirror, fixed-seed RNG, bit-exact comparators |
-| `tests/smoke.rs` | 3 | harness self-check, pristine-state isolation, `Node` layout vs gcc |
-| `tests/valid_paths.rs` | 41 | Phase B — one test per `CONFIGS.md` row (C1..C41) |
-| `tests/error_paths.rs` | 36 | Phase C — one test per `ERRORS.md` row (E1..E38 minus E6/E21) |
-| `tests/null_pointer.rs` | 2 (+1 ignored payload) | Phase C — E6/E21, out-of-process signal comparison |
-| `tests/symbol_parity.rs` | 3 | Phase D — `nm -D` parity, no non-libc imports, `dlsym` of all 7 |
-
-Each `Pair::fresh()` copies both `.so`s to unique temporary files before
-`dlopen`, so every test case starts from **pristine** library state
-(`node_count == 0`, `node_storage` zeroed) — which is the only way to reach the
-`MAX_NODES` boundary and the empty-store branches, since the C exposes no reset.
-
-## Divergences found and fixed
-
-### 1. NaN payload/sign lost in `calculate_subtree_sum` (real bug)
-
-`c_src/src/lib.c:92` — `sum += calculate_subtree_sum(node_storage[i].id);`
-
-gcc emits the recursive result as the **destination** operand:
-
-```asm
-call   calculate_subtree_sum   ; xmm0 = child sum
-movsd  -0x8(%rbp),%xmm1        ; xmm1 = sum
-addsd  %xmm1,%xmm0             ; xmm0 = child + sum
-```
-
-LLVM emitted the operands the other way round (`addsd %xmm0,%xmm1`, dst = the
-accumulator). `ADDSD` returns its *first* operand when both addends are NaN, so
-whenever a subtree produced one NaN and the accumulator held another, the two
-libraries returned different NaN bit patterns:
-
-```
-calculate_subtree_sum(1): C = 0xfff8000000000000, Rust = 0x7ff8000000000000
-```
-
-Fixed by pinning the operand order (`add_c_order`, inline `addsd` on x86-64) and
-locked down with `CONFIGS.md` row C41 (all ordered pairs of 8 NaN patterns at
-depth 3 + randomized fan-out).
-
-### 2. Non-deterministic `Node` padding bytes
-
-`find_node_by_id` returns a `Node *` into the static array, so a consumer can
-read the 6 padding bytes at offsets 58..63. gcc zero-fills the whole 80-byte
-object for `Node new_node = {.id = ..., ...}`; the Rust struct literal left
-padding formally uninitialised, and the dev-profile build indeed wrote garbage
-there. `add_node` now stages the node in a `MaybeUninit::<Node>::zeroed()` buffer
-and copies all `size_of::<Node>()` bytes, so the full 80-byte image matches in
-both profiles (row C40). The staging buffer also preserves the C's ordering — the
-name is read *before* the destination slot is written, so a `name` argument that
-aliases the destination slot behaves as in C.
-
-### 3. Dev-profile null-dereference check (build configuration)
-
-`add_node(.., NULL, ..)` and `process_string(NULL)` are unchecked dereferences in
-the C and die with `SIGSEGV`. Rust's debug assertions turn them into a panic →
-`SIGABRT`. `[profile.dev] debug-assertions = false` restores the C's failure
-mode; the suite now passes with `HARVEST_RUST_SO` pointing at *either* the
-release or the dev `cdylib`.
-
-### 4. Smaller fidelity fixes
-
-* `add_node`'s capacity test is a signed `int` comparison in C
-  (`node_count >= MAX_NODES`); it was casting the counter to `usize`.
-* the slot write uses signed `offset`, like C's indexing.
-
-## Completeness evidence
-
-* **Symbols** — `nm -D --defined-only`: C exports exactly 7 symbols
-  (`add_node`, `find_node_by_id`, `get_children_count`,
-  `calculate_subtree_sum`, `process_string`, `safe_double_to_int`, `maxnmin`);
-  the Rust `.so` exports all 7 under the same names. Diff empty, 0 non-libc
-  undefined symbols. Nothing stubbed, no untranslated module.
-* **C coverage driven by the suite** (`./check_coverage.sh`):
-  lines 100.00 % (75/75), branches executed 100.00 % (38/38), branch directions
-  taken 97.37 % (37/38), calls 100.00 % (16/16). The single untaken direction is
-  `lib.c:145 if (*name_ptr)` FALSE, which is unreachable by construction
-  (`maxnmin` re-seeds six builtins whose names are all non-empty) and is covered
-  as far as the API allows by `ERRORS.md` row E29.
-* **Mutation sensitivity** (`./mutation_check.sh`): 10 deliberate breakages of
-  the Rust (capacity off-by-one, `strncpy` length off-by-one, clamp value,
-  `active == 1` instead of `!= 0`, NaN operand order, `rem_euclid` instead of
-  C's truncating `%`, non-zero padding, `-0.0` instead of `+0.0`, dropped sign
-  extension in `process_string`, inactive nodes counted as children) — **all 10
-  caught**. Documented non-mutation: `>` → `>=` in the `safe_double_to_int`
-  clamps is behaviour-preserving, because `d == (double)INT_MAX` falls through to
-  `(int)d` and yields `INT_MAX` anyway.
-* **Feature combinations** (`./check_features.sh`): `Cargo.toml` has no
-  `[features]`, so `<default>`, `--no-default-features` and `--all-features` are
-  the complete set; 85/85 tests pass and the symbol diff is empty in all three.
+Because neither library exports its `static` node table and there is no public
+reset entry point, the harness gets pristine state per test by copying each
+`.so` to a unique temp path and `dlopen`ing the copy (`Pair::fresh()` in
+`tests/common/mod.rs`). Each test therefore owns private `node_storage` /
+`node_count` in both libraries, and tests are safe to run in parallel.
 
 ## Completion gate
 
-- [x] `SYMBOLS.md`: `nm -D` shows 0 missing symbols and 0 undefined non-libc
-      symbols in the Rust `.so`.
-- [x] Phase B: all 41 `CONFIGS.md` rows pass across randomized inputs.
-- [x] Phase C: all 38 executable `ERRORS.md` rows have a passing differential
-      test (E39/E40 are identical, non-observable UB and are documented).
-- [x] All of the above hold under every feature combination, and with the Rust
-      `.so` built in either the release or the dev profile.
+| gate | status |
+|---|---|
+| `SYMBOLS.md`: `nm -D` shows 0 missing / 0 unresolved non-libc symbols in Rust | **PASS** — symbol diff is empty (7/7), both profiles |
+| Phase B: every row of `CONFIGS.md` (32 rows) passes across randomized inputs | **PASS** — `tests/differential.rs`, 32/32 |
+| Project builds a binary? | **N/A** — `Cargo.toml` has no `[[bin]]`, no `src/main.rs`; `CMakeLists.txt` builds only `add_library(... SHARED)`. No driver stdout to compare. |
+| Phase C: every row of `ERRORS.md` (30 rows) has a passing error-path test | **PASS** — `tests/errors.rs`, 25 tests covering all 30 rows |
+| Holds under every feature combination | **PASS** — the crate declares no `[features]`, so default is the only combination; verified for both `release` and `debug` profiles |
+
+Counts (all with fixed PRNG seeds, `splitmix64`): ~170 k randomized
+`safe_double_to_int` calls, ~70 k randomized `maxnmin` calls (incl. the 9^4
+boundary cross-product), ~10 k randomized `process_string` calls, ~2 k
+randomized node tables, and 300 randomized 60-step interleaved sequences over
+all seven exports.
+
+## Divergence found and fixed
+
+**Rust `.so` aborted (SIGABRT) where C segfaults (SIGSEGV)** on the two NULL
+dereference paths — `add_node(.., NULL, ..)` (ERRORS.md row 5) and
+`process_string(NULL)` (row 13).
+
+Cause: the `dev` profile enables `debug-assertions`, which makes rustc's
+`CheckNull` MIR pass turn `*ptr` on a null pointer into a Rust panic. Panicking
+out of an `extern "C"` function aborts, so the child process died with signal 6
+instead of the C library's signal 11. The C library is compiled with no runtime
+UB instrumentation, so the translation must not have any either.
+
+Fix (`translation/Cargo.toml`):
+
+```toml
+[profile.dev]
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+```
+
+After the fix both libraries die with SIGSEGV on both NULL paths, and with the
+same signal on the unbounded-recursion path (row 12, self-parent node), in both
+profiles.
+
+No divergence was found in any return value of any of the seven functions.
+
+## Harness adequacy (mutation check)
+
+To prove the suite is not vacuous, 15 mutations were injected into
+`translation/src/lib.rs`, each built and run through the full suite, then
+reverted:
+
+| mutation | result |
+|---|---|
+| `get_children_count` counts by 2 | CAUGHT (20 tests) |
+| `calculate_subtree_sum` seeds `value + 0.5` | CAUGHT (19 tests) |
+| `process_string` treats bytes as unsigned | CAUGHT (6) |
+| `maxnmin` uses `% 7` for `node_id` | CAUGHT (6) |
+| `add_node` capacity check `>` instead of `>=` | CAUGHT (2) |
+| `maxnmin` multiplies children by 11 | CAUGHT (10) |
+| `maxnmin` parent probe `+ 2` | CAUGHT (9) |
+| `safe_double_to_int` returns 1 for NaN | CAUGHT (6) |
+| `find_node_by_id` returns `n.add(1)` | CAUGHT (23) |
+| `calculate_subtree_sum` iterates children in reverse (f64 order) | CAUGHT (5) |
+| `add_node` returns `count` instead of `count - 1` | CAUGHT (19) |
+| name truncated at 48 instead of 49 bytes | CAUGHT (5) |
+| `strncpy` bound `MAX_NAME_LEN` instead of `MAX_NAME_LEN - 1` | survived — **equivalent**: `name[49] = 0` overwrites the extra byte, so the stored struct is unchanged |
+| drop the `&& active` guard in `find_node_by_id` | survived — **equivalent**: `add_node` always stores `active = 1` and indices `>= node_count` are never scanned (this is exactly ERRORS.md row 7, documented as unreachable via the public API) |
+| `safe_double_to_int` clamp `>=` instead of `>` | survived — **equivalent**: at `d == (double)INT_MAX` both the clamp and `(int)d` yield `INT_MAX` |
+| `process_string` drops the redundant `if (*str)` guard | survived — **equivalent**: the `while` loop already tests the same condition |
+
+All four survivors are provably semantically equivalent to the C, so the
+mutation score is effectively 100 %.
+
+## Reproduce
+
+```sh
+bash translation/run_all.sh          # everything: C build, symbol diff, all profiles
+# or, individually:
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd translation && cargo build --release && cargo test
+```

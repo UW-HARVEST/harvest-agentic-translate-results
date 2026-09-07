@@ -1,58 +1,88 @@
-# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
+
+* C   `.so`: `c_src/build/libharvest-work-eb8Rqb.so`
+* Rust `.so`: `translation/target/release/libenvy_lib.so`
+
+Reproduce with:
 
 ```sh
-nm -D --defined-only c_src/build/libharvest-work-irN63C.so
-nm -D --defined-only translation/target/release/libenvy_lib.so
+nm -D --defined-only c_src/build/libharvest-work-eb8Rqb.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libenvy_lib.so | awk '{print $3}' | sort > /tmp/r_syms.txt
+comm -23 /tmp/c_syms.txt /tmp/r_syms.txt   # missing from Rust  -> MUST be empty
+comm -13 /tmp/c_syms.txt /tmp/r_syms.txt   # extra in Rust
 ```
 
-The C library consists of a single translation unit (`c_src/src/lib.c`) with no
-`static` functions, so every function definition in that file becomes a public
-dynamic symbol. `c_src/include/lib.h` declares only `envy`, but the other four
-functions are exported too and are therefore part of the verified surface.
+## Defined dynamic symbols
 
-## Defined (exported) symbols
+| # | symbol | C `.so` | Rust `.so` | C declaration | Rust definition |
+|---|--------|---------|------------|---------------|-----------------|
+| 1 | `apply_bit_operations` | `T` | `T` | `int apply_bit_operations(int value, struct ConfigFlags* flags)` | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn apply_bit_operations` |
+| 2 | `envy`                 | `T` | `T` | `int envy(int, int, int, int)` (the only symbol in `include/lib.h`) | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn envy` |
+| 3 | `init_config_from_env` | `T` | `T` | `void init_config_from_env(struct ConfigFlags* flags)` | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn init_config_from_env` |
+| 4 | `parse_env_numeric`    | `T` | `T` | `int parse_env_numeric(const char* env_name, int default_val)` | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn parse_env_numeric` |
+| 5 | `perform_operation`    | `T` | `T` | `int perform_operation(int val1, int val2, struct ConfigFlags* flags)` | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C" fn perform_operation` |
 
-| # | symbol | in C `.so` | in Rust `.so` | C source (`c_src/src/lib.c`) | Rust source (`src/lib.rs`) |
-|---|--------|-----------|---------------|------------------------------|----------------------------|
-| 1 | `parse_env_numeric`    | T | T | `int parse_env_numeric(const char*, int)`             | `#[unsafe(no_mangle)] pub unsafe extern "C" fn parse_env_numeric` |
-| 2 | `init_config_from_env` | T | T | `void init_config_from_env(struct ConfigFlags*)`      | `#[unsafe(no_mangle)] pub unsafe extern "C" fn init_config_from_env` |
-| 3 | `perform_operation`    | T | T | `int perform_operation(int, int, struct ConfigFlags*)`| `#[unsafe(no_mangle)] pub unsafe extern "C" fn perform_operation` |
-| 4 | `apply_bit_operations` | T | T | `int apply_bit_operations(int, struct ConfigFlags*)`  | `#[unsafe(no_mangle)] pub unsafe extern "C" fn apply_bit_operations` |
-| 5 | `envy`                 | T | T | `int envy(int, int, int, int)`                        | `#[unsafe(no_mangle)] pub unsafe extern "C" fn envy` |
+Counts: C = 5 defined dynamic symbols, Rust = 5.
 
-**Missing from Rust: 0.** No symbol required an added `#[no_mangle]` wrapper and
-no C module was left untranslated — `c_src/src/lib.c` is the only C source file
-listed in `c_src/CMakeLists.txt` and all five of its functions are translated
-with real bodies (no stubs, no `unimplemented!()`).
+There are no macro-generated symbols in the C source (`BUFFER_SIZE` is the only
+object-like macro and it produces no symbol). There are no `static` helpers, so
+the exported set equals the full set of functions in `src/lib.c`. No C module
+was skipped by the translation: `src/lib.c` is the only translation unit in
+`c_src/CMakeLists.txt`.
 
-There are no macro-generated symbols: the only object-like macro in the C is
-`BUFFER_SIZE`, which expands to a constant and emits no symbol.
+## Diff result
 
-## Undefined (imported) symbols
+```
+MISSING from Rust : (empty)
+EXTRA in Rust     : (empty)
+```
 
-The C `.so` imports only libc: `atoi`, `fprintf`, `getenv`, `printf`, `puts`,
-`snprintf`, `stderr`, `strchr` (plus the usual `__cxa_finalize`,
-`__gmon_start__`, `_ITM_*` toolchain weak symbols).
+## Undefined (imported) symbols in the Rust `.so`
 
-The Rust `.so` imports that same libc set (the translation deliberately calls
-libc `getenv`/`atoi`/`strchr`/`printf`/`fprintf`/`snprintf` and uses the libc
-`stderr` stream so buffering and stdout/stderr interleaving match), plus the
-Rust runtime's own libc/libgcc dependencies: `_Unwind_*` (libgcc), `malloc`,
-`free`, `calloc`, `realloc`, `posix_memalign`, `memcpy`, `memmove`, `memset`,
-`bcmp`, `strlen`, `abort`, `__errno_location`, `__tls_get_addr`,
-`__cxa_thread_atexit_impl`, `pthread_key_*`, `pthread_setspecific`, `gettid`,
-`syscall`, `dl_iterate_phdr`, `getcwd`, `readlink`, `realpath`, `open64`,
-`close`, `read`, `write`, `writev`, `lseek64`, `fstat64`, `stat64`, `statx`,
-`mmap64`, `munmap`.
+All undefined symbols are libc / toolchain runtime imports, none are
+unresolved project symbols:
 
-`ldd` on the Rust `.so` resolves to `libgcc_s.so.1`, `libc.so.6`,
-`ld-linux-x86-64.so.2` only.
+* libc used deliberately by the translation so that formatting and stream
+  buffering are bit-identical to the C: `getenv`, `atoi`, `strchr`, `printf`,
+  `fprintf`, `snprintf`, `stderr`.
+* Rust `std` / `panic = "abort"` runtime and allocator imports: `malloc`,
+  `calloc`, `realloc`, `free`, `posix_memalign`, `memcpy`, `memmove`,
+  `memset`, `bcmp`, `strlen`, `abort`, `puts`, `write`, `writev`, `read`,
+  `open64`, `close`, `lseek64`, `fstat64`, `stat64`, `statx`, `mmap64`,
+  `munmap`, `getcwd`, `readlink`, `realpath`, `syscall`, `gettid`,
+  `dl_iterate_phdr`, `__errno_location`, `__cxa_finalize`,
+  `__cxa_thread_atexit_impl`, `__tls_get_addr`, `pthread_key_create`,
+  `pthread_key_delete`, `pthread_setspecific`.
+* libgcc unwinder + standard weak stubs: `_Unwind_*`, `_ITM_registerTMCloneTable`,
+  `_ITM_deregisterTMCloneTable`, `__gmon_start__`.
 
-**Missing / undefined non-libc symbols in Rust: 0.**
+## Gate
 
-Enforced by the automated test `symbol_parity::c_and_rust_export_identical_symbols`
-in `tests/symbol_parity.rs`, which shells out to `nm -D` on both libraries and
-asserts the defined-symbol sets are equal and that every Rust undefined symbol
-resolves against libc/libgcc.
+- [x] `nm -D` shows 0 symbols missing from the Rust `.so`.
+- [x] `nm -D` shows 0 undefined non-libc / non-runtime symbols in the Rust `.so`.
+
+## Result
+
+Symbol parity was already exact and required no new translation work: `src/lib.c`
+is the only C translation unit, all five of its functions were present in the
+Rust with `#[unsafe(no_mangle)] extern "C"` wrappers, and nothing was stubbed.
+
+The diff is enforced from inside the test suite by
+`tests/phase_d_symbols.rs::symbol_parity_is_exact`, which shells out to `nm -D`
+on both objects and additionally asserts the C `.so` exports exactly the five
+symbols listed above — so a future C function that the Rust never learns about
+fails the build rather than passing silently.
+`rust_so_has_no_unresolved_project_symbols` allowlists the libc/toolchain
+imports and fails on anything else undefined.
+
+Confirmed independently:
+
+```
+$ nm -D --defined-only c_src/build/libharvest-work-eb8Rqb.so | awk '{print $3}' | sort
+apply_bit_operations envy init_config_from_env parse_env_numeric perform_operation
+$ nm -D --defined-only translation/target/release/libenvy_lib.so | awk '{print $3}' | sort
+apply_bit_operations envy init_config_from_env parse_env_numeric perform_operation
+missing:[]  extra:[]
+```

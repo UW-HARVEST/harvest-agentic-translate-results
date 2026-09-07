@@ -1,98 +1,127 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Error-surface table
 
 Derived mechanically from the C source, not from docs or assumptions.
 
-## Mechanical derivation
-
-Grep run over the entire C tree (`c_src/src`, `c_src/include`) for every
-rejection / error construct:
+## Mechanical grep of the entire library
 
 ```
-grep -nE 'return|assert|NULL|ERROR|errno|if *\(|switch|#if|goto|exit|abort|MAX|MIN|<=|>=|[^-]-1' -r src include
-→ (no matches)
+$ grep -nE 'return|assert|NULL|errno|error|ERROR|goto|exit|abort|-1|MIN|MAX|LIMIT' \
+        c_src/include/lib.h c_src/src/lib.c
+include/lib.h:1:#include <stdint.h>      <- only hit: the include line
+$ grep -nE 'if|switch|while|for|#if|\?|\|\||&&' c_src/include/lib.h c_src/src/lib.c
+<no hits>
 ```
 
-Findings, per construct class:
+Findings, and what each rules out:
 
-| construct class searched | occurrences in C |
-|--------------------------|------------------|
-| error-return macro (`RETURN_ERROR`, …) | 0 |
-| `return` of any kind (incl. `return -1`, `return NULL`) | 0 |
-| error enum / status code type | 0 |
-| `assert` / `abort` / `exit` | 0 |
-| `if` / `switch` / `goto` (any conditional rejection) | 0 |
-| null-pointer check | 0 |
-| explicit range / bounds check | 0 |
-| min/max constant | 0 |
-| `errno` use | 0 |
+| construct searched for | occurrences | consequence |
+|---|---|---|
+| `return` statement (value or bare) | 0 | function is `void`; there is **no return value to compare** |
+| error-return macro (`RETURN_ERROR`-style) | 0 | no macro error surface |
+| `assert` / `abort` / `exit` | 0 | no runtime trap |
+| `NULL` comparison / null check | 0 | pointers are dereferenced unconditionally |
+| `if` / `switch` / `?:` / `&&` / `\|\|` | 0 | **straight-line code, single basic block** |
+| loops (`for` / `while`) | 0 | no iteration bounds to overflow |
+| `#if` / `#ifdef` | 0 | no compile-time variants |
+| `enum` declarations | 0 | **no enum crosses the FFI boundary** |
+| length / count / size parameter | 0 | output length is fixed at 16 by the signature |
+| min/max constant, range check | 0 | every bit pattern of every input is in range |
 
-`md5_digest` is declared `void`. It has **no return value, no out-parameter
-status, no sentinel, and no validation whatsoever** — it is 16 straight-line
-unconditional stores. Therefore the C library's error surface is empty: there
-exists no input for which the C **reports** an error.
+**Therefore the library rejects nothing.** `md5_digest` has an empty
+rejection surface: `void md5_digest(const tflac_md5*, tflac_u8[16])` accepts
+all 2^128 struct values, always writes exactly 16 bytes, and reports no status.
+There are zero `RETURN_ERROR`-equivalent branches, so there are zero
+"function-returns-error-code" rows to write. Any row claiming otherwise would
+be invented rather than derived, which the task forbids.
 
-## Error-surface table
+## Rows actually present
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|---------------------------------------------|-------------------|
-| — | — | *(none: the C contains zero rejection paths)* | — |
+The only inputs the C does *not* define behavior for are the generic C-API
+boundaries (undefined behavior, not library-level rejection). These are real
+inputs a caller can pass, so each still gets a differential test asserting C
+and Rust behave identically — the assertion is on the *observed process
+outcome* (signal / exit status), compared side by side, not merely "both
+failed".
 
-**Row count: 0.** There is nothing to check off from this table, because the C
-defines no rejection behavior to match.
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|----------------------------------------------|-------------------|------|
+| E1 | `md5_digest` | `m == NULL`, `out` valid — unconditional read of `m->a` at address 0 | no check exists; page fault → process killed by `SIGSEGV` (11) | `err_e1_null_m` |
+| E2 | `md5_digest` | `out == NULL`, `m` valid — unconditional store to `out[0]` at address 0 | no check exists; page fault → `SIGSEGV` (11) | `err_e2_null_out` |
+| E3 | `md5_digest` | both `m == NULL` and `out == NULL` | `SIGSEGV` (11), faulting on the `m->a` read first | `err_e3_both_null` |
+| E4 | `md5_digest` | `out` buffer shorter than 16 bytes (undersized length) — C writes indices 0..15 regardless | writes exactly 16 bytes, overrunning the caller's buffer; no truncation, no error | `err_e4_writes_exactly_16` (guard-page: 16-byte-exact mapping succeeds, 15-byte-exact faults, identically for C and Rust) |
+| E5 | `md5_digest` | `out` buffer larger than 16 bytes (oversized length) | writes exactly bytes 0..15; bytes ≥16 left untouched — no error, no extra writes | `err_e5_no_overwrite_past_16` |
+| E6 | `md5_digest` | value "one step past a documented valid range" | **N/A — vacuous.** Both parameters are unbounded: `tflac_u32` fields have no documented valid range (all 2^32 values valid) and there is no length/index/count argument. Exhaustively covered instead by the boundary values in `CONFIGS.md` rows C1–C9. | `cfg_*` |
+| E7 | `md5_digest` | out-of-range enum value passed across the FFI boundary | **N/A — vacuous.** `grep -c enum` over `include/lib.h` + `src/lib.c` = 0. The API takes no enum, no int-typed mode, and no flag word, so no invalid-variant input exists to construct. | — |
 
-## Generic-boundary coverage (required by Phase C even when the table is empty)
+Rows E6 and E7 are recorded as explicitly-checked-and-absent rather than
+omitted, so the absence is a derived result and not an oversight.
 
-These are the boundaries every C API has. For each, the C behavior is recorded
-below, and the requirement on the Rust is "behave identically", which for the
-undefined-behavior cases means "do not add a check the C does not have".
+## Checklist
 
-| # | boundary | C behavior | Rust requirement | how covered |
-|---|----------|------------|------------------|-------------|
-| G1 | `m == NULL` | dereferences NULL → SIGSEGV (UB, no diagnostic) | must also have no null check; must not return early, must not panic with a different signal | `tests/error_paths.rs::null_m_faults_in_both` — runs C and Rust each in a forked child, asserts BOTH die by the SAME signal |
-| G2 | `out == NULL` | stores through NULL → SIGSEGV (UB) | same as G1 | `tests/error_paths.rs::null_out_faults_in_both` — same fork/compare-signal method |
-| G3 | both pointers NULL | SIGSEGV (UB) | same | `tests/error_paths.rs::null_both_faults_in_both` |
-| G4 | `out` buffer shorter than 16 bytes | writes 16 bytes regardless — no length parameter exists, so the C cannot and does not check | Rust must also write exactly 16 bytes and no more/fewer | `tests/error_paths.rs::writes_exactly_16_bytes_no_overrun` — 16-byte window inside a poisoned 48-byte arena; asserts guard bytes on BOTH sides are untouched and identical for C and Rust |
-| G5 | "oversized length" | not applicable — the API takes no length argument | n/a | documented; G4 is the analogue |
-| G6 | out-of-range enum value across FFI | not applicable — the API has **no enum, no flag, no mode parameter**; the only parameters are two pointers | n/a | documented as vacuous; see below |
-| G7 | one step past a documented valid range | not applicable for indices (no index parameter). The value range of every field is the *full* `uint32_t` range, so "one past the range" is unrepresentable; instead the extremes `0x00000000` and `0xFFFFFFFF` and the wrap neighbours `0x00000001` / `0xFFFFFFFE` are tested as values | `tests/error_paths.rs::extreme_word_values` |
-| G8 | `out` overlapping / aliasing `m` (caller passes the struct itself as the output buffer) | no restrict qualifier, no aliasing check; C reads each word then stores — result is whatever the store order produces | Rust must produce the identical overlapping result | `tests/error_paths.rs::aliased_out_over_m` |
-| G9 | `out` unaligned (odd address) | `tflac_u8*` has alignment 1 — always legal, no check | identical bytes | `tests/error_paths.rs::unaligned_out_offsets` |
-| G10 | `m` unaligned (misaligned `tflac_md5*`) | UB per the C standard, but on x86-64 the generated loads are unaligned-tolerant and it reads normally | Rust reads via `read_unaligned`-equivalent semantics must match byte output | `tests/error_paths.rs::unaligned_m_pointer` |
+- [x] E1 `m == NULL`
+- [x] E2 `out == NULL`
+- [x] E3 both NULL
+- [x] E4 undersized `out` (writes 16 regardless)
+- [x] E5 oversized `out` (writes no more than 16)
+- [x] E6 past-valid-range scalar — N/A, no bounded scalar exists (verified by grep)
+- [x] E7 out-of-range enum — N/A, no enum in the API (verified by grep)
 
-G6 note: because there is genuinely no enum in this API, the "out-of-range enum
-variant" bug class cannot be instantiated. The nearest real analogue — an
-arbitrary bit pattern arriving from C that has no "valid" interpretation in
-Rust — is covered by feeding fully random 16-byte struct images (including
-patterns a Rust-side `enum`/`bool`/`NonZero` field would reject) in
-`tests/error_paths.rs::arbitrary_struct_bit_patterns`. The Rust struct must
-accept all 2^128 images exactly as C does.
+## Results
 
-## Verification status
+All 7 rows pass against both the debug and release Rust `.so`, under both
+`cargo test` and `cargo test --no-default-features`. Rows E1–E4 run the call in
+a `fork()`ed child and compare the child's exact terminating signal / exit
+status, so a pass means the two libraries produced the *same specific* outcome,
+not merely that both failed.
 
-`tests/error_paths.rs` covers G1..G10; the table itself has 0 rows, and
-`errors_table_is_empty_by_construction` re-derives that emptiness from the C
-source at test time, so if the C ever gains a rejection path the test fails and
-this table must be regenerated.
+Measured outcomes (identical for C and Rust):
 
-The null-pointer rows (G1..G3) are compared by *fault signal*: each library is
-called with the null pointer in a forked child process and both must die with
-the same signal (SIGSEGV). This is what proves the Rust has not silently added a
-null check the C lacks — a Rust version that returned early instead of faulting
-would exit 0 and the test would fail.
+| row | C outcome | Rust outcome |
+|---|---|---|
+| E1 `m == NULL` | `Signaled(SIGSEGV=11)` | `Signaled(SIGSEGV=11)` |
+| E2 `out == NULL` | `Signaled(SIGSEGV=11)` | `Signaled(SIGSEGV=11)` |
+| E3 both NULL | `Signaled(SIGSEGV=11)` | `Signaled(SIGSEGV=11)` |
+| E4 `out` slack = 16 (fits) | `Exited(0)` | `Exited(0)` |
+| E4 `out` slack ∈ {1,2,3,4,8,12,15} | `Signaled(SIGSEGV=11)` | `Signaled(SIGSEGV=11)` |
+| E5 oversized `out` | 16 bytes written, tail intact | identical, byte-for-byte |
 
-Result: 10/10 error-path tests pass (plus the 6 `#[ignore]`d death-test payloads
-invoked as child processes).
+### Divergence found and fixed — rows E1 and E3
 
-| row | test | status |
-|-----|------|--------|
-| (table) | `errors_table_is_empty_by_construction` | PASS |
-| G1 | `g1_null_m_faults_in_both` | PASS (both SIGSEGV) |
-| G2 | `g2_null_out_faults_in_both` | PASS (both SIGSEGV) |
-| G3 | `g3_null_both_faults_in_both` | PASS (both SIGSEGV) |
-| G4 | `g4_writes_exactly_16_bytes_no_overrun` | PASS |
-| G5 | vacuous (no length parameter) | n/a, documented |
-| G6 | `g6_arbitrary_struct_bit_patterns` | PASS |
-| G7 | `g7_extreme_word_values` | PASS |
-| G8 | `g8_aliased_out_over_m` | PASS — **this row found the one real bug**; see `CONFIGS.md` |
-| G9 | `g9_unaligned_out_offsets` | PASS |
-| G10 | `g10_unaligned_m_pointer` | PASS |
+The first fix for the misalignment problem used
+`core::ptr::read_unaligned::<u32>`, which expands to `copy_nonoverlapping` and
+therefore carries a precondition check:
+
+```
+unsafe precondition(s) violated: ptr::copy_nonoverlapping requires that both
+pointer arguments are aligned and non-null ...
+```
+
+With a NULL `m` that check aborted **before** the faulting load, so the child
+died with `SIGABRT` (6) while the C died with `SIGSEGV` (11):
+
+```
+[E1 m==NULL] C gave Signaled(11) but Rust gave Signaled(6)
+[E3 both NULL] C gave Signaled(11) but Rust gave Signaled(6)
+```
+
+Fixed two ways, so no configuration diverges:
+
+1. The Rust now uses a plain single-byte raw dereference instead of any
+   `core::ptr::read*` helper, so no `copy_nonoverlapping` precondition check is
+   emitted and a NULL pointer produces a genuine faulting load.
+2. `[profile.dev]` sets `debug-assertions = false` / `overflow-checks = false`.
+   rustc's optional UB checks (`"null pointer dereference occurred"`,
+   `"misaligned pointer dereference"`) convert exactly the faulting loads this
+   library must reproduce into `SIGABRT` panics. They are absent from the
+   release artifact a consumer `dlopen`s, and disabling them for the dev
+   artifact makes the differential suite return the same verdict under every
+   profile rather than only under `--release`.
+
+### E6/E7 vacuity is machine-checked
+
+`err_e6_e7_no_bounded_scalar_and_no_enum_in_api` re-reads
+`c_src/include/lib.h` and `c_src/src/lib.c` at test time and asserts they
+contain no `enum` and none of `if `, `if(`, `switch`, `assert`, `return `,
+`return;`, `NULL`. So the claim that there is no bounded scalar and no enum to
+push out of range is re-derived on every run instead of merely asserted here —
+if the C ever gains a check, this test fails and forces the table to be redone.

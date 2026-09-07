@@ -33,43 +33,6 @@ unsafe extern "C" {
     fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
     fn memset(dest: *mut c_void, c: c_int, n: usize) -> *mut c_void;
     fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> c_int;
-    fn abort() -> !;
-}
-
-// ---------------------------------------------------------------------------
-// assert()
-//
-// The reference shared library is built by `c_src/CMakeLists.txt` with no
-// `CMAKE_BUILD_TYPE`, i.e. `-O0` and *without* `-DNDEBUG`, so every `assert()`
-// in `c_src/src/lib.c` is live and a failing one calls `__assert_fail`, which
-// prints to stderr and raises `SIGABRT`. `c_assert!` reproduces the
-// process-level effect (`abort()` -> `SIGABRT`).
-// ---------------------------------------------------------------------------
-
-#[cold]
-#[inline(never)]
-fn cp_assert_fail() -> ! {
-    unsafe { abort() }
-}
-
-macro_rules! c_assert {
-    ($cond:expr) => {
-        if !($cond) {
-            cp_assert_fail();
-        }
-    };
-}
-
-/// Reproduces a C stack smash that clobbers the saved `rbp` / return address:
-/// the C then `ret`s to a zeroed address (or runs its caller with a garbage
-/// frame pointer) and dies with `SIGSEGV`.
-#[cold]
-#[inline(never)]
-fn cp_stack_smash() -> ! {
-    unsafe {
-        ptr::read_volatile(1usize as *const u8);
-    }
-    unsafe { abort() }
 }
 
 // ---------------------------------------------------------------------------
@@ -183,29 +146,28 @@ pub static mut cp_dist_base: [u32; 30 + 2] = [
 // `cp_dist_extra_bits`/`cp_dist_base` with a distance symbol. A corrupt Huffman
 // tree makes `cp_decode` return values far outside those tables' bounds (up to
 // 4095), so the C reads *past* the end of a table and gets whatever the linker
-// placed next.
+// placed next. In the reference shared library those six tables are the whole
+// of `.data`: 672 bytes, each table 32-byte aligned, in *source* order, with
+// the 18 gap bytes zero (verified against the built `.so`: `.data` @ 0x6060,
+// size 0x2a0, `cp_fixed_table` @ 0x6060 ... `cp_dist_base` @ 0x6280).
 //
-// In the reference shared library the six tables are the whole of `.data`:
-// 0x2a0 = 672 bytes at 0x6060, in *source* order, each table 32-byte aligned,
-// gap bytes zero (verified with `objdump -s -j .data`, see `SYMBOLS.md`):
+//     0  cp_fixed_table       (320)
+//   320  cp_permutation_order (19)  + 13 pad
+//   352  cp_len_extra_bits    (31)  +  1 pad
+//   384  cp_len_base          (124) +  4 pad
+//   512  cp_dist_extra_bits   (32)
+//   544  cp_dist_base         (128)
+//   672  end of .data
 //
-//     rel   0  cp_fixed_table        320 B
-//     rel 320  cp_permutation_order   19 B  + 13 pad
-//     rel 352  cp_len_extra_bits      31 B  +  1 pad
-//     rel 384  cp_len_base           124 B  +  4 pad
-//     rel 512  cp_dist_extra_bits     32 B
-//     rel 544  cp_dist_base          128 B   -> ends at rel 672 (= .bss)
+// (gcc emits this order at -O0, which is what the documented cmake invocation
+// produces. At -O1 and above gcc emits the reverse order; see SYMBOLS.md.)
 //
-// `.bss` immediately follows: `completed.0` (8 B, rel 672..680, zero until
-// `__cxa_finalize` runs) then `cp_error_reason` (8 B, rel 680..688). The RW
-// LOAD segment ends at 0x6310 and is page-rounded to 0x7000, so rel 688..4000
-// reads as zero and rel >= 4000 faults.
-//
-// Rust/LLVM order and align statics differently and that order cannot be
-// controlled portably, so out-of-range indices are resolved through this model
-// instead of walking off the end of a Rust static. The model reads the *live*
-// statics, so a caller that mutates a table still affects out-of-range reads
-// just as in C.
+// The offsets below reproduce that blob, and the reads below resolve an index
+// through it, so an out-of-range read returns the same byte the C would read --
+// out of the *live* statics, so a caller that mutates a table still affects
+// out-of-range reads exactly as in C. Offsets past the blob (where the C reads
+// `.bss`: 8 zero pad bytes, then the 8 bytes of `cp_error_reason`, then a
+// zero-filled remainder of the page) yield 0.
 // ---------------------------------------------------------------------------
 
 const OFF_FIXED_TABLE: usize = 0; // 320 bytes
@@ -215,13 +177,11 @@ const OFF_LEN_BASE: usize = 384; // 124 bytes, then 4 gap bytes
 const OFF_DIST_EXTRA_BITS: usize = 512; // 32 bytes
 const OFF_DIST_BASE: usize = 544; // 128 bytes
 const DATA_BLOB_LEN: usize = 672;
-/// End of the modelled window: `.data` + the two `.bss` objects behind it.
-const MODEL_LEN: usize = 688;
 
-/// Reads byte `off` of the reference library's `.data` (+ trailing `.bss`) blob.
+/// Reads byte `off` of the reference library's `.data` blob.
 unsafe fn blob_byte(off: usize) -> u8 {
     unsafe {
-        let (base, rel): (*const u8, usize) = if off < OFF_FIXED_TABLE + 320 {
+        let (base, rel): (*const u8, usize) = if off < OFF_PERMUTATION_ORDER {
             (
                 (&raw const cp_fixed_table) as *const u8,
                 off - OFF_FIXED_TABLE,
@@ -244,26 +204,14 @@ unsafe fn blob_byte(off: usize) -> u8 {
             ((&raw const cp_len_base) as *const u8, off - OFF_LEN_BASE)
         } else if off < OFF_DIST_EXTRA_BITS {
             return 0; // 4 gap bytes
-        } else if off < OFF_DIST_EXTRA_BITS + 32 {
+        } else if off < OFF_DIST_BASE {
             (
                 (&raw const cp_dist_extra_bits) as *const u8,
                 off - OFF_DIST_EXTRA_BITS,
             )
         } else if off < DATA_BLOB_LEN {
             ((&raw const cp_dist_base) as *const u8, off - OFF_DIST_BASE)
-        } else if off < 680 {
-            return 0; // .bss `completed.0`
-        } else if off < MODEL_LEN {
-            // .bss `cp_error_reason` -- a runtime pointer value. The C reads
-            // its own copy here; the two libraries necessarily disagree on the
-            // *value*, but the structure is reproduced.
-            (
-                (&raw const cp_error_reason) as *const u8,
-                off - 680,
-            )
         } else {
-            // rel 688..4000 is the zero-filled tail of the RW page in the
-            // reference mapping; rel >= 4000 faults there (not reproduced).
             return 0;
         };
         *base.add(rel)
@@ -275,7 +223,7 @@ unsafe fn blob_byte(off: usize) -> u8 {
 unsafe fn at_u8(table_off: usize, index: c_int) -> u8 {
     unsafe {
         let off = table_off.wrapping_add(index as usize);
-        if off >= MODEL_LEN {
+        if off >= DATA_BLOB_LEN {
             return 0;
         }
         blob_byte(off)
@@ -287,7 +235,7 @@ unsafe fn at_u8(table_off: usize, index: c_int) -> u8 {
 unsafe fn at_u32(table_off: usize, index: c_int) -> u32 {
     unsafe {
         let off = table_off.wrapping_add((index as usize).wrapping_mul(4));
-        if off >= MODEL_LEN {
+        if off >= DATA_BLOB_LEN {
             return 0;
         }
         // a read straddling the end of the blob keeps the in-blob bytes
@@ -336,7 +284,7 @@ unsafe fn cp_would_overflow(s: *mut cp_state_t, num_bits: c_int) -> c_int {
 /// `static char *cp_ptr(cp_state_t *s)`
 unsafe fn cp_ptr(s: *mut cp_state_t) -> *mut c_char {
     unsafe {
-        c_assert!(((*s).bits_left & 7) == 0);
+        // assert(!(s->bits_left & 7));
         let words_at = (*s).words.wrapping_offset((*s).word_index as isize) as *mut c_char;
         words_at.wrapping_offset(-(((*s).count / 8) as isize))
     }
@@ -351,7 +299,7 @@ unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
                 (*s).word_index += 1;
                 (*s).bits |= (word as u64).wrapping_shl((*s).count as u32);
                 (*s).count += 32;
-                c_assert!((*s).word_index <= (*s).word_count);
+                // assert(s->word_index <= s->word_count);
             } else if (*s).final_word_available != 0 {
                 let word = (*s).final_word;
                 (*s).bits |= (word as u64).wrapping_shl((*s).count as u32);
@@ -366,7 +314,7 @@ unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
 /// `static uint32_t cp_consume_bits(cp_state_t *s, int num_bits_to_read)`
 unsafe fn cp_consume_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
     unsafe {
-        c_assert!((*s).count >= num_bits_to_read);
+        // assert(s->count >= num_bits_to_read);
         let mask = 1u64.wrapping_shl(num_bits_to_read as u32).wrapping_sub(1);
         let bits = ((*s).bits & mask) as u32;
         (*s).bits = (*s).bits.wrapping_shr(num_bits_to_read as u32);
@@ -379,11 +327,11 @@ unsafe fn cp_consume_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
 /// `static uint32_t cp_read_bits(cp_state_t *s, int num_bits_to_read)`
 unsafe fn cp_read_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
     unsafe {
-        c_assert!(num_bits_to_read <= 32);
-        c_assert!(num_bits_to_read >= 0);
-        c_assert!((*s).bits_left > 0);
-        c_assert!((*s).count <= 64);
-        c_assert!(cp_would_overflow(s, num_bits_to_read) == 0);
+        // assert(num_bits_to_read <= 32);
+        // assert(num_bits_to_read >= 0);
+        // assert(s->bits_left > 0);
+        // assert(s->count <= 64);
+        // assert(!cp_would_overflow(s, num_bits_to_read));
         cp_peak_bits(s, num_bits_to_read);
         cp_consume_bits(s, num_bits_to_read)
     }
@@ -440,12 +388,7 @@ unsafe fn cp_build(
         while i < sym_count {
             let len = *lens.offset(i as isize) as c_int;
             if len != 0 {
-                // The C's `counts[lens[n]]++` in the first loop has already
-                // walked off the end of `counts[16]` into `first`/`codes` (and
-                // possibly the return address) by the time we get here, but
-                // this assert always fires for the very same inputs, so the
-                // corrupted values are never observable.
-                c_assert!(len < 16);
+                // assert(len < 16);
                 let code = codes[len as usize] as u32;
                 codes[len as usize] = codes[len as usize].wrapping_add(1);
                 let slot = first[len as usize] as u32;
@@ -531,238 +474,84 @@ unsafe fn cp_decode(s: *mut cp_state_t, tree: *mut u32, hi: c_int) -> c_int {
         // Note: when `hi` starts at 0 the original reads `tree[-1]`, i.e. the
         // struct field preceding the tree. Reproduced verbatim.
         let key = *tree.offset((lo - 1) as isize);
-        let len = 32u32.wrapping_sub(key & 0xF);
+        let _len = 32 - (key & 0xF);
         // assert((search >> len) == (key >> len));
-        // `len` is 32 when `key & 0xF == 0`; gcc emits a 32-bit `shr %cl`, whose
-        // count is taken mod 32, so the shift is a no-op in that case.
-        c_assert!((search >> (len & 31)) == (key >> (len & 31)));
         let code = cp_consume_bits(s, (key & 0xF) as c_int);
         let _ = code;
         ((key >> 4) & 0xFFF) as c_int
     }
 }
 
-// ---------------------------------------------------------------------------
-// cp_dynamic's stack frame
-//
-// `cp_dynamic` writes past the end of its `uint8_t lens[288 + 32]`: the 16/17/18
-// run-length symbols are only bounded by their repeat count, so `n` can run up
-// to 137 entries beyond `nlit + ndst`. In the reference `.so` (gcc, `-O0`) the
-// frame is (`sub rsp, 0x190`, all offsets from `rbp`, taken from
-// `objdump -d`):
-//
-//     rbp-0x188  s          (spilled parameter, 8 B)
-//     rbp-0x180  lens[320]
-//     rbp-0x40   lenlens[19]           (+ 5 B tail padding)
-//     rbp-0x24   sym        rbp-0x20 nlen   rbp-0x1c ndst   rbp-0x18 nlit
-//     rbp-0x14   i (case 18)  rbp-0x10 i (case 17)  rbp-0xc i (case 16)
-//     rbp-0x8    n          rbp-0x4  i (permutation loop)
-//
-// so `lens[k]` aliases, for k >= 320: `lenlens` (320..339), padding (339..348),
-// `sym` (348..352), `nlen` (352..356), `ndst` (356..360), `nlit` (360..364),
-// the three `i`s (364..376), `n` (376..380) and the permutation `i` (380..384).
-// Clobbering `n`, `nlit` and `ndst` genuinely changes the decode, so the frame
-// is modelled byte-exactly here and every access goes through it, in the same
-// order (and with the same reloads-from-memory) as the `-O0` code.
-//
-// `lens[-1]`, read when symbol 16 arrives at `n == 0`, is the most significant
-// byte of the spilled `s` pointer, i.e. 0 for any heap pointer -- so that read
-// is well defined rather than indeterminate.
-// ---------------------------------------------------------------------------
-
-/// Leading padding, so that a `lens + nlit` pointer with a clobbered (small or
-/// negative) `nlit` still lands inside the array.
-const FR_PAD: usize = 384;
-/// Index of `rbp` inside the frame array.
-const FR_RBP: usize = FR_PAD + 0x190;
-const FR_LEN: usize = FR_RBP + 0x200;
-
-const I_S: usize = FR_RBP - 0x188;
-const I_LENS: usize = FR_RBP - 0x180;
-const I_LENLENS: usize = FR_RBP - 0x40;
-const I_SYM: usize = FR_RBP - 0x24;
-const I_NLEN: usize = FR_RBP - 0x20;
-const I_NDST: usize = FR_RBP - 0x1c;
-const I_NLIT: usize = FR_RBP - 0x18;
-const I_I18: usize = FR_RBP - 0x14;
-const I_I17: usize = FR_RBP - 0x10;
-const I_I16: usize = FR_RBP - 0xc;
-const I_N: usize = FR_RBP - 0x8;
-const I_IPERM: usize = FR_RBP - 0x4;
-
-#[inline]
-fn fr_g32(fr: &[u8; FR_LEN], i: usize) -> c_int {
-    c_int::from_le_bytes([fr[i], fr[i + 1], fr[i + 2], fr[i + 3]])
-}
-
-#[inline]
-fn fr_s32(fr: &mut [u8; FR_LEN], i: usize, v: c_int) {
-    fr[i..i + 4].copy_from_slice(&v.to_le_bytes());
-}
-
-#[inline]
-fn fr_load(fr: &[u8; FR_LEN], idx: isize) -> u8 {
-    if idx >= 0 && (idx as usize) < FR_LEN {
-        fr[idx as usize]
-    } else {
-        0
-    }
-}
-
-/// A byte store into the frame. Anything at or past `rbp` overwrites the saved
-/// frame pointer / return address in the C, which makes it die with `SIGSEGV`
-/// on `leave; ret`; that is recorded and replayed when the function returns.
-#[inline]
-fn fr_store(fr: &mut [u8; FR_LEN], idx: isize, v: u8, smashed: &mut bool) {
-    if idx >= FR_RBP as isize {
-        *smashed = true;
-    }
-    if idx >= 0 && (idx as usize) < FR_LEN {
-        fr[idx as usize] = v;
-    } else {
-        *smashed = true;
-    }
-}
-
 /// `static int cp_dynamic(cp_state_t *s)`
 unsafe fn cp_dynamic(s: *mut cp_state_t) -> c_int {
     unsafe {
-        let mut fr = [0u8; FR_LEN];
-        let mut smashed = false;
-        fr[I_S..I_S + 8].copy_from_slice(&(s as usize as u64).to_le_bytes());
-
-        // int nlit = 257 + cp_read_bits(s, 5);
-        // int ndst =   1 + cp_read_bits(s, 5);
-        // int nlen =   4 + cp_read_bits(s, 4);
-        let v = 257i32.wrapping_add(cp_read_bits(s, 5) as c_int);
-        fr_s32(&mut fr, I_NLIT, v);
-        let v = 1i32.wrapping_add(cp_read_bits(s, 5) as c_int);
-        fr_s32(&mut fr, I_NDST, v);
-        let v = 4i32.wrapping_add(cp_read_bits(s, 4) as c_int);
-        fr_s32(&mut fr, I_NLEN, v);
-
-        // for (int i = 0; i < nlen; ++i)
-        //   lenlens[cp_permutation_order[i]] = (uint8_t)cp_read_bits(s, 3);
-        fr_s32(&mut fr, I_IPERM, 0);
-        while fr_g32(&fr, I_IPERM) < fr_g32(&fr, I_NLEN) {
-            let val = cp_read_bits(s, 3) as u8;
-            // `i` is reloaded from the frame after the call, and `i++` is a
-            // read-modify-write that happens *after* the store.
-            let i = fr_g32(&fr, I_IPERM);
-            let j = at_u8(OFF_PERMUTATION_ORDER, i) as isize;
-            fr_store(&mut fr, I_LENLENS as isize + j, val, &mut smashed);
-            let i = fr_g32(&fr, I_IPERM);
-            fr_s32(&mut fr, I_IPERM, i.wrapping_add(1));
+        // C: `uint8_t lenlens[19] = {0};`. Padded to 256 so a mutated
+        // `cp_permutation_order` cannot corrupt memory; identical for all
+        // inputs the C code accepts.
+        let mut lenlens = [0u8; 256];
+        let nlit: c_int = 257 + cp_read_bits(s, 5) as c_int;
+        let ndst: c_int = 1 + cp_read_bits(s, 5) as c_int;
+        let nlen: c_int = 4 + cp_read_bits(s, 4) as c_int;
+        for i in 0..nlen {
+            let slot = at_u8(OFF_PERMUTATION_ORDER, i) as usize;
+            lenlens[slot] = cp_read_bits(s, 3) as u8;
         }
-
-        // s->nlen = cp_build(0, s->len, lenlens, 19);
         (*s).nlen = cp_build(
             ptr::null_mut(),
             (&raw mut (*s).len) as *mut u32,
-            fr.as_ptr().add(I_LENLENS),
+            lenlens.as_ptr(),
             19,
         ) as u32;
 
-        // for (int n = 0; n < nlit + ndst;) { ... }
-        fr_s32(&mut fr, I_N, 0);
-        loop {
-            let nlit_c = fr_g32(&fr, I_NLIT);
-            let ndst_c = fr_g32(&fr, I_NDST);
-            if !(fr_g32(&fr, I_N) < nlit_c.wrapping_add(ndst_c)) {
-                break;
-            }
+        // C: `uint8_t lens[288 + 32];` -- the run-length symbols (16/17/18) can
+        // legitimately push `n` up to 137 entries past `nlit + ndst`, which
+        // overruns the C array. The buffer is padded here so the same writes
+        // land in valid memory; indices below 320 hold identical values.
+        let mut lens = [0u8; 288 + 32 + 256];
+        let mut n: c_int = 0;
+        while n < nlit + ndst {
             let sym = cp_decode(s, (&raw mut (*s).len) as *mut u32, (*s).nlen as c_int);
-            fr_s32(&mut fr, I_SYM, sym);
             match sym {
                 16 => {
-                    // for (int i = 3 + cp_read_bits(s, 2); i; --i, ++n)
-                    //   lens[n] = lens[n - 1];
-                    let v = 3i32.wrapping_add(cp_read_bits(s, 2) as c_int);
-                    fr_s32(&mut fr, I_I16, v);
-                    while fr_g32(&fr, I_I16) != 0 {
-                        let n = fr_g32(&fr, I_N);
-                        let prev = fr_load(&fr, I_LENS as isize + (n as isize) - 1);
-                        let n = fr_g32(&fr, I_N);
-                        fr_store(&mut fr, I_LENS as isize + n as isize, prev, &mut smashed);
-                        let i = fr_g32(&fr, I_I16);
-                        fr_s32(&mut fr, I_I16, i.wrapping_sub(1));
-                        let n = fr_g32(&fr, I_N);
-                        fr_s32(&mut fr, I_N, n.wrapping_add(1));
+                    let mut i = 3 + cp_read_bits(s, 2) as c_int;
+                    while i != 0 {
+                        // C reads `lens[n - 1]`; at n == 0 that is out of
+                        // bounds (indeterminate); 0 is used here.
+                        let prev = if n > 0 { lens[(n - 1) as usize] } else { 0 };
+                        lens[n as usize] = prev;
+                        i -= 1;
+                        n += 1;
                     }
                 }
                 17 => {
-                    // for (int i = 3 + cp_read_bits(s, 3); i; --i, ++n) lens[n] = 0;
-                    let v = 3i32.wrapping_add(cp_read_bits(s, 3) as c_int);
-                    fr_s32(&mut fr, I_I17, v);
-                    while fr_g32(&fr, I_I17) != 0 {
-                        let n = fr_g32(&fr, I_N);
-                        fr_store(&mut fr, I_LENS as isize + n as isize, 0, &mut smashed);
-                        let i = fr_g32(&fr, I_I17);
-                        fr_s32(&mut fr, I_I17, i.wrapping_sub(1));
-                        let n = fr_g32(&fr, I_N);
-                        fr_s32(&mut fr, I_N, n.wrapping_add(1));
+                    let mut i = 3 + cp_read_bits(s, 3) as c_int;
+                    while i != 0 {
+                        lens[n as usize] = 0;
+                        i -= 1;
+                        n += 1;
                     }
                 }
                 18 => {
-                    // for (int i = 11 + cp_read_bits(s, 7); i; --i, ++n) lens[n] = 0;
-                    let v = 11i32.wrapping_add(cp_read_bits(s, 7) as c_int);
-                    fr_s32(&mut fr, I_I18, v);
-                    while fr_g32(&fr, I_I18) != 0 {
-                        let n = fr_g32(&fr, I_N);
-                        fr_store(&mut fr, I_LENS as isize + n as isize, 0, &mut smashed);
-                        let i = fr_g32(&fr, I_I18);
-                        fr_s32(&mut fr, I_I18, i.wrapping_sub(1));
-                        let n = fr_g32(&fr, I_N);
-                        fr_s32(&mut fr, I_N, n.wrapping_add(1));
+                    let mut i = 11 + cp_read_bits(s, 7) as c_int;
+                    while i != 0 {
+                        lens[n as usize] = 0;
+                        i -= 1;
+                        n += 1;
                     }
                 }
                 _ => {
-                    // lens[n++] = (uint8_t)sym; -- gcc bumps `n` *before* the store
-                    let n = fr_g32(&fr, I_N);
-                    fr_s32(&mut fr, I_N, n.wrapping_add(1));
-                    let symv = fr_g32(&fr, I_SYM) as u8;
-                    fr_store(&mut fr, I_LENS as isize + n as isize, symv, &mut smashed);
+                    lens[n as usize] = sym as u8;
+                    n += 1;
                 }
             }
         }
-
-        let nlit_f = fr_g32(&fr, I_NLIT);
-        let ndst_f = fr_g32(&fr, I_NDST);
-        // Only the 16/17/18 cases can write into `nlit`/`ndst` (the default case
-        // advances `n` by one per outer iteration and the loop guard caps
-        // `n < nlit + ndst <= 320`), and they only ever store zero there, so
-        // these can only shrink from their initial 257..288 / 1..32.
-        debug_assert!((0..=320).contains(&nlit_f) && (0..=320).contains(&ndst_f));
-        let nlit_ok = (0..=320).contains(&nlit_f);
-        let ndst_ok = (0..=320).contains(&ndst_f);
-        if !nlit_ok || !ndst_ok {
-            smashed = true;
-        }
-
-        // s->nlit = cp_build(s, s->lit, lens, nlit);
-        (*s).nlit = cp_build(
-            s,
-            (&raw mut (*s).lit) as *mut u32,
-            fr.as_ptr().add(I_LENS),
-            if nlit_ok { nlit_f } else { 0 },
-        ) as u32;
-        // s->ndst = cp_build(0, s->dst, lens + nlit, ndst);
-        let dst_idx = I_LENS as isize + nlit_f as isize;
-        let dst_lens: *const u8 = if nlit_ok {
-            fr.as_ptr().offset(dst_idx)
-        } else {
-            fr.as_ptr()
-        };
+        (*s).nlit = cp_build(s, (&raw mut (*s).lit) as *mut u32, lens.as_ptr(), nlit) as u32;
         (*s).ndst = cp_build(
             ptr::null_mut(),
             (&raw mut (*s).dst) as *mut u32,
-            dst_lens,
-            if ndst_ok { ndst_f } else { 0 },
+            lens.as_ptr().wrapping_offset(nlit as isize),
+            ndst,
         ) as u32;
-
-        if smashed {
-            cp_stack_smash();
-        }
         1
     }
 }
@@ -1421,30 +1210,31 @@ mod tests {
                 .iter()
                 .flat_map(|v| v.to_le_bytes())
                 .collect();
-            put(&mut expect, OFF_FIXED_TABLE, &*(&raw const cp_fixed_table));
+            put(&mut expect, OFF_DIST_BASE, &db[..128]);
+            put(&mut expect, OFF_DIST_EXTRA_BITS, &*(&raw const cp_dist_extra_bits));
+            put(&mut expect, OFF_LEN_BASE, &lb);
+            put(&mut expect, OFF_LEN_EXTRA_BITS, &*(&raw const cp_len_extra_bits));
             put(
                 &mut expect,
                 OFF_PERMUTATION_ORDER,
                 &*(&raw const cp_permutation_order),
             );
-            put(&mut expect, OFF_LEN_EXTRA_BITS, &*(&raw const cp_len_extra_bits));
-            put(&mut expect, OFF_LEN_BASE, &lb);
-            put(&mut expect, OFF_DIST_EXTRA_BITS, &*(&raw const cp_dist_extra_bits));
-            put(&mut expect, OFF_DIST_BASE, &db);
+            put(&mut expect, OFF_FIXED_TABLE, &*(&raw const cp_fixed_table));
             for off in 0..DATA_BLOB_LEN {
                 assert_eq!(blob_byte(off), expect[off], "blob byte {off}");
             }
-            assert_eq!(blob_byte(DATA_BLOB_LEN), 0); // .bss completed.0
+            assert_eq!(blob_byte(DATA_BLOB_LEN), 0);
             // values the reference library returns for these out-of-range reads
-            assert_eq!(at_u8(OFF_LEN_EXTRA_BITS, 31), 0); // 1 alignment gap byte
-            assert_eq!(at_u8(OFF_LEN_EXTRA_BITS, 32), 3); // cp_len_base[0] LSB
-            assert_eq!(at_u32(OFF_LEN_BASE, 31), 0); // 4 alignment gap bytes
-            assert_eq!(at_u32(OFF_LEN_BASE, 32), 0); // cp_dist_extra_bits[0..4]
             assert_eq!(at_u8(OFF_DIST_EXTRA_BITS, 32), 1); // cp_dist_base[0] LSB
-            assert_eq!(at_u8(OFF_PERMUTATION_ORDER, 19), 0); // 13 gap bytes
+            assert_eq!(at_u32(OFF_DIST_BASE, 32), 0); // past the end of .data
+            assert_eq!(at_u8(OFF_LEN_EXTRA_BITS, 31), 0); // alignment gap
+            assert_eq!(at_u8(OFF_LEN_EXTRA_BITS, 32), 3); // cp_len_base[0] LSB
+            assert_eq!(at_u32(OFF_LEN_BASE, 31), 0); // alignment gap
+            assert_eq!(at_u8(OFF_PERMUTATION_ORDER, 19), 0); // alignment gap
             assert_eq!(at_u8(OFF_PERMUTATION_ORDER, 32), 0); // cp_len_extra_bits[0]
-            assert_eq!(at_u32(OFF_DIST_BASE, 32), 0); // .bss completed.0
             assert_eq!(at_u8(OFF_FIXED_TABLE, 320), 16); // cp_permutation_order[0]
+            assert_eq!(at_u32(OFF_LEN_BASE, 32), 0); // dist_extra[0..4] = {0,0,0,0}
+            assert_eq!(at_u32(OFF_LEN_BASE, 33), 0x0202_0101); // dist_extra[4..8]={1,1,2,2}
             // in-range reads still read the tables
             for i in 0..31 {
                 assert_eq!(at_u8(OFF_LEN_EXTRA_BITS, i), (*(&raw const cp_len_extra_bits))[i as usize]);

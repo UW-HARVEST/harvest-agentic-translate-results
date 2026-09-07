@@ -1,64 +1,114 @@
-# SYMBOLS.md — public ABI surface
+# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
 
-Derived mechanically:
+Sources compared:
+
+* C   : `c_src/build/libharvest-work-oeLV3y.so` (cmake, `src/lib.c`, links `-lm`)
+* Rust: `translation/target/release/libstr_put_lib.so` (`crate-type = ["cdylib"]`)
+
+Commands:
 
 ```sh
-nm -D --defined-only c_src/build/libharvest-work-TltUpD.so | awk '{print $2, $3}' | sort
-nm -D --defined-only translation/target/release/libstr_put_lib.so | awk '{print $2, $3}' | sort
+nm -D --defined-only c_src/build/libharvest-work-oeLV3y.so   | awk '{print $2,$3}' | sort
+nm -D --defined-only translation/target/release/libstr_put_lib.so | awk '{print $2,$3}' | sort
 ```
 
-`c_src/include/lib.h` declares only `void str_put(int num);`, so the rest of the
-ABI comes from the non-`static` definitions inside `c_src/src/lib.c`.
+`Cargo.toml` declares **no `[features]` section**, so there is exactly one
+build configuration (`--no-default-features` and the default build are the same
+`.so`). Feature-combination sweep is therefore the single default combination.
 
-## Defined (exported) symbols
+## Dynamic symbol table (`nm -D`), defined symbols
 
-| # | symbol | C type / signature | C source | Rust impl | exported by Rust `.so` |
-|---|--------|--------------------|----------|-----------|------------------------|
-| 1 | `stbds_arrgrowf`      | `void *(void *a, size_t elemsize, size_t addlen, size_t min_cap)` | lib.c:271 | `src/arr.rs` | yes |
-| 2 | `stbds_arrfreef`      | `void (void *a)` | lib.c:305 | `src/arr.rs` | yes |
-| 3 | `stbds_rand_seed`     | `void (size_t seed)` | lib.c:359 | `src/hash.rs` | yes |
-| 4 | `stbds_hash_string`   | `size_t (char *str, size_t seed)` | lib.c:481 | `src/hash.rs` | yes |
-| 5 | `stbds_hash_bytes`    | `size_t (void *p, size_t len, size_t seed)` | lib.c:553 | `src/hash.rs` | yes |
-| 6 | `stbds_hmfree_func`   | `void (void *a, size_t elemsize)` | lib.c:572 | `src/hash.rs` | yes |
-| 7 | `stbds_hmget_key_ts`  | `void *(void *a, size_t elemsize, void *key, size_t keysize, ptrdiff_t *temp, int mode)` | lib.c:634 | `src/hash.rs` | yes |
-| 8 | `stbds_hmget_key`     | `void *(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | lib.c:663 | `src/hash.rs` | yes |
-| 9 | `stbds_hmput_default` | `void *(void *a, size_t elemsize)` | lib.c:670 | `src/hash.rs` | yes |
-| 10 | `stbds_hmput_key`    | `void *(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | lib.c:682 | `src/hash.rs` | yes |
-| 11 | `stbds_shmode_func`  | `void *(size_t elemsize, int mode)` | lib.c:798 | `src/hash.rs` | yes |
-| 12 | `stbds_hmdel_key`    | `void *(void *a, size_t elemsize, void *key, size_t keysize, size_t keyoffset, int mode)` | lib.c:808 | `src/hash.rs` | yes |
-| 13 | `stbds_stralloc`     | `char *(stbds_string_arena *a, char *str)` | lib.c:883 | `src/strings.rs` | yes |
-| 14 | `stbds_strreset`     | `void (stbds_string_arena *a)` | lib.c:920 | `src/strings.rs` | yes |
-| 15 | `strkey`             | `char *(int n)` | lib.c:941 | `src/testapi.rs` | yes |
-| 16 | `str_put`            | `void (int num)` | lib.c:947 | `src/testapi.rs` | yes |
+| # | symbol | C type | Rust type | Rust site | status |
+|---|--------|--------|-----------|-----------|--------|
+| 1 | `stbds_arrfreef`     | T | T | `src/arr.rs`     | OK |
+| 2 | `stbds_arrgrowf`     | T | T | `src/arr.rs`     | OK |
+| 3 | `stbds_hash_bytes`   | T | T | `src/hash.rs`    | OK |
+| 4 | `stbds_hash_string`  | T | T | `src/hash.rs`    | OK |
+| 5 | `stbds_hmdel_key`    | T | T | `src/hash.rs`    | OK |
+| 6 | `stbds_hmfree_func`  | T | T | `src/hash.rs`    | OK |
+| 7 | `stbds_hmget_key`    | T | T | `src/hash.rs`    | OK |
+| 8 | `stbds_hmget_key_ts` | T | T | `src/hash.rs`    | OK |
+| 9 | `stbds_hmput_default`| T | T | `src/hash.rs`    | OK |
+| 10 | `stbds_hmput_key`   | T | T | `src/hash.rs`    | OK |
+| 11 | `stbds_rand_seed`   | T | T | `src/hash.rs`    | OK |
+| 12 | `stbds_shmode_func` | T | T | `src/hash.rs`    | OK |
+| 13 | `stbds_stralloc`    | T | T | `src/strings.rs` | OK |
+| 14 | `stbds_strreset`    | T | T | `src/strings.rs` | OK |
+| 15 | `str_put`           | T | T | `src/testapi.rs` | OK |
+| 16 | `strkey`            | T | T | `src/testapi.rs` | OK |
 
-`diff` of the two sorted symbol lists is **empty** — 16 defined symbols on both
-sides, identical names and identical `T` binding.
+**Missing from Rust `.so`: 0.**
 
-## Intentionally NOT exported (matches C)
+```
+$ comm -23 <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
+           <(nm -D --defined-only RUST.so| awk '{print $3}' | sort)
+(empty)
+```
 
-| C entity | why not exported |
+## Non-exported C internals (`static`, correctly absent from both `nm -D`)
+
+Translated but intentionally not exported — they are `static` in C, so they must
+NOT appear in `nm -D`:
+
+| C symbol | Rust counterpart |
 |----------|------------------|
-| `static char buffer[256]` | file-scope `static` → local symbol (`b`/`d` in `nm`, absent from `nm -D`) |
-| `stbds_siphash_bytes`, `stbds_is_key_equal`, `stbds_hm_find_slot`, `stbds_probe_position`, `stbds_log2`, `stbds_make_hash_index`, `stbds_strdup` | `static` in the C source |
-| `stbds_unit_tests` | `extern`-declared in lib.c but never defined; not in the `.so` |
+| `stbds_hash_seed` (static var) | `types::STBDS_HASH_SEED` |
+| `buffer` (static var)          | `testapi::BUFFER` |
+| `stbds_probe_position`         | `hash::stbds_probe_position` |
+| `stbds_log2`                   | `hash::stbds_log2` |
+| `stbds_make_hash_index`        | `hash::stbds_make_hash_index` |
+| `stbds_siphash_bytes`          | `hash::stbds_siphash_bytes` |
+| `stbds_is_key_equal`           | `hash::stbds_is_key_equal` |
+| `stbds_hm_find_slot`           | `hash::stbds_hm_find_slot` |
+| `stbds_strdup`                 | `strings::stbds_strdup` |
+
+Verified: neither `.so` exports any of these.
 
 ## Undefined (imported) symbols
 
-The Rust `.so` imports only libc / libgcc names
-(`realloc`, `free`, `memmove`, `memcpy`, `memset`, `bcmp`/`memcmp`, `strlen`,
-`strcmp`, `printf`, `sprintf`, `__assert_fail`, `abort`, plus the
-`_Unwind_*` / `__cxa_*` / `pthread_*` runtime support that `libstd` pulls in).
-**0 missing / undefined non-libc symbols.**
+The Rust `.so` imports only libc, libgcc-unwind and libpthread symbols — no
+undefined symbol belongs to the library itself.
 
-`tests/symbols.rs` enforces both halves of this automatically:
+One difference is worth naming explicitly: the C `.so` imports `memcmp`, the
+*release* Rust `.so` imports `bcmp` instead (the debug build imports both).
+`src/hash.rs` does declare and call `c::memcmp`, but every call site is
+`0 == memcmp(...)`, so LLVM rewrites it to glibc's `bcmp`, which answers exactly
+that equality question. Behaviour is unchanged; the differential tests in
+`tests/phase_c_errors.rs` (`g2_keysize_zero`, `g3_keysize_covers_whole_element`)
+and the randomized binary-map pipelines cover the key-comparison path directly.
 
-* `defined_symbol_diff_is_empty` — `nm -D --defined-only` on both objects, then
-  `C \ Rust` must be empty, the C count must be exactly 16, and each of the 16
-  names must be present on both sides.
-* `rust_so_imports_only_runtime_symbols` — every `nm -D --undefined-only` entry
-  must be an allow-listed libc / runtime name, and in particular **no `stbds_*`
-  symbol may be undefined**, which is what would happen if a C module had been
-  left untranslated and merely re-declared.
+`verify.sh` step 3 enforces this mechanically: it strips the libc / unwinder /
+pthread allowlist from `nm -D --undefined-only` and fails if anything is left.
 
-`tests/feature_matrix.sh` repeats the `nm -D` diff for every feature
-combination.
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+
+## Completion gate (Phase D)
+
+```
+$ ./verify.sh
+C exports:    16
+Rust exports: 16 of them
+symbol diff: EMPTY (0 missing)
+--- undefined non-libc symbols in the Rust .so ---
+none
+Cargo.toml declares no [features]; the only configuration is the default.
+test result: ok. 17 passed   (tests/phase_b_arr.rs)
+test result: ok. 15 passed   (tests/phase_b_hash.rs)
+test result: ok. 43 passed   (tests/phase_b_map.rs)
+test result: ok.  7 passed   (tests/phase_b_strput.rs)
+test result: ok. 53 passed   (tests/phase_c_errors.rs)
+PHASE D: ALL CHECKS PASSED
+```
+
+- [x] `SYMBOLS.md`: `nm -D` shows 0 missing and 0 undefined non-libc symbols in Rust.
+- [x] Phase B: every one of the 80 `CONFIGS.md` rows passes across randomized inputs.
+- [x] No binary executable is produced by `c_src/CMakeLists.txt` (it declares a
+      single `add_library(... SHARED ...)`), so the only program output the
+      library can produce is `str_put`'s `printf`; that is compared byte-for-byte
+      through a redirected fd 1 in `tests/phase_b_strput.rs`.
+- [x] Phase C: every one of the 52 `ERRORS.md` rows plus G1–G7 has a passing
+      error-path differential test.
+- [x] All of the above hold under every feature combination — `Cargo.toml`
+      declares no `[features]`, so `--no-default-features` and the default build
+      are the same configuration, and `verify.sh` runs the sweep either way.
+      The suite also passes in both the `dev` and `release` profiles.

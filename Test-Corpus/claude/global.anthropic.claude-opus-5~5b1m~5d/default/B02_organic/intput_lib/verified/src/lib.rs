@@ -191,30 +191,6 @@ fn elem_ptr(a: *mut c_void, elemsize: usize, i: usize) -> *mut u8 {
     (a as *mut u8).wrapping_add(elemsize.wrapping_mul(i))
 }
 
-// ---------------------------------------------------------------------------
-// Raw loads/stores through pointers that come straight from the FFI boundary.
-//
-// The C code never null-checks its pointer parameters, so `stbds_hash_string(0,
-// s)`, `stbds_hash_bytes(0, 8, s)`, `stbds_stralloc(0, s)`, `stbds_strreset(0)`,
-// `stbds_hmget_key_ts(..., temp=0, ...)` and a failing `realloc` inside
-// `stbds_arrgrowf` all fault with SIGSEGV.  A plain `*p` in Rust would instead
-// trip rustc's "null pointer dereference occurred" UB check (SIGABRT) whenever
-// the crate is built with debug assertions, which would make the observable
-// failure mode differ from the C by build profile.  Volatile accesses perform
-// the same machine load/store without that check, so the Rust `.so` faults
-// exactly like the C one in *every* profile.
-// ---------------------------------------------------------------------------
-
-#[inline(always)]
-unsafe fn vread<T>(p: *const T) -> T {
-    ptr::read_volatile(p)
-}
-
-#[inline(always)]
-unsafe fn vwrite<T>(p: *mut T, v: T) {
-    ptr::write_volatile(p, v)
-}
-
 #[inline(always)]
 unsafe fn read_char_ptr(p: *const u8) -> *mut c_char {
     ptr::read_unaligned(p as *const *mut c_char)
@@ -228,7 +204,7 @@ unsafe fn write_char_ptr(p: *mut u8, v: *mut c_char) {
 unsafe fn c_strlen(s: *const c_char) -> usize {
     let mut n = 0usize;
     let mut p = s as *const u8;
-    while vread(p) != 0 {
+    while *p != 0 {
         n += 1;
         p = p.add(1);
     }
@@ -240,8 +216,8 @@ unsafe fn c_str_eq(a: *const c_char, b: *const c_char) -> bool {
     let mut x = a as *const u8;
     let mut y = b as *const u8;
     loop {
-        let ca = vread(x);
-        let cb = vread(y);
+        let ca = *x;
+        let cb = *y;
         if ca != cb {
             return false;
         }
@@ -292,15 +268,12 @@ pub unsafe extern "C" fn stbds_arrgrowf(
         elemsize.wrapping_mul(min_cap).wrapping_add(HDR_SIZE),
     );
     let b = (raw as *mut u8).wrapping_add(HDR_SIZE) as *mut c_void;
-    // `realloc` may return NULL, in which case the C writes through
-    // `(stbds_array_header *) 32 - 1` == address 0 and faults; reproduce that.
-    let h = stbds_header(b);
     if a.is_null() {
-        vwrite(ptr::addr_of_mut!((*h).length), 0);
-        vwrite(ptr::addr_of_mut!((*h).hash_table), ptr::null_mut());
-        vwrite(ptr::addr_of_mut!((*h).temp), 0);
+        (*stbds_header(b)).length = 0;
+        (*stbds_header(b)).hash_table = ptr::null_mut();
+        (*stbds_header(b)).temp = 0;
     }
-    vwrite(ptr::addr_of_mut!((*h).capacity), min_cap);
+    (*stbds_header(b)).capacity = min_cap;
 
     b
 }
@@ -482,12 +455,8 @@ unsafe fn stbds_make_hash_index(
 pub unsafe extern "C" fn stbds_hash_string(str_: *mut c_char, seed: usize) -> usize {
     let mut hash = seed;
     let mut s = str_ as *const u8;
-    loop {
-        let ch = vread(s);
-        if ch == 0 {
-            break;
-        }
-        hash = hash.rotate_left(9).wrapping_add(ch as usize);
+    while *s != 0 {
+        hash = hash.rotate_left(9).wrapping_add(*s as usize);
         s = s.add(1);
     }
 
@@ -545,15 +514,15 @@ unsafe fn stbds_siphash_bytes(p: *mut c_void, len: usize, seed: usize) -> usize 
     while i.wrapping_add(size_of::<usize>()) <= len {
         // data = d[0] | (d[1] << 8) | (d[2] << 16) | (d[3] << 24);
         // (int arithmetic, then converted to size_t == sign extension)
-        let lo: c_int = (vread(d.add(0)) as c_int)
-            | ((vread(d.add(1)) as c_int) << 8)
-            | ((vread(d.add(2)) as c_int) << 16)
-            | ((vread(d.add(3)) as c_int) << 24);
+        let lo: c_int = (*d.add(0) as c_int)
+            | ((*d.add(1) as c_int) << 8)
+            | ((*d.add(2) as c_int) << 16)
+            | ((*d.add(3) as c_int) << 24);
         data = lo as isize as usize;
-        let hi: c_int = (vread(d.add(4)) as c_int)
-            | ((vread(d.add(5)) as c_int) << 8)
-            | ((vread(d.add(6)) as c_int) << 16)
-            | ((vread(d.add(7)) as c_int) << 24);
+        let hi: c_int = (*d.add(4) as c_int)
+            | ((*d.add(5) as c_int) << 8)
+            | ((*d.add(6) as c_int) << 16)
+            | ((*d.add(7) as c_int) << 24);
         data |= ((hi as isize as usize) << 16) << 16;
 
         v3 ^= data;
@@ -572,25 +541,25 @@ unsafe fn stbds_siphash_bytes(p: *mut c_void, len: usize, seed: usize) -> usize 
     let rem = len.wrapping_sub(i);
     // switch with fall-through: case 7 .. case 1
     if rem >= 7 {
-        data |= ((vread(d.add(6)) as usize) << 24) << 24;
+        data |= ((*d.add(6) as usize) << 24) << 24;
     }
     if rem >= 6 {
-        data |= ((vread(d.add(5)) as usize) << 20) << 20;
+        data |= ((*d.add(5) as usize) << 20) << 20;
     }
     if rem >= 5 {
-        data |= ((vread(d.add(4)) as usize) << 16) << 16;
+        data |= ((*d.add(4) as usize) << 16) << 16;
     }
     if rem >= 4 {
-        data |= (((vread(d.add(3)) as c_int) << 24) as isize) as usize;
+        data |= (((*d.add(3) as c_int) << 24) as isize) as usize;
     }
     if rem >= 3 {
-        data |= (((vread(d.add(2)) as c_int) << 16) as isize) as usize;
+        data |= (((*d.add(2) as c_int) << 16) as isize) as usize;
     }
     if rem >= 2 {
-        data |= (((vread(d.add(1)) as c_int) << 8) as isize) as usize;
+        data |= (((*d.add(1) as c_int) << 8) as isize) as usize;
     }
     if rem >= 1 {
-        data |= ((vread(d.add(0)) as c_int) as isize) as usize;
+        data |= ((*d.add(0) as c_int) as isize) as usize;
     }
 
     v3 ^= data;
@@ -638,7 +607,7 @@ unsafe fn stbds_is_key_equal(
         let ka = key as *const u8;
         let mut n = 0usize;
         while n < keysize {
-            if vread(ka.add(n)) != vread(slot.add(n)) {
+            if *ka.add(n) != *slot.add(n) {
                 eq = false;
                 break;
             }
@@ -756,20 +725,20 @@ pub unsafe extern "C" fn stbds_hmget_key_ts(
         let a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
         (*stbds_header(a)).length += 1;
         ptr::write_bytes(a as *mut u8, 0, elemsize);
-        vwrite(temp, STBDS_INDEX_EMPTY);
+        *temp = STBDS_INDEX_EMPTY;
         arr_to_hash(a, elemsize)
     } else {
         let raw_a = hash_to_arr(a, elemsize);
         let table = (*stbds_header(raw_a)).hash_table as *mut stbds_hash_index;
         if table.is_null() {
-            vwrite(temp, -1);
+            *temp = -1;
         } else {
             let slot = stbds_hm_find_slot(a, elemsize, key, keysize, keyoffset, mode);
             if slot < 0 {
-                vwrite(temp, STBDS_INDEX_EMPTY);
+                *temp = STBDS_INDEX_EMPTY;
             } else {
                 let b = (*table).storage.offset(slot >> STBDS_BUCKET_SHIFT);
-                vwrite(temp, (*b).index[(slot as usize) & STBDS_BUCKET_MASK]);
+                *temp = (*b).index[(slot as usize) & STBDS_BUCKET_MASK];
             }
         }
         a
@@ -1132,17 +1101,13 @@ pub unsafe extern "C" fn stbds_stralloc(
 ) -> *mut c_char {
     let p: *mut c_char;
     let len = c_strlen(str_) + 1;
-    // `a` comes straight from the caller and is never null-checked by the C.
-    let a_remaining = ptr::addr_of_mut!((*a).remaining);
-    let a_block = ptr::addr_of_mut!((*a).block);
-    let a_storage = ptr::addr_of_mut!((*a).storage);
-    if len > vread(a_remaining) {
-        let blocksize0 = vread(a_block) as usize;
+    if len > (*a).remaining {
+        let blocksize0 = (*a).block as usize;
         let blocksize =
             STBDS_STRING_ARENA_BLOCKSIZE_MIN.wrapping_shl((blocksize0 >> 1) as u32);
 
         if blocksize < STBDS_STRING_ARENA_BLOCKSIZE_MAX {
-            vwrite(a_block, vread(a_block).wrapping_add(1));
+            (*a).block = (*a).block.wrapping_add(1);
         }
 
         if len > blocksize {
@@ -1155,13 +1120,13 @@ pub unsafe extern "C" fn stbds_stralloc(
                 ptr::addr_of_mut!((*sb).storage) as *mut u8,
                 len,
             );
-            if !vread(a_storage).is_null() {
-                (*sb).next = (*vread(a_storage)).next;
-                (*vread(a_storage)).next = sb;
+            if !(*a).storage.is_null() {
+                (*sb).next = (*(*a).storage).next;
+                (*(*a).storage).next = sb;
             } else {
                 (*sb).next = ptr::null_mut();
-                vwrite(a_storage, sb);
-                vwrite(a_remaining, 0);
+                (*a).storage = sb;
+                (*a).remaining = 0;
             }
             return ptr::addr_of_mut!((*sb).storage) as *mut c_char;
         } else {
@@ -1169,29 +1134,29 @@ pub unsafe extern "C" fn stbds_stralloc(
                 ptr::null_mut(),
                 (size_of::<stbds_string_block>() - 8).wrapping_add(blocksize),
             ) as *mut stbds_string_block;
-            (*sb).next = vread(a_storage);
-            vwrite(a_storage, sb);
-            vwrite(a_remaining, blocksize);
+            (*sb).next = (*a).storage;
+            (*a).storage = sb;
+            (*a).remaining = blocksize;
         }
     }
 
     stbds_assert!(
-        len <= vread(a_remaining),
+        len <= (*a).remaining,
         b"len <= a->remaining\0",
         913,
         b"stbds_stralloc\0"
     );
-    p = (ptr::addr_of_mut!((*vread(a_storage)).storage) as *mut u8)
-        .wrapping_add(vread(a_remaining))
+    p = (ptr::addr_of_mut!((*(*a).storage).storage) as *mut u8)
+        .wrapping_add((*a).remaining)
         .wrapping_sub(len) as *mut c_char;
-    vwrite(a_remaining, vread(a_remaining) - len);
+    (*a).remaining -= len;
     ptr::copy(str_ as *const u8, p as *mut u8, len);
     p
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stbds_strreset(a: *mut stbds_string_arena) {
-    let mut x = vread(ptr::addr_of!((*a).storage));
+    let mut x = (*a).storage;
     while !x.is_null() {
         let y = (*x).next;
         free(x as *mut c_void);

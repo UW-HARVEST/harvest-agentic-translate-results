@@ -1,62 +1,129 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — error-surface table (Phase A / gate for Phase C)
 
 ## How this table was derived
 
-Mechanical grep of the entire C source for every rejection construct:
+Mechanically, from `c_src/src/driver.c` and `c_src/include/driver.h`. The entire
+non-comment body of the library is:
 
-```sh
-grep -nE 'return|assert|NULL|errno|ERROR|if *\(|switch|exit|abort|-1' \
-     c_src/src/driver.c c_src/include/driver.h        # -> 0 hits in code
+```c
+#include "driver.h"
+#include <stdint.h>
+#include <stdio.h>
+
+typedef union {
+    uint64_t x;
+    double f;
+} raw_double_t;
+
+void driver(double f) {
+    raw_double_t u = {.f = f};
+    printf("%llx %a %.4f\n", u.x, f, f);
+}
 ```
 
-Result: the C code contains
+Grepping the code region (lines 23..EOF, i.e. everything after the licence
+comment) for every rejection construct gives all-zero counts:
 
-* **no** `return` statement (the function is `void`),
-* **no** `assert`,
-* **no** `if` / `switch` / ternary — i.e. no explicit range, null or bounds check,
-* **no** error enum, error macro, `errno` use, sentinel value, `exit` or `abort`,
-* **no** min/max constant,
-* **no** pointer, array, length, count or enum parameter (the only parameter is
-  a by-value `double`),
-* the return value of `printf` (the one call that *can* fail, e.g. `EBADF`) is
-  **discarded**, so even a failing write is invisible to the caller.
+| construct | `return` | `assert` | `NULL` | `errno` | `if` | `switch` | `#if` | `for` | `while` | `goto` | `exit` | `abort` | `[` (index) | `malloc` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| occurrences | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
-Consequently the library has an **empty explicit error surface**: there is no
-input the C code rejects, and no observable error channel. `driver` accepts all
-2^64 bit patterns of its argument and always returns `void`.
+So: **there is no error-return macro, no error enum, no sentinel return, no
+`assert`, no range check, no null check, and no min/max constant in this C
+library.** `driver` returns `void` and discards `printf`'s return value, so no
+failure of any kind is ever reported to the caller. Rows 1–4 below record that
+absence explicitly (it is a finding, not an omission), and the remaining rows are
+the generic-boundary / degenerate-input cases Phase C mandates regardless: every
+input class where the C's *observable behaviour* (the bytes on stdout) is
+produced by an exceptional branch inside the glibc conversions the C invokes.
 
-The rows below therefore enumerate the *implicit* rejection/degenerate surface
-that actually exists for this API: the argument classes that the C library must
-handle without a valid numeric representation (the `double` analogue of
-"out-of-range enum value"), plus the generic FFI boundary conditions the task
-mandates. Each row is asserted by a differential test in
-`tests/differential.rs` (`phase_c_*`), comparing C vs Rust byte-for-byte.
+`expected C result` is the exact stdout line, written as
+`<%llx> <%a> <%.4f>` followed by `\n`. Anything that is value-dependent is
+marked and checked by the differential test rather than hard-coded.
 
 ## Table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|---------------------------------------------|-------------------|------|
-| 1 | `driver` | `+inf` (`0x7ff0000000000000`) — no finite value; `%a` and `%.4f` have no digits to print | writes `7ff0000000000000 inf inf\n`; returns normally, no error signalled | `phase_c_row01_pos_inf` |
-| 2 | `driver` | `-inf` (`0xfff0000000000000`) — sign bit set on a non-finite | writes `fff0000000000000 -inf -inf\n` | `phase_c_row02_neg_inf` |
-| 3 | `driver` | quiet NaN, positive sign (`0x7ff8000000000000`) — the "no valid variant" bit pattern | writes `7ff8000000000000 nan nan\n` | `phase_c_row03_qnan_pos` |
-| 4 | `driver` | quiet NaN, **sign bit set** (`0xfff8000000000000`) — `%a`/`%.4f` must still honour `signbit` | writes `fff8000000000000 -nan -nan\n` | `phase_c_row04_qnan_neg` |
-| 5 | `driver` | signalling NaN (`0x7ff0000000000001`, mantissa MSB clear) — must not trap or normalise | writes `7ff0000000000001 nan nan\n` (payload not printed) | `phase_c_row05_snan` |
-| 6 | `driver` | NaN with arbitrary/maximal payload (`0x7fffffffffffffff`, `0xffffffffffffffff`) — payload must be dropped by `%a` yet preserved by `%llx` | `%llx` prints the full payload, `%a`/`%.4f` print `nan`/`-nan` | `phase_c_row06_nan_payloads` |
-| 7 | `driver` | negative zero (`0x8000000000000000`) — zero that must keep its sign | writes `8000000000000000 -0x0p+0 -0.0000\n` | `phase_c_row07_negative_zero` |
-| 8 | `driver` | positive zero (`0x0000000000000000`) — degenerate `%llx` (leading-zero suppression must yield a single `0`, not an empty field) | writes `0 0x0p+0 0.0000\n` | `phase_c_row08_positive_zero` |
-| 9 | `driver` | smallest subnormal (`0x0000000000000001`) — biased exponent field 0, so `%a` must **not** renormalise | writes `1 0x0.0000000000001p-1022 0.0000\n` | `phase_c_row09_min_subnormal` |
-| 10 | `driver` | largest subnormal (`0x000fffffffffffff`) — one step below the smallest normal | `%a` uses leading `0` and `p-1022` | `phase_c_row10_max_subnormal` |
-| 11 | `driver` | smallest normal (`0x0010000000000000`) — one step past the subnormal range | `%a` uses leading `1` and `p-1022` | `phase_c_row11_min_normal` |
-| 12 | `driver` | largest finite `DBL_MAX` (`0x7fefffffffffffff`) — one step below `inf`; `%.4f` must emit the full 309-digit exact expansion | full exact decimal expansion, no truncation/rounding to `inf` | `phase_c_row12_dbl_max` |
-| 13 | `driver` | `-DBL_MAX` (`0xffefffffffffffff`) | same as row 12 with a leading `-` | `phase_c_row13_neg_dbl_max` |
-| 14 | `driver` | magnitude strictly below the `%.4f` resolution (e.g. `4.9e-324`, `1e-300`, `1e-5`) — every requested fractional digit is a rounding artefact | `%.4f` collapses to `0.0000` / `-0.0000`, sign preserved | `phase_c_row14_underflow_to_zero` |
-| 15 | `driver` | exact decimal tie at the 4th fractional digit (e.g. `0.03125`, `0.09375`, `2.00005`-class values) — round-half-to-even boundary, the "one step past valid range" of the rounding rule | glibc rounds half-to-even under the default `FE_TONEAREST` | `phase_c_row15_ties_half_even` |
-| 16 | `driver` | rounding carry that propagates across the radix point (e.g. `0.99999`, `9.99999`, `-0.99999`) | `%.4f` produces `1.0000` / `10.0000` / `-1.0000` | `phase_c_row16_rounding_carry` |
-| 17 | `driver` | every one of the 2^11 raw biased-exponent field values, including the reserved `0` and `0x7ff` — the exhaustive "out-of-range enum value" sweep for the only enumerable field in the input | C handles all; no field value is rejected | `phase_c_row17_all_exponent_fields` |
-| 18 | `driver` | the argument is passed by value, so there is **no** null-pointer, zero-length or oversized-length input to construct; documented here for completeness | not applicable — no pointer/length parameter exists in the ABI | `phase_c_row18_no_pointer_or_length_surface` (asserts the ABI/arity of the export instead) |
-| 19 | `driver` | every sentinel input (`±inf`, quiet/signalling NaN, `±0.0`, min/max subnormal, min normal) under **every** locale and **every** rounding direction — the degenerate inputs must not acquire a radix character where C prints none, and must not be nudged by directed rounding | identical sentinel spellings in all 4 × 8 ambient states | `phase_c_row19_specials_under_all_ambient_state` |
-| 20 | `driver` | an out-of-range rounding-direction value — `fesetround` rejects any int that names no `FE_*` direction, so the reachable set is exactly the four modes; the translation's int→mode mapping must be total and must not silently collapse to the default | all four modes produce distinct, matching output; a bogus mode is refused by libc before `driver` ever sees it | `phase_c_row20_out_of_range_rounding_mode_value` |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|---------------------------------------------|-------------------|
+| 1 | `driver` | any input whatsoever — the function has no rejection branch | never returns an error; `void` return, no error code, no sentinel, no `errno` set by the library itself |
+| 2 | `driver` | `printf` itself fails (return < 0) | return value is discarded; `driver` still returns normally. Rust must also ignore the write result and not panic |
+| 3 | `driver` | NULL pointer argument | **N/A** — `driver` has no pointer parameter; nothing to null-check |
+| 4 | `driver` | out-of-range enum value / zero or oversized length | **N/A** — `driver` has no enum and no length/count parameter. Its one parameter is `double`, for which *all* 2^64 bit patterns are legal arguments; there is no value the C rejects |
+| 5 | `driver` | `f` = quiet NaN, sign bit clear (`0x7ff8000000000000`) | `7ff8000000000000 nan nan\n` |
+| 6 | `driver` | `f` = quiet NaN, sign bit set (`0xfff8000000000000`) | `fff8000000000000 -nan -nan\n` — glibc honours the NaN sign bit for both `%a` and `%f` |
+| 7 | `driver` | `f` = signalling NaN (`0x7ff4000000000000`) | `7ff4000000000000 nan nan\n` — `printf` does not trap; sNaN is spelled the same as qNaN |
+| 8 | `driver` | `f` = NaN with non-canonical payload, e.g. `0x7ff0000000000001` (smallest NaN), `0xffffffffffffffff` | `%llx` prints the payload exactly; `%a`/`%.4f` print `nan` / `-nan` with no payload digits |
+| 9 | `driver` | `f` = `+inf` (`0x7ff0000000000000`) | `7ff0000000000000 inf inf\n` |
+| 10 | `driver` | `f` = `-inf` (`0xfff0000000000000`) | `fff0000000000000 -inf -inf\n` |
+| 11 | `driver` | `f` = `+0.0` (`0x0000000000000000`) | `0 0x0p+0 0.0000\n` — `%llx` of zero is a single `0`; `%a` uses leading digit `0`, emits **no** radix point, and exponent `p+0` |
+| 12 | `driver` | `f` = `-0.0` (`0x8000000000000000`) | `8000000000000000 -0x0p+0 -0.0000\n` — the sign must survive into both conversions even though the magnitude is zero |
+| 13 | `driver` | `f` = smallest positive subnormal (`0x0000000000000001`) | `1 0x0.0000000000001p-1022 0.0000\n` — glibc does **not** renormalise subnormals: leading digit stays `0` and the exponent is pinned at `BIAS-1 = -1022` |
+| 14 | `driver` | `f` = largest subnormal (`0x000fffffffffffff`) | `fffffffffffff 0x0.fffffffffffffp-1022 0.0000\n` |
+| 15 | `driver` | `f` = negative smallest subnormal (`0x8000000000000001`) | `8000000000000001 -0x0.0000000000001p-1022 -0.0000\n` — the `%.4f` result is negative zero with a sign |
+| 16 | `driver` | `f` = smallest positive **normal**, `DBL_MIN` (`0x0010000000000000`) | `10000000000000 0x1p-1022 0.0000\n` — exponent field 1 is the first value that switches the `%a` leading digit to `1`; note the same `p-1022` as row 13 but a different leading digit |
+| 17 | `driver` | `f` = `DBL_MAX` (`0x7fefffffffffffff`) | `7fefffffffffffff 0x1.fffffffffffffp+1023 ` + a 309-integer-digit decimal + `.0000\n` — the largest exponent the `%a` path can emit and the longest `%.4f` output |
+| 18 | `driver` | `f` = `-DBL_MAX` (`0xffefffffffffffff`) | as row 17, negated, with `-0x1.…p+1023` |
+| 19 | `driver` | `f` one step past the `%.4f` "rounds to zero" boundary from below: largest double `< 0.00005` (`0.000049999999999999996`) | fraction rounds **down**: `… 0.0000\n` |
+| 20 | `driver` | `f` = nearest double to the exact tie `0.00005` (`0x3f0a36e2eb1c432d`, which is `0.000050000000000000002...` — *above* the tie) | rounds **up**: `… 0.0001\n`. The tie is unrepresentable, so the exact expansion decides; the Rust must use the exact expansion too, not a shortest-repr shortcut |
+| 21 | `driver` | `f` = an exactly-representable `%.4f` tie whose 4th fraction digit is **even**: `0.03125` (= 1/32, exact decimal `0.03125`, so the digit past the cut is exactly 5 and nothing follows) | round-half-to-**even** keeps the 4th digit: `0.0312`, not `0.0313` |
+| 22 | `driver` | `f` = an exactly-representable `%.4f` tie whose 4th fraction digit is **odd**: `0.09375` (= 3/32, exact decimal `0.09375`) | round-half-to-even rounds **up**: `0.0938` |
+| 23 | `driver` | `f` = a value whose `%.4f` rounding carries all the way, e.g. `0.99999` → `1.0000`, and `9.99999` → `10.0000` | carry propagates into the integer part; digit count grows |
+| 24 | `driver` | `f` = exponent field `0x7fe` with mantissa 0 (`0x7fe0000000000000`) — one step below the inf exponent | `%a` = `0x1p+1023`; must **not** be classified as inf |
+| 25 | `driver` | `f` = mantissa with trailing zero nibbles, e.g. `0x3ff1230000000000` | `%a` trims trailing hex zeroes: `0x1.123p+0`, and does not emit the full 13 digits |
+| 26 | `driver` | `f` = mantissa whose low nibble is nonzero, `0x3ff0000000000001` | `%a` keeps all 13 digits: `0x1.0000000000001p+0` (no trimming, leading zeroes inside the fraction preserved) |
+| 27 | `driver` | `f` = `1.0` (`0x3ff0000000000000`), exponent field exactly `BIAS` | `3ff0000000000000 0x1p+0 1.0000\n` — the `p+0` boundary between the "positive exponent" and "negative exponent" branches; sign of the exponent is `+`, never absent |
+| 28 | `driver` | `f` = value just below 1, `0x3fefffffffffffff` | `%a` exponent flips to `p-1`: `0x1.fffffffffffffp-1` |
+| 29 | `driver` | `f` bit pattern `0x0000000000000000`..`0x000000000000000f` (a `%llx` result of exactly one hex digit) | `%llx` prints no leading zeroes and no padding, so a 1-digit result stays 1 digit |
+| 30 | `driver` | stdout closed (`close(1)`) or pointed at an unwritable fd before the call | `printf` fails with EBADF, the return value is discarded, `driver` returns normally, nothing is written. Rust must match: no panic, no abort (the crate is built with `panic = "abort"`, so a panic here would kill the process) |
+| 31 | `driver` | called repeatedly / re-entrantly with the buffered `FILE*` mid-line | output is appended to the same `stdout` `FILE` buffer; no per-call flush is forced by the C. Rust must use the same `FILE` object so interleaving is identical |
+| 32 | `driver` | stdout forced **wide-oriented** with `fwide(stdout, 1)` before the call | glibc's byte functions refuse a wide-oriented stream, so `printf` fails and writes nothing; the return value is discarded and `driver` returns normally. Rust's `fwrite` must fail the same way — same (empty) output, same exit status, no panic |
+| 33 | `driver` | stdout switched to `_IONBF` / `_IOLBF` / `_IOFBF` with `setvbuf` before the call | the bytes are identical in all three modes; only the flush timing differs. Because both libraries go through the *same* `FILE`, the Rust must produce byte-identical output under each mode |
 
-All rows 1–17 and 19–20 are covered by `tests/differential.rs`; row 18 is
-structurally impossible for this ABI and is recorded so the enumeration is
-complete (the test in its place pins the export's ABI and arity).
+Rows 1–4 are "N/A / absent by construction" findings; rows 5–33 each get a
+differential test in `tests/errors.rs`. Rows 2, 30, 32 and 33 run in a forked
+child, because a failed write and `fwide` both leave sticky state on glibc's
+`stdout` that cannot be undone — and because the crate is built with
+`panic = "abort"`, a fork also makes "did the Rust panic?" observable as
+`SIGABRT` rather than as a dead test process.
+
+## Phase C checklist
+
+| # | test | status |
+|---|------|--------|
+| 1 | `err_01_no_error_return` (`void` return, no observable error channel) | [x] |
+| 2 | `err_02_printf_failure_ignored` | [x] |
+| 3 | `err_03_null_pointer_na_but_abi_checked` (N/A; the substitutable check is the calling convention) | [x] |
+| 4 | `err_04_enum_and_length_na_no_value_is_rejected` (N/A; 200k-pattern fuzz stands in) | [x] |
+| 5 | `err_05_qnan_positive` | [x] |
+| 6 | `err_06_qnan_negative` | [x] |
+| 7 | `err_07_snan` | [x] |
+| 8 | `err_08_nan_noncanonical_payloads` | [x] |
+| 9 | `err_09_pos_inf` | [x] |
+| 10 | `err_10_neg_inf` | [x] |
+| 11 | `err_11_pos_zero` | [x] |
+| 12 | `err_12_neg_zero` | [x] |
+| 13 | `err_13_min_subnormal` | [x] |
+| 14 | `err_14_max_subnormal` | [x] |
+| 15 | `err_15_neg_min_subnormal` | [x] |
+| 16 | `err_16_dbl_min_normal` | [x] |
+| 17 | `err_17_dbl_max` | [x] |
+| 18 | `err_18_neg_dbl_max` | [x] |
+| 19 | `err_19_just_below_rounding_boundary` | [x] |
+| 20 | `err_20_nearest_double_to_tie` | [x] |
+| 21 | `err_21_exact_tie_even` | [x] |
+| 22 | `err_22_exact_tie_odd` | [x] |
+| 23 | `err_23_rounding_carry` | [x] |
+| 24 | `err_24_max_exponent_field_not_inf` | [x] |
+| 25 | `err_25_trailing_zero_trim` | [x] |
+| 26 | `err_26_low_nibble_set_no_trim` | [x] |
+| 27 | `err_27_exponent_zero_boundary` | [x] |
+| 28 | `err_28_exponent_minus_one_boundary` | [x] |
+| 29 | `err_29_single_hex_digit_llx` | [x] |
+| 30 | `err_30_stdout_closed` | [x] |
+| 31 | `err_31_repeated_calls_share_buffer` | [x] |
+| 32 | `err_32_wide_oriented_stream` | [x] |
+| 33 | `err_33_buffering_modes` | [x] |
+
+All 33 rows pass against BOTH the debug and the release `cdylib`
+(`cargo test --test errors` → 33 passed, 0 failed; the two `soak_*` tests in the
+same file are `#[ignore]`d and were run separately, see `CONFIGS.md`).

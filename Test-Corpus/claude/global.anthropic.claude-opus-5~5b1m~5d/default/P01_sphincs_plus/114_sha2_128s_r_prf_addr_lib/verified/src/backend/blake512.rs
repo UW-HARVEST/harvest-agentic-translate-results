@@ -48,8 +48,8 @@ impl Default for BlakeState512 {
     }
 }
 
-/// `const u64 cst[16]` -- non-`static` in the C source, so it is an exported
-/// symbol of `libblake.so`; keep the exact C name so `nm -D` matches.
+/// `const u64 cst[16]` -- a non-static (externally linked) const array in
+/// `blake512.c`, so it must be exported under the bare C name `cst`.
 #[unsafe(no_mangle)]
 pub static cst: [u64; 16] = CST;
 

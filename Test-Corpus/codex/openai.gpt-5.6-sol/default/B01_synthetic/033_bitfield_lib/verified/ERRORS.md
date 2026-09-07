@@ -1,34 +1,19 @@
-# Error Surface
+# Error surface
 
-The following source search was applied to all C source and headers:
+Mechanical searches covered `RETURN_ERROR`, negative and null returns,
+assertions, explicit `if`/`switch` checks, range comparisons, and min/max
+constants in `c_src/include` and `c_src/src`. The C source contains no explicit
+input rejection or error-return path.
 
-```text
-rg -n 'RETURN_ERROR|return[[:space:]]+(-1|NULL)|assert[[:space:]]*\(|\
-error|ERROR|if[[:space:]]*\(|switch[[:space:]]*\(|#[[:space:]]*if|\
-NULL|MIN|MAX|enum' ../c_src/include ../c_src/src
-```
-
-It finds no error return, error enum, assertion, range check, null check,
-minimum/maximum constant, conditional, switch, or conditional-compilation
-branch. Consequently, the C implementation has no explicit rejection rows.
+The following row records the generic pointer boundary required by the
+verification protocol. It is not a checked C error: the C implementation
+dereferences the pointer directly, so the observed contract for this build is
+process termination by `SIGSEGV`.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|----------------------------------------------|-------------------|
-| - | - | No explicit rejection path exists in the C source. | - |
+| 1 | `print_foo` | `foo == NULL` | [x] no return; child process terminates with `SIGSEGV` |
 
-## Generic FFI Boundaries
-
-`driver` has no pointer, length, or enum argument. Its unsigned and signed
-arguments occupy their full C integer domains; values beyond the bitfield
-widths are valid and truncate, so they are covered in `CONFIGS.md`. Its
-`bool` domain is exactly `false` and `true`.
-
-The dynamically exported (but header-private) `print_foo` accepts one pointer.
-It immediately dereferences the pointer without checking it. A null pointer is
-therefore not a C error return; it terminates the isolated caller with
-`SIGSEGV` on the target platform. Phase C verifies that boundary in child
-processes so it cannot terminate the test runner.
-
-- [x] All zero explicit C rejection rows are covered.
-- [x] The generic null-pointer boundary matches exactly (`SIGSEGV` for both).
-- [x] No length or enum boundary exists in either exported signature.
+There are no length parameters, array counts, documented numeric ranges, or
+enum parameters in this API, so zero/oversized lengths and invalid enum
+discriminants are not applicable.

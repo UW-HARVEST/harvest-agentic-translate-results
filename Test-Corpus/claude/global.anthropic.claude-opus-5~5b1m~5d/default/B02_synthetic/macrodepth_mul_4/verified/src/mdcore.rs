@@ -1,7 +1,6 @@
 // Translation of c_src/src/mdcore.c
 
 use std::ffi::{c_char, c_int};
-use std::io::Write;
 
 use crate::mdconfig::{self, INIT, OP_NAME_C, REPEAT};
 
@@ -32,36 +31,24 @@ fn accum(n: c_int) -> c_int {
 
 /* Global macro uses at file scope (exercises expansion at global init) */
 
-// `int (*G_OP)(int,int)` and `const char *G_OP_NAME` are *mutable* globals in
-// C: they live in the writable `.data` section, so an external consumer may
-// assign to them.  `static mut` reproduces that (a plain `static` would be
-// placed in `.data.rel.ro`, which full RELRO makes read-only, so a store from
-// a C caller would fault where the C library allows it).
 #[unsafe(no_mangle)]
-pub static mut G_OP: extern "C" fn(c_int, c_int) -> c_int = mdconfig::op_fn();
+pub static G_OP: extern "C" fn(c_int, c_int) -> c_int = mdconfig::op_fn();
+
+#[repr(transparent)]
+pub struct CStrPtr(pub *const c_char);
+unsafe impl Sync for CStrPtr {}
 
 #[unsafe(no_mangle)]
-pub static mut G_OP_NAME: *const c_char = OP_NAME_C.as_ptr() as *const c_char;
+pub static G_OP_NAME: CStrPtr = CStrPtr(OP_NAME_C.as_ptr() as *const c_char);
 
-/// Reads the current value of the `G_OP` global (C: plain lvalue read).
-#[inline]
-pub fn g_op() -> extern "C" fn(c_int, c_int) -> c_int {
-    unsafe { G_OP }
-}
-
-/// Reads the current value of the `G_OP_NAME` global.
-#[inline]
-pub fn g_op_name() -> *const c_char {
-    unsafe { G_OP_NAME }
-}
-
-/// stdout writer mirroring printf's behaviour closely enough for
-/// byte-identical output.
-fn out(s: &str) {
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    let _ = lock.write_all(s.as_bytes());
-    let _ = lock.flush();
+/* mdcore.c prints with C `printf`, so this translation calls the very same
+ * libc function with the very same format strings.  Using Rust's `std::io`
+ * would be observably different: C stdio is block-buffered when stdout is a
+ * pipe, so the library's output must share glibc's stdout buffer (and its
+ * flush-at-exit discipline) with any C consumer of this .so, rather than being
+ * written straight to fd 1. */
+extern "C" {
+    fn printf(fmt: *const c_char, ...) -> c_int;
 }
 
 #[unsafe(no_mangle)]
@@ -69,7 +56,13 @@ pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
     let r = (mdconfig::op_fn())(a, b);
     let mut acc: c_int = INIT;
     acc = mdconfig::run_loop(acc);
-    out(&format!("helper.call={} helper.acc={}\n", r, acc));
+    unsafe {
+        printf(
+            c"helper.call=%d helper.acc=%d\n".as_ptr(),
+            r as c_int,
+            acc as c_int,
+        );
+    }
     r.wrapping_add(acc)
 }
 
@@ -77,14 +70,18 @@ pub extern "C" fn helper_call(a: c_int, b: c_int) -> c_int {
 pub extern "C" fn helper_ptr(a: c_int, b: c_int) -> c_int {
     let fp: extern "C" fn(c_int, c_int) -> c_int = mdconfig::op_fn();
     let r = fp(a, b);
-    out(&format!("helper.ptr={}\n", r));
+    unsafe {
+        printf(c"helper.ptr=%d\n".as_ptr(), r as c_int);
+    }
     r
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn use_generated(n: c_int) -> c_int {
     let r = accum(n);
-    out(&format!("gen.acc={}\n", r));
+    unsafe {
+        printf(c"gen.acc=%d\n".as_ptr(), r as c_int);
+    }
     r
 }
 

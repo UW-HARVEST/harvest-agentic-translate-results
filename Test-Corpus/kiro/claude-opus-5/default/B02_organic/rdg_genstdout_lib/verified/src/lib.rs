@@ -93,10 +93,10 @@ pub unsafe extern "C" fn FIO_createFilename_fromOutDir(
         let out_dir_len = strlen(outDirName);
         let filename_len = strlen(filename_start);
 
-        // C `size_t` arithmetic wraps on overflow; use explicit wrapping adds so
-        // the computed request matches the C build in every Rust profile
-        // (debug builds enable overflow checks, which would otherwise panic on
-        // e.g. `suffixLen == SIZE_MAX` where the C code silently wraps).
+        // `strlen(outDirName) + 1 + strlen(filenameStart) + suffixLen + 1` is
+        // `size_t` arithmetic in C, which wraps on overflow. Use explicit
+        // wrapping adds so the behaviour is identical regardless of whether the
+        // crate is compiled with `overflow-checks` on (dev) or off (release).
         let alloc_len = out_dir_len
             .wrapping_add(1)
             .wrapping_add(filename_len)

@@ -1,91 +1,188 @@
 #!/usr/bin/env bash
-# Harness self-test ("does the suite have teeth?").
+# Negative control for the differential harness.
 #
-# Injects a deliberate bug into translation/src/lib.rs, re-runs the differential
-# suite, and requires it to FAIL. A mutation that survives means the suite has a
-# blind spot on that code path. Two mutations of provably-dead C branches are
-# included as negative controls -- those MUST survive.
+# Injects a set of small, semantics-changing mutations into src/lib.rs one at a
+# time and requires the differential suite to FAIL for each. If a mutant
+# survives, the harness is not actually comparing the two libraries and every
+# "pass" is vacuous. src/lib.rs is always restored from .mutation/lib.rs.orig.
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
-SRC=src/lib.rs
-BAK=$(mktemp "${TMPDIR:-/tmp}/lib.rs.bak.XXXXXX")
-OUT="${TMPDIR:-/tmp}/mutation"; mkdir -p "$OUT"
-cp "$SRC" "$BAK"
-restore() { cp "$BAK" "$SRC"; }
-trap restore EXIT
+ORIG=.mutation/lib.rs.orig
+[[ -f $ORIG ]] || { echo "!! missing $ORIG"; exit 1; }
 
-rc=0
-# name | expectation(killed|survives) | sed-style old text | new text
-run_mutation() {
-  local name="$1" expect="$2" old="$3" new="$4"
-  restore
-  if ! python3 - "$SRC" "$old" "$new" <<'PY'
+restore() { cp "$ORIG" src/lib.rs; }
+trap 'restore; echo "(src/lib.rs restored)"' EXIT
+
+mutate() { # <from> <to>
+  python3 - "$1" "$2" <<'PY'
 import sys
-p, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+p = 'src/lib.rs'
 s = open(p).read()
-if s.count(old) != 1:
-    print(f"PATCH-ERROR: {s.count(old)} occurrences of {old!r}")
-    sys.exit(1)
-open(p, "w").write(s.replace(old, new))
+f, t = sys.argv[1], sys.argv[2]
+n = s.count(f)
+if n != 1:
+    sys.exit(f"pattern appears {n} times, expected 1: {f!r}")
+open(p, 'w').write(s.replace(f, t))
 PY
-  then printf '  \033[31mSKIP\033[0m %-42s (could not apply patch)\n' "$name"; rc=1; return; fi
+}
 
-  if timeout 600 cargo test --offline >"$OUT/$name.log" 2>&1; then
-    result=survives
-  else
-    result=killed
+SURVIVORS=0
+KILLED=0
+
+check() { # <desc> <from> <to>
+  local desc="$1"
+  restore
+  if ! mutate "$2" "$3"; then
+    echo "!! could not apply mutant [$desc]"
+    SURVIVORS=$((SURVIVORS + 1))
+    return
   fi
-
-  if [ "$result" = "$expect" ]; then
-    printf '  \033[32mOK\033[0m   %-42s %s (as expected)\n' "$name" "$result"
-    if [ "$result" = killed ]; then
-      printf '         first divergence: %s\n' \
-        "$(grep -oE 'DIVERGENCE[^\\]*' "$OUT/$name.log" | head -1 | cut -c1-110)"
-    fi
+  # A mutant is KILLED iff `cargo test` exits non-zero. Relying on the
+  # "N failed" summary line is wrong: a mutant can crash the test binary
+  # (SIGSEGV) before libtest ever prints a summary.
+  local out rc
+  out=$(cargo test --offline --release 2>&1)
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    local why
+    why=$(printf '%s\n' "$out" | grep -oE '[1-9][0-9]* failed|SIGSEGV|SIGABRT|SIGBUS' | head -1)
+    echo "== KILLED  [$desc]  (exit=$rc ${why:-non-zero exit})"
+    KILLED=$((KILLED + 1))
   else
-    printf '  \033[31mBAD\033[0m  %-42s got %s, expected %s\n' "$name" "$result" "$expect"
-    rc=1
+    echo "!! SURVIVED [$desc]  (harness did not notice the injected bug!)"
+    SURVIVORS=$((SURVIVORS + 1))
   fi
 }
 
-printf '\033[1m== mutation testing the Rust translation ==\033[0m\n'
+check "mode1 base_id 100 -> 101" \
+  "create_entries(count, 100)" "create_entries(count, 101)"
 
-# --- live code paths: every one of these MUST be caught --------------------
-run_mutation mode1_not_found_sentinel   killed 'result = -2;'                   'result = -3;'
-run_mutation mode1_base_id              killed 'create_entries(count, 100)'     'create_entries(count, 101)'
-run_mutation mode1_default_count        killed 'if param1 > 0 { param1 } else { 5 }' 'if param1 > 0 { param1 } else { 6 }'
-run_mutation mode1_target_offset        killed '100i32.wrapping_add(param2)'    '101i32.wrapping_add(param2)'
-run_mutation mode2_default_count        killed 'if param1 > 0 { param1 } else { 3 }' 'if param1 > 0 { param1 } else { 4 }'
-run_mutation mode2_base_id              killed 'create_entries(count, 200)'     'create_entries(count, 201)'
-run_mutation mode2_value_scale          killed 'wrapping_mul(10)'               'wrapping_mul(11)'
-run_mutation mode2_skip_param3          killed 'result = result.wrapping_add(param3);' 'result = result;'
-run_mutation mode2_guard_observable     killed 'if temp_value != 0 {'           'if temp_value != 2000 {'
-run_mutation mode3_double               killed 'temp.wrapping_mul(2)'           'temp.wrapping_mul(3)'
-run_mutation mode3_row_bound            killed 'param1 < 4'                     'param1 <= 4'
-run_mutation mode3_col_bound            killed 'param2 < 3'                     'param2 <= 3'
-run_mutation mode3_table_cell           killed '[100, 110, 120]'                '[100, 110, 121]'
-run_mutation default_string_len         killed 'b"TestName"'                    'b"TestNam"'
-run_mutation default_prefill            killed 'b"Default"'                     'b""'
-run_mutation find_entry_off_by_one      killed 'while p < end {'                'while p <= end {'
-run_mutation modify_entries_bound       killed 'while current < last {'         'while current <= last {'
-run_mutation alloc_size                 killed 'wrapping_mul(core::mem::size_of::<DataEntry>())' 'wrapping_mul(8)'
-run_mutation switch_arm_dispatch        killed '3 => {'                          '30 => {'
+check "mode2 base_id 200 -> 201" \
+  "create_entries(count, 200)" "create_entries(count, 201)"
 
-# --- provably-equivalent / dead branches: these SHOULD survive -------------
-# (negative controls: they prove a "killed" verdict means something, and they
-#  document exactly which C branches are unreachable -- see ERRORS.md E5/E8/E11)
+check "mode1 default count 5 -> 6" \
+  "count = if param1 > 0 { param1 } else { 5 };" \
+  "count = if param1 > 0 { param1 } else { 6 };"
+
+check "mode2 default count 3 -> 4" \
+  "count = if param1 > 0 { param1 } else { 3 };" \
+  "count = if param1 > 0 { param1 } else { 4 };"
+
+check "lookup_table cell 120 -> 121" \
+  "[100, 110, 120]," "[100, 110, 121],"
+
+check "calculate_lookup *2 -> *3" \
+  "*result = temp.wrapping_mul(2);" "*result = temp.wrapping_mul(3);"
+
+check "mode3 row bound 4 -> 3" \
+  "if param1 >= 0 && param1 < 4 && param2 >= 0 && param2 < 3 {" \
+  "if param1 >= 0 && param1 < 3 && param2 >= 0 && param2 < 3 {"
+
+check "mode3 col bound 3 -> 2" \
+  "if param1 >= 0 && param1 < 4 && param2 >= 0 && param2 < 3 {" \
+  "if param1 >= 0 && param1 < 4 && param2 >= 0 && param2 < 2 {"
+
+check "mode2 adds param3 unconditionally (drops the != 0 guard)" \
+  "                    result = modify_entries(entries, count, param2);
+                    if result != 0 {
+                        result = result.wrapping_add(param3);
+                    }" \
+  "                    result = modify_entries(entries, count, param2);
+                    result = result.wrapping_add(param3);"
+
+check "default arm literal TestName -> TestNameX" \
+  'b"TestName"' 'b"TestNameX"'
+
+check "find_entry miss sentinel -2 -> -3" \
+  "result = -2;" "result = -3;"
+
+check "create_entries value *10 -> *11" \
+  "(*e).value = base_id.wrapping_add(i).wrapping_mul(10);" \
+  "(*e).value = base_id.wrapping_add(i).wrapping_mul(11);"
+
+check "mode1 target 100 + param2 -> 99 + param2" \
+  "find_entry(entries, count, 100i32.wrapping_add(param2))" \
+  "find_entry(entries, count, 99i32.wrapping_add(param2))"
+
+check "malloc size 40 -> DataEntry size ignored (allocation never fails)" \
+  "let size = (count as isize as usize).wrapping_mul(core::mem::size_of::<DataEntry>());" \
+  "let size = 4096usize;"
+
+# NOTE: simply *dropping* modify_entries' `value != 0` guard is an EQUIVALENT
+# mutant (value is always (200+i)*10 != 0), so it is not used here. Instead we
+# accumulate the pre-multiply value, which is a genuine behaviour change.
+check "modify_entries sums the pre-multiply value" \
+  "                total = total.wrapping_add((*current).value);" \
+  "                total = total.wrapping_add(temp_value);"
+
+check "modify_entries iterates one entry short" \
+  "    last = unsafe { entries.offset(count as isize) };" \
+  "    last = unsafe { entries.offset(count as isize - 1) };"
+
+check "find_entry returns the entry after the match" \
+  "            if (*p).id == target_id {
+                return p;
+            }" \
+  "            if (*p).id == target_id {
+                return p.add(1);
+            }"
+
+# ---------------------------------------------------------------------------
+# KNOWN-EQUIVALENT mutation targets — deliberately NOT used as kill targets,
+# because `dataentry`'s only observable output is its `int` return value:
 #
-# count <= 0 is unreachable: both call sites use `param1 > 0 ? param1 : <5|3>`.
-run_mutation ctl_dead_count_guard       survives 'if entries.is_null() || count <= 0 {' 'if entries.is_null() || count < 0 {'
-# found->id == 0 is unreachable: ids are 100+i / 200+i for reachable counts.
-run_mutation ctl_dead_found_id_guard    survives 'if found.is_null() || (*found).id == 0 {' 'if found.is_null() {'
-# `if temp_value != 0` is an EQUIVALENT mutant: when temp_value == 0 the guarded
-# body computes 0*multiplier == 0 and adds 0, so both branches agree exactly.
-run_mutation ctl_equivalent_zero_guard  survives 'if temp_value != 0 {'           'if true {'
+#   * `sprintf(temp_name, "Entry_%d", ...)` / `strcpy(entries[i].name, ...)`:
+#     the `name` field is never read back through the public API. Mode 1 copies
+#     it into the local `buffer`, which `dataentry` then discards. Overflowing
+#     `name[32]` is unreachable (`base_id + i` never exceeds 15 characters for
+#     any `count` whose allocation succeeds), so no name-formatting change is
+#     observable.
+#   * `process_name`'s return value: the default arm immediately overwrites
+#     `result` with `strlen(buffer) * param1`, and `strlen("TestName") != 0`
+#     always holds, so the returned length is never observable.
+#   * `sizeof(DataEntry)` / field layout: the malloc size and the iteration
+#     stride are derived from the same constant, so a different layout stays
+#     internally consistent and produces identical results.
+#   * dropping `modify_entries`' `value != 0` guard: `(200 + i) * 10` is never
+#     zero for any reachable `i`.
+#
+# Those paths are still translated faithfully; they simply cannot be
+# distinguished from outside, which is documented in CONFIGS.md / ERRORS.md.
+# ---------------------------------------------------------------------------
 
-restore
-printf '\n'
-[ $rc -eq 0 ] && printf '\033[32mHARNESS SELF-TEST PASSED\033[0m\n' \
-              || printf '\033[31mHARNESS SELF-TEST FOUND BLIND SPOTS\033[0m\n'
-exit $rc
+check "mode1 case falls through to default (switch arm removed)" \
+  "            1 => {" \
+  "            10001 => {"
+
+check "mode2 case falls through to default (switch arm removed)" \
+  "            2 => {" \
+  "            10002 => {"
+
+check "mode3 case falls through to default (switch arm removed)" \
+  "            3 => {" \
+  "            10003 => {"
+
+check "create_entries id off by one" \
+  "            (*e).id = base_id.wrapping_add(i);" \
+  "            (*e).id = base_id.wrapping_add(i).wrapping_add(1);"
+
+check "mode1 NULL/count==0 sentinel -1 -> -4" \
+  "                if entries.is_null() || count == 0 {
+                    result = -1;" \
+  "                if entries.is_null() || count == 0 {
+                    result = -4;"
+
+check "mode2 NULL sentinel -1 -> -5" \
+  "                if entries.is_null() {
+                    result = -1;" \
+  "                if entries.is_null() {
+                    result = -5;"
+
+echo
+echo "mutants killed: $KILLED   survived: $SURVIVORS"
+if [[ $SURVIVORS -ne 0 ]]; then
+  echo "RESULT: HARNESS IS NOT SOUND"
+  exit 1
+fi
+echo "RESULT: harness kills every injected mutant"

@@ -79,10 +79,6 @@ fn print_literal(literal: &[u8]) {
 /// `mystr` must be a valid pointer to a NUL-terminated string, and
 /// `start_ptr` / `stop_ptr` must each be either null or point to a readable
 /// `int`. These are exactly the requirements imposed by the C original.
-// `start` and `stop` are declared up front and assigned in the branches below,
-// mirroring the C source's `int start, stop;` so the control flow stays
-// line-for-line comparable with the original.
-#[allow(clippy::needless_late_init)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn slice(
     mystr: *mut c_char,

@@ -1,18 +1,39 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Generated from:
+Derived from:
 
 ```text
-nm -D --defined-only --format=posix ../c_src/build/libdriver.so
+nm -D c_src/build/libdriver.so
+nm -D --defined-only c_src/build/libdriver.so
+nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-Only defined dynamic symbols are part of the library's public symbol surface.
-Undefined libc/toolchain imports are dependencies, not exports.
+## Defined public symbols
 
-| C symbol | Type | Rust symbol | Status |
-|----------|------|-------------|--------|
-| `driver` | `T` | `driver` | [x] |
-| `run` | `T` | `run` | [x] |
+| C symbol | C type | Rust symbol present | Source |
+|----------|--------|---------------------|--------|
+| `driver` | `T` | [x] | Declared in `include/driver.h`; defined in `src/driver.c` |
+| `run` | `T` | [x] | Defined with external linkage in `src/driver.c` |
 
-Current missing C exports in `target/release/libdriver.so`: **0**.
+## C shared-library imports
 
+The remaining entries from `nm -D` are libc/toolchain imports, not symbols
+implemented by this library:
+
+```text
+_ITM_deregisterTMCloneTable
+_ITM_registerTMCloneTable
+__cxa_finalize@GLIBC_2.2.5
+__errno_location@GLIBC_2.2.5
+__gmon_start__
+printf@GLIBC_2.2.5
+puts@GLIBC_2.2.5
+strtol@GLIBC_2.2.5
+```
+
+## Phase D status
+
+- [x] Every C-defined dynamic symbol is exported by the Rust shared object.
+- [x] Missing C-defined symbols: 0.
+- [x] Unresolved dynamic relocations reported by `ldd -r`: 0; runtime
+  imports are satisfied by libc, libgcc, and weak toolchain symbols.

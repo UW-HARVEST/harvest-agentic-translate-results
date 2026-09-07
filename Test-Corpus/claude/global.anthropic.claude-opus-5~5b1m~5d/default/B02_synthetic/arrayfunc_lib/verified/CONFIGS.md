@@ -1,136 +1,65 @@
-# CONFIGS.md — Phase B valid-configuration surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`. Axes the C code
-actually branches on:
+## Axes the C code actually branches on
 
-**Axis O — runtime "option" (the only injectable behaviour): `operation_func op`**
-`process_with_foreach` takes a function pointer. The four operations the TU defines,
-plus arbitrary externally supplied callbacks, are distinct modes:
-`add_operation` | `multiply_operation` | `subtract_operation` | `modulo_operation`
-| foreign callback | *(the fixed 4-op sequence baked into `arrayfunc`)*.
-The provider of the pointer is itself an axis: the **C** `.so`'s exports, the
-**Rust** `.so`'s exports, and a **harness** Rust `extern "C"` fn.
+Derived from `c_src/src/lib.c` + `c_src/include/lib.h`. There are **no**
+`#ifdef`s, no compile-time options, no runtime global state and no init/teardown
+in the C (`grep -c '#ifdef\|#if \|static ' c_src/src/lib.c` → 0), and the Rust
+`Cargo.toml` declares **no `[features]`** — so there is exactly **one** feature
+combination (`--no-default-features` and default are identical; verified in
+Phase D).
 
-**Axis N — `ResultArray::count` shape:** `0` | `1` | `2` | `3..9` (many) | `10`
-(full capacity) | clamped-from-`>10` via `init_result_array` | `>10` written directly
-into the `count` field, which the C never rejects (rows 42-45).
+The axes are therefore purely *data* axes:
 
-**Axis V — element value shape:** zeros | small ± | `INT32_MAX`/`INT32_MIN`
-boundaries | values whose `*0.75` / `*weight*0.8` saturates | random 32-bit.
+| axis | values the C distinguishes |
+|------|----------------------------|
+| **A. entry point** | 11 external functions; the low-level ones (`add/multiply/subtract/modulo_operation`, `safe_double_to_int`) → the mid-level ones (`compute_scaled_value`, `init_result_array`, `compare_results_in_array`) → the composed ones (`process_with_foreach`, `compute_weighted_sum`) → the one-shot wrapper (`arrayfunc`) |
+| **B. `operation_func` selected** | 4 built-in ops (`add`, `multiply`, `subtract`, `modulo`) + an arbitrary caller-supplied C or Rust function pointer |
+| **C. `ResultArray.count` shape** | `0` (empty) / `1` (one) / `2..9` (many) / `10` (full — the clamp boundary) / `>10` passed to `init_result_array` (clamped) / negative (accepted by the clamp) |
+| **D. `init_result_array` `count` vs. array capacity** | `count < 10`, `count == 10`, `count > 10`, `count <= 0` |
+| **E. numeric magnitude of element values** | small (no overflow) / large enough that `*1.5`, `*0.75`, `*weight*0.8` leave int range / `INT32_MIN` / `INT32_MAX` / `0` / negative |
+| **F. `safe_double_to_int` input class** | in-range positive / in-range negative / `>= INT32_MAX` / `<= INT32_MIN` / NaN / `±INF` / `±0.0` / subnormal / fractional (truncation direction) |
+| **G. `compare_results_in_array` index pair** | `idx1 < idx2` / `idx1 > idx2` / `idx1 == idx2` / either `>= count` / either negative |
+| **H. pipeline composition** | `init` → `process_with_foreach` applied 1×, 2×, 3×, 4× in a row (state carries over: each pass rewrites `value` from `safe_double_to_int(op(...)*0.75)`) → `compute_weighted_sum` → `compare_*` chain, i.e. exactly what `arrayfunc` does, but driven manually so intermediate `ResultArray` bytes are compared too |
+| **I. observable output** | return value **and** the full 248-byte `ResultArray` (all 10 `Result` slots + `count`), compared byte-for-byte incl. the `double scaled` bit patterns and padding-free layout |
 
-**Axis S — `double` shape for the float entry points:** `0.0` / `-0.0` |
-`(-1,1)` fractional | integral | `.5` ties | huge | `±INFINITY` | `NaN` | subnormal |
-exact `±2^31` boundaries.
+Every row is exercised with **many randomized inputs** (`SplitMix64`, fixed seed
+`0x5EED_1234_ABCD_EF01`), not a single hand-picked value, and both libraries are
+called only through `libloading` symbols from their `.so` files.
 
-**Axis P — call composition:** single call | `init` → `process` (×k) → `weighted_sum`
-→ `compare` (the `arrayfunc` pipeline) | repeated `process` on already-mutated state
-(the C mutates `value` **and** `scaled` in place, so iteration *k* depends on *k-1*).
+## Rows
 
-**Axis M — struct-memory shape:** freshly zeroed `ResultArray` | pre-poisoned
-`ResultArray` (non-zero bytes in `data[count..10]`, so any accidental extra write is
-visible) | `count` field written directly by the caller, bypassing `init_result_array`.
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|-------------------------------------------|------|-----|
+| C1 | `add_operation` | 20 000 random `(a,b)` incl. `INT32_MIN/MAX/0/±1` boundary sweep; `unused1/unused2` randomized to prove they are ignored | `cfg_c1_add_operation` | [x] |
+| C2 | `multiply_operation` | 20 000 random `(a,b)`, overflow-heavy (large × large) + boundary sweep | `cfg_c2_multiply_operation` | [x] |
+| C3 | `subtract_operation` | 20 000 random `(a,b)` + boundary sweep | `cfg_c3_subtract_operation` | [x] |
+| C4 | `modulo_operation` | 20 000 random `(a,b)` with `b` forced to 0 in ~1/8 of cases, both signs, `INT32_MIN % -1` | `cfg_c4_modulo_operation` | [x] |
+| C5 | `safe_double_to_int` | 30 000 random `f64` bit patterns (uniform over all 64-bit patterns → NaN/INF/subnormal appear naturally) | `cfg_c5_sdti_random_bits` | [x] |
+| C6 | `safe_double_to_int` | axis F exhaustively: the exact clamp boundaries `±2147483647.0`, `±2147483648.0`, `nextafter` on both sides, `±INF`, quiet/negative NaN, `±0.0`, subnormals, `±0.5`, `±1.5` | `cfg_c6_sdti_boundaries` | [x] |
+| C7 | `compute_scaled_value` | 20 000 random `(int base, double scale)` with `scale` drawn from a mix of small factors, huge factors, NaN, `±INF`, `0.0` | `cfg_c7_compute_scaled_value` | [x] |
+| C8 | `init_result_array` | `count` in `0..=12` × random `values[]`; whole 248-byte `ResultArray` compared (both sides pre-filled with the same non-zero poison so untouched slots are diffed too) | `cfg_c8_init_count_sweep` | [x] |
+| C9 | `init_result_array` | axis D boundary: `count == 9, 10, 11` with `values[]` long enough; asserts only 10 slots are written and `count` is clamped | `cfg_c9_init_clamp_boundary` | [x] |
+| C10 | `init_result_array` | `count` random in `1..=10` with extreme values (`INT32_MIN/MAX`) so `value*1.5` produces large/inexact doubles | `cfg_c10_init_extreme_values` | [x] |
+| C11 | `compare_results_in_array` | random `count` in `0..=10` × all index pairs `idx1,idx2 ∈ -2..=12` (axis G cross-product), 200 random arrays | `cfg_c11_compare_index_matrix` | [x] |
+| C12 | `process_with_foreach` (low-level, direct) | `op = add_operation` from the **same** `.so` under test; `count` in `0..=10` × random values; return value + full struct compared | `cfg_c12_foreach_add` | [x] |
+| C13 | `process_with_foreach` | `op = multiply_operation` (overflow-prone), `count` in `0..=10` × random values | `cfg_c13_foreach_multiply` | [x] |
+| C14 | `process_with_foreach` | `op = subtract_operation`, `count` in `0..=10` × random values | `cfg_c14_foreach_subtract` | [x] |
+| C15 | `process_with_foreach` | `op = modulo_operation` (hits the `b==0` guard whenever `rank == 0`), `count` in `0..=10` × random values | `cfg_c15_foreach_modulo` | [x] |
+| C16 | `process_with_foreach` | `op` = **caller-supplied Rust `extern "C"` closure-free fn** passed into *both* libraries (proves the C and Rust call the pointer with identical arguments); the shim records `(a,b,unused1,unused2)` per call and the two call traces are compared | `cfg_c16_foreach_custom_op_trace` | [x] |
+| C17 | `process_with_foreach` | repeated application, axis H: same array run through the same `op` 1,2,3,4 times, comparing the struct after **each** pass | `cfg_c17_foreach_repeated_passes` | [x] |
+| C18 | `compute_weighted_sum` | `count` in `0..=10` × random values incl. extremes (exercises weight `1` at `i==0` and weight `i` elsewhere, plus per-term clamping) | `cfg_c18_weighted_sum_sweep` | [x] |
+| C19 | full manual pipeline (low-level entry points composed) | `init_result_array(count)` → `process_with_foreach` × all 4 ops in order → `compute_weighted_sum` → `compare_results_in_array` chain; `count` in `0..=10`, random values; struct compared after every stage | `cfg_c19_manual_pipeline` | [x] |
+| C20 | full manual pipeline, permuted ops | same as C19 but with a random permutation of the 4 ops (and repeats), 300 random configurations — the composed-pipeline order axis | `cfg_c20_pipeline_op_permutations` | [x] |
+| C21 | `arrayfunc` (one-shot wrapper) | 100 000 random `(param1..param4)` over the full `int` range | `cfg_c21_arrayfunc_random` | [x] |
+| C22 | `arrayfunc` | small-magnitude grid `-4..=4` on all four params (6561 cases, exhaustive) — the value-dependent paths `modulo` `b==0`, negative `/2` truncation | `cfg_c22_arrayfunc_small_grid` | [x] |
+| C23 | `arrayfunc` | boundary sweep: every param independently set to `INT32_MIN`, `INT32_MIN+1`, `-1`, `0`, `1`, `INT32_MAX-1`, `INT32_MAX` (cross-product 7^4 = 2401) | `cfg_c23_arrayfunc_boundary_grid` | [x] |
+| C24 | struct/ABI shape | `sizeof`/offsets of `Result` (24; 0/8/16) and `ResultArray` (248; 0/240) inferred through the FFI by having C `init_result_array` write a Rust-declared struct and vice-versa | `cfg_c24_struct_layout_crosswrite` | [x] |
 
-There are **no** compile-time options: `c_src/src/lib.c` contains no `#ifdef`, and
-`translation/Cargo.toml` declares no `[features]`. Byte order / element type / format
-axes do not exist (fixed `int`/`double`, no serialization).
+## Binary executable
 
-Cross-product, pruned to combinations the C distinguishes:
-
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|--------------------------------------------|-----|
-| 1  | `add_operation` | random `(a,b)` over full `i32` incl. overflow pairs; `unused1/2` set to random junk to prove they are ignored | [x] |
-| 2  | `multiply_operation` | random `(a,b)` incl. `INT32_MIN*-1`, `MAX*MAX` overflow; random unused args | [x] |
-| 3  | `subtract_operation` | random `(a,b)` incl. `INT32_MIN - 1` underflow; random unused args | [x] |
-| 4  | `modulo_operation` | random `(a,b)` with `b != 0`, both signs (C truncated remainder keeps the sign of `a`) | [x] |
-| 5  | `modulo_operation` | `b == 0` sweep over random `a`, plus the neighbours of the `(INT32_MIN, -1)` trap pair (the pair itself SIGFPEs in C — ERRORS.md row 2) | [x] |
-| 6  | `safe_double_to_int` | axis S: every shape above, plus random bit patterns reinterpreted as `f64` (incl. NaN payloads) | [x] |
-| 7  | `safe_double_to_int` | random values in the exact-representable boundary band `[2^31-2, 2^31+2]` and its negation | [x] |
-| 8  | `compute_scaled_value` | `base` random `i32` × `scale_factor` from axis S (0, ±1, 0.333, 0.75, 1.5, 0.8, huge, inf, NaN, subnormal) | [x] |
-| 9  | `compute_scaled_value` | `base = 0` × `scale = ±INFINITY` (⇒ `NaN` ⇒ 0) and `base = 0` × `NaN` | [x] |
-| 10 | `init_result_array` | `count = 0`, zeroed `arr` — verify no byte of `data[]` is written | [x] |
-| 11 | `init_result_array` | `count = 1`, random value | [x] |
-| 12 | `init_result_array` | `count = 2`, random values | [x] |
-| 13 | `init_result_array` | `count` in `3..=9`, random values, **poisoned** `arr` (axis M) — verify the tail is left poisoned identically | [x] |
-| 14 | `init_result_array` | `count = 10` (boundary, no clamp) | [x] |
-| 15 | `init_result_array` | `count` in `11..=64` and `INT32_MAX` ⇒ clamp to 10; `values` buffer over-allocated so only the first 10 may legally be read | [x] |
-| 16 | `init_result_array` | values at boundaries (`INT32_MAX`, `INT32_MIN`, `0`, `±1`) — checks the `value*1.5` `scaled` field bit-exactly | [x] |
-| 17 | `init_result_array` | called **twice** on the same `arr`, second time with a smaller `count` — stale `data[newcount..oldcount]` must survive identically | [x] |
-| 18 | `process_with_foreach` | `op = add_operation`, `count` 1/2/5/10, random values, `arr` built by `init_result_array` | [x] |
-| 19 | `process_with_foreach` | `op = multiply_operation`, `count` 1/2/5/10, random values (`value*rank`, so rank 0 zeroes element 0) | [x] |
-| 20 | `process_with_foreach` | `op = subtract_operation`, `count` 1/2/5/10, random values | [x] |
-| 21 | `process_with_foreach` | `op = modulo_operation`, `count` 1/2/5/10 — `b` is `rank`, so element 0 always hits the `b == 0` guard | [x] |
-| 22 | `process_with_foreach` | `count = 0` with each of the four ops (loop never runs; must return 0 and not touch `data[]`) | [x] |
-| 23 | `process_with_foreach` | **cross-provider**: `op` taken from the **C** `.so` while the driver is the **Rust** `.so`, and vice versa — proves the function-pointer ABI matches | [x] |
-| 24 | `process_with_foreach` | `op` = a **harness** Rust `extern "C"` callback that records `(a,b,unused1,unused2)`; asserts both libraries pass the identical argument sequence, in order, incl. the literal `0,0` for the unused params | [x] |
-| 25 | `process_with_foreach` | repeated invocation (axis P): same `arr`, same op, 4 iterations in a row — state carried through the in-place `value`/`scaled` mutation | [x] |
-| 26 | `process_with_foreach` | axis P: the exact 4-op sequence `add, multiply, subtract, modulo` on one `arr`, as `arrayfunc` does, over random `count`/values | [x] |
-| 27 | `process_with_foreach` | saturating shape: values near `INT32_MAX`/`INT32_MIN` with `multiply_operation` so `result*0.75` clips in `safe_double_to_int` and `total` wraps | [x] |
-| 28 | `process_with_foreach` | axis M: `count` written directly (not via `init_result_array`) with a hand-built `data[]` incl. arbitrary `rank` values decoupled from the index | [x] |
-| 29 | `compute_weighted_sum` | `count = 1` (only the `weight = 1` branch of the ternary) | [x] |
-| 30 | `compute_weighted_sum` | `count = 2..10` (both ternary branches: `i == 0` → 1, `i > 0` → `i`) | [x] |
-| 31 | `compute_weighted_sum` | `count = 0` (returns 0) | [x] |
-| 32 | `compute_weighted_sum` | boundary values (`INT32_MAX`/`INT32_MIN` in `value`) at every index, so `value*weight*0.8` saturates at various weights | [x] |
-| 33 | `compute_weighted_sum` | axis M: hand-built `data[]` (arbitrary `scaled`, `rank`) — confirms only `value` is read and nothing is written | [x] |
-| 34 | `compute_weighted_sum` | called after `process_with_foreach` (axis P composition), random shapes | [x] |
-| 35 | `compare_results_in_array` | both indices in range, all ordered pairs for `count` in `1..=10` (exhaustive over `idx1,idx2 ∈ 0..count`) | [x] |
-| 36 | `compare_results_in_array` | full `arrayfunc`-style sweep `i` vs `i+1` for `count = 8` | [x] |
-| 37 | `arrayfunc` | the documented one-shot entry point: 4 random `i32` params, thousands of seeded cases | [x] |
-| 38 | `arrayfunc` | boundary params: every combination drawn from `{0, 1, -1, 2, -2, INT32_MAX, INT32_MIN, INT32_MAX/2, INT32_MIN/2}` (9⁴ = 6561 cases, exhaustive) | [x] |
-| 39 | `arrayfunc` | small-magnitude params (`-8..=8` cross-product, 17⁴ = 83 521 cases) where no saturation occurs — the "ordinary" arithmetic path | [x] |
-| 40 | `arrayfunc` | odd/negative `param4` to exercise C truncation-toward-zero in `param4 / 2` (`-1/2 == 0`, `-3/2 == -1`) | [x] |
-| 41 | `Result` / `ResultArray` layout | `sizeof`/offset agreement, proven by writing a poison pattern through one `.so` and reading the mutated bytes back after the other `.so` operates on it | [x] |
-| 42 | `compute_weighted_sum` | axis M/N extended: `count` written directly as `11..=73` on an over-allocated buffer. Read-only, so stable — and this is the ONLY way to drive `weight` above 9, which no `init_result_array`-built array can reach | [x] |
-| 43 | `process_with_foreach` | `count = 11..=73`, **one pass per buffer**, each of the four ops (see the aliasing note below for why exactly one) | [x] |
-| 44 | `process_with_foreach` | the `data[10]` / `count` aliasing itself: `count > 10` and assert both libraries clobber `count` to the *same* value | [x] |
-| 45 | `compare_results_in_array` | `count = 11..=73` with in-range, boundary and negative indices; read-only so repeatable | [x] |
-
-All rows are driven with many randomized inputs from a fixed-seed
-(`0x2026_09_03_C0FFEE`) SplitMix64 generator, not single hand-picked values.
-
-
-## Discovered during Phase B: `data[10]` aliases `count`
-
-`sizeof(Result) == 24` and `count` lives at offset `240 == 10 * 24`, so **`data[10].value`
-and `count` are the same four bytes**. Consequences, all reproduced by the Rust:
-
-* With `count > 10`, the 11th iteration of `process_with_foreach` writes
-  `safe_double_to_int(result * 0.75)` straight over `count`.
-* The loop itself survives, because the `FOREACH` macro snapshots `size = (count)`
-  once in its initialiser rather than re-reading it.
-* Any **subsequent** call then re-reads the corrupted `count` (often `INT32_MAX`) and
-  walks off the end of the object. Verified experimentally: a second
-  `process_with_foreach` pass with `count = 11` **SIGSEGVs**.
-
-This is exactly what `init_result_array`'s `count < 10 ? count : 10` clamp exists to
-prevent. Row 43 therefore uses one pass per freshly cloned buffer — the deepest
-well-defined probe of that path — and row 44 pins the aliasing down directly.
-
-## Axes deliberately NOT enumerated, and why
-
-* **Compile-time options** — `c_src/src/lib.c` has no `#ifdef` and
-  `translation/Cargo.toml` has no `[features]` table. `scripts/verify_all.sh`
-  derives this mechanically and still runs the full suite for `DEFAULT` and
-  `--no-default-features`, in both `debug` and `release`, so the "every feature
-  combination" gate is met by construction rather than by assumption.
-* **Byte order / element type / serialization format** — the API is fixed `int` and
-  `double`; nothing is serialized, so these axes do not exist.
-* **Enum values** — there is no `enum` anywhere in `c_src/`. The analogous
-  "any bit pattern is a legal argument" surface is covered in `ERRORS.md`
-  (rows 8-18) and by `generic_extreme_int_arguments_across_ffi`.
-
-## Mutation testing (evidence the suite is not vacuous)
-
-16 mutations were injected into `src/lib.rs` and the whole suite re-run against each.
-Every non-equivalent mutation was **killed**: the `count < 10` clamp bound, both
-`compare_results_in_array` guards, `total` accumulation, the `rank` value, the `1.5`
-and `0.75` and `0.333` scale factors, the `weight = 1` special case for element 0,
-`param2 - param3` operand order, and the `+ 1` on `param4 / 2`.
-
-Three survivors were each *proven* semantically equivalent rather than accepted:
-
-| mutation | why it cannot be observed |
-|---|---|
-| `d >= INT32_MAX` → `d > INT32_MAX` | differs only at `d == 2147483647.0`, where the fallthrough `(int)d` yields the same `INT32_MAX` |
-| `count < 10` → `count <= 10` | differs only at `count == 10`, where both store `10` |
-| `(v*w)*0.8` → `v*(w*0.8)` | exhaustive search over **all 2^32 values of `value` x every weight `1..=73`** (22.3 billion pairs where the two `double`s genuinely differ) found **0** cases where the truncated `int` differs |
-| `if (d != d)` → `if (false)` | Rust's float->int cast saturates NaN to `0`, the same value the guard returns |
+`c_src/CMakeLists.txt` builds **only** `add_library(... SHARED src/lib.c)` —
+there is no `add_executable`, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. There is no driver binary, so the
+"compare stdout byte-for-byte" gate is not applicable (`grep -c add_executable
+c_src/CMakeLists.txt` → 0).

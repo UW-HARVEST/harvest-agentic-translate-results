@@ -1,99 +1,74 @@
 # SYMBOLS.md — exported-symbol parity
 
-Derived mechanically:
+Source of truth: `nm -D --defined-only` on
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-aena63.so   | awk '{print $3}' | sort -u
-nm -D --defined-only translation/target/release/libhm_geti_lib.so | awk '{print $3}' | sort -u
-```
+* C:    `c_src/build/libharvest-work-po7J5v.so`
+* Rust: `translation/target/release/libhm_geti_lib.so`
 
-The C translation unit is `c_src/src/lib.c` (the `STB_DS_IMPLEMENTATION` body of
-`stb_ds.h` plus the small `strkey` / `hm_geti` driver at the bottom).
+The C translation unit is `stb_ds.h`'s `STB_DS_IMPLEMENTATION` body plus the
+small driver at the bottom of `lib.c` (`strkey`, `hm_geti`). Only
+`void hm_geti(int num);` is declared in `include/lib.h`; every other symbol
+below is a non-`static` definition in `src/lib.c` and therefore part of the
+`.so` ABI surface. All 16 must be verified.
 
-## Public (dynamic, defined) symbols
+## Table
 
-| # | symbol | C `.so` | Rust `.so` | Rust definition site |
-|---|--------|---------|------------|----------------------|
-| 1 | `hm_geti`             | yes | yes | `src/unit_tests.rs` |
-| 2 | `strkey`              | yes | yes | `src/unit_tests.rs` |
-| 3 | `stbds_arrgrowf`      | yes | yes | `src/arr.rs` |
-| 4 | `stbds_arrfreef`      | yes | yes | `src/arr.rs` |
-| 5 | `stbds_rand_seed`     | yes | yes | `src/hash.rs` |
-| 6 | `stbds_hash_bytes`    | yes | yes | `src/hash.rs` |
-| 7 | `stbds_hash_string`   | yes | yes | `src/hash.rs` |
-| 8 | `stbds_stralloc`      | yes | yes | `src/strings.rs` |
-| 9 | `stbds_strreset`      | yes | yes | `src/strings.rs` |
-| 10 | `stbds_hmfree_func`  | yes | yes | `src/hashmap.rs` |
-| 11 | `stbds_hmget_key`    | yes | yes | `src/hashmap.rs` |
-| 12 | `stbds_hmget_key_ts` | yes | yes | `src/hashmap.rs` |
-| 13 | `stbds_hmput_default`| yes | yes | `src/hashmap.rs` |
-| 14 | `stbds_hmput_key`    | yes | yes | `src/hashmap.rs` |
-| 15 | `stbds_hmdel_key`    | yes | yes | `src/hashmap.rs` |
-| 16 | `stbds_shmode_func`  | yes | yes | `src/hashmap.rs` |
+| # | symbol | C signature (from `src/lib.c`) | in C `.so` | in Rust `.so` | Rust impl site |
+|---|--------|-------------------------------|-----------|---------------|----------------|
+| 1 | `stbds_arrgrowf` | `void *stbds_arrgrowf(void *a, size_t elemsize, size_t addlen, size_t min_cap)` | T | T | `src/arr.rs` |
+| 2 | `stbds_arrfreef` | `void stbds_arrfreef(void *a)` | T | T | `src/arr.rs` |
+| 3 | `stbds_rand_seed` | `void stbds_rand_seed(size_t seed)` | T | T | `src/hash.rs` |
+| 4 | `stbds_hash_string` | `size_t stbds_hash_string(char *str, size_t seed)` | T | T | `src/hash.rs` |
+| 5 | `stbds_hash_bytes` | `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)` | T | T | `src/hash.rs` |
+| 6 | `stbds_hmfree_func` | `void stbds_hmfree_func(void *a, size_t elemsize)` | T | T | `src/hashmap.rs` |
+| 7 | `stbds_hmget_key_ts` | `void *stbds_hmget_key_ts(void *a, size_t elemsize, void *key, size_t keysize, ptrdiff_t *temp, int mode)` | T | T | `src/hashmap.rs` |
+| 8 | `stbds_hmget_key` | `void *stbds_hmget_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | T | T | `src/hashmap.rs` |
+| 9 | `stbds_hmput_default` | `void *stbds_hmput_default(void *a, size_t elemsize)` | T | T | `src/hashmap.rs` |
+| 10 | `stbds_hmput_key` | `void *stbds_hmput_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` | T | T | `src/hashmap.rs` |
+| 11 | `stbds_shmode_func` | `void *stbds_shmode_func(size_t elemsize, int mode)` | T | T | `src/hashmap.rs` |
+| 12 | `stbds_hmdel_key` | `void *stbds_hmdel_key(void *a, size_t elemsize, void *key, size_t keysize, size_t keyoffset, int mode)` | T | T | `src/hashmap.rs` |
+| 13 | `stbds_stralloc` | `char *stbds_stralloc(stbds_string_arena *a, char *str)` | T | T | `src/strings.rs` |
+| 14 | `stbds_strreset` | `void stbds_strreset(stbds_string_arena *a)` | T | T | `src/strings.rs` |
+| 15 | `strkey` | `char *strkey(int n)` | T | T | `src/unit_tests.rs` |
+| 16 | `hm_geti` | `void hm_geti(int num)` | T | T | `src/unit_tests.rs` |
 
-**Symbol diff (`comm -23 c_syms rs_syms`): EMPTY.** 16 / 16 present, exact names.
+## `static` C functions (no symbol, exercised only indirectly)
 
-## `static` (internal, not exported) C functions
+`stbds_probe_position`, `stbds_log2`, `stbds_make_hash_index`,
+`stbds_siphash_bytes`, `stbds_is_key_equal`, `stbds_hm_find_slot`,
+`stbds_strdup`. All are present in the Rust crate as private functions and are
+covered transitively by the differential tests (the hash-index internals are
+compared field-by-field and bucket-by-bucket, so `stbds_make_hash_index`,
+`stbds_log2` and `stbds_probe_position` are checked directly).
 
-These are `static` in C so they are absent from `nm -D` in both builds. All are
-translated (as private Rust `fn`s) and are exercised indirectly:
+`extern` declarations in `lib.c` with no definition in this TU
+(`stbds_unit_tests`) produce no symbol in either `.so` — nothing to translate.
 
-| C static symbol | Rust counterpart |
-|---|---|
-| `stbds_probe_position`   | `hashmap::stbds_probe_position` |
-| `stbds_log2`             | `hashmap::stbds_log2` |
-| `stbds_make_hash_index`  | `hashmap::stbds_make_hash_index` |
-| `stbds_siphash_bytes`    | `hash::stbds_siphash_bytes` |
-| `stbds_is_key_equal`     | `hashmap::stbds_is_key_equal` |
-| `stbds_hm_find_slot`     | `hashmap::stbds_hm_find_slot` |
-| `stbds_strdup`           | `strings::stbds_strdup` |
-| `stbds_hash_seed` (data) | `hash::stbds_hash_seed` |
-| `buffer` (data)          | `unit_tests::buffer` |
-
-`stbds_unit_tests` is *declared* `extern` in the C source but never defined, so
-it is exported by neither `.so`. Correct — do not add it.
-
-## Undefined (imported) symbols
-
-C imports only libc: `malloc realloc free memcmp memcpy memmove memset sprintf
-strcmp strlen __assert_fail` (+ CRT/ITM stubs).
-
-Rust imports the same libc set (`memcmp` is lowered to `bcmp` by LLVM, which is
-libc) plus the Rust std runtime's own libc/unwind imports. **0 missing or
-undefined non-libc symbols.**
-
-## Feature combinations
-
-`translation/Cargo.toml` has **no `[features]` section** — there are exactly two
-resolvable configurations, `DEFAULT` and `--no-default-features`, and they are
-the same crate. `verify.sh` enumerates combinations out of `Cargo.toml`
-generically (so adding a feature later cannot silently skip coverage) and runs
-`cargo check`, the release build, the `nm -D` diff and all five test suites for
-each one.
-
-Result:
+## Verification result
 
 ```
-[DEFAULT]    C exports 16, Rust exports 16, symbol diff EMPTY, no undefined non-libc
-[NO_DEFAULT] C exports 16, Rust exports 16, symbol diff EMPTY, no undefined non-libc
+$ diff <(nm -D --defined-only c_src/build/libharvest-work-po7J5v.so    | awk '{print $2,$3}' | sort) \
+       <(nm -D --defined-only translation/target/release/libhm_geti_lib.so | awk '{print $2,$3}' | sort)
+<empty>
 ```
 
-## Completion gate
+* Symbols in C `.so` but not Rust `.so`: **0**
+* Symbols in Rust `.so` but not C `.so`: **0**
+* Undefined symbols in Rust `.so`: only libc / libgcc_s runtime imports
+  (`malloc`, `realloc`, `free`, `memcpy`, `memmove`, `memset`, `bcmp`,
+  `strcmp`, `strlen`, `abort`, `__errno_location`, `_Unwind_*`, `__cxa_*`,
+  pthread TLS shims, and the std backtrace syscalls). **0** non-libc
+  undefined symbols.
 
-- [x] `SYMBOLS.md`: `nm -D` diff empty (16/16), 0 undefined non-libc symbols in
-      the Rust `.so`. No stubs — `grep -E 'unimplemented!|todo!'` over `src/`
-      returns nothing.
-- [x] Phase B: every one of the 38 `CONFIGS.md` rows plus 5 cross-cutting stress
-      rows passes across randomized inputs (fixed seeds).
-- [x] Phase C: every one of the 55 `ERRORS.md` rows and 9 generic FFI-boundary
-      rows has a passing differential test; 0 unchecked boxes.
-- [x] Both feature configurations hold: 91 tests green under `DEFAULT` and under
-      `--no-default-features`.
+## Struct-layout parity (needed by the differential harness)
 
-Reproduce with:
+Confirmed with a standalone C probe using the definitions copied from
+`src/lib.c` and with `core::mem::size_of` on the Rust side:
 
-```sh
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd ../../translation && ./verify.sh all
-```
+| type | size | notable offsets |
+|------|------|-----------------|
+| `stbds_array_header` | 32 | length 0, capacity 8, hash_table 16, temp 24 |
+| `stbds_string_block` | 16 | next 0, storage 8 |
+| `stbds_string_arena` | 24 | storage 0, remaining 8, block 16, mode 17 |
+| `stbds_hash_bucket` | 128 | hash[8] 0, index[8] 64 |
+| `stbds_hash_index` | 104 | seed 56, slot_count_log2 64, string 72, storage 96 |

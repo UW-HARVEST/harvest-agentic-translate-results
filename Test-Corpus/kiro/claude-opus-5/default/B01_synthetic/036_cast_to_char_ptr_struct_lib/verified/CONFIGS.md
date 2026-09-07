@@ -1,74 +1,112 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — configuration-surface table
 
-## How this table was derived
+The mirror of `ERRORS.md`, for **valid** inputs. Axes derived mechanically from
+the source, not guessed.
 
-Mechanical enumeration of every axis the C code actually branches on or is
-data-dependent upon.
+## Axis derivation
 
-### Public entry points (complete set)
+### Axis 1 — build-time / feature configuration
 
-`nm -D --defined-only` on the C `.so` plus the public header give the full list:
+```sh
+$ grep -nE "\[features\]|^[a-z-]+ = " translation/Cargo.toml   # no [features] section
+$ grep -nE "#if|#ifdef|#ifndef" -r c_src/src c_src/include
+c_src/include/driver.h:24:#ifndef DRIVER_H_        <- include guard only
+$ grep -nE "option\(|add_definitions|target_compile_definitions" c_src/CMakeLists.txt
+(no matches)
+```
 
-| entry point | signature | level |
-|-------------|-----------|-------|
-| `driver` | `void driver(int floors)` | this is simultaneously the highest **and** the lowest-level public entry point — there is no convenience wrapper and no deeper public layer |
+* Rust crate declares **no** `[features]` → the only feature combination is the
+  default (empty) one. `--no-default-features` is therefore identical to the
+  default build, and both are exercised (see Phase D).
+* C build declares **no** CMake `option()`s and **no** `#ifdef` other than the
+  header include guard → exactly one C build configuration.
+* No `[[bin]]` target in `Cargo.toml` and no `add_executable` in
+  `CMakeLists.txt` → the project builds **no binary driver**, so there is no
+  stdout-of-executable comparison to perform. Only `add_library(driver SHARED)`.
 
-`print_hex` is `static` (internal linkage) and therefore not a public entry
-point. It is nonetheless exercised on every call, and its two behaviours
-(the `%02x` per-byte formatting loop, and the trailing newline) are covered by
-the rows below; there is no way to reach it with any other `(p, len)` pair
-because `driver` always passes `(&house, sizeof(house_t))`.
+### Axis 2 — runtime options / modes / flags
 
-### Runtime options / modes / flags
+```sh
+$ grep -nE "\bif\b|\bswitch\b|\?|&&|\|\||static [a-z_]+ [a-z_]+ =|extern" -r c_src/src c_src/include
+(no matches other than the include guard)
+```
 
-**None.** Grepped for `if`, `switch`, `#ifdef`, and for any setter, global,
-context struct, or option parameter in the header:
+**Zero** runtime options: no flags, no modes, no global/static mutable state, no
+setters, no init/teardown, no environment variables read. The library is a pure
+function of its single argument (plus the `stdout` stream it writes to).
 
-* the header declares exactly one function and no types, enums, or globals;
-* `driver.c` contains **no** `if`, `switch`, `else`, or conditional
-  `#ifdef`/`#if` (the only preprocessor conditional is the `DRIVER_H_` include
-  guard);
-* there is no global/static mutable state, no init/config function, no
-  environment-variable read, and no locale dependence (`%02x` and `\n` are
-  locale-invariant).
+### Axis 3 — public entry points (full set, including the lowest level)
 
-So the configuration cross-product has exactly **one** option combination: the
-empty one. All remaining axes are input **shape** axes.
+| entry point | linkage | reachable from a differential test? |
+|-------------|---------|--------------------------------------|
+| `void driver(int x)` | external, in `include/driver.h`, `T` in `nm -D` | YES — this is simultaneously the highest **and** the lowest-level public entry point; the library has exactly one |
+| `static void print_hex(unsigned char *p, int len)` | internal (`static`) | NO — not in `nm -D` for the C `.so`, so it is not part of the surface under test. Its behaviour is verified transitively (the 16 byte-pairs + newline that `driver` emits are produced entirely by it) |
 
-### Input shape axes the code is sensitive to
+There is no convenience/one-shot wrapper hiding a lower layer: `driver` *is* the
+low-level entry point.
 
-| axis | why it matters, from the source |
-|------|---------------------------------|
-| value of `floors` | copied verbatim into `house.floors`, whose 4 bytes are then printed; every distinct value produces distinct output |
-| per-byte value within `floors` | `printf("%02x", p[i])` formats each byte independently; bytes `< 0x10` take the zero-padding path, `>= 0x80` exercise the `unsigned char` → `int` promotion (must not sign-extend) |
-| host byte order / struct layout | the struct is printed as raw memory, so field offsets, `sizeof(house_t) == 16`, and little-endian ordering are all observable in the output |
-| field-boundary interaction | `bedrooms == 3` and `bathrooms == 2.0` are constants, but they sit adjacent to `floors` in memory, so a wrong offset or wrong padding shows up as a shifted/overlapping byte run |
-| padding bytes | `int,int,double` on the LP64 ABI packs to offsets 0/4/8 with `sizeof == 16` and **zero** padding bytes; `house_t house = {0}` still zero-initialises the whole object, so a layout with padding would also be observable |
-| `double` bit pattern | `2.0` must serialise as IEEE-754 `0x4000000000000000` in little-endian byte order |
-| invocation count / sequence | each call constructs a fresh automatic `house`; output must not depend on previous calls or on which library was called before |
-| output framing | exactly `2 * 16` hex characters followed by one `\n`, i.e. 33 bytes, for every input |
+### Axis 4 — input shapes the code special-cases
 
-## Configuration-surface table
+`driver` takes one `int`. The code contains no branch on its value, so the C
+distinguishes inputs only through the **byte image** that `%02x` renders. The
+meaningful shape classes are therefore the distinct byte-pattern classes of a
+32-bit two's-complement integer, plus the interaction with the struct layout:
 
-One row per combination the C treats differently. Every row is run against
-**both** `.so` files through `libloading` and compared byte-for-byte; rows
-marked "randomized" use many inputs from a fixed-seed PRNG.
+* `house_t` layout (`int floors; int bedrooms; double bathrooms;`):
+  offsets 0 / 4 / 8, `sizeof == 16`, `alignof == 8`, **no interior padding** and
+  no tail padding on the LP64 target — so the `{0}` initialiser's treatment of
+  padding bytes is not an observable axis here, but the test asserts the total
+  output length (33 bytes) on every row so any layout drift is caught.
+* `bedrooms` is always `3` and `bathrooms` always `2.0` — constant across all
+  configurations; their byte images (`03000000` and `0000000000000040`) act as a
+  layout/endianness fingerprint checked by every row.
+* `print_hex` loop shape: `len` is always the constant `16`, so exactly one loop
+  trip-count (16) is reachable — the "empty / one / many" axis collapses to
+  "many", and the row set instead varies the *data* the loop renders.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+## Configuration table
+
+One row per combination the C actually treats differently (cross-product of
+axes 1–4, pruned to reachable combinations). Every row is driven through **both**
+`.so` files via `libloading`, with **many randomized inputs** (fixed seed
+`0x5EED_1234_5678_9ABC`, SplitMix64) plus the named boundary values, and stdout
+compared byte-for-byte.
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `driver` | no options (none exist) + `floors = 0` — all-zero low field, minimal case | [x] |
-| 2 | `driver` | `floors = 1` — smallest non-zero, single set bit in byte 0 | [x] |
-| 3 | `driver` | `floors = 3` — equal to the hard-coded `bedrooms`, so a field-mixup bug is masked in the individual bytes but not in their order | [x] |
-| 4 | `driver` | `floors = -1` — all 32 bits set, exercises `unsigned char` promotion on all four bytes (`ff ff ff ff`, must not print `ffffffff` sign-extended per byte) | [x] |
-| 5 | `driver` | `floors = INT_MAX` (`0x7fffffff`) — positive extreme, mixed `ff`/`7f` bytes | [x] |
-| 6 | `driver` | `floors = INT_MIN` (`0x80000000`) — negative extreme, high bit only | [x] |
-| 7 | `driver` | one-hot byte placement: `0x000000ff`, `0x0000ff00`, `0x00ff0000`, `0xff000000` — isolates byte ORDER (catches big/little-endian and offset errors) | [x] |
-| 8 | `driver` | one-hot bit placement: all 32 values `1 << k`, `k = 0..31` — isolates every bit position | [x] |
-| 9 | `driver` | zero-padding shape: every `floors` in `0x00..=0xFF` — the only formatting branch (`%02x` widening for values `< 0x10`) | [x] |
-| 10 | `driver` | byte-boundary shapes: `0x7f/0x80/0x81`, `0x7fff/0x8000/0x8001`, `0x7fffff/0x800000/0x800001` — carry across each byte lane | [x] |
-| 11 | `driver` | randomized full 32-bit domain, fixed seed, 20000 inputs — value-dependent paths across the whole domain | [x] |
-| 12 | `driver` | randomized small magnitudes, fixed seed (`-1024..=1024`), 4096 inputs — dense coverage near zero where sign handling changes | [x] |
-| 13 | `driver` | randomized bytewise-sparse values, fixed seed (values assembled from `{0x00,0x01,0x0f,0x10,0x7f,0x80,0xfe,0xff}` in each of the 4 lanes, all 4096 combinations) — full cross-product of the per-byte formatting cases | [x] |
-| 14 | `driver` | invocation sequence: the same `floors` called twice in a row, then a different value, then the first again — no residual state | [x] |
-| 15 | `driver` | interleaved cross-library sequence: C, Rust, C, Rust … in one process with shared `stdout` — no cross-contamination or buffering divergence | [x] |
-| 16 | `driver` | structural invariants observed on random inputs: output is exactly 33 bytes, is lowercase hex + `\n`, bytes 8..16 are `03000000`, bytes 16..32 are `0000000000000040` (constant `bedrooms`/`bathrooms` image incl. the `sizeof == 16` / zero-padding layout) | [x] |
+| 1 | `driver` | default features; `floors == 0` (all bytes zero — the `{0}` identity image) | [x] |
+| 2 | `driver` | default features; `floors` small positive, single non-zero low byte (`1`, `2`, `3`, `7`, `42`, `127`) | [x] |
+| 3 | `driver` | default features; `floors` small negative (`-1`, `-2`, `-3`, `-42`, `-128`) — high bytes become `ff` | [x] |
+| 4 | `driver` | default features; `floors == INT_MAX` (`0x7fffffff`) upper boundary | [x] |
+| 5 | `driver` | default features; `floors == INT_MIN` (`0x80000000`) lower boundary | [x] |
+| 6 | `driver` | default features; byte-boundary values that flex each `%02x` field independently: `0x000000ff`, `0x0000ff00`, `0x00ff0000`, `0xff000000`, `0xffffffff` | [x] |
+| 7 | `driver` | default features; values with **embedded zero bytes** (`0x00ff00ff`, `0xff00ff00`, `0x00010000`) — catches any string/NUL-termination mistake in the hex formatting | [x] |
+| 8 | `driver` | default features; values whose bytes are `< 0x10` (`0x01020304`, `0x0f0f0f0f`) — exercises the zero-**padding** of `%02x` (a `%x` translation would drop a digit here) | [x] |
+| 9 | `driver` | default features; values whose bytes are `>= 0x80` (`0x80808080`, `0xdeadbeef`, `0xcafebabe`) — exercises `unsigned char` promotion; a signed-char translation would print `ffffff80`-style garbage | [x] |
+| 10 | `driver` | default features; powers of two and one-off neighbours across the whole width (`1<<k`, `(1<<k)-1`, `-(1<<k)` for k = 0..31) | [x] |
+| 11 | `driver` | default features; **randomized** full-range `i32` (uniform over all 2^32 bit patterns), 4096 draws, fixed seed | [x] |
+| 12 | `driver` | default features; **randomized byte-biased** `i32` (each byte drawn independently from `{0x00,0x01,0x0f,0x10,0x7f,0x80,0xfe,0xff}`), 4096 draws, fixed seed — dense coverage of per-byte formatting edges | [x] |
+| 13 | `driver` | default features; **repeated invocation / interleaving**: many `driver` calls in one captured stdout region, alternating C and Rust, asserting each emits exactly 33 bytes and that no state leaks between calls | [x] |
+| 14 | `driver` | default features; **output framing**: exactly `2*sizeof(house_t)` hex digits followed by a single `\n`, no leading/trailing whitespace, lowercase hex — asserted on every row above | [x] |
+| 15 | `driver` | `--no-default-features` (identical to default, since no `[features]` exist) — full rows 1–14 re-run under that build | [x] |
+
+## Status
+
+All 15 rows pass under every feature combination. Row *n* is implemented by
+`tests/differential.rs::phase_b_row_NN_*`; row 15 (feature combinations) is
+covered by `./run_differential.sh`, which enumerates the combos from
+`Cargo.toml` and re-runs rows 1–14 under each:
+
+```
+FEATURE COMBO: default                 -> result: ok. 26 passed; 0 failed
+FEATURE COMBO: --no-default-features   -> result: ok. 26 passed; 0 failed
+FEATURE COMBO: --all-features          -> result: ok. 26 passed; 0 failed
+```
+
+Total distinct inputs driven through both `.so`s: ~10 000 per combination
+(4096 uniform-random + 4096 byte-biased-random + 1024 boundary/enumerated +
+~1600 repeated/interleaved calls), all with a fixed seed.
+
+Note: `cargo test` does not rebuild a cdylib, so testing without a preceding
+`cargo build` compares against a stale `.so`. `assert_artifacts_fresh()` in the
+test harness now refuses to run in that state — see `SYMBOLS.md`.

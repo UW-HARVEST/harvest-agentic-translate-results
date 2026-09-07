@@ -1,16 +1,19 @@
 # Error Surface
 
-Mechanical searches covered `RETURN_ERROR`, `return -1`, `return NULL`,
-`assert`, `if`, `switch`, preprocessor conditionals, null checks, range checks,
-and min/max constants in all C sources and public headers.
+Mechanical searches covered `c_src/include`, `c_src/src`, and
+`c_src/CMakeLists.txt` for error returns, null returns, assertions, enums,
+conditionals, range comparisons, null checks, and min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | status |
-|---|----------|----------------------------------------------|-------------------|--------|
+| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
+|---|----------|----------------------------------------------|-------------------|-----|
 
-There are no rejection paths. `max_size_frame` takes three `uint32_t` values
-by value and accepts the full domain of each argument. It has no pointers,
-length contracts, enums, sentinels, assertions, or error returns. Zero and
-`UINT32_MAX` are valid values and are covered as valid-path boundaries in
-`CONFIGS.md`.
+There are no rejection paths in the C API. `max_size_frame` accepts all three
+arguments as the complete `uint32_t` domain and always returns a `uint32_t`.
+The API contains no pointers, lengths, enum parameters, documented scalar
+ranges, assertions, or error sentinels. Generic scalar boundaries
+(`0`, `1`, equality boundaries, `UINT32_MAX`, and overflow-producing operands)
+are therefore valid inputs and are covered by the valid-path matrix.
 
-- [x] Every C rejection branch is represented (the source contains none).
+- [x] Phase C complete: the error table has no C rejection rows, and
+  `phase_c_generic_scalar_boundaries_are_valid_and_match` passes through both
+  shared-library FFI boundaries.

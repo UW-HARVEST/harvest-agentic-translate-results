@@ -61,12 +61,6 @@ static FMT_S_NEWLINE: [c_char; 4] = [b'%' as c_char, b's' as c_char, b'\n' as c_
 //         }
 //     }
 
-/// # Safety
-///
-/// `line` must either be NULL or point to a NUL-terminated byte string that
-/// remains readable for the duration of the call. This is exactly the contract
-/// the C function imposes: it null-checks the pointer and otherwise hands it
-/// straight to `printf("%s\n", ...)`, which reads until the terminator.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn printLine(line: *const c_char) {
     if !line.is_null() {
@@ -93,10 +87,7 @@ pub unsafe extern "C" fn printLine(line: *const c_char) {
 // observable behaviour of the compiled C library: GCC diagnoses the return of a
 // local address (`-Wreturn-local-addr`) and emits `mov $0x0, %eax` for the
 // return value, i.e. `helperBad` hands back a NULL pointer. Verified on the
-// reference build, and confirmed to be independent of the optimization level:
-// `tests/optlevels.rs` recompiles this exact C source at -O0, -O1, -O2, -O3 and
-// -Os and asserts each build's observable output matches this translation. The
-// -O0 disassembly of the CMake reference build:
+// reference build at both -O0 and -O2:
 //
 //     000000000000115b <helperBad>:
 //       ...
@@ -136,11 +127,6 @@ fn helperBad() -> *mut c_char {
 //         printLine(helperBad());
 //     }
 
-/// # Safety
-///
-/// Takes no arguments and dereferences nothing the caller supplies, so there is
-/// no precondition; it is `unsafe` only to keep the `extern "C"` signature
-/// identical to the C symbol's.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bad() {
     printLine(helperBad());
@@ -188,11 +174,6 @@ fn helperGood1() -> *mut c_char {
 //         printLine(helperGood1());
 //     }
 
-/// # Safety
-///
-/// Takes no arguments and dereferences nothing the caller supplies, so there is
-/// no precondition; it is `unsafe` only to keep the `extern "C"` signature
-/// identical to the C symbol's.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn good() {
     printLine(helperGood1());
@@ -214,10 +195,6 @@ pub unsafe extern "C" fn good() {
 //         }
 //     }
 
-/// # Safety
-///
-/// Every `c_int` bit pattern is a valid input -- the C only tests `useGood != 0`
-/// -- so there is no precondition beyond the C ABI itself.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(useGood: c_int) {
     // C truthiness: any non-zero value (including negative ones) selects

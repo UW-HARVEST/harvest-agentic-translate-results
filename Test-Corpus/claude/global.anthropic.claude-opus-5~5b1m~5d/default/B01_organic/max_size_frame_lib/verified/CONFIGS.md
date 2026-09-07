@@ -1,65 +1,56 @@
-# CONFIGS.md — Phase A: configuration-surface table (valid inputs)
+# CONFIGS.md — Configuration-surface table (valid inputs)
 
-## Mechanical derivation of the axes
+## Axes derived from the C source
 
-The public API is one function (see `SYMBOLS.md`); it is simultaneously the
-convenience wrapper *and* the lowest-level entry point — there is no deeper
-layer to reach past, and no state/handle/option struct to configure
-(`grep` for `struct`/`enum`/`#define`/`if`/`switch` in `c_src` → no matches).
-So the configuration surface is entirely the **shape of the three arguments**,
-and the axes are exactly the sub-expressions the C branches or annihilates on:
+`c_src/src/lib.c` has no `if`/`switch`/`#ifdef` (verified: `grep -cE '\bif\b|\bswitch\b'` → 0).
+All branching is *arithmetic*, via 0/1 multipliers. The predicates the code
+actually distinguishes are therefore exactly:
 
-| axis | source line | distinct classes the C treats differently |
-|---|---|---|
-| **A. `channels` vs 2** | `channels * (channels != 2)`, `(channels == 2)` ×2 | `== 2` (stereo: `t1` zeroed, `t2`+`t3` active) vs `!= 2` (`t2`,`t3` zeroed, `t1` active) |
-| **B. `channels == 0`** | `channels * (...)` | `0` annihilates `t1` even on the `!= 2` branch → constant `18` |
-| **C. `bitdepth` vs 32** | `bitdepth + (bitdepth != 32)` | `== 32` (no `+1`) vs `!= 32` (`+1`); only observable when `channels == 2` |
-| **D. `bitdepth == 0` / `blocksize == 0`** | the products | annihilate terms |
-| **E. wraparound regime** | all `*` and `+` are `uint32_t` | products fit in 32 bits vs wrap mod 2³² (incl. `bitdepth+1` wrapping `MAX`→`0`, and `18+channels` wrapping) |
-| **F. `(… + 7) / 8`** | division line | the 8 residues of `sum mod 8` (truncating divide, i.e. ceiling of `sum/8` pre-`+7`) |
-| **G. magnitude classes** | argument domain is full `uint32_t` | `0`, `1`, `2`, small, typical-FLAC (`bs∈{16,4096,65535}`, `ch∈{1..8}`, `bd∈{4,8,12,16,20,24,32}`), one-past-range (`ch=9`, `bd=33`, `bs=65536`), huge (`2³¹`), `MAX` |
+| axis | predicate in C | effect |
+|------|----------------|--------|
+| **A** — channel mode | `channels == 2` (line 6,7) vs `channels != 2` (line 5) | selects the stereo path (`term2 + term3`) or the independent-channel path (`term1`) |
+| **A′** — channel count shape | `channels * (channels != 2)`: `0`, `1`, `2`, `3`, many, `≥2^31`, `u32::MAX` | `channels == 0` zeroes `term1` *and* the `+ channels` outer term; also appears un-gated as `18U + channels` |
+| **B** — bitdepth mode | `bitdepth != 32` (line 7) | adds `+1` to the bitdepth used by `term3` — **only observable when `channels == 2`** |
+| **B′** — bitdepth shape | `0`, `1`, `8`, `16`, `24`, `31`, `32`, `33`, `≥2^31`, `u32::MAX` | scales `term1`/`term2`/`term3` |
+| **C** — blocksize shape | `0`, `1`, small, typical (`4096`), `65535`, `65536`, `≥2^31`, `u32::MAX` | scales all three terms |
+| **D** — wrapping | products exceed `2^32` | C unsigned arithmetic wraps mod 2^32; the `+7` and `/8` then act on the wrapped value |
+| **E** — rounding | `(sum + 7) / 8` | ceil-to-bytes; residue of `sum mod 8` is the interesting sub-axis |
 
-Rows below are the pruned cross-product A×B×C×D×E×F×G — one row per
-combination the C actually distinguishes. Every row is driven with **many
-randomized inputs** (SplitMix64, fixed seed `0x5F3759DF_C0FFEE01`) over the
-free axes of that row, not a single hand-picked value, and compared C-vs-Rust
-byte-for-byte through the `.so` exports.
+Public entry points: exactly one, `max_size_frame` (the only symbol in
+`nm -D`; there is no lower-level/internal API, no state object, no options
+struct, no init/reset call, and no driver binary — `CMakeLists.txt` builds only
+`SHARED src/lib.c`, and `Cargo.toml` has no `[[bin]]` and no `[features]`).
+So there is a single feature combination: the default (== `--no-default-features`).
 
-## Configuration surface table
+## Configuration rows
 
-Argument order `(blocksize, channels, bitdepth)`; `MAX` = `0xFFFFFFFF`.
+Every row is driven through **both** `.so` exports with **many seeded-random
+inputs** on the axes left free by that row (seed fixed at `0x5EED_C0DE`,
+xorshift64* PRNG, 2000 iterations per row unless noted), asserting the returned
+`u32` matches byte-for-byte.
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| C1 | `max_size_frame` | stereo (`ch=2`) × `bd=32` (no `+1`) × `bs` random in `1..=65535` | [x] |
-| C2 | `max_size_frame` | stereo (`ch=2`) × `bd` random in typical `{4,8,12,16,20,24}` (`+1` applies) × `bs` random `1..=65535` | [x] |
-| C3 | `max_size_frame` | stereo (`ch=2`) × `bd=0` × `bs` random `0..=65535` (D: `t2` dies, `t3=bs`) | [x] |
-| C4 | `max_size_frame` | stereo (`ch=2`) × `bd=31` and `bd=33` (both sides of the 32 boundary) × random `bs` | [x] |
-| C5 | `max_size_frame` | stereo (`ch=2`) × `bd=MAX` (E: `bd+1` wraps to 0, `t3` dies) × random `bs` | [x] |
-| C6 | `max_size_frame` | stereo (`ch=2`) × `bs=0` × `bd` random full-`u32` | [x] |
-| C7 | `max_size_frame` | stereo (`ch=2`) × `bs`,`bd` random full-`u32` (wrap regime dominant) | [x] |
-| C8 | `max_size_frame` | mono (`ch=1`) × `bd=32` × `bs` random `1..=65535` | [x] |
-| C9 | `max_size_frame` | mono (`ch=1`) × `bd` random typical × `bs` random `1..=65535` (note: `bd!=32` `+1` must **not** apply) | [x] |
-| C10 | `max_size_frame` | mono (`ch=1`) × `bd=MAX` × random `bs` (proves `bd+1` wrap is unused off the stereo branch) | [x] |
-| C11 | `max_size_frame` | `ch=0` × `bs`,`bd` random full-`u32` (B: must always be `18`) | [x] |
-| C12 | `max_size_frame` | `ch=3` (just past stereo) × `bd` random typical × `bs` random `1..=65535` | [x] |
-| C13 | `max_size_frame` | `ch` random in `4..=8` (multichannel FLAC) × `bd` random typical × `bs` random `1..=65535` | [x] |
-| C14 | `max_size_frame` | `ch=9` (one past FLAC max) × `bd` random typical × random `bs` | [x] |
-| C15 | `max_size_frame` | `ch` random `10..=255` × `bd` random typical × random `bs` | [x] |
-| C16 | `max_size_frame` | `ch` random `256..=65535` × random `bd` × random `bs` (product wrap likely) | [x] |
-| C17 | `max_size_frame` | `ch=MAX` (E: `18+ch` wraps) × `bs`,`bd` random full-`u32` | [x] |
-| C18 | `max_size_frame` | `ch` random in `MAX-17 ..= MAX` (sweeps `18+ch` across the wrap point) × random `bs`,`bd` | [x] |
-| C19 | `max_size_frame` | `bs=0` × `ch` random full-`u32` × `bd` random full-`u32` (D on blocksize) | [x] |
-| C20 | `max_size_frame` | `bs=1` × `ch` random `0..=8` × `bd` random `0..=33` (smallest non-empty block, dense small grid) | [x] |
-| C21 | `max_size_frame` | `bs=65535` (FLAC max) and `bs=65536` (one past) × `ch` random `1..=8` × `bd` random typical | [x] |
-| C22 | `max_size_frame` | `bs=2^31` / `2^32-1` (huge) × random `ch` `1..=8` × random typical `bd` (E: heavy wrap) | [x] |
-| C23 | `max_size_frame` | F: `bs` swept `0..=64` with `ch=1,bd=1` — every residue of `sum mod 8`, both branches | [x] |
-| C24 | `max_size_frame` | F: `bs` swept `0..=64` with `ch=2,bd=1` — residues on the stereo branch (`t2+t3` both odd) | [x] |
-| C25 | `max_size_frame` | unconstrained: all three args random full-`u32`, 2,000,000 draws (global wrap-regime fuzz) | [x] |
-| C26 | `max_size_frame` | powers-of-two / bit-pattern grid: each arg from `{0,1,2,3,7,8,2^k, 2^k±1, MAX}` cross-product (exhaustive over the interesting-value set) | [x] |
-| C27 | `max_size_frame` | exhaustive dense cube: `bs ∈ 0..=40`, `ch ∈ 0..=40`, `bd ∈ 0..=40` (68,921 combos, every small-value interaction) | [x] |
-| C28 | `max_size_frame` | realistic FLAC matrix: full cross-product `bs ∈ {192,576,1152,2304,4608,4096,8192,16384,65535}` × `ch ∈ 1..=8` × `bd ∈ {4,8,12,16,20,24,32}` | [x] |
-| C29 | `max_size_frame` | repeated-call / stateless check: same args called 1000× interleaved between C and Rust (proves no hidden state or init order dependence in either `.so`) | [x] |
-| C30 | `max_size_frame` | ABI/calling-convention check: return value read as `u32` and arguments passed at register boundaries (values with high bit set in every position, e.g. `0x80000000`) to catch sign-extension mismatches | [x] |
+| 1 | `max_size_frame` | A: `channels == 2` (stereo path) × B: `bitdepth == 32` × C: `blocksize` random full-range | [x] |
+| 2 | `max_size_frame` | A: `channels == 2` × B: `bitdepth != 32`, random full-range × C: `blocksize` random full-range | [x] |
+| 3 | `max_size_frame` | A: `channels == 2` × B′: `bitdepth ∈ {0,1,8,16,24,31,33}` (near-32 boundary) × C: `blocksize` random | [x] |
+| 4 | `max_size_frame` | A: `channels == 2` × B: `bitdepth == 32` × C: `blocksize ∈ {0,1,16,4096,65535,65536}` (audio-realistic + boundary) | [x] |
+| 5 | `max_size_frame` | A′: `channels == 0` (zeroes `term1` and the `+channels` term) × B/B′ random × C random | [x] |
+| 6 | `max_size_frame` | A′: `channels == 1` (mono) × B′ random incl. 32 × C random | [x] |
+| 7 | `max_size_frame` | A′: `channels == 3` (first count past the stereo special case) × B′ random × C random | [x] |
+| 8 | `max_size_frame` | A′: `channels ∈ [4,8]` (multichannel, FLAC-legal) × B′ ∈ {8,16,24,32} × C ∈ [1,65535] — realistic consumer usage | [x] |
+| 9 | `max_size_frame` | A′: `channels` random full-range `u32` (incl. `≥2^31`) × B′ random × C random — non-2 path with wrapping | [x] |
+| 10 | `max_size_frame` | A: `channels == 2` × B′ `bitdepth ≥ 2^31` (high-bit set) × C random — stereo path with wrapping | [x] |
+| 11 | `max_size_frame` | C: `blocksize == 0` × A/A′ random × B′ random — all terms vanish, result is `18 + channels + 0` | [x] |
+| 12 | `max_size_frame` | C: `blocksize == 1` × A/A′ random × B′ random | [x] |
+| 13 | `max_size_frame` | C: `blocksize == u32::MAX` × A/A′ random × B′ random | [x] |
+| 14 | `max_size_frame` | D: overflow-targeted — `blocksize`/`bitdepth`/`channels` drawn from powers of two so products land exactly on / just past `2^32` multiples (both `channels==2` and `channels!=2`) | [x] |
+| 15 | `max_size_frame` | E: rounding-targeted — inputs chosen so `sum mod 8` sweeps `0..7` for both channel paths | [x] |
+| 16 | `max_size_frame` | A′: `channels == u32::MAX` (outer `18U + channels` wraps past 2^32) × B′/C random | [x] |
+| 17 | `max_size_frame` | Fully unconstrained: all three args uniform random `u32` — 200 000 iterations, seeded | [x] |
+| 18 | `max_size_frame` | Exhaustive dense cube: `blocksize, channels, bitdepth ∈ [0,40]^3` (68 921 triples) — every small-value interaction | [x] |
+| 19 | `max_size_frame` | Structured sweep: `channels ∈ [0,10]` × `bitdepth ∈ [0,40]` × `blocksize ∈ {0,1,7,8,9,4095,4096,65535,2^31,2^32-1}` | [x] |
+| 20 | `max_size_frame` | Repeat-call determinism / no hidden state: each row's first input replayed 3× and compared against the C `.so` each time (the C function is pure; a Rust `static mut` regression would show here) | [x] |
 
-All 30 rows are exercised by `tests/configs.rs` (Phase B).
+All 20 rows checked off — see `translation/tests/differential.rs`
+(`config_row_01` … `config_row_20`), all passing against both `.so`s.

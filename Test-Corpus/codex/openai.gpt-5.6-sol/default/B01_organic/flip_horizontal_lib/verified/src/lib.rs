@@ -16,11 +16,6 @@ pub struct CpImage {
     pub pix: *mut CpPixel,
 }
 
-/// # Safety
-///
-/// `img` must point to a valid `CpImage`, and `pix` must provide writable
-/// storage for at least `w * h` pixels whenever the C implementation accesses
-/// that storage.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn flip_horizontal(img: *mut CpImage) {
     let pix = unsafe { (*img).pix };

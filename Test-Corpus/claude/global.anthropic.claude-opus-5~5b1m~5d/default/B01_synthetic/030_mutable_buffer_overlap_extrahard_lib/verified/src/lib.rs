@@ -25,7 +25,7 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int};
 
 unsafe extern "C" {
     // Use the platform C library's printf so that output buffering and
@@ -33,14 +33,6 @@ unsafe extern "C" {
     // (and so output interleaves with any other C stdio in the process
     // exactly as it did before).
     fn printf(fmt: *const c_char, ...) -> c_int;
-
-    // The C source calls `memcpy` from <string.h>; call the very same function
-    // rather than `ptr::copy_nonoverlapping`. Besides being the literal
-    // translation, this keeps the behaviour on out-of-contract inputs identical:
-    // `copy_nonoverlapping` has a debug-only null/alignment precondition check
-    // that aborts (SIGABRT), whereas `memcpy` with a bad pointer faults exactly
-    // like the C does (SIGSEGV).
-    fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
 }
 
 /// Format string `"%d\n"` used by `inner`.
@@ -91,26 +83,16 @@ unsafe fn inner(out: *mut c_int, len: c_int) {
 /// then calls `inner`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(data: *const c_int, len: c_int) {
-    // `int out[len]` — a VLA.
-    //
-    // A negative `len` is undefined behaviour in C: the VLA has a negative size
-    // and, worse, `len * sizeof(int)` converts `len` to `size_t`, so `memcpy`
-    // receives ~2^64 and the C process dies with SIGSEGV. That crash is not a
-    // specified result and is not reproducible across compilers or stack
-    // limits, so it is deliberately NOT replicated; `len` is clamped and the
-    // function returns without output (see ERRORS.md row E11). C emits nothing
-    // before trapping, so the two never produce *differing* output.
+    // `int out[len]` — a VLA. A non-positive `len` means the subsequent
+    // loops/copies do nothing observable, so an empty buffer suffices.
     let n = if len > 0 { len as usize } else { 0 };
     let mut out: Vec<c_int> = vec![0; n];
+    if n > 0 {
+        unsafe {
+            std::ptr::copy_nonoverlapping(data, out.as_mut_ptr(), n);
+        }
+    }
     unsafe {
-        // `memcpy(out, data, len * sizeof(int))`, called unconditionally just as
-        // the C does — including the `len == 0` case, where the C passes a size
-        // of 0 and `data` is never dereferenced.
-        memcpy(
-            out.as_mut_ptr() as *mut c_void,
-            data as *const c_void,
-            n * std::mem::size_of::<c_int>(),
-        );
         inner(out.as_mut_ptr(), len);
     }
 }

@@ -160,26 +160,27 @@ fn fneg(x: f32) -> f32 {
     std::hint::black_box(f32::from_bits(x.to_bits() ^ 0x8000_0000))
 }
 
-/// SSE quiets a signalling NaN operand before propagating it: the quiet bit
-/// (mantissa MSB) is set while the sign and the rest of the payload survive.
-/// Idempotent for NaNs that are already quiet.
+/// x86 SSE scalar ops select which NaN propagates by *operand position*:
+/// `op dst, src` yields `dst` when `dst` is NaN, else `src` when `src` is NaN.
+/// gcc's register allocation therefore fixes which NaN a mixed-NaN expression
+/// returns; these helpers let the translation name that choice explicitly.
+/// For non-NaN operands they are exactly the plain IEEE-754 operation.
+///
+/// SSE arithmetic instructions also *quiet* a propagated signalling NaN by
+/// setting the mantissa MSB, so the helpers apply `quiet()` to the operand they
+/// forward (a plain `dst`/`src` return would leak an sNaN payload that the C
+/// build never produces).
 #[inline(always)]
-fn quiet_nan(x: f32) -> f32 {
+fn quiet(x: f32) -> f32 {
     f32::from_bits(x.to_bits() | 0x0040_0000)
 }
 
-/// x86 SSE scalar ops select which NaN propagates by *operand position*:
-/// `op dst, src` yields `quiet(dst)` when `dst` is NaN, else `quiet(src)` when
-/// `src` is NaN.  gcc's register allocation therefore fixes which NaN a
-/// mixed-NaN expression returns; these helpers let the translation name that
-/// choice explicitly.  For non-NaN operands they are exactly the plain
-/// IEEE-754 operation.
 #[inline(always)]
 fn x86_mul(dst: f32, src: f32) -> f32 {
     let r = if dst.is_nan() {
-        quiet_nan(dst)
+        quiet(dst)
     } else if src.is_nan() {
-        quiet_nan(src)
+        quiet(src)
     } else {
         dst * src
     };
@@ -189,9 +190,9 @@ fn x86_mul(dst: f32, src: f32) -> f32 {
 #[inline(always)]
 fn x86_add(dst: f32, src: f32) -> f32 {
     let r = if dst.is_nan() {
-        quiet_nan(dst)
+        quiet(dst)
     } else if src.is_nan() {
-        quiet_nan(src)
+        quiet(src)
     } else {
         dst + src
     };
@@ -201,25 +202,11 @@ fn x86_add(dst: f32, src: f32) -> f32 {
 #[inline(always)]
 fn x86_sub(dst: f32, src: f32) -> f32 {
     let r = if dst.is_nan() {
-        quiet_nan(dst)
+        quiet(dst)
     } else if src.is_nan() {
-        quiet_nan(src)
+        quiet(src)
     } else {
         dst - src
-    };
-    std::hint::black_box(r)
-}
-
-/// Plain IEEE-754 division as gcc emits it (`divss dst, src`): same NaN
-/// operand-position rule as the other SSE scalar ops.
-#[inline(always)]
-fn x86_div(dst: f32, src: f32) -> f32 {
-    let r = if dst.is_nan() {
-        quiet_nan(dst)
-    } else if src.is_nan() {
-        quiet_nan(src)
-    } else {
-        dst / src
     };
     std::hint::black_box(r)
 }
@@ -467,8 +454,7 @@ unsafe fn c2Clip(seg: *mut c2v, h: c2h) -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
-    // gcc -O0: `movss $1.0,%xmm0 ; divss b,%xmm0` — dst is the 1.0 constant.
-    c2Mulvs(a, x86_div(1.0f32, b))
+    c2Mulvs(a, 1.0f32 / b)
 }
 
 #[unsafe(no_mangle)]

@@ -1,91 +1,64 @@
-# SYMBOLS.md — Phase A / Phase D symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Derived mechanically from `nm -D` on both shared objects.
 
-Build commands used:
+C:    `c_src/build/liblong.so`
+Rust: `translation/target/release/liblong.so`
+
+## Defined (exported) symbols in the C `.so`
+
+| symbol | type | C size | present in Rust `.so`? | Rust type | Rust size |
+|--------|------|--------|------------------------|-----------|-----------|
+| `array` | `B` (bss object) | `0x100000` | YES | `B` | `0x100000` |
+| `long_exec` | `T` (text/func) | — | YES | `T` | — |
+| `perform_expensive_operations` | `T` (text/func) | — | YES | `T` | — |
+
+## Undefined / imported symbols in the C `.so`
+
+| symbol | kind | in Rust `.so`? |
+|--------|------|----------------|
+| `printf@GLIBC_2.2.5` | `U` libc | YES (imported) |
+| `rand@GLIBC_2.2.5` | `U` libc | YES (imported) |
+| `srand@GLIBC_2.2.5` | `U` libc | YES (imported) |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` libc | YES |
+| `_ITM_deregisterTMCloneTable` | `w` toolchain | (toolchain-generated, not API) |
+| `_ITM_registerTMCloneTable` | `w` toolchain | (toolchain-generated, not API) |
+| `__gmon_start__` | `w` toolchain | (toolchain-generated, not API) |
+
+## Header surface (`c_src/include/long.h`)
+
+Only `void long_exec(unsigned int seed);` is declared in the public header.
+`perform_expensive_operations` and `array` have external linkage in
+`c_src/src/long.c` (no `static`), so they are part of the exported ABI and are
+reproduced in Rust with `#[no_mangle]`.
+
+## Result
+
+- Symbol diff (C defined symbols not defined by Rust): **EMPTY**
+- Undefined non-libc symbols in Rust `.so`: **NONE**
+- Every C module (`src/long.c`, the only translation unit) is translated.
+
+Verification command used:
 
 ```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/liblong.so
-
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/liblong.so
+diff <(nm -D c_src/build/liblong.so            | awk '$2 ~ /^[A-TBD]$/ {print $3}' | sort) \
+     <(nm -D translation/target/release/liblong.so | awk '$2 ~ /^[A-TBD]$/ {print $3}' | sort)
 ```
 
-## Complete C translation unit inventory
-
-`c_src` contains exactly one header and one translation unit, so there is no
-possibility of a whole module having been skipped by the translation step:
-
-| C file | translated in |
-|--------|---------------|
-| `c_src/include/long.h` | `translation/src/lib.rs` (declaration of `long_exec`) |
-| `c_src/src/long.c`     | `translation/src/lib.rs` (all 3 definitions) |
-
-`c_src/CMakeLists.txt` lists `src/long.c` as the only source of the `long`
-target. There are no other `.c` files in the tree:
+## Phase D result
 
 ```
-$ find c_src -name '*.c' -o -name '*.h'
-c_src/include/long.h
-c_src/src/long.c
+$ diff <(nm -D c_src/build/liblong.so | ...) <(nm -D translation/target/release/liblong.so | ...)
+OK: defined-symbol diff is EMPTY
+OK: every libc import of the C .so is also imported by Rust
 ```
 
-## Exported symbols of the C `.so`
-
-```
-$ nm -D --defined-only c_src/build/liblong.so
-0000000000004060 B array
-00000000000011f4 T long_exec
-0000000000001139 T perform_expensive_operations
-```
-
-## Exported symbols of the Rust `.so`
-
-```
-$ nm -D --defined-only translation/target/release/liblong.so | grep -v ' [UwW] '
-000000000004631c B array
-000000000000c8c0 T long_exec
-000000000000c9a0 T perform_expensive_operations
-```
-
-## Parity table
-
-| # | symbol | nm type (C) | nm type (Rust) | C declaration | Rust definition | status |
-|---|--------|-------------|----------------|---------------|-----------------|--------|
-| 1 | `array` | `B` (`.bss` object, 1048576 bytes) | `B` (`.bss` object, 1048576 bytes) | `int array[256*1024];` (`long.c:33`) | `#[unsafe(no_mangle)] pub static mut array: [c_int; ARRAY_SIZE]` | **present** |
-| 2 | `long_exec` | `T` (text) | `T` (text) | `void long_exec(unsigned int seed);` (`long.h:27`, `long.c:49`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn long_exec(seed: c_uint)` | **present** |
-| 3 | `perform_expensive_operations` | `T` (text) | `T` (text) | `void perform_expensive_operations();` (`long.c:36`, not in header but non-`static`, therefore exported) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn perform_expensive_operations()` | **present** |
-
-### Missing symbols
-
-**None.** The C→Rust symbol diff is empty in the `C \ Rust` direction, which is
-the direction that matters for drop-in ABI replacement.
-
-No stubs, no `unimplemented!()`, no `todo!()` — every exported symbol is a real
-translation of the corresponding C definition:
-
-```
-$ grep -c 'unimplemented!\|todo!\|panic!' translation/src/lib.rs
-0
-```
-
-### Extra symbols exported by the Rust `.so`
-
-The Rust `cdylib` additionally exports the standard Rust/`compiler-builtins`
-runtime helpers (`rust_eh_personality`, `__rust_*` allocator shims, etc.) and
-the usual ELF bookkeeping symbols (`_init`, `_fini`, `_edata`, `_end`,
-`__bss_start`). Extra symbols are harmless for ABI compatibility — a consumer
-linked against the C library never references them. The parity requirement is
-one-directional: every C symbol must exist in Rust.
-
-### Size / ABI checks performed by the test suite
-
-`tests/symbols.rs` re-derives both symbol lists with `nm -D` at test time and
-asserts the `C \ Rust` difference is empty, so this document cannot silently
-drift from reality. It additionally asserts, via `readelf -sW`, that the `array`
-object has **the same st_size in both objects** (1048576 = 256*1024*4), because
-a consumer is allowed to `dlsym("array")` and index all 262144 elements.
+* 0 missing symbols; 0 undefined non-libc symbols in the Rust `.so`.
+* Nothing is stubbed: all three symbols are real translations of `src/long.c`.
+* The Rust `.so` additionally imports `_Unwind_*` / allocator symbols from its
+  own `std`; those are runtime-support imports, not part of the library's API,
+  and every symbol the C `.so` needs is present.
+* Feature combinations: `translation/Cargo.toml` declares no `[features]`, and
+  `src/lib.rs` contains no `cfg(feature = ...)`, so there is exactly one
+  configuration. `run_all.sh` still runs the suite under both the default and
+  `--no-default-features`; both are green.

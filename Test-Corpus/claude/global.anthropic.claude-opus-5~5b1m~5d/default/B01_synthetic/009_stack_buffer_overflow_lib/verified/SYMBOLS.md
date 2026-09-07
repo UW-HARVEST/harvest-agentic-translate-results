@@ -1,89 +1,103 @@
-# SYMBOLS.md — Public symbol surface
+# SYMBOLS.md — public symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Source of truth: `nm -D --defined-only` on `c_src/build/libdriver.so`
+(built via `cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON`, default/empty
+`CMAKE_BUILD_TYPE`, i.e. `-O0`).
 
-```
-C  : c_src/build/libdriver.so
-Rust: translation/target/release/libdriver.so
-```
+## C `.so` exported (global, defined) symbols
 
-## C `.so` exported symbols (`nm -D --defined-only`)
-
-| # | symbol | type | C declaration | exported by Rust `.so`? |
-|---|--------|------|---------------|-------------------------|
-| 1 | `bad`          | T | `void bad(int data)`                     | YES |
-| 2 | `driver`       | T | `void driver(int goodData, int badData)` | YES |
-| 3 | `good`         | T | `void good(int data)`                    | YES |
-| 4 | `printIntLine` | T | `void printIntLine(int intNumber)`       | YES |
-| 5 | `printLine`    | T | `void printLine(const char *line)`       | YES |
-
-## Symbols intentionally NOT exported (match C)
-
-`driver.c` declares two helpers `static`, so they have internal linkage and do
-not appear in `nm -D`. The Rust translation keeps them private (plain `unsafe
-fn`, no `#[no_mangle]`):
-
-| symbol | C linkage | Rust |
-|--------|-----------|------|
-| `goodG2B` | `static void goodG2B(void)`      | private `unsafe fn goodG2B()`   |
-| `goodB2G` | `static void goodB2G(int data)`   | private `unsafe fn goodB2G(...)` |
-
-## Diff result
+Command:
 
 ```
-$ comm -3 <(nm -D --defined-only c_src/build/libdriver.so    | awk '{print $3}' | sort) \
-          <(nm -D --defined-only translation/.../libdriver.so | awk '{print $3}' | sort)
-(empty)
+nm -D --defined-only c_src/build/libdriver.so | grep -v ' [wWvV] '
 ```
 
-**0 missing symbols. 0 undefined non-libc symbols in the Rust `.so`**
-(the Rust object's only undefined imports are libc: `printf`, plus the usual
-`memcpy`/unwind/`__cxa` runtime glue).
-
-## Translation completeness
-
-`c_src` contains exactly one translation unit (`src/driver.c`, 114 lines) and
-one public header (`include/driver.h`). Every function in that translation unit
-(`printLine`, `printIntLine`, `bad`, `goodG2B`, `goodB2G`, `good`, `driver`) has
-a corresponding Rust implementation in `translation/src/lib.rs`. No module was
-skipped; there are no stubs and no `unimplemented!()`.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
-build configuration is the default one. Verified with:
-
 ```
-$ cargo read-manifest | python3 -c 'import json,sys; print(json.load(sys.stdin)["features"])'
-{}
+0000000000001159 T printLine
+000000000000117b T printIntLine
+00000000000011a2 T bad
+0000000000001324 T good
+0000000000001346 T driver
 ```
 
-So "every feature combination" == `{default}` == `cargo test` with no flags.
+`goodG2B` and `goodB2G` are `static` in `c_src/src/driver.c` and therefore are
+`t` (local), *not* exported. They must NOT be exported from Rust either
+(otherwise the Rust `.so` would have a larger surface than the C one).
 
-## Test-suite sensitivity (mutation study)
+```
+$ nm c_src/build/libdriver.so | grep -i 'good'
+... t goodB2G
+... t goodG2B
+... T good
+```
 
-Symbol parity and green tests only mean something if the tests can actually fail.
-18 mutants were injected into `src/lib.rs` one at a time and the full suite run
-against each; **all 18 were caught**. `src/lib.rs` was then restored and verified
-byte-identical (`md5sum` match) to the original translation.
+## Rust `.so` exported symbols
 
-| mutant | caught by |
-|--------|-----------|
-| `goodB2G`: `data < 10` -> `data <= 10` | 5 tests |
-| `goodB2G`: upper-bound check removed | 7 tests |
-| `bad`: missing upper-bound check *added* | 7 tests |
-| `bad`: `data >= 0` -> `data > 0` | 7 tests |
-| negative diagnostic: trailing `.` dropped | 5 tests |
-| negative diagnostic replaced by the out-of-bounds one | 5 tests |
-| out-of-bounds diagnostic: `out-of-bounds` -> `out of bounds` | 9 tests |
-| `printLine`: NULL guard removed | 2 tests |
-| `printIntLine`: `%d` -> `%u` | 4 tests |
-| `printLine`: `%s` -> `%s%s` | 21 tests |
-| `goodG2B`: hard-coded `7` -> `3` | 16 tests |
-| `good()`: `goodG2B`/`goodB2G` call order swapped | 15 tests |
-| `driver()`: `good()` call dropped | 8 tests |
-| `driver()`: good and bad halves swapped | 8 tests |
-| dump loop: `0..10` -> `0..9` | 14 tests |
-| `BUFFER_LEN` `10` -> `11` | 22 tests |
-| `bad`: writes `2` instead of `1` | 10 tests |
-| `Frame` slack `118` -> `0` | did not compile (not a valid mutant) |
+Command:
+
+```
+nm -D --defined-only translation/target/release/libdriver.so \
+  | grep -v '_ZN\|rust\|__rust'
+```
+
+```
+0000000000011920 T bad
+0000000000011a00 T driver
+0000000000011a50 T good
+0000000000011bb0 T printIntLine
+0000000000011bd0 T printLine
+```
+
+## Parity table
+
+| # | C symbol | C binding | exported by Rust `.so`? | note |
+|---|----------|-----------|-------------------------|------|
+| 1 | `printLine`    | `T` (global text) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn printLine` |
+| 2 | `printIntLine` | `T` (global text) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn printIntLine` |
+| 3 | `bad`          | `T` (global text) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn bad` |
+| 4 | `good`         | `T` (global text) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn good` |
+| 5 | `driver`       | `T` (global text) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver` |
+| — | `goodG2B`      | `t` (local)       | n/a — must stay private | private `unsafe fn goodG2B` in Rust: correct |
+| — | `goodB2G`      | `t` (local)       | n/a — must stay private | private `unsafe fn goodB2G` in Rust: correct |
+
+**Missing from Rust: NONE.** No translation gaps: `c_src` contains exactly one
+translation unit (`src/driver.c`, 114 lines) plus one header
+(`include/driver.h`), and every function in it (including the two `static`
+helpers) has a corresponding Rust implementation in `translation/src/lib.rs`.
+
+## Undefined (imported) symbols
+
+C `.so` imports: `printf`, plus the usual glibc/ld.so bookkeeping
+(`__stack_chk_fail` is absent at `-O0` here, `_ITM_*`/`__gmon_start__`/
+`__cxa_finalize` are weak).
+
+```
+$ nm -D --undefined-only c_src/build/libdriver.so
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U printf@GLIBC_2.2.5
+                 U puts@GLIBC_2.2.5
+```
+
+Note the `puts` import: the compiler rewrites `printf("%s\n", line)` into
+`puts(line)`. The Rust `.so` imports **both `printf` and `puts` as well**
+(LLVM performs the identical rewrite on `printf(b"%s\n\0", line)`), so the
+`%`-in-string behaviour is the same in both: the argument is *not* treated as
+a format string.
+
+Rust `.so` imports the same `printf`/`puts` (the translation deliberately
+routes all output through the C runtime rather than Rust's `std::io::stdout`,
+so buffering/flushing/interleaving is identical), plus the standard glibc /
+libgcc-unwind symbols pulled in by `std` (`memcpy`, `malloc`, `pthread_key_*`,
+`_Unwind_*`, …). All are libc/libgcc symbols; **0 missing/undefined non-libc
+symbols**.
+
+## Verified
+
+- [x] Every symbol the C `.so` exports is exported by the Rust `.so` with the
+      exact same name.
+- [x] The Rust `.so` exports no *extra* `driver.c`-derived symbol (the two
+      `static` helpers stay private).
+- [x] 0 missing/undefined non-libc symbols in the Rust `.so`.

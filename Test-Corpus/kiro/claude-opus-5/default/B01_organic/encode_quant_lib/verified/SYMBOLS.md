@@ -1,79 +1,70 @@
-# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A: exported symbol surface
 
-Derived mechanically, not from assumptions:
+Derived mechanically from `nm -D` on both shared objects.
 
-```
-# C side
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libharvest-work-ZOtKwo.so
+* C `.so`:    `c_src/build/libharvest-work-cHZhAC.so`
+* Rust `.so`: `translation/target/release/libencode_quant_lib.so`
 
-# Rust side
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libencode_quant_lib.so
-```
+## Source inventory (completeness check)
 
-## C translation-unit inventory (completeness check)
-
-`CMakeLists.txt` compiles exactly one source file into the shared library:
-
-```cmake
-add_library(${project_name} SHARED
-    src/lib.c)
-```
-
-`find c_src -type f` yields only `CMakeLists.txt`, `include/lib.h`, `src/lib.c`.
-There is **no untranslated module**: `src/lib.c` (62 lines, one function) is
-fully translated in `translation/src/lib.rs`. The public header declares exactly
-one prototype and contains **no** namespace-renaming / symbol-generating macros:
-
-```c
-int encode_quant(int uni, int step, int pred, int tgt, int tgt2, int lsbit);
-```
-
-## Symbol table
-
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `encode_quant` | `T` (text, global) | `T` (text, global) | **PRESENT in both** |
-
-Raw output:
+`c_src/CMakeLists.txt` compiles exactly one translation unit:
 
 ```
-=== C defined dynamic symbols ===
-00000000000010f9 T encode_quant
-
-=== Rust defined dynamic symbols ===
-00000000000116d0 T encode_quant
+add_library(${project_name} SHARED src/lib.c)
 ```
 
-## Symbol diff
+There is **no** `add_executable` target, so the project builds **no driver
+binary** (the Phase D "compare stdout of C and Rust binaries" item is
+not-applicable, recorded below).
 
+| C source file | lines | translated in Rust? | Rust location |
+|---|---|---|---|
+| `c_src/include/lib.h` | 1 (one prototype, no macros) | yes | `translation/src/lib.rs` |
+| `c_src/src/lib.c` | 62 | yes (whole file) | `translation/src/lib.rs` |
+
+No C module/file is missing from the translation, so no Phase A
+"TRANSLATE the missing C source" work was required.
+
+## `nm -D --defined-only` on the C `.so`
+
+| # | symbol | type | exported by Rust `.so`? |
+|---|--------|------|-------------------------|
+| 1 | `encode_quant` | `T` (global text) | **yes** — `T encode_quant` |
+
+Total C dynamic defined symbols: **1**. Total matched by Rust: **1**.
+Symbol diff (C-exported minus Rust-exported): **empty**.
+
+The header declares no namespace/renaming macros, so there are no
+macro-generated alias symbols to reproduce.
+
+## Rust `.so` undefined symbols
+
+All undefined symbols in the Rust `.so` are libc / libgcc-unwind imports:
+`memcpy`, `malloc`, `free`, `realloc`, `calloc`, `posix_memalign`, `memset`,
+`memmove`, `bcmp`, `strlen`, `abort`, `getenv`, `getcwd`, `readlink`,
+`realpath`, `open64`, `close`, `read`, `write`, `writev`, `lseek64`, `mmap64`,
+`munmap`, `stat64`, `fstat64`, `statx`, `syscall`, `dl_iterate_phdr`,
+`__errno_location`, `__tls_get_addr`, `pthread_key_*`, `pthread_setspecific`,
+`gettid`, `_Unwind_*`, plus the usual weak `_ITM_*` / `__gmon_start__` /
+`__cxa_*` stubs.
+
+**0 missing / undefined non-libc symbols.**
+
+## Verification command
+
+```sh
+diff <(nm -D --defined-only c_src/build/libharvest-work-cHZhAC.so \
+        | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libencode_quant_lib.so \
+        | awk '{print $3}' | grep -v '^_ZN' | sort)
 ```
-$ diff <(nm -D --defined-only C.so   | awk '{print $NF}' | sort) \
-       <(nm -D --defined-only RUST.so | awk '{print $NF}' | sort)
-(empty)
-```
 
-**Symbols exported by C but missing from Rust: 0.**
-No `#[no_mangle]` wrapper had to be added and no C module had to be translated;
-the surface was already complete. (No stubs / `unimplemented!()` exist anywhere
-in the crate — verified with `grep -rn 'unimplemented!\|todo!\|panic!' src/`.)
+Result: no output (identical sets).
 
-## Undefined-symbol audit of the Rust `.so`
+## Feature configurations
 
-`nm -D -u translation/target/release/libencode_quant_lib.so` lists only
-platform runtime imports — glibc (`malloc`, `memcpy`, `open64`, `pthread_*`,
-`__errno_location`, …), the libgcc unwinder (`_Unwind_*`), and weak ELF
-housekeeping symbols (`__gmon_start__`, `_ITM_*`, `statx`, `gettid`).
-
-**Missing/undefined non-libc symbols: 0.** ✅
-
-## Feature-combination matrix
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the crate has
-exactly one configuration: the default (empty) feature set. Phase D's
-"every feature combination" therefore collapses to a single combo, and it is
-still exercised explicitly across all three of
-`--no-default-features`, default, and `--all-features`
-(see `check_all_feature_combos.sh`).
+`translation/Cargo.toml` contains **no `[features]` section** and no optional
+dependencies, therefore the crate has exactly **one** build configuration
+(default == `--no-default-features`). Phase D's "repeat for every feature
+combination" collapses to that single configuration; it is nevertheless
+re-run explicitly (see `FEATURES` section of the test report).

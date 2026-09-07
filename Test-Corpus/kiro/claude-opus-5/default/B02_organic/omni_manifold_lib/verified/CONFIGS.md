@@ -1,177 +1,174 @@
-# CONFIGS.md — configuration-surface table (Phase A, gates Phase B)
+# CONFIGS.md — configuration / valid-input surface table
 
-## Axes the C actually branches on
+Axes the C code actually branches on (derived from `c_src/src/lib.c`):
 
-Derived from `c_src/src/lib.c` + `c_src/include/lib.h`, not from guesswork.
+* **Shape type pair** — `c2Collide`'s nested `switch (typeA) { switch (typeB) }`
+  gives 9 handled ordered pairs over `{CIRCLE, AABB, CAPSULE}`. The ordering
+  matters: 4 of the 9 pairs re-order the arguments and then apply
+  `m->n = c2Neg(m->n)`.
+* **`c2GJK` runtime options** — `ax_ptr` NULL vs identity vs a real rotation,
+  `bx_ptr` likewise, `use_radius` 0 vs 1, `outA`/`outB` NULL vs non-NULL,
+  `iterations` NULL vs non-NULL, `cache` NULL vs zeroed vs warm.
+* **Proxy shape** — `c2MakeProxy` produces `count` 1 (circle), 2 (capsule),
+  4 (AABB), and leaves the proxy untouched for poly. Proxy `radius` is 0 for
+  AABB, `r` otherwise.
+* **Simplex `count`** — 1, 2, 3 (and 0/4 for the `default:` arms) select
+  entirely different bodies in `c22`, `c23`, `c2D`, `c2L`, `c2Witness`,
+  `c2GJKSimplexMetric`.
+* **`c23` region** — 7 mutually exclusive Voronoi regions (vertex A, vertex B,
+  vertex C, edge AB, edge BC, edge CA, interior).
+* **`c22` region** — 3 regions (vertex A, vertex B, edge).
+* **`c2CapsuletoPolyManifold` `code`** — 0 (poly face reference), 1 (capsule
+  side plane 0), 2 (capsule side plane 1); crossed with the shallow branch
+  (`1e-6 <= d < A.r`) and the deep branch (`d < 1e-6`).
+* **Separation regime** — deeply overlapping / touching / shallow overlap /
+  separated, for each pair.
+* **Degenerate shapes** — zero-radius circle, zero-extent AABB, inverted AABB,
+  point capsule (`a == b`), axis-aligned vs diagonal capsule.
+* **Poly `count`** — 3, 4, 5, …, 8 vertices, plus the transform `bx_ptr`
+  NULL / identity / rotated+translated (only reachable via the direct
+  `c2CapsuletoPolyManifold` entry point — `c2Collide` never builds a poly with
+  more than the 4 AABB verts).
+* **Float value classes** — normal, `0.0`/`-0.0`, subnormal, huge, `inf`, `NaN`.
 
-**A. Shape-type axis (the `C2_TYPE` enum, 4 values + out-of-range).**
-`c2MakeProxy` (`lib.c:126`), `c2Collide` (`lib.c:855`) and `ptr_from_parts`
-(`lib.c:906`) all `switch` on it. Note `C2_TYPE_CAPSULE == 0`,
-`CIRCLE == 1`, `AABB == 2`, `POLY == 3`. `c2Collide` is a full 4×4 dispatch of
-which only the 9 non-poly cells are implemented; `c2MakeProxy` and
-`ptr_from_parts` have no poly case at all.
-
-**B. `c2GJK` runtime options** (`lib.c:420`, 11 parameters):
-1. `ax_ptr` — `NULL` (⇒ identity) / identity / rotation+translation
-2. `bx_ptr` — same three
-3. `use_radius` — `0` / non-zero (selects the radius-shrink post-pass at `lib.c:562`)
-4. `cache` — `NULL` / zeroed (`count == 0`, cache rejected) / primed with a
-   previous run's simplex (`count ∈ {1,2,3}`, cache *read*) / primed with
-   out-of-range `iA`/`iB`
-5. `outA` / `outB` — `NULL` vs written
-6. `iterations` — `NULL` vs written
-7. `typeA` × `typeB` — axis A
-
-**C. Simplex-state axis** for the low-level entry points `c22`, `c23`, `c2D`,
-`c2L`, `c2Witness`, `c2GJKSimplexMetric`: `count ∈ {0,1,2,3,4,...}` × `div`
-(`0`, `1`, arbitrary) × vertex geometry (which barycentric region the origin
-falls in — `c23` alone has **7** mutually exclusive branches at `lib.c:270`).
-
-**D. Geometric-relationship axis** (input shape): disjoint far / disjoint near /
-exactly touching / shallow overlap / deep overlap / fully contained /
-coincident centres.
-
-**E. Degeneracy axis**: zero radius / negative radius / `capsule.a == capsule.b`
-/ `aabb.min == aabb.max` / inverted AABB (`min > max`) / poly with duplicate
-consecutive verts / `count` of 0, negative, `> 8`.
-
-**F. Float-value axis**: normal magnitudes / very large (`1e30`) / very small
-(`1e-30`, denormals) / exact zeros incl. `-0.0` / `±inf` / `NaN`.
-
-**G. Poly axis** for `c2CapsuletoPolyManifold` / `c2Support` / `c2PlaneAt` /
-`c2Norms` / `c2Incident`: vertex `count ∈ {0,1,2,3,4,5,6,7,8}`, convex vs
-non-convex winding, normals consistent vs garbage, and which of the three
-separating-axis `code` paths (0 = poly face, 1 = capsule `ab_h0`,
-2 = capsule `ab_h1`) is selected at `lib.c:777`.
-
-## Rows
-
-One row per meaningful combination the C treats differently. Each row is
-exercised with **many randomized inputs** (fixed seed, see
-`tests/differential.rs`), comparing the C `.so` and the Rust `.so` bit-for-bit.
+Every row is exercised with many randomized inputs (fixed seed, xorshift PRNG)
+through both `.so` files, not a single hand-picked value.
 
 | # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|-------------------------------------------|-----|
-| **Scalar / vector primitives** | | | |
-| 1 | `c2V`, `c2Add`, `c2Sub`, `c2Mulvs`, `c2Neg`, `c2Skew`, `c2CCW90` | random `f32` bit patterns incl. `±0`, `±inf`, `NaN`, denormals | [x] |
-| 2 | `c2Dot`, `c2Det2`, `c2Len` | same value axis (F); checks fma-free evaluation order and `sqrtf` rounding | [x] |
-| 3 | `c2Maxv`, `c2Minv` | random pairs incl. `-0.0 vs +0.0` and `NaN` on either side (C's ternary is not `fmaxf`) | [x] |
-| 4 | `c2Clampv` | `a` inside / below / above `[lo,hi]`, plus **inverted** `lo > hi`, plus `NaN` in each of the 3 args | [x] |
-| 5 | `c2Absv` | positives, negatives, `-0.0` (C returns `-0.0` unchanged), `NaN` | [x] |
-| 6 | `c2Div`, `c2Norm` | non-zero divisor / `b == 0` / zero-length vector (⇒ `NaN`) / huge & tiny vectors | [x] |
-| 7 | `c2Intersect` | `da != db` / `da == db` (⇒ `inf`/`NaN`) / `da == 0` / opposite signs | [x] |
-| 8 | `c2Dist` | random plane × point, incl. `NaN` plane normal | [x] |
-| **Rotations & transforms** | | | |
-| 9 | `c2RotIdentity`, `c2xIdentity` | no inputs — exact bit pattern of the returned struct | [x] |
-| 10 | `c2Mulrv`, `c2MulrvT` | identity rot / unit-norm rot / non-normalized rot / zero rot / `NaN` rot | [x] |
-| 11 | `c2Mulxv`, `c2MulxvT` | identity `c2x` / translation only / rotation only / both / `NaN` components | [x] |
-| **Poly / AABB helpers** | | | |
-| 12 | `c2BBVerts` | normal AABB, degenerate (`min == max`), **inverted** (`min > max`), `NaN` bounds | [x] |
-| 13 | `c2PlaneAt` | `i ∈ [0,8)` over a randomized poly (all 8 slots populated) | [x] |
-| 14 | `c2Norms` | `count ∈ {1..8}`, convex CCW poly, convex CW poly, duplicate consecutive verts (⇒ `NaN` norm), `count == 0` | [x] |
-| 15 | `c2Support` | `count ∈ {1..8}` × random direction, plus direction `(0,0)` (all dots equal ⇒ index 0), plus `NaN` direction | [x] |
-| **`c2MakeProxy` (all 4 enum values)** | | | |
-| 16 | `c2MakeProxy` | `type = C2_TYPE_CIRCLE` (1), random circle | [x] |
-| 17 | `c2MakeProxy` | `type = C2_TYPE_AABB` (2), random / degenerate / inverted AABB | [x] |
-| 18 | `c2MakeProxy` | `type = C2_TYPE_CAPSULE` (0), random capsule incl. `a == b` | [x] |
-| 19 | `c2MakeProxy` | `type = C2_TYPE_POLY` (3) — no case; `*p` must be left byte-identical to its pre-call contents (pre-filled with a random pattern to detect any write) | [x] |
-| **Simplex solvers (lowest-level entry points, driven directly)** | | | |
-| 20 | `c22` | `count = 2`, random `a.p`/`b.p`; hits all 3 branches (`v <= 0`, `u <= 0`, interior) | [x] |
-| 21 | `c22` | `a.p == b.p` (degenerate: `u == v == 0` ⇒ first branch) | [x] |
-| 22 | `c23` | `count = 3`, random triangles — sweeps all **7** branches of `lib.c:270` | [x] |
-| 23 | `c23` | origin strictly inside the triangle (final `else`, `count` stays 3) | [x] |
-| 24 | `c23` | degenerate triangle (`area == 0`, collinear points) ⇒ `uABC = vABC = wABC = 0`, `div == 0` | [x] |
-| 25 | `c2D` | `count = 1` / `2` with `det > 0` / `2` with `det <= 0` / `3` / out-of-range `count` | [x] |
-| 26 | `c2L` | `count = 1` / `2` / `3` (⇒ `(0,0)`) / `0`, each with `div != 0` and `div == 0` | [x] |
-| 27 | `c2Witness` | `count ∈ {1,2,3}` × `div ∈ {1, random, 0}` — random `sA`/`sB`/`u` | [x] |
-| 28 | `c2Witness` | `count = 0` and `count = 4` (`default:` ⇒ both outputs `(0,0)`) | [x] |
-| 29 | `c2GJKSimplexMetric` | `count ∈ {0,1,2,3,4}` × random simplex vertices | [x] |
-| **`c2GJK` — the full option cross-product** | | | |
-| 30 | `c2GJK` | CIRCLE↔CIRCLE, `ax=bx=NULL`, `use_radius=0`, no cache, all outputs requested | [x] |
-| 31 | `c2GJK` | CIRCLE↔CIRCLE, `use_radius=1` (radius-shrink post-pass) | [x] |
-| 32 | `c2GJK` | CIRCLE↔CAPSULE, both `use_radius` values, `ax=bx=NULL` | [x] |
-| 33 | `c2GJK` | CIRCLE↔AABB, both `use_radius` values | [x] |
-| 34 | `c2GJK` | CAPSULE↔CAPSULE, both `use_radius` values | [x] |
-| 35 | `c2GJK` | CAPSULE↔AABB, both `use_radius` values | [x] |
-| 36 | `c2GJK` | AABB↔AABB, both `use_radius` values (4-vert proxies ⇒ deepest simplex iteration) | [x] |
-| 37 | `c2GJK` | any pair, **non-NULL identity** `ax_ptr`/`bx_ptr` (must equal the `NULL` result exactly) | [x] |
-| 38 | `c2GJK` | any pair, `ax_ptr` = pure translation, `bx_ptr = NULL` | [x] |
-| 39 | `c2GJK` | any pair, `ax_ptr` = rotation+translation, `bx_ptr` = rotation+translation (random unit `c2r`) | [x] |
-| 40 | `c2GJK` | any pair, **non-normalized** `c2r` (`c*c + s*s != 1`) — the C never normalizes | [x] |
-| 41 | `c2GJK` | `outA = NULL`, `outB` non-NULL (and vice versa); return value must still match | [x] |
-| 42 | `c2GJK` | `iterations` non-NULL — compare the iteration count too (probes the loop-exit branch taken) | [x] |
-| 43 | `c2GJK` | `cache` non-NULL, zero-initialized (`count == 0` ⇒ cache rejected); compare the **written-back** cache fields | [x] |
-| 44 | `c2GJK` | `cache` non-NULL, primed by a *previous* `c2GJK` call on the same pair (`count ∈ {1,2,3}` ⇒ cache **read**), then re-run — the warm-start path at `lib.c:443` | [x] |
-| 45 | `c2GJK` | `cache` primed, then shapes **moved** before the second call (metric mismatch ⇒ cache-validity test at `lib.c:464`) | [x] |
-| 46 | `c2GJK` | `typeA = POLY` and/or `typeB = POLY` (proxy never filled — see ERRORS.md NOTE) with a zeroed proxy-equivalent poly | [x] |
-| 47 | `c2GJK` | shapes disjoint far apart (early `d1 > d0` exit) | [x] |
-| 48 | `c2GJK` | shapes deeply overlapping (`hit` path, `a = b`, `dist = 0`) | [x] |
-| 49 | `c2GJK` | shapes exactly touching (`dist ≈ 0`, `use_radius=1` midpoint fallback at `lib.c:573`) | [x] |
-| 50 | `c2GJK` | degenerate shapes: zero-radius circle, `capsule.a == capsule.b`, `aabb.min == aabb.max` | [x] |
-| 51 | `c2GJK` | coincident shapes (identical circle vs identical circle) — duplicate-support-point `break` at `lib.c:539` | [x] |
-| **Manifold generators (each public one, directly)** | | | |
-| 52 | `c2CircletoCircleManifold` | disjoint / touching / shallow / deep / coincident centres / zero radii / negative radius | [x] |
-| 53 | `c2CircletoAABBManifold` | circle outside / straddling a face / straddling a corner / centre inside (`d2 == 0` deep branch) / `x_overlap == y_overlap` tie / degenerate AABB / inverted AABB | [x] |
-| 54 | `c2CircletoCapsuleManifold` | disjoint / overlapping / `d == 0` / degenerate capsule (`a == b` ⇒ `NaN` normal) / zero radii | [x] |
-| 55 | `c2AABBtoAABBManifold` | separated on X (`dx < 0`) / on Y (`dy < 0`) / X-minimal overlap / Y-minimal overlap / `dx == dy` tie / `d.x < 0` and `d.x >= 0` sub-branches / identical boxes / degenerate / inverted | [x] |
-| 56 | `c2CapsuletoCapsuleManifold` | parallel / crossing / collinear / disjoint / `d == 0` with `A.a == A.b` / zero radii | [x] |
-| 57 | `c2CapsuletoPolyManifold` | `bx_ptr = NULL`, convex poly `count = 3,4,5,6,7,8`, capsule outside → `d >= 1e-6 && d >= A.r` (no manifold) | [x] |
-| 58 | `c2CapsuletoPolyManifold` | `bx_ptr = NULL`, capsule in the shallow band `1e-6 <= d < A.r` (the `else if` branch) | [x] |
-| 59 | `c2CapsuletoPolyManifold` | `bx_ptr = NULL`, capsule overlapping ⇒ `d < 1e-6`, separating-axis `code = 0` (poly face) | [x] |
-| 60 | `c2CapsuletoPolyManifold` | overlapping ⇒ `code = 1` (capsule `ab_h0` axis wins) | [x] |
-| 61 | `c2CapsuletoPolyManifold` | overlapping ⇒ `code = 2` (capsule `ab_h1` axis wins) | [x] |
-| 62 | `c2CapsuletoPolyManifold` | **non-NULL** `bx_ptr`: identity / translation / rotation+translation / non-normalized rot | [x] |
-| 63 | `c2CapsuletoPolyManifold` | poly with `count = 0`, `count = 1`, `count = 2` (degenerate; `index` may stay `-1`) | [x] |
-| 64 | `c2CapsuletoPolyManifold` | degenerate capsule `A.a == A.b` (⇒ `ab` is `NaN`, `s0`/`s1` `NaN`, `code` forced to 0) | [x] |
-| 65 | `c2CapsuletoPolyManifold` | poly whose `norms` are inconsistent with `verts` (C never validates) | [x] |
-| 66 | `c2AABBtoCapsuleManifold` | AABB×capsule: disjoint / shallow / deep / degenerate AABB (`NaN` norms) / inverted AABB; also checks the **unconditional** `m->n = c2Neg(m->n)` with a pre-poisoned `m` | [x] |
-| **Dispatch layer — full 4×4 + out-of-range** | | | |
-| 67 | `c2Collide` | `typeA × typeB` over all 16 `{CAPSULE, CIRCLE, AABB, POLY}²` combinations, randomized shapes, `m` pre-poisoned | [x] |
-| 68 | `c2Collide` | out-of-range `typeA`/`typeB` (`-1`, `4`, `99`, `INT_MAX`, `INT_MIN`) | [x] |
-| 69 | `ptr_from_parts` | `typ ∈ {CIRCLE, AABB, CAPSULE}` — dereference the returned pointer and compare the allocated struct bytes | [x] |
-| 70 | `ptr_from_parts` | `typ = POLY` / out of range — C falls off the end of a non-void function (indeterminate); documented, not asserted | [x] |
-| **`omni_manifold` — the top-level API, full cross-product** | | | |
-| 71 | `omni_manifold` | all 16 `type_a × type_b` combinations × randomized `a1..a5`/`b1..b5` in a small range (dense overlap) | [x] |
-| 72 | `omni_manifold` | all 16 combinations × randomized wide range (mostly disjoint) | [x] |
-| 73 | `omni_manifold` | all 16 combinations × values snapped to a coarse grid (forces exact ties, touching, coincidence, zero radii) | [x] |
-| 74 | `omni_manifold` | all 16 combinations × values drawn from `{0, -0.0, ±1, ±inf, NaN, FLT_MAX, FLT_MIN, 1e-30, 1e30}` | [x] |
-| 75 | `omni_manifold` | out-of-range `type_a`/`type_b` (`-1`, `4`, `99`, `INT_MAX`, `INT_MIN`) with `m` pre-poisoned — must leave `m` identical apart from `count = 0` | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `c2V`, `c2Mulvs`, `c2Sub`, `c2Add`, `c2Neg`, `c2Dot`, `c2Det2`, `c2Len`, `c2Div`, `c2Skew`, `c2CCW90`, `c2Absv` | random finite f32 pairs, full exponent range | [x] |
+| 2 | same as row 1 | signed zeros, subnormals, `±inf`, `NaN` mixed in | [x] |
+| 3 | `c2Maxv`, `c2Minv`, `c2Clampv` | random values; equal components; `lo > hi` inverted range; NaN operands (C ternary keeps `b` on NaN) | [x] |
+| 4 | `c2Norm` | random non-zero vectors; near-zero magnitudes; huge magnitudes (overflow to inf) | [x] |
+| 5 | `c2Intersect` | random `a`,`b`,`da`,`db`; `da == db` (division by zero); `da == 0` | [x] |
+| 6 | `c2Dot`/`c2Dist`/`c2PlaneAt` | random `c2h` plane + point; index 0..7 into a random poly | [x] |
+| 7 | `c2RotIdentity`, `c2xIdentity` | no inputs — constant parity | [x] |
+| 8 | `c2Mulrv`, `c2MulrvT` | random unit rotations; non-unit `c2r`; zero `c2r` | [x] |
+| 9 | `c2Mulxv`, `c2MulxvT` | identity transform / pure translation / pure rotation / both | [x] |
+| 10 | `c2BBVerts` | random AABB; zero-extent; inverted (`min > max`) | [x] |
+| 11 | `c2Norms` | poly with count 3,4,5,6,7,8; duplicate consecutive verts (NaN normals); count 0 | [x] |
+| 12 | `c2Support` | count 1,2,4,8; random direction; ties in the dot product; count 0 | [x] |
+| 13 | `c2MakeProxy` | `type = CIRCLE` (count 1, radius r) | [x] |
+| 14 | `c2MakeProxy` | `type = CAPSULE` (count 2, radius r) | [x] |
+| 15 | `c2MakeProxy` | `type = AABB` (count 4, radius 0) | [x] |
+| 16 | `c2GJKSimplexMetric` | `count = 1` / `2` / `3`, randomized simplex points | [x] |
+| 17 | `c22` | simplex `count = 2` covering all 3 Voronoi regions (`v<=0`, `u<=0`, interior) | [x] |
+| 18 | `c23` | simplex `count = 3` covering all 7 regions, incl. degenerate/zero area | [x] |
+| 19 | `c2D` | `count = 1` / `2` (both `c2Det2` signs) / `3` | [x] |
+| 20 | `c2L` | `count = 1` / `2`, random `div` incl. `div = 0` | [x] |
+| 21 | `c2Witness` | `count = 1` / `2` / `3`, random `div` and `u` weights | [x] |
+| 22 | `c2GJK` | CIRCLE vs CIRCLE, `ax/bx = NULL`, `use_radius = 0`, no cache | [x] |
+| 23 | `c2GJK` | CIRCLE vs CIRCLE, `use_radius = 1` (radius shrink branch) | [x] |
+| 24 | `c2GJK` | CAPSULE vs CAPSULE, `use_radius = 0` and `1` | [x] |
+| 25 | `c2GJK` | AABB vs AABB (proxy count 4 both sides), `use_radius = 0`/`1` | [x] |
+| 26 | `c2GJK` | CIRCLE vs AABB and AABB vs CIRCLE (asymmetric proxy counts) | [x] |
+| 27 | `c2GJK` | CAPSULE vs AABB and AABB vs CAPSULE | [x] |
+| 28 | `c2GJK` | CIRCLE vs CAPSULE and CAPSULE vs CIRCLE | [x] |
+| 29 | `c2GJK` | non-NULL `ax_ptr`, identity transform | [x] |
+| 30 | `c2GJK` | non-NULL `ax_ptr`, pure translation | [x] |
+| 31 | `c2GJK` | non-NULL `ax_ptr` **and** `bx_ptr`, both rotated + translated (`c2r` from `cos/sin` of a random angle) | [x] |
+| 32 | `c2GJK` | non-unit / zero `c2r` in the transform | [x] |
+| 33 | `c2GJK` | `outA = NULL`, `outB` non-NULL, and vice versa | [x] |
+| 34 | `c2GJK` | `iterations` non-NULL — iteration count parity | [x] |
+| 35 | `c2GJK` | `cache` non-NULL, zero-initialized (cold cache) — cache written out | [x] |
+| 36 | `c2GJK` | `cache` non-NULL, **warm**: run once, feed the resulting cache back with unchanged shapes | [x] |
+| 37 | `c2GJK` | `cache` warm, then shapes moved (stale but in-range cache) | [x] |
+| 38 | `c2GJK` | separated / touching / shallow / deeply overlapping, for each pair (distance regimes) | [x] |
+| 39 | `c2GJK` | POLY type (proxy untouched ⇒ zeroed proxy) as A and as B | [x] |
+| 40 | `c2CircletoCircleManifold` | separated, shallow overlap, deep overlap, concentric (`l == 0`), zero radius, huge radius | [x] |
+| 41 | `c2CircletoAABBManifold` | circle outside; overlapping a face; overlapping a corner; centre strictly inside (`d2 == 0` deep branch, `x_overlap < y_overlap` and `>=`); zero-radius circle; zero-extent AABB | [x] |
+| 42 | `c2CircletoCapsuleManifold` | separated; overlapping near the capsule body; overlapping near an end cap; `d == 0` (centre on the segment); point capsule | [x] |
+| 43 | `c2AABBtoAABBManifold` | separated on x; separated on y; overlapping with `dx < dy`; with `dx >= dy`; all four sign combinations of `d.x`/`d.y`; touching exactly; identical boxes; zero-extent; inverted | [x] |
+| 44 | `c2CapsuletoCapsuleManifold` | parallel / crossing / collinear / end-to-end capsules; separated; `d == 0`; point capsules | [x] |
+| 45 | `c2AABBtoCapsuleManifold` | capsule crossing a face; a corner; fully inside; separated; axis-aligned and diagonal capsules; point capsule | [x] |
+| 46 | `c2CapsuletoPolyManifold` | `bx_ptr = NULL`, poly count 4 (AABB-like), deep branch (`d < 1e-6`), `code = 0` | [x] |
+| 47 | `c2CapsuletoPolyManifold` | `bx_ptr = NULL`, deep branch, `code = 1` (capsule side plane 0 wins) | [x] |
+| 48 | `c2CapsuletoPolyManifold` | `bx_ptr = NULL`, deep branch, `code = 2` (capsule side plane 1 wins) | [x] |
+| 49 | `c2CapsuletoPolyManifold` | shallow branch `1e-6 <= d < A.r` | [x] |
+| 50 | `c2CapsuletoPolyManifold` | `bx_ptr` = identity `c2x` (non-NULL) | [x] |
+| 51 | `c2CapsuletoPolyManifold` | `bx_ptr` = pure translation | [x] |
+| 52 | `c2CapsuletoPolyManifold` | `bx_ptr` = rotation + translation | [x] |
+| 53 | `c2CapsuletoPolyManifold` | poly vertex count 3 | [x] |
+| 54 | `c2CapsuletoPolyManifold` | poly vertex count 5, 6, 7, 8 (regular polygons, CCW, `c2Norms`-derived normals) | [x] |
+| 55 | `c2CapsuletoPolyManifold` | randomized capsule × randomized convex poly × randomized transform (broad property sweep) | [x] |
+| 56 | `c2Collide` | `CIRCLE`×`CIRCLE` | [x] |
+| 57 | `c2Collide` | `CIRCLE`×`AABB` | [x] |
+| 58 | `c2Collide` | `CIRCLE`×`CAPSULE` | [x] |
+| 59 | `c2Collide` | `AABB`×`CIRCLE` (swapped args + `c2Neg` on the normal) | [x] |
+| 60 | `c2Collide` | `AABB`×`AABB` | [x] |
+| 61 | `c2Collide` | `AABB`×`CAPSULE` | [x] |
+| 62 | `c2Collide` | `CAPSULE`×`CIRCLE` (swapped + `c2Neg`) | [x] |
+| 63 | `c2Collide` | `CAPSULE`×`AABB` (swapped + `c2Neg`) | [x] |
+| 64 | `c2Collide` | `CAPSULE`×`CAPSULE` | [x] |
+| 65 | `ptr_from_parts` | `CIRCLE` — check the 3 floats land in `p.x`,`p.y`,`r` | [x] |
+| 66 | `ptr_from_parts` | `AABB` — 4 floats into `min`,`max` | [x] |
+| 67 | `ptr_from_parts` | `CAPSULE` — 5 floats into `a`,`b`,`r` | [x] |
+| 68 | `omni_manifold` | all 9 handled type pairs × randomized float packs (the public header entry point) | [x] |
+| 69 | `omni_manifold` | all 9 pairs, coordinates drawn from a small grid so hits/near-misses/exact ties are frequent | [x] |
+| 70 | `omni_manifold` | all 9 pairs with `±0.0`, subnormal, `±inf`, `NaN` in the float packs | [x] |
+| 71 | `omni_manifold` | all 16 ordered type pairs including `POLY` and out-of-range ints | [x] |
 
-## Methodology
+No binary/driver target exists (`Cargo.toml` declares only `crate-type =
+["cdylib"]`; `CMakeLists.txt` declares only `add_library(... SHARED)`), so the
+"compare stdout of the C and Rust binaries" clause does not apply. Verified
+mechanically: `grep -c 'add_executable' c_src/CMakeLists.txt` is 0 and the crate
+has no `src/main.rs` / `[[bin]]` section.
 
-* Both libraries are loaded with `libloading` and called **only** through their
-  exported C symbols — the Rust crate is never linked directly, so the
-  `#[no_mangle]`/`extern "C"` wrappers are part of what is tested.
-* Comparison is on **raw bytes** (`common::raw`), never `f32 == f32`, so `-0.0`
-  vs `+0.0` and differing NaN payloads are caught.
-* Every output struct is **pre-poisoned** with a recognisable non-zero pattern
-  (`common::poison_manifold`), so a field the C leaves untouched is compared
-  rather than silently agreeing on zeros.
-* Inputs are property-style randomized from a fixed-seed SplitMix64
-  (`common::Rng`), over five value families: tame, grid-snapped (to force exact
-  ties, touching and coincidence, which uniform floats never hit), very large,
-  very small, and pathological (`±inf`, `NaN`, `±0`, `FLT_MAX`, `FLT_MIN`,
-  denormals).
-* `common::scrub_stack()` runs before each FFI call. See the ERRORS.md note on
-  rows #37/#41: without it the C's poly path reads our leftover stack bytes and
-  its own answer becomes caller-dependent.
+## Where the rows are tested
 
-## Row → test mapping
+| rows | file |
+|------|------|
+| 1..21 | `tests/phase_b_primitives.rs` |
+| 22..39 | `tests/phase_b_gjk.rs` |
+| 40..55 | `tests/phase_b_manifolds.rs` |
+| 56..71 | `tests/phase_b_collide.rs` |
 
-| rows | file / test |
-|------|-------------|
-| 1–19 | `tests/phase_b_primitives.rs` (`row01_…` … `row16_19_make_proxy`) |
-| 20–29 | `tests/phase_b_primitives.rs` (`row20_21_c22`, `row22_23_24_c23`, `row25_26_29_c2D_c2L_metric`, `row27_28_witness`) |
-| 30–42, 46–51 | `tests/phase_b_gjk.rs::rows30_42_gjk_typepairs_transforms_outparams` |
-| 43–45 | `tests/phase_b_gjk.rs::rows43_45_gjk_cache`, `row44_gjk_hand_primed_cache` |
-| 52–66 | `tests/phase_b_manifolds.rs` (one test per generator) |
-| 67, 68 | `tests/phase_b_dispatch.rs::rows67_68_collide_all_type_pairs` |
-| 69, 70 | `tests/phase_b_dispatch.rs::rows69_70_ptr_from_parts` |
-| 71–75 | `tests/phase_b_dispatch.rs` (`row71_…` … `row75_…`) |
+Every test name carries its row numbers, uses a fixed PRNG seed, and asserts
+bit-for-bit equality of every output byte (including the manifold slots beyond
+`count`, which both libraries are handed pre-seeded with the same pattern).
+Several tests also assert *coverage* — e.g. `c22` must reach both of its
+reachable region outcomes, `c23` all three simplex counts, and
+`c2CapsuletoPolyManifold` all of manifold `count` 0, 1 and 2 — so a row cannot
+silently pass by never exercising the branch it is meant to cover.
 
-`tests/phase_c_nan_payload.rs` additionally sweeps every exported entry point
-with distinct NaN / inf / signed-zero bit patterns; that is what pins the
-`fx::{add_l, add_r, mul_l, mul_r}` operand-order choices in `src/lib.rs`.
+## Preconditions the tests must establish
 
-Run everything, across both build profiles and every feature combination, with
-`./translation/verify.sh`.
+Rows that reach `c2GJK` with `C2_TYPE_POLY` (39, 45..55, 61, 63) go through code
+where the C reads an **uninitialized** `c2Proxy`, because `c2MakeProxy` has no
+poly case. Those tests call `common::scrub_stack()` before every call into either
+library, which is the only reproducible precondition. See the "Irreproducible UB"
+section of `ERRORS.md` for the measurements behind that decision.
+
+## Bugs this table found
+
+Row 68/70 (`omni_manifold` over all pairs with special float classes) is what
+surfaced the `c2Clip` abort and, indirectly, the `p->verts[-1]` and cache-index
+defects. All three are written up in `ERRORS.md`. None of them are reachable from
+a per-function happy-path test — they only appear when the whole pipeline is
+driven end to end with awkward value classes, which is the point of enumerating
+the cross-product here rather than testing one call at a time.
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no** `[features]` table, so the only
+configuration is the default one. Verified mechanically:
+
+```
+$ grep -n '\[features\]' translation/Cargo.toml            # no match (exit 1)
+$ cargo metadata --no-deps --format-version 1 | ... features   # {}
+```
+
+`verify.sh` still enumerates the feature list out of `cargo metadata` rather than
+assuming, and runs the whole suite under `<default>`,
+`--no-default-features` and `--all-features`. All three pass with 46/46 symbol
+parity.
+
+## Status
+
+- [x] All 71 rows have a passing differential test across randomized inputs.
+- [x] No binary target exists in either project, so the stdout-comparison clause
+      does not apply (verified mechanically above).
+- [x] All rows pass under every feature combination.
+- [x] Fixed seeds cannot be hiding a divergence by luck: the whole suite was
+      re-run under 79 independent global seeds (`DIFF_SEED=0..80`,
+      `SWEEP=n translation/verify.sh`) with zero failures.

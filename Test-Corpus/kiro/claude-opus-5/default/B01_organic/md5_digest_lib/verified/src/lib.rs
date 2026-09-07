@@ -30,52 +30,50 @@ pub struct tflac_md5 {
 /// An array parameter in C decays to a pointer, so `out` is `*mut tflac_u8`.
 /// The C code performs no NULL checks; this translation reproduces that
 /// behavior exactly (dereferencing NULL is UB in both languages).
-///
-/// # Aliasing fidelity
-///
-/// The C body is sixteen *separate* statements, each of which re-reads the
-/// source word and then stores one byte:
-///
-/// ```c
-/// out[0] = (tflac_u8)(m->a);
-/// out[1] = (tflac_u8)(m->a >> 8);
-/// ...
-/// ```
-///
-/// `out` has type `tflac_u8 *` (i.e. `unsigned char *`), which is exempt from
-/// the strict-aliasing rule, so a C compiler *may not* cache `m->a` across the
-/// stores — a store through `out` can legally modify `*m`. When the caller
-/// aliases `out` onto (or partially over) `m`, each store therefore feeds back
-/// into the next load, and the observable output is a byte-by-byte cascade
-/// rather than a straight copy of the original words.
-///
-/// This is reproduced here by loading the word afresh immediately before each
-/// store, using volatile accesses so the optimizer cannot re-cache the loads,
-/// merge the stores into wider ones, or reorder them. Loads are done a byte at
-/// a time (alignment 1) so that an under-aligned `m` behaves like the C too;
-/// no store intervenes between the four byte loads of one iteration, so the
-/// value observed is identical to C's single 32-bit load at that point.
-/// `from_ne_bytes` keeps the reconstruction host-endian, matching the C, while
-/// the shifts below reproduce C's value-level little-endian serialization.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn md5_digest(m: *const tflac_md5, out: *mut tflac_u8) {
-    let words = m.cast::<tflac_u8>();
+    // Three subtleties are reproduced here that a naive slice-based
+    // implementation gets wrong:
+    //
+    // (1) Unaligned tolerance. We must never form a `&tflac_md5` reference
+    //     nor a `&mut [u8]` slice from these raw pointers: Rust would assert
+    //     4-byte alignment for the struct and abort on a misaligned address,
+    //     whereas the C simply performs (unaligned-capable) loads. So we work
+    //     purely through raw pointers. Reading only a single byte at a time
+    //     makes the alignment requirement vacuous (`u8` has alignment 1), so
+    //     any misaligned `m` is handled exactly as the C handles it.
+    //
+    // (2) Per-byte reload under aliasing. Neither pointer is `restrict`, so
+    //     `out` may overlap `*m`. The unoptimized C reloads the struct field
+    //     from memory immediately before each single-byte store, so a store
+    //     into an overlapping byte changes the value a later store observes.
+    //     To match, we FRESHLY read the source byte inside every iteration
+    //     (never hoisted) and emit exactly one single-byte write per step, so
+    //     within each iteration the read precedes that iteration's store and
+    //     later iterations observe bytes written by earlier ones.
+    //
+    // (3) NULL faults like the C. We deliberately avoid
+    //     `core::ptr::read_unaligned` / `copy_nonoverlapping`: with
+    //     debug-assertions those emit a precondition check that aborts
+    //     (SIGABRT) on a NULL pointer *before* the faulting load. A plain
+    //     single-byte raw dereference emits no such check, so a NULL `m`
+    //     produces a genuine faulting load and dies with SIGSEGV, matching C.
+    //
+    // Equivalence proof. The C statement for output index `i` is
+    // `out[i] = (tflac_u8)(<field> >> shift)`, where the field starts at byte
+    // offset `4*(i/4)` and `shift == 8*(i%4)`. On this little-endian target,
+    // byte `k` of a `u32` is the byte at `+k` from the field's start, so the
+    // byte the shift selects is at absolute offset `4*(i/4) + (i%4) == i`.
+    // Reading that one byte observes exactly the same memory state as the C's
+    // full 4-byte load followed by the shift.
+    let base = m as *const u8;
     let mut i = 0usize;
     while i < 16 {
-        // Which struct word this output byte comes from, and which byte of it:
-        //   out[4*w + 0] = (u8)(word);       out[4*w + 1] = (u8)(word >> 8);
-        //   out[4*w + 2] = (u8)(word >> 16); out[4*w + 3] = (u8)(word >> 24);
-        let field = unsafe { words.add(i & !3) };
-        let word = tflac_u32::from_ne_bytes(unsafe {
-            [
-                field.read_volatile(),
-                field.add(1).read_volatile(),
-                field.add(2).read_volatile(),
-                field.add(3).read_volatile(),
-            ]
-        });
-        let byte = (word >> (8 * (i % 4))) as tflac_u8;
-        unsafe { out.add(i).write_volatile(byte) };
+        let field_off = 4 * (i / 4); // 0 for a, 4 for b, 8 for c, 12 for d
+        let byte_in_field = i % 4; // == shift / 8
+        // SAFETY: raw single-byte load/store, mirroring the C statement
+        // `out[i] = (tflac_u8)(<field> >> 8*byte_in_field);`
+        unsafe { out.add(i).write(*base.add(field_off + byte_in_field)) };
         i += 1;
     }
 }

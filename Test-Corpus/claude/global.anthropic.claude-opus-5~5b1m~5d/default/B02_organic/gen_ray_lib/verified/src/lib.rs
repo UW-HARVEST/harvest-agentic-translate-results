@@ -177,21 +177,17 @@ fn c2v_new(x: f32, y: f32) -> c2v {
 
 /// `c2Dot`
 ///
-/// gcc -O0 emits, in order:
+/// Reference codegen (`-O0`, so there is no inlining and this ordering is the
+/// one every internal caller sees too):
+///
 /// ```text
-///   movss a.x,%xmm1 ; movss b.x,%xmm0 ; mulss %xmm0,%xmm1   -> dest = a.x
-///   movss a.y,%xmm2 ; movss b.y,%xmm0 ; mulss %xmm2,%xmm0   -> dest = b.y
-///   addss %xmm1,%xmm0                                       -> dest = y-product
+///     movss a.x,%xmm1 ; movss b.x,%xmm0 ; mulss %xmm0,%xmm1   ; xprod, dest = a.x
+///     movss a.y,%xmm2 ; movss b.y,%xmm0 ; mulss %xmm2,%xmm0   ; yprod, dest = b.y
+///     addss %xmm1,%xmm0                                       ; sum,   dest = yprod
 /// ```
-/// so the `y` product and the sum both take their *second* source operand as
-/// the `mulss`/`addss` destination. That is observable whenever both operands
-/// are NaN (the destination's payload wins), hence the deliberate argument
-/// order below.
 #[inline(always)]
 fn dot(a: c2v, b: c2v) -> f32 {
-    let x_prod = fmul(a.x, b.x);
-    let y_prod = fmul(b.y, a.y);
-    fadd(y_prod, x_prod)
+    fadd(fmul(b.y, a.y), fmul(a.x, b.x))
 }
 
 /// `c2Len`
@@ -202,8 +198,9 @@ fn len(a: c2v) -> f32 {
 
 /// `c2Add`
 ///
-/// gcc -O0 loads `a.<lane>` into `xmm1` and `b.<lane>` into `xmm0` and then
-/// emits `addss %xmm1,%xmm0`, i.e. **`b` is the destination** for both lanes.
+/// Reference codegen uses `b` as the `addss` **destination** for both lanes
+/// (`movss a.x,%xmm1 ; movss b.x,%xmm0 ; addss %xmm1,%xmm0`), which is
+/// observable when both addends are NaN.
 #[inline(always)]
 fn add(mut a: c2v, b: c2v) -> c2v {
     a.x = fadd(b.x, a.x);
@@ -221,8 +218,8 @@ fn sub(mut a: c2v, b: c2v) -> c2v {
 
 /// `c2Mulvs`
 ///
-/// gcc -O0 emits `mulss <b-in-memory>,%xmm0` with `a.<lane>` in `xmm0`, so
-/// `a.<lane>` is the destination for *both* lanes.
+/// Reference codegen keeps `a` as the `mulss` destination for **both** lanes
+/// (`movss a.x,%xmm0 ; mulss b(%rbp),%xmm0`), since `b` lives in memory.
 #[inline(always)]
 fn mulvs(mut a: c2v, b: f32) -> c2v {
     a.x = fmul(a.x, b);
@@ -280,18 +277,14 @@ fn ccw90(a: c2v) -> c2v {
 
 /// `c2MulmvT`
 ///
-/// Same `mulss`/`addss` destination pattern as [`dot`]: for each row the first
-/// product keeps `a.<row>.x` as destination, the second product uses `b.y`, and
-/// the sum's destination is that second product.
+/// Same shape as `c2Dot` per row: the first product's destination is the matrix
+/// entry, the second product's destination is `b.y`, and the `addss`
+/// destination is the *second* product.
 #[inline(always)]
 fn mulmv_t(a: c2m, b: c2v) -> c2v {
     let mut c = c2v { x: 0.0, y: 0.0 };
-    let x0 = fmul(a.x.x, b.x);
-    let x1 = fmul(b.y, a.x.y);
-    c.x = fadd(x1, x0);
-    let y0 = fmul(a.y.x, b.x);
-    let y1 = fmul(b.y, a.y.y);
-    c.y = fadd(y1, y0);
+    c.x = fadd(fmul(b.y, a.x.y), fmul(a.x.x, b.x));
+    c.y = fadd(fmul(b.y, a.y.y), fmul(a.y.x, b.x));
     c
 }
 
@@ -626,15 +619,16 @@ pub unsafe extern "C" fn c2RaytoCapsule(A: c2Ray, B: c2Capsule, out: *mut c2Rayc
     unsafe { ray_to_capsule(A, B, out) }
 }
 
-/// The in-range part of `c2CastRay`.  Kept separate so the exported symbol can
-/// be a naked stub that reproduces the C's fall-off-the-end behaviour exactly
-/// (see [`c2CastRay`]).
-///
 /// # Safety
 /// `B` must point to a `c2Circle`, `c2AABB` or `c2Capsule` matching `typeB`,
 /// and `out` must point to a writable `c2Raycast`.
-#[inline(never)]
-unsafe extern "C" fn c2CastRay_dispatch(
+///
+/// The C original has neither a `default:` label nor a `return` after the
+/// `switch`, so an out-of-range `typeB` falls off the end of the function.  On
+/// the reference build that leaves `eax` holding the low 32 bits of the `B`
+/// pointer; that (undefined) behaviour is mirrored rather than "fixed".
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn c2CastRay(
     A: c2Ray,
     B: *const c_void,
     typeB: c_int,
@@ -644,72 +638,11 @@ unsafe extern "C" fn c2CastRay_dispatch(
         match typeB {
             C2_TYPE_CIRCLE => ray_to_circle(A, *(B as *const c2Circle), out),
             C2_TYPE_AABB => ray_to_aabb(A, *(B as *const c2AABB), out),
-            // The C source has a dead `return 0;` after this `return`; it is
-            // unreachable and therefore has no observable effect.
-            _ => ray_to_capsule(A, *(B as *const c2Capsule), out),
+            C2_TYPE_CAPSULE => ray_to_capsule(A, *(B as *const c2Capsule), out),
+            // Falls off the end of the C `switch`: garbage return value.
+            _ => (B as usize as u32) as c_int,
         }
     }
-}
-
-/// # Safety
-/// `B` must point to a `c2Circle`, `c2AABB` or `c2Capsule` matching `typeB`,
-/// and `out` must point to a writable `c2Raycast`.
-///
-/// ## Reproducing the missing `default:`
-///
-/// The C original is
-///
-/// ```c
-/// int c2CastRay(c2Ray A, const void *B, C2_TYPE typeB, c2Raycast *out) {
-///     switch (typeB) {
-///         case C2_TYPE_CIRCLE:  return c2RaytoCircle(A, *(c2Circle *)B, out);
-///         case C2_TYPE_AABB:    return c2RaytoAABB(A, *(c2AABB *)B, out);
-///         case C2_TYPE_CAPSULE: return c2RaytoCapsule(A, *(c2Capsule *)B, out);
-///                               return 0;              /* dead */
-///     }
-/// }                                                    /* no default:, no return */
-/// ```
-///
-/// There is neither a `default:` label nor a `return` after the `switch`, so an
-/// out-of-range `typeB` falls off the end of a non-`void` function — undefined
-/// behaviour.  `gcc -O0` compiles that literally: the out-of-range path is
-/// `cmpl $2,typeB; ja <epilogue>` straight to `leave; ret` **without ever
-/// writing `%eax`**, so the value the caller observes is whatever it happened to
-/// leave in `%eax` before the `call`, and `*out` is left untouched.
-///
-/// A plain Rust `match` arm cannot express "return the incoming `%eax`", so the
-/// exported symbol is a naked stub that mirrors the C's instruction semantics
-/// exactly: range-check `typeB` (unsigned, so negatives are out of range, just
-/// like gcc's `ja`), tail-jump to the real dispatcher when it is in range, and
-/// otherwise `ret` immediately with `%eax` and `*out` untouched.
-///
-/// This is the closest a translation can get: the residual difference from the
-/// C is now attributable purely to the *caller's* leftover `%eax`, not to the
-/// translation.  In particular, when the caller invokes both libraries through
-/// `call *%rax` (as rustc does for a function pointer held in `rax`), each
-/// library returns the low 32 bits of *its own* entry address — an unavoidable
-/// consequence of the UB, not a translation defect.
-#[unsafe(naked)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn c2CastRay(
-    A: c2Ray,
-    B: *const c_void,
-    typeB: c_int,
-    out: *mut c2Raycast,
-) -> c_int {
-    // System V AMD64: `A` (20-byte struct → MEMORY class) is on the stack,
-    // `B` in rdi, `typeB` in esi, `out` in rdx — identical to the C build, so a
-    // tail `jmp` needs no argument shuffling at all.
-    core::arch::naked_asm!(
-        "cmp esi, 2",
-        "ja 2f",
-        "jmp {dispatch}",
-        // Out of range: fall off the end exactly like the C does — `eax` and
-        // `*out` are left exactly as the caller had them.
-        "2:",
-        "ret",
-        dispatch = sym c2CastRay_dispatch,
-    )
 }
 
 /// # Safety

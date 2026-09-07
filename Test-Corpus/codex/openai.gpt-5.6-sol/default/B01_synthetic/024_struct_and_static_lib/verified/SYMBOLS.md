@@ -1,25 +1,18 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
+Derived from:
 
-Enumeration command:
-
-```sh
+```text
 nm -D --defined-only ../c_src/build/libdriver.so
+nm -D --defined-only target/release/libdriver.so
 ```
 
-Only defined dynamic symbols are API exports. Undefined entries such as
-`printf@GLIBC_2.2.5` are shared-library dependencies, not symbols implemented
-by this library.
+| C symbol | Rust symbol | Status |
+|----------|-------------|--------|
+| `driver` | `driver` | present |
+| `run` | `run` | present |
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `driver` | `T` | `driver` | [x] |
-| `run` | `T` | `run` | [x] |
+The C shared object has no other defined dynamic symbols. The Rust shared
+object is missing zero C-defined dynamic symbols.
 
-Missing C exports in Rust: **0**
-
-Extra Rust API exports: **0**
-
-Undefined non-system symbols required by the C API but absent from Rust: **0**
-
+Phase D symbol parity: [x] complete.

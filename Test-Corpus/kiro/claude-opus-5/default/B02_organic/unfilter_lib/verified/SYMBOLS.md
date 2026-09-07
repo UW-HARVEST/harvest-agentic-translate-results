@@ -1,74 +1,81 @@
-# SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from:
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-2sETlw.so
+nm -D --defined-only c_src/build/libharvest-work-M25J6k.so
 nm -D --defined-only translation/target/release/libunfilter_lib.so
 ```
 
-The C library is built from a single TU (`c_src/src/lib.c`); everything declared
-`static` there has internal linkage and is therefore **not** part of the dynamic
-symbol table. The exported surface is exactly the 9 symbols below.
+## Exported symbols of the C `.so`
 
-## Defined dynamic symbols
+| # | symbol | nm type | C declaration | in Rust `.so`? | Rust item |
+|---|--------|---------|---------------|----------------|-----------|
+| 1 | `cp_error_reason`      | `B` (bss)  | `const char *cp_error_reason;`            | YES | `#[no_mangle] pub static mut cp_error_reason` |
+| 2 | `cp_dist_base`        | `D` (data) | `uint32_t cp_dist_base[30 + 2]`           | YES | `#[no_mangle] pub static mut cp_dist_base` |
+| 3 | `cp_dist_extra_bits`  | `D` (data) | `uint8_t cp_dist_extra_bits[30 + 2]`      | YES | `#[no_mangle] pub static mut cp_dist_extra_bits` |
+| 4 | `cp_fixed_table`      | `D` (data) | `uint8_t cp_fixed_table[288 + 32]`        | YES | `#[no_mangle] pub static mut cp_fixed_table` |
+| 5 | `cp_len_base`         | `D` (data) | `uint32_t cp_len_base[29 + 2]`            | YES | `#[no_mangle] pub static mut cp_len_base` |
+| 6 | `cp_len_extra_bits`   | `D` (data) | `uint8_t cp_len_extra_bits[29 + 2]`       | YES | `#[no_mangle] pub static mut cp_len_extra_bits` |
+| 7 | `cp_permutation_order`| `D` (data) | `uint8_t cp_permutation_order[19]`        | YES | `#[no_mangle] pub static mut cp_permutation_order` |
+| 8 | `cp_inflate`          | `T` (text) | `int cp_inflate(void*, int, void*, int)`  | YES | `#[no_mangle] pub extern "C" fn cp_inflate` |
+| 9 | `unfilter`            | `T` (text) | `int unfilter(int, int, int, uint8_t*)`   | YES | `#[no_mangle] pub extern "C" fn unfilter` |
 
-| # | symbol | C type / signature | nm class (C) | in C `.so` | in Rust `.so` | nm class (Rust) |
-|---|--------|--------------------|--------------|-----------|--------------|-----------------|
-| 1 | `cp_dist_base`         | `uint32_t[30+2]`                                  | `D` | yes | yes | `D` |
-| 2 | `cp_dist_extra_bits`   | `uint8_t[30+2]`                                   | `D` | yes | yes | `D` |
-| 3 | `cp_error_reason`      | `const char *`                                    | `B` | yes | yes | `B` |
-| 4 | `cp_fixed_table`       | `uint8_t[288+32]`                                 | `D` | yes | yes | `D` |
-| 5 | `cp_inflate`           | `int (void*, int, void*, int)`                     | `T` | yes | yes | `T` |
-| 6 | `cp_len_base`          | `uint32_t[29+2]`                                  | `D` | yes | yes | `D` |
-| 7 | `cp_len_extra_bits`    | `uint8_t[29+2]`                                   | `D` | yes | yes | `D` |
-| 8 | `cp_permutation_order` | `uint8_t[19]`                                     | `D` | yes | yes | `D` |
-| 9 | `unfilter`             | `int (int, int, int, uint8_t*)`                    | `T` | yes | yes | `T` |
+**Symbol diff (C exported, missing from Rust): EMPTY.**
+No stubs were added; every symbol above is backed by a real translation of the C body.
 
-**Missing from Rust `.so`: none.** The symbol diff is empty; no wrapper had to be
-added and no C module was left untranslated. `c_src` contains exactly one
-translation unit (`src/lib.c`, 478 lines) plus a 2-line header, and every
-function in it — including the `static` ones — has a counterpart in
-`translation/src/lib.rs`.
+## C `static` (internal, non-exported) functions — all translated
 
-## `static` (internal-linkage) C functions — not exported, but translated
+Confirmed present in the C object's `.symtab` but not `.dynsym`, therefore not
+required to be exported. All are nevertheless translated in `src/lib.rs`:
 
-These must **not** appear in `nm -D` for either library. They are listed to show
-the translation is complete, not merely export-compatible.
+`cp_make_pixel_a`, `cp_make_pixel`, `cp_would_overflow`, `cp_ptr`,
+`cp_peak_bits`, `cp_consume_bits`, `cp_read_bits`, `cp_rev16`, `cp_build`,
+`cp_stored`, `cp_fixed`, `cp_decode`, `cp_dynamic`, `cp_block`, `cp_paeth`,
+`cp_make32`, `cp_chunk`, `cp_find`.
 
-| C `static` symbol | Rust counterpart | notes |
-|---|---|---|
-| `cp_make_pixel_a`    | `cp_make_pixel_a`    | dead code in C too |
-| `cp_make_pixel`      | `cp_make_pixel`      | dead code in C too |
-| `cp_would_overflow`  | `cp_would_overflow`  | only used inside an `assert` |
-| `cp_ptr`             | `cp_ptr`             | |
-| `cp_peak_bits`       | `cp_peak_bits`       | |
-| `cp_consume_bits`    | `cp_consume_bits`    | |
-| `cp_read_bits`       | `cp_read_bits`       | |
-| `cp_rev16`           | `cp_rev16`           | |
-| `cp_build`           | `cp_build`           | |
-| `cp_stored`          | `cp_stored`          | |
-| `cp_fixed`           | `cp_fixed`           | |
-| `cp_decode`          | `cp_decode`          | |
-| `cp_dynamic`         | `cp_dynamic`         | |
-| `cp_block`           | `cp_block`           | |
-| `cp_paeth`           | `cp_paeth`           | |
-| `cp_make32`          | `cp_make32`          | |
-| `cp_chunk`           | `cp_chunk`           | dead code in C too (no caller) |
-| `cp_find`            | `cp_find`            | dead code in C too (no caller) |
+Types `cp_pixel_t`, `cp_image_t`, `cp_state_t`, `cp_raw_png_t` are translated as
+`#[repr(C)]` structs. `cp_state_t` layout fidelity is load-bearing: `cp_decode`
+can read `tree[-1]`, which for `tree == s->len` aliases `s->dst[31]` and for
+`tree == s->lit` aliases `s->lookup[510..511]`. `#[repr(C)]` reproduces those
+offsets exactly.
 
-`struct cp_pixel_t`, `struct cp_image_t`, `struct cp_state_t`, `struct
-cp_raw_png_t` are all mirrored as `#[repr(C)]` in Rust. `cp_state_t`'s layout is
-load-bearing: `cp_decode` can evaluate `tree[-1]`, so `lookup[511]` must
-immediately precede `lit[0]`, `lit[287]` must precede `dst[0]`, and `dst[31]`
-must precede `len[0]`. Verified by test `c32_state_layout_matches_c` in `tests/phase_b_inflate.rs`.
+## Undefined (imported) symbols
 
-## Undefined symbols
+C `.so` imports only libc/libm: `__assert_fail`, `calloc`, `free`, `memcmp`,
+`memcpy`, `memset` (plus weak `_ITM_*`, `__gmon_start__`, `__cxa_finalize`).
+Rust `.so` imports the usual Rust/libc set; **0 missing/undefined non-libc
+symbols** — verified with `ldd -r` (no "undefined symbol" lines).
 
-`nm -D --undefined-only` on the Rust `.so` lists only libc/`libgcc_s` unwinder
-imports (`memcpy`, `memset`, `malloc`, `calloc`, `free`, `abort`, `_Unwind_*`,
-`__tls_get_addr`, …). **0 missing/undefined non-libc symbols.**
+## CRITICAL BUILD FACT: `assert()` is LIVE in the C `.so`
 
-The C `.so` additionally imports `__assert_fail` because the CMake build sets no
-`CMAKE_BUILD_TYPE` and therefore never defines `NDEBUG` — see the note at the top
-of `ERRORS.md`.
+`c_src/CMakeLists.txt` sets no `CMAKE_BUILD_TYPE`, and the documented build
+command passes only `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`. The actual compile
+line is:
+
+```
+/usr/bin/cc -D..._EXPORTS -I include -I src -fPIC -MD -MT ... -c src/lib.c
+```
+
+There is **no `-DNDEBUG`**, so every `assert()` in `lib.c` is compiled in.
+`nm -D --undefined-only` shows `U __assert_fail@GLIBC_2.2.5`, and all nine
+assert expression strings are present in `.rodata`:
+
+```
+!(s->bits_left & 7)                        (cp_ptr)
+s->word_index <= s->word_count             (cp_peak_bits)
+s->count >= num_bits_to_read               (cp_consume_bits)
+num_bits_to_read <= 32                     (cp_read_bits)
+num_bits_to_read >= 0                      (cp_read_bits)
+s->bits_left > 0                           (cp_read_bits)
+s->count <= 64                             (cp_read_bits)
+!cp_would_overflow(s, num_bits_to_read)    (cp_read_bits)
+len < 16                                   (cp_build)
+(search >> len) == (key >> len)            (cp_decode)
+```
+
+A failing assert calls `__assert_fail` → `abort()` → **SIGABRT**. This is
+observable behaviour of the ground-truth library and is reachable from trivial
+inputs (e.g. `cp_inflate(in, 0, out, n)` trips `assert(s->bits_left > 0)`).
+The Rust translation must therefore abort under exactly the same conditions.
+See `ERRORS.md` rows E1–E10.

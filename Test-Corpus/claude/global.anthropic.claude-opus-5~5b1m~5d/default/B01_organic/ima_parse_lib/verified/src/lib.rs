@@ -181,39 +181,36 @@ fn ima_btoh64(v: ima_u64_t) -> ima_u64_t {
 // from the caller's buffer, so the accesses may be misaligned.  These helpers
 // perform the same loads without relying on alignment.
 //
-// `wrapping_add` is used for the address arithmetic because the C code performs
-// unchecked pointer arithmetic that can legitimately wrap (a chunk with a
-// negative or absurd `size` moves `chunk` anywhere in the address space).
-//
-// NOTE on UB-check instrumentation: `ima_parse` genuinely dereferences NULL for
-// some inputs -- `data == NULL`, or a `data` chunk that precedes any
-// `desc`/`pakt` chunk, which leaves `desc`/`pakt` NULL when they are read at the
-// end of the function.  The C library, compiled without instrumentation, faults
-// with SIGSEGV.  Rust's optional UB checks (rustc's MIR null-check pass and the
-// `assert_unsafe_precondition!` in `ptr::read_unaligned`) would instead turn
-// those loads into a non-unwinding panic, i.e. SIGABRT -- an observable
-// divergence from the C library.  `[profile.dev] debug-assertions = false` in
-// `Cargo.toml` keeps the cdylib free of that instrumentation in every profile,
-// exactly like the C build.  See `ERRORS.md` rows 4-7.
+// The loads go through `#[repr(C, packed)]` newtypes rather than
+// `core::ptr::read_unaligned`, because `read_unaligned` carries a
+// `debug_assertions`/`-Zub-checks` precondition check that panics on a NULL (or
+// otherwise invalid) pointer.  The C code has no such check: it simply issues
+// the load and faults.  A plain `*ptr` deref of a packed newtype lowers to
+// exactly that unaligned machine load with no added check, so a debug-profile
+// build of this crate faults identically to the C instead of aborting with a
+// Rust panic message.
+
+#[repr(C, packed)]
+struct Unaligned<T>(T);
 
 #[inline]
 unsafe fn load_u16(base: *const u8, offset: usize) -> ima_u16_t {
-    core::ptr::read_unaligned(base.wrapping_add(offset) as *const ima_u16_t)
+    (*(base.wrapping_add(offset) as *const Unaligned<ima_u16_t>)).0
 }
 
 #[inline]
 unsafe fn load_u32(base: *const u8, offset: usize) -> ima_u32_t {
-    core::ptr::read_unaligned(base.wrapping_add(offset) as *const ima_u32_t)
+    (*(base.wrapping_add(offset) as *const Unaligned<ima_u32_t>)).0
 }
 
 #[inline]
 unsafe fn load_u64(base: *const u8, offset: usize) -> ima_u64_t {
-    core::ptr::read_unaligned(base.wrapping_add(offset) as *const ima_u64_t)
+    (*(base.wrapping_add(offset) as *const Unaligned<ima_u64_t>)).0
 }
 
 #[inline]
 unsafe fn load_f64(base: *const u8, offset: usize) -> ima_f64_t {
-    core::ptr::read_unaligned(base.wrapping_add(offset) as *const ima_f64_t)
+    (*(base.wrapping_add(offset) as *const Unaligned<ima_f64_t>)).0
 }
 
 /// x86-64 `cvttsd2si` with a 64-bit destination: truncate toward zero, and

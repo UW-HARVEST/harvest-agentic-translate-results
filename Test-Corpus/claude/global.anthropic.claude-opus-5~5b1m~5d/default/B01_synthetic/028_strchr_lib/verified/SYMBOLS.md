@@ -1,82 +1,70 @@
-# SYMBOLS.md — Exported symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A: public symbol surface
 
-Derived mechanically from `nm -D` on both shared libraries.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
 Build commands used:
 
-```sh
-# C
+```
 cd c_src && mkdir -p build && cd build && \
   cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
 # -> c_src/build/libdriver.so
 
-# Rust
 cd translation && cargo build --release
 # -> translation/target/release/libdriver.so
 ```
 
-## C source surface
+## C `.so` exported symbols (`nm -D --defined-only c_src/build/libdriver.so`)
 
-The whole C library is a single translation unit, `c_src/src/driver.c`
-(40 lines). It defines exactly two functions with external linkage:
+| symbol | type | C declaration | present in Rust `.so`? |
+|--------|------|---------------|------------------------|
+| `driver` | `T` (text, global) | `void driver(const char *in);` (public, `include/driver.h`) | YES |
+| `foo`    | `T` (text, global) | `int foo(const char *in, char c);` (not in header, but **non-`static`**, so it is part of the ABI surface) | YES |
 
-| C definition | declared in header? |
-|---|---|
-| `int foo(const char *in, char c)` | no (not in `driver.h`, but non-`static` → exported) |
-| `void driver(const char *in)` | yes (`c_src/include/driver.h`) |
+There are no exported data symbols, no macro-generated symbols, no
+`#ifdef`-conditional symbols, and no additional translation units — `c_src`
+contains exactly one `.c` file (`src/driver.c`) and one header
+(`include/driver.h`), both fully translated in `translation/src/lib.rs`.
 
-There are no macros that generate symbols, no global variables, no `static`
-helpers, and no other `.c` files in `CMakeLists.txt`. So the complete expected
-export set is `{driver, foo}`.
+## Rust `.so` exported symbols
 
-## Defined dynamic symbols (`nm -D --defined-only`, code/data only)
+| symbol | Rust item |
+|--------|-----------|
+| `driver` | `#[no_mangle] pub unsafe extern "C" fn driver(in_: *const c_char)` |
+| `foo`    | `#[no_mangle] pub unsafe extern "C" fn foo(in_: *const c_char, c: c_char) -> c_int` |
 
-| symbol | C `.so` | Rust `.so` | status |
-|---|---|---|---|
-| `driver` | `T` | `T` | ✅ present in both |
-| `foo`    | `T` | `T` | ✅ present in both |
-
-`foo` is *not* declared in `driver.h`, but because it is not `static` it is a
-real public dynamic symbol of the C library; the Rust translation therefore
-also exports it via `#[unsafe(no_mangle)] pub unsafe extern "C" fn foo`.
-
-The Rust `.so` additionally exports the usual Rust/`cdylib` runtime symbols
-(`_init`, `_fini`, `__bss_start`, `_edata`, `_end`, and Rust std internals).
-Extra exports are harmless — the requirement is that every C symbol is present
-in Rust, which holds.
-
-### Symbol diff
+## Symbol diff
 
 ```
-$ comm -23 <(nm -D --defined-only c_src/build/libdriver.so           | awk '$2=="T"{print $3}' | sort) \
-           <(nm -D --defined-only translation/target/release/libdriver.so | awk '$2=="T"{print $3}' | sort)
-(empty)
+C - Rust = {}        (0 missing)
+Rust - C = {}        (0 extra)
 ```
 
-**Missing symbols: 0.** No `#[no_mangle]` wrapper had to be added and no C
-module was left untranslated (there is only one C module and it is fully
-translated: `foo` and `driver` in `translation/src/lib.rs`).
+No stubs, no `unimplemented!()`, no untranslated modules. Both C symbols have a
+real Rust implementation exported under the exact same name.
 
 ## Undefined (imported) symbols
 
-C `.so` imports: `printf@GLIBC_2.2.5`, `strchr@GLIBC_2.2.5` (+ weak
-`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
+The Rust `.so` imports only libc symbols, matching the C `.so`:
 
-Rust `.so` imports the same two libc functions — the translation deliberately
-calls libc `strchr` and libc `printf` directly so that search semantics and
-stdout formatting/buffering are byte-identical — plus the standard Rust
-runtime imports (`malloc`/`free`/`memcpy`/`_Unwind_*`/`pthread_key_*`/…).
+| symbol | used by C | used by Rust |
+|--------|-----------|--------------|
+| `strchr` | yes (`foo`) | yes (`foo`, called via `extern "C"`) |
+| `printf` | yes (`driver`) | yes (`driver`, called via `extern "C"`) |
 
-**Undefined non-libc symbols in the Rust `.so`: 0.** Every `U`/`w` entry
-resolves to glibc (`GLIBC_*` versioned) or to the platform unwinder
-(`GCC_*`), both of which are present at load time; `dlopen` of the Rust
-`.so` succeeds in the differential tests, which is the empirical proof.
+0 missing / undefined **non-libc** symbols in the Rust `.so`.
 
-## Checklist
+## Cargo feature combinations
 
-- [x] Every `T` symbol of the C `.so` is exported by the Rust `.so` with the
-      exact same name.
-- [x] `nm -D` shows 0 missing symbols and 0 undefined non-libc symbols for
-      the Rust `.so`.
-- [x] No stubs / `unimplemented!()` / `todo!()` anywhere in
-      `translation/src/lib.rs` (verified by grep).
+`translation/Cargo.toml` declares **no `[features]` section** and no optional
+dependencies, so there is exactly one build configuration
+(`--no-default-features` is equivalent to the default build). Phases B and C
+therefore cover 100% of the feature space; this is verified by
+`check_features.sh`.
+
+## Binary executable
+
+`c_src/CMakeLists.txt` builds only `add_library(driver SHARED ...)`. There is no
+`add_executable`, so the project produces **no driver binary** and the
+"compare C and Rust stdout of the binary" clause is not applicable. Note that
+`driver()` itself writes to stdout, and that stdout **is** compared
+byte-for-byte in Phase B by redirecting fd 1 to a temp file around each call.

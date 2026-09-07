@@ -75,12 +75,7 @@ unsafe fn valid_4(x: *const u8) -> bool {
 /// byte (0).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn w_utf8_drop(string: *const c_char) -> *const c_char {
-    // The C library is compiled without `NDEBUG` (its CMakeLists sets no build
-    // type and no `-DNDEBUG`), so `assert(string != NULL)` is live and a NULL
-    // argument terminates the process via `__assert_fail` -> SIGABRT. Use a
-    // real (non-debug) assertion so the Rust build aborts as well instead of
-    // dereferencing NULL and raising SIGSEGV.
-    assert!(!string.is_null(), "string != NULL");
+    assert!(!string.is_null());
 
     let mut p = string as *const u8;
 
@@ -106,17 +101,16 @@ pub unsafe extern "C" fn w_utf8_drop(string: *const c_char) -> *const c_char {
 /// Return a newly allocated copy of `string` with every byte that is not part of
 /// a valid UTF-8 sequence dropped, or (when `replacement` is true) substituted
 /// with U+FFFD (EF BF BD).
+///
+/// `replacement` is declared as `u8` rather than `bool`: the C prototype uses
+/// `_Bool`, which is a single byte in the SysV ABI, and a foreign caller can
+/// legally place *any* byte value there. The C compiles `if (replacement)` to a
+/// whole-byte "is non-zero" test, so any non-zero byte means true. Using `u8`
+/// here is ABI-identical to `_Bool`/`bool` while avoiding the undefined
+/// behaviour of materialising a `bool` holding a value other than 0 or 1.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn w_utf8_filter(string: *const c_char, replacement: u8) -> *mut c_char {
-    // See `w_utf8_drop`: the C `assert` is live in the shipped build.
-    assert!(!string.is_null(), "string != NULL");
-
-    // C's `_Bool` parameter is a single byte and the compiled C code tests it
-    // with `cmpb $0x0` — i.e. ANY non-zero byte means "true". Rust's `bool` is
-    // UB for byte values other than 0/1, so the parameter is taken as `u8`
-    // (identical ABI: low byte of the second integer register) and compared
-    // against zero exactly like the C does.
-    let replacement = replacement != 0;
+    assert!(!string.is_null());
 
     let valid_start = unsafe { w_utf8_drop(string) };
 
@@ -161,7 +155,7 @@ pub unsafe extern "C" fn w_utf8_filter(string: *const c_char, replacement: u8) -
                     valid = valid.add(1);
                 }
             } else {
-                if replacement {
+                if replacement != 0 {
                     if repl < 3 {
                         size += REPLACEMENT_INC;
                         copy = realloc(copy as *mut c_void, size) as *mut u8;

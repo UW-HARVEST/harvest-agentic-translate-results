@@ -230,14 +230,11 @@ pub unsafe extern "C" fn init_result_array(
     // modifies it, so a plain comparison against the stored value is exact.
     while i < (*arr).count {
         let v: c_int = *values.wrapping_offset(i as isize);
-        // Written field-by-field (never as a whole-struct store) so that the two
-        // padding holes of `Result` (bytes 4..8 and 20..24) are left untouched,
-        // exactly like the field-wise stores gcc/clang emit for the C compound
-        // literal assignment `arr->data[i] = (Result){...}`.
-        let slot: *mut Result = base.wrapping_offset(i as isize);
-        core::ptr::addr_of_mut!((*slot).value).write(v);
-        core::ptr::addr_of_mut!((*slot).scaled).write(v as c_double * 1.5);
-        core::ptr::addr_of_mut!((*slot).rank).write(i);
+        *base.wrapping_offset(i as isize) = Result {
+            value: v,
+            scaled: v as c_double * 1.5,
+            rank: i,
+        };
         i = i.wrapping_add(1);
     }
 }
@@ -276,16 +273,7 @@ pub unsafe extern "C" fn process_with_foreach(arr: *mut ResultArray, op: operati
 
     let base: *mut Result = (*arr).data.as_mut_ptr();
     let size: c_int = (*arr).count; // evaluated once, as in the macro
-    // C calls straight through the raw function pointer with no NULL check; a
-    // NULL `op` therefore faults on the first iteration exactly as it does in C.
-    // The transmute (instead of `unwrap_unchecked`) makes that explicit and keeps
-    // the zero-count case — where the pointer is never dereferenced — well
-    // defined for a NULL `op`, matching C.
-    let op: unsafe extern "C" fn(c_int, c_int, c_int, c_int) -> c_int =
-        core::mem::transmute::<
-            *const (),
-            unsafe extern "C" fn(c_int, c_int, c_int, c_int) -> c_int,
-        >(core::mem::transmute::<operation_func, *const ()>(op));
+    let op = op.unwrap_unchecked(); // C would call through the raw pointer
 
     let mut count_iter: c_int = 0;
     while count_iter != size {
@@ -329,13 +317,8 @@ pub unsafe extern "C" fn compute_weighted_sum(arr: *mut ResultArray) -> c_int {
         let base: *mut Result = (*arr).data.as_mut_ptr();
         let current: *mut Result = base.wrapping_offset(i as isize);
 
-        // `current - base` in *elements*.  Computed from the raw addresses rather
-        // than with `offset_from`, so that a caller-supplied `count` larger than
-        // the 10-element array (which the C happily walks past) does not turn
-        // into Rust-level UB while still producing the identical value.
         let weight: c_int = if current > base {
-            (((current as usize).wrapping_sub(base as usize)) / core::mem::size_of::<Result>())
-                as c_int
+            current.offset_from(base) as c_int
         } else {
             1
         };

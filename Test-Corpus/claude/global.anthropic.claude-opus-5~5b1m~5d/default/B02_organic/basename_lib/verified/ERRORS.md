@@ -1,77 +1,46 @@
-# ERRORS.md — Phase A error-surface table
+# ERRORS.md — Phase A: error-surface table
 
-## Mechanical derivation
-
-Every rejection path in the library was found by grepping the complete C source
-(22 lines of `src/lib.c`, 1 line of `include/lib.h`) for every construct that
-could reject input:
-
-```sh
-grep -nE 'return|assert|NULL|ERROR|errno|if|else|\?|<|>|==|!=|#if|#define|enum|switch' \
-     c_src/src/lib.c c_src/include/lib.h
-```
-
-Result:
+Mechanically derived from the *entire* C source. Grep results that establish
+completeness:
 
 ```
-src/lib.c:3:#include <string.h>
-src/lib.c:13:  if(s1 && s2) {
-src/lib.c:14:    path = (s1 > s2) ? s1 + 1 : s2 + 1;
-src/lib.c:16:  else if(s1)
-src/lib.c:18:  else if(s2)
-src/lib.c:21:  return path;
+$ grep -nE 'RETURN_ERROR|return -1|return NULL|assert|errno|goto|if *\(' c_src/src/lib.c
+13:  if(s1 && s2) {
+16:  else if(s1)
+18:  else if(s2)
+$ grep -c . c_src/include/lib.h          # 1 line: the prototype only
 ```
 
-Findings, stated exactly as the source shows them:
+`tool_basename` is a **total function over its documented domain**: it contains
+**no** error-return macro, **no** `return -1` / `return NULL`, **no** `assert`,
+**no** `errno` use, **no** explicit range check, **no** null check, and **no**
+min/max constant. There is no error enum and no out-parameter status. Every
+input that is a valid NUL-terminated string produces a non-NULL pointer into
+that same string.
 
-* **`return` statements: 1** (`return path;`). There is no `return -1`, no
-  `return NULL`, no `RETURN_ERROR`-style macro.
-* **`assert`: 0.**
-* **explicit range checks / min-max constants: 0.**
-* **NULL checks on the `path` argument: 0.** `path` goes straight into
-  `strrchr()`.
-* **error enums / error codes / `errno` use: 0.**
-* **`#if` / `#ifdef` / `switch`: 0.** There are no enum parameters anywhere in
-  the public API (the only parameter is `char *`), so there is no
-  out-of-range-enum-value case to construct.
-
-**`tool_basename` therefore has no error return at all.** It is total over every
-valid NUL-terminated string: it always returns a non-NULL pointer into the
-caller's buffer. The only conditions that can be called "rejections" are (a) the
-degenerate/no-separator inputs that fall through the `if` chain to the untouched
-`return path;`, and (b) the one input the C cannot handle — `NULL` — which it
-does not check and therefore faults on.
-
-The table below has one row per distinct such condition. The three `if` branches
-on lines 13/16/18 are *success* paths and belong to `CONFIGS.md`; the row for
-the implicit `else` (no separator at all) is here because it is the fall-through
-of that rejection-shaped chain.
-
-## Error-surface table
+Consequently the "error surface" consists solely of the *implicit* rejections /
+undefined-behaviour boundaries that the C code reaches by not checking. Each is
+listed as one row and each has a differential test.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|----------------------------------------------|-------------------|------|--------|
-| E1 | `tool_basename` | `path == NULL`. No NULL check exists; `strrchr(NULL, '/')` dereferences it. | Undefined behaviour → process dies on `SIGSEGV` (11). Not an error *return*: no value comes back. | `phase_c_null_ptr.rs::null_pointer_differential` (both `.so`s called in forked child processes; compared termination signals) | ✅ |
-| E2 | `tool_basename` | `path` = `""` (empty string, length 0). Both `strrchr` calls return `NULL`, so the `if`/`else if`/`else if` chain is skipped entirely. | Returns `path` unchanged (offset 0); result is `""`. Never `NULL`. | `phase_c_errors.rs::e2_empty_string` | ✅ |
-| E3 | `tool_basename` | `path` contains **no** `'/'` and **no** `'\\'` (e.g. `"filename.txt"`). `s1 == NULL && s2 == NULL`; all three branches fail. | Returns `path` unchanged (offset 0). Never `NULL`. | `phase_c_errors.rs::e3_no_separator_at_all` | ✅ |
-| E4 | `tool_basename` | Separator is the **last** byte, so the "basename" is empty (`"dir/"`, `"dir\\"`). `s1`/`s2` points at the final byte; `s1 + 1` is the NUL terminator. | Returns a pointer to the NUL terminator = `""` at offset `len-1+1 == len`. This is a valid in-bounds pointer, not an error. | `phase_c_errors.rs::e4_trailing_separator_yields_empty` | ✅ |
-| E5 | `tool_basename` | Separator is the **only** byte (`"/"`, `"\\"`). Degenerate form of E4 with `len == 1`. | Returns pointer to the NUL terminator = `""` at offset 1. | `phase_c_errors.rs::e5_separator_only` | ✅ |
-| E6 | `tool_basename` | A byte one step **outside** the separator values is passed where a separator would be: `'.'`(0x2E) / `'0'`(0x30) around `'/'`(0x2F), and `'['`(0x5B) / `']'`(0x5D) around `'\\'`(0x5C). These are the "one past a valid range" inputs for the two byte comparisons. | Not treated as separators → behaves like E3 (returns offset 0). | `phase_c_errors.rs::e6_bytes_adjacent_to_separators` | ✅ |
-| E7 | `tool_basename` | High-bit bytes `0x80..=0xFF` in the buffer. `char` is **signed** on x86-64, so a naive signed comparison could sign-extend and mis-compare; `strrchr` compares as `unsigned char`. Includes `0xAF` (= `0x2F \| 0x80`) and `0xDC` (= `0x5C \| 0x80`). | Never matched as separators. Result is decided only by real `'/'`/`'\\'` bytes. | `phase_c_errors.rs::e7_high_bit_bytes_are_not_separators` | ✅ |
-| E8 | `tool_basename` | Oversized input: buffer of 1 MiB with the separator at the very end, and a 1 MiB buffer with no separator. There is no length cap in the C. | No truncation, no cap, no error: returns the correct interior pointer at offset ~1 MiB. | `phase_c_errors.rs::e8_oversized_input` | ✅ |
-| E9 | `tool_basename` | Buffer whose bytes are **not valid UTF-8** (e.g. lone `0xFF`, truncated multi-byte sequences), with and without separators. C is byte-oriented and has no encoding validation; a Rust port that went through `str`/`from_utf8` would reject or panic here. | Byte-wise result exactly as for any other bytes; no validation, no error. | `phase_c_errors.rs::e9_invalid_utf8_bytes` | ✅ |
-| E10 | `tool_basename` | Buffer containing **only** the NUL terminator at a nonzero index cannot happen, but the mirror case can: bytes appearing *after* the NUL terminator (separators hidden in the tail of an oversized allocation). C stops at the NUL. | Bytes past the NUL are invisible; result must ignore them (identical to E3/E2 for the visible prefix). | `phase_c_errors.rs::e10_bytes_after_nul_are_invisible` | ✅ |
+|---|----------|---------------------------------------------|-------------------|------|--------|
+| 1 | `tool_basename` | `path == NULL`. C passes it straight to `strrchr(NULL, '/')` with no null check → dereference of address 0. | Process fault (`SIGSEGV`); no value returned. Rust must fault identically, not return a value or a different signal. | `err_01_null_pointer_faults_identically` (out-of-process, compares wait-status/signal of C vs Rust child) | [x] |
+| 2 | `tool_basename` | Empty string `""` (length 0 — the "zero length" boundary). `strrchr` finds neither separator. | Returns `path` unchanged (pointer to the NUL byte itself), i.e. offset 0. | `err_02_empty_string` | [x] |
+| 3 | `tool_basename` | String consisting of exactly one separator, `"/"` — separator is the last byte, so the result points one past it, at the NUL terminator. | Returns `path + 1`, a pointer to the terminating NUL (an *empty* basename, not an error). | `err_03_separator_only_returns_empty_tail` | [x] |
+| 4 | `tool_basename` | String consisting of exactly one backslash, `"\\"` (the `s2`-only variant of row 3). | Returns `path + 1` → empty basename. | `err_03_separator_only_returns_empty_tail` | [x] |
+| 5 | `tool_basename` | Trailing separator on a real path, `"a/b/"` — result is the empty string after the final `/`, so the "basename" is empty even though the input was not. | Returns pointer to the NUL byte (offset `strlen(path)`). | `err_04_trailing_separator` | [x] |
+| 6 | `tool_basename` | Both separators present and **equal-position impossible**, but the `s1 > s2` tie-branch: `s1` and `s2` can never be equal (different bytes), so the `else` arm `s2 + 1` must be taken whenever `s2 > s1`. Constructed input `"a\\b/c"` vs `"a/b\\c"` covers both arms. | `(s1 > s2) ? s1+1 : s2+1` — the *later* separator wins. | `err_05_both_separators_ordering` | [x] |
+| 7 | `tool_basename` | Oversized input: string much longer than any buffer heuristic (64 KiB, no separator, and 64 KiB with a separator at the very end). C has no length limit, so it must succeed. | Returns correct offset; no truncation, no overflow. | `err_06_oversized_length` | [x] |
+| 8 | `tool_basename` | Bytes that are *not* valid UTF-8 (e.g. `0x80 0xFF 0xFE`) and high-bit bytes adjacent to separators. Naive Rust translations that go through `str`/`String` reject these; C does not care. | Treated as ordinary opaque bytes; separator search unaffected. | `err_07_non_utf8_bytes` | [x] |
+| 9 | `tool_basename` | Byte values that are *one step past* the separators in the ASCII table and therefore must **not** match: `'.'`(0x2E) vs `'/'`(0x2F) vs `'0'`(0x30), and `'['`(0x5B) vs `'\\'`(0x5C) vs `']'`(0x5D). | No match → `path` returned unchanged. | `err_08_near_miss_separator_bytes` | [x] |
+| 10 | `tool_basename` | Interior NUL: buffer `"a/b\0c/d"`. C's `strrchr` stops at the first NUL, so the bytes after it are invisible even though they contain a later `/`. | Searches only `"a/b"` → returns offset 2. The trailing `/d` is ignored. | `err_09_interior_nul_truncates_search` | [x] |
+| 11 | `tool_basename` | Aliasing / mutation contract: the returned pointer must point **into the caller's own buffer** (no copy, no allocation the caller would have to free, input not modified). A Rust version returning a freshly allocated string would leak and break pointer arithmetic done by the caller. | `path <= ret <= path + strlen(path)`; input bytes unchanged. | `err_10_returns_interior_pointer_no_copy` | [x] |
+| 12 | `tool_basename` | Out-of-range enum values passed across FFI. **N/A — no enum, no flag, no mode parameter exists in this API** (`grep -nE 'enum|typedef|#define' c_src/src/lib.c c_src/include/lib.h` → no match). Recorded so the class is explicitly discharged rather than silently skipped. | — | documented in `configs_and_errors_coverage` | [x] |
 
-## Notes on generic boundaries required by Phase C
+## Notes on row 1
 
-| generic boundary | how it is covered |
-|---|---|
-| NULL pointer | E1 (subprocess-based signal comparison — the only way to observe UB differentially without killing the harness) |
-| zero length | E2 (`""`) |
-| oversized length | E8 (1 MiB buffers) |
-| one step past a documented valid range | E6 (bytes `0x2E`/`0x30` and `0x5B`/`0x5D`, i.e. the neighbours of the two separator byte values) and E7 (high-bit / sign-extension neighbours) |
-| out-of-range enum value across the FFI boundary | **not applicable, and this is verified rather than assumed**: `grep -E 'enum|switch' c_src/src/lib.c c_src/include/lib.h` finds nothing, and the sole public prototype is `char *tool_basename(char *path)` — there is no integer or enum parameter in the entire ABI, so no invalid discriminant can be constructed. |
-| return-value sentinel | The C never returns `NULL`; tests assert the Rust never does either, and compare the exact byte **offset** of the returned interior pointer, not just "both non-NULL". |
-| output-buffer mutation | The C never writes through `path`; tests assert the input buffer is byte-identical after both calls (E2–E10 and all Phase B rows). |
-
-**All 10 rows have a passing differential test. Phase C gate satisfied.**
+Row 1 is the only genuinely fatal input. It cannot be asserted in-process
+(the fault would kill the test runner), so the test re-executes the test
+binary as a child process — once for the C `.so`, once for the Rust `.so` —
+and compares the raw `wait` status, i.e. it asserts *the same signal*, not
+merely "both failed somehow".

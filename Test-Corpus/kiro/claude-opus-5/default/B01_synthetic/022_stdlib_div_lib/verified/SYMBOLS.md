@@ -1,85 +1,76 @@
-# SYMBOLS.md — Symbol parity between C `.so` and Rust `.so`
+# SYMBOLS.md — Symbol parity between the C `.so` and the Rust `.so`
 
 Artifacts compared:
 
-- C:    `c_src/build/libdriver.so`      (cmake, `add_library(driver SHARED src/driver.c)`)
-- Rust: `translation/target/release/libdriver.so` (`crate-type = ["cdylib"]`)
-- Rust: `translation/target/debug/libdriver.so`   (same sources, `panic=unwind` profile)
+- C:    `c_src/build/libdriver.so`        (cmake, `add_library(driver SHARED src/driver.c)`)
+- Rust: `translation/target/release/libdriver.so`  (`crate-type = ["cdylib"]`)
 
-## Exported (defined, dynamic) symbols
+Command used (both sides):
 
-`nm -D --defined-only` on each library.
+```
+nm -D --defined-only <lib>
+```
 
-| # | C symbol | type | present in Rust `.so`? | notes |
-|---|----------|------|------------------------|-------|
-| 1 | `driver` | `T` (global text) | YES — `T driver` | declared in `include/driver.h` as `void driver(int x, int y);`; Rust exports it via `#[unsafe(no_mangle)] pub extern "C" fn driver(x: c_int, y: c_int)` |
+## C source surface
 
-The C `.so` exports exactly one symbol. `src/driver.c` defines no other
-function, no global/static data with external linkage, and contains no
-symbol-generating macros. There is no second translation unit
-(`CMakeLists.txt` lists only `src/driver.c`), so no C module was skipped
-during translation — the surface is genuinely one function.
+`c_src/` contains exactly two source files and one translation unit:
 
-**Missing-from-Rust count: 0.** No `#[no_mangle]` wrapper had to be added and
-no untranslated C module was found.
+| file | contents |
+|------|----------|
+| `c_src/include/driver.h` | one declaration: `void driver(int x, int y);` |
+| `c_src/src/driver.c`     | one definition: `driver`, calling `div()` + `printf()` |
 
-The Rust `.so` exports no *extra* non-standard symbols either (only `driver`
-plus the platform-standard `_init`/`_fini`-class entries that the linker adds
-to every shared object; these do not appear in `nm -D --defined-only`).
+There are no other `.c` files, no macro-generated symbol families, no global
+variables, and no `static` helpers. So the complete public surface is one
+symbol. Nothing in `c_src` was left untranslated.
+
+## Dynamic-symbol table (defined / exported)
+
+| # | symbol | type | in C `.so` | in Rust `.so` | status |
+|---|--------|------|------------|---------------|--------|
+| 1 | `driver` | `T` (global text) | yes | yes | MATCH |
+
+Exported-symbol diff (`comm -3` on the sorted name lists): **empty**.
+
+- Symbols in C `.so` but missing from Rust `.so`: **0**
+- Extra defined/exported symbols in the Rust `.so`: **0** — `nm -D
+  --defined-only` on the Rust `.so` prints exactly one line, `T driver`.
 
 ## Undefined (imported) symbols
 
-Requirement: 0 missing/undefined **non-libc** symbols in the Rust `.so`.
+Both libraries import only libc:
 
-C imports:
+| library | non-libc undefined symbols |
+|---------|----------------------------|
+| C `.so` | none — `U div@GLIBC_2.2.5`, `U printf@GLIBC_2.2.5`, plus the weak `__cxa_finalize` / `__gmon_start__` / `_ITM_*` toolchain hooks |
+| Rust `.so` | none — `U printf@GLIBC_2.2.5` plus libc (`malloc`, `memcpy`, `write`, `open64`, …), the `_Unwind_*` GCC unwinder, and the same weak toolchain hooks. All resolve from `libc`/`libgcc_s`. |
 
-```
-w _ITM_deregisterTMCloneTable      w _ITM_registerTMCloneTable
-w __cxa_finalize@GLIBC_2.2.5       w __gmon_start__
-U div@GLIBC_2.2.5                  U printf@GLIBC_2.2.5
-```
+Note: the C `.so` imports `div` from glibc rather than inlining it, so the
+reference behavior is glibc's `div()`, which is a plain `numer / denom` and
+`numer % denom` on `int` — i.e. a single `idiv` on x86-64. The Rust translation
+emits `cdq; idiv` via inline asm for exactly this reason (see `ERRORS.md` rows
+1–2).
 
-Rust imports (49 entries) are all one of:
-
-- `printf@GLIBC_2.2.5` — the same libc symbol the C uses for output;
-- other glibc symbols pulled in by the Rust standard library
-  (`malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `memcpy`,
-  `memmove`, `memset`, `bcmp`, `strlen`, `abort`, `getenv`, `getcwd`,
-  `read`, `write`, `writev`, `close`, `open64`, `lseek64`, `fstat64`,
-  `stat64`, `statx`, `readlink`, `realpath`, `mmap64`, `munmap`, `syscall`,
-  `__errno_location`, `dl_iterate_phdr`, `gettid`, `pthread_key_create`,
-  `pthread_key_delete`, `pthread_setspecific`, `__tls_get_addr`,
-  `__cxa_thread_atexit_impl`, `__cxa_finalize`);
-- `_Unwind_*@GCC_*` from libgcc_s (panic/backtrace machinery);
-- the weak `_ITM_*TMCloneTable` / `__gmon_start__` toolchain markers, which
-  the C `.so` also has.
-
-Rust does **not** import `div`: `div()` is reimplemented in the translation
-(see `c_div` in `src/lib.rs`) rather than called through libc. That is an
-implementation choice, not a missing symbol — `div` is not part of this
-library's exported surface, and glibc's `div` is itself just
-`{ numer/denom, numer%denom }`, so the differential tests confirm the
-reimplementation is behaviourally identical (including the two faulting
-cases; see `ERRORS.md`).
-
-**Undefined non-libc / non-toolchain symbols in Rust `.so`: 0.**
-
-## Verification commands
-
-```sh
-nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort > /tmp/c.syms
-nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/r.syms
-comm -23 /tmp/c.syms /tmp/r.syms      # C-only symbols -> must be EMPTY
-```
-
-Result: empty. Symbol diff has reached empty.
+**0 missing / 0 undefined non-libc symbols in the Rust `.so`.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the crate has
-exactly one build configuration (no default features, no optional features).
-"Every feature combination" is therefore the single empty combination, and it
-is covered by the default `cargo test` / `cargo build` runs. For completeness
-the test suite is additionally run under
-`--no-default-features` and both the `debug` and `release` profiles are loaded
-and compared against C (`release` differs meaningfully: `panic = "abort"`).
+`translation/Cargo.toml` declares no `[features]` table, so the only build
+configuration is the default one. `--no-default-features` and the default build
+produce the identical symbol table (verified by re-running `nm -D` after
+`cargo build --release --no-default-features`). There are no feature-gated code
+paths to re-verify.
+
+## Binary / driver executable
+
+Neither build produces an executable:
+
+- `c_src/CMakeLists.txt` has only `add_library(driver SHARED ...)`; no
+  `add_executable`, and `driver.c` has no `main`.
+- `translation/Cargo.toml` has only a `[lib]` target (`cdylib`); there is no
+  `[[bin]]` and no `src/main.rs`.
+
+So the "compare the two binaries' stdout" clause is not applicable. stdout is
+still compared byte-for-byte, but through the shared libraries: the tests
+redirect fd 1 to a temp file around each `driver()` call (see
+`tests/differential.rs`).

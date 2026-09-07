@@ -1,31 +1,35 @@
-# Exported Symbol Surface
+# Dynamic symbol surface
 
-Source artifact: `../c_src/build/libharvest-work-rgFqeQ.so`
-
-Command:
+Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-rgFqeQ.so
+nm -D --defined-only ../c_src/build/libharvest-work-OCFKN1.so
+nm -D --defined-only target/release/libstr_dups_lib.so
 ```
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `stbds_arrfreef` | `T` | `stbds_arrfreef` | [x] |
-| `stbds_arrgrowf` | `T` | `stbds_arrgrowf` | [x] |
-| `stbds_hash_bytes` | `T` | `stbds_hash_bytes` | [x] |
-| `stbds_hash_string` | `T` | `stbds_hash_string` | [x] |
-| `stbds_hmdel_key` | `T` | `stbds_hmdel_key` | [x] |
-| `stbds_hmfree_func` | `T` | `stbds_hmfree_func` | [x] |
-| `stbds_hmget_key` | `T` | `stbds_hmget_key` | [x] |
-| `stbds_hmget_key_ts` | `T` | `stbds_hmget_key_ts` | [x] |
-| `stbds_hmput_default` | `T` | `stbds_hmput_default` | [x] |
-| `stbds_hmput_key` | `T` | `stbds_hmput_key` | [x] |
-| `stbds_rand_seed` | `T` | `stbds_rand_seed` | [x] |
-| `stbds_shmode_func` | `T` | `stbds_shmode_func` | [x] |
-| `stbds_stralloc` | `T` | `stbds_stralloc` | [x] |
-| `stbds_strreset` | `T` | `stbds_strreset` | [x] |
-| `str_dups` | `T` | `str_dups` | [x] |
-| `strkey` | `T` | `strkey` | [x] |
+Only defined public symbols are listed. The C library exports 16 symbols.
 
-Defined C symbols missing from Rust: **0**.
+| # | C symbol | Rust export |
+|---|----------|-------------|
+| 1 | `stbds_arrfreef` | present |
+| 2 | `stbds_arrgrowf` | present |
+| 3 | `stbds_hash_bytes` | present |
+| 4 | `stbds_hash_string` | present |
+| 5 | `stbds_hmdel_key` | present |
+| 6 | `stbds_hmfree_func` | present |
+| 7 | `stbds_hmget_key` | present |
+| 8 | `stbds_hmget_key_ts` | present |
+| 9 | `stbds_hmput_default` | present |
+| 10 | `stbds_hmput_key` | present |
+| 11 | `stbds_rand_seed` | present |
+| 12 | `stbds_shmode_func` | present |
+| 13 | `stbds_stralloc` | present |
+| 14 | `stbds_strreset` | present |
+| 15 | `str_dups` | present |
+| 16 | `strkey` | present |
 
+Completion check:
+
+- [x] Release libraries rebuilt after all fixes.
+- [x] Sorted C-minus-Rust symbol diff is empty.
+- [x] Rust has no undefined non-libc project symbols.

@@ -1,18 +1,13 @@
-# Configuration Surface
+# Configuration surface
 
-The public header exposes one entry point and no runtime options, modes, flags,
-formats, element types, byte-order choices, or compile-time feature branches.
-The only C branch is the loop condition `i < x`, which distinguishes the input
-shapes below.
+The public headers expose only `driver(int)`. There are no runtime options,
+modes, flags, element types, formats, byte-order choices, compile-time feature
+branches, or additional entry points. The C loop distinguishes the following
+input shapes through the `i < x` condition.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `driver` | no options; `x < 0`, empty output | [x] |
-| 2 | `driver` | no options; `x == 0`, empty output | [x] |
-| 3 | `driver` | no options; `x == 1`, one output line | [x] |
-| 4 | `driver` | no options; `x > 1`, many output lines | [x] |
-
-## Feature combinations
-
-`Cargo.toml` declares no features. The sole build configuration is the default
-empty feature set.
+| 1 | `driver` | `x < 0`: negative `int`, zero iterations and empty output | [x] |
+| 2 | `driver` | `x == 0`: boundary value, zero iterations and empty output | [x] |
+| 3 | `driver` | `x == 1`: exactly one output record (`0 0\n`) | [x] |
+| 4 | `driver` | `x > 1`: many output records; randomized positive counts | [x] |

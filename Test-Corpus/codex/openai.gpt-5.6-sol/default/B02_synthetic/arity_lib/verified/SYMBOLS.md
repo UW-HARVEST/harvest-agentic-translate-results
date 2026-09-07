@@ -1,44 +1,27 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Generated from:
+Source library: `../c_src/build/libharvest-work-QACph0.so`
+
+Derived with:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-nJQRmM.so
-nm -D --defined-only target/release/libarity_lib.so
+nm -D --defined-only ../c_src/build/libharvest-work-QACph0.so
 ```
 
-## C-defined public symbols
+| C symbol | Rust export | Status |
+|----------|-------------|--------|
+| `apply_bitmask` | `apply_bitmask` | present |
+| `arity` | `arity` | present |
+| `arity2` | `arity2` | present |
+| `arity3` | `arity3` | present |
+| `arity4` | `arity4` | present |
+| `compare_allocations` | `compare_allocations` | present |
+| `init_matrix` | `init_matrix` | present |
+| `process_string` | `process_string` | present |
+| `shift_array` | `shift_array` | present |
 
-| # | symbol | C type | Rust type | parity |
-|---|--------|--------|-----------|--------|
-| 1 | `apply_bitmask` | `T` | `T` | [x] |
-| 2 | `arity` | `T` | `T` | [x] |
-| 3 | `arity2` | `T` | `T` | [x] |
-| 4 | `arity3` | `T` | `T` | [x] |
-| 5 | `arity4` | `T` | `T` | [x] |
-| 6 | `compare_allocations` | `T` | `T` | [x] |
-| 7 | `init_matrix` | `T` | `T` | [x] |
-| 8 | `process_string` | `T` | `T` | [x] |
-| 9 | `shift_array` | `T` | `T` | [x] |
+The C library has no other defined dynamic symbols. Its undefined dynamic
+symbols are libc/toolchain dependencies (`free`, `malloc`, `memmove`, `strlen`,
+and weak runtime bookkeeping symbols), not library API.
 
-Missing C-defined symbols in Rust: **0**.
-
-## C runtime imports
-
-The unfiltered C `nm -D` output also contains these undefined runtime imports.
-They are dependencies, not public symbols defined by the library:
-
-| binding | symbol |
-|---------|--------|
-| `U` | `free@GLIBC_2.2.5` |
-| `U` | `malloc@GLIBC_2.2.5` |
-| `U` | `memmove@GLIBC_2.2.5` |
-| `U` | `strlen@GLIBC_2.2.5` |
-| `w` | `_ITM_deregisterTMCloneTable` |
-| `w` | `_ITM_registerTMCloneTable` |
-| `w` | `__cxa_finalize@GLIBC_2.2.5` |
-| `w` | `__gmon_start__` |
-
-All are libc/compiler-runtime symbols; the C library has no undefined
-non-runtime project symbols.
-
+Completion check: [x] re-run the final `nm -D` diff in Phase D.

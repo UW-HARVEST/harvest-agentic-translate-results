@@ -108,26 +108,6 @@ unsafe fn buffer_at_offset(buffer: *const parse_buffer) -> *const c_uchar {
     unsafe { (*buffer).content.wrapping_add((*buffer).offset) }
 }
 
-/// Faithful equivalent of the C statement `item->FIELD = VALUE;`.
-///
-/// The C performs **no** `item != NULL` check (lib.c:92 stores straight through
-/// the parameter), and that missing check is a behaviour we must reproduce, not
-/// fix. Writing it in Rust as the place expression `(*item).FIELD = VALUE` compiles
-/// to the same plain store *only* when UB checks are off; under
-/// `-C debug-assertions` (which Cargo's `dev` profile enables by default) rustc
-/// additionally emits a null-pointer-dereference check, so a NULL `item` aborts
-/// with a Rust panic (SIGABRT + a message on stderr) where the C raises SIGSEGV.
-///
-/// `addr_of_mut!` computes the field's address *without* dereferencing, and
-/// `ptr::write` performs exactly the same plain, non-volatile, non-atomic store
-/// the C does — so a NULL `item` faults with SIGSEGV at the identical address in
-/// every profile, matching the C build byte for byte.
-macro_rules! item_store {
-    ($item:expr, $field:ident, $value:expr) => {
-        unsafe { core::ptr::write(core::ptr::addr_of_mut!((*$item).$field), $value) }
-    };
-}
-
 /* ---------------------------------------------------------------------------
  * Public ABI
  * ------------------------------------------------------------------------- */
@@ -163,11 +143,11 @@ pub unsafe extern "C" fn parse_number(
         match c {
             b'0' | b'1' | b'2' | b'3' | b'4' | b'5' | b'6' | b'7' | b'8' | b'9' | b'+' | b'-'
             | b'e' | b'E' => {
-                number_string_length += 1;
+                number_string_length = number_string_length.wrapping_add(1);
             }
 
             b'.' => {
-                number_string_length += 1;
+                number_string_length = number_string_length.wrapping_add(1);
                 has_decimal_point = CJSON_TRUE;
             }
 
@@ -199,7 +179,7 @@ pub unsafe extern "C" fn parse_number(
                 /* replace '.' with the decimal point of the current locale (for strtod) */
                 unsafe { *number_c_string.wrapping_add(i) = decimal_point };
             }
-            i += 1;
+            i = i.wrapping_add(1);
         }
     }
 
@@ -217,14 +197,13 @@ pub unsafe extern "C" fn parse_number(
 
     // NOTE: the original C never checks `item != NULL`; dereferencing a NULL
     // `item` faults there and faults here too. Bug preserved intentionally.
-    // See `item_store!` for why the stores go through `addr_of_mut!`.
-    item_store!(item, valuedouble, number);
+    unsafe { (*item).valuedouble = number };
 
     /* use saturation in case of overflow */
     if number >= INT_MAX as c_double {
-        item_store!(item, valueint, INT_MAX);
+        unsafe { (*item).valueint = INT_MAX };
     } else if number <= INT_MIN as c_double {
-        item_store!(item, valueint, INT_MIN);
+        unsafe { (*item).valueint = INT_MIN };
     } else {
         /* C's `(int)` cast truncates toward zero; the branches above guarantee
          * the value is representable, so a plain `as` cast is exact. NaN cannot
@@ -235,10 +214,10 @@ pub unsafe extern "C" fn parse_number(
         } else {
             number as c_int
         };
-        item_store!(item, valueint, truncated);
+        unsafe { (*item).valueint = truncated };
     }
 
-    item_store!(item, type_, cJSON_Number);
+    unsafe { (*item).type_ = cJSON_Number };
 
     unsafe {
         (*input_buffer).offset = (*input_buffer)

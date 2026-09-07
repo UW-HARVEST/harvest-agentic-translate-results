@@ -14,15 +14,10 @@ public header, with 4M NaN/inf-heavy cases.
     (cd .. && cargo build --release)
     # compare
     gcc -O2 -o /tmp/difftest difftest.c -ldl -lm
-    /tmp/difftest /tmp/cref/lib*.so ../target/release/libspec_ray_lib.so
+    /tmp/difftest /tmp/cref/lib*.so ../target/release/libtranslation.so
     gcc -O2 -o /tmp/specfuzz specfuzz.c -ldl -lm
-    /tmp/specfuzz /tmp/cref/lib*.so ../target/release/libspec_ray_lib.so
+    /tmp/specfuzz /tmp/cref/lib*.so ../target/release/libtranslation.so
 
 Result: 0 mismatches for every non-NaN input, for both the default (`-O0`) and
 the `Release` (`-O2`) C build.  See the module documentation in `src/lib.rs`
 for the NaN-payload caveat.
-
-These two C programs are the *original* verification scaffolding.  The
-authoritative suite is now the Rust integration-test harness in `../tests/`,
-which loads both `.so` files with `libloading` and is driven by `../verify.sh`;
-see `../VERIFICATION.md`, `../SYMBOLS.md`, `../CONFIGS.md` and `../ERRORS.md`.

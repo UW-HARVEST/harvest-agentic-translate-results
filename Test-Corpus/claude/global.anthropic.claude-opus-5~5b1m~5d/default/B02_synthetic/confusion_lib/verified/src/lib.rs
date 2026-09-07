@@ -152,13 +152,7 @@ pub struct ProcessState {
 /// Reproduces the x86-64 `(int)float` conversion (`cvttss2si`) that GCC emits,
 /// including the "integer indefinite" result for NaN / out-of-range values.
 /// Rust's `as` would saturate instead, which does not match the C code.
-///
-/// The bounds are written out as two explicit comparisons rather than a
-/// `Range::contains` so that each one maps 1:1 onto the hardware condition:
-/// `2^31` and `-2^31` are both exactly representable as `f32`, and `-2^31`
-/// itself *is* a valid `i32`, so the lower bound must be exclusive.
 #[inline]
-#[allow(clippy::manual_range_contains)]
 fn f32_to_c_int(value: f32) -> c_int {
     let truncated = value.trunc();
     if truncated.is_nan()

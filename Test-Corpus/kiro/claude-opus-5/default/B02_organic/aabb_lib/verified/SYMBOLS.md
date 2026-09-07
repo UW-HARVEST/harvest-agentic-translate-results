@@ -1,91 +1,71 @@
-# SYMBOLS.md — public symbol surface
+# SYMBOLS.md — exported-symbol parity
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
-
-- C `.so`:    `c_src/build/libharvest-work-g6Fd0c.so`
-- Rust `.so`: `translation/target/release/libaabb_lib.so`
-
-Reproduce with:
+Derived mechanically:
 
 ```sh
-nm -D --defined-only c_src/build/libharvest-work-g6Fd0c.so   | awk '$2=="T"{print $3}' | grep -v '^_' | sort > /tmp/c_syms.txt
-nm -D --defined-only translation/target/release/libaabb_lib.so | awk '$2=="T"{print $3}' | grep -v '^_' | sort > /tmp/rs_syms.txt
-comm -23 /tmp/c_syms.txt /tmp/rs_syms.txt   # missing from Rust  -> MUST be empty
-comm -13 /tmp/c_syms.txt /tmp/rs_syms.txt   # extra in Rust      -> MUST be empty
+nm -D --defined-only c_src/build/libharvest-work-tOnxOy.so | awk '{print $3}' | sort > /tmp/c_syms.txt
+nm -D --defined-only translation/target/release/libaabb_lib.so | awk '{print $3}' | sort > /tmp/rust_syms.txt
+comm -23 /tmp/c_syms.txt /tmp/rust_syms.txt   # missing in Rust
+comm -13 /tmp/c_syms.txt /tmp/rust_syms.txt   # extra in Rust
 ```
 
-`c_src/src/lib.c` declares nothing `static`, so every one of its 38 functions has
-external linkage and appears in the dynamic symbol table. Only `aabb` is declared
-in `include/lib.h`; the remaining 37 are still part of the ABI surface and are
-therefore all covered here and by the differential tests.
+C `.so` defined symbols: **38**.  Rust `.so` defined symbols: **38**.
+Missing in Rust: **0**.  Extra in Rust: **0**.
 
-## Parity table
+`c_src` is a single translation unit (`src/lib.c`) with no `static` functions,
+so every function has external linkage and appears below. There are no
+macro-generated symbols and no exported data objects.
 
-| #  | symbol                | C `.so` | Rust `.so` | C signature (from `c_src/src/lib.c`) |
-|----|-----------------------|---------|------------|--------------------------------------|
-|  1 | `aabb`                | T       | T          | `int aabb(float,float,float,float)` |
-|  2 | `c22`                 | T       | T          | `void c22(c2Simplex*)` |
-|  3 | `c23`                 | T       | T          | `void c23(c2Simplex*)` |
-|  4 | `c2AABBtoAABB`        | T       | T          | `int c2AABBtoAABB(c2AABB,c2AABB)` |
-|  5 | `c2AABBtoCapsule`     | T       | T          | `int c2AABBtoCapsule(c2AABB,c2Capsule)` |
-|  6 | `c2Add`               | T       | T          | `c2v c2Add(c2v,c2v)` |
-|  7 | `c2BBVerts`           | T       | T          | `void c2BBVerts(c2v*,c2AABB*)` |
-|  8 | `c2CCW90`             | T       | T          | `c2v c2CCW90(c2v)` |
-|  9 | `c2CapsuletoCapsule`  | T       | T          | `int c2CapsuletoCapsule(c2Capsule,c2Capsule)` |
-| 10 | `c2CircletoAABB`      | T       | T          | `int c2CircletoAABB(c2Circle,c2AABB)` |
-| 11 | `c2CircletoCapsule`   | T       | T          | `int c2CircletoCapsule(c2Circle,c2Capsule)` |
-| 12 | `c2CircletoCircle`    | T       | T          | `int c2CircletoCircle(c2Circle,c2Circle)` |
-| 13 | `c2Clampv`            | T       | T          | `c2v c2Clampv(c2v,c2v,c2v)` |
-| 14 | `c2Collided`          | T       | T          | `int c2Collided(const void*,C2_TYPE,const void*,C2_TYPE)` |
-| 15 | `c2D`                 | T       | T          | `c2v c2D(c2Simplex*)` |
-| 16 | `c2Det2`              | T       | T          | `float c2Det2(c2v,c2v)` |
-| 17 | `c2Div`               | T       | T          | `c2v c2Div(c2v,float)` |
-| 18 | `c2Dot`               | T       | T          | `float c2Dot(c2v,c2v)` |
-| 19 | `c2GJK`               | T       | T          | `float c2GJK(const void*,C2_TYPE,const c2x*,const void*,C2_TYPE,const c2x*,c2v*,c2v*,int,int*,c2GJKCache*)` |
-| 20 | `c2GJKSimplexMetric`  | T       | T          | `float c2GJKSimplexMetric(c2Simplex*)` |
-| 21 | `c2L`                 | T       | T          | `c2v c2L(c2Simplex*)` |
-| 22 | `c2Len`               | T       | T          | `float c2Len(c2v)` |
-| 23 | `c2MakeProxy`         | T       | T          | `void c2MakeProxy(const void*,C2_TYPE,c2Proxy*)` |
-| 24 | `c2Maxv`              | T       | T          | `c2v c2Maxv(c2v,c2v)` |
-| 25 | `c2Minv`              | T       | T          | `c2v c2Minv(c2v,c2v)` |
-| 26 | `c2Mulrv`             | T       | T          | `c2v c2Mulrv(c2r,c2v)` |
-| 27 | `c2MulrvT`            | T       | T          | `c2v c2MulrvT(c2r,c2v)` |
-| 28 | `c2Mulvs`             | T       | T          | `c2v c2Mulvs(c2v,float)` |
-| 29 | `c2Mulxv`             | T       | T          | `c2v c2Mulxv(c2x,c2v)` |
-| 30 | `c2Neg`               | T       | T          | `c2v c2Neg(c2v)` |
-| 31 | `c2Norm`              | T       | T          | `c2v c2Norm(c2v)` |
-| 32 | `c2RotIdentity`       | T       | T          | `c2r c2RotIdentity(void)` |
-| 33 | `c2Skew`              | T       | T          | `c2v c2Skew(c2v)` |
-| 34 | `c2Sub`               | T       | T          | `c2v c2Sub(c2v,c2v)` |
-| 35 | `c2Support`           | T       | T          | `int c2Support(const c2v*,int,c2v)` |
-| 36 | `c2V`                 | T       | T          | `c2v c2V(float,float)` |
-| 37 | `c2Witness`           | T       | T          | `void c2Witness(c2Simplex*,c2v*,c2v*)` |
-| 38 | `c2xIdentity`         | T       | T          | `c2x c2xIdentity(void)` |
+| # | symbol | C signature | present in Rust `.so` |
+|---|--------|-------------|-----------------------|
+| 1 | `aabb` | `int aabb(float,float,float,float)` | yes |
+| 2 | `c22` | `void c22(c2Simplex*)` | yes |
+| 3 | `c23` | `void c23(c2Simplex*)` | yes |
+| 4 | `c2AABBtoAABB` | `int c2AABBtoAABB(c2AABB,c2AABB)` | yes |
+| 5 | `c2AABBtoCapsule` | `int c2AABBtoCapsule(c2AABB,c2Capsule)` | yes |
+| 6 | `c2Add` | `c2v c2Add(c2v,c2v)` | yes |
+| 7 | `c2BBVerts` | `void c2BBVerts(c2v*,c2AABB*)` | yes |
+| 8 | `c2CCW90` | `c2v c2CCW90(c2v)` | yes |
+| 9 | `c2CapsuletoCapsule` | `int c2CapsuletoCapsule(c2Capsule,c2Capsule)` | yes |
+| 10 | `c2CircletoAABB` | `int c2CircletoAABB(c2Circle,c2AABB)` | yes |
+| 11 | `c2CircletoCapsule` | `int c2CircletoCapsule(c2Circle,c2Capsule)` | yes |
+| 12 | `c2CircletoCircle` | `int c2CircletoCircle(c2Circle,c2Circle)` | yes |
+| 13 | `c2Clampv` | `c2v c2Clampv(c2v,c2v,c2v)` | yes |
+| 14 | `c2Collided` | `int c2Collided(const void*,C2_TYPE,const void*,C2_TYPE)` | yes |
+| 15 | `c2D` | `c2v c2D(c2Simplex*)` | yes |
+| 16 | `c2Det2` | `float c2Det2(c2v,c2v)` | yes |
+| 17 | `c2Div` | `c2v c2Div(c2v,float)` | yes |
+| 18 | `c2Dot` | `float c2Dot(c2v,c2v)` | yes |
+| 19 | `c2GJK` | `float c2GJK(const void*,C2_TYPE,const c2x*,const void*,C2_TYPE,const c2x*,c2v*,c2v*,int,int*,c2GJKCache*)` | yes |
+| 20 | `c2GJKSimplexMetric` | `float c2GJKSimplexMetric(c2Simplex*)` | yes |
+| 21 | `c2L` | `c2v c2L(c2Simplex*)` | yes |
+| 22 | `c2Len` | `float c2Len(c2v)` | yes |
+| 23 | `c2MakeProxy` | `void c2MakeProxy(const void*,C2_TYPE,c2Proxy*)` | yes |
+| 24 | `c2Maxv` | `c2v c2Maxv(c2v,c2v)` | yes |
+| 25 | `c2Minv` | `c2v c2Minv(c2v,c2v)` | yes |
+| 26 | `c2Mulrv` | `c2v c2Mulrv(c2r,c2v)` | yes |
+| 27 | `c2MulrvT` | `c2v c2MulrvT(c2r,c2v)` | yes |
+| 28 | `c2Mulvs` | `c2v c2Mulvs(c2v,float)` | yes |
+| 29 | `c2Mulxv` | `c2v c2Mulxv(c2x,c2v)` | yes |
+| 30 | `c2Neg` | `c2v c2Neg(c2v)` | yes |
+| 31 | `c2Norm` | `c2v c2Norm(c2v)` | yes |
+| 32 | `c2RotIdentity` | `c2r c2RotIdentity(void)` | yes |
+| 33 | `c2Skew` | `c2v c2Skew(c2v)` | yes |
+| 34 | `c2Sub` | `c2v c2Sub(c2v,c2v)` | yes |
+| 35 | `c2Support` | `int c2Support(const c2v*,int,c2v)` | yes |
+| 36 | `c2V` | `c2v c2V(float,float)` | yes |
+| 37 | `c2Witness` | `void c2Witness(c2Simplex*,c2v*,c2v*)` | yes |
+| 38 | `c2xIdentity` | `c2x c2xIdentity(void)` | yes |
 
-## Result
+## Undefined symbols in the Rust `.so`
 
-```
-C count: 38   Rust count: 38
-missing from Rust: (none)
-extra in Rust:    (none)
-```
+`nm -D --undefined-only` on the Rust `.so` lists only libc / libgcc-unwind
+imports (`memcpy`, `malloc`, `abort`, `_Unwind_*`, `__cxa_finalize`, ...).
+**0 non-libc undefined symbols.**
 
-Undefined symbols in the Rust `.so` are libc / libgcc-unwind only
-(`memcpy`, `malloc`, `abort`, `_Unwind_*`, …) — no unresolved project symbols.
-The C `.so` additionally imports `sqrtf@GLIBC`; Rust lowers `f32::sqrt` to the
-`sqrtss` instruction inline, which is the same IEEE-754 correctly-rounded
-operation, so this import difference is not a behavioural difference.
+## Feature combinations
 
-## ABI notes verified by the tests
-
-- `c2v` / `c2r` (2 × `float`, 8 bytes) return in the low half of `xmm0` and are
-  passed in one SSE register. `#[repr(C)]` two-`f32` structs match.
-- `c2x` (4 × `float`, 16 bytes) is classified SSE,SSE — `xmm0`/`xmm1`.
-- `c2AABB` (16 bytes) and `c2Circle` (12 bytes) are passed in SSE registers;
-  `c2Capsule` (20 bytes) exceeds 16 bytes and is passed on the stack (MEMORY).
-- `c2Simplex` is `c2sv a,b,c,d; float div; int count`. `sizeof(c2sv) == 36`,
-  align 4, so the Rust `[c2sv; 4]` field reproduces the C layout byte for byte
-  (total 152 bytes) — this is what makes the C's `c2sv *verts = &s.a;` array
-  walk legal to model as an array.
-- No feature flags exist in `translation/Cargo.toml`, so the default build is
-  the only feature combination (see `CONFIGS.md` § Feature combinations).
+`translation/Cargo.toml` declares **no `[features]` table**, so the only build
+configuration is the default one. `cargo test --no-default-features` is
+therefore identical to the default build; both are exercised by
+`scripts/run_all.sh`.

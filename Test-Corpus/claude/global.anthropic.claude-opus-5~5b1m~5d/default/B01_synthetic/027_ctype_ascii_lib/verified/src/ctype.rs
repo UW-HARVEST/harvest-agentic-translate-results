@@ -121,12 +121,13 @@ const CTYPE_B: [c_int; 384] = {
 
 #[inline]
 fn class(c: c_int) -> c_int {
-    // `get` rather than `[]` so that an index outside glibc's `-128 ..= 255`
-    // window can never turn into an out-of-bounds read, no matter what the
-    // optimiser is able to prove about the caller.
-    match CTYPE_B.get((c as i64 + 128) as usize) {
-        Some(&bits) => bits,
-        None => 0,
+    // `.get()` rather than an `if` + index: the range predicate on its own can
+    // be folded away by the optimiser when it believes `c` came from an `i8`,
+    // which would leave an unchecked out-of-bounds read behind.  A checked
+    // lookup cannot be folded away.
+    match usize::try_from(c.wrapping_add(128)) {
+        Ok(i) => *CTYPE_B.get(i).unwrap_or(&0),
+        Err(_) => 0,
     }
 }
 
@@ -217,16 +218,16 @@ const CTYPE_TOUPPER: [c_int; 384] = {
 
 #[inline]
 pub fn tolower(c: c_int) -> c_int {
-    match CTYPE_TOLOWER.get((c as i64 + 128) as usize) {
-        Some(&v) => v,
-        None => c,
+    match usize::try_from(c.wrapping_add(128)) {
+        Ok(i) => *CTYPE_TOLOWER.get(i).unwrap_or(&c),
+        Err(_) => c,
     }
 }
 
 #[inline]
 pub fn toupper(c: c_int) -> c_int {
-    match CTYPE_TOUPPER.get((c as i64 + 128) as usize) {
-        Some(&v) => v,
-        None => c,
+    match usize::try_from(c.wrapping_add(128)) {
+        Ok(i) => *CTYPE_TOUPPER.get(i).unwrap_or(&c),
+        Err(_) => c,
     }
 }

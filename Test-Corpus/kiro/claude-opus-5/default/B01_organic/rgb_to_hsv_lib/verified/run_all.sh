@@ -1,108 +1,82 @@
 #!/usr/bin/env bash
-# Runs the full differential suite (Phases B, C, D) against every feature
-# combination and every build profile of the Rust cdylib.
-#
-# Usage: cd translation && ./run_all.sh
+# Phase D driver: rebuild both libraries, verify symbol parity, and run the full
+# differential suite across every feature combination x profile.
 set -uo pipefail
-
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CRATE="$ROOT/translation"
-cd "$CRATE"
-
+cd "$(dirname "$0")"
+ROOT="$(cd .. && pwd)"
 FAIL=0
 
-# --- build the C library --------------------------------------------------
-if ! ls "$ROOT"/c_src/build/lib*.so >/dev/null 2>&1; then
-  echo "== building the C shared library =="
-  ( mkdir -p "$ROOT/c_src/build" && cd "$ROOT/c_src/build" \
-      && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-      && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
-fi
-C_SO="$(ls "$ROOT"/c_src/build/lib*.so | head -1)"
-echo "C  .so: $C_SO"
+echo "=== rebuild C shared library ==="
+( cd "$ROOT/c_src" && mkdir -p build && cd build \
+    && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
+    && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
+C_SO="$(ls "$ROOT"/c_src/build/*.so)"
+echo "C .so: $C_SO"
 
-# --- enumerate feature combinations from Cargo.toml -----------------------
-# Every key in [features] except "default".
-FEATURES="$(awk '
+# ---- enumerate feature combinations from Cargo.toml -------------------------
+mapfile -t FEATURES < <(awk '
   /^\[features\]/ {inf=1; next}
-  /^\[/ {inf=0}
-  inf && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
-    split($0, a, "="); gsub(/[[:space:]]/, "", a[1]);
-    if (a[1] != "default") print a[1]
-  }' Cargo.toml)"
+  /^\[/           {inf=0}
+  inf && /^[A-Za-z0-9_-]+[[:space:]]*=/ {sub(/[[:space:]]*=.*/,""); if ($0!="default") print}
+' Cargo.toml)
 
 COMBOS=()
-if [ -z "$FEATURES" ]; then
-  echo "no [features] in Cargo.toml -> the only configuration is the default one"
-  COMBOS+=("__default__" "__none__")
+if [ "${#FEATURES[@]}" -eq 0 ]; then
+  echo "=== no [features] table in Cargo.toml -> single build configuration ==="
+  COMBOS+=("default:")                       # plain cargo test
+  COMBOS+=("no-default:--no-default-features")
+  COMBOS+=("all:--all-features")
 else
-  COMBOS+=("__default__" "__none__")
-  # Full powerset of the declared features.
-  FARR=($FEATURES)
-  n=${#FARR[@]}
-  for ((mask=1; mask<(1<<n); mask++)); do
-    combo=""
-    for ((i=0; i<n; i++)); do
-      if (( mask & (1<<i) )); then combo="${combo:+$combo,}${FARR[$i]}"; fi
-    done
-    COMBOS+=("$combo")
+  n=${#FEATURES[@]}
+  for ((mask=0; mask<(1<<n); mask++)); do
+    sel=()
+    for ((i=0; i<n; i++)); do (( mask & (1<<i) )) && sel+=("${FEATURES[$i]}"); done
+    joined=$(IFS=,; echo "${sel[*]:-}")
+    COMBOS+=("nodefault[$joined]:--no-default-features --features $joined")
   done
+  COMBOS+=("default:")
+  COMBOS+=("all:--all-features")
 fi
-echo "feature combinations: ${COMBOS[*]}"
 
-run_suite () {           # $1 = label, $2 = cargo feature flags, $3 = profile flags
-  local label="$1" fflags="$2" pflags="$3"
-  echo
-  echo "===== $label ====="
-  # Build the cdylib for this combination/profile so the .so under test matches.
-  # shellcheck disable=SC2086
-  if ! timeout 600 cargo build $pflags $fflags >/dev/null 2>&1; then
-    echo "  cargo build FAILED for $label"; FAIL=1; return
-  fi
-  local prof=debug
-  [[ "$pflags" == *--release* ]] && prof=release
-  export HARVEST_RUST_SO="$CRATE/target/$prof/librgb_to_hsv_lib.so"
-  if [ ! -f "$HARVEST_RUST_SO" ]; then
-    echo "  missing $HARVEST_RUST_SO"; FAIL=1; return
-  fi
-  echo "  Rust .so: $HARVEST_RUST_SO"
-  # nm parity for this exact artifact.
-  local missing
-  missing="$(comm -23 \
-      <(nm -D --defined-only "$C_SO"            | awk '{print $NF}' | sort -u) \
-      <(nm -D --defined-only "$HARVEST_RUST_SO" | awk '{print $NF}' | sort -u))"
-  if [ -n "$missing" ]; then
-    echo "  SYMBOL PARITY FAILED, missing: $missing"; FAIL=1
-  else
-    echo "  symbol parity: OK (0 missing)"
-  fi
-  # shellcheck disable=SC2086
-  if timeout 600 cargo test $fflags -- --test-threads=4 2>&1 | tail -n 6; then
-    :
-  fi
-  # shellcheck disable=SC2086
-  if ! timeout 600 cargo test $fflags >/dev/null 2>&1; then
-    echo "  TESTS FAILED for $label"; FAIL=1
-  else
-    echo "  tests: OK"
-  fi
-  unset HARVEST_RUST_SO
-}
+for profile in release debug; do
+  PFLAG=""; [ "$profile" = release ] && PFLAG="--release"
+  for entry in "${COMBOS[@]}"; do
+    label="${entry%%:*}"; flags="${entry#*:}"
+    echo
+    echo "############ profile=$profile combo=$label flags='${flags:-<none>}' ############"
 
-for combo in "${COMBOS[@]}"; do
-  case "$combo" in
-    __default__) fflags="" ; name="default features" ;;
-    __none__)    fflags="--no-default-features"; name="--no-default-features" ;;
-    *)           fflags="--no-default-features --features $combo"; name="features=$combo" ;;
-  esac
-  run_suite "$name / debug cdylib"   "$fflags" ""
-  run_suite "$name / release cdylib" "$fflags" "--release"
+    if ! timeout 600 cargo build $PFLAG $flags >/tmp/build.$profile.log 2>&1; then
+      echo "BUILD FAILED"; tail -20 /tmp/build.$profile.log; FAIL=1; continue
+    fi
+    R_SO="target/$profile/librgb_to_hsv_lib.so"
+    [ -f "$R_SO" ] || { echo "missing $R_SO"; FAIL=1; continue; }
+
+    # ---- symbol parity: every C dynamic symbol must exist in the Rust .so ----
+    nm -D --defined-only "$C_SO"  | awk '{print $NF}' | sort -u > /tmp/c.syms
+    nm -D --defined-only "$R_SO"  | awk '{print $NF}' | sort -u > /tmp/r.syms
+    MISSING="$(comm -23 /tmp/c.syms /tmp/r.syms)"
+    if [ -n "$MISSING" ]; then
+      echo "SYMBOL PARITY FAILED — missing from Rust .so:"; echo "$MISSING"; FAIL=1
+    else
+      echo "symbol parity OK ($(wc -l </tmp/c.syms) C symbol(s), 0 missing)"
+    fi
+    # ---- no undefined non-libc symbols in the Rust .so ----
+    UNDEF="$(nm -D --undefined-only "$R_SO" | awk '{print $NF}' \
+      | grep -vE '@GLIBC|@GCC|^_ITM_|^__gmon_start__|^_Unwind_|^gettid$|^statx$' || true)"
+    if [ -n "$UNDEF" ]; then
+      echo "UNRESOLVED non-libc symbols in Rust .so:"; echo "$UNDEF"; FAIL=1
+    else
+      echo "no unresolved non-libc symbols"
+    fi
+
+    if ! timeout 600 cargo test $PFLAG $flags >/tmp/test.$profile.log 2>&1; then
+      echo "TESTS FAILED"; grep -E "^test .*FAILED|DIVERGENCE|test result" /tmp/test.$profile.log | head -30; FAIL=1
+    else
+      grep -E "test result" /tmp/test.$profile.log
+    fi
+  done
 done
 
 echo
-if [ "$FAIL" -eq 0 ]; then
-  echo "ALL COMBINATIONS PASSED"
-else
-  echo "SOME COMBINATIONS FAILED"
-fi
-exit "$FAIL"
+if [ "$FAIL" -eq 0 ]; then echo "=== ALL CONFIGURATIONS PASSED ==="; else echo "=== FAILURES PRESENT ==="; fi
+exit $FAIL

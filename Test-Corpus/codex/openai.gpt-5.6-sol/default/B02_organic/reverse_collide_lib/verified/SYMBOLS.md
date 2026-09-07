@@ -1,8 +1,13 @@
-# Dynamic symbol surface
+# Exported symbol surface
 
-Source: `nm -D --defined-only ../c_src/build/libharvest-work-r4rkXW.so`.
-The status column compares exact names with
-`target/release/libreverse_collide_lib.so`.
+Mechanically derived from:
+
+```text
+nm -D --defined-only c_src/build/libharvest-work-nUa2tT.so
+nm -D --defined-only target/release/libreverse_collide_lib.so
+```
+
+The C and Rust shared libraries export the same 38 public symbols.
 
 | # | C symbol | Rust export |
 |---|----------|-------------|
@@ -45,6 +50,7 @@ The status column compares exact names with
 | 37 | `c2xIdentity` | present |
 | 38 | `reverse_collide` | present |
 
-Missing C symbols: **0**.
+Missing C symbols in Rust: **0**.
 
-Undefined non-system/project symbols in the Rust shared object: **0**.
+Undefined project/API symbols in Rust (`c2*` or `reverse_collide`): **0**.
+The remaining dynamic imports are standard `libc`/`libgcc_s` runtime symbols.

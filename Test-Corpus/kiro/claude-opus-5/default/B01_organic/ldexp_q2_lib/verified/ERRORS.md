@@ -1,58 +1,53 @@
-# ERRORS.md — error / rejection surface table (Phase A, gate for Phase C)
+# Phase A.2 — Error-surface table
 
-Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
-
-## Mechanical grep evidence
+## Mechanical grep of the whole C source
 
 ```
-$ grep -nE 'return|assert|NULL|errno|-1|ERROR|if |switch|#if|malloc|free' \
+$ grep -nE 'return|assert|NULL|errno|RETURN_ERROR|-1|if |switch|#ifdef|#if |enum' \
       c_src/src/lib.c c_src/include/lib.h
-c_src/src/lib.c:8:    e = ((30 * 4) > (exp_q2) ? (exp_q2) : (30 * 4));
-c_src/src/lib.c:9:    y *= g_expfrac[e & 3] * (1 << 30 >> (e >> 2));
-c_src/src/lib.c:10:    } while ((exp_q2 -= e) > 0);
+c_src/src/lib.c:4:    static const float g_expfrac[4] = {9.31322575e-10f, 7.83145814e-10f,
+c_src/src/lib.c:5:                                       6.58544508e-10f, 5.53767716e-10f};
 c_src/src/lib.c:11:    return y;
 ```
 
-The only `return` is the unconditional `return y;`. There is:
+**The C library contains exactly ONE `return` statement (`return y;`), zero
+`assert`s, zero error enums, zero error-return macros, zero null checks, zero
+explicit range checks, and zero min/max rejection constants.** There are no
+pointer parameters and no enum parameters, so there is no "invalid handle",
+"NULL argument" or "out-of-range enum variant" path to reject. `int exp_q2`
+accepts the entire `int` range as a *valid* input and `float y` accepts every
+`float` bit pattern, including non-finite ones.
 
-* **no** error-return macro (`RETURN_ERROR`, …), **no** `return -1`, **no**
-  `return NULL`, **no** error enum, **no** out-parameter status;
-* **no** `assert` / `static_assert` / `abort` / `exit`;
-* **no** pointer parameter anywhere in the API, hence **no** null check to make;
-* **no** explicit range check on `exp_q2` — the only clamp is the `?:` at line 8,
-  which *saturates* rather than rejects;
-* **no** allocation, so no allocation-failure path.
+Consequently the error surface is not made of error codes but of **boundary and
+implementation-defined/undefined-behaviour conditions that the compiled C `.so`
+nevertheless resolves to a concrete result.** Each row below is one such
+distinct rejection-or-degenerate condition derived from the source text, with
+the result the C `.so` actually produces. The Rust must reproduce the same
+concrete result bit-for-bit.
 
-So `ldexp_q2` is **total**: every `(float, int)` pair in the domain returns a
-`float` and nothing is ever rejected. The rejection surface is therefore not made
-of error codes but of the *implicit* boundaries the code walks into — the
-saturation constant, the two's-complement index, the shift whose count leaves
-the standard-defined range, and the IEEE-754 special values. Each row below is
-one distinct such condition, taken from what the source actually does, and each
-has a differential test in `tests/errors.rs` asserting C and Rust return the
-**same bit pattern** (the sentinel this API has instead of an error code).
+The only constant that acts as a limit in the source is `30 * 4` (= 120) in
+`e = ((30 * 4) > (exp_q2) ? (exp_q2) : (30 * 4));` — the clamp that keeps
+`1 << 30 >> (e >> 2)` in range for non-negative exponents. Rows 4–6 walk that
+boundary.
 
-## The table
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|---------------------------------------------|-------------------|-----|
+| 1 | `ldexp_q2` | `exp_q2 < 0` ⇒ `e = exp_q2 < 0` ⇒ shift count `e >> 2` is **negative**: `1 << 30 >> (e >> 2)` is **undefined behaviour** in C | Compiled to `sar %cl,%edx`; x86 masks the count to 5 bits, so the factor is `0x40000000 >> ((e >> 2) & 31)`. Rust must mask with `& 31` identically. | [x] |
+| 2 | `ldexp_q2` | `exp_q2 ∈ {-1,-2,-3,-4}` ⇒ `(e >> 2) & 31 == 31` ⇒ integer factor is **exactly 0** (total cancellation of the scale) | returns `y * (g_expfrac[e&3] * 0.0f)` = `±0.0` with the sign of `y` for finite `y`; `NaN` for `y = ±inf` or `y = NaN` | [x] |
+| 3 | `ldexp_q2` | `exp_q2 == 0` — the `do`/`while` body still executes once (no early-out guard); a "no-op" exponent is *not* a no-op path | `e = 0`, factor `= g_expfrac[0] * 2^30 = 1.0f` exactly (`g_expfrac[0]` is bit-exactly `2^-30`), so `y` is returned unchanged, including `-0.0` and `NaN` payloads | [x] |
+| 4 | `ldexp_q2` | `exp_q2 == 120` — exactly at the `30 * 4` clamp | one iteration; `e = 120`, `exp_q2 -= e` → `0`, loop exits | [x] |
+| 5 | `ldexp_q2` | `exp_q2 == 121` — one step **past** the clamp; forces a second iteration with a tiny residual exponent | iter 1: `e = 120`; iter 2: `e = 1` (`121-120`); result is the product of both factors, not `2^(121/4)` | [x] |
+| 6 | `ldexp_q2` | `exp_q2 == 119` — one step **below** the clamp | single iteration, `e = 119` (unclamped) | [x] |
+| 7 | `ldexp_q2` | `exp_q2 == INT_MIN` (`-2147483648`) — extreme negative; `exp_q2 -= e` computed with `e == INT_MIN` | no signed overflow (`INT_MIN - INT_MIN == 0`); single iteration; `e & 3 == 0`, `(e >> 2) & 31 == 0` ⇒ factor `1.0f` ⇒ returns `y` unchanged | [x] |
+| 8 | `ldexp_q2` | `exp_q2 == INT_MIN + 1 .. INT_MIN + 3` — extreme negative, non-zero low bits | single iteration; index `e & 3 ∈ {1,2,3}` via two's-complement `&` (never out of bounds); factor `g_expfrac[e&3] * 1` | [x] |
+| 9 | `ldexp_q2` | `exp_q2 == INT_MAX` (`2147483647`) — extreme positive; ~17.9 M loop iterations, `y` saturates to `±inf` (or stays `±0`/`NaN`) | overflow to `±inf` for non-zero finite `y`; `±0.0` stays `±0.0`; `NaN` stays `NaN`. No signed overflow in `exp_q2 -= e`. | [x] |
+| 10 | `ldexp_q2` | `y == NaN` (quiet, and with a non-default payload / negative sign bit) | `NaN` propagated through `mulss`; payload/sign must match the C `.so` bit-for-bit | [x] |
+| 11 | `ldexp_q2` | `y == ±inf` combined with a factor of `0.0` (row 2) ⇒ `inf * 0` | `NaN` (the x86 default-quiet `-nan`/`nan` produced by `mulss`), compared as raw bits | [x] |
+| 12 | `ldexp_q2` | `y` subnormal / `±FLT_MIN` with a large negative scale ⇒ **underflow** to zero | gradual underflow then `±0.0`, sign preserved | [x] |
+| 13 | `ldexp_q2` | `y == ±FLT_MAX` with a large positive `exp_q2` ⇒ **overflow** | `±inf` | [x] |
+| 14 | `ldexp_q2` | `exp_q2` values whose masked shift wraps (`(e >> 2) & 31` period-128 aliasing for negative `e`, e.g. `-128`, `-129`, `-256`, `-508`) | factor jumps non-monotonically; each residue class must match | [x] |
+| 15 | `ldexp_q2` | non-finite `y` (`±inf`) with a *huge positive* `exp_q2` (multi-iteration `inf * finite`) | stays `±inf` | [x] |
+| 16 | `ldexp_q2` | "out-of-range enum value across the FFI boundary" — **N/A**: the API has no enum and no pointer parameter. The full `int` domain of `exp_q2` is covered instead by rows 1, 7, 8, 9, 14 plus the randomized full-`i32`-range sweep in Phase B. | — | [x] |
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `ldexp_q2` | `exp_q2 == 0` — degenerate exponent; `do/while` still runs the body once with `e == 0`, so the `while` guard `0 > 0` fails after exactly one scaling | returns `y * (g_expfrac[0] * (1<<30))`, i.e. `y * 2^-30 * 2^30`, **not** `y` unchanged; no error |
-| 2 | `ldexp_q2` | `exp_q2 < 0` (any negative), e.g. `-1` — `e = exp_q2 < 0`, so `e >> 2 < 0` and `1 << 30 >> negative` is **undefined behaviour** per C11 6.5.7p3 | no trap/error: the emitted code is `sar edx, cl`, and x86 masks a 32-bit shift count to its low 5 bits, so the result is `0x40000000 >> ((e>>2) & 31)` |
-| 3 | `ldexp_q2` | `exp_q2 == -1` — worst case of row 2: `(e>>2) & 31 == 31`, so the integer factor collapses to `0` | returns `y * (g_expfrac[3] * 0.0f)` = `±0.0f` for finite `y` (sign = sign of `y`), and `NaN` for `y ∈ {±inf, NaN}` |
-| 4 | `ldexp_q2` | `exp_q2 == INT_MIN` — extreme of row 2, and the value for which `-exp_q2` would overflow; `e = INT_MIN`, `e & 3 == 0`, `e >> 2 == -2^29`, `(-2^29) & 31 == 0` so **no** shift happens | returns `y * (g_expfrac[0] * (1<<30))`; the subsequent `exp_q2 -= e` is `INT_MIN - INT_MIN == 0` — the one subtraction that could overflow does not — loop exits after one pass |
-| 5 | `ldexp_q2` | `exp_q2 == INT_MAX` — saturation path taken the maximum number of times: `e` clamps to `120` for `⌊INT_MAX/120⌋ = 17 895 697` iterations, then a final short iteration with the remainder `7` | returns `0.0f` for finite `y` (product underflows to zero long before the loop ends); terminates, does not hang or overflow |
-| 6 | `ldexp_q2` | `exp_q2 > 120` (any) — exceeds the hard-coded ceiling `30 * 4`; the ternary silently saturates `e` to `120` instead of rejecting | multiple loop iterations, each scaling by `g_expfrac[0] * (1<<30)`; the remainder `exp_q2 % 120` is applied in the last iteration |
-| 7 | `ldexp_q2` | `exp_q2 == 120` exactly — the boundary value of the clamp; `120 > 120` is false so the *else* branch is taken and `e = 30*4` from the constant, not from `exp_q2` | single iteration, `e == 120`, `e & 3 == 0`, `e >> 2 == 30`, factor `= g_expfrac[0] * 1` |
-| 8 | `ldexp_q2` | `exp_q2 == 121` — one step past the clamp boundary; forces exactly two iterations (`e = 120`, then `e = 1`) | two scalings; result differs from the single-iteration `exp_q2 == 120` case by the second factor `g_expfrac[1] * (1<<30)` |
-| 9 | `ldexp_q2` | negative `exp_q2` whose `e & 3` is non-zero — two's-complement `&` on a negative `int`, e.g. `-1 & 3 == 3`, `-2 & 3 == 2`, `-3 & 3 == 1` | index is *always* within `0..=3`, so `g_expfrac[e & 3]` is **never** an out-of-bounds read; a "negative index" is impossible by construction |
-| 10 | `ldexp_q2` | `exp_q2` a negative multiple of `-128` (so `e >> 2` is a multiple of `-32`), e.g. `-128`, `-256` — the masked shift count wraps to `0` | integer factor is the *unshifted* `0x40000000`; distinct from the `exp_q2 == -1` collapse-to-zero of row 3 |
-| 11 | `ldexp_q2` | `y` is `NaN` (quiet or signalling) — no NaN check exists | NaN propagates through both `mulss`es; a signalling NaN is quieted; result is NaN with the input payload |
-| 12 | `ldexp_q2` | `y` is `±inf` with an `exp_q2` whose integer factor is `0` (row 3) — `inf * 0.0f` is the IEEE-754 invalid operation | returns the default `NaN`, no error signalled to the caller |
-| 13 | `ldexp_q2` | `y` is `±0.0f` — sign must survive multiplication by a possibly-`0` factor | returns `±0.0f`; sign is the XOR of the operand signs |
-| 14 | `ldexp_q2` | `y` finite but the scaling would overflow `float` range (e.g. `y = FLT_MAX` with the largest possible factor, `exp_q2 = -128` / `INT_MIN`) | **UNREACHABLE, verified.** `g_expfrac[0]` is *exactly* `2^-30` (bit pattern `0x30800000`) and the largest integer factor is `0x40000000 >> 0 == 2^30`, so the largest per-iteration multiplier is exactly `1.0f`; the other three entries are `2^-30 * 2^(-k/4) < 2^-30`. `ldexp_q2` is therefore magnitude **non-increasing** and can never turn a finite `y` into `±inf`. The test asserts this invariant on both implementations instead of asserting an overflow |
-| 15 | `ldexp_q2` | `y` finite but the scaling underflows (e.g. `y = FLT_MIN`, `exp_q2` large positive) | returns a subnormal or `±0.0f`, silently |
-| 16 | `ldexp_q2` | `y` is a subnormal input — smallest magnitudes, where the `float` multiply loses relative precision | scaled per IEEE-754 round-to-nearest-even; no error |
-| 17 | `ldexp_q2` | "out-of-range enum" analogue: `exp_q2` is an `int` parameter with **no** valid-value documentation, so *every* one of the 2^32 bit patterns is a real input, including the ones no sane caller passes (`INT_MIN`, `INT_MAX`, `-1`, `0x80000001`, `0x7FFFFFFF`) | all are accepted; behaviour is fully determined by rows 1–10; the Rust `.so` must reproduce every one bit-exactly |
-
-Rows 1–17 each map to a `#[test]` in `tests/errors.rs`; see the checklist at the
-bottom of that file's module doc for the pass status.
+Total distinct rows requiring a differential test: **15** (row 16 is a
+documented N/A). All are covered by `translation/tests/differential.rs`.

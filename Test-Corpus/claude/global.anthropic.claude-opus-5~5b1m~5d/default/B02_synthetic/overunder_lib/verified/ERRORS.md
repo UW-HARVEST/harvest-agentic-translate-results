@@ -1,78 +1,74 @@
 # ERRORS.md — Error / rejection surface table
 
-Mechanically derived from every rejection-shaped construct in `c_src/src/lib.c`.
-This library has **no error enum, no `errno`, no `RETURN_ERROR` macro, no
-`assert`, and no NULL checks**. Its entire rejection surface consists of:
+Derived mechanically by grepping `c_src/src/lib.c` for every `return`, `assert`,
+`NULL` check, explicit range check, and min/max constant:
 
-* the three guard branches in `safe_double_to_int` (`> INT_MAX`, `< INT_MIN`,
-  `isnan`) — clamping/sentinel returns, `lib.c:40-45`;
-* the `default:` arm of `process_with_fallthrough`, whose `result = -1` is the
-  only `-1` sentinel in the file (`lib.c:69-71`);
-* the fixed `sizeof(label) - 1` bound + forced NUL in `overunder` (`lib.c:121-122`);
-* unchecked pointer dereferences in `copy_data_block` (`lib.c:78`) — no
-  validation at all, so an invalid pointer is a hard fault in both languages.
+```
+grep -n "return\|assert\|NULL\|INT_MAX\|INT_MIN\|isnan\|default\|sizeof" c_src/src/lib.c
+```
 
-Column "expected C result" is the value the C `.so` actually produces (confirmed
-by the differential tests, not by documentation).
+The library has **no error enum, no `RETURN_ERROR` macro, no `errno` use, no
+`assert`, and no `NULL` guards.** Every public function returns an ordinary
+value. The complete rejection/clamping/sentinel surface is therefore the set of
+guarded branches below (`lib.c:40-47`, `lib.c:69-71`) plus the generic FFI
+boundary conditions every C API has.
 
-| #  | function | trigger (exact invalid input/condition) | expected C result |
-|----|----------|------------------------------------------|-------------------|
-| 1  | `safe_double_to_int` | `d > (double)INT_MAX`, i.e. `d > 2147483647.0` (e.g. `2147483648.0`, `1e15`) | returns `INT_MAX` = `2147483647` |
-| 2  | `safe_double_to_int` | `d == nextafter(2147483647.0, INF)` — one ULP past the valid range | returns `INT_MAX` |
-| 3  | `safe_double_to_int` | `d == +INFINITY` | returns `INT_MAX` (first branch taken) |
-| 4  | `safe_double_to_int` | `d < (double)INT_MIN`, i.e. `d < -2147483648.0` (e.g. `-2147483649.0`, `-1e15`) | returns `INT_MIN` = `-2147483648` |
-| 5  | `safe_double_to_int` | `d == nextafter(-2147483648.0, -INF)` — one ULP past the valid range | returns `INT_MIN` |
-| 6  | `safe_double_to_int` | `d == -INFINITY` | returns `INT_MIN` (second branch taken) |
-| 7  | `safe_double_to_int` | `d` is a quiet NaN (both range comparisons are false, so `isnan` arm is reached) | returns `0` |
-| 8  | `safe_double_to_int` | `d` is a *signalling* / negative-sign NaN (`-NAN`, custom payload bit pattern) | returns `0` (same arm) |
-| 9  | `safe_double_to_int` | boundary *inside* the range: `d == 2147483647.0` exactly (`>` is false) | returns `2147483647` via the `(int)d` cast, **not** the clamp |
-| 10 | `safe_double_to_int` | boundary *inside* the range: `d == -2147483648.0` exactly (`<` is false) | returns `-2147483648` via the `(int)d` cast, **not** the clamp |
-| 11 | `process_with_fallthrough` | `code` outside `{0,1,2,3,4,5}` — negative, e.g. `-1`, `-5`, `INT_MIN` | `default:` arm → returns `-1` |
-| 12 | `process_with_fallthrough` | `code` outside `{0,1,2,3,4,5}` — one past the range, `code == 6` | `default:` arm → returns `-1` |
-| 13 | `process_with_fallthrough` | `code == INT_MAX` (far out-of-range "enum" value crossing FFI) | `default:` arm → returns `-1` |
-| 14 | `process_with_fallthrough` | `code == 0` (sentinel-looking value that is *valid*) | returns `0`, **ignoring** `base_value` entirely |
-| 15 | `process_with_fallthrough` | signed overflow: `code == 5`, `base_value == INT_MAX` (adds 150) | wraps two's-complement → `INT_MAX + 150` wrapped = `-2147483499` |
-| 16 | `process_with_fallthrough` | signed underflow: `code == 5`, `base_value == INT_MIN` | no wrap needed → `-2147483498` |
-| 17 | `copy_data_block` | `dest == NULL`, `src` valid — no null check, `memcpy` writes to `NULL` | process dies with `SIGSEGV` (11) |
-| 18 | `copy_data_block` | `src == NULL`, `dest` valid — `memcpy` reads from `NULL` | process dies with `SIGSEGV` (11) |
-| 19 | `copy_data_block` | both `dest == NULL` and `src == NULL` | process dies with `SIGSEGV` (11) |
-| 20 | `copy_data_block` | `src` points at a buffer **smaller than 40 bytes** (undersized/oversized-length class): reads all `sizeof(DataBlock)` bytes regardless | copies 40 bytes incl. the 4 padding bytes after `id` and the 4 trailing pad bytes; no truncation, no rejection |
-| 21 | `handle_pointer_operations` | signed overflow in `value * 2`: `value == INT_MAX` | wraps → `2 * INT_MAX` wrapped is `-2`, `+ 100` = **`98`** (not a saturated value) |
-| 22 | `handle_pointer_operations` | signed overflow in `value * 2`: `value == INT_MIN` | wraps → `0 + 100` = `100` |
-| 23 | `overunder` | `a < 0` ⇒ C's `%` truncates toward zero so `a % 6 < 0` ⇒ `process_with_fallthrough` takes `default:` | `switch_result == -1` folded into `total` |
-| 24 | `overunder` | `a == INT_MIN` ⇒ `a % 6 == -2` (negative, `default:` arm) **and** `a * a` overflows | `switch_result == -1`; see row 25 for `conv4` |
-| 25 | `overunder` | `d*d + a*a` overflows to a **negative** int ⇒ `sqrt(negative)` = NaN ⇒ `safe_double_to_int(NaN)` | `conv4 == 0` (row 7 path), no trap, no `errno` check |
-| 26 | `overunder` | `a` large enough that `a * 1.5 > INT_MAX` (e.g. `a == INT_MAX`) | `conv1` clamped to `INT_MAX` (row 1 path) |
-| 27 | `overunder` | `b` large enough that `b * 2.7 > INT_MAX` / `< INT_MIN` | `conv2` clamped to `INT_MAX` / `INT_MIN` |
-| 28 | `overunder` | total accumulation overflows `int` (all four args near `INT_MAX`) | wraps two's-complement; no saturation, no rejection |
-| 29 | `overunder` | fixed hard-coded clamps `safe_double_to_int(1e15)` / `(-1e15)` executed on **every** call | always prints `2147483647` then `-2147483648` (rows 1 & 4) |
-| 30 | `overunder` | `strncpy(label, "Source", sizeof(label)-1)` + `label[19]='\0'`: source shorter than the bound | `label` = `"Source"` then **13 zero-pad bytes**, `label[19]` forced to `0`; `%s` prints `Source` |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
+|---|----------|---------------------------------------------|-------------------|------|---|
+| 1 | `safe_double_to_int` | `d > (double)INT_MAX` — overflow guard, `lib.c:40` (e.g. `2147483648.0`, `1e15`, `1e300`) | returns `INT_MAX` = `2147483647` | `err_01_sdti_over_int_max` | [x] |
+| 2 | `safe_double_to_int` | `d == +INFINITY` (extreme case of row 1) | returns `INT_MAX` | `err_02_sdti_pos_inf` | [x] |
+| 3 | `safe_double_to_int` | `d < (double)INT_MIN` — underflow guard, `lib.c:42` (e.g. `-2147483649.0`, `-1e15`, `-1e300`) | returns `INT_MIN` = `-2147483648` | `err_03_sdti_under_int_min` | [x] |
+| 4 | `safe_double_to_int` | `d == -INFINITY` (extreme case of row 3) | returns `INT_MIN` | `err_04_sdti_neg_inf` | [x] |
+| 5 | `safe_double_to_int` | `isnan(d)` — NaN guard, `lib.c:44`. Reached only after both comparisons are false, which NaN makes so. Quiet NaN, signalling NaN, and negative NaN all count. | returns `0` | `err_05_sdti_nan` | [x] |
+| 6 | `safe_double_to_int` | exact boundary `d == (double)INT_MAX` (`2147483647.0`) — *not* `>`, so falls to the cast | returns `2147483647` (no clamp) | `err_06_sdti_boundary_int_max` | [x] |
+| 7 | `safe_double_to_int` | exact boundary `d == (double)INT_MIN` (`-2147483648.0`) — *not* `<`, so falls to the cast | returns `-2147483648` (no clamp) | `err_07_sdti_boundary_int_min` | [x] |
+| 8 | `safe_double_to_int` | one step past the valid range in ULPs: `nextafter(INT_MAX, +inf)` and `nextafter(INT_MIN, -inf)` | `INT_MAX` / `INT_MIN` | `err_08_sdti_one_ulp_past` | [x] |
+| 9 | `safe_double_to_int` | in-range fractional / negative-zero (`2147483646.9`, `-0.0`, `-0.5`) — truncation toward zero | `(int)d` truncated | `err_09_sdti_truncation` | [x] |
+| 10 | `safe_double_to_int` | subnormal / tiny magnitudes (`f64::MIN_POSITIVE`, `5e-324`) | `0` | `err_10_sdti_subnormal` | [x] |
+| 11 | `process_with_fallthrough` | `code` matches no `case` → `default:` at `lib.c:69` (any `code` outside `{0,1,2,3,4,5}`, e.g. `6`, `-1`, `INT_MAX`, `INT_MIN`) — this is the function's only rejection path | returns the sentinel `-1`, ignoring `base_value` | `err_11_pwf_default_sentinel` | [x] |
+| 12 | `process_with_fallthrough` | `code == 0` → the `result = 0` case, which *discards* `base_value` (a second sentinel-like path distinct from `default`) | returns `0` | `err_12_pwf_zero_case` | [x] |
+| 13 | `process_with_fallthrough` | one step past each end of the valid case range: `code == -1` and `code == 6` | both return `-1` (`default`) | `err_13_pwf_one_past_range` | [x] |
+| 14 | `process_with_fallthrough` | out-of-range "enum-like" `code` values crossing the FFI boundary — a C `switch` on `int` accepts *any* `int`, so values with no valid case are real inputs: `INT_MIN`, `INT_MAX`, `-2147483648`, `0x7fffffff`, `1<<31`-wrapped | all return `-1` | `err_14_pwf_ffi_enum_out_of_range` | [x] |
+| 15 | `process_with_fallthrough` | `base_value` at `INT_MAX` / near `INT_MAX` with a fall-through case → signed-overflow wrap in `result += …` | wraps two's-complement (e.g. `code=5, base=INT_MAX` → `INT_MAX+150` wrapped) | `err_15_pwf_base_value_overflow` | [x] |
+| 16 | `copy_data_block` | `dest == NULL` and/or `src == NULL` → `memcpy(NULL, …)` at `lib.c:78`. **Undefined behaviour in C (segfault).** Not differentially testable without crashing the harness; asserted as "both sides are UB, therefore excluded" and documented rather than executed. | UB / SIGSEGV | *documented, not executed* | [x] |
+| 17 | `copy_data_block` | `dest == src` (fully aliased self copy) and every **disjoint** `dest`/`src` offset | destination unchanged / copied verbatim, byte-identical | `err_17_cdb_self_copy`, `err_17b_cdb_aliasing_in_place` | [x] |
+| 17a | `copy_data_block` | **partially** overlapping `dest`/`src` (0 < offset < 40) | genuine UB with **no stable C answer**: at `-O0` GCC emits a call to glibc `memcpy` (loads all 40 bytes, then stores → overlap-safe), at `-O2` GCC inlines a forward load/store sequence whose earlier stores clobber later loads, so the two C builds disagree with *each other*. Excluded — see note below. | *documented, not asserted; the testable (aliased + disjoint) part is covered by* `err_17b_cdb_aliasing_in_place` | [x] |
+| 18 | `copy_data_block` | `src` holding non-`char`-safe bytes: an unterminated 20-byte `label` (no NUL), all-`0xFF` bytes, and a NaN/inf `value` — `memcpy` must copy all `sizeof(DataBlock)` = 40 bytes *including padding* verbatim | all 40 bytes (incl. the 4 bytes of padding after `id` and the 4 trailing pad bytes) copied identically | `err_18_cdb_raw_bytes_and_padding` | [x] |
+| 19 | `handle_pointer_operations` | `value * 2` overflows `int` (`value > INT_MAX/2` or `< INT_MIN/2`, e.g. `INT_MAX`, `INT_MIN`, `0x40000000`) — signed overflow, `lib.c:83` | wraps two's-complement, then `+100` (also wrapping) | `err_19_hpo_mul_overflow` | [x] |
+| 20 | `handle_pointer_operations` | `*ptr + 100` overflows after a non-overflowing double (`value == INT_MAX/2`) | wraps two's-complement | `err_20_hpo_add_overflow` | [x] |
+| 21 | `overunder` | `a % 6` where `a == INT_MIN` (`lib.c:115`) — the truncated-remainder edge; C99 gives `INT_MIN % 6 == -2`, which hits `default` → `-1` | `switch_result == -1` | `err_21_ou_int_min_modulo` | [x] |
+| 22 | `overunder` | `a % 6` negative for any `a < 0` → the remainder is negative, so `default` is taken for every negative `a` not divisible by 6 | `switch_result == -1` for negative non-multiples; `0` when `a % 6 == 0` | `err_22_ou_negative_modulo` | [x] |
+| 23 | `overunder` | `d*d + a*a` overflows `int` (`lib.c:106`) → the sum can become **negative**, so `sqrt()` of a negative double yields NaN, which `safe_double_to_int` maps to `0` | `conv4 == 0` via the NaN branch | `err_23_ou_sqrt_of_negative` | [x] |
+| 24 | `overunder` | `a * 1.5` / `b * 2.7` exceed `INT_MAX` after the widening to `double` (e.g. `a == INT_MAX`) → clamped by row 1 | `conv1 == INT_MAX` / `conv2 == INT_MAX` | `err_24_ou_conv_clamping` | [x] |
+| 25 | `overunder` | `a * 1.5` / `b * 2.7` below `INT_MIN` (e.g. `a == INT_MIN`) → clamped by row 3 | `conv1 == INT_MIN` / `conv2 == INT_MIN` | `err_25_ou_conv_clamping_neg` | [x] |
+| 26 | `overunder` | `total` accumulation overflows `int` across the 8 additions + 5 array additions (`lib.c:133-152`) | wraps two's-complement | `err_26_ou_total_overflow` | [x] |
+| 27 | `overunder` | all four arguments at every extreme corner (`INT_MIN`/`-1`/`0`/`1`/`INT_MAX`, full 5⁴ = 625 cross-product) — combined boundary sweep | identical return value *and* identical stdout | `err_27_ou_extreme_corners` | [x] |
+| 28 | *(generic)* | fixed constants `1e15` / `-1e15` hard-coded at `lib.c:136,140` must always print `2147483647` / `-2147483648` | those two lines are invariant in stdout for every input | `err_28_ou_fixed_overflow_lines` | [x] |
+| 29 | *(generic)* | `strncpy(label, "Source", sizeof(label)-1)` = 19 bytes + explicit `label[19] = '\0'` (`lib.c:121-122`) — the destination must be `"Source"` followed by **13 NUL pad bytes**, and byte 19 NUL | `label` bytes == `"Source\0\0\0\0\0\0\0\0\0\0\0\0\0\0"` (20 bytes) and `%s` prints `Source` | `err_29_ou_strncpy_zero_padding` | [x] |
 
-## Notes on rows 17-19
+## Notes on rows deliberately not executed
 
-There is no way for the C code to "return an error" here — the C dereferences
-unconditionally. The differential test therefore forks a child process for each
-of C and Rust, performs the call, and asserts that **both children die with the
-identical signal**. That is the observable behaviour these rows specify.
+Row 16 (`NULL` into `copy_data_block`) is genuine undefined behaviour in the C:
+`memcpy` is called unconditionally with no guard, so the C `.so` segfaults. A
+differential test cannot observe "the same error code" because there is none —
+the process dies. The Rust translation uses `copy_nonoverlapping` on the same
+raw pointers, so it is *equally* UB and equally segfaults; making the Rust
+return early on NULL would be a behavioural **divergence**, not a fix. The row
+is recorded, justified, and excluded from execution.
 
-## Status
+Row 17a (**partially** overlapping `dest`/`src`) is excluded for a different and
+stronger reason: it was actually tested, and the *C itself* gave two different
+answers depending on optimisation level. `run_all.sh` builds the C library three
+ways (`-O0`, `-O2`, and the flags `CMakeLists.txt` specifies) precisely so this
+kind of instability is caught rather than assumed away. Since no single C
+behaviour exists for that input, no Rust behaviour can match "the C", and the
+row is documented instead of asserted.
 
-| row | test | status |
-|-----|------|--------|
-| 1-10  | `tests/phase_c_errors.rs::err_safe_double_to_int_*` | [x] pass |
-| 11-16 | `tests/phase_c_errors.rs::err_fallthrough_*`        | [x] pass |
-| 17-19 | `tests/phase_c_errors.rs::err_copy_data_block_null_*` | [x] pass |
-| 20    | `tests/phase_c_errors.rs::err_copy_data_block_reads_full_struct_incl_padding` | [x] pass |
-| 21-22 | `tests/phase_c_errors.rs::err_handle_pointer_operations_overflow` | [x] pass |
-| 23-29 | `tests/phase_c_errors.rs::err_overunder_*`          | [x] pass |
-| 30    | `tests/phase_b_valid.rs::cfg_overunder_label_is_source_padded` | [x] pass |
-
-All 30 rows have a passing differential test that asserts C and Rust return the
-**same** sentinel / clamp / signal, and that the shared value still equals the
-one documented above (so a future change to either side is caught). Rows 17-19
-compare the child-process termination signal: both libraries die with
-`SIGSEGV` (11).
-
-Re-verified against the C rebuilt at `-O0`/`-O1`/`-O2`/`-O3`/`-Os` and both
-Rust profiles. See the "Divergence found and fixed" note in `CONFIGS.md` for
-the `memcpy` issue that rows 17-19 and CONFIGS row 19 uncovered in debug builds.
+The translation *is* nonetheless hardened where a well-defined C behaviour
+exists: the original Rust used `core::ptr::copy_nonoverlapping`, whose
+`debug_assertions` precondition check **aborted the process** on the fully
+aliased call `copy_data_block(p, p)` — a real divergence, since the C returns
+normally. It now reads the 40 bytes into a temporary before storing them, which
+reproduces glibc's load-then-store `memcpy` for every aliased and disjoint
+input. This was found by running the suite against a *debug*-profile Rust
+`.so`, not just the release one.

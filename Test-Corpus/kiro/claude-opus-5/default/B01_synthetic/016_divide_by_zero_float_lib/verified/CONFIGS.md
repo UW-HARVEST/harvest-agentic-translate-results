@@ -1,147 +1,124 @@
-# CONFIGS.md — Configuration surface table (Phase A → Phase B)
+# CONFIGS.md — configuration / valid-input surface table (Phase B gate)
 
-## How this table was derived
+Mechanically derived from `c_src/include/driver.h` (the public header) plus every
+`if` / branch in `c_src/src/driver.c`. There are **no** runtime options, no
+global mode flags, no `#ifdef`s, no setters, and no opaque context struct in this
+library, so the configuration surface is entirely **(entry point) x (input
+shape)**.
 
-From the C source only. The axes below are the ones the C code *actually*
-branches on or is shaped by; nothing here is guessed.
+## Axes the C actually branches on
 
-### Axis 1 — public entry points (the FULL set, lowest level first)
+**Axis E — entry point.** The `.so` exports five symbols. `driver.h` declares
+only `driver()`, but the other four have external linkage and are therefore part
+of the ABI surface a real consumer can (and the test harness does) call
+directly. The call hierarchy, lowest level first:
 
-`nm -D --defined-only c_src/build/libdriver.so` yields exactly five. They form
-a call hierarchy, and the table drives the **low-level ones directly**, not
-just the `driver()` one-shot wrapper:
-
-| level | entry point | callees |
-|-------|-------------|---------|
-| L0 (leaf) | `printLine(const char*)`      | `printf`/`puts` |
-| L0 (leaf) | `printIntLine(int)`           | `printf` |
-| L1        | `bad(float)`                 | `printIntLine` |
-| L1        | `good(float)`                | `goodG2B` (static) -> `printIntLine`; `goodB2G` (static) -> `printIntLine` / `printLine` |
-| L2 (top)  | `driver(float, float)`       | `printLine` x4, `good`, `bad` |
-
-`goodG2B` / `goodB2G` are `static`, so they are only reachable through `good()`
-and `driver()` — rows 20+ exist specifically to exercise that composed pipeline.
-
-### Axis 2 — runtime options / modes / flags
-
-**There are none.** Exhaustive check:
-
-```sh
-grep -nE "#if|#ifdef|#ifndef|switch|extern .*=|static .*=|getenv" c_src/src/driver.c
+```
+printLine(const char*)      <- leaf, null-guarded
+printIntLine(int)           <- leaf, unguarded
+bad(float)                  -> printIntLine
+goodG2B(void)     [static]  -> printIntLine        (constant divisor 2.0F)
+goodB2G(float)    [static]  -> printIntLine | printLine
+good(float)                 -> goodG2B, goodB2G
+driver(float,float)         -> printLine, good, printLine, printLine, bad, printLine
 ```
 
-finds no preprocessor configuration, no globals, no setters, no mode enums, no
-environment lookups. The library is stateless: output depends only on the
-arguments of the current call. `driver.h`'s single `#ifndef DRIVER_H_` is an
-include guard, not a feature toggle. `Cargo.toml` likewise has no `[features]`,
-so `default` == `--no-default-features` == the whole cross-product.
+Tests exercise the leaves (`printLine`, `printIntLine`) directly, then `bad`,
+then `good` (which is the only way to reach the two `static` functions), then the
+composed `driver` — not just the top-level convenience entry point.
 
-The one piece of *implicit* shared state is libc's `stdout` buffer, which both
-`.so`s write into — so **call ordering / interleaving** is treated as an axis
-(rows 24-26).
+**Axis P — pointer shape** (`printLine` only): NULL / empty string / short ASCII
+/ long string (>4 KiB, crosses the stdio buffer) / string containing `%d`,
+`%s`, `%n` (must be printed verbatim because it is an *argument* to `"%s\n"`,
+never a format) / embedded newlines / non-ASCII (UTF-8) bytes / 0xFF high bytes.
 
-### Axis 3 — input shapes the code special-cases
+**Axis I — int shape** (`printIntLine` only): `0`, `1`, `-1`, `INT_MAX`,
+`INT_MIN`, random `i32`.
 
-* `float data`, branched on by `driver.c:61` (`fabs(data) > 0.000001`) and
-  consumed by `100.0 / data` at `driver.c:45/54/63`. Distinct shapes:
-  sign (+/-), zero, subnormal, below-threshold, exactly-threshold,
-  just-above-threshold, small, ~1, large, `FLT_MAX`, inf, NaN — plus the
-  int-range cliff of the quotient at `|100.0/data| >= 2^31`
-  (i.e. `|data| <= ~4.66e-8`) which changes what `cvttsd2si` yields.
-* `int intNumber`, consumed by `printf("%d\n", ...)`: negative / zero /
-  positive / `INT_MIN` / `INT_MAX` (digit count and sign change the bytes).
-* `const char *line`, consumed by `printf("%s\n", ...)` (GCC rewrote this to
-  `puts`): NULL / empty / 1 byte / many bytes / bytes past the 4 KiB stdio
-  buffer / non-UTF-8 bytes / format-specifier bytes.
-* `float` **bit patterns** rather than values, since the argument crosses the
-  FFI boundary in `xmm0` and any 32 bits are a legal input.
+**Axis F — float shape** (`bad`, `good`, `driver`). The code distinguishes:
 
-## The table
+| class | why the C treats it differently |
+|-------|--------------------------------|
+| `+0.0` / `-0.0` | `goodB2G` guard rejects; `bad` divides -> `±inf` -> `cvttsd2si` UB |
+| subnormal (`1e-45f`, `FLT_TRUE_MIN`) | rejected by guard; overflows the `(int)` cast in `bad` |
+| `0 < |x| <= 1e-6` (normal tiny) | rejected by guard; overflows the cast in `bad` |
+| exactly `1e-6f` | boundary: `(double)1e-6f < 1e-6`, so *rejected* |
+| `nextafterf(1e-6f, 1)` | boundary: first value *accepted* by the guard |
+| `|x|` where `100/|x|` straddles `INT_MAX` (`x ~= 4.656613e-8`... `x ~= 100/2^31`) | boundary of the `cvttsd2si` in-range check |
+| ordinary magnitudes `1e-6 < |x| < 1e6` | guard passes, quotient in range, plain truncation |
+| quotient with a fractional part (`3.0f`, `7.0f`, `-3.0f`) | truncation **toward zero**, both signs |
+| exact quotients (`2.0f`, `4.0f`, `100.0f`) | no truncation |
+| large `|x|` (`1e30f`, `FLT_MAX`) | quotient underflows to `~0` -> prints `0` |
+| `±inf` | `100/inf = 0` — in range, prints `0`, *not* an error |
+| NaN (quiet + signalling, both sign bits) | guard: unordered -> reject; `bad`: `cvttsd2si` UB |
+| sign: every magnitude class also tested negative | `andps` strips the sign for the guard but not for the quotient |
 
-One row per combination the C treats differently. Every row is driven with
-**many randomized inputs** (`SEED = 0x5EED_1234_ABCD_0001`, splitmix64 —
-reproducible) unless the row is a single exact bit pattern.
+**Axis N — argument independence** (`driver` only): the cross product of the
+`goodData` class and the `badData` class, since they flow into two independent
+guards and the output must interleave in a fixed order.
 
-| #  | entry point(s) | configuration (options set + input shape) | [x] |
-|----|----------------|--------------------------------------------|-----|
-| 1  | `printIntLine` | uniform random `i32` over the full range, 4000 draws | [x] |
-| 2  | `printIntLine` | boundary set: `INT_MIN`, `INT_MIN+1`, `-1`, `0`, `1`, `INT_MAX-1`, `INT_MAX` | [x] |
-| 3  | `printIntLine` | small magnitudes `-1000..=1000` (every digit count + sign) | [x] |
-| 4  | `printIntLine` | powers of two and `±10^k` (digit-count carries) | [x] |
-| 5  | `printLine`    | random ASCII printable strings, lengths 0..64, 2000 draws | [x] |
-| 6  | `printLine`    | random byte strings over `0x01..=0xFF` (non-UTF-8), lengths 0..64, 2000 draws | [x] |
-| 7  | `printLine`    | length sweep 0,1,2,…,80 plus 4095/4096/4097 and 65536 (stdio buffer crossings) | [x] |
-| 8  | `printLine`    | strings that are themselves format specifiers (`%s`, `%d`, `%n`, `%%`) | [x] |
-| 9  | `printLine`    | strings containing `\t`, `\r`, `\x0b`, and an interior `\n` | [x] |
-| 10 | `bad`          | uniform random `f32` **bit patterns** (all 2^32 reachable, incl. NaN/inf/subnormal), 20000 draws | [x] |
-| 11 | `bad`          | random *finite normal* `f32` in `±[1e-3, 1e3]`, 8000 draws (in-range quotient) | [x] |
-| 12 | `bad`          | random `f32` in `±[1e-45, 1e-6]` (subnormal + tiny → quotient overflows `int`), 4000 draws | [x] |
-| 13 | `bad`          | random large `f32` in `±[1e6, FLT_MAX]` (quotient truncates to 0), 4000 draws | [x] |
-| 14 | `bad`          | exact `f32` values straddling the `cvttsd2si` cliff: `100/2^31`, `nextafter` on both sides, `±`variants | [x] |
-| 15 | `bad`          | `±0.0`, `±inf`, quiet/signalling/negative NaN, `±FLT_MIN`, `±FLT_MAX`, `±1.0` | [x] |
-| 16 | `good`         | uniform random `f32` bit patterns, 20000 draws (drives `goodG2B` **and** `goodB2G`) | [x] |
-| 17 | `good`         | random `f32` with `|data|` in `(1e-6, 1e-3)` — just inside the guard, 6000 draws | [x] |
-| 18 | `good`         | random `f32` with `|data|` in `(0, 1e-6]` — the `else` branch, 6000 draws | [x] |
-| 19 | `good`         | exact guard boundary: `1e-6f`, `nextafter(1e-6f, ±inf)`, `-1e-6f`, and the `double` literal `0.000001` as `f32` | [x] |
-| 20 | `driver`       | random `(goodData, badData)` bit-pattern pairs, 12000 draws (full composed pipeline) | [x] |
-| 21 | `driver`       | cross-product of the 10-element degenerate set `{±0, ±inf, NaN, ±1e-7, ±2.0}` x itself = 100 rows | [x] |
-| 22 | `driver`       | `goodData` in the guard-passing band x `badData` in the overflow band, 4000 draws | [x] |
-| 23 | `driver`       | `goodData` in the guard-failing band x `badData` normal, 4000 draws | [x] |
-| 24 | mixed sequence | `printLine`,`printIntLine`,`bad`,`good`,`driver` called back-to-back in one capture, random args, 500 rounds (shared `stdout` buffer / ordering) | [x] |
-| 25 | mixed sequence | `driver` called repeatedly (statelessness: N calls == N concatenated single calls) | [x] |
-| 26 | mixed sequence | `printLine(NULL)` interleaved between printing calls (skipped branch must not disturb ordering) | [x] |
+## Configuration table
 
-## How the rows are executed
+One row per combination the C treats differently. Each row is driven with **many
+randomized inputs** (seeded xorshift64\*, seed `0x243F6A8885A308D3`) in addition
+to the named boundary values, and asserted byte-identical between the C `.so` and
+the Rust `.so`.
 
-`translation/tests/differential.rs` contains one case per row, named
-`phase_b_rowNN_*`. Each case:
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1  | `printLine` | non-NULL short ASCII strings, randomized length 1..64 from a printable alphabet | [x] |
+| 2  | `printLine` | empty string `""` | [x] |
+| 3  | `printLine` | long string, 4 KiB and 64 KiB (crosses the stdio buffer boundary) | [x] |
+| 4  | `printLine` | strings containing `printf` format directives (`%d %s %n %%`) — must be emitted verbatim | [x] |
+| 5  | `printLine` | strings with embedded `\n`, `\t`, and high bytes 0x80..0xFF (non-UTF-8) | [x] |
+| 6  | `printIntLine` | named extremes: `0`, `1`, `-1`, `INT_MAX`, `INT_MIN` | [x] |
+| 7  | `printIntLine` | 512 randomized `i32` values over the full range | [x] |
+| 8  | `bad` | ordinary magnitudes, randomized in `(1e-3, 1e3)`, both signs — exact + truncating quotients | [x] |
+| 9  | `bad` | exact-quotient divisors `2, 4, 5, 10, 20, 25, 50, 100` and their negations | [x] |
+| 10 | `bad` | truncating quotients `3, 6, 7, 9, 11, ...` and negations (toward-zero, both signs) | [x] |
+| 11 | `bad` | tiny magnitudes `(0, 1e-6]` incl. subnormals -> quotient overflows the `(int)` cast | [x] |
+| 12 | `bad` | divisors straddling the `INT_MAX` cast boundary: `100/2^31` +- a few ULPs, both signs | [x] |
+| 13 | `bad` | large magnitudes `1e10 .. FLT_MAX` -> quotient truncates to `0`, both signs | [x] |
+| 14 | `bad` | `+0.0`, `-0.0`, `+inf`, `-inf`, quiet NaN, negative NaN | [x] |
+| 15 | `bad` | 1024 randomized bit patterns reinterpreted as `f32` (full domain incl. NaNs/subnormals) | [x] |
+| 16 | `good` | accepted branch: randomized `|x| > 1e-6` -> `goodG2B` prints `50` then `goodB2G` prints the quotient | [x] |
+| 17 | `good` | rejected branch: `0`, `-0`, subnormals, `(0,1e-6]`, NaN -> `50` then the message | [x] |
+| 18 | `good` | guard boundary pair: `1e-6f` (reject) and `nextafterf(1e-6f, 1)` (accept), both signs | [x] |
+| 19 | `good`, `bad` | region just above the guard (`|x|` in `(1e-6, 1e-5)`) where the quotient is ~1e8 — large but still in `int` range; also the first 64 floats above the guard, one ULP at a time. **Finding:** `100/2^31 ~= 4.66e-8` is *below* the guard threshold, so no guard-accepted value can overflow the cast; the test asserts that relationship holds rather than assuming it | [x] |
+| 20 | `good` | `±inf` -> guard passes (`inf > 1e-6`), quotient `0` | [x] |
+| 21 | `good` | 1024 randomized bit patterns reinterpreted as `f32` | [x] |
+| 22 | `driver` | both arguments ordinary/valid, randomized in `(1e-3, 1e3)`, both signs | [x] |
+| 23 | `driver` | cross product of the 12 named `goodData` classes x 12 named `badData` classes (144 combos) | [x] |
+| 24 | `driver` | 2048 randomized `(f32, f32)` bit-pattern pairs over the full domain | [x] |
+| 25 | all five | interleaving: a randomized *sequence* of calls to all five exports against the same open stdout, to catch buffering/ordering divergence | [x] |
 
-1. resolves the five exported symbols in **both** `.so`s with `libloading`
-   (`dlopen`/`dlsym`) — the Rust functions are never called directly, so the
-   `#[no_mangle] extern "C"` wrappers are part of what is under test;
-2. redirects file descriptor 1 to a temp file, replays the row's whole input
-   batch against the C library, restores fd 1, then does the same for the Rust
-   library;
-3. compares the two byte strings with `assert_eq`-style exactness.
+## Binary / driver executable
 
-Replaying inputs in **batches inside one capture** is deliberate: it keeps the
-run fast *and* means every row also exercises repeated/sequenced calls through
-the shared libc `stdout` buffer, which a one-call-per-capture design would not.
+`c_src/CMakeLists.txt` contains no `add_executable`, and `translation/Cargo.toml`
+declares no `[[bin]]` (and there is no `src/main.rs`). Neither side builds a
+program, so the "compare C and Rust stdout on the same inputs" gate has no binary
+to run. It is instead satisfied at the library level: every test in
+`tests/valid_paths.rs` and `tests/error_paths.rs` compares captured `stdout`
+bytes, which is the only output this library produces.
 
-Two harness details are load-bearing:
+## Verification evidence
 
-* the suite runs under `harness = false`. libtest writes its own progress text
-  to fd 1 from a different thread, and that text lands inside the captured bytes
-  and produces spurious divergences. The custom runner in `main()` prints only
-  while fd 1 is un-redirected.
-* each case runs in a `fork()`ed child. A translation bug that dereferences a
-  pointer the C guards against shows up as `SIGSEGV`; without isolation that
-  would kill the runner and hide every other result. Signal deaths are reported
-  as failures.
+Run `./run_all.sh` from the crate root. It rebuilds the C `.so`, then for each
+profile (`debug`, `release`) x each feature set (`<default>`,
+`--no-default-features`, `--all-features`) it runs `cargo build` (needed because
+`cargo test` does **not** build `cdylib` artifacts) followed by
+`cargo test -- --test-threads=1`, and finally diffs `nm -D` output.
 
-`cargo test` alone does **not** re-link the `cdylib`, so it is possible to run
-the entire suite against a stale `libdriver.so`. The harness therefore refuses
-to run when `src/lib.rs` or `Cargo.toml` is newer than the `.so`. Use
-`./run_verification.sh` (or `cargo build --release && cargo test --release`).
+Last run: **6 configurations, all pass** — 25 (valid) + 21 (error) + 5 (symbol /
+harness self-check) = 51 tests each, and the `nm -D` diff is empty for both
+profiles.
 
-## Results
+Bulk independent cross-check (outside the Rust test suite, driving both `.so`
+files with `ctypes`): 200 000 randomized full-domain `f32` bit patterns through
+`bad`, 200 000 through `good`, and 200 000 `(f32, f32)` pairs through `driver` —
+about 24 MB of captured stdout, **byte-identical** in all three cases.
 
-All 26 rows pass, under every configuration:
-
-| configuration | result |
-|---------------|--------|
-| default features, Rust release cdylib vs C (CMake default, no `-O`) | 58/58 cases pass |
-| `--no-default-features` (identical: the crate declares no features) | 58/58 cases pass |
-| Rust **debug** cdylib vs the same C reference | 58/58 cases pass |
-| Rust release cdylib vs C rebuilt with `-O2` | 58/58 cases pass |
-| Rust release cdylib vs C rebuilt with `-O3` | 58/58 cases pass |
-
-The last three matter because `bad()` relies on C undefined behaviour
-(`(int)` of an out-of-range `double`). Matching at `-O0`, `-O2` and `-O3` shows
-the Rust reproduces the platform's actual `cvttsd2si` semantics rather than an
-artefact of one optimisation level. The alternative C builds are produced with
-`gcc` into a temp directory; `c_src/` is never modified.
-
-58 cases cover 26 `CONFIGS.md` rows + 32 `ERRORS.md` rows (several error rows
-share a case where the C treats them identically) + 2 reachability proofs + the
-symbol-parity check.
+Note the row-25 style interleaving matters: `capture()` serialises access to fd 1
+behind a mutex and calls `fflush(NULL)` before restoring the descriptor, because
+both libraries write through the *same* glibc `stdout` FILE and it becomes fully
+buffered when redirected to a file.

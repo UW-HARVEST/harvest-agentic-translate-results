@@ -1,99 +1,87 @@
-# CONFIGS.md — Configuration-surface table (Phase A / gate for Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-## Mechanical derivation of the axes
-
-Public API, from `c_src/include/driver.h` (the *only* header, one declaration):
+Derived mechanically from the C source. The whole public API is:
 
 ```c
-void driver(int x, int y);
+void driver(int x, int y);          /* include/driver.h  — the ONLY entry point */
 ```
 
-Body, after digraph (`%:`→`#`, `<%`→`{`, `%>`→`}`) and `<iso646.h>`
-(`bitor`→`|`, `compl`→`~`) expansion — confirmed with `gcc -E`:
+body (after resolving the ISO 646 spellings `bitor` = `|`, `compl` = `~`):
 
 ```c
-void driver(int x, int y) {
-    int result = x | ~y;
-    printf("%d", result);
-    puts("");
-}
+int result = x | ~y;
+printf("%d", result);   /* no newline */
+puts("");               /* newline only */
 ```
 
-Axis enumeration, derived strictly from what the C code above can branch on:
+## Axes the C code actually branches on
 
-| axis | values the C actually distinguishes | source of the distinction |
-|------|--------------------------------------|---------------------------|
-| **A1** runtime options / modes / flags | **none** — there is no setter, no global, no context struct, no flag argument, no `#ifdef` in the library | grep of the tree found 0 `if`/`switch`/`?:`/`#if` other than the header include guard |
-| **A2** entry points | **one**: `driver`. It is simultaneously the lowest-level and the only entry point — there is no convenience wrapper to hide behind | `nm -D` exports exactly `driver` |
-| **A3** value class of `x` | `0`, `+1`, `-1`, `INT_MAX`, `INT_MIN`, random positive, random negative, single-bit, all-bits | `x` feeds `\|` (bit-level: every bit position is a distinct path) and then `%d` |
-| **A4** value class of `y` | same set; additionally `y = 0` (`~0 = -1` ⇒ result always `-1`) and `y = -1` (`~-1 = 0` ⇒ result `= x`) are the two absorbing/identity cases of `\| ~y` | `~y` then `\|` |
-| **A5** value class of `result = x \| ~y` | `0`, `-1`, `INT_MIN`, `INT_MAX`, positive, negative | `printf("%d")` formatting is value-dependent (sign, digit count, and `INT_MIN` has no positive magnitude) |
-| **A6** output width | 1..10 decimal digits, with and without a leading `-` (1..11 bytes) | `%d` conversion |
-| **A7** call count / sequencing in one stream | 1 call, few calls, many calls (crossing the 4096-byte `stdio` buffer), C-and-Rust calls interleaved into the *same* `stdout` `FILE` | `printf` + `puts` write into the shared, buffered `stdout`; interleaving/buffering is observable |
-| **A8** `stdout` sink shape | regular file (fully buffered), pipe (fully buffered), character device / non-seekable | glibc picks the buffering mode from `fstat` on fd 1; affects *when* bytes appear, so it must be compared under each shape |
+There are **no** runtime options, modes, flags, `#ifdef`s (other than the
+header's include guard), `if`s, `switch`es, or `?:` in the C source, and no
+mutable library state. Grep confirms:
 
-There is no byte-order axis (no multi-byte buffer is produced), no element-type
-axis (both parameters are `int`), and no format axis (the format string is the
-literal `"%d"`).
+```
+grep -nE '#if|#ifdef|#else|if *\(|switch|\?|extern|static|global' c_src/src/driver.c c_src/include/driver.h
+```
+=> only `%:ifndef DRIVER_H_` / `%:define` / `%:endif` (include guard) and
+`%:include` lines.
 
-Rows below are the pruned cross-product of A3–A8 — pruned to the combinations
-the code above actually treats differently. Every row is driven through the
-`.so` exports of **both** libraries and compared byte-for-byte. Rows marked
-"randomized" use ≥256 pseudo-random inputs from a fixed-seed SplitMix64
-generator (seed `0x2545F4914F6CDD1D`), so runs are reproducible.
+So the configuration surface is entirely the **input shape** of the two
+`int` arguments, plus the shape of the *derived* value `result = x | ~y`
+whose decimal formatting is what `printf("%d", …)` branches on internally
+(sign, digit count). The axes are therefore:
 
-## Table
+* **A1 — sign of `x`**: negative / zero / positive.
+* **A2 — sign of `y`**: negative / zero / positive.
+* **A3 — magnitude class of each operand**: `0`, `±1`, small (< 10),
+  multi-digit, near-`INT_MAX`, exactly `INT_MAX`, exactly `INT_MIN`.
+* **A4 — sign of the printed `result`** (`x | ~y`): negative (a `-` is
+  emitted) vs non-negative. Note `x | ~y` is non-negative **iff** `x >= 0`
+  and `y < 0`, so this axis is *not* independent of A1/A2 and must be
+  crossed with them.
+* **A5 — decimal width of `result`**: 1 digit … 10 digits (+ optional `-`),
+  i.e. the number of characters `printf` must emit — 1 through 11 bytes.
+* **A6 — bit-pattern shape**: all-zero bits, all-one bits, single bit set,
+  single bit clear, alternating (`0x55555555` / `0xAAAAAAAA`), sign bit only,
+  arbitrary random pattern. These select different `~` / `|` results and
+  different formatting lengths.
+* **A7 — call multiplicity / statefulness**: one call vs many consecutive
+  calls into the *same* loaded library (the two `stdio` calls per invocation
+  mean output of consecutive calls must concatenate identically; a
+  buffering/flush difference between C and Rust is only visible here).
+* **A8 — entry-point level**: there is exactly one entry point and it is the
+  lowest level one; there is no convenience wrapper vs. low-level split.
+  `driver` is called directly via `dlsym` from both `.so`s in every row.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `driver` | `(0, 0)` — both identity-ish zero; result `-1` | [x] |
-| C2 | `driver` | `(0, -1)` — the only shape producing result `0` (shortest positive output) | [x] |
-| C3 | `driver` | `(-1, 0)` — all-bits `x`, absorbing `y` | [x] |
-| C4 | `driver` | `y = 0` fixed, `x` randomized over all 32 bits — `~0 = -1` absorbs, result must always be `-1` | [x] |
-| C5 | `driver` | `x = 0` fixed, `y` randomized over all 32 bits — result must be exactly `~y` | [x] |
-| C6 | `driver` | `y = -1` fixed, `x` randomized — `~-1 = 0`, identity: result must be exactly `x` | [x] |
-| C7 | `driver` | `x = -1` fixed, `y` randomized — result must always be `-1` | [x] |
-| C8 | `driver` | `(INT_MAX, INT_MIN)` — result `INT_MAX`, widest positive output (10 digits) | [x] |
-| C9 | `driver` | `(INT_MIN, INT_MAX)` — result `INT_MIN`, widest negative output (`-2147483648`) | [x] |
-| C10 | `driver` | `(INT_MAX, INT_MAX)` and `(INT_MIN, INT_MIN)` — result `-1` in both | [x] |
-| C11 | `driver` | both operands randomized, **`x > 0`, `y > 0`** quadrant | [x] |
-| C12 | `driver` | both operands randomized, **`x > 0`, `y < 0`** quadrant | [x] |
-| C13 | `driver` | both operands randomized, **`x < 0`, `y > 0`** quadrant | [x] |
-| C14 | `driver` | both operands randomized, **`x < 0`, `y < 0`** quadrant | [x] |
-| C15 | `driver` | result forced to each **positive** decimal width 1..10 (`x = 0`, `y = ~v` for `v` at each power-of-ten boundary and boundary−1) | [x] |
-| C16 | `driver` | result forced to each **negative** decimal width 1..10 (`x = 0`, `y = ~(-v)`) | [x] |
-| C17 | `driver` | single-bit `x` (`1 << b`, `b = 0..31`) × `y = 0, -1, INT_MIN, INT_MAX` — every bit position of the `\|` | [x] |
-| C18 | `driver` | single-bit `y` (`1 << b`, `b = 0..31`) × `x = 0, -1, 1, INT_MIN` — every bit position of the `~` | [x] |
-| C19 | `driver` | complementary / equal pairs: `y = x`, `y = !x` (`~x`), `y = -x`, over randomized `x` | [x] |
-| C20 | `driver` | full boundary cross-product: all 81 pairs from `{INT_MIN, INT_MIN+1, -2, -1, 0, 1, 2, INT_MAX-1, INT_MAX}` | [x] |
-| C21 | `driver` | one-past-narrow-width values: all pairs from `{-32769, -32768, -129, -128, -1, 0, 127, 128, 255, 256, 32767, 32768, 65535, 65536}` (all 196 combinations of `int` values that a narrower port would treat differently) | [x] |
-| C22 | `driver` | unconstrained randomized sweep: 4096 fully random `(x, y)` pairs over the whole `int × int` domain, single capture per pair | [x] |
-| C23 | `driver` | **A7 sequencing:** 200 randomized calls inside **one** capture — exercises `stdout` buffer accumulation and `printf`/`puts` ordering across calls | [x] |
-| C24 | `driver` | **A7 sequencing:** ~2000 randomized calls in one capture, > 4096 bytes total, forcing intermediate `stdio` buffer flushes mid-stream | [x] |
-| C25 | `driver` | **A7 interleaving:** C and Rust `driver` called alternately into the *same* `stdout` `FILE` in one capture; compared against the same alternation with the roles swapped — proves both share and advance the identical stream state | [x] |
-| C26 | `driver` | **A8 sink shape:** `stdout` redirected to a **regular file** (fully buffered, seekable) — the baseline used by all rows above | [x] |
-| C27 | `driver` | **A8 sink shape:** `stdout` redirected to a **pipe** (fully buffered, non-seekable), randomized inputs | [x] |
-| C28 | `driver` | **A8 sink shape:** `stdout` redirected to `/dev/null` (character device), randomized inputs — both must complete without output and without error | [x] |
-| C29 | `driver` | **A1 verification:** no runtime option exists — asserted structurally by checking that the C `.so` exports exactly one symbol and that repeated identical calls are stateless (same input ⇒ same output, 100 repeats, no drift) | [x] |
+Every row below is exercised by loading BOTH `.so`s with `libloading`,
+calling the exported `driver` symbol, capturing raw file-descriptor 1, and
+comparing the captured bytes byte-for-byte. Rows marked "randomized" use
+many pseudo-random inputs from a fixed-seed SplitMix64 generator.
 
-## Result
+## Configuration table
 
-All 29 rows pass. `cargo test` → 46 tests across 5 binaries, 0 failures, under
-both `default` and `--no-default-features` (the crate declares no cargo
-features, so those are the only two configurations — see `scripts/verify.sh`
-step 4, which enumerates them from `cargo metadata` rather than by assumption).
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `driver` | A1=0, A2=0: `(0, 0)` — the minimal call; `result = ~0 = -1` | [x] |
+| 2 | `driver` | A1>0, A2>0, both small single-digit: full cross product of `x,y ∈ 0..=9` (100 combos) | [x] |
+| 3 | `driver` | A1<0, A2<0, both small negative: full cross product of `x,y ∈ -9..=0` | [x] |
+| 4 | `driver` | mixed signs, small: full cross product `x,y ∈ -9..=9` (361 combos) | [x] |
+| 5 | `driver` | A4 non-negative result branch (`x >= 0 && y < 0`), randomized: `x ∈ [0, INT_MAX]`, `y ∈ [INT_MIN, -1]` — printed value has **no** `-` sign | [x] |
+| 6 | `driver` | A4 negative result branch (`x < 0` or `y >= 0`), randomized over each of the three sub-cases (`x<0,y<0`), (`x<0,y>=0`), (`x>=0,y>=0`) | [x] |
+| 7 | `driver` | A5 = every decimal width 1..=10 digits of a non-negative `result`, constructed exactly (`result` = 0, 9, 99, …, 2147483647) via `x = result, y = INT_MIN` | [x] |
+| 8 | `driver` | A5 = every decimal width of a negative `result` incl. the 11-byte worst case `-2147483648` (`x = INT_MIN, y = INT_MAX`) | [x] |
+| 9 | `driver` | A3 boundary operands: full cross product of `{INT_MIN, INT_MIN+1, -65537, -256, -2, -1, 0, 1, 2, 255, 65536, INT_MAX-1, INT_MAX}` (169 combos) | [x] |
+| 10 | `driver` | A6 bit-pattern shapes: cross product of `{0x00000000, 0xFFFFFFFF, 0x80000000, 0x7FFFFFFF, 0x55555555, 0xAAAAAAAA, 0x00000001, 0xFFFFFFFE}` reinterpreted as `int` (64 combos) | [x] |
+| 11 | `driver` | A6 single-bit-set `x` × single-bit-clear `y`: `x = 1<<i`, `y = !(1<<j)` for all `i, j ∈ 0..32` (1024 combos) | [x] |
+| 12 | `driver` | A1–A6 fully randomized: 20 000 uniformly random 32-bit `(x, y)` pairs, fixed seed | [x] |
+| 13 | `driver` | A7 many consecutive calls, single capture: 500 randomized calls in one redirected-stdout window — the concatenated stream must match byte-for-byte (catches newline/flush/buffering divergence) | [x] |
+| 14 | `driver` | A7 interleaved C-then-Rust and Rust-then-C ordering within one capture window, to rule out order-dependent buffering state | [x] |
+| 15 | `driver` | A5 exhaustive-per-length sweep: for each output byte length 1..=11, 200 randomized inputs producing that exact length | [x] |
+| 16 | `driver` | no-op / repeat determinism: the same input called twice must produce two identical copies of the same bytes in both libraries | [x] |
 
-### Sensitivity evidence
-
-The rows are only meaningful if they can fail. Mutating the Rust source and
-re-running (via `scripts/mutate.py`) produces:
-
-| mutation to `src/lib.rs` | rows that caught it |
-|--------------------------|---------------------|
-| `x \| !y` → `x ^ !y` | 21 of 29 (the 8 that survive are the rows where `\|` and `^` genuinely agree: `x` or `~y` is `0`, or the operands are bit-disjoint) |
-| `printf("%d")` → `printf("%u")` | 23 of 29 |
-| dropped the `puts("")` newline | **29 of 29** |
-| spurious `if x == INT_MIN \|\| y == INT_MIN { return; }` rejection | 9 of 29 Phase B rows + 6 of 10 Phase C rows + both isolated Phase C binaries |
-
-Each mutation was reverted immediately; `src/lib.rs` is byte-identical to its
-pre-testing state.
+No binary executable is produced by either build (`c_src/CMakeLists.txt`
+declares only `add_library(driver SHARED …)`; `translation/Cargo.toml`
+declares only `[lib] crate-type = ["cdylib"]`), so the "compare the C and
+Rust driver binaries' stdout" gate is not applicable; the equivalent
+end-to-end stdout comparison is performed through rows 13–16, which capture
+raw fd 1 exactly as a binary's stdout would be captured.

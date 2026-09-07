@@ -1,18 +1,29 @@
 # Dynamic Symbol Surface
 
-Source: `nm -D ../c_src/build/libdriver.so`, built from the unmodified C source.
+Generated from:
 
-| C symbol | C type | Rust `nm -D` status | Classification |
-|----------|--------|---------------------|----------------|
-| `_ITM_deregisterTMCloneTable` | `w` | present (`w`) | undefined toolchain weak symbol |
-| `_ITM_registerTMCloneTable` | `w` | present (`w`) | undefined toolchain weak symbol |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | present (`w`) | undefined libc weak symbol |
-| `__gmon_start__` | `w` | present (`w`) | undefined toolchain weak symbol |
-| `driver` | `T` | present (`T`) | defined public API |
-| `printf@GLIBC_2.2.5` | `U` | present (`U`) | undefined libc symbol |
+```text
+nm -D ../c_src/build/libdriver.so
+nm -D --defined-only ../c_src/build/libdriver.so
+```
 
-## Completion
+## C dynamic symbols
 
-- [x] Every C-defined public symbol is defined by the Rust shared library.
-- [x] Missing C-defined public symbols: 0.
-- [x] Missing/undefined non-libc API symbols in Rust: 0.
+| Symbol | C `nm -D` type | Classification | Rust parity |
+|--------|----------------|----------------|-------------|
+| `_ITM_deregisterTMCloneTable` | `w` | Toolchain weak undefined symbol | Not a library API; excluded from defined-symbol parity |
+| `_ITM_registerTMCloneTable` | `w` | Toolchain weak undefined symbol | Not a library API; excluded from defined-symbol parity |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | libc weak undefined symbol | Resolved by libc |
+| `__gmon_start__` | `w` | Toolchain weak undefined symbol | Not a library API; excluded from defined-symbol parity |
+| `driver` | `T` | Public defined library symbol | Present as exact symbol `driver` |
+| `printf@GLIBC_2.2.5` | `U` | libc undefined symbol | Resolved by libc |
+
+## Defined public-symbol parity
+
+| # | C symbol | Rust symbol | Status |
+|---|----------|-------------|--------|
+| 1 | `driver` | `driver` | [x] |
+
+Missing C-defined public symbols in Rust: **0**
+
+Undefined non-libc C symbols requiring a Rust implementation: **0**

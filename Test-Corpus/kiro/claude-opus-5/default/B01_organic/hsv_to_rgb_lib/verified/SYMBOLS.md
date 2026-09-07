@@ -1,66 +1,59 @@
-# SYMBOLS.md — exported-symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-## Commands used
+C `.so`:    `c_src/build/libharvest-work-7Ma4DJ.so`
+Rust `.so`: `translation/target/release/libhsv_to_rgb_lib.so`
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libharvest-work-uyduuJ.so
+## C exported (defined) dynamic symbols
 
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libhsv_to_rgb_lib.so
+```
+$ nm -D --defined-only c_src/build/libharvest-work-7Ma4DJ.so
+0000000000001109 T hsv_to_rgb
 ```
 
-## C source inventory
-
-`c_src/CMakeLists.txt` compiles exactly one translation unit into the shared
-library:
-
-* `src/lib.c`  (links against `m` for `floorf`)
-
-`c_src/include/lib.h` declares exactly one prototype:
+That is the complete list. The C translation unit is a single file
+(`c_src/src/lib.c`, 59 lines) declaring a single public prototype in
+`c_src/include/lib.h`:
 
 ```c
 void hsv_to_rgb(float *dest, const float *src);
 ```
 
-There are no additional C source files, so there is no un-translated module.
+There are no macro-generated symbols, no versioned aliases, no `static`
+functions promoted to external linkage, and no additional C source files in
+`CMakeLists.txt` (`add_library(... SHARED src/lib.c)` only).
 
-## Symbol table
+## Symbol parity table
 
-| # | C symbol (`nm -D`) | type | exported by Rust `.so` | notes |
-|---|--------------------|------|------------------------|-------|
-| 1 | `hsv_to_rgb`       | `T`  | YES (`T hsv_to_rgb`)   | `#[unsafe(no_mangle)] pub unsafe extern "C" fn` in `src/lib.rs` |
+| # | C symbol | type | exported by Rust `.so`? | Rust item |
+|---|----------|------|-------------------------|-----------|
+| 1 | `hsv_to_rgb` | `T` (global text) | YES — `T hsv_to_rgb` | `#[unsafe(no_mangle)] pub unsafe extern "C" fn hsv_to_rgb` in `src/lib.rs` |
 
-No macro-generated symbols exist in the C source (no function-defining macros
-are used at all).
+## Missing-symbol analysis
 
-## Diff
+**None.** The C→Rust symbol diff is empty; no exports needed to be added and no
+C module was left untranslated. `c_src/src/lib.c` is fully translated in
+`translation/src/lib.rs`.
 
 ```
-$ diff <(nm -D --defined-only c_src/build/libharvest-work-uyduuJ.so | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/libhsv_to_rgb_lib.so | awk '{print $3}' | sort)
-(empty)
+$ comm -3 <(nm -D --defined-only <c.so>  | awk '{print $NF}' | sort) \
+          <(nm -D --defined-only <rust.so> | awk '{print $NF}' | sort) \
+  | grep -v '^\s*_\?_\?rust\|^\s*_ITM_\|^\s*__cxa\|^\s*__gmon'
+  <empty>
 ```
-
-**Missing from Rust: 0.  Extra in Rust: 0.  Symbol diff is EMPTY.**
 
 ## Undefined (imported) symbols
 
-| library | undefined non-libc symbols |
-|---------|----------------------------|
-| C `.so` | none (`floorf` is libm) |
-| Rust `.so` | none (only libc/`ld-linux` interfaces from the Rust runtime) |
-
-**Result: `nm -D` shows 0 missing and 0 undefined non-libc symbols in Rust. ✅**
+C imports `floorf@GLIBC_2.2.5` plus the usual weak CRT hooks
+(`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+`__cxa_finalize`, `__gmon_start__`). The Rust `.so` resolves `floorf`
+internally via `f32::floor` (an LLVM intrinsic lowering to
+`roundss $0x9` / `frintm`), so it has no extra non-libc undefined symbols.
+0 missing / 0 undefined non-libc symbols on the Rust side.
 
 ## Feature combinations
 
 `translation/Cargo.toml` declares **no `[features]` section**, therefore the
-only build configuration is the default one. `--no-default-features` and the
-default build are identical. Verified by an automated loop
-(`scripts/check_all_features.sh`).
+only build configuration is the default one. `--no-default-features` and
+`--all-features` are equivalent to the default here (verified in Phase D).

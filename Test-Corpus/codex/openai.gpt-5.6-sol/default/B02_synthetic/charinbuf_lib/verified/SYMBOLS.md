@@ -1,25 +1,26 @@
-# Dynamic Symbol Surface
+# Exported Symbol Surface
 
-Generated from:
+Derived from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-hklH5o.so
+nm -D --defined-only ../c_src/build/libharvest-work-caSExF.so
 ```
 
-| # | C symbol | C type | Rust export |
-|---|----------|--------|-------------|
-| 1 | `increment_counter` | `T` | present |
-| 2 | `decrement_counter` | `T` | present |
-| 3 | `multiply_counter` | `T` | present |
-| 4 | `reset_counter` | `T` | present |
-| 5 | `is_string_empty` | `T` | present |
-| 6 | `find_char_in_buffer` | `T` | present |
-| 7 | `create_buffer` | `T` | present |
-| 8 | `validate_uint16_range` | `T` | present |
-| 9 | `apply_operation` | `T` | present |
-| 10 | `charinbuf` | `T` | present |
+Only symbols defined by the library are listed; imported libc symbols are not
+part of the library's public export surface.
+
+| C symbol | Rust export |
+|----------|-------------|
+| `apply_operation` | [x] exact match |
+| `charinbuf` | [x] exact match |
+| `create_buffer` | [x] exact match |
+| `decrement_counter` | [x] exact match |
+| `find_char_in_buffer` | [x] exact match |
+| `increment_counter` | [x] exact match |
+| `is_string_empty` | [x] exact match |
+| `multiply_counter` | [x] exact match |
+| `reset_counter` | [x] exact match |
+| `validate_uint16_range` | [x] exact match |
 
 Missing from Rust: **0**
 
-The remaining undefined symbols in each shared object are libc, compiler
-runtime, or loader/runtime imports rather than library API symbols.

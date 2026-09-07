@@ -3,26 +3,17 @@
 Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-M8dUuU.so
+nm -D --defined-only --extern-only ../c_src/build/libharvest-work-1dcjw8.so
+nm -D --defined-only --extern-only target/release/librgb_to_hsv_lib.so
 ```
 
-Toolchain support symbols and undefined imports are excluded by
-`--defined-only`. The C library has one public dynamic symbol.
+The unfiltered C `nm -D` output also contains the undefined weak toolchain
+hooks `_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+`__cxa_finalize@GLIBC_2.2.5`, and `__gmon_start__`. They are imports, not
+symbols defined by the C library.
 
-| C symbol | Type | Rust symbol | Status |
-|----------|------|-------------|--------|
-| `rgb_to_hsv` | `T` (global function) | `rgb_to_hsv` | [x] present |
+| C symbol | C type | Rust symbol | Rust type | parity |
+|----------|--------|-------------|-----------|--------|
+| `rgb_to_hsv` | `T` | `rgb_to_hsv` | `T` | [x] |
 
-## Parity
-
-```text
-C-only symbols:    0
-Rust-only API symbols: 0
-Undefined non-libc symbols required by the C API: 0
-```
-
-The Rust comparison command is:
-
-```text
-nm -D --defined-only target/release/librgb_to_hsv_lib.so
-```
+Missing C-defined public symbols in Rust: **0**.

@@ -1,44 +1,45 @@
 # Configuration Surface
 
-The sole public and lowest-level entry point is `searchAndReplace`. It has no
-runtime modes, flags, element types, formats, byte-order options, or Cargo
-features. The matrix below is the cross-product of the source branches:
+The public API consists only of `searchAndReplace`. It has no runtime options,
+modes, flags, compile-time features, element types, byte-order modes, or numeric
+length arguments. The rows below are the pruned cross-product of the branches
+and data shapes that `../c_src/src/lib.c` actually distinguishes:
 
-- first match at byte zero vs. after a nonempty prefix;
-- no later match vs. adjacent later match vs. later match after a nonempty gap;
-- no suffix vs. a nonempty suffix after the last match;
-- empty vs. nonempty replacement.
+- no match versus at least one match;
+- first match at byte zero versus after a copied prefix;
+- one match versus later adjacent matches versus later matches separated by a
+  copied gap;
+- no suffix versus a copied suffix;
+- empty versus non-empty replacement;
+- one-byte versus multi-byte search text;
+- empty versus non-empty original text on the no-match path.
 
-No-match inputs bypass all replacement branches. Empty `orig` is listed
-separately as the zero-size boundary. Empty `search` is also separate because
-the C loop never advances and does not terminate.
+The empty-search shape is non-returning and is therefore in `ERRORS.md`, not the
+valid configuration table.
 
-| # | entry point(s) | configuration (options set + input shape) | |
-|---|----------------|--------------------------------------------|-|
-| 1 | `searchAndReplace` | empty `orig`, nonempty `search`, no match, empty or nonempty `value` | [x] |
-| 2 | `searchAndReplace` | nonempty `orig`, nonempty `search`, no match, empty or nonempty `value` | [x] |
-| 3 | `searchAndReplace` | first match at byte zero; no later match; no suffix; empty `value` | [x] |
-| 4 | `searchAndReplace` | first match at byte zero; no later match; no suffix; nonempty `value` | [x] |
-| 5 | `searchAndReplace` | first match at byte zero; no later match; nonempty suffix; empty `value` | [x] |
-| 6 | `searchAndReplace` | first match at byte zero; no later match; nonempty suffix; nonempty `value` | [x] |
-| 7 | `searchAndReplace` | first match at byte zero; adjacent later match; no suffix; empty `value` | [x] |
-| 8 | `searchAndReplace` | first match at byte zero; adjacent later match; no suffix; nonempty `value` | [x] |
-| 9 | `searchAndReplace` | first match at byte zero; adjacent later match; nonempty suffix; empty `value` | [x] |
-| 10 | `searchAndReplace` | first match at byte zero; adjacent later match; nonempty suffix; nonempty `value` | [x] |
-| 11 | `searchAndReplace` | first match at byte zero; later match after a nonempty gap; no suffix; empty `value` | [x] |
-| 12 | `searchAndReplace` | first match at byte zero; later match after a nonempty gap; no suffix; nonempty `value` | [x] |
-| 13 | `searchAndReplace` | first match at byte zero; later match after a nonempty gap; nonempty suffix; empty `value` | [x] |
-| 14 | `searchAndReplace` | first match at byte zero; later match after a nonempty gap; nonempty suffix; nonempty `value` | [x] |
-| 15 | `searchAndReplace` | first match after a nonempty prefix; no later match; no suffix; empty `value` | [x] |
-| 16 | `searchAndReplace` | first match after a nonempty prefix; no later match; no suffix; nonempty `value` | [x] |
-| 17 | `searchAndReplace` | first match after a nonempty prefix; no later match; nonempty suffix; empty `value` | [x] |
-| 18 | `searchAndReplace` | first match after a nonempty prefix; no later match; nonempty suffix; nonempty `value` | [x] |
-| 19 | `searchAndReplace` | first match after a nonempty prefix; adjacent later match; no suffix; empty `value` | [x] |
-| 20 | `searchAndReplace` | first match after a nonempty prefix; adjacent later match; no suffix; nonempty `value` | [x] |
-| 21 | `searchAndReplace` | first match after a nonempty prefix; adjacent later match; nonempty suffix; empty `value` | [x] |
-| 22 | `searchAndReplace` | first match after a nonempty prefix; adjacent later match; nonempty suffix; nonempty `value` | [x] |
-| 23 | `searchAndReplace` | first match after a nonempty prefix; later match after a nonempty gap; no suffix; empty `value` | [x] |
-| 24 | `searchAndReplace` | first match after a nonempty prefix; later match after a nonempty gap; no suffix; nonempty `value` | [x] |
-| 25 | `searchAndReplace` | first match after a nonempty prefix; later match after a nonempty gap; nonempty suffix; empty `value` | [x] |
-| 26 | `searchAndReplace` | first match after a nonempty prefix; later match after a nonempty gap; nonempty suffix; nonempty `value` | [x] |
-| 27 | `searchAndReplace` | empty `search`; the C implementation does not terminate | [x] |
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `searchAndReplace` | empty original; non-empty one-byte search; empty replacement; no match (`strdup` path) | [x] |
+| 2 | `searchAndReplace` | empty original; non-empty multi-byte search; non-empty replacement; no match (`strdup` path) | [x] |
+| 3 | `searchAndReplace` | non-empty original; one-byte search; empty replacement; no match (`strdup` path) | [x] |
+| 4 | `searchAndReplace` | non-empty original; multi-byte search; non-empty replacement; no match (`strdup` path) | [x] |
+| 5 | `searchAndReplace` | first/only one-byte match at start; no suffix; empty replacement | [x] |
+| 6 | `searchAndReplace` | first/only one-byte match at start; no suffix; non-empty replacement | [x] |
+| 7 | `searchAndReplace` | first/only multi-byte match at start; suffix present; empty replacement | [x] |
+| 8 | `searchAndReplace` | first/only multi-byte match at start; suffix present; non-empty replacement | [x] |
+| 9 | `searchAndReplace` | first/only one-byte match after a prefix; no suffix; empty replacement | [x] |
+| 10 | `searchAndReplace` | first/only one-byte match after a prefix; no suffix; non-empty replacement | [x] |
+| 11 | `searchAndReplace` | first/only multi-byte match after a prefix; suffix present; empty replacement | [x] |
+| 12 | `searchAndReplace` | first/only multi-byte match after a prefix; suffix present; non-empty replacement | [x] |
+| 13 | `searchAndReplace` | repeated adjacent one-byte matches at start; no suffix; empty replacement | [x] |
+| 14 | `searchAndReplace` | repeated adjacent one-byte matches at start; no suffix; non-empty replacement | [x] |
+| 15 | `searchAndReplace` | repeated adjacent multi-byte matches after a prefix; suffix present; empty replacement | [x] |
+| 16 | `searchAndReplace` | repeated adjacent multi-byte matches after a prefix; suffix present; non-empty replacement | [x] |
+| 17 | `searchAndReplace` | repeated gapped one-byte matches at start; no suffix; empty replacement | [x] |
+| 18 | `searchAndReplace` | repeated gapped one-byte matches at start; no suffix; non-empty replacement | [x] |
+| 19 | `searchAndReplace` | repeated gapped multi-byte matches at start; suffix present; empty replacement | [x] |
+| 20 | `searchAndReplace` | repeated gapped multi-byte matches at start; suffix present; non-empty replacement | [x] |
+| 21 | `searchAndReplace` | repeated gapped one-byte matches after a prefix; no suffix; empty replacement | [x] |
+| 22 | `searchAndReplace` | repeated gapped one-byte matches after a prefix; no suffix; non-empty replacement | [x] |
+| 23 | `searchAndReplace` | repeated gapped multi-byte matches after a prefix; suffix present; empty replacement | [x] |
+| 24 | `searchAndReplace` | repeated gapped multi-byte matches after a prefix; suffix present; non-empty replacement | [x] |

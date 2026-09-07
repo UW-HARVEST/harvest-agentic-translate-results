@@ -1,18 +1,25 @@
-# Configuration Surface
+# Configuration surface
 
-The public headers expose only `pow43(int)`. There are no runtime options,
-flags, compile-time features, element types, byte orders, pointers, or lengths.
-The rows below are derived from the two C range branches and the `sign`
-calculation that selects different interpolation shapes.
+The public API has one entry point, `pow43(int)`. There are no runtime options,
+modes, flags, element types, formats, byte-order choices, pointer/count shapes,
+compile-time feature branches, or convenience wrappers. The rows below are the
+cross-product of the C control-flow branch and the formula's two possible
+`sign` states, pruned where `sign` is not computed.
+
+The defined table-access domain is `-16..=8223`. Tests include all branch
+boundaries and many fixed-seed randomized values for each nontrivial row.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `pow43` | Direct table path: `-16 <= x < 129` | [x] |
-| 2 | `pow43` | Scaled path: `129 <= x < 1024`, `(x << 3) & 32 == 0` (`sign == 0`) | [x] |
-| 3 | `pow43` | Scaled path: `129 <= x < 1024`, `(x << 3) & 32 != 0` (`sign == 64`) | [x] |
-| 4 | `pow43` | Unscaled path: `1024 <= x <= 8223`, `x & 32 == 0` (`sign == 0`) | [x] |
-| 5 | `pow43` | Unscaled path: `1024 <= x <= 8223`, `x & 32 != 0` (`sign == 64`) | [x] |
+| 1 | `pow43` | direct table lookup: `-16 <= x < 129` (negative, zero, positive, and both boundaries) | [x] |
+| 2 | `pow43` | scaled interpolation: `129 <= x < 1024`, `x <<= 3`, `mult = 16`, computed `sign = 0` | [x] |
+| 3 | `pow43` | scaled interpolation: `129 <= x < 1024`, `x <<= 3`, `mult = 16`, computed `sign = 64` | [x] |
+| 4 | `pow43` | unscaled interpolation: `1024 <= x <= 8223`, `mult = 256`, computed `sign = 0` | [x] |
+| 5 | `pow43` | unscaled interpolation: `1024 <= x <= 8223`, `mult = 256`, computed `sign = 64` | [x] |
 
-The valid boundaries come mechanically from the 145-element table and its
-index expressions: `16 + x` on the direct path and
-`16 + ((x + sign) >> 6)` on interpolation paths.
+Cargo feature combinations:
+
+| combination | [ ] |
+|-------------|-----|
+| default (the manifest declares no features) | [x] |
+| `--no-default-features` (equivalent empty feature set) | [x] |

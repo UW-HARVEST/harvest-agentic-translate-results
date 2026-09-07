@@ -1,79 +1,81 @@
-# SYMBOLS.md — public symbol surface
+# SYMBOLS.md — exported-symbol parity
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Derived mechanically from `nm -D` on both shared objects.
 
-Build commands used:
+- C:    `c_src/build/libharvest-work-MX0GHr.so`
+- Rust: `translation/target/release/libread_side_info_lib.so`
 
-```
-cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-```
-
-## C `.so` — `c_src/build/libharvest-work-9L4ZMY.so`
+## C `.so` defined dynamic symbols
 
 ```
-$ nm -D --defined-only c_src/build/libharvest-work-9L4ZMY.so
-00000000000011d1 T read_side_info
+$ nm -D --defined-only c_src/build/libharvest-work-MX0GHr.so
+T read_side_info
 ```
 
-## Rust `.so` — `translation/target/release/libread_side_info_lib.so`
+The C translation unit (`c_src/src/lib.c`) contains exactly two functions:
+
+| C function | linkage | exported? |
+|------------|---------|-----------|
+| `read_side_info` | external | yes — `T read_side_info` |
+| `get_bits` | `static` (internal) | no — not in `nm -D`, by design |
+
+`c_src/include/lib.h` declares exactly one function (`read_side_info`) and two
+types (`bs_t`, `L3_gr_info_t`). There are no macros that generate additional
+symbols, no additional `.c` files in `CMakeLists.txt` (`add_library(... src/lib.c)`),
+and no data objects with external linkage (the three `g_scf_*` tables are
+function-local `static const`, so they have local linkage and no dynamic symbol).
+
+## Rust `.so` defined dynamic symbols
 
 ```
 $ nm -D --defined-only translation/target/release/libread_side_info_lib.so
-00000000000119f0 T read_side_info
+T read_side_info
 ```
 
 ## Parity table
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `read_side_info` | T | T | `#[unsafe(no_mangle)] pub unsafe extern "C" fn` in `src/lib.rs` |
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `read_side_info` | `T` | `T` | MATCH |
 
-**Symbol diff (C-exported symbols missing from Rust): EMPTY.**
+**Symbol diff (C-exported minus Rust-exported): EMPTY.**
 
-```
-$ diff <(nm -D --defined-only <c.so>  | awk '{print $NF}' | sort -u) \
-       <(nm -D --defined-only <rs.so> | awk '{print $NF}' | sort -u)
-(no output)
-```
+No symbol needed a new `#[no_mangle]` wrapper, and no C module was left
+untranslated — `src/lib.c` is the only source file and both of its functions
+(`read_side_info`, plus the `static` helper `get_bits`, translated as a private
+Rust `fn`) are present in `translation/src/lib.rs`.
 
-## Non-exported C internals (verified present in the Rust translation)
+## Undefined (imported) symbols
 
-`c_src/src/lib.c` contains exactly one `static` helper and three `static` tables
-local to `read_side_info`. These have internal linkage in C, so they are not in
-`nm -D`, but they must still be translated for behavioural parity:
-
-| C internal | linkage | Rust counterpart |
-|------------|---------|------------------|
-| `static uint32_t get_bits(bs_t*, int)` | internal | `unsafe fn get_bits` |
-| `static const uint8_t g_scf_long[8][23]` | internal (fn-local) | `static G_SCF_LONG: [[u8; 23]; 8]` |
-| `static const uint8_t g_scf_short[8][40]` | internal (fn-local) | `static G_SCF_SHORT: [[u8; 40]; 8]` |
-| `static const uint8_t g_scf_mixed[8][40]` | internal (fn-local) | `static G_SCF_MIXED: [[u8; 40]; 8]` |
-
-No C source file / module is untranslated: the library is one `.c` file
-(`src/lib.c`, 163 lines) and one header (`include/lib.h`, 16 lines), both fully
-covered by `translation/src/lib.rs`.
-
-## ABI / layout parity
-
-`translation/src/layout_check.rs` const-asserts the two FFI structs. The
-expected values were confirmed independently against gcc with an `offsetof`
-probe:
+The C `.so` imports only libc/toolchain symbols:
 
 ```
-bs_t          size=16 align=8   buf=0 pos=8 limit=12
-L3_gr_info_t  size=32 align=8
-  sfbtab 0  part_23_length 8  big_values 10  scalefac_compress 12
-  global_gain 14  block_type 15  mixed_block_flag 16  n_long_sfb 17
-  n_short_sfb 18  table_select 19  region_count 22  subblock_gain 25
-  preflag 28  scalefac_scale 29  count1_table 30  scfsi 31
+_ITM_deregisterTMCloneTable
+_ITM_registerTMCloneTable
+__cxa_finalize@GLIBC_2.2.5
+__gmon_start__
 ```
 
-Both structs are fully packed (no interior or trailing padding), so the whole
-32-byte granule record can be compared byte-for-byte across the FFI boundary.
+The Rust `.so` imports only libc / Rust-runtime symbols. **0 missing or
+undefined non-libc symbols in the Rust `.so`.**
+
+## Internal (non-exported) table data — verified separately
+
+Because the three `g_scf_*` tables are `static` inside the C function they are
+not comparable via `nm`. They are instead verified two ways:
+
+1. Textually, by parsing the array initialisers out of both sources and
+   diffing them (including C's implicit zero-fill of short row initialisers):
+   `g_scf_long` 8x23, `g_scf_short` 8x40, `g_scf_mixed` 8x40 — all IDENTICAL.
+2. Behaviourally, through the FFI boundary: every differential test dereferences
+   the `sfbtab` pointer each library returns and compares the pointed-to bytes
+   (23 bytes for the long table, 40 for short/mixed). See
+   `tests/differential.rs::cmp_gr`.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-configurations that exist are the default one and `--no-default-features`
-(identical code). Both are checked/tested by `check_features.sh`.
+`translation/Cargo.toml` has **no `[features]` section** and no optional
+dependencies, so there is exactly one build configuration
+(`--no-default-features` and the default build are identical). There is also no
+`[[bin]]` target and no `src/main.rs`, so the project builds **no binary
+driver** — the "compare C and Rust stdout" clause is not applicable.

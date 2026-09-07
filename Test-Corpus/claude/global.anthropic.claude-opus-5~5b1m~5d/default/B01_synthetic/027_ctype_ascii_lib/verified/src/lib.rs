@@ -30,8 +30,7 @@
 
 mod ctype;
 
-use core::ffi::c_char;
-use core::ffi::c_int;
+use core::ffi::{c_char, c_int};
 
 // `LC_ALL` as defined by glibc's <locale.h> on Linux.
 const LC_ALL: c_int = 6;
@@ -81,35 +80,35 @@ fn print_int(fmt: &[u8], value: c_int) {
 /// classification bits for negative indices are all zero.  That behaviour is
 /// reproduced exactly rather than "fixed".
 ///
-/// ABI note: the parameter is declared `c_int` rather than `c_char` on purpose.
-/// The compiled C function reads the whole argument register and *truncates* it
-/// to its low byte before sign-extending it:
+/// # ABI note
 ///
-/// ```text
-///     mov  %edi,%eax
-///     mov  %al,-0x4(%rbp)     ; keep only the low 8 bits
-///     ...
-///     movsbq -0x4(%rbp),%rax  ; sign-extend that byte
-/// ```
+/// The parameter is declared as a full `c_int` rather than `c_char` on purpose.
+/// On the platforms this library targets (e.g. x86-64 SysV, AArch64 AAPCS) a
+/// `char` argument is passed in the low 8 bits of an argument register and the
+/// remaining bits are *unspecified*; the C compiler therefore emits a callee
+/// that reads only the low byte and sign-extends it, silently ignoring whatever
+/// is in the upper bits.  Rust's `extern "C" fn(c_char)` instead carries LLVM's
+/// `signext` parameter attribute, which lets the optimiser *assume* the upper
+/// bits are a correct sign extension — so a caller with a mismatched prototype
+/// (or an out-of-range enum/int value crossing the FFI boundary, which C accepts
+/// without complaint) would make the Rust build read past the ctype tables while
+/// the C build quietly classifies the low byte.
 ///
-/// Declaring the Rust parameter as `c_char` (`i8`) instead makes LLVM apply the
-/// `signext` attribute, i.e. *assume* the caller already sign-extended the
-/// byte, which lets it index the class table with the raw register contents.
-/// A caller that pushes a value outside `-128 ..= 127` (which the C ABI permits
-/// at the register level, and which the C library silently truncates) would
-/// then read out of bounds instead of matching the C.  Taking a `c_int` and
-/// truncating explicitly reproduces the C's instruction sequence exactly, and
-/// is ABI-identical for every caller that does pass a genuine `char`.
+/// Taking a `c_int` and narrowing it here is ABI-identical for every conforming
+/// caller and reproduces the C callee's truncation exactly for every
+/// non-conforming one.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(c: c_int) {
+    // Exactly what the compiled C does with its `char` parameter: keep the low
+    // 8 bits, reinterpret them as a signed `char`.
+    let c: c_char = (c as u8) as c_char;
+
     unsafe {
         setlocale(LC_ALL, LOCALE_C.as_ptr());
     }
 
-    // `char c` keeps only the low byte of the incoming argument; the `is*()`
-    // macros then widen that (signed) byte back to `int`, keeping its sign.
-    let narrowed: c_char = (c as u8) as c_char;
-    let ci: c_int = narrowed as c_int;
+    // `c` is used as an `int` by the classification macros, keeping its sign.
+    let ci: c_int = c as c_int;
 
     print_int(FMT_ALNUM, ctype::isalnum(ci));
     print_int(FMT_ALPHA, ctype::isalpha(ci));

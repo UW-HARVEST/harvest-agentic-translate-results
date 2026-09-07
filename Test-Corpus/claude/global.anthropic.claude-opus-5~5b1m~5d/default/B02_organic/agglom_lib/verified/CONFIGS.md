@@ -1,151 +1,180 @@
-# CONFIGS.md — Phase A: configuration surface table
+# CONFIGS.md — Phase B configuration surface table
 
-Mechanically enumerated from the branches `c_src/src/lib.c` actually takes.
+Derived mechanically from `c_src/src/lib.c` + `c_src/include/lib.h`.
 
-## Axes the C code branches on
+## Axes the C code actually branches on
 
-### Runtime options / modes
-There is **no** init struct, no flag word, no `#ifdef`, and no global state.
-`grep -n '#if' c_src/src/lib.c` → no matches. The only *mode selector* in the
-public API is the `C2_TYPE` enum pair passed to `f2`:
+There are **no compile-time options** — `grep -c '#if' c_src/src/lib.c` returns
+`0`, i.e. the translation unit contains no conditional compilation at all — and
+**no runtime configuration struct**. The branching axes are therefore:
 
-| axis | values the C distinguishes | source |
-|------|----------------------------|--------|
-| `typeA` | `C2_TYPE_CIRCLE` (0), `C2_TYPE_AABB` (1) | `switch (typeA)` lib.c:84 |
-| `typeB` | `C2_TYPE_CIRCLE` (0), `C2_TYPE_AABB` (1) | `switch (typeB)` lib.c:86, 96 |
-| `f7` channel mode | `channels == 2` vs `channels != 2` | `(channels != 2)` / `(channels == 2)` lib.c:453-455 |
-| `f7` depth mode | `bitdepth == 32` vs `bitdepth != 32` | `(bitdepth != 32)` lib.c:455 |
-| `f11` achromatic | `s == 0` vs `s != 0` | lib.c:872 |
-| `f11` hue sector | 6 range arms + final `else` (7 states) | lib.c:881-909 |
-| `f12` achromatic | `s == 0` vs `s != 0` | lib.c:919 |
-| `f12` sector | `i` ∈ {0,1,2,3,4} + `default` (6 states) | `switch (i)` lib.c:931 |
-| `f13` degenerate | `delta == 0 \|\| max == 0` vs neither | lib.c:984 |
-| `f13` max channel | `r == max`, else `g == max`, else `b` (3 states) | lib.c:991-996 |
-| `f13` hue wrap | `h < 0` vs `h >= 0` | lib.c:998 |
-| `f3` sign/overflow | 8 nested arms + `r >= 0` fix-up | lib.c:110-139 |
+| axis | values the C distinguishes | evidence |
+|------|---------------------------|----------|
+| `A1` `C2_TYPE typeA` | `CIRCLE(0)`, `AABB(1)`, out-of-range | `switch (typeA)` in `f2` |
+| `A2` `C2_TYPE typeB` | `CIRCLE(0)`, `AABB(1)`, out-of-range | nested `switch (typeB)` ×2 |
+| `A3` shape overlap outcome | overlapping / disjoint / touching (`d2 < r2` strict) | `return d2 < r2` |
+| `A4` `f3` sign quadrant | `v1>=0`/`v1<0`/`v1==INT_MIN` × `v2>0`/`v2<0`/`v2==INT_MIN`/`v2==0` | 9-way `if`/`else` ladder |
+| `A5` `f3` remainder sign | `r >= 0` vs `r < 0` (floor correction) | trailing `if (r >= 0)` |
+| `A6` `cn_rnd_t` seed shape | `{0,0}`, `{max,max}`, one-word-zero, random | `cn_rnd_next` xorshift |
+| `A7` `f5` input width | ≤ 0xFFFF vs > 0xFFFF (masks are 16-bit) | `0xAAAA`/`0x5555`… masks |
+| `A8` `f7` `channels` | `== 2` vs `!= 2` (incl. `0`, `1`, `3`, huge) | `(channels != 2)` / `(channels == 2)` |
+| `A9` `f7` `bitdepth` | `== 32` vs `!= 32` (incl. `0`, `8`, `16`, `24`, `33`) | `(bitdepth != 32)` |
+| `A10` `f7` magnitude | small (no overflow) vs `u32`-overflowing | unsigned wrap |
+| `A11` `f9` triangle shape | non-degenerate / collinear / coincident points | `1.0f/(dot00*dot11 - dot01*dot01)` |
+| `A12` `f10` half-float class | zero, subnormal (`n==0`), normal, Inf/NaN (`n==31`/`63`), negative (`n>=32`) | `m__offset[n]` / `m__exponent[n]` tables |
+| `A13` `f11` `s` | `== 0` (early out) vs `!= 0` | `if (s == 0)` |
+| `A14` `f11` `h` sector | `[0,60)`, `[60,120)`, `<120 && <180` (**buggy branch, catches all `h<120` incl. negatives**), `[180,240)`, `[240,300)`, `[300,360)`, else | 7-way `if`/`else if` ladder |
+| `A15` `f12` `s` | `== 0` (early out) vs `!= 0` | `if (s == 0)` |
+| `A16` `f12` `i` | `0`,`1`,`2`,`3`,`4`, `default` | `switch (i)` |
+| `A17` `f13` early-out | `delta == 0` ‖ `max == 0` vs neither | `if (delta == 0 \|\| max == 0)` |
+| `A18` `f13` which channel is max | `r == max`, `g == max`, else (`b`) | 3-way `if`/`else if`/`else` |
+| `A19` `f13` hue wrap | `h < 0` after `h *= 60` vs not | `if (h < 0) h += 360` |
+| `A20` float class of any input | normal, `-0.0`, subnormal, `±inf`, `NaN` (incl. distinct payloads) | every float compare / arith |
+| `A21` entry-point level | low-level (`c2V`…`c2Dot`, `c2*to*`) / mid (`f2`…`f13`) / aggregate (`agglom`) | `nm -D` surface |
 
-### Input shapes / value classes
-* **`float` classes**: positive normal, negative normal, `+0.0`, `-0.0`,
-  subnormal, `FLT_MIN`, `FLT_MAX`, `+Inf`, `-Inf`, quiet `NaN` (varied payload
-  and sign), signaling-`NaN` bit patterns, and uniformly random 32-bit patterns.
-* **`int` classes**: `0`, `±1`, `INT_MIN`, `INT_MAX`, `INT_MIN+1`, `INT_MAX-1`,
-  random.
-* **`uint32_t` classes**: `0`, `1`, `0xFFFF`, `0x10000`, `UINT32_MAX`, random.
-* **`uint64_t` classes**: `0`, `1`, `UINT64_MAX`, random.
-* **`uint16_t`**: the **entire** 65536-value domain (`f10`).
-* **Geometric shapes** (`c2*`/`f9`): disjoint, touching, overlapping, contained,
-  identical, inverted AABB (`min > max`), zero-radius circle, negative-radius
-  circle, degenerate/collinear triangle, huge and tiny coordinates.
-* **Aliasing**: `dest == src` for `f11`/`f12`/`f13`.
+Feature combinations: `translation/Cargo.toml` has **no `[features]`** table, so
+the only configuration is the default. (Phase D re-runs the same suite under
+`--no-default-features`, which is identical here.)
 
-### Feature combinations
-`translation/Cargo.toml` declares **no** `[features]` section, so the only
-build configuration is the default one (verified by
-`cargo read-manifest | jq .features` → `{}`). Phases B–C are additionally run
-under `--no-default-features` and in both `dev` and `release` profiles, which
-is the complete cross-product of build configurations available.
+## Configuration rows
 
-## Configuration table
+Every row is exercised with **many randomized inputs** (fixed seed
+`0x243F6A8885A308D3`, SplitMix64) unless marked *exhaustive* or *fixed*.
 
-Each row is exercised with **many randomized inputs** (fixed seed
-`0x243F_6A88_85A3_08D3`, the digits of π — see `tests/common/mod.rs`) plus the
-hand-picked boundary values that select that row's branch.
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `c2V` | random finite `(x, y)`; also `±0.0`, subnormal, `±inf`, `NaN` payloads | [x] |
+| 2 | `c2Maxv` | random finite pairs — componentwise max | [x] |
+| 3 | `c2Maxv` | one/both components `NaN` (asymmetric ternary), `±inf`, `±0.0` | [x] |
+| 4 | `c2Minv` | random finite pairs — componentwise min | [x] |
+| 5 | `c2Minv` | one/both components `NaN`, `±inf`, `±0.0` | [x] |
+| 6 | `c2Clampv` | `lo <= hi` well-formed box, `a` inside / on edge / outside each side | [x] |
+| 7 | `c2Clampv` | inverted box `lo > hi`; and `NaN` in `a`/`lo`/`hi` | [x] |
+| 8 | `c2Sub` | random finite; `inf - inf` → `NaN`; `NaN` operands both sides | [x] |
+| 9 | `c2Dot` | random finite; `0 * inf` → `NaN`; `NaN` payload propagation; huge values → `inf` | [x] |
+| 10 | `c2CircletoCircle` | overlapping circles (random, positive radii) | [x] |
+| 11 | `c2CircletoCircle` | disjoint circles; exactly-touching (`d2 == r2`, strict `<` → 0) | [x] |
+| 12 | `c2CircletoCircle` | zero radius, negative radius (`r2 = (rA+rB)²` ≥ 0 quirk), `NaN`/`inf` radius | [x] |
+| 13 | `c2CircletoAABB` | circle centre inside the box (clamp is identity) | [x] |
+| 14 | `c2CircletoAABB` | centre outside — each of the 8 outside regions (edges + corners) | [x] |
+| 15 | `c2CircletoAABB` | degenerate box (`min == max`), inverted box (`min > max`), `NaN` coords | [x] |
+| 16 | `c2AABBtoAABB` | overlapping boxes (random) | [x] |
+| 17 | `c2AABBtoAABB` | disjoint on x only / y only / both; touching edges (strict `<`) | [x] |
+| 18 | `c2AABBtoAABB` | `NaN` coordinates → all `<` false → returns `1` | [x] |
+| 19 | `f2` | `typeA=CIRCLE, typeB=CIRCLE` — random circle pairs | [x] |
+| 20 | `f2` | `typeA=CIRCLE, typeB=AABB` — random circle + box (`c2CircletoAABB(A,B)`) | [x] |
+| 21 | `f2` | `typeA=AABB, typeB=CIRCLE` — **swapped-argument path** `c2CircletoAABB(*B, *A)` | [x] |
+| 22 | `f2` | `typeA=AABB, typeB=AABB` — random box pairs | [x] |
+| 23 | `f3` | `v1 >= 0, v2 > 0` (plain truncating divide, early `return`) | [x] |
+| 24 | `f3` | `v1 >= 0, v2 < 0` (`v2 != INT_MIN`) — negative quotient + floor correction | [x] |
+| 25 | `f3` | `v1 < 0` (`!= INT_MIN`), `v2 > 0` — floor correction path | [x] |
+| 26 | `f3` | `v1 < 0` (`!= INT_MIN`), `v2 < 0` (`!= INT_MIN`) | [x] |
+| 27 | `f3` | `v1 == INT_MIN`, `v2 > 0` — the `-(v1+v2)` overflow-avoidance branch | [x] |
+| 28 | `f3` | `v1 == INT_MIN`, `v2 < 0` (`!= INT_MIN`) — the `-(v1-v2)` branch | [x] |
+| 29 | `f3` | `v2 == INT_MIN` with `v1 >= 0`, `v1 < 0`, `v1 == INT_MIN` (3 sub-cases) | [x] |
+| 30 | `f3` | `v1 == ±1`, `v2 == ±1`, `v1 == INT_MAX`, `v2 == INT_MAX`, exact multiples (`r == 0`) | [x] |
+| 31 | `f4` | random 128-bit seeds — single call | [x] |
+| 32 | `f4` | **stateful sequence**: same seed, 256 successive calls; asserts the mutated `cn_rnd_t` state matches after every step | [x] |
+| 33 | `f4` | seed `{0,0}`, `{0,1}`, `{1,0}`, `{u64::MAX, u64::MAX}`, `{u64::MAX, 0}` (fixed) | [x] |
+| 34 | `f5` | random `u32` (both ≤ `0xFFFF` and `> 0xFFFF`, high bits discarded) | [x] |
+| 35 | `f5` | *exhaustive* over all `0..=0xFFFF`, plus `0xFFFF0000`-style high-bit-only values | [x] |
+| 36 | `f7` | `channels == 2`, `bitdepth == 32`, small `blocksize` | [x] |
+| 37 | `f7` | `channels == 2`, `bitdepth != 32` (8/16/20/24/33), small `blocksize` | [x] |
+| 38 | `f7` | `channels != 2` (0, 1, 3, 8), `bitdepth == 32` | [x] |
+| 39 | `f7` | `channels != 2`, `bitdepth != 32` | [x] |
+| 40 | `f7` | overflowing magnitudes: `blocksize`/`channels`/`bitdepth` random full `u32` (unsigned wrap + `/8`) | [x] |
+| 41 | `f7` | all zeros; `blocksize == 0`; `channels == 0`; `bitdepth == 0`; each at `u32::MAX` | [x] |
+| 42 | `f9` | non-degenerate triangle, `p` strictly inside | [x] |
+| 43 | `f9` | non-degenerate triangle, `p` outside / on an edge / at a vertex | [x] |
+| 44 | `f9` | collinear `p1,p2,p3` (denominator `0` → `invDenom = ±inf`) | [x] |
+| 45 | `f9` | all four points identical (`0 * inf` → `NaN`) | [x] |
+| 46 | `f9` | coordinates including `±inf`, `NaN` (distinct payloads), `±0.0`, subnormals, huge finite (overflow to `inf`) | [x] |
+| 47 | `f9` | fully random `u32`-bit-pattern coordinates (all float classes mixed) | [x] |
+| 48 | `f10` | *exhaustive* over **all 65536** `uint16_t` values — covers zero, subnormal (`n==0`), every normal exponent, Inf, NaN, and all negatives (`n>=32`); bitwise-compared | [x] |
+| 49 | `f11` | `s == 0` early-out, with `l` random / `±inf` / `NaN` / `±0.0` | [x] |
+| 50 | `f11` | `s == -0.0` (still `== 0` in float compare) → early-out | [x] |
+| 51 | `f11` | `h ∈ [0,60)` sector, random `s != 0`, random `l` | [x] |
+| 52 | `f11` | `h ∈ [60,120)` sector | [x] |
+| 53 | `f11` | `h ∈ [120,180)` — the range the C bug renders **unreachable** → final `else` | [x] |
+| 54 | `f11` | `h < 0` (negative hue) → hits the buggy third branch `h<120 && h<180` | [x] |
+| 55 | `f11` | `h ∈ [180,240)` sector | [x] |
+| 56 | `f11` | `h ∈ [240,300)` sector | [x] |
+| 57 | `f11` | `h ∈ [300,360)` sector | [x] |
+| 58 | `f11` | `h >= 360` → final `else` | [x] |
+| 59 | `f11` | `h = ±inf`, `h = NaN` (both payload signs) | [x] |
+| 60 | `f11` | `s`/`l` extreme: `s = inf`, `l = inf`, `s`/`l` `NaN`, subnormals, huge (so `fmodf` and `fabsf` see extremes) | [x] |
+| 61 | `f11` | fully random `u32`-bit-pattern `src[0..3]` (all classes) | [x] |
+| 62 | `f11` | `dest == src` (**aliasing**: same buffer passed for both) | [x] |
+| 63 | `f11` | `dest` overlapping `src` at offset ±1 element | [x] |
+| 64 | `f12` | `s == 0` early-out (and `s == -0.0`), random `v` incl. `NaN`/`inf` | [x] |
+| 65 | `f12` | `i == 0` (`h ∈ [0,60)`) | [x] |
+| 66 | `f12` | `i == 1` (`h ∈ [60,120)`) | [x] |
+| 67 | `f12` | `i == 2` (`h ∈ [120,180)`) | [x] |
+| 68 | `f12` | `i == 3` (`h ∈ [180,240)`) | [x] |
+| 69 | `f12` | `i == 4` (`h ∈ [240,300)`) | [x] |
+| 70 | `f12` | `i == 5` → `default:` (`h ∈ [300,360)`) | [x] |
+| 71 | `f12` | `i` negative (`h < 0`) → `default:`; and `h` exactly `-0.0` | [x] |
+| 72 | `f12` | `h/60` beyond `int` range / `±inf` / `NaN` → `cvttss2si` = `INT_MIN` → `default:` | [x] |
+| 73 | `f12` | `s`/`v` extremes: `inf`, `NaN`, subnormal, `s > 1`, `s < 0`, `v < 0` | [x] |
+| 74 | `f12` | fully random `u32`-bit-pattern `src[0..3]` | [x] |
+| 75 | `f12` | `dest == src` aliasing, and ±1-element overlap | [x] |
+| 76 | `f13` | `delta == 0` (`r == g == b`, nonzero) → `{0,0,v}` | [x] |
+| 77 | `f13` | `max == 0` (black / all ≤ 0) → early out | [x] |
+| 78 | `f13` | `r == max` with `g >= b` (hue `[0,60)`) | [x] |
+| 79 | `f13` | `r == max` with `g < b` → `h < 0` → `+= 360` wrap | [x] |
+| 80 | `f13` | `g == max` (hue around 120) | [x] |
+| 81 | `f13` | `b == max` (else branch, hue around 240) | [x] |
+| 82 | `f13` | ties: `r == g > b`, `g == b > r`, `r == b > g` (tie-breaking order of the `if` ladder) | [x] |
+| 83 | `f13` | components `NaN` (each position, and multiple) — min/max ternary asymmetry | [x] |
+| 84 | `f13` | components `±inf` (`inf - inf` → `NaN` delta), `±0.0`, subnormals, negatives | [x] |
+| 85 | `f13` | fully random `u32`-bit-pattern `src[0..3]` | [x] |
+| 86 | `f13` | `dest == src` aliasing, and ±1-element overlap | [x] |
+| 87 | `f11`→`f12`→`f13` | **composed pipeline**: HSL→RGB, RGB→HSV, HSV→RGB round trips chained on the same buffers | [x] |
+| 88 | `agglom` | all 33 arguments fully random bit patterns (all float classes, full-range ints) — bitwise `f64` compare | [x] |
+| 89 | `agglom` | all-zero arguments | [x] |
+| 90 | `agglom` | "sane" arguments: finite coords, valid hues `[0,360)`, `s`/`l`/`v` in `[0,1]`, `channels ∈ {1,2,3}`, `bitdepth ∈ {8,16,24,32}` | [x] |
+| 91 | `agglom` | arguments driving each `isnan` guard: `f9` degenerate, `f10_1` = half-NaN, `f11`/`f12`/`f13` NaN-producing | [x] |
+| 92 | `agglom` | arguments producing `±inf` contributions (not skipped by the `isnan` guards) | [x] |
+| 93 | `agglom` | `f3_1`/`f3_2` at `INT_MIN`/`INT_MAX`/`0`; `f5_1`/`f7_*` at `u32::MAX`; `f4_*` at `u64::MAX`/`0` | [x] |
+| 94 | `agglom` | *sane-hue sweep*: `f11_2`/`f12_2`/`f13_*` swept across all 7 `f11` sectors × 6 `f12` `i` values | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|--------------------------------------------|---|
-| C1 | `c2V` | random 32-bit float bit patterns (all classes, incl. NaN payloads, ±0, subnormal) — verifies the 8-byte struct return ABI | [x] |
-| C2 | `c2Maxv` | both components: `a > b`, `a < b`, `a == b`, `±0` vs `∓0`, NaN in `a`, NaN in `b`, NaN in both (`>` is false → picks `b.x`) | [x] |
-| C3 | `c2Minv` | mirror of C2 with `<` (NaN → picks `b`) | [x] |
-| C4 | `c2Clampv` | `a` below `lo`, inside, above `hi`; **inverted** range (`lo > hi`); NaN in `a`/`lo`/`hi`; ±0 boundaries | [x] |
-| C5 | `c2Sub` | random pairs incl. `Inf - Inf` → NaN, `x - x`, `±0 - ±0`, overflow to `±Inf`, NaN operands (checks `subss` NaN-operand choice) | [x] |
-| C6 | `c2Dot` | random pairs; `0 * Inf` → NaN; `Inf*x + -Inf*y` → NaN; catastrophic cancellation; NaN in either component (checks `mulss`/`addss` operand order) | [x] |
-| C7 | `c2CircletoCircle` | overlapping / touching (`d2 == r2`, strict `<` → 0) / disjoint / identical circles; `r == 0`; **negative** radii; `r = Inf`; NaN centre or radius | [x] |
-| C8 | `c2CircletoAABB` | circle centre inside AABB, outside on each of the 8 sides/corners, exactly on the edge; zero-area AABB; **inverted** AABB (`min > max`); `r == 0`; negative `r`; NaN fields | [x] |
-| C9 | `c2AABBtoAABB` | overlapping, edge-touching (`<` is strict), disjoint on each axis/side, one contained in the other, zero-area, inverted, NaN fields (all four `<` false → returns 1) | [x] |
-| C10 | `f2` low-level dispatch | `typeA=CIRCLE, typeB=CIRCLE` → `c2CircletoCircle(*A, *B)`; randomized circles | [x] |
-| C11 | `f2` low-level dispatch | `typeA=CIRCLE, typeB=AABB` → `c2CircletoAABB(*A, *B)`; randomized circle + AABB | [x] |
-| C12 | `f2` low-level dispatch | `typeA=AABB, typeB=CIRCLE` → **argument-swapping** arm `c2CircletoAABB(*B, *A)`; randomized AABB + circle | [x] |
-| C13 | `f2` low-level dispatch | `typeA=AABB, typeB=AABB` → `c2AABBtoAABB(*A, *B)`; randomized AABBs | [x] |
-| C14 | `f2` | same buffer passed as both `A` and `B` (aliasing), each of the 4 valid type pairs | [x] |
-| C15 | `f3` | `v1 >= 0, v2 > 0` — the early `return v1/v2` fast path; random + `INT_MAX/1`, `0/x` | [x] |
-| C16 | `f3` | `v1 >= 0, v2 < 0, v2 != INT_MIN` — `q = -(v1/-v2)`, `r = v1 % -v2`, incl. `r != 0` fix-up | [x] |
-| C17 | `f3` | `v1 < 0, v1 != INT_MIN, v2 > 0` — `q = -((-v1)/v2)`, `r = -((-v1)%v2)`, fix-up path | [x] |
-| C18 | `f3` | `v1 < 0, v1 != INT_MIN, v2 < 0, v2 != INT_MIN` — `q = (-v1)/(-v2)`, `r = -((-v1)%(-v2))` | [x] |
-| C19 | `f3` | fully random `(i32, i32)` pairs across all four quadrants, ~40k samples | [x] |
-| C20 | `f3` | small exhaustive grid `v1, v2 ∈ [-40, 40]` (all 6561 pairs) — floored-division identity across every sign combination | [x] |
-| C21 | `f4` | single call, random `state[2]`; asserts return value **and** the mutated `state` array | [x] |
-| C22 | `f4` | **iterated** 256-call chain from one seed (the real consumer pattern), comparing the whole double sequence and the final state | [x] |
-| C23 | `f4` | `state` shapes: `{0,0}`, `{1,0}`, `{0,1}`, `{u64::MAX, u64::MAX}`, single-bit states (all 128 positions), values that make `x + y` wrap | [x] |
-| C24 | `f5` | `a` in `[0, 0xFFFF]` — **exhaustive** over the low 16 bits (65536 values) | [x] |
-| C25 | `f5` | `a > 0xFFFF`: random full-width `u32`, `0xFFFF_FFFF`, `0x1_0000`, single-bit values at bits 16..31 | [x] |
-| C26 | `f7` | `channels != 2` (0, 1, 3, 4, 8) × `bitdepth ∈ {8,16,24,32}` × `blocksize ∈ {0,1,16,4096,65535}` | [x] |
-| C27 | `f7` | `channels == 2` × `bitdepth != 32` (8,16,24) × same blocksizes — activates both `channels == 2` terms **and** the `+1` depth correction | [x] |
-| C28 | `f7` | `channels == 2` × `bitdepth == 32` — the `bitdepth != 32` term is 0 | [x] |
-| C29 | `f7` | overflow shapes: `blocksize`/`bitdepth`/`channels` at `UINT32_MAX`, `0x8000_0000`, and random full-width triples (~20k) | [x] |
-| C30 | `f9` | non-degenerate triangle, `p` inside / on a vertex / on an edge / outside; randomized normal coordinates | [x] |
-| C31 | `f9` | degenerate: `p1 == p2`, `p1 == p3`, `p2 == p3`, all three equal, collinear points → `invDenom = 1/0` | [x] |
-| C32 | `f9` | extreme magnitudes: coordinates at `FLT_MAX`, `FLT_MIN`, subnormals, `±Inf`, mixed — dot products overflow/underflow | [x] |
-| C33 | `f9` | fully random 32-bit bit patterns in all 8 coordinates (~20k) — stresses the `mulss`/`addss`/`subss`/`divss` NaN-operand ordering of all five dot products | [x] |
-| C34 | `f10` | **exhaustive** over all 65536 `uint16_t` values — covers every one of the 64 `m__offset`/`m__exponent` buckets, plus half-float `±0`, subnormals, `±Inf`, and NaN encodings | [x] |
-| C35 | `f11` | `s == 0` early return with random `h`, `l` (incl. NaN `h`, NaN `l`, `-0.0` `s`) | [x] |
-| C36 | `f11` | sector `0 <= h < 60`, random `s`, `l` in `[0,1]` and outside `[0,1]` | [x] |
-| C37 | `f11` | sector `60 <= h < 120` | [x] |
-| C38 | `f11` | third arm `h < 120 && h < 180` — reached for `120 <= h < 180` **and** for all `h < 0` (the C's quirk) | [x] |
-| C39 | `f11` | sector `180 <= h < 240` | [x] |
-| C40 | `f11` | sector `240 <= h < 300` | [x] |
-| C41 | `f11` | sector `300 <= h < 360` | [x] |
-| C42 | `f11` | final `else` (`h >= 360` or `h` NaN, incl. `+Inf`) | [x] |
-| C43 | `f11` | fully random 3-float bit patterns (~20k) — hits `fmodf`, `fabsf` and every arm at random | [x] |
-| C44 | `f12` | `s == 0` early return, random `h`, `v` | [x] |
-| C45 | `f12` | `i == 0` (`0 <= h < 60`), random `s`, `v` | [x] |
-| C46 | `f12` | `i == 1` (`60 <= h < 120`) | [x] |
-| C47 | `f12` | `i == 2` (`120 <= h < 180`) | [x] |
-| C48 | `f12` | `i == 3` (`180 <= h < 240`) | [x] |
-| C49 | `f12` | `i == 4` (`240 <= h < 300`) | [x] |
-| C50 | `f12` | `default` arm: `i == 5` (`300 <= h < 360`), `i > 5`, `i < 0`, and the `floorf` boundary `h` exactly `60*k` | [x] |
-| C51 | `f12` | fully random 3-float bit patterns (~20k) — exercises `floorf` + `(int)` conversion at random | [x] |
-| C52 | `f13` | `r == max` branch, `g >= b` (no hue wrap) and `g < b` (`h += 360` wrap) | [x] |
-| C53 | `f13` | `g == max` branch (`h = 2 + (b-r)/delta`) | [x] |
-| C54 | `f13` | `b == max` branch (`h = 4 + (r-g)/delta`) | [x] |
-| C55 | `f13` | ties: `r == g > b`, `g == b > r`, `r == b > g`, `r == g == b` (delta 0) — branch order matters | [x] |
-| C56 | `f13` | negative channels (so `max` can be `0` or negative), subnormal `delta`, `FLT_MAX` spread | [x] |
-| C57 | `f13` | fully random 3-float bit patterns (~20k) | [x] |
-| C58 | `f11`/`f12`/`f13` | `dest == src` aliasing, and `dest`/`src` at odd alignment inside a larger buffer | [x] |
-| C59 | `agglom` (top-level) | all 33 parameters fully random (independent bit patterns) — ~20k iterations, byte-compared as `f64` bits | [x] |
-| C60 | `agglom` | all-zero parameters; all-`0xFF` bit patterns; per-parameter one-hot boundary sweeps (each of the 33 params set to a boundary value while the rest are a fixed benign baseline) | [x] |
-| C61 | `agglom` | parameters steered so each sub-function takes a *specific* branch simultaneously (`f3_2 = 0`, `channels = 2`, degenerate `f9`, `s = 0` for `f11`/`f12`, `delta = 0` for `f13`) — checks the composed pipeline, not just the wrappers | [x] |
-| C62 | `agglom` | inputs chosen to make individual sub-results NaN so the 13 `isnan()` filters fire in every combination | [x] |
-| C63 | all 20 entry points | run under `cargo test --release` (optimised Rust `.so`, `panic = "abort"`) **and** `cargo test` (dev profile) | [x] |
-| C64 | all 20 entry points | run under `cargo test --no-default-features` (no `[features]` exist, so this is the same code path — recorded for completeness of the feature cross-product) | [x] |
+**Binary executable:** the project builds no driver binary — `c_src/CMakeLists.txt`
+declares only `add_library(... SHARED src/lib.c)` (no `add_executable`), and
+`translation/Cargo.toml` declares only `[lib] crate-type = ["cdylib"]` (no
+`[[bin]]`, no `src/main.rs`). The stdout-comparison item is therefore N/A.
 
-## Results
+## Verification result
 
-Every row above passes. Row → test mapping (all tests load BOTH `.so`s via
-`libloading` and compare bit-for-bit; the Rust crate is never linked directly):
-
-| rows | file | tests |
-|------|------|-------|
-| C1 – C14 | `tests/phase_b_geom.rs` | 13 |
-| C15 – C29 | `tests/phase_b_int.rs` | 15 |
-| C30 – C34 | `tests/phase_b_float.rs` | 5 |
-| C35 – C58 | `tests/phase_b_color.rs` | 24 |
-| C59 – C62 | `tests/phase_b_agglom.rs` | 4 |
-| C63 – C64 | `run_tests.sh` (profile × feature loop) | 4 combinations |
-
-Mechanical cross-check that no row is missing a test:
+All 94 rows pass, in **both** the debug and the release cdylib:
 
 ```
-$ comm -23 <(grep -oE '^\| C[0-9]+' CONFIGS.md | tr -d '| ' | sort -V) \
-           <(grep -hoE 'fn c([0-9]+)(_c([0-9]+))?_' tests/phase_b_*.rs \
-             | grep -oE 'c[0-9]+' | tr -d c | sort -nu | sed 's/^/C/' | sort -V)
-C63
-C64        <- the two build-configuration rows, covered by run_tests.sh
+$ ./run_diff_tests.sh
+### feature combination: default
+  phase_b_lowlevel   15 passed   (rows 1–41)
+  phase_b_float      17 passed   (rows 42–87)
+  phase_b_agglom      7 passed   (rows 88–94)
+  phase_b_stress      9 passed   (high-volume randomized top-up)
+  phase_c_errors     44 passed
+  phase_d_symbols     5 passed
+--- re-running against the RELEASE cdylib ---
+  ... identical results
 ```
 
-Beyond the per-row tests, `tests/fuzz_deep.rs` blankets all 20 entry points with
-uniformly random bit patterns. Soaked at **40,000,000 iterations per function**
-(`FUZZ_ITERS=40000000 cargo test --release --test fuzz_deep`) with zero
-divergences.
+Every row is driven with many randomized inputs from a fixed SplitMix64 seed
+(`0x243F6A8885A308D3`), plus deterministic boundary values. Two axes are covered
+**exhaustively** rather than by sampling:
 
-Full run: **108 tests × 4 build configurations = 432 passing test executions**,
-`run_tests.sh` exit status 0.
+- `f10`: all 65536 `uint16_t` inputs (rows 48, 24) — bit-compared.
+- `f5`: all 65536 low-16-bit values (row 35); since the C masks discard bits
+  above bit 15, this is exhaustive over the function's entire effective domain.
+
+`tests/phase_b_stress.rs` adds ~180 million further differential comparisons
+(30 M iterations per function in release) to reduce the chance that a rare
+value-dependent path went unsampled.
+
+### Comparison strength
+
+All float results are compared with `to_bits()`, i.e. **bit-for-bit**, so
+signed zeros and NaN payloads are part of the contract — not just numeric
+equality. `f4` additionally asserts the mutated `cn_rnd_t` state matches after
+every one of 512 successive calls.

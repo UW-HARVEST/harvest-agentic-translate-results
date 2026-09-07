@@ -1,4 +1,3 @@
-use std::arch::asm;
 use std::ffi::{c_char, c_int};
 use std::ptr;
 
@@ -7,17 +6,6 @@ unsafe extern "C" {
 }
 
 const DECIMAL_LINE_FORMAT: &[u8] = b"%d\n\0";
-const MAX_C_STACK_ELEMENTS: c_int = 2_097_000;
-
-unsafe fn force_segfault() {
-    unsafe {
-        asm!(
-            "mov byte ptr [{address}], 0",
-            address = in(reg) 0_usize,
-            options(nostack, preserves_flags)
-        );
-    }
-}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fma_array(
@@ -38,14 +26,7 @@ pub unsafe extern "C" fn fma_array(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(data: *const c_int, len: c_int) {
-    if len < 0 || len > MAX_C_STACK_ELEMENTS {
-        unsafe {
-            force_segfault();
-        }
-        return;
-    }
-
-    if len == 0 {
+    if len <= 0 {
         return;
     }
 

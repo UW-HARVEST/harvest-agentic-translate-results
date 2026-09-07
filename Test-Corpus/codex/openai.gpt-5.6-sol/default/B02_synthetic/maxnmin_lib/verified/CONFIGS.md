@@ -1,46 +1,45 @@
-# Configuration Surface
+# Configuration-surface table
 
-Derived from the public dynamic entry points and every data-dependent `if`,
-loop, modulo selector, and conversion boundary in `../c_src/src/lib.c`. The
-library has no Cargo features and the C source has no conditional compilation,
-runtime mode, option, flag, public enum, byte-order branch, or element-type
-branch.
+This table is derived from the public dynamic entry points plus every branch,
+limit, and special input shape in `../c_src/src/lib.c`. There are no Cargo
+features, compile-time option branches, or binary targets. `Node.active` is
+included because `find_node_by_id` returns a writable `Node *` and the C code
+branches on that field.
 
 | # | entry point(s) | configuration (options set + input shape) | verified |
 |---|----------------|--------------------------------------------|----------|
-| C01 | `add_node` | empty storage; empty C string; finite value | [x] |
-| C02 | `add_node` | available storage; name length 1 through 48 | [x] |
-| C03 | `add_node` | available storage; name length exactly 49 | [x] |
-| C04 | `add_node` | available storage; name length greater than 49, truncated and terminated at byte 49 | [x] |
-| C05 | `add_node` | available storage; arbitrary IDs/parent IDs and NaN or infinity value | [x] |
-| C06 | `find_node_by_id` | empty storage | [x] |
-| C07 | `find_node_by_id` | one active matching node | [x] |
-| C08 | `find_node_by_id` | duplicate IDs; first active match wins | [x] |
-| C09 | `find_node_by_id` | matching inactive node is skipped in favor of a later active match | [x] |
-| C10 | `get_children_count` | empty storage or no matching active parent IDs | [x] |
-| C11 | `get_children_count` | exactly one active matching child | [x] |
-| C12 | `get_children_count` | many active matching children, with inactive matches excluded | [x] |
-| C13 | `calculate_subtree_sum` | active leaf node | [x] |
-| C14 | `calculate_subtree_sum` | one-level tree with one active child | [x] |
-| C15 | `calculate_subtree_sum` | multi-level tree with multiple active children | [x] |
-| C16 | `calculate_subtree_sum` | inactive descendants excluded | [x] |
-| C17 | `calculate_subtree_sum` | active tree containing NaN or infinity | [x] |
-| C18 | `process_string` | empty C string | [x] |
-| C19 | `process_string` | one-byte C string | [x] |
-| C20 | `process_string` | many bytes ending at the first embedded NUL | [x] |
-| C21 | `process_string` | bytes with the high bit set, using the platform C `char` signedness | [x] |
-| C22 | `safe_double_to_int` | finite in-range positive/negative integral values, including `INT_MIN` and `INT_MAX` | [x] |
-| C23 | `safe_double_to_int` | finite in-range positive/negative fractional values truncate toward zero | [x] |
-| C24 | `maxnmin` | `param1` selects each node ID 1 through 6; leaf and non-leaf subtree/name branches | [x] |
-| C25 | `maxnmin` | `param2` selects each node ID 1 through 6 for multiplied values | [x] |
-| C26 | `maxnmin` | `param4 % 3` selects parent ID 1, 2, or 3 | [x] |
-| C27 | `maxnmin` | negative `param4` selects parent ID 0 or -1 | [x] |
-| C28 | `maxnmin` | `param3 == -1`, making the floating-point denominator zero | [x] |
-| C29 | `maxnmin` | finite nonzero denominator and fractional final calculation | [x] |
-| C30 | `maxnmin` | extreme integer parameters exercise multiplication/conversion clamps and wrapping machine arithmetic | [x] |
-| C31 | `maxnmin` | repeated calls reset global storage to the fixed six-node tree | [x] |
-
-The error-side selector combinations and capacity boundary are enumerated in
-`ERRORS.md` and are not duplicated here.
-
-All rows passed under the default and no-default-features configurations.
+| 1 | `add_node` | non-full storage; empty name; arbitrary IDs and finite value | [x] |
+| 2 | `add_node` | non-full storage; short NUL-terminated name (1–48 bytes) | [x] |
+| 3 | `add_node` | non-full storage; name exactly 49 bytes before NUL | [x] |
+| 4 | `add_node` | non-full storage; name longer than 49 bytes (stored name is truncated and terminated) | [x] |
+| 5 | `add_node`, `find_node_by_id` | duplicate active IDs; lookup returns the first stored match | [x] |
+| 6 | `add_node` | insertion that raises count from 99 to the `MAX_NODES` limit of 100 | [x] |
+| 7 | `find_node_by_id` | empty storage / absent ID | [x] |
+| 8 | `find_node_by_id` | present active ID | [x] |
+| 9 | `find_node_by_id` | present ID whose returned node has been changed to `active == 0` | [x] |
+| 10 | `get_children_count` | no matching active children (empty, absent parent, or only inactive matches) | [x] |
+| 11 | `get_children_count` | exactly one active child | [x] |
+| 12 | `get_children_count` | multiple active children, with inactive non-counted siblings | [x] |
+| 13 | `calculate_subtree_sum` | missing or inactive requested root | [x] |
+| 14 | `calculate_subtree_sum` | active leaf node | [x] |
+| 15 | `calculate_subtree_sum` | active root with multiple direct active children | [x] |
+| 16 | `calculate_subtree_sum` | multi-level tree; recursion includes active descendants and excludes inactive branches | [x] |
+| 17 | `process_string` | empty string (first byte NUL) | [x] |
+| 18 | `process_string` | one-byte string | [x] |
+| 19 | `process_string` | multi-byte string | [x] |
+| 20 | `process_string` | bytes with the high bit set, exercising platform signed-`char` accumulation | [x] |
+| 21 | `safe_double_to_int` | finite in-range positive/negative integers and zero | [x] |
+| 22 | `safe_double_to_int` | finite in-range fractions, truncated toward zero | [x] |
+| 23 | `safe_double_to_int` | exact `INT_MIN`/`INT_MAX` boundaries and adjacent representable in-range values | [x] |
+| 24 | `maxnmin` | `param1 % 6 + 1` selects root node 1 (name + full subtree branches) | [x] |
+| 25 | `maxnmin` | first selection is internal node 2 or 3 | [x] |
+| 26 | `maxnmin` | first selection is leaf node 4, 5, or 6 | [x] |
+| 27 | `maxnmin` | negative `param1` remainder selects no node, skipping first-node contribution | [x] |
+| 28 | `maxnmin` | second selection found; `param3` is zero, positive, or negative and product remains in range | [x] |
+| 29 | `maxnmin` | negative `param2` remainder selects no second node | [x] |
+| 30 | `maxnmin` | second-node multiplication exceeds positive or negative integer range and clamps | [x] |
+| 31 | `maxnmin` | `param4 % 3 + 1` selects parent 1/2 (two children), parent 3 (one child), or a missing parent (zero children) | [x] |
+| 32 | `maxnmin` | `param3 == -1`; final division produces NaN for zero numerator or signed infinity for nonzero numerator | [x] |
+| 33 | `maxnmin` | ordinary nonzero denominator; final calculation is positive, negative, fractional, or zero | [x] |
+| 34 | `maxnmin` | final calculation exceeds positive or negative integer range and clamps | [x] |
+| 35 | `maxnmin` | integer boundary operands exercise the C build's signed add / `+ 1` behavior before conversion to `double` | [x] |

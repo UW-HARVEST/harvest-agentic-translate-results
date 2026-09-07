@@ -1,21 +1,18 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Source library:
-`../c_src/build/libharvest-work-uUFhe9.so`
+Generated from:
 
-Inventory command:
-
-```sh
-nm -D --defined-only --format=posix \
-  ../c_src/build/libharvest-work-uUFhe9.so
+```text
+nm -D --defined-only ../c_src/build/libharvest-work-rjuFwk.so
+nm -D --defined-only target/release/libtfm_lib.so
 ```
 
-| C symbol | Type | Rust export | Status |
-|----------|------|-------------|--------|
-| `tfm` | `T` (global function) | `tfm` | Present |
+| C symbol | C type | Rust symbol | Rust type | Status |
+|----------|--------|-------------|-----------|--------|
+| `tfm` | `T` | `tfm` | `T` | [x] exact export match |
 
-The unfiltered C dynamic table also contains the imported libm symbol
-`sqrtf@GLIBC_2.2.5` and weak ELF runtime symbols. These are dependencies, not
-public symbols defined by the C library.
+The C library also has one undefined runtime dependency, `sqrtf@GLIBC_2.2.5`;
+it is not a public symbol defined by the library and therefore is not an export
+that the Rust library must reproduce.
 
-Missing C exports in Rust: **0**
+Missing C exports in Rust: **0**.

@@ -1,139 +1,115 @@
-# CONFIGS.md — configuration-surface table (Phase B gate)
+# CONFIGS.md — configuration-surface table for VALID inputs (Phase A, gated in Phase B)
 
-## How this table was derived
+Derived mechanically from `c_src/src/driver.c` + `c_src/include/driver.h`.
 
-### Public entry points (the FULL set, not just wrappers)
+## Axis derivation (from the source, not from assumptions)
 
-`c_src/include/driver.h` declares exactly one function, and `nm -D` on the C
-`.so` exports exactly one symbol:
+**Runtime options / modes / flags:** none.
 
-| entry point | signature | kind |
+```
+$ grep -nE '#if|#ifdef|#ifndef|#else|#elif' c_src/src/driver.c            # -> no match
+$ grep -nE '#if|#ifdef|#ifndef' c_src/include/driver.h
+24:#ifndef DRIVER_H_        (include guard only)
+$ grep -nE 'switch|static|extern|global' c_src/src/driver.c               # -> no match
+```
+
+There are no setters, no context/handle struct, no global state, no
+byte-order/format/width selectors, no `switch`, and no compile-time
+configuration. `translation/Cargo.toml` has no `[features]` table, so there is
+exactly one build configuration.
+
+**Public entry points (full set, including the lowest level):** exactly one —
+`void driver(int x, int y)`. It *is* the lowest-level entry point; there is no
+convenience wrapper layer to skip past.
+
+**Input shape axes** — the code branches only on the two `int` arguments, and it
+compares them against the constants `0`, `1`, `3`, `4`. The axes are therefore
+the value classes those comparisons carve out:
+
+| axis | source line(s) | classes |
 |---|---|---|
-| `driver` | `void driver(int x, int y)` | the **only** entry point — it is simultaneously the lowest-level and the highest-level API. There are no convenience/one-shot wrappers layered over a lower-level API here, so "test the low-level entry point too" is satisfied trivially: `driver` *is* the low-level entry point. |
+| entry guard | `while (x > 0 \|\| y > 0)` | accept / reject |
+| `x` vs `0` (guard, `label1` `if (x > 0)`) | 30, 38 | `x < 0` (incl. `INT_MIN`), `x == 0`, `x > 0` |
+| `x` vs `1` (forward-goto predicate) | 33 | `x == 1`, `x != 1` |
+| `x` vs `3` (back-edge `goto label1`) | 49 | `x < 3` (back-edge taken), `x >= 3` (fall through to guard re-test) |
+| `y` vs `0` (guard, `label2` `if (y == 0) continue`) | 30, 44 | `y < 0`, `y == 0`, `y > 0` |
+| `y` vs `4` (forward-goto predicate) | 33 | `y == 4`, `y != 4` |
+| combined special case | 33 | `x == 1 && y == 4` → skip the `label1` block once |
+| in-loop transition | 38 + 49 | `x` crossing the `3` boundary *during* execution (start `x > 3` with `y` large enough to decrement `x` below `3`) |
+| magnitude | — | empty (`0`), one (`1`), few (`2..4`), many (`>4`), large (`~4096`), extreme (`INT_MIN`) |
 
-### Runtime options / modes / flags
+Rows below are the cross-product of the `x` classes and `y` classes, pruned to
+the combinations the code actually distinguishes. The non-terminating region
+`x > 0 && y < 0` is excluded here and recorded in `ERRORS.md` rows 12–13.
 
-Mechanically searched for: `#if`/`#ifdef`/`#define` (only the `DRIVER_H_`
-include guard), file-scope/`static` state, setter functions, `getenv`, and
-struct-of-options parameters. **None exist.** `driver` is a pure function of its
-two `int` arguments plus `stdout`. There are therefore **no option axes** — the
-entire configuration surface is the input *shape*, i.e. the region of the
-`(x, y)` plane the argument pair lands in.
-
-### Input-shape axes the C actually branches on
-
-Every branch site in `c_src/src/driver.c`:
-
-| site | line | predicate |
-|---|---|---|
-| S1 | 30 | `while (x > 0 \|\| y > 0)` — loop guard |
-| S2 | 33 | `if (x == 1 && y == 4)` — forward `goto label2`, skipping `label1` |
-| S3 | 38 | `if (x > 0)` — `label1` block (`printf("x\n"); x--;`) |
-| S4 | 44 | `if (y == 0) continue;` |
-| S5 | 49 | `if (x < 3) goto label1;` — backward edge |
-
-Collapsing those five predicates into equivalence classes gives the two axes:
-
-* **`x` classes** (6): `x < 0`, `x == 0`, `x == 1`, `x == 2`, `x == 3`, `x > 3`
-  (`0` splits S1/S3; `1` splits S2; `3` splits S5, with `2` and `3` as the
-  one-step-either-side boundary values)
-* **`y` classes** (5): `y < 0`, `y == 0`, `0 < y < 4`, `y == 4`, `y > 4`
-  (`0` splits S1/S4; `4` splits S2, with `1..3` and `5..` as the neighbours)
-
-The rows below are the **full 6 × 5 cross-product** of those classes — the
-combinations the code actually distinguishes — plus extreme-magnitude and
-whole-domain sweep rows. The 4 combinations where `x > 0 && y < 0` are the
-non-terminating class; they are owned by `ERRORS.md` row 12 and are marked here
-as such rather than silently dropped.
-
-**Termination law** (proved from the source, used to pick sweep inputs): `y`
-never becomes negative if it starts non-negative (`y--` is guarded by `y != 0`),
-`x` never becomes negative if it starts non-negative (`x--` is guarded by
-`x > 0`), and every full body pass either decrements `x`, decrements `y`, or
-exits. Hence `driver` terminates **iff `y >= 0 || x <= 0`**, and diverges
-exactly on `x > 0 && y < 0`.
-
-Every row is exercised with **many randomized inputs** from its region
-(`SplitMix64`, fixed seed `0x5D1F_C0DE_1234_5678`), and asserted byte-identical
-between the C `.so` and the Rust `.so`.
+Every row is exercised with **many randomized inputs drawn from that row's
+class** (seeded, deterministic LCG — `SEED = 0x5DEECE66D`) by
+`translation/tests/differential.rs::phase_b_configuration_surface`, comparing
+the full `stdout` byte stream of the C `.so` against the Rust `.so`.
 
 ## Table
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `driver` | no options exist · `x < 0`, `y < 0` — S1 false, body never runs | [x] |
-| 2 | `driver` | `x < 0`, `y == 0` — S1 false | [x] |
-| 3 | `driver` | `x < 0`, `0 < y < 4` — S1 true via `y`, S3 always false, S5 always true (pure `label1`↔`label2` replay) | [x] |
-| 4 | `driver` | `x < 0`, `y == 4` — S2 false (needs `x == 1`), so no skip | [x] |
-| 5 | `driver` | `x < 0`, `y > 4` | [x] |
-| 6 | `driver` | `x == 0`, `y < 0` — S1 false | [x] |
-| 7 | `driver` | `x == 0`, `y == 0` — S1 false, zero-work boundary | [x] |
-| 8 | `driver` | `x == 0`, `0 < y < 4` | [x] |
-| 9 | `driver` | `x == 0`, `y == 4` — `y == 4` present but `x != 1`, S2 false | [x] |
-| 10 | `driver` | `x == 0`, `y > 4` | [x] |
-| 11 | `driver` | `x == 1`, `y < 0` — **non-terminating**, owned by `ERRORS.md` row 12 | [x] |
-| 12 | `driver` | `x == 1`, `y == 0` — S4 `continue` on the first pass | [x] |
-| 13 | `driver` | `x == 1`, `0 < y < 4` — S2 false, S5 true (`1 < 3`) | [x] |
-| 14 | `driver` | `x == 1`, `y == 4` — **the S2 special case**: forward `goto label2` skips `label1` once, then the back-edge re-enters `label1` normally | [x] |
-| 15 | `driver` | `x == 1`, `y > 4` — S2 false because `y != 4` (one step past the special case) | [x] |
-| 16 | `driver` | `x == 2`, `y < 0` — **non-terminating**, `ERRORS.md` row 12 | [x] |
-| 17 | `driver` | `x == 2`, `y == 0` | [x] |
-| 18 | `driver` | `x == 2`, `0 < y < 4` — S5 true at the boundary (`2 < 3`) | [x] |
-| 19 | `driver` | `x == 2`, `y == 4` — `y == 4` with `x` one step past 1 | [x] |
-| 20 | `driver` | `x == 2`, `y > 4` | [x] |
-| 21 | `driver` | `x == 3`, `y < 0` — **non-terminating**, `ERRORS.md` row 12 | [x] |
-| 22 | `driver` | `x == 3`, `y == 0` | [x] |
-| 23 | `driver` | `x == 3`, `0 < y < 4` — S5 **false** at the boundary (`3 < 3`), so the back-edge is declined and the `while` guard is re-tested | [x] |
-| 24 | `driver` | `x == 3`, `y == 4` | [x] |
-| 25 | `driver` | `x == 3`, `y > 4` | [x] |
-| 26 | `driver` | `x > 3`, `y < 0` — **non-terminating**, `ERRORS.md` row 12 | [x] |
-| 27 | `driver` | `x > 3`, `y == 0` — pure `x`-drain, one `"loop\nx\n"` per outer pass | [x] |
-| 28 | `driver` | `x > 3`, `0 < y < 4` — S5 false while `x >= 3`, then flips true as `x` drains below 3 (mode change mid-run) | [x] |
-| 29 | `driver` | `x > 3`, `y == 4` | [x] |
-| 30 | `driver` | `x > 3`, `y > 4` — both counters large, S5 flips mid-run | [x] |
-| 31 | `driver` | extreme low boundary: `x == INT_MIN` with `y` ∈ {`INT_MIN`, `-1`, `0`, `1`, `4`, `5`, `37`} | [x] |
-| 32 | `driver` | extreme mixed: `x` ∈ {`-1`, `0`, `1`, `2`, `3`, `4`} × `y` ∈ {`INT_MIN`, `INT_MIN+1`} (guard-false or non-terminating classification per the termination law) | [x] |
-| 33 | `driver` | large magnitudes: `x`, `y` randomized in `[10_000, 60_000]` (long output streams, many S5 mode flips). `INT_MAX` itself is excluded only for wall-clock reasons — it would emit ~2^31 lines; it is in the same equivalence class as this row. | [x] |
-| 34 | `driver` | **exhaustive** small grid: every `(x, y)` in `[-6, 12] × [-6, 12]` (361 pairs), the interaction cross-product at full density | [x] |
-| 35 | `driver` | randomized whole-domain sweep: `(x, y)` uniform over `[-64, 512]²`, 4000 pairs, terminating ones compared byte-for-byte | [x] |
-| 36 | `driver` | repeated-call / residual-state check: the same loaded `.so` handle called many times in sequence with different shapes, asserting no cross-call state leaks (C has no `static` state; the Rust must not introduce any) | [x] |
+| 1 | `driver` | guard rejects: `x == 0, y == 0` — the empty case, no output | [x] |
+| 2 | `driver` | guard rejects: `x < 0` random in `[INT_MIN, -1]`, `y == 0` | [x] |
+| 3 | `driver` | guard rejects: `x == 0`, `y < 0` random in `[INT_MIN, -1]` | [x] |
+| 4 | `driver` | guard rejects: both negative, random `x, y` in `[INT_MIN, -1]` | [x] |
+| 5 | `driver` | `x == 0`, `y == 1` — one, `label1` block never taken | [x] |
+| 6 | `driver` | `x == 0`, `y` random in `[2, 4]` — includes `y == 4` with `x != 1` (forward-goto near-miss) | [x] |
+| 7 | `driver` | `x == 0`, `y` random in `[5, 4096]` — many/large, `x < 3` back-edge taken every pass | [x] |
+| 8 | `driver` | `x < 0` random in `[-4096, -1]`, `y` random in `[1, 4096]` | [x] |
+| 9 | `driver` | `x == INT_MIN`, `y` random in `[1, 512]` — extreme `x`, `x--` unreachable so no underflow | [x] |
+| 10 | `driver` | `x == 1`, `y == 0` — guard passes on `x` alone; `continue` branch every iteration | [x] |
+| 11 | `driver` | `x == 1`, `y == 1` | [x] |
+| 12 | `driver` | `x == 1`, `y == 3` — one below the forward-goto constant | [x] |
+| 13 | `driver` | `x == 1`, `y == 4` — **the `x == 1 && y == 4` forward `goto label2`**, the single special case | [x] |
+| 14 | `driver` | `x == 1`, `y == 5` — one above the forward-goto constant | [x] |
+| 15 | `driver` | `x == 1`, `y` random in `[6, 4096]` | [x] |
+| 16 | `driver` | `x == 2`, `y == 0` — `x < 3` true, `x != 1` | [x] |
+| 17 | `driver` | `x == 2`, `y == 4` — forward-goto predicate fails on `x` only | [x] |
+| 18 | `driver` | `x == 2`, `y` random in `[1, 4096]` | [x] |
+| 19 | `driver` | `x == 3`, `y == 0` — `x < 3` false on entry (back-edge not taken on first pass) | [x] |
+| 20 | `driver` | `x == 3`, `y == 4` | [x] |
+| 21 | `driver` | `x == 3`, `y` random in `[1, 4096]` — `x` crosses the `3` boundary mid-run | [x] |
+| 22 | `driver` | `x == 4`, `y == 4` — both one past their forward-goto constants | [x] |
+| 23 | `driver` | `x` random in `[4, 64]`, `y == 0` — `x >= 3` path with `y` dead | [x] |
+| 24 | `driver` | `x` random in `[4, 64]`, `y` random in `[1, 64]` — small-many cross product, `x` crossing `3` | [x] |
+| 25 | `driver` | `x` random in `[500, 4096]`, `y` random in `[500, 4096]` — large magnitudes, long back-edge chains | [x] |
+| 26 | `driver` | `x` random in `[4, 4096]`, `y` random in `[1, 3]` — `y` exhausts long before `x` | [x] |
+| 27 | `driver` | `x` random in `[1, 3]`, `y` random in `[4, 4096]` — `x` exhausts long before `y` | [x] |
+| 28 | `driver` | unbiased broad sweep: `x, y` random in `[-8, 40]` (mixes reject/accept, all constants, both goto edges) | [x] |
+| 29 | `driver` | `x == 4096`, `y == 4096` — fixed large boundary pair | [x] |
+| 30 | `driver` | `x == 0`, `y == 4096` and `x == 4096`, `y == 0` — single-axis large | [x] |
 
-## Harness
+## Binary executable
 
-`tests/phase_b_configs.rs` (36 tests, one per row) plus `tests/support/mod.rs`.
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/driver.c)`
+— no `add_executable`. There is no `[[bin]]` target in
+`translation/Cargo.toml` and no `src/main.rs`. Verified:
 
-Both implementations are loaded with `libloading` and called **only** through
-their exported `driver` symbol — the Rust side is never called as a Rust
-function, so the `#[no_mangle] extern "C"` wrapper is under test too. `dlopen`
-keys on the resolved path and `libloading` uses `RTLD_LOCAL`, so the two
-identically-named `libdriver.so` files do not collide.
-
-Because `driver` returns `void`, the harness captures fd 1 around each call and
-compares the resulting bytes. Two buffering layers must be drained before the
-redirect: libc's `stdout` FILE (used by both `.so`s) *and* `std::io::Stdout`'s
-own userspace buffer, which libtest fills with progress text. The suite also
-**requires a single test thread**, since libtest writes status lines to fd 1
-from the test-driving thread; `tests/support/mod.rs` asserts this rather than
-leaving it as a flake.
-
-## How to run
-
-```sh
-./run_tests.sh        # build C + Rust, check symbols, run the suite vs debug AND release .so
-./check_symbols.sh    # Phase A/D symbol parity only
-./check_features.sh   # Phase D: every feature combination
-./mutation_check.sh   # proves the suite actually detects divergence
+```
+$ grep -n add_executable c_src/CMakeLists.txt   # -> no match
+$ ls translation/src                            # -> lib.rs
 ```
 
-## Result
+Therefore the "compare C and Rust binary stdout" obligation is **not
+applicable**; stdout is nevertheless compared byte-for-byte for every row
+above, which is the same evidence a driver binary would provide.
 
-All 36 rows pass, against **both** the debug and the release Rust `.so` (release
-is a distinct artifact: it is built with `panic = "abort"`).
+## Phase B result (evidence for the checkmarks above)
 
-`./mutation_check.sh` breaks the Rust translation nine different ways — dropping
-the `x == 1 && y == 4` forward `goto`, letting that skip persist, moving the
-`x < 3` back-edge boundary, making the back-edge re-test the `while` guard,
-turning the `y == 0` `continue` into a `break`, changing `||` to `&&` in the loop
-guard, loosening the `label1` guard, returning early on the divergent class, and
-changing a `printf` string — and the suite detects **all nine**. Green results
-here therefore mean something.
+`./run_all_configs.sh` — all rows executed against both `.so`s, `stdout`
+compared byte-for-byte. Identical output in both build profiles:
+
+```
+phase B: 4364 differential invocations matched        (all 30 rows, seeded randomized)
+phase B grid: 1865 pairs matched                     (exhaustive [-4,40]^2, terminating pairs)
+phase B oracle: 359 cases matched C, Rust and oracle
+```
+
+The suite also contains a negative control result: three mutants of
+`src/lib.rs` (drop the `x == 1 && y == 4` forward goto; change the back-edge
+predicate `x < 3` to `x < 2`; clear the skip flag one iteration late) were each
+built as a `.so` and rejected by the suite at rows 13, 20 and 13 respectively —
+so the passing runs above are not vacuous.

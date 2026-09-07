@@ -1,80 +1,66 @@
-# SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — exported-symbol parity
 
 Derived mechanically from:
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-JOS7Vx.so
+nm -D --defined-only c_src/build/libharvest-work-PaNz4Z.so
 nm -D --defined-only translation/target/release/libgotomach_lib.so
 ```
 
-## C source inventory (`c_src/src/lib.c`, 199 lines — the ONLY C source file)
+The C library is built from a single translation unit (`c_src/src/lib.c`,
+listed as the only source in `c_src/CMakeLists.txt`). The public header
+`c_src/include/lib.h` declares only `gotomach`, but `process_value`,
+`double_value` and `triple_value` are non-`static` definitions and therefore
+land in the dynamic symbol table as well. The macros `MAKE_FUNC_NAME` and
+`CREATE_LABEL` are defined but never expanded, so there are no
+macro-generated symbol names to account for.
 
-`c_src/CMakeLists.txt` builds exactly one translation unit: `src/lib.c`.
-There is no other C module, so there is no "whole file never translated" gap.
+## Defined (exported) symbols
 
-Definitions in the C source and their linkage:
+| # | C symbol | C type | present in Rust `.so` | Rust item |
+|---|----------|--------|-----------------------|-----------|
+| 1 | `process_value` | `T` (global text) | yes | `#[no_mangle] pub unsafe extern "C" fn process_value` |
+| 2 | `double_value`  | `T` | yes | `#[no_mangle] pub unsafe extern "C" fn double_value` |
+| 3 | `triple_value`  | `T` | yes | `#[no_mangle] pub unsafe extern "C" fn triple_value` |
+| 4 | `gotomach`      | `T` | yes | `#[no_mangle] pub unsafe extern "C" fn gotomach` |
 
-| C definition | linkage | in dynamic symtab? |
-|---|---|---|
-| `is_valid_state` | `static` | no |
-| `check_char_flag` | `static` | no |
-| `init_processor` | `static` | no |
-| `cleanup_processor` | `static` | no |
-| `process_value` | external | **yes** |
-| `double_value` | external | **yes** |
-| `triple_value` | external | **yes** |
-| `gotomach` | external | **yes** |
+**Symbol diff (C defined − Rust defined): EMPTY.** 0 missing symbols.
 
-Macro check: `MAKE_FUNC_NAME`, `LOG_MSG` and `CREATE_LABEL` are defined in
-`lib.c` but `MAKE_FUNC_NAME`/`CREATE_LABEL` are **never expanded**, so no
-symbol name is macro-generated. `LOG_MSG` only expands to a `printf` call.
-Therefore the linker names equal the source-level names.
+No whole-module gaps: `lib.c` is the only C source file, and every non-static
+definition in it has a real Rust implementation (no stubs, no
+`unimplemented!()`).
 
-`operation_fn` is a typedef, `ProcessorState` a struct — no symbols.
+## Static (non-exported) C functions — correctly absent from both `.so`s
 
-## Symbol table diff
+These are `static` in `lib.c`, so they must NOT appear in `nm -D` output for
+either library. Verified absent from both.
 
-C `.so` defined symbols (T = text, global):
-
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `process_value` | T | T | OK |
-| 2 | `double_value`  | T | T | OK |
-| 3 | `triple_value`  | T | T | OK |
-| 4 | `gotomach`      | T | T | OK |
-
-**Missing from Rust: 0.**
-
-The Rust `.so` additionally exports Rust-internal `_ZN…`/`__rust_*` symbols
-from `std`; extra symbols are not a parity failure (only *missing* ones are).
+| C symbol | Rust counterpart (private) |
+|----------|----------------------------|
+| `is_valid_state`    | `unsafe fn is_valid_state` |
+| `check_char_flag`   | `fn check_char_flag` |
+| `init_processor`    | `unsafe fn init_processor` |
+| `cleanup_processor` | `unsafe fn cleanup_processor` |
 
 ## Undefined (imported) symbols
 
-C `.so` imports, excluding weak toolchain markers
-(`_ITM_*`, `__cxa_finalize`, `__gmon_start__`):
+| C undefined symbol | Rust `.so` |
+|--------------------|------------|
+| `malloc@GLIBC_2.2.5` | imported (`extern "C" fn malloc`) |
+| `free@GLIBC_2.2.5`   | imported (`extern "C" fn free`) |
+| `puts@GLIBC_2.2.5`   | imported (`extern "C" fn puts`) |
 
-```
-free@GLIBC_2.2.5
-malloc@GLIBC_2.2.5
-puts@GLIBC_2.2.5
-```
+Note: the C source writes its log lines with `printf("[" #level "] " msg "\n")`,
+which has no conversion specifiers, so the compiler lowers each call to `puts`.
+`nm -D -u` on the C `.so` shows an undefined reference to `puts` and none to
+`printf`; the Rust translation calls `puts` for the same reason, which keeps the
+emitted stdout bytes identical.
 
-Note `puts`, not `printf`: `LOG_MSG(level, msg)` expands to
-`printf("[" #level "] " msg "\n")`, a format string with no conversion
-specifiers, which GCC lowers to `puts`. The Rust translation calls `puts`
-directly for byte-identical stdout.
+The Rust `.so` additionally imports the usual libc/unwind support symbols that
+any `cdylib` needs (`memcpy`, `__tls_get_addr`, `_Unwind_*`, `pthread_*`, …).
+These are libc/runtime symbols, not untranslated C code.
 
-Rust `.so` imports the same three plus only libc/`libgcc_s` unwinder symbols
-pulled in by `std` (`malloc`, `calloc`, `realloc`, `free`, `posix_memalign`,
-`memcpy`, `memmove`, `memset`, `bcmp`, `strlen`, `abort`, `__errno_location`,
-`open64`/`read`/`write`/`close`/`lseek64`/`stat64`/`fstat64`/`statx`,
-`mmap64`/`munmap`, `getcwd`/`getenv`/`readlink`/`realpath`, `syscall`,
-`dl_iterate_phdr`, `pthread_key_*`, `pthread_setspecific`, `__tls_get_addr`,
-`gettid`, `writev`, `_Unwind_*`).
-
-**Non-libc / non-toolchain undefined symbols in the Rust `.so`: 0.**
-
-## Verdict
+## Result
 
 - [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
-- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.
+- [x] 0 undefined non-libc symbols in the Rust `.so`.

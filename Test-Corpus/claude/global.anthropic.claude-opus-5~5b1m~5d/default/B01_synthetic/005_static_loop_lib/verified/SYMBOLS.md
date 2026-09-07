@@ -1,68 +1,65 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
 
 Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Build commands used:
-
-```sh
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libStaticLoop.so
-
-cd translation && cargo build --release
-# -> translation/target/release/libStaticLoop.so
-```
+- C  `.so`: `c_src/build/libStaticLoop.so`   (cmake, default build type)
+- Rust `.so`: `translation/target/release/libStaticLoop.so` (`cargo build --release`)
 
 ## C source inventory
 
-The entire library is two translation units' worth of surface:
+The whole C library is exactly two translation-unit-visible functions, both
+declared in `include/staticloop.h`:
 
-| C file | public functions defined |
-|---|---|
-| `c_src/src/staticloop.c` | `static_sum`, `driver` |
-| `c_src/include/staticloop.h` | declares `int static_sum(int update);` and `void driver(int update);` |
+| C file | function | declared in header |
+|--------|----------|--------------------|
+| `src/staticloop.c` | `int static_sum(int update)` | yes |
+| `src/staticloop.c` | `void driver(int stride)`    | yes |
 
-There are no other `.c` files, no macro-generated symbol families, no global
-variables with external linkage, and no additional headers. `sum` inside
-`static_sum` is a function-scope `static int` and therefore has **no** external
-linkage — it must NOT appear in `nm -D` on either side (confirmed below).
+There are no macro-generated symbols, no exported globals (`sum` is a
+function-scope `static`, therefore **not** an exported symbol — verified: it
+does not appear in `nm -D` of the C `.so`), and no additional C source files.
+So there is no "whole module was never translated" gap in this project.
 
-## `nm -D --defined-only` — C `.so`
+## Symbol table (C `.so` → Rust `.so`)
 
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|-----------|--------|
+| 1 | `static_sum` | `T` (0x1119) | `T` | **present** |
+| 2 | `driver`     | `T` (0x1139) | `T` | **present** |
+
+Symbol diff (`comm -23` of the two sorted defined-symbol name lists): **empty**.
+
+Reproduce with:
+
+```sh
+diff <(nm -D --defined-only c_src/build/libStaticLoop.so             | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libStaticLoop.so | awk '{print $3}' | sort)
 ```
-0000000000001139 T driver
-0000000000001119 T static_sum
-```
 
-## `nm -D --defined-only` — Rust `.so`
+This is asserted automatically by the test `symbols::rust_so_exports_every_c_symbol`
+in `tests/differential.rs`, which shells out to `nm` on both objects.
 
-```
-0000000000011730 T driver
-0000000000011850 T static_sum
-```
+## Undefined symbols in the Rust `.so`
 
-## Parity table
+`nm -D -u` on the Rust `.so` lists only libc / libgcc-unwind / ld.so imports:
 
-| # | symbol | type | in C `.so` | in Rust `.so` | status |
-|---|--------|------|-----------|--------------|--------|
-| 1 | `static_sum` | `T` (global text) | yes | yes | MATCH |
-| 2 | `driver`     | `T` (global text) | yes | yes | MATCH |
+`_ITM_*`, `_Unwind_*`, `__cxa_finalize`, `__cxa_thread_atexit_impl`,
+`__errno_location`, `__gmon_start__`, `__tls_get_addr`, `abort`, `bcmp`,
+`calloc`, `close`, `dl_iterate_phdr`, `free`, `fstat64`, `getcwd`, `getenv`,
+`gettid`, `lseek64`, `malloc`, `memcpy`, `memmove`, `memset`, `mmap64`,
+`munmap`, `open64`, `posix_memalign`, `printf`, `pthread_key_create`,
+`pthread_key_delete`, `pthread_setspecific`, `read`, `readlink`, `realloc`,
+`realpath`, `stat64`, `statx`, `strlen`, `syscall`, `write`, `writev`.
 
-**Symbols exported by C but missing from Rust: 0.**
-**Symbols exported by Rust but not by C: 0.**
+**0 missing / undefined non-libc symbols.** ✅
 
-No `#[no_mangle]` wrapper had to be added and no C module was left
-untranslated — `staticloop.c` is the only implementation file and both of its
-functions are present in `translation/src/lib.rs`.
+Note: `printf@GLIBC_2.2.5` is imported on purpose — the Rust `driver` calls the
+very same glibc `printf` the C `driver` calls, so the emitted bytes and the
+stdio buffering discipline are identical.
 
-## Undefined (imported) symbols
+## Feature combinations
 
-The Rust `.so` must not depend on any non-libc symbol. `nm -D --undefined-only`
-on the Rust `.so` resolves entirely against `libc`/`libgcc` (`printf`,
-`memcpy`, unwinder/`__cxa` personality stubs, `__libc_start_main` family). The
-Rust translation deliberately calls C's `printf` via `extern "C"` rather than
-Rust's `std::io::stdout`, so `driver`'s bytes land in the *same* stdio stream,
-with the same buffering discipline, as the C original's.
-
-See `check_symbols.sh` in the crate root for the automated diff that must
-produce empty output.
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+build configuration is the default one (`--no-default-features` is equivalent).
+Symbol parity and all tests are therefore verified under the single existing
+configuration; see `check_all_features.sh`.

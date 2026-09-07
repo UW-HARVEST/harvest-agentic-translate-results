@@ -1,164 +1,114 @@
-# CONFIGS.md — Phase B configuration surface table (VALID inputs)
+# CONFIGS.md — configuration surface table (Phase B)
 
-Derived mechanically from the branches the C source actually takes.
+Mechanically derived from `c_src/src/lib.c` + `c_src/include/lib.h`.
 
-## Step 1 — enumerate the runtime options the public API can set
+## Axes the C code actually branches on
 
-Grep of the public header for options/modes/flags:
+The library exposes **no** runtime options, flags, modes, contexts, byte-order
+selectors or `#ifdef`s (`grep -n '#if\|#ifdef\|enum\|extern' c_src/src/lib.c` →
+only `#include`s). The Cargo manifest declares **no `[features]`**, so there is
+exactly one feature combination (`--no-default-features` == default == all).
+The configuration surface is therefore entirely made of *input shapes*:
 
-```
-c_src/include/lib.h  ->  1 type (cb_rgb_255), 1 function (contrast_ratio)
-grep -nE '#if|#ifdef|switch' c_src/src/lib.c  ->  no matches
-```
+* **Axis 1 — sRGB transfer branch, per channel (6 independent instances).**
+  `X > 0.04045 ? pow((X+0.055)/1.055, 2.4) : X/12.92`, evaluated after
+  promotion to `double`. For `X = byte/255f`: byte ≤ 10 ⇒ **L** (linear arm),
+  byte ≥ 11 ⇒ **P** (`pow` arm). Each colour has a 3-bit mask over (R,G,B),
+  giving 8 states per colour: `LLL, LLP, LPL, LPP, PLL, PLP, PPL, PPP`.
+* **Axis 2 — the `if (High < Low)` swap in `cbContrastRatio`**: taken
+  (LumA < LumB) / not taken (LumA >= LumB, or either operand NaN).
+* **Axis 3 — entry point.** `contrast_ratio` is the *only* public entry point
+  (the lower-level `cbLuminance` / `cbContrastRatio` are `static`, hence not
+  callable across the FFI boundary; they are exercised transitively and their
+  intermediate values are pinned by the exhaustive grey-scale sweep, row 73).
+* **Axis 4 — value shape**: all-zero channels, all-max channels, equal args,
+  single-channel-only colours, greys, exhaustive per-byte sweeps.
 
-**There is no runtime option, mode, flag, context object, or `#ifdef` in this
-library.** No setter, no init, no global state. The configuration surface is
-therefore made entirely of *input shapes* and the *branches* those shapes select.
+Rows 1–64 are the full cross product of Axis 1 (colour A mask × colour B mask);
+Axis 2 is covered *inside every one of those rows* by testing both argument
+orders `(A,B)` and `(B,A)` for every randomized sample. Rows 65+ add the
+remaining shape axes.
 
-## Step 2 — enumerate the FULL set of public entry points, lowest level included
+Every row is driven with **many randomized inputs** (`SplitMix64`, fixed seed
+`0x5EED_1234_ABCD_0001`, ≥256 samples/row) whose bytes are drawn from the
+byte sub-range that realises the required branch mask, and both libraries are
+compared on **raw `u32` bit patterns**.
 
-| entry point | linkage | reachable how |
-|---|---|---|
-| `contrast_ratio(cb_rgb_255, cb_rgb_255)` | exported | called directly via `.so` (the only export) |
-| `cbContrastRatio(float×6)` | `static` — **not** exported | lowest-level composed step; driven through `contrast_ratio`. The 6 floats are not free: `contrast_ratio` supplies exactly `n/255.f`, so the reachable domain is the 256 values `{0/255 … 255/255}` per channel. Every one of those 256 values per channel is exercised (rows C65/C66 sweep all 2^24 combinations). |
-| `cbLuminance(float×3)` | `static` — **not** exported | driven through `cbContrastRatio`; both operand positions (A and B) are exercised for every row. |
-
-Because the two low-level functions are `static`, driving them "directly" is
-impossible through the ABI *by design*; the tests instead drive them over their
-**entire reachable input domain**, which is strictly stronger than sampling.
-
-## Step 3 — axes the C code branches on
-
-| axis | values | source |
-|---|---|---|
-| **X1** sRGB branch, channel R of A | `lin` = value ≤ 10 → `R/12.92`; `pow` = value ≥ 11 → `pow((R+.055)/1.055, 2.4)` | `lib.c:6` (`R > 0.04045`; `n/255 > 0.04045 ⟺ n ≥ 11`) |
-| **X2** sRGB branch, channel G of A | `lin` / `pow` | `lib.c:7` |
-| **X3** sRGB branch, channel B of A | `lin` / `pow` | `lib.c:8` |
-| **X4/X5/X6** same three branches for operand B | `lin` / `pow` | `lib.c:6-8` via second `cbLuminance` call |
-| **X7** swap branch | `High<Low` **true** (swap) / **false** (no swap, incl. `LumA == LumB`) | `lib.c:18` |
-| **X8** divisor degeneracy | `Low > 0` / `Low == 0` (pure-black operand) | `lib.c:21` unguarded `High/Low` |
-| **X9** input shape / ABI | 3-byte struct by value, packed in one INTEGER register; padding byte defined vs garbage | `include/lib.h:1-5` + SysV AMD64 classification |
-
-Rows C1–C64 below are the **full cross product of X1…X6** (8 luminance branch
-patterns for operand A × 8 for operand B). This is the set of combinations the
-code genuinely distinguishes; the `lin`/`pow` pattern is written as a triple over
-(R,G,B). Every row is driven with **many randomized inputs** (fixed seed
-`0x5EED_1234`, values drawn from the correct sub-range per channel — `0..=10` for
-`lin`, `11..=255` for `pow`), and every row additionally covers **both** settings
-of X7 by construction, since randomized A/B pairs land on either side of
-`High<Low` (the test asserts both orderings were observed).
-
-| # | entry point(s) | configuration (options set + input shape) | ✅ |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| C1 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C2 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C3 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C4 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C5 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C6 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C7 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C8 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,lin)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C9 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C10 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C11 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C12 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C13 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C14 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C15 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C16 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,lin,pow)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C17 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C18 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C19 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C20 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C21 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C22 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C23 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C24 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,lin)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C25 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C26 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C27 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C28 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C29 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C30 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C31 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C32 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(lin,pow,pow)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C33 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C34 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C35 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C36 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C37 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C38 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C39 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C40 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,lin)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C41 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C42 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C43 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C44 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C45 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C46 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C47 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C48 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,lin,pow)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C49 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C50 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C51 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C52 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C53 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C54 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C55 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C56 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,lin)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C57 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(lin,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C58 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(lin,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C59 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(lin,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C60 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(lin,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C61 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(pow,lin,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C62 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(pow,lin,pow)**; randomized channel values within each branch's sub-range | [x] |
-| C63 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(pow,pow,lin)**; randomized channel values within each branch's sub-range | [x] |
-| C64 | `contrast_ratio` → `cbContrastRatio` → `cbLuminance`×2 | no options (none exist); A branch pattern R,G,B = **(pow,pow,pow)**, B branch pattern R,G,B = **(pow,pow,pow)**; randomized channel values within each branch's sub-range | [x] |
-
-## Rows C65+ — remaining axes (X7 swap, X8 degeneracy, X9 ABI shape, full-domain sweeps)
-
-| # | entry point(s) | configuration (options set + input shape) | ✅ |
-|---|----------------|--------------------------------------------|-----|
-| C65 | `contrast_ratio` (full domain of `cbLuminance`) | **Exhaustive**: all 2^24 = 16,777,216 colors as operand A against fixed `B = white (255,255,255)`. Sweeps the entire reachable input domain of `cbLuminance` and every `pow` argument the library can ever produce. | [x] |
-| C66 | `contrast_ratio` (full domain, other operand position) | **Exhaustive**: all 2^24 colors as operand **B** against fixed `A = black (0,0,0)`, exercising the swapped operand position and the `Low == 0` degenerate divisor for every possible `High`. | [x] |
-| C67 | `contrast_ratio` | X7 = **no swap** forced: randomized pairs with `LumA > LumB` (A strictly brighter), all-`pow` and mixed patterns | [x] |
-| C68 | `contrast_ratio` | X7 = **swap** forced: randomized pairs with `LumA < LumB` (B strictly brighter) | [x] |
-| C69 | `contrast_ratio` | X7 = **equal** boundary: `LumA == LumB` via `A == B` (randomized identical colors) → `High<Low` false, ratio exactly 1.0 | [x] |
-| C70 | `contrast_ratio` | X7 = **equal luminance, different colors** (distinct RGB triples that collide to the same `float` luminance, found by search) → tie path with `A != B` | [x] |
-| C71 | `contrast_ratio` | X8: `Low == 0` with A = black, B = randomized non-black (→ `+inf`) | [x] |
-| C72 | `contrast_ratio` | X8: `Low == 0` with B = black, A = randomized non-black (→ `+inf`) | [x] |
-| C73 | `contrast_ratio` | X8: `Low == 0` and `High == 0` (both black) → `+0.0/+0.0` NaN, bit-exact | [x] |
-| C74 | `contrast_ratio` | Input shape: **grayscale** colors (`R == G == B`), all 256 of them, cross-product against 256 grayscales = 65,536 pairs (the `0.2126+0.7152+0.0722` sum path with equal terms) | [x] |
-| C75 | `contrast_ratio` | Input shape: **single-channel-only** colors (pure R / pure G / pure B, other channels 0) over all 256 intensities × all 3 channel positions, paired both ways — isolates each weight coefficient | [x] |
-| C76 | `contrast_ratio` | Input shape: **branch-boundary lattice** — every channel drawn from `{0,1,9,10,11,12,254,255}` (the values straddling the `> 0.04045` threshold and the domain ends): full 8^3 × 8^3 = 262,144 pair cross-product | [x] |
-| C77 | `contrast_ratio` | X9 ABI: struct read from an oversized buffer with **garbage in the 4th byte** (`0x00`/`0xAA`/`0xFF`), randomized colors — the 3-byte struct is passed packed in one INTEGER register, so the padding must not leak into either implementation's result | [x] |
-| C78 | `contrast_ratio` | X9 ABI: both arguments' structs taken from **unaligned** offsets inside a byte buffer, randomized colors — confirms neither side assumes alignment for the by-value copy | [x] |
-| C79 | `contrast_ratio` | Large-scale randomized fuzz over the **unconstrained** domain: 5,000,000 uniformly random `(A,B)` pairs, seed-fixed, bit-exact comparison (catches value-dependent divergence not tied to any enumerated branch) | [x] |
-| C80 | `contrast_ratio` | **Symmetry/ordering property** cross-check: for randomized pairs, `contrast_ratio(A,B)` and `contrast_ratio(B,A)` must agree between C and Rust *individually* (the C is symmetric by construction; verified as a differential invariant on both) | [x] |
-
-## Row → test mapping
-
-| rows | test |
-|---|---|
-| C1–C64 | `phase_b_configs::c1_c64_srgb_branch_cross_product` (384,000 comparisons; 64/64 rows reached both sides of the swap branch and a ratio > 1) |
-| C65 | `phase_b_exhaustive::exhaustive_all_colors_vs_white` (all 16,777,216 colors) |
-| C66 | `phase_b_exhaustive::exhaustive_all_colors_vs_black` (all 16,777,216 colors) |
-| C67, C68 | `phase_b_configs::c67_c68_swap_branch_both_directions` |
-| C69 | `phase_b_configs::c69_identical_colors_tie` |
-| C70 | `phase_b_configs::c70_equal_luminance_distinct_colors` (2,371 exact luminance ties between *distinct* colors) |
-| C71, C72, C73 | `phase_b_configs::c71_c73_zero_luminance_divisor` |
-| C74 | `phase_b_configs::c74_grayscale_full_cross_product` (65,536 pairs) |
-| C75 | `phase_b_configs::c75_single_channel_colors` (589,824 pairs) |
-| C76 | `phase_b_configs::c76_branch_boundary_lattice` (262,144 pairs) |
-| C77 | `phase_b_configs::c77_struct_register_padding_garbage` (500,000 comparisons) |
-| C78 | `phase_b_configs::c78_unaligned_struct_source` (120,000 comparisons) |
-| C79 | `phase_b_configs::c79_random_fuzz_unconstrained` (1,500,000 comparisons) |
-| C80 | `phase_b_configs::c80_argument_order_invariant` (200,000 comparisons) |
-
-**Result: all 80 rows pass, bit-for-bit (`f32::to_bits`), under all 4 build
-configurations** (default / `--no-default-features` x debug / release).
-
-Together, rows C65+C66 sweep the library's **entire reachable input domain** for
-one operand (every one of the 2^24 colors, hence every `pow` argument and every
-branch decision the code can make), and the remaining rows cover the pairing and
-ordering logic on top of it.
+| 1 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 2 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 3 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 4 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 5 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 6 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 7 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 8 | `contrast_ratio` | A branch mask `LLL` (R=lin,G=lin,B=lin) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 9 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 10 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 11 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 12 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 13 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 14 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 15 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 16 | `contrast_ratio` | A branch mask `LLP` (R=lin,G=lin,B=pow) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 17 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 18 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 19 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 20 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 21 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 22 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 23 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 24 | `contrast_ratio` | A branch mask `LPL` (R=lin,G=pow,B=lin) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 25 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 26 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 27 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 28 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 29 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 30 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 31 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 32 | `contrast_ratio` | A branch mask `LPP` (R=lin,G=pow,B=pow) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 33 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 34 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 35 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 36 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 37 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 38 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 39 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 40 | `contrast_ratio` | A branch mask `PLL` (R=pow,G=lin,B=lin) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 41 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 42 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 43 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 44 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 45 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 46 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 47 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 48 | `contrast_ratio` | A branch mask `PLP` (R=pow,G=lin,B=pow) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 49 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 50 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 51 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 52 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 53 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 54 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 55 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 56 | `contrast_ratio` | A branch mask `PPL` (R=pow,G=pow,B=lin) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 57 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `LLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 58 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `LLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 59 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `LPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 60 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `LPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 61 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `PLL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 62 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `PLP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 63 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `PPL`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 64 | `contrast_ratio` | A branch mask `PPP` (R=pow,G=pow,B=pow) × B branch mask `PPP`; randomized bytes in the arm-selecting sub-ranges; both argument orders (swap taken and not taken) | [x] |
+| 65 | `contrast_ratio` | exhaustive: every grey pair `A={v,v,v}`, `B={w,w,w}` for all 256×256 = 65536 `(v,w)` — pins `cbLuminance` and the swap for every byte value | [x] |
+| 66 | `contrast_ratio` | exhaustive single-axis sweep: `A={v,0,0}` vs fixed `B={128,128,128}` for all 256 `v` (red channel only) | [x] |
+| 67 | `contrast_ratio` | exhaustive single-axis sweep: `A={0,v,0}` vs fixed `B={128,128,128}` for all 256 `v` (green channel only) | [x] |
+| 68 | `contrast_ratio` | exhaustive single-axis sweep: `A={0,0,v}` vs fixed `B={128,128,128}` for all 256 `v` (blue channel only) | [x] |
+| 69 | `contrast_ratio` | exhaustive single-axis sweep on the *second* argument: `A={128,128,128}` vs `B={v,v,0}` for all 256 `v` | [x] |
+| 70 | `contrast_ratio` | boundary sweep of the transfer branch point: all `v` in `0..=21` × all `w` in `0..=21` (both colours straddling the `0.04045` threshold, all-channels-equal) | [x] |
+| 71 | `contrast_ratio` | high boundary: all `v` in `234..=255` × all `w` in `234..=255` (both colours near max, `pow` arm, ratio ≈ 1) | [x] |
+| 72 | `contrast_ratio` | `A == B` for 4096 randomized colours (exact self-division, must be exactly 1.0f) | [x] |
+| 73 | `contrast_ratio` | fully randomized full-range: 200000 uniformly random `(A,B)` pairs over all 6 bytes — unbiased cross-check of every branch mask and both swap directions | [x] |
+| 74 | `contrast_ratio` | extreme ratio: `A = {0,0,0}` vs `B` = each of the 3 minimal single-channel colours `{1,0,0} {0,1,0} {0,0,1}` and all 255 non-zero greys (largest finite ratios / infinities) | [x] |
+| 75 | `contrast_ratio` | argument symmetry: for 50000 randomized pairs, assert `f(A,B)` bits == `f(B,A)` bits in *both* libraries (validates the `High < Low` swap identically) | [x] |
+| 76 | `contrast_ratio` | register-padding independence: same 3 payload bytes passed with the upper register bytes varied (struct is 3 bytes, ABI-packed) over 4096 randomized cases | [x] |

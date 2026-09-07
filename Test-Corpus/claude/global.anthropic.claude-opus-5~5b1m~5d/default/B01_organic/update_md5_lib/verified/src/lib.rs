@@ -13,6 +13,8 @@
 
 #![allow(non_camel_case_types)]
 
+use core::ffi::c_void;
+
 /* ------------------------------------------------------------------ */
 /* Typedefs mirroring lib.h                                            */
 /* ------------------------------------------------------------------ */
@@ -46,108 +48,26 @@ pub struct tflac {
 }
 
 /* ------------------------------------------------------------------ */
-/* Raw memory access primitives                                        */
-/* ------------------------------------------------------------------ */
-//
-// Every load/store below is performed as a *byte-granular volatile* access,
-// which is what the C compiler emits for these functions and, crucially, what
-// gives the translation the same observable behaviour as the C for the two
-// pointer situations the C does not guard against:
-//
-//   * a NULL (or otherwise unmapped) pointer must fault with SIGSEGV exactly
-//     like the C does — a plain `*p = v` would instead trip Rust's debug-only
-//     "null pointer dereference" check and abort with SIGABRT;
-//   * a *misaligned* `tflac`/`tflac_md5` pointer must still work, as it does
-//     in C on this target — a plain `*(p as *mut u64)` would trip Rust's
-//     debug-only "misaligned pointer dereference" check and abort.
-//
-// Byte-granular access is also endian-neutral: `from_ne_bytes`/`to_ne_bytes`
-// reproduce the native multi-byte load/store the C performs on any target.
-// All arithmetic uses `wrapping_add` so no pointer-offset precondition check
-// can fire where the C simply computes an address.
-
-#[inline(always)]
-unsafe fn ld_u8(p: *const tflac_u8) -> tflac_u8 {
-    p.read_volatile()
-}
-
-#[inline(always)]
-unsafe fn st_u8(p: *mut tflac_u8, v: tflac_u8) {
-    p.write_volatile(v)
-}
-
-#[inline(always)]
-unsafe fn ld_u32(p: *const tflac_u8) -> tflac_u32 {
-    let mut b = [0u8; 4];
-    let mut i = 0usize;
-    while i < 4 {
-        b[i] = ld_u8(p.wrapping_add(i));
-        i += 1;
-    }
-    tflac_u32::from_ne_bytes(b)
-}
-
-#[inline(always)]
-unsafe fn st_u32(p: *mut tflac_u8, v: tflac_u32) {
-    let b = v.to_ne_bytes();
-    let mut i = 0usize;
-    while i < 4 {
-        st_u8(p.wrapping_add(i), b[i]);
-        i += 1;
-    }
-}
-
-#[inline(always)]
-unsafe fn ld_u64(p: *const tflac_u8) -> tflac_u64 {
-    let mut b = [0u8; 8];
-    let mut i = 0usize;
-    while i < 8 {
-        b[i] = ld_u8(p.wrapping_add(i));
-        i += 1;
-    }
-    tflac_u64::from_ne_bytes(b)
-}
-
-#[inline(always)]
-unsafe fn st_u64(p: *mut tflac_u8, v: tflac_u64) {
-    let b = v.to_ne_bytes();
-    let mut i = 0usize;
-    while i < 8 {
-        st_u8(p.wrapping_add(i), b[i]);
-        i += 1;
-    }
-}
-
-/// Load one `tflac_s32` (`int32_t`) the way the C `samples[k]` load does.
-#[inline(always)]
-unsafe fn ld_s32(p: *const tflac_s32) -> tflac_s32 {
-    ld_u32(p as *const tflac_u8) as tflac_s32
-}
-
-/* ------------------------------------------------------------------ */
 /* tflac_pack_u64le                                                    */
 /* ------------------------------------------------------------------ */
 
 /// ```c
-/// void tflac_pack_u64le(tflac_u8 *d, tflac_u64 n) {
-///     d[0] = (tflac_u8)(n);
-///     d[1] = (tflac_u8)(n >> 8);
-///     ...
-///     d[7] = (tflac_u8)(n >> 56);
-/// }
+/// void tflac_pack_u64le(tflac_u8 *d, tflac_u64 n);
 /// ```
 ///
 /// Stores `n` into `d[0..8]` in little-endian byte order.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tflac_pack_u64le(d: *mut tflac_u8, n: tflac_u64) {
-    st_u8(d.wrapping_add(0), n as tflac_u8);
-    st_u8(d.wrapping_add(1), (n >> 8) as tflac_u8);
-    st_u8(d.wrapping_add(2), (n >> 16) as tflac_u8);
-    st_u8(d.wrapping_add(3), (n >> 24) as tflac_u8);
-    st_u8(d.wrapping_add(4), (n >> 32) as tflac_u8);
-    st_u8(d.wrapping_add(5), (n >> 40) as tflac_u8);
-    st_u8(d.wrapping_add(6), (n >> 48) as tflac_u8);
-    st_u8(d.wrapping_add(7), (n >> 56) as tflac_u8);
+    // Written byte-by-byte through raw pointers so the memory effects match
+    // the C exactly (no assumption about alignment or provenance width).
+    *d.add(0) = n as tflac_u8;
+    *d.add(1) = (n >> 8) as tflac_u8;
+    *d.add(2) = (n >> 16) as tflac_u8;
+    *d.add(3) = (n >> 24) as tflac_u8;
+    *d.add(4) = (n >> 32) as tflac_u8;
+    *d.add(5) = (n >> 40) as tflac_u8;
+    *d.add(6) = (n >> 48) as tflac_u8;
+    *d.add(7) = (n >> 56) as tflac_u8;
 }
 
 /* ------------------------------------------------------------------ */
@@ -155,26 +75,17 @@ pub unsafe extern "C" fn tflac_pack_u64le(d: *mut tflac_u8, n: tflac_u64) {
 /* ------------------------------------------------------------------ */
 
 /// ```c
-/// void tflac_md5_addsample(tflac_md5 *m, tflac_u32 bits, tflac_uint val) {
-///     tflac_u32 bytes;
-///     ((m->total) += (tflac_u64)(bits));
-///     bytes = bits / 8;
-///     tflac_u32 pos2 = m->pos % 64;
-///     tflac_pack_u64le(&m->buffer[pos2], val);
-///     m->pos += bytes;
-///     if (m->pos >= 64) {
-///         m->pos %= 64;
-///         bytes = m->pos;
-///         while (bytes--) {
-///             m->buffer[bytes] = m->buffer[64 + bytes];
-///         }
-///     }
-/// }
+/// void tflac_md5_addsample(tflac_md5 *m, tflac_u32 bits, tflac_uint val);
 /// ```
 ///
-/// Every operation is performed in the C's order, including the facts that
-/// `pos2` is derived from the *old* `pos`, that `m->pos` is written before the
-/// `>= 64` test, and that `bytes` is reused as the spill counter.
+/// Accumulates `bits` into `m->total`, writes `val` little-endian at
+/// `m->buffer[m->pos % 64]`, advances `m->pos` by `bits / 8` and, once the
+/// 64-byte block boundary has been crossed, copies the spill-over bytes from
+/// the tail region (`buffer[64 + i]`) back down to the head of the buffer.
+///
+/// The order of every operation matches the C source, including the fact that
+/// `pos2` is computed from the *old* `pos` and that `bytes` is reused as the
+/// copy counter.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tflac_md5_addsample(
     m: *mut tflac_md5,
@@ -183,45 +94,36 @@ pub unsafe extern "C" fn tflac_md5_addsample(
 ) {
     let mut bytes: tflac_u32;
 
-    let p_pos = core::ptr::addr_of_mut!((*m).pos) as *mut tflac_u8;
-    let p_total = core::ptr::addr_of_mut!((*m).total) as *mut tflac_u8;
-    let buffer = core::ptr::addr_of_mut!((*m).buffer) as *mut tflac_u8;
-
     // ((m->total) += (tflac_u64)(bits));
-    st_u64(p_total, ld_u64(p_total).wrapping_add(bits as tflac_u64));
+    let total = core::ptr::addr_of_mut!((*m).total);
+    *total = (*total).wrapping_add(bits as tflac_u64);
 
     // bytes = bits / 8;
     bytes = bits / 8;
 
+    let pos = core::ptr::addr_of_mut!((*m).pos);
+    let buffer = core::ptr::addr_of_mut!((*m).buffer) as *mut tflac_u8;
+
     // tflac_u32 pos2 = m->pos % 64;
-    let pos2 = ld_u32(p_pos) % 64;
+    let pos2 = *pos % 64;
 
     // tflac_pack_u64le(&m->buffer[pos2], val);
-    tflac_pack_u64le(buffer.wrapping_add(pos2 as usize), val);
+    tflac_pack_u64le(buffer.add(pos2 as usize), val);
 
-    // m->pos += bytes;   (unsigned 32-bit wraparound)
-    let mut pos = ld_u32(p_pos).wrapping_add(bytes);
-    st_u32(p_pos, pos);
+    // m->pos += bytes;
+    *pos = (*pos).wrapping_add(bytes);
 
     // if (m->pos >= 64) { ... }
-    if pos >= 64 {
-        // m->pos %= 64;
-        pos %= 64;
-        st_u32(p_pos, pos);
-
-        // bytes = m->pos;
-        bytes = pos;
-
+    if *pos >= 64 {
+        *pos %= 64;
+        bytes = *pos;
         // while (bytes--) m->buffer[bytes] = m->buffer[64 + bytes];
         //
-        // `bytes` is unsigned, so a zero counter skips the loop body entirely
+        // `bytes` is unsigned, so a zero counter skips the loop entirely
         // (the post-decrement wraparound is never observed).
         while bytes != 0 {
             bytes -= 1;
-            st_u8(
-                buffer.wrapping_add(bytes as usize),
-                ld_u8(buffer.wrapping_add(64usize.wrapping_add(bytes as usize))),
-            );
+            *buffer.add(bytes as usize) = *buffer.add(64 + bytes as usize);
         }
     }
 }
@@ -244,17 +146,14 @@ pub unsafe extern "C" fn tflac_md5_addsample(
 ///     wrapping on underflow.
 ///   * `samples` advances by `8 * sizeof(tflac_s32) == 32` *elements* per
 ///     iteration (pointer arithmetic already scales by the element size), so
-///     only the first 8 of every 32 samples are consumed; the reads therefore
-///     land on `samples[0..8]`, `[32..40]`, `[64..72]`, `[96..104]`,
-///     `[128..136]`.
+///     only the first 8 of every 32 samples are consumed.
 ///   * Each sample is sign-extended to 64 bits and then masked with `0xFF`,
 ///     i.e. only its lowest byte survives.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn update_md5(t: *mut tflac, samples: *const tflac_s32) -> tflac_u32 {
     // tflac_u32 b = t->cur_blocksize * t->channels;
-    let cur_blocksize = ld_u32(core::ptr::addr_of!((*t).cur_blocksize) as *const tflac_u8);
-    let channels = ld_u32(core::ptr::addr_of!((*t).channels) as *const tflac_u8);
-    let mut b: tflac_u32 = cur_blocksize.wrapping_mul(channels);
+    let mut b: tflac_u32 = (*core::ptr::addr_of!((*t).cur_blocksize))
+        .wrapping_mul(*core::ptr::addr_of!((*t).channels));
 
     // const tflac_u32 step = sizeof(tflac_uint);
     let step: tflac_u32 = core::mem::size_of::<tflac_uint>() as tflac_u32;
@@ -266,9 +165,7 @@ pub unsafe extern "C" fn update_md5(t: *mut tflac, samples: *const tflac_s32) ->
     while i <= 4 {
         // Sign-extend to tflac_uint (u64) then keep the low byte, exactly as
         // `(((tflac_uint)samples[k]) & 0xFF) << (8 * k)` does in C.
-        let s = |k: usize| -> tflac_uint {
-            (ld_s32(samples.wrapping_add(k)) as i64 as tflac_uint) & 0xFF
-        };
+        let s = |k: usize| -> tflac_uint { ((*samples.add(k)) as i64 as tflac_uint) & 0xFF };
 
         let mut v: tflac_uint = s(0) << 0;
         v |= s(1) << 8;
@@ -290,7 +187,7 @@ pub unsafe extern "C" fn update_md5(t: *mut tflac, samples: *const tflac_s32) ->
         b = b.wrapping_sub(step);
 
         // samples += (8 * sizeof(tflac_s32));  /* == 32 elements */
-        samples = samples.wrapping_add(8 * core::mem::size_of::<tflac_s32>());
+        samples = samples.add(8 * core::mem::size_of::<tflac_s32>());
 
         i += 1;
     }
@@ -303,12 +200,14 @@ pub unsafe extern "C" fn update_md5(t: *mut tflac, samples: *const tflac_s32) ->
 /* ------------------------------------------------------------------ */
 
 const _: () = {
-    // Layouts verified against the C compiler on this platform
-    // (`sizeof`/`_Alignof`/`offsetof`).
+    // Layouts verified against the C compiler on this platform.
     assert!(core::mem::size_of::<tflac_md5>() == 88);
     assert!(core::mem::align_of::<tflac_md5>() == 8);
     assert!(core::mem::size_of::<tflac>() == 96);
     assert!(core::mem::align_of::<tflac>() == 8);
-    assert!(core::mem::size_of::<tflac_uint>() == 8);
-    assert!(core::mem::size_of::<tflac_s32>() == 4);
 };
+
+// Keep `c_void` referenced so the import stays meaningful for any future
+// pointer-typed additions without tripping the unused-import lint.
+#[allow(dead_code)]
+type _CVoidAlias = *mut c_void;

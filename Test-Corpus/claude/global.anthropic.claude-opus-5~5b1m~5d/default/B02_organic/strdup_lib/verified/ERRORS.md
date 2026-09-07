@@ -1,85 +1,46 @@
-# ERRORS.md — Error / rejection surface table (Phase A, gate for Phase C)
+# ERRORS.md — Phase A: error / rejection surface table
 
-Mechanically derived from `c_src/src/lib.c`. Every `return`, every branch, every
-sentinel is accounted for below — nothing invented, nothing from docs.
+Derived mechanically by grepping `c_src/src/lib.c` for every `return`, every
+early-exit branch, every null check, every `assert`, and every range/size
+constant. The whole library is 22 lines, so the enumeration is exhaustive.
 
-## Mechanical extraction
-
-The whole of `c_src/src/lib.c` (the only translation unit):
-
-```c
-char *custom_strdup(const char *str)
-{
-  size_t len;
-  char *newstr;
-
-  if(!str)                 /* <-- rejection #1 */
-    return (char *)NULL;
-
-  len = strlen(str) + 1;   /* size_t wraparound is the only arithmetic */
-
-  newstr = malloc(len);
-  if(!newstr)              /* <-- rejection #2 */
-    return (char *)NULL;
-
-  memcpy(newstr, str, len);
-  return newstr;           /* success */
-}
+```
+$ grep -n 'return\|assert\|if(\|if (' c_src/src/lib.c
+11:  if(!str)
+12:    return (char *)NULL;
+17:  if(!newstr)
+18:    return (char *)NULL;
+21:  return newstr;
 ```
 
-Grep inventory of every rejection construct in `c_src/`:
-
-| construct | occurrences | where |
-|-----------|-------------|-------|
-| `return (char *)NULL` | 2 | the two rows below |
-| `return -1` / error codes / error enums | 0 | *(none — the API's only failure channel is a `NULL` return)* |
-| `RETURN_ERROR`-style macro | 0 | none defined or used |
-| `assert` / `NDEBUG` | 0 | none |
-| `errno` set or read | 0 | none — the C never touches `errno` |
-| explicit range / min / max check | 0 | no `#define` limits, no size clamps, no bounds compare |
-| null check | 2 | `if(!str)`, `if(!newstr)` |
-| enum parameters | 0 | the API takes no enum / flag / mode argument |
-
-There are exactly **2** distinct rejection paths.
+There are exactly **two** rejection branches (`lib.c:11-12` and `lib.c:17-18`),
+plus the implicit `size_t` arithmetic edge at `lib.c:14`. No `assert`, no error
+enum, no `errno` set, no explicit min/max constants — the only sentinel is
+`NULL`.
 
 ## Error-surface table
 
-| # | function | trigger (exact invalid input/condition) | expected C result | test | status |
-|---|----------|------------------------------------------|-------------------|------|--------|
-| E1 | `custom_strdup` | `str == NULL` — the argument is a null pointer, so `if(!str)` is taken | returns `NULL` (`(char *)0`); no allocation performed; `errno` untouched | `tests/error_paths.rs::e1_null_pointer_input` | [x] |
-| E2 | `custom_strdup` | `malloc(strlen(str)+1)` returns `NULL` — allocator exhaustion, so `if(!newstr)` is taken. Reproduced deterministically by lowering `RLIMIT_AS` to the process's current address-space size before calling with an 8 MiB string, which forces glibc's `mmap` path to fail | returns `NULL`; the already-computed `len` is discarded; **no `memcpy` is performed** (i.e. no crash, no partial write) | `tests/malloc_failure.rs::e2_malloc_returns_null` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `custom_strdup` | `str == NULL` (`lib.c:11`, `!str` is true) | returns `NULL`; no allocation performed, `errno` untouched | [x] |
+| 2 | `custom_strdup` | `malloc(len)` fails / returns `NULL` (`lib.c:17`, out-of-memory) | returns `NULL`; nothing copied, no leak | [x] |
+| 3 | `custom_strdup` | `str` non-NULL but points at `""` (empty string) — the smallest valid length; `len == 1`, boundary of the `strlen(str)+1` computation (`lib.c:14`) | returns a non-NULL 1-byte buffer containing `'\0'` (NOT an error, but the zero-length boundary every C API must be probed at) | [x] |
+| 4 | `custom_strdup` | `str` points into a buffer whose only NUL is at the very last readable byte (one step past would be out of range) | returns full copy incl. terminator; must not over- or under-read by one | [x] |
 
-### Notes on E1
+### Generic FFI boundary cases also covered in Phase C
 
-`!str` is a plain pointer-nullness test, so the *only* rejected pointer value is
-`(char *)0`. Any other value — including a wild/unmapped non-null pointer — is
-**not** rejected by the C and is undefined behaviour to pass; such pointers are
-therefore deliberately excluded from the differential tests (they would crash
-both implementations identically but untestably).
+These are not distinct C branches but are mandated boundary probes for any C
+API. Each has a differential test in `tests/differential.rs`.
 
-### Notes on E2
+| # | condition | expected C result |
+|---|-----------|-------------------|
+| G1 | null pointer argument (same as row 1, asserted as a strict pointer-equality-to-NULL check on both `.so`s) | `NULL` from both | [x] |
+| G2 | zero length input (empty string, row 3) | 1-byte `""` copy from both | [x] |
+| G3 | oversized length: a very large (1 MiB, 4 MiB) NUL-terminated string | identical byte-for-byte copy from both | [x] |
+| G4 | embedded NUL bytes: input `"ab\0cd"` — the C stops at the first NUL, so bytes after it must NOT be copied | both return `"ab"` (len 3 incl. terminator); byte at index 3 of the result is unspecified and is NOT compared | [x] |
+| G5 | non-UTF-8 / arbitrary binary bytes `0x01..0xFF` before the terminator (Rust must not assume UTF-8 validity) | identical copy from both | [x] |
+| G6 | out-of-range enum values across the FFI boundary | **N/A** — the API takes no enum, no flag, and no integer parameter; `const char *` is the only parameter, so there is no enum discriminant to fuzz. Documented here to record that the check was performed, not skipped. | [x] |
+| G7 | misaligned / unaligned `char*` (pointer to a non-word-aligned offset inside a buffer) | identical copy from both | [x] |
+| G8 | returned pointer must be `free()`-able by the caller (allocator parity) | no crash / no allocator mismatch for either `.so` | [x] |
 
-E2 is the only path where the two implementations could plausibly diverge: a
-Rust translation that used the Rust global allocator (`alloc::alloc`) instead of
-`malloc` would **abort** the process on allocation failure instead of returning
-`NULL`. The translation calls libc `malloc` directly, so it returns `NULL` like
-the C. The test asserts both return `NULL` *and* that the process survives.
-
-## Generic FFI boundary cases required by Phase C
-
-These are covered even though the C has no explicit check for them, because
-Phase C mandates the generic boundaries every C API has:
-
-| # | condition | expected behaviour (C, and therefore Rust) | test | status |
-|---|-----------|--------------------------------------------|------|--------|
-| G1 | null pointer | see E1 — returns `NULL` | `e1_null_pointer_input` | [x] |
-| G2 | zero length input: `""` (valid, not an error) | `len == 1`; returns a 1-byte allocation holding just `'\0'`; **non-NULL** | `g2_empty_string_is_not_an_error` | [x] |
-| G3 | out-of-range enum value across FFI | **not applicable, and proven so**: `custom_strdup` has exactly one parameter of type `const char *` and no enum/flag/mode parameter anywhere in `lib.h`, so there is no enum whose value could fall outside its variants. The nearest analogue — a `char` payload byte outside the "expected" ASCII range — is covered as a *valid* input by `CONFIGS.md` rows C6/C7 (all 255 non-NUL byte values, incl. `0x80..=0xFF` which are negative in a signed `char`) | `g3_no_enum_parameters_all_byte_values_are_valid` | [x] |
-| G4 | oversized length | The C imposes **no** maximum length (no range check exists to violate). "Oversized" therefore degenerates into E2: the length is only rejected when `malloc` cannot satisfy it. Large-but-satisfiable lengths (1 MiB, 8 MiB) are valid inputs and are covered by `CONFIGS.md` row C8 | `e2_malloc_returns_null`, `CONFIGS` C8 | [x] |
-| G5 | one step past a documented valid range | There is no documented valid range and no constant to step past (0 range checks, 0 min/max constants in the source). The only boundary in the code is the `strlen`/NUL boundary itself, which is probed by C9 (NUL as the final byte before an unmapped page) | `CONFIGS` C9 | [x] |
-| G6 | repeated / interleaved failure and success calls | each call is independent and stateless (no globals, no statics in `lib.c`); a `NULL` return must not poison later calls | `g6_failure_does_not_poison_later_calls` | [x] |
-
-## Phase C gate
-
-All rows above are checked. **E1, E2, G1–G6 have passing differential tests
-against both `.so`s.**
+All rows checked — see Phase C section of `tests/differential.rs`.

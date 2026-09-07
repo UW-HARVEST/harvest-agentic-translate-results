@@ -1,115 +1,100 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from the built shared objects:
+Derived mechanically from `nm -D --defined-only` on the built C shared library
+`c_src/build/libharvest-work-UKfGah.so` and the Rust cdylib
+`translation/target/release/libmemchra2_lib.so`.
 
-```
-c_src/build/libharvest-work-ihIbAd.so     (C, ground truth)
-translation/target/release/libmemchra2_lib.so  (Rust)
-```
-
-## 1. `nm -D --defined-only` on the C `.so`
+## C `.so` exported (defined, dynamic) symbols
 
 ```
-$ nm -D --defined-only c_src/build/libharvest-work-ihIbAd.so
+$ nm -D --defined-only c_src/build/libharvest-work-UKfGah.so
 00000000000013e1 T memchra2
 ```
 
-The C translation unit (`c_src/src/lib.c`) contains 9 functions, but 8 of them
-are declared `static` (internal linkage) and therefore do **not** appear in the
-dynamic symbol table:
+That is the complete list. `c_src/src/lib.c` is the only translation unit and
+every other routine in it (`memchra`, `process_buffer`, `int_to_float_bits`,
+`process_strings`, `safe_sum_array`, `interpret_as_int`, `count_occurrences`,
+`complex_iteration`) is declared `static`, i.e. internal linkage, so it is not
+part of the ABI surface. `c_src/include/lib.h` likewise declares only
+`int memchra2(int a, int b, int c, int d);`.
 
-| C function | linkage | dynamic symbol? |
+## Parity table
+
+| # | C symbol | type | Rust `.so` exports it? | notes |
+|---|----------|------|------------------------|-------|
+| 1 | `memchra2` | `T` (global text) | YES — `00000000000011b70 T memchra2` | `#[unsafe(no_mangle)] pub extern "C" fn memchra2(a,b,c,d) -> c_int` |
+
+### Missing symbols
+
+None. The symbol diff is EMPTY:
+
+```
+$ comm -23 <(nm -D --defined-only <C.so>  | awk '{print $3}' | sort -u) \
+           <(nm -D --defined-only <RS.so> | awk '{print $3}' | sort -u)
+(no output)
+```
+
+### Undefined (imported) symbols in the Rust `.so`
+
+All remaining `U` entries in the Rust `.so` are libc / Rust-runtime imports
+(`memcpy`, `__libc_start_main`-family, unwinder, `_ITM_*`,
+`__cxa_thread_atexit_impl`, `__rust_*` shims). There are 0 missing/undefined
+NON-libc symbols that the Rust library fails to provide.
+
+### Rust-only extra symbols
+
+The Rust cdylib additionally exports mangled `_ZN*` Rust-internal and
+`rust_eh_personality` / `__rust_*` runtime symbols. Extra exports are harmless
+for parity (the requirement is one-directional: every C symbol must exist in
+Rust).
+
+## Static (internal-linkage) C functions — translation completeness
+
+Even though these are not exported, all 8 were checked to exist as private Rust
+functions so that no C source was skipped:
+
+| C static function | Rust counterpart | present |
 |---|---|---|
-| `memchra` | `static` | no (inlined/local) |
-| `process_buffer` | `static` | no |
-| `int_to_float_bits` | `static` | no |
-| `process_strings` | `static` | no |
-| `safe_sum_array` | `static` | no |
-| `interpret_as_int` | `static` | no |
-| `count_occurrences` | `static` | no |
-| `complex_iteration` | `static` | no |
-| `memchra2` | external | **yes** |
+| `memchra` | `fn memchra` | yes |
+| `process_buffer` | `fn process_buffer` | yes |
+| `int_to_float_bits` | `fn int_to_float_bits` | yes |
+| `process_strings` | `fn process_strings` | yes |
+| `safe_sum_array` | `fn safe_sum_array` | yes |
+| `interpret_as_int` | `fn interpret_as_int` | yes |
+| `count_occurrences` | `fn count_occurrences` | yes |
+| `complex_iteration` | `fn complex_iteration` | yes |
+| `snprintf` (libc, used by `memchra2`) | `fn snprintf_into` helper | yes |
 
-`c_src/include/lib.h` confirms the public API is exactly one declaration:
+No module or file of the C sources was left untranslated; no stubs or
+`unimplemented!()` placeholders exist.
 
-```c
-int memchra2(int a, int b, int c, int d);
-```
+## Binaries
 
-## 2. Symbol parity table
+`c_src/CMakeLists.txt` builds `add_library(... SHARED src/lib.c)` only — there
+is no driver executable, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. The "compare binary stdout"
+requirement is therefore not applicable.
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `memchra2` | `T` (global text) | `T` (global text) | **match** |
+## Feature combinations
 
-## 3. Symbol diff
+`translation/Cargo.toml` declares no `[features]` table, so the only build
+configuration is the default one (`--no-default-features` is also
+behaviourally identical since there are no default features). All phases below
+are run under that single configuration, plus both dev and release profiles.
 
-```
-$ comm -23 <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
-           <(nm -D --defined-only rust.so | awk '{print $3}' | sort)
-<empty>
-```
+---
 
-**0 symbols missing from the Rust `.so`.**
+## Results
 
-No C module was skipped by the translation: `c_src` contains exactly one
-`.c` file (`src/lib.c`) and one header (`include/lib.h`), and every function in
-it — including all 8 `static` helpers — is present in `translation/src/lib.rs`
-as a private Rust function. Nothing is stubbed or `unimplemented!()`.
-
-| C definition (lib.c) | Rust counterpart (src/lib.rs) |
-|---|---|
-| `static int memchra(const char*, int, size_t)` | `fn memchra(&[u8], c_int, usize) -> c_int` |
-| `static int process_buffer(char*, size_t)` | `fn process_buffer(Option<&[u8]>, usize) -> c_int` |
-| `static float int_to_float_bits(int)` | `fn int_to_float_bits(c_int) -> f32` |
-| `static int process_strings(char**, int, const char*)` | `fn process_strings(Option<&[Option<&[u8]>]>, c_int, &[u8]) -> c_int` |
-| `static int safe_sum_array(int*, size_t)` | `fn safe_sum_array(Option<&[c_int]>, usize) -> c_int` |
-| `static int interpret_as_int(unsigned char*, size_t)` | `fn interpret_as_int(Option<&[u8]>, usize) -> c_int` |
-| `static int count_occurrences(const char*, char)` | `fn count_occurrences(Option<&[u8]>, u8) -> c_int` |
-| `static int complex_iteration(int*, size_t)` | `fn complex_iteration(Option<&[c_int]>, usize) -> c_int` |
-| `snprintf(buf, sizeof buf, ...)` (libc) | `fn snprintf_into(&mut [u8], &str)` |
-| `int memchra2(int,int,int,int)` | `#[unsafe(no_mangle)] pub extern "C" fn memchra2` |
-
-## 4. Undefined (imported) symbols
-
-The Rust `.so` must not require any non-libc symbol that the C `.so` does not.
+Symbol diff is EMPTY for both the release and the debug Rust cdylib
+(`verify.sh` step 3 enforces this, and `tests/phase_d_symbols.rs` asserts it as
+a test, additionally `dlsym`-ing and CALLING both exports to prove the
+`#[no_mangle] extern "C"` wrapper is real code with the right ABI, not just a
+name in the symbol table).
 
 ```
-$ nm -D --undefined-only translation/target/release/libmemchra2_lib.so
+OK (release): 0 missing symbols. C exports: memchra2
+OK (debug):   0 missing symbols. C exports: memchra2
 ```
 
-Only the standard glibc / libgcc runtime imports appear (see
-`tests/symbol_parity.rs::rust_so_has_no_unresolved_non_libc_symbols`, which
-asserts this programmatically). 0 unresolved non-libc symbols.
-
-## 5. Feature combinations
-
-`translation/Cargo.toml` declares exactly two `[features]` keys:
-
-| feature | default? | effect on the exported symbol set |
-|---|---|---|
-| `default` | — | empty; identical to `--no-default-features` |
-| `test_internals` | **no** | adds 9 test-only `harness_*` wrappers around the translations of `lib.c`'s `static` helpers (used by Phase C, see `ERRORS.md`). `memchra2` is unchanged. |
-
-So the complete combination set is:
-
-```
---no-default-features
---no-default-features --features test_internals
---all-features                     (== test_internals)
-```
-
-Symbol parity in each combination (checked by `run_verification.sh`, which diffs
-`nm -D` per combination, and by `tests/symbol_parity.rs`):
-
-| combination | profile | C symbols missing from Rust | extra Rust symbols |
-|---|---|---|---|
-| `--no-default-features` | dev | 0 | none (sets are *identical*) |
-| `--no-default-features --features test_internals` | dev | 0 | the 9 documented `harness_*` |
-| `--all-features` | dev | 0 | the 9 documented `harness_*` |
-| `--no-default-features` | release | 0 | none (sets are *identical*) |
-| `--no-default-features --features test_internals` | release | 0 | the 9 documented `harness_*` |
-| `--all-features` | release | 0 | the 9 documented `harness_*` |
-
-`tests/feature_matrix.rs` additionally fails if a new feature is added to
-`Cargo.toml` without extending the verification matrix.
+No C source was left untranslated, and no symbol is stubbed.

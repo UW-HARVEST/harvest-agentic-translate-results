@@ -1,76 +1,76 @@
-# SYMBOLS.md — Phase A: public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Mechanically derived from `nm -D` on both shared objects.
+Derived mechanically from `nm -D` on both shared objects.
 
-Build commands used:
+Build commands:
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libdriver.so
-
-# Rust
+```
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+#  -> c_src/build/libdriver.so
 cd translation && cargo build --release
-# -> translation/target/release/libdriver.so
+#  -> translation/target/release/libdriver.so
 ```
 
-## C source inventory (completeness check)
+## Public header surface (`c_src/include/lib.h`)
 
-The whole C library is two files; there is no untranslated module.
+The header is a single line — the entire public API:
 
-| C file | contents | translated in |
-|--------|----------|---------------|
-| `c_src/include/lib.h` | 1 declaration: `char *searchAndReplace(const char*, const char*, const char*)` | `translation/src/lib.rs` |
-| `c_src/src/lib.c` | 1 definition: `searchAndReplace` (90 lines) | `translation/src/lib.rs` (`pub unsafe extern "C" fn searchAndReplace`) |
+```c
+char *searchAndReplace(const char *orig, const char *search, const char *value);
+```
 
-`grep -nE '^[A-Za-z_].*\(' c_src/src/lib.c` finds exactly one function definition,
-and there are no `#define`d/macro-generated symbol names, no `static` helpers, no
-global data, and no `__attribute__((constructor))` in the C source. So the
-expected exported surface is exactly one symbol.
+There are no namespace/renaming macros, so the linker symbol is literally
+`searchAndReplace`. There is no binary/driver executable target in
+`c_src/CMakeLists.txt` (only `add_library(driver SHARED src/lib.c)`), so there
+is no stdout-comparison step for this project.
 
-## `nm -D --defined-only` (exported, dynamic)
+## Exported (defined) dynamic symbols
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|-----------|-------|
-| 1 | `searchAndReplace` | `T` (0x1159) | `T` (0x11ce0) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn`, C ABI, name not mangled |
+`nm -D --defined-only`
 
-Symbol diff (`comm -3` of the two sorted defined-symbol name lists): **empty**.
+| # | symbol | C `libdriver.so` | Rust `libdriver.so` | status |
+|---|--------|------------------|---------------------|--------|
+| 1 | `searchAndReplace` | `T` (0x1159) | `T` (0x11730) | ✅ present in both |
 
-Neither `.so` exports any other global text/data symbol (both are built without
-`--export-dynamic`; the Rust `cdylib` exports only `#[no_mangle]` items).
+Symbol diff (C-exported minus Rust-exported): **EMPTY** — 0 missing symbols.
 
-## `nm -D --undefined-only` (imports)
+```
+$ comm -23 <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $NF}' | sort) \
+           <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort)
+(no output)
+```
 
-* C `.so`: `malloc`, `realloc`, `strdup`, `strlen`, `strncpy`, `strstr`
-  (all `GLIBC_2.2.5`) + weak ITM/gmon/`__cxa_finalize` stubs.
-* Rust `.so`: `malloc`, `realloc`, `strdup`, `strlen` (the three `extern "C"`
-  imports declared in `src/lib.rs`, plus `strlen` used by `CStr::from_ptr`),
-  plus the Rust standard-library's own libc/libgcc imports
-  (`memcpy`, `memmove`, `memset`, `bcmp`, `free`, `calloc`, `posix_memalign`,
-  `abort`, `mmap64`/`munmap`, `open64`/`read`/`write`/`close`, `dl_iterate_phdr`,
-  `pthread_key_*`, `_Unwind_*`, `__errno_location`, `__tls_get_addr`, …).
+No stubs / `unimplemented!()` were introduced: the single symbol is a real,
+literal translation of `c_src/src/lib.c`.
 
-`ldd` on the Rust `.so` resolves to `libgcc_s.so.1`, `libc.so.6`,
-`ld-linux-x86-64.so.2` only.
+## Undefined (imported) dynamic symbols
 
-**0 missing symbols, 0 undefined non-libc / non-libgcc symbols in the Rust `.so`.**
-(`strstr`/`strncpy` are open-coded in Rust — `c_strstr`/`c_strncpy` — which is a
-private implementation detail, not part of the exported surface; their observable
-behaviour is what Phases B/C verify.)
+The C object imports `malloc`, `realloc`, `strdup`, `strlen`, `strncpy`,
+`strstr` (all libc), plus the usual weak `_ITM_*` / `__gmon_start__` /
+`__cxa_finalize` glue.
 
-## Feature configurations
+The Rust `cdylib` imports `malloc`, `realloc`, `strdup`, `strlen` from libc
+directly and additionally pulls in the standard libc/`libgcc` surface used by
+the Rust runtime (`memcpy`, `memmove`, `memset`, `bcmp`, `calloc`,
+`posix_memalign`, `free`, `abort`, `__errno_location`, `_Unwind_*`,
+`pthread_key_*`, `dl_iterate_phdr`, file/`stat` syscall wrappers used by the
+panic/backtrace machinery, …).
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only
-possible feature configurations are:
+**0 missing / undefined non-libc symbols in the Rust `.so`.** `strncpy` and
+`strstr` are not imported because the translation reimplements their exact
+semantics in-crate (`c_strncpy`, `c_strstr`) — this is an implementation detail,
+not an API difference; the exported surface is identical.
 
-| combo | cargo flags |
-|-------|-------------|
-| default (empty) | `cargo test` |
-| no-default-features (identical, empty) | `cargo test --no-default-features` |
-| all-features (identical, empty) | `cargo test --all-features` |
+Note: the Rust crate deliberately allocates the returned buffer with the **C**
+allocator (`malloc`/`realloc`/`strdup`) so callers can release it with `free()`,
+exactly as with the C library. This is why those four libc symbols are imported.
 
-All three resolve to the same code; `scripts/verify_all.sh` runs the suite under
-each of them anyway, and additionally against the **debug** build of the Rust
-`.so` (which enables `debug_assertions` and integer-overflow checks) via
-`RUST_DRIVER_SO`.
+## Symbol parity across build configurations
+
+`cargo metadata` reports an empty `[features]` table for this package, so there
+is exactly **one** feature combination. `run_all_configs.sh` nevertheless builds
+and re-checks parity for `{dev, release} × {default, --no-default-features,
+--all-features}` — six configurations — because the two cargo *profiles* really
+are different code (`[profile.release] panic = "abort"` vs. the dev profile's
+unwinding panics plus debug assertions / overflow checks). See
+`all_configs.log`: `symbol parity: OK (0 missing)` for all six.

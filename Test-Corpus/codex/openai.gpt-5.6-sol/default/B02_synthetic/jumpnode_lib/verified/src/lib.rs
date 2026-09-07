@@ -39,3 +39,29 @@ pub extern "C" fn jumpnode(
         _ => STATUS_ERROR | 0o200,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::jumpnode;
+
+    #[test]
+    fn returns_not_found_for_uninitialized_storage_modes() {
+        assert_eq!(jumpnode(0o1, 1, 0, 0), 0o22);
+        assert_eq!(jumpnode(0o2, 1, 0, 0), 0o42);
+        assert_eq!(jumpnode(0o4, 1, 0, 0), 0o102);
+    }
+
+    #[test]
+    fn computes_formatted_name_metric() {
+        assert_eq!(jumpnode(0o3, 12, -3, 0o377), 167);
+        assert_eq!(
+            jumpnode(0o3, i32::MIN, i32::MAX, 0),
+            (5 + 11 + 7 + 10) * 2 + 0o10,
+        );
+    }
+
+    #[test]
+    fn returns_unknown_operation_error() {
+        assert_eq!(jumpnode(0, 0, 0, 0), 0o202);
+    }
+}

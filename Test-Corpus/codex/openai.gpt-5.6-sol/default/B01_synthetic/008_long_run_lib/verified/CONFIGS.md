@@ -1,22 +1,31 @@
 # Configuration Surface
 
-The public header exposes `long_exec(unsigned int seed)`. Dynamic-symbol
-inventory additionally exposes the low-level
-`perform_expensive_operations(void)` function and the fixed-size global
-`int array[256 * 1024]`.
+Mechanically derived axes:
 
-The C source has no runtime option, mode, flag, element-type, format,
-byte-order, variable-size, or feature branch. Its only two operational axes
-are:
-
-- initial values in all 262,144 signed-int array elements for the low-level
-  operation;
-- the complete 32-bit unsigned seed domain for end-to-end execution.
+- Exported callable entry points: `perform_expensive_operations(void)` and
+  `long_exec(unsigned int)`.
+- Exported state: `array`, exactly `256 * 1024` C `int` elements.
+- Fixed transform shape: every array element, exactly 100 arithmetic rounds.
+- Fixed composed-operation shape: libc `srand`/`rand` initialization, exactly
+  2000 full transforms, then XOR reduction and one decimal line on stdout.
+- Runtime option/input: the full 32-bit `unsigned int` seed supplied to
+  `long_exec`; the C source has no mode flags or option branches.
+- Cargo features: none.
+- Executable targets: none (shared libraries only).
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `perform_expensive_operations`, `array` | Fixed 262,144-element `int` array; randomized full-domain `int` values plus `INT_MIN`, negative, zero, positive, and `INT_MAX` boundaries; one invocation performs 100 arithmetic rounds per element. | [x] |
-| 2 | `long_exec`, `array` | End-to-end fixed-size initialization and 2,000 transformation passes; randomized `unsigned int` seeds plus `0` and `UINT_MAX`; compare observable stdout and all final array bytes. | [x] |
+|---|----------------|--------------------------------------------|--------|
+| 1 | exported `array`; `perform_expensive_operations` | Full fixed-size array populated with arbitrary 32-bit bit patterns (including zero, positive, negative, `INT_MIN`, and `INT_MAX`), then one 100-round transform over all elements | [x] |
+| 2 | `long_exec`; exported `array`; `perform_expensive_operations` | Full-range `unsigned int` seed (including `0` and `UINT_MAX`); libc PRNG fills the full fixed-size array, 2000 transforms run, array is XOR-reduced, and decimal result plus newline is written to stdout | [x] |
 
-No Cargo features are declared in `Cargo.toml`, so the sole feature
-configuration is the default/no-feature build.
+The rows are the complete pruned cross-product: there are no public flags,
+variable lengths, element-type choices, formats, byte-order modes, feature
+combinations, or alternate entry points in the C source.
+
+The prescribed unoptimized C build exceeded the mandatory 600-second limit.
+The same untouched C source was therefore also built with CMake's Release
+configuration. That optimized library first matched Rust across all 12
+randomized row-1 cases, establishing the same observed transform semantics,
+then all eight row-2 workers (boundary seeds plus six deterministic randomized
+seeds) passed in 399.69 seconds. The orchestrator remains ignored by default so
+ordinary test runs do not accidentally select the unoptimized reference.

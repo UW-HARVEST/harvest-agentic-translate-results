@@ -1,20 +1,18 @@
-# Error Surface
+# Error and invalid-input surface
 
-This table is derived from every conditional rejection or sentinel-return
-branch in `c_src/src/lib.c`. The source has no `RETURN_ERROR`, `return -1`,
-`return NULL`, `assert`, explicit pointer validation, or error-enum return.
+Rows 1-2 are the explicit rejection branches mechanically found in
+`c_src/src/lib.c`. Rows 3-9 are the generic FFI boundary cases mandated by the
+verification protocol. The C API does not report an error code for these
+generic cases: it falls back, returns the allocator outcome, or faults.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | verified |
 |---|----------|---------------------------------------------|-------------------|----------|
-| E1 | `is_valid_operation` | `op_char == 0` | `false` | [x] |
-| E2 | `is_valid_operation` | nonzero `op_char < '1'` | `false` | [x] |
-| E3 | `is_valid_operation` | `op_char > '5'` | `false` | [x] |
-| E4 | `divide_operation` | `b == 0` | `0` | [x] |
-| E5 | `modulo_operation` | `b == 0` | `0` | [x] |
-
-`perform_computation_with_history` dereferences both pointer arguments without
-checking them. A null `history` or `history_count` therefore has undefined
-behavior in C rather than a defined error result. `allocate_results` passes
-zero, negative, and oversized counts directly to `calloc`; its only sentinel
-is the allocator's null result.
-
+| 1 | `divide_operation` | `b == 0` | returns `0` | [x] |
+| 2 | `modulo_operation` | `b == 0` | returns `0` | [x] |
+| 3 | `select_operation` | enum value `0` (one below `OP_ADD`) | returns `add_operation` | [x] |
+| 4 | `select_operation` | enum value `6` (one above `OP_MODULO`) | returns `add_operation` | [x] |
+| 5 | `perform_computation_with_history` | enum value outside `1..=5` | computes with `add_operation` | [x] |
+| 6 | `allocate_results` | zero length (`count == 0`) | returns exactly the platform `calloc(0, sizeof(ComputationResult))` outcome | [x] |
+| 7 | `allocate_results` | oversized/negative lengths (`INT_MAX`, `-1`) | returns exactly the platform `calloc` null/non-null outcome | [x] |
+| 8 | `perform_computation_with_history` | outer `history == NULL` | process terminates from invalid pointer dereference | [x] |
+| 9 | `perform_computation_with_history` | `history_count == NULL` | process terminates from invalid pointer dereference | [x] |

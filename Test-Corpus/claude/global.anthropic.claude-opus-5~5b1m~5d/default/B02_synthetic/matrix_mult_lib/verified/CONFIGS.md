@@ -1,86 +1,122 @@
-# CONFIGS.md — Phase A configuration surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-The library has **no runtime options, no flags, no modes, no `#ifdef`s and no
-enums**. Grepping `c_src/` for `#if`, `switch`, `getenv`, `static` globals and
-setter functions finds none. The only things the C branches on are therefore:
+## Axes the C code actually branches on
 
-* which of the **7 public entry points** is called
-  (`allocate_matrix`, `free_matrix`, `initialize_matrix_from_string`,
-  `multiply_matrices`, `matrix_to_string`, `write_to_file`, `driver`);
-* the **shape** of the input: `width`, `height` (`int`, any value) and the
-  relationship `mat_a->width == mat_b->height`;
-* the **format** of the input string, as seen by `strtok_r(.., "\n", ..)` /
-  `strtok_r(.., " ", ..)` and `atoi`;
-* the **magnitude/sign** of the element values (which changes the number of
-  digits `snprintf("%d")` emits and therefore the layout inside the
-  `matrix_to_string` buffer);
-* for `write_to_file`, the **content length** relative to `BUFSIZ` (which
-  decides whether the failure/flush happens inside `fprintf` or inside
-  `fclose`) and whether the target file already exists.
+Derived from `c_src/include/*.h` (the full public API) plus every `if`/loop
+bound in `c_src/src/*.c`. There are **no `#ifdef`s, no global options, no
+modes/flags** in this library — it is stateless. The configuration surface is
+therefore made of *input shape* axes only:
 
-Rows below are the cross-product of those axes, pruned to the combinations the
-C code actually distinguishes. Every row is driven with **many randomized
-inputs** from a fixed-seed PRNG (`SEED = 0x5EED_1234_ABCD_0001`), not a single
-hand-picked value.
+| axis | values the C distinguishes | where |
+|---|---|---|
+| A. entry point | `allocate_matrix`, `free_matrix`, `initialize_matrix_from_string`, `multiply_matrices`, `matrix_to_string`, `write_to_file`, `driver` | all of `matrix.h`, `write.h`, `driver.c`. `driver` is the one-shot wrapper; the other six are the low-level API and are driven **directly**. |
+| B. `height` | `0`, `1`, `>1`; `< 0` (→ error) | loop bounds `i < height`; `malloc(height*8)` |
+| C. `width` | `0`, `1`, `>1`; `< 0` (→ error) | loop bounds `j < width`; `malloc(width*4)`; `j < width - 1` separator test |
+| D. shape relation for `multiply_matrices` | `a.width == b.height` (ok) vs `!=` (error); square vs non-square; inner dim `0` (result all-zero); `1×n · n×1` (→ 1×1); `n×1 · 1×n` (→ n×n outer product) | `matrix.c:119`, triple loop |
+| E. token layout of the input string | exactly `height` lines; **more** lines than `height` (extra ignored); exactly `width` cols; **more** cols than `width` (extra ignored); consecutive delimiters (`strtok_r` collapses runs of `\n` and of `" "`); leading/trailing delimiters; no trailing newline; trailing newline; `\n` only vs `" "` only | `strtok_r` semantics, `matrix.c:89-111` |
+| F. cell value magnitude / `atoi` parsing | `0`; positive; negative; `INT_MAX`; `INT_MIN`; leading `+`; leading whitespace; overflowing literals (`"2147483648"`, `"-2147483649"` → `atoi` UB, glibc saturates); trailing garbage (`"12abc"` → `12`); non-numeric (`"abc"` → `0`); `"-"`; `"0x10"` → `0` | `atoi(col_token)` |
+| G. product arithmetic | products/accumulations that stay in range vs those that overflow `int` (C UB; both builds must wrap identically) | `matrix.c:129` |
+| H. `matrix_to_string` render width | `width == 1` (no separators emitted at all); `width > 1` (`width-1` spaces); `height == 0` (returns `""`); `width == 0` (row is just `"\n"`); digit counts 1..11 (11 chars ⇒ the C sizing formula under-allocates) | `matrix.c:143-163` |
+| I. `write_to_file` filename target | fresh file; **existing** file (truncated by mode `"w"`); nested-but-existing dir; path with spaces/UTF-8 | `fopen(filename,"w")` |
+| J. `write_to_file` content shape | `""` (empty ⇒ zero-byte file); single line; embedded `\n`; embedded `%` (must be literal — C uses `"%s"`); high bytes ≥ 0x80; long (≫ BUFSIZ) | `fprintf(file,"%s",content)` |
+| K. cross-library ABI interop | `matrix_t` built by C consumed by Rust and vice versa (same `repr(C)` layout, same `malloc` heap) | `matrix_t` in `matrix.h` |
 
-> **Value-range note (deliberate, not a shortcut).** `matrix_to_string` sizes its
-> buffer as `h*(w*10 + w) + h + 1` = 11 bytes per element + 1 byte per row, but
-> needs `strlen` per element **+ (w-1) separators + 1 newline** per row. For
-> `w >= 2` any row whose elements average more than 10 characters overruns the
-> heap allocation — a real bug in the C that is faithfully reproduced in Rust.
-> Randomized rows therefore keep `|value| <= 999_999_999` (<= 10 chars) so the
-> comparison observes defined behaviour; the `w == 1` rows, where the C sizing is
-> *exactly* tight (12 bytes per row, 11 digits + newline), sweep the **full**
-> `i32` range including `INT_MIN`/`INT_MAX`.
+## Rows (pruned cross-product — one row per combination the C treats differently)
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|-------------------------------------------|---|
-| C1 | `allocate_matrix` + `free_matrix` | `w,h` over `{0,1,2,3,7,64}²` (incl. `0×0`, `0×h`, `w×0`) — round-trip alloc/free, compare returned struct fields (`width`, `height`, rows-pointer non-null) | [x] |
-| C2 | `allocate_matrix` + `free_matrix` | randomized `w,h ∈ [0,128]`, write then read back every cell through the returned `int**` to prove the row/col layout matches | [x] |
-| C3 | `initialize_matrix_from_string` | exact fit: `h` rows × `w` cols, single spaces, no trailing newline; randomized `w,h ∈ [1,8]`, values `∈ [-999999999, 999999999]` | [x] |
-| C4 | `initialize_matrix_from_string` | exact fit **with** a trailing `"\n"` | [x] |
-| C5 | `initialize_matrix_from_string` | **extra columns** present in every row (surplus tokens ignored) | [x] |
-| C6 | `initialize_matrix_from_string` | **extra rows** present (surplus rows ignored) | [x] |
-| C7 | `initialize_matrix_from_string` | runs of **multiple spaces** between tokens + leading/trailing spaces per row (`strtok_r` collapses them) | [x] |
-| C8 | `initialize_matrix_from_string` | **leading / consecutive / trailing newlines** (blank lines are skipped by `strtok_r`) | [x] |
-| C9 | `initialize_matrix_from_string` | `w == 1` (no space delimiter appears at all), `h ∈ [1,8]`, **full `i32`** value range incl. `INT_MIN`/`INT_MAX` | [x] |
-| C10 | `initialize_matrix_from_string` | `h == 1` (single row, no newline delimiter), `w ∈ [1,16]` | [x] |
-| C11 | `initialize_matrix_from_string` | `w == 0`, `h == 0` and `w == 0 && h == 0` — degenerate shapes that still succeed (`malloc(0)`) | [x] |
-| C12 | `initialize_matrix_from_string` | token **forms** fed to `atoi`: `"abc"`, `"12abc"`, `"+7"`, `"-0"`, `"007"`, `"0x10"`, `"2147483647"`, `"-2147483648"`, `"99999999999999999999"`, `"-99999999999999999999"`, `"1e3"`, `"."`, `"--3"` | [x] |
-| C13 | `matrix_to_string` | `w == 1`, `h ∈ [1,8]`, full `i32` values (no separators; buffer exactly tight) | [x] |
-| C14 | `matrix_to_string` | `w >= 2` square/non-square, randomized values `∈ [-999999999,999999999]` (separators + newline per row) | [x] |
-| C15 | `matrix_to_string` | degenerate shapes: `0×0` → `""`, `w×0` → `""`, `0×h` → `h` bare newlines | [x] |
-| C16 | `matrix_to_string` | all-zero matrix, all-negative matrix, mixed-sign matrix, single-digit vs 10-digit widths (digit-count boundaries 1/2/9/10 chars) | [x] |
-| C17 | `multiply_matrices` | `a: h_a×k`, `b: k×w_b` with randomized `h_a, k, w_b ∈ [1,8]`, small values (`|v| <= 32`) so no wrap | [x] |
-| C18 | `multiply_matrices` | inner dimension `k == 0` (loop never runs → result is written as all zeros) and `k == 1` | [x] |
-| C19 | `multiply_matrices` | `mat_a->height == 0` and/or `mat_b->width == 0` (result allocated but no cell written) | [x] |
-| C20 | `multiply_matrices` | **`int` overflow / wraparound** in the accumulator: values near `±2^15…±2^16` with `k >= 4` so products and sums wrap | [x] |
-| C21 | `multiply_matrices` | non-square chains `1×N * N×1` (dot product) and `N×1 * 1×N` (outer product) | [x] |
-| C22 | `write_to_file` | new file, content `< BUFSIZ`; check return value **and** the resulting file bytes | [x] |
-| C23 | `write_to_file` | content `> BUFSIZ` (multiple flushes) and content exactly `BUFSIZ` | [x] |
-| C24 | `write_to_file` | **overwrite/truncate**: pre-existing file longer than the new content (`"w"` mode truncation) | [x] |
-| C25 | `write_to_file` | `content == ""` (0 bytes; `fprintf` returns 0 which is **not** `< 0`) | [x] |
-| C26 | `write_to_file` | content containing `\n`, `\t`, high-bit/UTF-8 bytes and `%` characters (must not be interpreted as a format) | [x] |
-| C27 | `write_to_file` | target `/dev/null` (opens, writes, closes successfully → `0`) | [x] |
-| C28 | `driver` (full pipeline, low-level entry points composed) | randomized valid `w_a×h_a * w_b×h_b` with `w_a == h_b`, `∈ [1,8]`, small values; compares return code **and** the bytes of `matrix.txt` | [x] |
-| C29 | `driver` | degenerate but valid pipelines: `w_a == h_b == 0`, `h_a == 0`, `w_b == 0` | [x] |
-| C30 | `driver` | `w_a == h_b == 1` (1×1 result) and `1×N * N×1` / `N×1 * 1×N` shapes | [x] |
-| C31 | end-to-end composition | `initialize_matrix_from_string` → `multiply_matrices` → `matrix_to_string` → `write_to_file` driven **manually** through the individual exports (not via `driver`), then the file bytes compared | [x] |
-| C32 | all entry points | large-ish stress shapes (`w,h` up to 64) with randomized values, to catch out-of-range indexing / row-stride mistakes | [x] |
+Every row is exercised with **many randomized inputs** (xorshift64\*, fixed
+seed `0x2545F4914F6CDD1D`) unless it is inherently a single fixed shape, and
+both `.so`s are called through `libloading` with byte-for-byte comparison of
+the return value, the `matrix_t` contents, the rendered string, and the
+captured `stderr`.
+
+| # | entry point(s) | configuration (options set + input shape) | test | [ ] |
+|---|----------------|-------------------------------------------|------|-----|
+| 1 | `allocate_matrix` + `free_matrix` | `width,height` = (1,1) | `cfg_01_alloc_free_1x1` | [x] |
+| 2 | `allocate_matrix` + `free_matrix` | `height = 0`, `width` random 0..64 (`malloc(0)` row array, no rows) | `cfg_02_alloc_zero_height` | [x] |
+| 3 | `allocate_matrix` + `free_matrix` | `width = 0`, `height` random 1..64 (`malloc(0)` per row) | `cfg_03_alloc_zero_width` | [x] |
+| 4 | `allocate_matrix` + `free_matrix` | randomized `width,height` ∈ 1..64 (many) — struct fields + non-NULL parity | `cfg_04_alloc_random` | [x] |
+| 5 | `allocate_matrix` | large-but-plausible `width,height` (1..4096 × 1..4096, capped so it fits) | `cfg_05_alloc_large` | [x] |
+| 6 | `initialize_matrix_from_string` + `matrix_to_string` | exact-fit input: `height` lines × `width` cols, single spaces, no trailing `\n`; randomized dims 1..12 and values in ±10⁴ | `cfg_06_init_exact_fit` | [x] |
+| 7 | `initialize_matrix_from_string` | trailing newline present | `cfg_07_init_trailing_newline` | [x] |
+| 8 | `initialize_matrix_from_string` | **more rows** than `height` and **more cols** than `width` (surplus ignored) | `cfg_08_init_surplus_tokens` | [x] |
+| 9 | `initialize_matrix_from_string` | runs of consecutive delimiters: `"\n\n"`, multiple spaces, leading/trailing spaces (`strtok_r` collapses) | `cfg_09_init_collapsed_delimiters` | [x] |
+| 10 | `initialize_matrix_from_string` | `width = 0` (inner loop never runs; each line consumed as a row token) | `cfg_10_init_zero_width` | [x] |
+| 11 | `initialize_matrix_from_string` | `height = 0` (outer loop never runs; returns matrix, input untouched) | `cfg_11_init_zero_height` | [x] |
+| 12 | `initialize_matrix_from_string` | `atoi` edge tokens: `"0"`, `"+5"`, `"-0"`, `"007"`, `"2147483647"`, `"-2147483648"`, `"2147483648"`, `"-2147483649"`, `"99999999999999999999"`, `"12abc"`, `"abc"`, `"-"`, `"0x10"`, `" 7"`, `"1e3"` | `cfg_12_init_atoi_edges` | [x] |
+| 13 | `initialize_matrix_from_string` | randomized *token text* fuzz: random mixes of digits, signs, letters and spaces | `cfg_13_init_token_fuzz` | [x] |
+| 14 | `matrix_to_string` | `width == 1` (no separator branch ever taken), values incl. `INT_MIN`/`INT_MAX` (11-char, still exactly fits the C formula for `width==1`) | `cfg_14_to_string_width1_extremes` | [x] |
+| 15 | `matrix_to_string` | `width == 0` (rows render as bare `"\n"`) | `cfg_15_to_string_zero_width` | [x] |
+| 16 | `matrix_to_string` | `height == 0` (returns `""`) | `cfg_16_to_string_zero_height` | [x] |
+| 17 | `matrix_to_string` | `width > 1`, randomized dims/values kept ≤ 10 chars so the C sizing formula does not under-allocate | `cfg_17_to_string_random` | [x] |
+| 18 | `multiply_matrices` | square × square, randomized `n` ∈ 1..12, values ±100 | `cfg_18_mul_square` | [x] |
+| 19 | `multiply_matrices` | non-square compatible: `(h_a×w_a) · (w_a×w_b)`, randomized | `cfg_19_mul_nonsquare` | [x] |
+| 20 | `multiply_matrices` | inner dimension `0` (`a` is `h×0`, `b` is `0×w`) → every cell `0`, `k`-loop never runs | `cfg_20_mul_zero_inner` | [x] |
+| 21 | `multiply_matrices` | `1×n · n×1` → 1×1 dot product | `cfg_21_mul_dot` | [x] |
+| 22 | `multiply_matrices` | `n×1 · 1×m` → n×m outer product | `cfg_22_mul_outer` | [x] |
+| 23 | `multiply_matrices` | `height_a = 0` or `width_b = 0` (result has an empty dimension) | `cfg_23_mul_empty_result` | [x] |
+| 24 | `multiply_matrices` | **overflowing** products/accumulations (values near `INT_MAX`/`INT_MIN`) — signed wrap must match bit-for-bit | `cfg_24_mul_overflow` | [x] |
+| 25 | `multiply_matrices` | full pipeline `init → multiply → to_string`, randomized, values bounded so rendering is safe | `cfg_25_pipeline_random` | [x] |
+| 26 | `write_to_file` | fresh file, single-line content | `cfg_26_write_fresh` | [x] |
+| 27 | `write_to_file` | **existing, longer** file (mode `"w"` truncates) | `cfg_27_write_truncates` | [x] |
+| 28 | `write_to_file` | empty content `""` → zero-byte file, returns `0` | `cfg_28_write_empty` | [x] |
+| 29 | `write_to_file` | content with embedded `%d`/`%s`/`%%` — must be literal (C uses `"%s"`, not `content` as a format) | `cfg_29_write_percent_literal` | [x] |
+| 30 | `write_to_file` | content with high bytes (0x80..0xFF), embedded newlines; randomized length 0..8192 (crosses `BUFSIZ`) | `cfg_30_write_random_bytes` | [x] |
+| 31 | `write_to_file` | filename containing spaces / UTF-8 / dots | `cfg_31_write_odd_filenames` | [x] |
+| 32 | `driver` | success path, randomized compatible dims/values; compares return code **and the byte content of `matrix.txt`** | `cfg_32_driver_success_random` | [x] |
+| 33 | `driver` | success with `width_a = 0` (inner dim 0) and with `height_a = 0` | `cfg_33_driver_degenerate_dims` | [x] |
+| 34 | `driver` | success with `1×1 · 1×1`, incl. overflowing values | `cfg_34_driver_1x1_overflow` | [x] |
+| 35 | cross-library ABI | matrix built by **C** `initialize_matrix_from_string` → rendered by **Rust** `matrix_to_string`, and vice versa; also C-built × Rust-built into each `multiply_matrices` | `cfg_35_cross_library_interop` | [x] |
+| 36 | cross-library ABI | matrix allocated by **C** `allocate_matrix` → freed by **Rust** `free_matrix` and vice versa (same `malloc` arena) | `cfg_36_cross_library_alloc_free` | [x] |
+
+## Binary executable
+
+`c_src/CMakeLists.txt` builds **only** `add_library(driver SHARED …)` — there is
+no `add_executable`, and `driver.c` has no `main`. The Rust `Cargo.toml`
+likewise declares only `crate-type = ["cdylib"]` with no `[[bin]]`. **No driver
+binary exists, so the "compare stdout of the two binaries" gate is not
+applicable**; the `driver()` entry point is instead compared through the FFI in
+rows 32–34, including the bytes it writes to `matrix.txt`.
 
 ## Result
 
-All 32 rows pass, driven from `tests/phase_b_configs.rs` (one `#[test]` per row,
-named `c1_…` … `c32_…`). Roughly 3,300 differential comparisons run per suite
-invocation; each compares the return value, every reachable byte of the produced
-matrix / string / file, **and** the bytes written to `stderr`.
+`cargo test --release` → **36 passed, 0 failed** in `tests/phase_b_configs.rs`;
+every row above is checked off.
 
-Corrections made to this table while deriving it from the C (recorded so the
-table stays honest about what the C actually does):
+Notes on how the rows are driven:
 
-* `initialize_matrix_from_string("   ", 0, 1)` **succeeds** — `strtok_r` with the
-  `"\n"` delimiter returns the whole blank line as row 1, and the `width == 0`
-  inner loop never runs. Only asking for a *second* row fails.
-* `matrix_to_string` on `width == -1, height == -1` **succeeds** and returns `""`:
-  `buffer_size = (-1)*((-1)*10 + -1) + (-1) + 1 = 11`, a valid allocation, and
-  both loops are then skipped.
+* All six low-level entry points (`allocate_matrix`, `free_matrix`,
+  `initialize_matrix_from_string`, `multiply_matrices`, `matrix_to_string`,
+  `write_to_file`) are called **directly** through their exported C symbols, not
+  only via the `driver` one-shot wrapper; `driver` itself is additionally
+  compared end-to-end in rows 32–34, including the bytes it leaves in
+  `matrix.txt`.
+* Rows marked "randomized" use a xorshift64\* generator with the fixed seed
+  `0x2545F4914F6CDD1D` (per-row salted), 40–300 cases per row, and compare the
+  full observable state: the `matrix_t` dimensions, every cell, the rendered
+  `char*`, the return code, the written file bytes **and** the captured
+  `stderr` bytes.
+* `allocate_matrix` rows compare only NULL-ness and the `width`/`height` fields:
+  the cell storage it hands back is *uninitialised* `malloc` memory, so its
+  contents legitimately differ between the two calls.
+* Value ranges in the rendering rows are bounded so that no cell needs more than
+  10 characters. That is deliberate: the C sizing formula
+  `height * (width*10 + width) + height + 1` reserves only **one** spare byte per
+  row for the `width - 1` separators plus the newline, so an 11-character
+  rendering (e.g. `-2147483648`) with `width > 1` overruns the buffer and
+  corrupts the heap. That bug is faithfully reproduced (same `malloc`, same
+  `snprintf`/`strcat`, no intermediate Rust allocations), but it is not a stable
+  thing to assert on, so row 14/24 exercise the 11-character values with
+  `width == 1`, where the formula happens to fit exactly.
+* Rows 35–36 additionally check ABI compatibility of `matrix_t` *across* the two
+  libraries: a matrix built by C is rendered/multiplied/freed by Rust and vice
+  versa. This works because both `.so`s share the process's single `malloc`
+  arena and the Rust `#[repr(C)] matrix_t` is layout-identical.
+
+## Verified configurations of the build itself
+
+| build | how | result |
+|---|---|---|
+| `target/release/libdriver.so` (`panic = "abort"`) | `cargo build --release` | 66/66 tests pass |
+| `target/debug/libdriver.so` | `cargo build`, then `DIFFTEST_RUST_SO=…/target/debug/libdriver.so cargo test --release` | 66/66 tests pass |
+| default features | `./check_features.sh` | pass |
+| `--no-default-features` | `./check_features.sh` | pass |

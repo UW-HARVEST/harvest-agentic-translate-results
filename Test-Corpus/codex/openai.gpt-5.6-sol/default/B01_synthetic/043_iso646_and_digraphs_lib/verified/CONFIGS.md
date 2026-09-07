@@ -1,13 +1,13 @@
 # Configuration Surface
 
-Mechanical scan scope: the public header and all C implementation branches.
-There are no runtime options, modes, flags, state, preprocessor feature
-branches, or input-shape branches. The sole public entry point accepts two
-by-value C `int` values and always prints one decimal integer plus a newline.
+Mechanical inspection found one public entry point and no runtime options,
+modes, flags, state, switches, conditionals, feature branches, element types,
+formats, byte-order choices, counts, pointers, or variable-sized inputs.
+
+The only input shape is the complete pair of by-value C `int` bit patterns.
+The Phase B test for this row must include deterministic boundary pairs and
+many fixed-seed randomized pairs, comparing captured stdout byte-for-byte.
 
 | # | entry point(s) | configuration (options set + input shape) | status |
-|---|---|---|---|
-| 1 | `driver(int x, int y)` | No options; full `(x, y)` C `int` domain. Exercise `INT_MIN`, `INT_MAX`, `-1`, `0`, `1`, mixed-sign pairs, and many fixed-seed randomized pairs. Compare captured stdout byte-for-byte. | [x] |
-
-There are no lower-level, convenience, one-shot, or state-management entry
-points beyond `driver`.
+|---|----------------|--------------------------------------------|--------|
+| 1 | `driver(int x, int y)` | No options; all pairs in the full signed 32-bit C `int` domain, including zero, ±1, `INT_MIN`, `INT_MAX`, equal/opposite values, and randomized bit patterns | [x] |

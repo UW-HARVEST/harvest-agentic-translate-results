@@ -50,7 +50,6 @@ pub unsafe extern "C" fn init_array(initial_capacity: usize) -> *mut DynamicArra
 }
 
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn expand_array(array: *mut DynamicArray) -> c_int {
     if array.is_null() {
         return 0;
@@ -71,7 +70,6 @@ pub unsafe extern "C" fn expand_array(array: *mut DynamicArray) -> c_int {
 }
 
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn add_element(array: *mut DynamicArray, value: c_int) -> c_int {
     if array.is_null() {
         return 0;
@@ -90,7 +88,6 @@ pub unsafe extern "C" fn add_element(array: *mut DynamicArray, value: c_int) -> 
 }
 
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn free_array(array: *mut DynamicArray) {
     if !array.is_null() {
         unsafe {
@@ -101,7 +98,6 @@ pub unsafe extern "C" fn free_array(array: *mut DynamicArray) {
 }
 
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub extern "C" fn process_flags(flags: c_int) -> c_int {
     let read_enabled = c_int::from(flags & FLAG_READ != 0);
     let write_enabled = c_int::from(flags & FLAG_WRITE != 0);
@@ -112,7 +108,6 @@ pub extern "C" fn process_flags(flags: c_int) -> c_int {
 }
 
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub extern "C" fn calculate_matrix_checksum() -> c_int {
     let mut sum: c_int = 0;
     let base = ptr::addr_of!(matrix).cast::<c_int>();
@@ -124,7 +119,6 @@ pub extern "C" fn calculate_matrix_checksum() -> c_int {
 }
 
 #[unsafe(no_mangle)]
-#[inline(never)]
 pub unsafe extern "C" fn matrixsum(
     param1: c_int,
     param2: c_int,

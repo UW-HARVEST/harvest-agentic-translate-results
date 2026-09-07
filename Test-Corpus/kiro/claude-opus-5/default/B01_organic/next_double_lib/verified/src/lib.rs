@@ -10,11 +10,9 @@
 //! ```
 
 use std::ffi::c_double;
-use std::ptr;
 
 /// Mirrors `cn_rnd_t` from `include/lib.h`: two `uint64_t` words.
-/// `#[repr(C)]` keeps layout/alignment identical to the C struct
-/// (16 bytes, 8-byte aligned, `state[0]` at offset 0, `state[1]` at offset 8).
+/// `#[repr(C)]` keeps layout/alignment identical to the C struct.
 #[repr(C)]
 pub struct cn_rnd_t {
     pub state: [u64; 2],
@@ -26,30 +24,27 @@ pub struct cn_rnd_t {
 /// 2^64, so the final addition uses `wrapping_add` to reproduce it exactly
 /// (and to avoid a debug-build overflow panic).
 ///
-/// The state is accessed through raw `ptr::read`/`ptr::write` rather than a
-/// `&mut cn_rnd_t`. That is deliberate: the C code dereferences `rnd`
-/// unconditionally, and forming a Rust reference from the pointer first would
-/// trip a debug-build UB check and `abort()` (SIGABRT) where the C faults
-/// (SIGSEGV). Raw pointer reads fault exactly like the C does, in every
-/// profile. See `ERRORS.md` row B1.
-///
-/// # Safety
-/// `rnd` must be a valid, aligned pointer to a `cn_rnd_t`, mirroring the
-/// (unchecked) contract of the C function.
+/// The state words are accessed with `read_unaligned`/`write_unaligned` through
+/// a raw pointer rather than through a `&mut cn_rnd_t`. The C compiler emits
+/// plain 8-byte loads/stores that succeed on x86-64 regardless of the pointer's
+/// alignment, and forming a Rust reference would instead trip the debug-build
+/// misaligned-pointer check and abort. On an aligned pointer the generated code
+/// and results are identical, so this only widens the set of inputs Rust
+/// handles the same way C does.
 #[inline]
 unsafe fn cn_rnd_next(rnd: *mut cn_rnd_t) -> u64 {
-    // `state[0]` is at offset 0 and `state[1]` at offset 8 of the `#[repr(C)]`
-    // struct, so a `*mut u64` walk is layout-identical to `rnd->state[i]`.
+    // `cn_rnd_t` is `#[repr(C)]` with a single `[u64; 2]` field, so the struct
+    // pointer and a pointer to `state[0]` have the same address.
     let state = rnd as *mut u64;
 
-    let mut x: u64 = unsafe { ptr::read(state) }; // uint64_t x = rnd->state[0];
-    let y: u64 = unsafe { ptr::read(state.add(1)) }; // uint64_t y = rnd->state[1];
-    unsafe { ptr::write(state, y) }; // rnd->state[0] = y;
-    x ^= x << 23; // x ^= x << 23;
-    x ^= x >> 17; // x ^= x >> 17;
-    x ^= y ^ (y >> 26); // x ^= y ^ (y >> 26);
-    unsafe { ptr::write(state.add(1), x) }; // rnd->state[1] = x;
-    x.wrapping_add(y) // return x + y;
+    let mut x: u64 = unsafe { core::ptr::read_unaligned(state) };
+    let y: u64 = unsafe { core::ptr::read_unaligned(state.add(1)) };
+    unsafe { core::ptr::write_unaligned(state, y) };
+    x ^= x << 23;
+    x ^= x >> 17;
+    x ^= y ^ (y >> 26);
+    unsafe { core::ptr::write_unaligned(state.add(1), x) };
+    x.wrapping_add(y)
 }
 
 /// `double next_double(cn_rnd_t *rnd)`
@@ -58,12 +53,11 @@ unsafe fn cn_rnd_next(rnd: *mut cn_rnd_t) -> u64 {
 /// generated value and subtracts 1.0. The C code type-puns through
 /// `*(double *)&result`; `f64::from_bits` is the exact equivalent bit
 /// reinterpretation.
-///
-/// # Safety
-/// Same contract as the C function: `rnd` is dereferenced without any NULL or
-/// validity check.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn next_double(rnd: *mut cn_rnd_t) -> c_double {
+    // The C function dereferences `rnd` unconditionally (no NULL check);
+    // reproduce that behaviour rather than "fixing" it. A NULL pointer must
+    // fault here exactly as it does in C.
     let value: u64 = unsafe { cn_rnd_next(rnd) };
     let exponent: u64 = 1023;
     let mantissa: u64 = value >> 12;

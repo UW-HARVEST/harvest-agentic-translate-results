@@ -1,21 +1,28 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
+Generated from:
 
-Command:
-
-```sh
+```text
 nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `call_fma` | `T` | `call_fma` | present |
-| `driver` | `T` | `driver` | present |
-| `fma_array` | `T` | `fma_array` | present |
+| symbol | C type | C location | Rust export | status |
+|---|---|---|---|---|
+| `call_fma` | `int call_fma(const int *data, int len)` | `src/driver.c:34` | `src/lib.rs` | present |
+| `driver` | `void driver(const char *in)` | `include/driver.h:27`, `src/driver.c:50` | `src/lib.rs` | present |
+| `fma_array` | `void fma_array(int *restrict out, const int *mul1, const int *mul2, const int *add, int len)` | `src/driver.c:28` | `src/lib.rs` | present |
 
-The C library's undefined dynamic entries are the libc functions
-`__isoc99_sscanf` and `printf`, plus weak ELF toolchain hooks. They are imports,
-not public symbols defined by this library.
+## Raw C output
 
-Missing C-defined symbols in the Rust library: **0**.
+```text
+00000000000011c9 T call_fma
+00000000000013b4 T driver
+0000000000001139 T fma_array
+```
+
+## Phase D parity
+
+- [x] Every globally defined dynamic C symbol is exported by the Rust shared object with the exact name.
+- [x] Missing C symbols in Rust: 0.
+- [x] Undefined non-libc symbols introduced by the Rust translation: 0.
+

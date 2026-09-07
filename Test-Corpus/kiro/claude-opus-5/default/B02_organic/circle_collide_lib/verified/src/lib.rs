@@ -77,56 +77,6 @@ pub struct c2Capsule {
 }
 
 // ---------------------------------------------------------------------------
-// Bit-exact x86 SSE scalar-arithmetic models
-//
-// The C is built at -O0 and every float expression lowers to a scalar SSE
-// instruction of the form `OPss dst, src`, where `dst` is *src1*. When an
-// operand is NaN, x86 does NOT compute anything -- it forwards an operand:
-//
-//   * src1 is NaN  =>  result = src1 with the quiet bit forced on (| 0x400000);
-//                      sign and payload are otherwise preserved.
-//   * src1 is a number and src2 is NaN  =>  result = quiet(src2).
-//   * neither is NaN  =>  the ordinary IEEE-754 result (which for invalid
-//                         combinations such as inf*0 or inf+(-inf) is the x86
-//                         "real indefinite" QNaN 0xFFC0_0000).
-//
-// So for a NaN x NaN operand pair the *operand order* is observable in the
-// returned float. `fmul`/`fadd` are commutative, so LLVM's register allocator
-// commutes them at will and the Rust source order cannot pin src1 down. These
-// helpers therefore spell the selection rule out; the non-NaN path is left to
-// the hardware so ordinary results stay bit-identical by construction.
-// ---------------------------------------------------------------------------
-
-#[inline(always)]
-fn quiet(v: f32) -> f32 {
-    f32::from_bits(v.to_bits() | 0x0040_0000)
-}
-
-/// `mulss src1, src2` — x86 operand order, not Rust's `*`.
-#[inline(always)]
-fn mul_ss(src1: f32, src2: f32) -> f32 {
-    if src1.is_nan() {
-        return quiet(src1);
-    }
-    if src2.is_nan() {
-        return quiet(src2);
-    }
-    src1 * src2
-}
-
-/// `addss src1, src2` — x86 operand order, not Rust's `+`.
-#[inline(always)]
-fn add_ss(src1: f32, src2: f32) -> f32 {
-    if src1.is_nan() {
-        return quiet(src1);
-    }
-    if src2.is_nan() {
-        return quiet(src2);
-    }
-    src1 + src2
-}
-
-// ---------------------------------------------------------------------------
 // Vector helpers
 // ---------------------------------------------------------------------------
 
@@ -141,20 +91,38 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
 
 /// `c2v c2Mulvs(c2v a, float b)`
 ///
-/// gcc at `-O0` emits, for each component:
-///
-/// ```text
-///     movss  a.<c>, %xmm0 ;  mulss  b, %xmm0      ; src1 = a.<c>, src2 = b
-/// ```
-///
-/// i.e. the *vector component* is `src1` for both lanes, so on a NaN x NaN pair
-/// the component's payload survives, not the scalar's. Uses `mul_ss` to pin that
-/// down independently of how LLVM commutes the multiply.
+/// Each component multiplies with the `a` component as the `mulss` destination
+/// operand, matching the C (`mulss -0xc(%rbp),%xmm0` with `a.x`/`a.y` in
+/// `%xmm0`). This is observable only when both operands are NaN, where x86
+/// returns `quiet(dst)`. It must be pinned with inline asm: `fmul` is
+/// commutative in LLVM IR, and the release build happened to pick `a` as the
+/// destination while the debug build picked `b` — a divergence that plain Rust
+/// source cannot control.
+#[cfg(target_arch = "x86_64")]
+#[unsafe(no_mangle)]
+pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
+    let x: f32;
+    let y: f32;
+    unsafe {
+        core::arch::asm!(
+            "mulss {ax}, {b}", // a.x *= b   (dst = a.x)
+            "mulss {ay}, {b}", // a.y *= b   (dst = a.y)
+            ax = inout(xmm_reg) a.x => x,
+            ay = inout(xmm_reg) a.y => y,
+            b = in(xmm_reg) b,
+            options(pure, nomem, nostack),
+        );
+    }
+    c2v { x, y }
+}
+
+/// Portable fallback: identical for all non-NaN inputs.
+#[cfg(not(target_arch = "x86_64"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
     let mut a = a;
-    a.x = mul_ss(a.x, b);
-    a.y = mul_ss(a.y, b);
+    a.x = sse_mul_src1(a.x, b);
+    a.y = sse_mul_src1(a.y, b);
     a
 }
 
@@ -196,26 +164,107 @@ pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
     a
 }
 
+// ---------------------------------------------------------------------------
+// x86 SSE scalar NaN-propagation emulation
+//
+// `mulss`/`addss`/`subss dst, src` do NOT return a canonical NaN when an
+// operand is NaN: they return `quiet(dst)` if `dst` is NaN, otherwise
+// `quiet(src)` if `src` is NaN. So the *payload and sign* of the result depend
+// on which operand the compiler placed in the destination register.
+//
+// `gcc -O0` compiles `c2Dot`'s `a.x * b.x + a.y * b.y` as
+//     mulss %xmm0,%xmm1   ; xmm1 = a.x * b.x        (dst = a.x)
+//     mulss %xmm2,%xmm0   ; xmm0 = b.y * a.y        (dst = b.y)
+//     addss %xmm1,%xmm0   ; xmm0 = y_term + x_term  (dst = y_term)
+// i.e. the *y* product is the addition's first operand, and the two products
+// disagree about which side is the destination.
+//
+// This order cannot be pinned down from Rust source: LLVM canonicalises
+// commutative `fadd`/`fmul` operands, and because LLVM's IR leaves the payload
+// of a NaN-producing float op *unspecified* it will also happily fold an
+// explicit `if x.is_nan() { quiet(x) } else { x + y }` back into a bare `fadd`
+// (verified: doing so produced byte-identical machine code). The instructions
+// are therefore emitted directly, which is the only construct LLVM may not
+// reorder. Non-x86 targets fall back to the software emulation, which is
+// correct for every non-NaN input and best-effort for NaN payloads.
+// ---------------------------------------------------------------------------
+
+/// `a.x * b.x + b.y * a.y`, with each SSE instruction's destination operand
+/// pinned to the register the C compiler uses, so NaN payloads propagate
+/// identically.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn dot_sse(a: c2v, b: c2v) -> f32 {
+    let y_term: f32;
+    let _x_term: f32;
+    unsafe {
+        core::arch::asm!(
+            "mulss {x}, {bx}", // x_term = a.x * b.x   (dst = a.x)
+            "mulss {y}, {ay}", // y_term = b.y * a.y   (dst = b.y)
+            "addss {y}, {x}",  // y_term = y_term + x_term (dst = y_term)
+            x = inout(xmm_reg) a.x => _x_term,
+            y = inout(xmm_reg) b.y => y_term,
+            bx = in(xmm_reg) b.x,
+            ay = in(xmm_reg) a.y,
+            options(pure, nomem, nostack),
+        );
+    }
+    y_term
+}
+
+/// Portable fallback: identical for all non-NaN inputs.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+fn dot_sse(a: c2v, b: c2v) -> f32 {
+    let x_term = sse_mul_src1(a.x, b.x);
+    let y_term = sse_mul_src1(b.y, a.y);
+    sse_add_src1(y_term, x_term)
+}
+
+/// True for both quiet and signalling NaN.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+fn is_nan_bits(x: f32) -> bool {
+    (x.to_bits() & 0x7fff_ffff) > 0x7f80_0000
+}
+
+/// Set the mantissa MSB, exactly as x86 does when it quiets a NaN operand.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+fn quiet_nan(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() | 0x0040_0000)
+}
+
+/// `src1 * src2` with `src1` as the notional destination operand.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+fn sse_mul_src1(src1: f32, src2: f32) -> f32 {
+    if is_nan_bits(src1) {
+        quiet_nan(src1)
+    } else if is_nan_bits(src2) {
+        quiet_nan(src2)
+    } else {
+        src1 * src2
+    }
+}
+
+/// `src1 + src2` with `src1` as the notional destination operand.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+fn sse_add_src1(src1: f32, src2: f32) -> f32 {
+    if is_nan_bits(src1) {
+        quiet_nan(src1)
+    } else if is_nan_bits(src2) {
+        quiet_nan(src2)
+    } else {
+        src1 + src2
+    }
+}
+
 /// `float c2Dot(c2v a, c2v b)`
-///
-/// The C is `return a.x * b.x + a.y * b.y;`, which gcc at `-O0` lowers to
-///
-/// ```text
-///     movss  a.x, %xmm1 ;  mulss  b.x, %xmm1      ; x_term, src1 = a.x
-///     movss  a.y, %xmm2 ;  movss  b.y, %xmm0
-///     mulss  %xmm2, %xmm0                         ; y_term, src1 = b.y  (!)
-///     addss  %xmm1, %xmm0                         ; result, src1 = y_term (!)
-/// ```
-///
-/// Two asymmetries are observable in the returned NaN payload/sign: the y-term
-/// multiply takes **`b.y`** as `src1` (gcc happened to load `b.y` into the
-/// destination register), and the final add takes the **y term** as `src1`. Both
-/// are reproduced via the `mul_ss` / `add_ss` models above.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    let x_term = mul_ss(a.x, b.x);
-    let y_term = mul_ss(b.y, a.y);
-    add_ss(y_term, x_term)
+    dot_sse(a, b)
 }
 
 // ---------------------------------------------------------------------------
@@ -267,34 +316,20 @@ pub extern "C" fn c2CircletoCapsule(A: c2Circle, B: c2Capsule) -> c_int {
 
 /// `int c2Collided(const void *A, const void *B, C2_TYPE typeB)`
 ///
-/// `A` is always reinterpreted as a `c2Circle*` regardless of `typeB`, matching
-/// the C. Any `typeB` with no matching `case` label falls to `default:` and
-/// returns `0` *without* touching either pointer.
-///
-/// The loads use `read_unaligned` because the C's `*(c2Circle *)A` compiles to
-/// plain x86 `movss`/`mov` sequences that impose no alignment requirement, so a
-/// caller may legitimately pass an unaligned address and the C will read it
-/// correctly. A plain Rust `*ptr` would instead trip the debug-assertions
-/// "misaligned pointer dereference" check and abort, diverging from the C.
+/// `A` is always reinterpreted as a `c2Circle*`, matching the C.
 ///
 /// # Safety
-/// `A` and `B` must point at readable objects of the sizes implied by `typeB`,
-/// exactly as required by the C original. Alignment is *not* required.
+/// `A` and `B` must point at properly aligned, initialised objects of the
+/// types implied by `typeB`, exactly as required by the C original.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Collided(A: *const c_void, B: *const c_void, typeB: c_int) -> c_int {
     match typeB {
         C2_TYPE_CIRCLE => c2CircletoCircle(
-            core::ptr::read_unaligned(A as *const c2Circle),
-            core::ptr::read_unaligned(B as *const c2Circle),
+            *(A as *const c2Circle),
+            *(B as *const c2Circle),
         ),
-        C2_TYPE_AABB => c2CircletoAABB(
-            core::ptr::read_unaligned(A as *const c2Circle),
-            core::ptr::read_unaligned(B as *const c2AABB),
-        ),
-        C2_TYPE_CAPSULE => c2CircletoCapsule(
-            core::ptr::read_unaligned(A as *const c2Circle),
-            core::ptr::read_unaligned(B as *const c2Capsule),
-        ),
+        C2_TYPE_AABB => c2CircletoAABB(*(A as *const c2Circle), *(B as *const c2AABB)),
+        C2_TYPE_CAPSULE => c2CircletoCapsule(*(A as *const c2Circle), *(B as *const c2Capsule)),
         _ => 0,
     }
 }

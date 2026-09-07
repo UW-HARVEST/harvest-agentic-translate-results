@@ -1,56 +1,79 @@
-# SYMBOLS.md — public symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-Build commands:
+Build commands used:
 
 ```
 cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
 cd translation && cargo build --release
 ```
 
-## C `.so` — `c_src/build/libdriver.so`
+## C `.so` exported (defined, dynamic) symbols
+
+`nm -D --defined-only c_src/build/libdriver.so`
 
 ```
-$ nm -D --defined-only c_src/build/libdriver.so
 0000000000001149 T driver
 ```
 
-| # | symbol | type | exported by Rust `.so`? | notes |
-|---|--------|------|------------------------|-------|
-| 1 | `driver` | `T` (global text) | YES | `#[unsafe(no_mangle)] pub extern "C" fn driver(c: c_char)` in `src/lib.rs` |
+That is the complete public ABI. `c_src/include/driver.h` declares exactly one
+function and `c_src/src/driver.c` is the only translation unit in
+`CMakeLists.txt`. There are no macro-generated symbol names, no namespace
+prefix macros, no exported globals, and no additional C source files (so there
+is no "untranslated module" case here).
 
-## Rust `.so` — `translation/target/release/libdriver.so`
+## Rust `.so` exported (defined, dynamic) symbols
+
+`nm -D --defined-only translation/target/release/libdriver.so`
 
 ```
-$ nm -D --defined-only translation/target/release/libdriver.so
 00000000000129e0 T driver
 ```
 
-The Rust `cdylib` additionally defines the usual Rust/`compiler_builtins`
-housekeeping symbols only when they are needed; none of them are part of the C
-surface and none of the C symbols are missing.
+## Symbol parity table
 
-## Undefined (imported) symbols
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `driver` | T (exported) | T (exported) | ✅ present in both |
 
-The C object imports `printf`, `putchar`/`puts` (compiler-substituted), and
-`setlocale` from libc. The Rust object imports the same `printf` and
-`setlocale` from libc on purpose, so the two share one `stdout` `FILE` and
-therefore the identical buffering behaviour.
+## Diff
 
 ```
-$ nm -D --undefined-only c_src/build/libdriver.so   | grep -v '@GLIBC\|__cxa\|_ITM_\|__gmon'
-$ nm -D --undefined-only translation/target/release/libdriver.so | grep -v '@GLIBC\|__cxa\|_ITM_\|__gmon'
+$ diff <(nm -D --defined-only c_src/build/libdriver.so     | awk '{print $NF}' | sort) \
+       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $NF}' | sort)
+<empty>
 ```
 
-Both reduce to the empty set of non-libc undefined symbols.
+**Missing from Rust: 0. Undefined non-libc symbols in Rust: 0.**
 
-## Verdict
+The Rust `.so`'s undefined symbols are only libc imports (`printf`,
+`setlocale`) plus the usual glibc/`compiler_builtins` runtime entries, which
+mirror what the C `.so` imports (`printf`, `setlocale`, plus glibc's
+`__ctype_b_loc` / `__ctype_tolower_loc` / `__ctype_toupper_loc`, which the Rust
+translation replaces with its own in-crate `"C"`-locale tables in
+`src/ctype.rs`).
 
-- C symbols: 1 (`driver`).
-- Missing from Rust: **0**.
-- Non-libc undefined in Rust: **0**.
-- No whole C module was skipped: `c_src` contains exactly one translation unit
-  (`src/driver.c`) with exactly one non-static function.
+## Feature combinations
 
-Symbol diff is EMPTY. ✅
+`translation/Cargo.toml` declares **no `[features]` section** — there are no
+default or optional features, so the only build configuration is the default
+one. `cargo build --no-default-features` is therefore equivalent to the default
+build. (Verified with `cargo read-manifest`/`cargo metadata`: `"features": {}`.)
+
+## Verification result
+
+`tests/phase_d_symbol_parity.rs` enforces the parity above as a test
+(`every_c_symbol_is_exported_by_rust`, `rust_so_has_no_unresolvable_non_libc_symbols`),
+and `run_tests.sh` re-checks the raw `nm -D` diff for both the release and dev
+cdylib profiles:
+
+```
+symbol diff: EMPTY (parity OK)
+dev symbol diff: EMPTY (parity OK)
+```
+
+Nothing was stubbed and no module was missing: `c_src` contains a single
+translation unit whose only public function is fully implemented in Rust
+(`src/lib.rs` plus the `"C"`-locale `<ctype.h>` tables in `src/ctype.rs` that
+replace glibc's `__ctype_b_loc` / `__ctype_tolower_loc` / `__ctype_toupper_loc`).

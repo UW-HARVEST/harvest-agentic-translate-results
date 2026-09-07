@@ -246,13 +246,21 @@ pub unsafe extern "C" fn inreftree(
 
     let tree_sum = unsafe { calculate_tree_sum(1) };
 
-    let op_string = b"+*-%";
-    let op_index = tree_sum % 4;
-    let op_char = [
-        unsafe { *op_string.as_ptr().offset(op_index as isize) } as c_char,
-        0,
-    ];
-    let op = unsafe { parse_operation(op_char.as_ptr()) };
+    let op = if tree_sum < 0 {
+        // In the C shared object, indices -1, -2, and -3 land on bytes before
+        // "+*-%" that are not recognized operators, so parse_operation falls
+        // through to OP_ADD. Make that binary-observed behavior independent
+        // of Rust's unrelated static-data layout.
+        OP_ADD
+    } else {
+        let op_string = b"+*-%";
+        let op_index = tree_sum % 4;
+        let op_char = [
+            unsafe { *op_string.as_ptr().offset(op_index as isize) } as c_char,
+            0,
+        ];
+        unsafe { parse_operation(op_char.as_ptr()) }
+    };
 
     let func = get_operation_func(op);
     unsafe { func(tree_sum, target_id, 0, 0) }

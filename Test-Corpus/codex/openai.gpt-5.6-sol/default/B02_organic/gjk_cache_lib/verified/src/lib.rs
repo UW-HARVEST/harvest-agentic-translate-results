@@ -381,6 +381,8 @@ pub unsafe extern "C" fn c2D(s: *mut c2Simplex) -> c2v {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c_int {
     let mut imax = 0;
+    // The C implementation unconditionally reads verts[0], even when count
+    // makes the loop empty. Keep that FFI-observable access under optimization.
     let mut dmax = c2Dot(std::ptr::read_volatile(verts), d);
     let mut i = 1;
     while i < count {

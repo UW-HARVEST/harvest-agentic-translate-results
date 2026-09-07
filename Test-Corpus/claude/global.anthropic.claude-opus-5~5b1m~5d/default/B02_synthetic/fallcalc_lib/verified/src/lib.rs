@@ -25,7 +25,6 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use core::hint::black_box;
 use core::mem::size_of;
 use std::ffi::{c_double, c_int, c_void};
 
@@ -52,26 +51,6 @@ struct DataPoint {
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn free(ptr: *mut c_void);
-}
-
-/// Call libc `malloc` in a way the optimizer cannot reason away.
-///
-/// Without this, at `-O2`+ LLVM recognises a *constant-size* `malloc` whose
-/// pointer does not escape and applies "heap-to-stack": the allocation becomes
-/// an `alloca`, which cannot fail, so the `if (p == NULL) return -1;` branch is
-/// folded away as unreachable. The C reference (built by CMake with no
-/// `CMAKE_BUILD_TYPE`, i.e. `-O0`) always performs the real call and always
-/// honours the NULL check, so eliding it is an observable behavioural
-/// divergence whenever `malloc` actually fails (memory pressure, `RLIMIT_AS`,
-/// an interposed allocator...). `fallcalc`'s `malloc(5 * sizeof(int))` is
-/// exactly such a constant-size allocation.
-///
-/// Hiding the size behind `black_box` keeps the genuine libc call, and hiding
-/// the result keeps the NULL comparison, so the `-1` error path stays reachable
-/// in every profile.
-#[inline]
-unsafe fn c_malloc(size: usize) -> *mut c_void {
-    black_box(unsafe { malloc(black_box(size)) })
 }
 
 /// int safe_double_to_int(double d)
@@ -160,7 +139,7 @@ pub unsafe extern "C" fn allocate_and_compute(size: c_int, multiplier: c_double)
     // C: malloc(size * sizeof(DataPoint)) -- `size` (int) is converted to size_t
     // before the multiplication, so negative sizes become enormous requests.
     let bytes = (size as usize).wrapping_mul(size_of::<DataPoint>());
-    let points = unsafe { c_malloc(bytes) } as *mut DataPoint;
+    let points = unsafe { malloc(bytes) } as *mut DataPoint;
 
     if points.is_null() {
         return -1;
@@ -221,7 +200,7 @@ pub extern "C" fn fallcalc(param1: c_int, param2: c_int, param3: c_int, param4: 
 
     let array_size: c_int = 5;
     let data_array =
-        unsafe { c_malloc((array_size as usize).wrapping_mul(size_of::<c_int>())) } as *mut c_int;
+        unsafe { malloc((array_size as usize).wrapping_mul(size_of::<c_int>())) } as *mut c_int;
 
     if data_array.is_null() {
         return -1;

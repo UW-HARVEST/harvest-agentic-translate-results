@@ -1,15 +1,20 @@
 # Configuration Surface
 
-The complete public API is `void driver(float x)`. It has no runtime options,
-modes, flags, feature-controlled branches, or lower-level public entry points.
-The C implementation always copies `sizeof(float)` bytes and prints each byte
-in native object-representation order with `%02x`, followed by a newline.
+Mechanically inspected the public header and all `if`, `switch`, preprocessor,
+loop, and `sizeof` uses in the C source.
 
-The source has one data-independent loop over the fixed byte count. It does not
-branch on the float's sign, exponent, significand, classification, or value.
-Consequently one row covers the full input domain; its randomized corpus must
-sample raw bit patterns rather than only finite numeric values.
+There are no runtime options, modes, flags, feature conditionals, pointer
+shapes, lengths, counts, formats, byte-order settings, or alternate public
+entry points. `driver` always copies the complete native `float` object
+representation (`sizeof(float)` bytes) and prints each byte in increasing
+address order as two lowercase hexadecimal digits, followed by a newline.
+The loop branch depends only on that fixed object size, not on the input value.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `driver` | No options; every raw 32-bit `float` object representation, including positive/negative zero, normals, subnormals, infinities, quiet/signaling NaNs, and randomized payloads; native byte order; fixed `sizeof(float)` byte count | [x] |
+| 1 | `driver(float)` | No options; one by-value C `float`; arbitrary 32-bit object representation, including signed zeros, subnormals, finite values, infinities, and NaN payloads | [x] |
+
+Cargo metadata reports no declared features (`features: {}`). The row passes
+with both the default invocation and explicit `--no-default-features`, using
+18 boundary representations plus 25,000 fixed-seed randomized representations
+per run.

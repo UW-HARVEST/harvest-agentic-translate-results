@@ -83,9 +83,10 @@ impl Default for Aes256CtrDrbgStruct {
     }
 }
 
-/// `AES256_CTR_DRBG_struct DRBG_ctx;` -- a zero-initialised, *externally
-/// visible* file-scope global in the C translation unit (it is not `static`,
-/// so `libsphincs_core_det.so` exports the symbol `DRBG_ctx`).
+/// `AES256_CTR_DRBG_struct DRBG_ctx;` -- a zero-initialised file-scope global in
+/// the C translation unit.  It has external linkage in C, so it is exported
+/// under the bare name `DRBG_ctx`; every function below operates on exactly this
+/// object so that external mutation is observable, just like in C.
 #[unsafe(no_mangle)]
 pub static mut DRBG_ctx: Aes256CtrDrbgStruct = Aes256CtrDrbgStruct {
     Key: [0u8; 32],
@@ -324,6 +325,21 @@ pub mod ffi {
     use super::{AesXofStruct, RNG_BAD_OUTBUF};
     use core::ffi::c_int;
 
+    /// C ABI: `void AES256_ECB(unsigned char *key, unsigned char *ctr, unsigned char *buffer)`
+    ///
+    /// The C body is a straight OpenSSL AES-256-ECB single-block encryption of
+    /// `ctr` into `buffer` under `key`.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn AES256_ECB(key: *mut u8, ctr: *mut u8, buffer: *mut u8) {
+        let mut k = [0u8; 32];
+        k.copy_from_slice(core::slice::from_raw_parts(key, 32));
+        let mut c = [0u8; 16];
+        c.copy_from_slice(core::slice::from_raw_parts(ctr, 16));
+        let mut out = [0u8; 16];
+        super::aes256_ecb(&k, &c, &mut out);
+        core::slice::from_raw_parts_mut(buffer, 16).copy_from_slice(&out);
+    }
+
     /// C ABI: `void AES256_CTR_DRBG_Update(unsigned char *provided_data, unsigned char *Key, unsigned char *V)`
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn AES256_CTR_DRBG_Update(
@@ -393,19 +409,5 @@ pub mod ffi {
     pub unsafe extern "C" fn randombytes(x: *mut u8, xlen: u64) -> c_int {
         let xs = core::slice::from_raw_parts_mut(x, xlen as usize);
         super::randombytes(xs) as c_int
-    }
-
-    /// C ABI: `void AES256_ECB(unsigned char *key, unsigned char *ctr, unsigned char *buffer)`
-    ///
-    /// Declared (non-`static`) at file scope in `rng.c`, hence exported.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn AES256_ECB(key: *mut u8, ctr: *mut u8, buffer: *mut u8) {
-        let mut k = [0u8; 32];
-        k.copy_from_slice(core::slice::from_raw_parts(key, 32));
-        let mut c = [0u8; 16];
-        c.copy_from_slice(core::slice::from_raw_parts(ctr, 16));
-        let mut out = [0u8; 16];
-        super::aes256_ecb(&k, &c, &mut out);
-        core::slice::from_raw_parts_mut(buffer, 16).copy_from_slice(&out);
     }
 }

@@ -1,76 +1,58 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from:
 
-```
+```sh
 nm -D --defined-only c_src/build/libdriver.so
 nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-## C source inventory (every non-`static` definition)
+## C source → symbol provenance
 
-| C file | symbol | linkage |
-|--------|--------|---------|
-| `c_src/include/shared.h` | `os_calloc` | external (defined **in the header**, so it lands in every TU that includes it; only `read-alert.c` includes `shared.h`) |
-| `c_src/include/shared.h` | `os_realloc` | external |
-| `c_src/include/shared.h` | `os_strdup` | external |
-| `c_src/src/file-queue.c` | `merror` | external |
-| `c_src/src/file-queue.c` | `file_sleep` | `static` → NOT exported |
-| `c_src/src/file-queue.c` | `GetFile_Queue` | `static` → NOT exported |
-| `c_src/src/file-queue.c` | `Handle_Queue` | `static` → NOT exported |
-| `c_src/src/file-queue.c` | `s_month` | `static const` → NOT exported |
-| `c_src/src/file-queue.c` | `Init_FileQueue` | external |
-| `c_src/src/file-queue.c` | `Read_FileMon` | external |
-| `c_src/src/read-alert.c` | `FreeAlertData` | external |
-| `c_src/src/read-alert.c` | `GetAlertData` | external |
-| `c_src/src/driver.c` | `driver` | external |
+| C file | non-static definitions |
+|--------|------------------------|
+| `c_src/include/shared.h` | `os_calloc`, `os_realloc`, `os_strdup` (defined **in the header** with external linkage) |
+| `c_src/src/file-queue.c`  | `merror`, `Init_FileQueue`, `Read_FileMon` (`file_sleep`, `GetFile_Queue`, `Handle_Queue` are `static` → not exported) |
+| `c_src/src/read-alert.c`  | `FreeAlertData`, `GetAlertData` |
+| `c_src/src/driver.c`      | `driver` |
 
-## Dynamic-symbol table comparison
+## Exported symbol parity (`nm -D`, type `T`)
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `FreeAlertData` | `T` | `T` | OK |
-| 2 | `GetAlertData`  | `T` | `T` | OK |
-| 3 | `Init_FileQueue`| `T` | `T` | OK |
-| 4 | `Read_FileMon`  | `T` | `T` | OK |
-| 5 | `driver`        | `T` | `T` | OK |
-| 6 | `merror`        | `T` | `T` | OK |
-| 7 | `os_calloc`     | `T` | `T` | OK |
-| 8 | `os_realloc`    | `T` | `T` | OK |
-| 9 | `os_strdup`     | `T` | `T` | OK |
+| # | symbol | C `.so` | Rust `.so` | Rust definition site |
+|---|--------|---------|-----------|----------------------|
+| 1 | `FreeAlertData` | T | T | `src/read_alert.rs` |
+| 2 | `GetAlertData`  | T | T | `src/read_alert.rs` |
+| 3 | `Init_FileQueue`| T | T | `src/file_queue.rs` |
+| 4 | `Read_FileMon`  | T | T | `src/file_queue.rs` |
+| 5 | `driver`        | T | T | `src/driver.rs` |
+| 6 | `merror`        | T | T | `src/file_queue.rs` |
+| 7 | `os_calloc`     | T | T | `src/shared.rs` |
+| 8 | `os_realloc`    | T | T | `src/shared.rs` |
+| 9 | `os_strdup`     | T | T | `src/shared.rs` |
 
-**Symbol diff (C-exported minus Rust-exported): EMPTY.**
+**Symbol diff: EMPTY.** 9 / 9 C symbols exported by the Rust `.so` with the
+exact same names. No macro-generated symbols exist in this C source.
 
-```
-$ comm -23 <(nm -D --defined-only c_src/build/libdriver.so     | awk '{print $3}' | sort) \
-           <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
-(no output)
-```
+## Undefined-symbol audit of the Rust `.so`
 
-No symbol needed a new `#[no_mangle]` wrapper and no C module was left
-untranslated: all three C translation units (`file-queue.c`, `read-alert.c`,
-`driver.c`) plus the header-defined `shared.h` helpers have Rust counterparts
-(`src/file_queue.rs`, `src/read_alert.rs`, `src/driver.rs`, `src/shared.rs`).
+`nm -D --undefined-only` on the Rust `.so` reports only glibc
+(`@GLIBC_*`), libgcc unwinder (`_Unwind_*@GCC_*`) and standard
+weak/toolchain entries (`__gmon_start__`, `_ITM_*`). **0 missing / undefined
+non-libc symbols.**
 
-## Undefined (imported) symbols
+Every libc entity used by the translation is declared in `src/cbind.rs` and
+resolved against the very same glibc the C object files link to, so string /
+stdio / `stat` semantics are shared, not re-implemented.
 
-The Rust `.so` must not reference any non-libc symbol that the C `.so` does not.
-Both import only glibc entities. The Rust `.so` additionally imports the small
-set of glibc symbols the Rust runtime shim needs (`memcpy`, `pthread_*`, unwind
-stubs). That is a superset of libc only — no project symbol is undefined.
+## Build configurations
 
-Verified with:
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+configuration is the default one. `cargo check --no-default-features` and
+`cargo check` are the same build. Verified by:
 
-```
-nm -D --undefined-only translation/target/release/libdriver.so
+```sh
+grep -c '^\[features\]' translation/Cargo.toml   # -> 0
 ```
 
-→ 0 undefined non-libc symbols.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one. Phase D's "repeat for every feature
-combination" therefore collapses to a single combination; this is confirmed
-mechanically by `scripts/check_features.sh`, which parses `Cargo.toml` and
-loops over the powerset it finds (empty ⇒ default build only).
+Consequently "every feature combination" = the single default combination,
+which is what Phases B–D exercise.

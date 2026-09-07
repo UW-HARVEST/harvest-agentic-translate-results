@@ -1,89 +1,81 @@
-# ERRORS.md — error / rejection surface (Phase A)
+# ERRORS.md — Phase C error / rejection surface table
 
-The library has **no error codes, no `errno`, no asserts, no allocation and no
-`RETURN_ERROR`-style macro**. Its entire rejection surface consists of
+Mechanically derived from `c_src/src/lib.c`. The library uses **no** error
+macros, no `errno`, no `assert`, and no `NULL` checks; every rejection is an
+early `return 0` / falsy `int` result, or an IEEE-754 special value produced by
+an unguarded division. Every such distinct branch gets one row.
 
-* the `return 0` (= "no hit" / "no overlap") statements of the predicate and
-  raycast functions,
-* the degenerate arithmetic paths (`/ 0`, `1.0f / 0`, `sqrtf` of NaN, NaN
-  comparisons that make every `<`/`>`/`>=` false),
-* one **switch with no `default` label** (`c2CastRay`), which for an
-  out-of-range `C2_TYPE` falls off the end of a non-`void` function.
-
-Every row below was derived by grepping `c_src/src/lib.c` for `return 0`,
-`return`, `if (`, `? :` and `switch` (see the grep in the session log), one row
-per distinct rejecting condition.
-
-Line numbers refer to `c_src/src/lib.c`.
-
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test | ✔ |
-|----|----------|---------------------------------------------|-------------------|------|---|
-|  1 | `c2RaytoCircle` | L100 `disc < 0` — ray line misses the circle (`b*b - c < 0`) | returns `0`, **`*out` untouched** | `err_01_raytocircle_disc_negative` | [x] |
-|  2 | `c2RaytoCircle` | L100 `disc` is NaN (`B.r` or ray NaN) → `disc < 0` false, then `t` NaN → `t >= 0` false | returns `0`, `*out` untouched | `err_02_raytocircle_nan_disc` | [x] |
-|  3 | `c2RaytoCircle` | L103 `t < 0` — impact behind the ray origin (ray starts past the circle) | returns `0`, `*out` untouched | `err_03_raytocircle_t_negative` | [x] |
-|  4 | `c2RaytoCircle` | L103 `t > A.t` — hit farther away than the ray length (incl. `A.t = 0`, `A.t < 0`, `A.t = NaN`) | returns `0`, `*out` untouched | `err_04_raytocircle_t_beyond_len` | [x] |
-|  5 | `c2RaytoCircle` | `out == NULL` **and** the call rejects (rows 1–4) → the C never dereferences `out` | returns `0`, no crash | `err_05_raytocircle_null_out_on_miss` | [x] |
-|  6 | `c2AABBtoAABB` | L113 `d0`: `B.max.x < A.min.x` | returns `0` | `err_06_aabbtoaabb_d0` | [x] |
-|  7 | `c2AABBtoAABB` | L114 `d1`: `A.max.x < B.min.x` | returns `0` | `err_07_aabbtoaabb_d1` | [x] |
-|  8 | `c2AABBtoAABB` | L115 `d2`: `B.max.y < A.min.y` | returns `0` | `err_08_aabbtoaabb_d2` | [x] |
-|  9 | `c2AABBtoAABB` | L116 `d3`: `A.max.y < B.min.y` | returns `0` | `err_09_aabbtoaabb_d3` | [x] |
-| 10 | `c2AABBtoAABB` | any coordinate NaN → all four `<` false → `!(0)` | returns `1` (**accepts**, a NaN box "overlaps") | `err_10_aabbtoaabb_nan_accepts` | [x] |
-| 11 | `c2RaytoAABB` | L145 swept-AABB vs box rejected by `c2AABBtoAABB` | returns `0`, `*out` untouched | `err_11_raytoaabb_broadphase_reject` | [x] |
-| 12 | `c2RaytoAABB` | L156 `d > 0` — separating-axis reject on the ray's normal | returns `0`, `*out` untouched | `err_12_raytoaabb_sat_reject` | [x] |
-| 13 | `c2RaytoAABB` | L174/194 `hit == 0` (all four `t_i > 1.0f`, e.g. every `da*db > 0` and `da/(da-db) > 1`) | returns `0`, `*out` untouched | `err_13_raytoaabb_no_plane_hit` | [x] |
-| 14 | `c2RaytoAABB` | `out == NULL` and the call rejects (rows 11–13) | returns `0`, no crash | `err_14_raytoaabb_null_out_on_miss` | [x] |
-| 15 | `c2AABBtoPoint` | L218 `d0`: `B.x < A.min.x` | returns `0` | `err_15_aabbtopoint_d0` | [x] |
-| 16 | `c2AABBtoPoint` | L219 `d1`: `B.y < A.min.y` | returns `0` | `err_16_aabbtopoint_d1` | [x] |
-| 17 | `c2AABBtoPoint` | L220 `d2`: `B.x > A.max.x` | returns `0` | `err_17_aabbtopoint_d2` | [x] |
-| 18 | `c2AABBtoPoint` | L221 `d3`: `B.y > A.max.y` | returns `0` | `err_18_aabbtopoint_d3` | [x] |
-| 19 | `c2CircleToPoint` | L228 `d2 < A.r*A.r` false — point outside/on the circle, incl. `A.r = 0`, `A.r < 0` (`r*r > 0` again!), NaN | returns `0` | `err_19_circletopoint_outside` | [x] |
-| 20 | `c2RaytoCapsule` | L291 falls through: `yAe.x*yAp.x >= 0` **and** `min(|yAe.x|,|yAp.x|) >= B.r` | returns `0` **but `*out` has already been overwritten at L243/244** with `{t = 0, n = c2Norm(b-a)}` | `err_20_raytocapsule_fallthrough_writes_out` | [x] |
-| 21 | `c2RaytoCapsule` | L272/274/281/283 delegation to `c2RaytoCircle` which itself rejects (rows 1–4) | returns `0`, `*out` = the L243/244 pre-write (cap normal, `t = 0`) | `err_21_raytocapsule_delegated_miss` | [x] |
-| 22 | `c2RaytoCapsule` | degenerate capsule `B.a == B.b` → `c2Norm(0,0)` = `(0/0, 0/0)` = NaN,NaN → `M` all NaN, `yAp`/`yBb` NaN | no rejection check triggers on NaN; `capsule_bb.max.y` = NaN; whatever the NaN comparisons yield (C: `c2AABBtoPoint` returns 1 → `return 1` with `*out.n = NaN,NaN`, `t = 0`) | `err_22_raytocapsule_degenerate_ab` | [x] |
-| 23 | `c2RaytoCapsule` | `out == NULL` — the C dereferences `out` **unconditionally** at L243 before any check | SIGSEGV. Verified in a child process: C → signal 11; Rust **release** cdylib → signal 11 (identical); Rust **dev** cdylib → signal 6, because `-C debug-assertions=on` detects the null dereference itself (`"null pointer dereference occurred"`) and aborts deliberately. Both are the same rejection; the shipped (release) artifact matches the C exactly | `err_23_raytocapsule_null_out_segv` | [x] |
-| 24 | `c2CastRay` | L295 `typeB` has no valid variant (`3`, `4`, `5`, `7`, `255`, `256`, `1000`, `-1`, `-2`, `-1000`, `INT_MAX`, `INT_MIN`, `0x7fffffff`, `-0x80000000`, `0x10000`) → the switch has **no `default`**, so control falls off the end of an `int` function | UB. The disassembly shows the fall-through path jumping straight to `leave; ret` with `eax` never written, so the C "returns" whatever the caller left in `eax`: measured as 5 **different** values in 5 separate processes (ASLR-dependent), e.g. `-1452448196, -583686596, -557959620, -1485650372, -1496000964`. There is no behaviour to reproduce, so the Rust returns a deterministic `0`. The tests assert the whole DEFINED part of the contract: **`*out` is untouched by both**, neither crashes, and a following valid call still works | `err_24_castray_out_of_range_type`, `err_24b_castray_ub_return_is_not_reproducible` | [x] |
-| 25 | `c2CastRay` | `B == NULL` with a valid `typeB` → the C dereferences it (`*(c2Circle*)B`, `*(c2AABB*)B`) | SIGSEGV in both (same debug-assertion nuance as row 23). Also covered: a *hit* that writes through `out == NULL` | `err_25_castray_null_shape_segv` | [x] |
-| 26 | `c2CastRay` | valid `typeB` but the pointed-to shape rejects (rows 1–4 / 11–13 / 20–21) | same `0`/`*out` as the direct call | `err_26_castray_delegated_miss` | [x] |
-| 27 | `c2Div` / `c2Norm` | `b == 0.0f` → `1.0f/0.0f = +inf` → `a * inf` = ±inf or **NaN** (`0 * inf`); `c2Norm` of the zero vector → `(NaN, NaN)` | `(±inf/NaN, ±inf/NaN)`, no error signalled | `err_27_div_by_zero` | [x] |
-| 28 | `c2Div` / `c2Norm` | `b == -0.0f` → `1.0f/-0.0f = -inf` (sign matters) | `-inf`-scaled vector | `err_28_div_by_negative_zero` | [x] |
-| 29 | `c2Len` / `c2Norm` | overflow: `a.x*a.x` overflows to `+inf` → `sqrtf(+inf) = +inf` → `c2Norm` = `a * (1/inf)` = `a * 0` = `±0` | `+inf` / `(±0,±0)` | `err_29_len_overflow_inf` | [x] |
-| 30 | `c2Len` / `c2Dot` | NaN input → NaN out (`sqrtf(NaN)` quiets the NaN, keeps the payload) | NaN (payload: see note) | `err_30_len_nan` | [x] |
-| 31 | `spec_ray` | `mp == ray.p` → `c2Norm(0,0)` = NaN → `ray.d` NaN → `ray.t` NaN → `c2RaytoCircle` rejects (row 2) | returns `0`, `*out` untouched | `err_31_spec_ray_degenerate_direction` | [x] |
-| 32 | `spec_ray` | `c_r < 0` (negative radius) — `B.r*B.r` is still positive, so the circle behaves like `|r|` | returns whatever the `|r|` circle gives (**not** an error) | `err_32_spec_ray_negative_radius` | [x] |
-| 33 | `spec_ray` | `cast == NULL` and the raycast misses → `out` never dereferenced | returns `0`, no crash | `err_33_spec_ray_null_cast_on_miss` | [x] |
-| 34 | all `c2*` helpers | ±inf / NaN / denormal / `-0.0` operands (the "one step past a valid range" class for a pure-float API: there is no documented range, so the whole `f32` domain incl. specials is valid input) | bit-identical propagation | `err_34_helpers_special_values` | [x] |
-| 35 | `c2Minv`/`c2Maxv`/`c2Absv` | NaN operand — the C uses raw ternaries (`a<b?a:b`, `a<0?-a:a`), **not** `fminf`/`fabsf`: `c2Minv(NaN, x)` returns `x` (second operand) while `c2Minv(x, NaN)` returns `NaN`; `c2Absv(-NaN)` keeps the sign | ternary semantics, asymmetric in NaN | `err_35_minv_maxv_absv_nan_asymmetry` | [x] |
-
-## Note on NaN payloads (the one tolerated difference)
-
-For inputs where **two NaN operands** reach a single multiply/add, IEEE-754
-leaves the *payload* of the result unspecified; on x86 SSE the payload comes from
-whichever operand the compiler put in the destination register of the
-`mulss`/`addss`, i.e. from instruction selection. That is a property of the
-compiler, not of the C program:
-
-| comparison (identical NaN corpus, 133 520 comparisons) | non-NaN mismatches | NaN-payload-only differences |
-|---|---|---|
-| C `-O0` (reference) vs C `-O2` — *the same C source, two builds* | **0** | **2210** |
-| C `-O0` (reference) vs the Rust `cdylib` | **0** | 1676 |
-
-The C library therefore disagrees with *itself* on more NaN payloads than the
-Rust translation disagrees with the reference (`gcc -O0` emits
-`addss %xmm1,%xmm0` with the *second* operand as destination for `c2Add`, while
-`-O2` emits a packed `addps %xmm1,%xmm0` with the *first* — opposite payload
-priorities). Consequently the harness compares NaN results as "both NaN" and
-compares **exact bits for every non-NaN result**; the payload-only difference
-count is printed for every row and asserted to be no worse than the C-vs-C
-count (`tests/nan_payload_policy.rs`). Setting `SPEC_RAY_STRICT_NAN=1` turns
-payload differences into failures for anyone who wants to inspect them.
-
-Across the whole Phase B suite at `SPEC_RAY_N=200000` (**62 929 792**
-comparisons) there were **0** hard mismatches and 37 157 NaN-payload-only
-differences, every one of them from an input that itself contained a NaN.
-
-## How to re-run
+Grep basis:
 
 ```sh
-cd translation && ./verify.sh          # whole matrix: features x profiles x C builds
-cargo test --offline --test phase_c_errors -- --test-threads=1   # just Phase C
+grep -n 'return 0\|return 1\|return !\|return d2\|return da\|return 1.0f\|/ \|1.0f /' c_src/src/lib.c
 ```
+
+| # | function | trigger (exact invalid input / condition) | expected C result | test | ✅ |
+|---|----------|--------------------------------------------|-------------------|------|----|
+| 1 | `c2RaytoCircle` | `disc = b*b - c < 0` (ray line misses the circle) | `return 0`, `*out` **left untouched** | `err_raytocircle_disc_negative` | ✅ |
+| 2 | `c2RaytoCircle` | `t = -b - sqrtf(disc) < 0` (circle behind the ray origin) | `return 0`, `*out` untouched | `err_raytocircle_t_negative` | ✅ |
+| 3 | `c2RaytoCircle` | `t > A.t` (hit beyond the ray length) | `return 0`, `*out` untouched | `err_raytocircle_t_beyond_len` | ✅ |
+| 4 | `c2RaytoCircle` | `A.t` is NaN → `t <= A.t` false | `return 0`, `*out` untouched | `err_raytocircle_nan_t` | ✅ |
+| 5 | `c2RaytoCircle` | `B.r` NaN / `A.p` NaN → `disc` NaN → `disc < 0` false, then `t<=A.t` false | `return 0` | `err_raytocircle_nan_inputs` | ✅ |
+| 6 | `c2RaytoCircle` | `B.r == 0` and ray passes exactly through `B.p` (`disc == 0`, `t == -b`) | `return 1` iff `0 <= -b <= A.t` | `err_raytocircle_zero_radius` | ✅ |
+| 7 | `c2AABBtoAABB` | `d0`: `B.max.x < A.min.x` | `return 0` | `err_aabbtoaabb_d0` | ✅ |
+| 8 | `c2AABBtoAABB` | `d1`: `A.max.x < B.min.x` | `return 0` | `err_aabbtoaabb_d1` | ✅ |
+| 9 | `c2AABBtoAABB` | `d2`: `B.max.y < A.min.y` | `return 0` | `err_aabbtoaabb_d2` | ✅ |
+| 10 | `c2AABBtoAABB` | `d3`: `A.max.y < B.min.y` | `return 0` | `err_aabbtoaabb_d3` | ✅ |
+| 11 | `c2AABBtoAABB` | any coordinate NaN → all four `<` false | `return 1` (**NaN "overlaps"**) | `err_aabbtoaabb_nan` | ✅ |
+| 12 | `c2AABBtoAABB` | inverted box (`min > max`) | no validation; result is whatever the 4 compares say | `err_aabbtoaabb_inverted` | ✅ |
+| 13 | `c2AABBtoPoint` | `d0`: `B.x < A.min.x` | `return 0` | `err_aabbtopoint_d0` | ✅ |
+| 14 | `c2AABBtoPoint` | `d1`: `B.y < A.min.y` | `return 0` | `err_aabbtopoint_d1` | ✅ |
+| 15 | `c2AABBtoPoint` | `d2`: `B.x > A.max.x` | `return 0` | `err_aabbtopoint_d2` | ✅ |
+| 16 | `c2AABBtoPoint` | `d3`: `B.y > A.max.y` | `return 0` | `err_aabbtopoint_d3` | ✅ |
+| 17 | `c2AABBtoPoint` | `B.x`/`B.y` NaN | `return 1` | `err_aabbtopoint_nan` | ✅ |
+| 18 | `c2CircleToPoint` | `d2 >= A.r * A.r` (point on/outside the circle; note **strict** `<`, so a point exactly on the rim is rejected) | `return 0` | `err_circletopoint_outside_and_on_rim` | ✅ |
+| 19 | `c2CircleToPoint` | `A.r < 0` → `r*r > 0`, so a negative radius still "contains" points | no validation; `return` per `d2 < r*r` | `err_circletopoint_negative_radius` | ✅ |
+| 20 | `c2CircleToPoint` | `A.r` or `B` NaN → `d2 < r*r` false | `return 0` | `err_circletopoint_nan` | ✅ |
+| 21 | `c2RaytoAABB` | `!c2AABBtoAABB(a_box, B)` — swept-segment box disjoint from `B` | `return 0`, `*out` untouched | `err_raytoaabb_sweep_box_disjoint` | ✅ |
+| 22 | `c2RaytoAABB` | `d > 0` — separating-axis test on the segment normal fails | `return 0`, `*out` untouched | `err_raytoaabb_sat_reject` | ✅ |
+| 23 | `c2RaytoAABB` | `hit == 0` (`t0..t3` all `> 1.0f`, i.e. every plane crossing beyond the segment) | `return 0`, `*out` untouched | `err_raytoaabb_no_plane_hit` | ✅ |
+| 24 | `c2RaytoAABB` | `A.t == 0` (degenerate zero-length ray) → `p1 == p0`, `ab == 0`, `n == 0`, `d == -dot(abs_n,he)` | no rejection; `out->t = t*0 = 0` | `err_raytoaabb_zero_length_ray` | ✅ |
+| 25 | `c2RaytoAABB` | `A.d` NaN (e.g. from a degenerate `c2Norm`) → `a_box` NaN → `c2AABBtoAABB` returns 1, `d` NaN, `d>0` false | falls through to the plane tests | `err_raytoaabb_nan_dir` | ✅ |
+| 26 | `c2RayToPlane_OneDimensional` (via `c2RaytoAABB`) | `da < 0` | returns `0` (`t=0` ⇒ that plane is a "hit at 0") | `err_raytoplane_da_negative` | ✅ |
+| 27 | `c2RayToPlane_OneDimensional` (via `c2RaytoAABB`) | `da * db > 0` (both on the same side) | returns `1.0f` (⇒ `hit == 1` because `1.0f <= 1.0f`) | `err_raytoplane_same_side` | ✅ |
+| 28 | `c2RayToPlane_OneDimensional` (via `c2RaytoAABB`) | `da == db` ⇒ `d == 0` — **unguarded divide avoided** by the explicit `d != 0` check | returns `0`, *not* inf/NaN | `err_raytoplane_d_zero` | ✅ |
+| 29 | `c2RaytoCapsule` | neither the `yAe.x*yAp.x < 0` nor the `min(|yAe.x|,|yAp.x|) < B.r` condition holds | `return 0`, but `*out` **has already been overwritten** with `n = normalize(b-a)`, `t = 0` | `err_raytocapsule_miss_still_writes_out` | ✅ |
+| 30 | `c2RaytoCapsule` | ray origin inside the capsule slab (`c2AABBtoPoint(capsule_bb, yAp)`) | `return 1` with `t = 0`, `n = normalize(b-a)` | `err_raytocapsule_origin_in_slab` | ✅ |
+| 31 | `c2RaytoCapsule` | ray origin inside end-cap circle `a` | `return 1`, `t = 0` | `err_raytocapsule_origin_in_cap_a` | ✅ |
+| 32 | `c2RaytoCapsule` | ray origin inside end-cap circle `b` | `return 1`, `t = 0` | `err_raytocapsule_origin_in_cap_b` | ✅ |
+| 33 | `c2RaytoCapsule` | `B.a == B.b` (degenerate capsule) → `c2Norm(0,0)` = `0 * (1/0)` = **NaN**, `M` all NaN, `yBb`/`yAp`/`yAd` NaN | no validation; `out->n` = `(NaN,NaN)`, then NaN-driven branches | `err_raytocapsule_degenerate_ab` | ✅ |
+| 34 | `c2RaytoCapsule` | `B.r == 0` → `capsule_bb = {(0,0),(0,yBb.y)}`; `min(|..|,|..|) < 0` false | usually `return 0` | `err_raytocapsule_zero_radius` | ✅ |
+| 35 | `c2RaytoCapsule` | `B.r < 0` (negative radius) | no validation; `capsule_bb.min.x = -r > 0 = max.x` (inverted) | `err_raytocapsule_negative_radius` | ✅ |
+| 36 | `c2RaytoCapsule` | `d = yAe.x - yAp.x == 0` in the else-branch → **unguarded division** `(c - yAp.x)/d` → ±inf or NaN | propagates ±inf/NaN into `y`, then `y<=0` / `y>=yBb.y` decide | `err_raytocapsule_div_by_zero` | ✅ |
+| 37 | `c2RaytoCapsule` | `y >= yBb.y` → delegates to `c2RaytoCircle(A, Cb, out)`, whose result may be `0` | `return` the inner `0`, `*out` left as the pre-written `n`/`t=0` | `err_raytocapsule_delegate_returns_zero` | ✅ |
+| 38 | `c2CastRay` | `typeB` = `3` (one past the last enumerator) | `switch` has no `default`: control **falls off the end of a non-void function** (UB). GCC `-O0` emits `leave; ret` without touching `%eax`, so the returned value is the indeterminate incoming `%eax`. `*out` untouched. | `err_castray_out_of_range_enum` (asserts *`*out` untouched*; documents that the return value is UB and therefore not compared) | ✅ |
+| 39 | `c2CastRay` | `typeB` = `-1`, `INT_MIN`, `INT_MAX`, `0x7fffffff` (arbitrary out-of-range enum ints across FFI) | same UB fall-through, `*out` untouched | `err_castray_out_of_range_enum` | ✅ |
+| 40 | `c2CastRay` | `typeB` = `0/1/2` but `B == NULL` | unguarded deref → SIGSEGV in **both** libraries | `err_castray_null_shape` (documented; not executed in-process) | ✅ (documented) |
+| 41 | any `c2Rayto*` / `spec_ray` | `out == NULL` **and** the function takes a hit path | unguarded write → SIGSEGV in **both** libraries. `c2RaytoCapsule` faults *unconditionally* (it writes `out` before any test); `c2RaytoCircle`/`c2RaytoAABB` fault only on the hit paths, i.e. a *miss* with `out==NULL` returns 0 safely. | `err_null_out_miss_paths_are_safe` (verifies the safe subset differentially in-process; the faulting subset is verified in a forked child) | ✅ |
+| 42 | `c2Div` | `b == 0` → `1.0f/0.0f = +inf`, `a * inf` → `±inf` or `NaN` (for `a == 0`) | no rejection; inf/NaN propagate | `err_div_by_zero` | ✅ |
+| 43 | `c2Div` | `b == -0.0` → `1.0f/-0.0f = -inf` | `-inf` propagates (sign matters) | `err_div_by_zero` | ✅ |
+| 44 | `c2Norm` | `a == (0,0)` → `c2Len == 0` → `c2Div` by 0 → `(NaN, NaN)` | no rejection; `(NaN,NaN)` | `err_norm_zero_vector` | ✅ |
+| 45 | `c2Norm` | `a` contains ±inf → `c2Len == inf`, `1/inf == 0`, `inf*0` = NaN | `(NaN, …)` | `err_norm_inf_vector` | ✅ |
+| 46 | `c2Len` | `c2Dot(a,a)` overflows to `+inf` (e.g. `a.x = 1e30`) | `sqrtf(inf) = inf` | `err_len_overflow` | ✅ |
+| 47 | `spec_ray` | `mp == ray.p` → `c2Sub` = `(0,0)` → `c2Norm` = `(NaN,NaN)` → `ray.t` NaN → `c2RaytoCircle` `disc` NaN | `return 0`, `*cast` untouched | `err_spec_ray_mp_equals_ray_origin` | ✅ |
+| 48 | `spec_ray` | `c_r < 0` (negative radius) → `c = dot(m,m) - r*r` same as `+r` | no validation | `err_spec_ray_negative_radius` | ✅ |
+| 49 | `spec_ray` | `c_r == 0` | tangent-only hit | `err_spec_ray_zero_radius` | ✅ |
+| 50 | `spec_ray` | any float argument NaN / ±inf | no validation; NaN/inf propagate, generally `return 0` | `err_spec_ray_nan_inf_args` | ✅ |
+| 51 | `spec_ray` | `ray.t` computed negative (mouse point *behind* the ray origin — impossible for `c2Norm`'d `d`, but reachable with inf/NaN inputs) | `t <= A.t` false ⇒ `return 0` | `err_spec_ray_nan_inf_args` | ✅ |
+
+## Notes on rows 38–41 (UB / signal rows)
+
+* Rows 38–39: the C code has **no** `default:` label and **no** trailing
+  `return`, so for `typeB ∉ {0,1,2}` the C function's return value is
+  *indeterminate* (it is whatever `%eax` happens to hold). The test therefore
+  asserts the only well-defined, observable property — that neither library
+  writes to `*out` — and does **not** compare the garbage return value, since
+  the C library does not even agree with itself between `-O0` and `-O2` builds
+  there. The Rust translation returns `0`.
+* Rows 40–41: a `NULL` dereference cannot be compared in-process without
+  killing the test harness. The *safe* subset (miss paths, where the C code
+  never touches `out`) is compared differentially in-process; the faulting
+  subset is exercised in a `fork()`ed child and both libraries are asserted to
+  die with the same signal.

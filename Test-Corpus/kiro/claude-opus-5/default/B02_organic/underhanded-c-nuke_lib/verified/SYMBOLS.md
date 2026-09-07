@@ -1,85 +1,81 @@
-# SYMBOLS.md — public ABI surface parity
+# SYMBOLS.md — Exported-symbol parity
 
-Derived mechanically from `nm -D` on both shared objects.
-
-* C  `.so`: `c_src/build/libharvest-work-DwDtPG.so`
-  (built with `cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .`,
-  i.e. **no** `CMAKE_BUILD_TYPE` → `-O0`)
-* Rust `.so`: `translation/target/release/libunderhanded_c_nuke_lib.so`
-
-## Defined (exported) symbols
-
-`nm -D --defined-only` on each object:
-
-| # | symbol | in C `.so` | in Rust `.so` | C signature (as compiled) | notes |
-|---|--------|-----------|---------------|---------------------------|-------|
-| 1 | `match`             | `T` | `T` | `int match(double *test, double *reference, int bins, double threshold)` | `match.c` includes `match.h`, so its `float_t` is `double`. Exported from Rust as `#[unsafe(no_mangle)] extern "C" fn r#match`. |
-| 2 | `spectral_contrast` | `T` | `T` | `double spectral_contrast(float *a, float *b, int length)` | **`float`, not `double`** — see below. |
-
-Symbol diff: **empty**. No symbol exported by the C `.so` is missing from the
-Rust `.so`, and the Rust `.so` exports no extra `T`/`D`/`B` symbols.
+Generated mechanically from `nm -D` on both shared objects.
 
 ```
-$ nm -D --defined-only libharvest-work-DwDtPG.so
-0000000000001322 T match
-00000000000015cd T spectral_contrast
-
-$ nm -D --defined-only libunderhanded_c_nuke_lib.so
-0000000000011c90 T match
-0000000000011ee0 T spectral_contrast
+C   : c_src/build/libharvest-work-ifjFx4.so
+Rust: translation/target/release/libunderhanded_c_nuke_lib.so
 ```
 
-## `static` (non-exported) functions — translated but deliberately not exported
+## C `.so` defined dynamic symbols (`nm -D --defined-only`)
 
-These are `static` in C and therefore absent from `nm -D`. The Rust translation
-keeps them private for the same reason; exporting them would be a *surplus*
-symbol, not parity.
+| # | symbol | C type | exported by Rust `.so`? |
+|---|--------|--------|--------------------------|
+| 1 | `match` | `int match(double *test, double *reference, int bins, double threshold)` | YES (`src/match.rs`, `#[unsafe(no_mangle)] extern "C" fn r#match`) |
+| 2 | `spectral_contrast` | `double spectral_contrast(float *a, float *b, int length)` | YES (`src/spectral_contrast.rs`, `#[unsafe(no_mangle)] extern "C" fn spectral_contrast`) |
 
-| C function | file | Rust counterpart |
-|---|---|---|
-| `static double total(float_t *, int)`                 | `src/match.c`             | `matching::total`            |
-| `static void smoothen(float_t *, int)`                | `src/match.c`             | `matching::smoothen`         |
-| `static void differentiate(float_t *, int)`           | `src/match.c`             | `matching::differentiate`    |
-| `static void preprocess(float_t *, float_t *, int)`   | `src/match.c`             | `matching::preprocess`       |
-| `static double dot_product(float_t *, float_t *, int)`| `src/spectral_contrast.c` | `spectral_contrast::dot_product` |
-| `static void normalize(float_t *, int)`               | `src/spectral_contrast.c` | `spectral_contrast::normalize`   |
+Weak/undefined entries in the C `.so` are toolchain- or libc-provided and are
+not part of the library surface:
 
-## The `float_t` type split (the reason the two entry points disagree)
+| symbol | kind | note |
+|--------|------|------|
+| `_ITM_deregisterTMCloneTable` | `w` (weak undef) | GCC transactional-memory stub |
+| `_ITM_registerTMCloneTable`   | `w` (weak undef) | GCC transactional-memory stub |
+| `__cxa_finalize@GLIBC_2.2.5`  | `w` (weak undef) | libc |
+| `__gmon_start__`              | `w` (weak undef) | profiling hook |
+| `memcpy@GLIBC_2.14`           | `U` (undef)      | libc, used by `preprocess` |
+| `sqrt@GLIBC_2.2.5`            | `U` (undef)      | libm, used by `normalize` |
 
-`include/match.h` has `typedef double float_t;`, but `src/spectral_contrast.c`
-**never includes `match.h`** — it includes only `<math.h>`. So inside that
-translation unit `float_t` is C99's `<math.h>` `float_t`, which on x86-64 glibc
-(`FLT_EVAL_METHOD == 0`) is `float`:
+## Static (non-exported) C functions
+
+These have internal linkage and appear in **no** dynamic symbol table, so they
+are not required to be exported by the Rust `.so`. They are nonetheless fully
+translated because `match` / `spectral_contrast` depend on them.
+
+| C static symbol | file | Rust counterpart |
+|-----------------|------|------------------|
+| `total`         | `src/match.c`             | `match.rs::total` |
+| `smoothen`      | `src/match.c`             | `match.rs::smoothen` |
+| `differentiate` | `src/match.c`             | `match.rs::differentiate` |
+| `preprocess`    | `src/match.c`             | `match.rs::preprocess` |
+| `dot_product`   | `src/spectral_contrast.c` | `spectral_contrast.rs::dot_product` |
+| `normalize`     | `src/spectral_contrast.c` | `spectral_contrast.rs::normalize` |
+
+## Symbol diff
 
 ```
-$ ./fe            # printf("FLT_EVAL_METHOD=%d sizeof(float_t)=%zu")
-FLT_EVAL_METHOD=0 sizeof(float_t)=4
+$ comm -23 <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
+           <(nm -D --defined-only rust.so| awk '{print $3}' | sort)
+<empty>
 ```
 
-Confirmed in the compiled object — `dot_product`/`normalize` use a 4-byte
-element stride and single-precision ops:
+**Result: 0 missing symbols. 0 undefined non-libc symbols in the Rust `.so`.**
 
+## ABI notes that the symbol table alone does not show
+
+`include/match.h` contains `typedef double float_t;` and declares
+
+```c
+double spectral_contrast(float_t *a, float_t *b, int length);
 ```
-14e6:  lea    0x0(,%rax,4),%rdx     ; i * 4  -> float stride
-14f5:  movss  (%rax),%xmm1          ; a[i]
-150d:  movss  (%rax),%xmm0          ; b[i]
-1511:  mulss  %xmm1,%xmm0           ; single-precision multiply
-```
 
-whereas `total`/`smoothen`/`differentiate` in `match.c` use an 8-byte stride
-(`lea 0x0(,%rax,8),%rdx`, `movsd`, `addsd`).
+but `src/spectral_contrast.c` **never includes `match.h`** — it includes only
+`<math.h>`. Its `float_t` is therefore C99's `<math.h>` `float_t`, which on
+x86-64 glibc (`FLT_EVAL_METHOD == 0`) is `float`. Confirmed from the compiled
+object: `spectral_contrast`/`dot_product`/`normalize` use `movss` / `mulss` /
+`cvtss2sd` / `cvtsd2ss` and a 4-byte element stride, while `match`'s helpers use
+`movsd` / `addsd` / `subsd` and an 8-byte stride.
 
-Consequence, reproduced verbatim by the translation: `match` builds two
-`double` VLAs and hands them to `spectral_contrast`, which reinterprets the
-first `bins * 4` bytes of each as `bins` `float` lanes, normalises them in
-place, and dots them. `match` therefore only ever looks at the low halves of
-its first `bins/2` preprocessed `double`s.
+Consequences that both implementations must share:
 
-## Undefined symbols
+* the exported `spectral_contrast` takes `float *`, length counted in `float`s;
+* `match` hands `double`-typed VLAs to it, so only the low 4 bytes of each of
+  the first `bins` `double` slots are read/written, and the normalised `float`
+  results are stored back over those same bytes.
 
-C `.so`: `memcpy@GLIBC_2.14`, `sqrt@GLIBC_2.2.5` plus the usual weak
-`_ITM_*`/`__gmon_start__`/`__cxa_finalize` — all libc.
+## Feature combinations
 
-Rust `.so`: libc (`malloc`, `memcpy`, `memmove`, `memset`, `free`, …) and the
-`libgcc` unwinder (`_Unwind_*`) pulled in by the standard library.
-**0 missing/undefined non-libc symbols.**
+`translation/Cargo.toml` declares no `[features]` table, so the only build
+configuration is the default one (`--no-default-features` is also equivalent,
+as there are no default features). Verified with `cargo check
+--no-default-features` and `cargo test --no-default-features`.

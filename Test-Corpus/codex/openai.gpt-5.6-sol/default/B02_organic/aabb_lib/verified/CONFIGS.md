@@ -1,143 +1,89 @@
 # Configuration surface
 
-Derived from every exported definition in `../c_src/src/lib.c`, its `switch`
-cases, `if`/`else if` branches, nullable-option checks, shape tags, simplex
-counts, support counts, and GJK constants. There are no Cargo features declared
-in `Cargo.toml`; therefore the only semantic feature set is the empty set
-(tested both normally and with `--no-default-features`).
+Rows are derived from the public entry points and every `if`/`switch` branch in
+`src/lib.c`. Randomized tests use fixed seeds and force each listed branch.
+There are no Cargo features and no executable target.
 
-| # | entry point(s) | configuration (options set + input shape) | |
-|---:|----------------|--------------------------------------------|:-:|
-| 1 | `c2V` | Arbitrary raw `f32` pairs, including signed zero, infinities, and NaNs | [x] |
-| 2 | `c2Mulvs` | Arbitrary vector/scalar multiplication, including zero and negative scalar | [x] |
-| 3 | `c2Maxv` | `a.x>b.x`, `a.y>b.y` (both components selected from `a`) | [x] |
-| 4 | `c2Maxv` | `a.x>b.x`, `a.y<=b.y` (mixed selection) | [x] |
-| 5 | `c2Maxv` | `a.x<=b.x`, `a.y>b.y` (mixed selection) | [x] |
-| 6 | `c2Maxv` | `a.x<=b.x`, `a.y<=b.y` (both components selected from `b`) | [x] |
-| 7 | `c2Maxv` | Equality and unordered/NaN comparisons, which select `b` | [x] |
-| 8 | `c2Minv` | `a.x<b.x`, `a.y<b.y` (both components selected from `a`) | [x] |
-| 9 | `c2Minv` | `a.x<b.x`, `a.y>=b.y` (mixed selection) | [x] |
-| 10 | `c2Minv` | `a.x>=b.x`, `a.y<b.y` (mixed selection) | [x] |
-| 11 | `c2Minv` | `a.x>=b.x`, `a.y>=b.y` (both components selected from `b`) | [x] |
-| 12 | `c2Minv` | Equality and unordered/NaN comparisons, which select `b` | [x] |
-| 13 | `c2Clampv` | x below / y below bounds | [x] |
-| 14 | `c2Clampv` | x below / y inside bounds | [x] |
-| 15 | `c2Clampv` | x below / y above bounds | [x] |
-| 16 | `c2Clampv` | x inside / y below bounds | [x] |
-| 17 | `c2Clampv` | x inside / y inside bounds | [x] |
-| 18 | `c2Clampv` | x inside / y above bounds | [x] |
-| 19 | `c2Clampv` | x above / y below bounds | [x] |
-| 20 | `c2Clampv` | x above / y inside bounds | [x] |
-| 21 | `c2Clampv` | x above / y above bounds | [x] |
-| 22 | `c2Sub` | Arbitrary vector subtraction | [x] |
-| 23 | `c2Dot` | Arbitrary vectors, covering positive, negative, zero, and cancellation results | [x] |
-| 24 | `c2RotIdentity`, `c2xIdentity` | No-input identity constructors | [x] |
-| 25 | `c2BBVerts` | Nondegenerate, degenerate, and inverted AABBs; four output slots | [x] |
-| 26 | `c2MakeProxy` | Circle tag: one vertex and circle radius | [x] |
-| 27 | `c2MakeProxy` | AABB tag: four vertices and zero radius | [x] |
-| 28 | `c2MakeProxy` | Capsule tag: two vertices and capsule radius | [x] |
-| 29 | `c2Len` | Zero and nonzero vectors | [x] |
-| 30 | `c2Det2` | Positive, negative, and zero determinant | [x] |
-| 31 | `c2GJKSimplexMetric` | simplex count 1 | [x] |
-| 32 | `c2GJKSimplexMetric` | simplex count 2 (segment length) | [x] |
-| 33 | `c2GJKSimplexMetric` | simplex count 3 (signed triangle determinant) | [x] |
-| 34 | `c2Mulrv` | General rotation pair and vector | [x] |
-| 35 | `c2Add` | Arbitrary vector addition | [x] |
-| 36 | `c2Mulxv` | General translation/rotation transform and vector | [x] |
-| 37 | `c22` | `v<=0`: reduce to original vertex `a` | [x] |
-| 38 | `c22` | `v>0 && u<=0`: reduce to vertex `b` | [x] |
-| 39 | `c22` | `u>0 && v>0`: retain two-point edge | [x] |
-| 40 | `c23` | `vAB<=0 && uCA<=0`: vertex A Voronoi region | [x] |
-| 41 | `c23` | `uAB<=0 && vBC<=0`: vertex B Voronoi region | [x] |
-| 42 | `c23` | `uBC<=0 && vCA<=0`: vertex C Voronoi region | [x] |
-| 43 | `c23` | AB edge region (`wABC<=0`) | [x] |
-| 44 | `c23` | BC edge region (`uABC<=0`) | [x] |
-| 45 | `c23` | CA edge region (`vABC<=0`) | [x] |
-| 46 | `c23` | Triangle interior region; retain three points | [x] |
-| 47 | `c2Neg` | Arbitrary vector negation, including signed zero | [x] |
-| 48 | `c2Skew` | Arbitrary vector clockwise/perpendicular mapping | [x] |
-| 49 | `c2CCW90` | Arbitrary vector opposite perpendicular mapping | [x] |
-| 50 | `c2D` | simplex count 1 | [x] |
-| 51 | `c2D` | simplex count 2 and positive determinant branch | [x] |
-| 52 | `c2D` | simplex count 2 and nonpositive determinant branch | [x] |
-| 53 | `c2D` | simplex count 3 terminal zero direction | [x] |
-| 54 | `c2Support` | one vertex | [x] |
-| 55 | `c2Support` | many vertices with a unique strict maximum | [x] |
-| 56 | `c2Support` | many vertices with tied maxima; first maximum retained | [x] |
-| 57 | `c2Witness` | simplex count 1 | [x] |
-| 58 | `c2Witness` | simplex count 2 with weighted interpolation | [x] |
-| 59 | `c2Witness` | simplex count 3 with weighted interpolation | [x] |
-| 60 | `c2Div` | finite nonzero divisor | [x] |
-| 61 | `c2Div` | zero, infinity, and NaN divisors | [x] |
-| 62 | `c2Norm` | nonzero vector | [x] |
-| 63 | `c2Norm` | zero and non-finite vector | [x] |
-| 64 | `c2L` | simplex count 1 | [x] |
-| 65 | `c2L` | simplex count 2 with weighted interpolation | [x] |
-| 66 | `c2L` | simplex count 3 terminal zero vector | [x] |
-| 67 | `c2MulrvT` | General inverse-rotation pair and vector | [x] |
-| 68 | `c2GJK` | circle/circle, identity transforms, `use_radius=0`, separated | [x] |
-| 69 | `c2GJK` | circle/circle, identity transforms, `use_radius!=0`, separated beyond radius sum | [x] |
-| 70 | `c2GJK` | circle/circle, identity transforms, `use_radius!=0`, touching/overlapping | [x] |
-| 71 | `c2GJK` | circle/AABB ordered shape pair | [x] |
-| 72 | `c2GJK` | circle/capsule ordered shape pair | [x] |
-| 73 | `c2GJK` | AABB/circle ordered shape pair | [x] |
-| 74 | `c2GJK` | AABB/AABB ordered shape pair | [x] |
-| 75 | `c2GJK` | AABB/capsule ordered shape pair | [x] |
-| 76 | `c2GJK` | capsule/circle ordered shape pair | [x] |
-| 77 | `c2GJK` | capsule/AABB ordered shape pair | [x] |
-| 78 | `c2GJK` | capsule/capsule ordered shape pair | [x] |
-| 79 | `c2GJK` | non-null transform for A only | [x] |
-| 80 | `c2GJK` | non-null transform for B only | [x] |
-| 81 | `c2GJK` | non-null transforms for both A and B | [x] |
-| 82 | `c2GJK` | `outA`, `outB`, and `iterations` all non-null | [x] |
-| 83 | `c2GJK` | `outA` null; other outputs non-null | [x] |
-| 84 | `c2GJK` | `outB` null; other outputs non-null | [x] |
-| 85 | `c2GJK` | `iterations` null; witness outputs non-null | [x] |
-| 86 | `c2GJK` | all three result pointers null | [x] |
-| 87 | `c2GJK` | cache pointer null | [x] |
-| 88 | `c2GJK` | cache present with `count==0`; initialize from vertex zero and write cache | [x] |
-| 89 | `c2GJK` | readable warm cache with simplex count 1 | [x] |
-| 90 | `c2GJK` | readable warm cache with simplex count 2 | [x] |
-| 91 | `c2GJK` | readable warm cache with simplex count 3 | [x] |
-| 92 | `c2GJK` | cache metric rejection condition using factor `2.0` and threshold `-1.0e8`; restart simplex | [x] |
-| 93 | `c2GJK` | initial `FLT_MAX` distance gate and randomized geometries; returned iteration count never exceeds cap 20 | [x] |
-| 94 | `c2GJK` | simplex reaches count 3 (`hit` branch) | [x] |
-| 95 | `c2GJK` | search direction squared is below `FLT_EPSILON^2` | [x] |
-| 96 | `c2GJK` | duplicate support pair terminates search | [x] |
-| 97 | `c2GJK` | radius path with `dist > rA+rB` and `dist > FLT_EPSILON` | [x] |
-| 98 | `c2GJK` | radius path else-branch (`dist <= rA+rB` or epsilon) collapses witnesses to midpoint | [x] |
-| 99 | `c2GJK` | radius adjustment makes witness coordinates exactly equal and forces distance zero | [x] |
-| 100 | `c2AABBtoAABB` | strict overlap | [x] |
-| 101 | `c2AABBtoAABB` | boundary touching (comparisons are strict `<`) | [x] |
-| 102 | `c2AABBtoAABB` | separated on x | [x] |
-| 103 | `c2AABBtoAABB` | separated on y | [x] |
-| 104 | `c2AABBtoCapsule` | non-colliding | [x] |
-| 105 | `c2AABBtoCapsule` | colliding/touching under GJK radius handling | [x] |
-| 106 | `c2CapsuletoCapsule` | non-colliding | [x] |
-| 107 | `c2CapsuletoCapsule` | colliding/touching under GJK radius handling | [x] |
-| 108 | `c2CircletoCircle` | separated | [x] |
-| 109 | `c2CircletoCircle` | exact tangency (strict `<` returns false) | [x] |
-| 110 | `c2CircletoCircle` | overlap | [x] |
-| 111 | `c2CircletoAABB` | center inside box | [x] |
-| 112 | `c2CircletoAABB` | nearest point on side | [x] |
-| 113 | `c2CircletoAABB` | nearest point at corner | [x] |
-| 114 | `c2CircletoAABB` | exact tangency (strict `<` returns false) | [x] |
-| 115 | `c2CircletoAABB` | separated | [x] |
-| 116 | `c2CircletoCapsule` | projection before endpoint A, separated | [x] |
-| 117 | `c2CircletoCapsule` | projection before endpoint A, overlapping | [x] |
-| 118 | `c2CircletoCapsule` | projection on segment interior, separated | [x] |
-| 119 | `c2CircletoCapsule` | projection on segment interior, overlapping | [x] |
-| 120 | `c2CircletoCapsule` | projection after endpoint B, separated | [x] |
-| 121 | `c2CircletoCapsule` | projection after endpoint B, overlapping | [x] |
-| 122 | `c2Collided` | circle/circle dispatch | [x] |
-| 123 | `c2Collided` | circle/AABB dispatch | [x] |
-| 124 | `c2Collided` | circle/capsule dispatch | [x] |
-| 125 | `c2Collided` | AABB/circle reversed dispatch | [x] |
-| 126 | `c2Collided` | AABB/AABB dispatch | [x] |
-| 127 | `c2Collided` | AABB/capsule dispatch | [x] |
-| 128 | `c2Collided` | capsule/circle reversed dispatch | [x] |
-| 129 | `c2Collided` | capsule/AABB reversed dispatch | [x] |
-| 130 | `c2Collided` | capsule/capsule dispatch | [x] |
-| 131 | `aabb` | randomized and boundary AABB coordinates across all three encoded collision bits | [x] |
-| 132 | all exports | empty Cargo feature set, normal/default invocation | [x] |
-| 133 | all exports | empty Cargo feature set, explicit `--no-default-features` invocation | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---:|---|---|:---:|
+| 1 | `c2V` | arbitrary two-scalar vector construction | [x] |
+| 2 | `c2Mulvs` | arbitrary vector and scalar | [x] |
+| 3 | `c2Maxv` | both components selected from `a` | [x] |
+| 4 | `c2Maxv` | x from `a`, y from `b` | [x] |
+| 5 | `c2Maxv` | x from `b`, y from `a` | [x] |
+| 6 | `c2Maxv` | both components selected from `b`, including ties | [x] |
+| 7 | `c2Minv` | both components selected from `a` | [x] |
+| 8 | `c2Minv` | x from `a`, y from `b` | [x] |
+| 9 | `c2Minv` | x from `b`, y from `a` | [x] |
+| 10 | `c2Minv` | both components selected from `b`, including ties | [x] |
+| 11 | `c2Clampv` | each component independently below/inside/above bounds (3×3) | [x] |
+| 12 | `c2Sub` | arbitrary vector subtraction | [x] |
+| 13 | `c2Dot` | arbitrary vectors, including cancellation and zero | [x] |
+| 14 | `c2RotIdentity`, `c2xIdentity` | identity values | [x] |
+| 15 | `c2BBVerts` | arbitrary AABB, including reversed/equal bounds | [x] |
+| 16 | `c2MakeProxy` | circle: one vertex and radius | [x] |
+| 17 | `c2MakeProxy` | AABB: four vertices and zero radius | [x] |
+| 18 | `c2MakeProxy` | capsule: two vertices and radius | [x] |
+| 19 | `c2Len` | zero vector | [x] |
+| 20 | `c2Len` | nonzero arbitrary vector | [x] |
+| 21 | `c2Det2` | arbitrary vectors, including collinear and opposite orientation | [x] |
+| 22 | `c2GJKSimplexMetric` | simplex count 1 | [x] |
+| 23 | `c2GJKSimplexMetric` | simplex count 2 | [x] |
+| 24 | `c2GJKSimplexMetric` | simplex count 3 | [x] |
+| 25 | `c2Mulrv` | arbitrary rotation coefficients and vector | [x] |
+| 26 | `c2Add` | arbitrary vector addition | [x] |
+| 27 | `c2Mulxv` | arbitrary transform and vector | [x] |
+| 28 | `c22` | `v <= 0` vertex-A region | [x] |
+| 29 | `c22` | `v > 0 && u <= 0` vertex-B region | [x] |
+| 30 | `c22` | `v > 0 && u > 0` edge region | [x] |
+| 31 | `c23` | vertex-A region | [x] |
+| 32 | `c23` | vertex-B region | [x] |
+| 33 | `c23` | vertex-C region | [x] |
+| 34 | `c23` | edge-AB region | [x] |
+| 35 | `c23` | edge-BC region | [x] |
+| 36 | `c23` | edge-CA region | [x] |
+| 37 | `c23` | triangle interior/fallback region | [x] |
+| 38 | `c2Neg`, `c2Skew`, `c2CCW90` | arbitrary vector | [x] |
+| 39 | `c2D` | count 1 | [x] |
+| 40 | `c2D` | count 2 and determinant positive | [x] |
+| 41 | `c2D` | count 2 and determinant nonpositive | [x] |
+| 42 | `c2D` | count 3/default | [x] |
+| 43 | `c2Support` | one vertex | [x] |
+| 44 | `c2Support` | many vertices, first is strict maximum | [x] |
+| 45 | `c2Support` | many vertices, later vertex is strict maximum | [x] |
+| 46 | `c2Support` | many vertices with a maximum tie (first maximum retained) | [x] |
+| 47 | `c2Support` | oversized count (> proxy capacity) backed by a sufficiently large array | [x] |
+| 48 | `c2Witness` | count 1 | [x] |
+| 49 | `c2Witness` | count 2 weighted result | [x] |
+| 50 | `c2Witness` | count 3 weighted result | [x] |
+| 51 | `c2Div` | nonzero divisor | [x] |
+| 52 | `c2Div` | zero divisor (IEEE infinities/NaNs) | [x] |
+| 53 | `c2Norm` | nonzero vector | [x] |
+| 54 | `c2Norm` | zero vector (IEEE NaNs) | [x] |
+| 55 | `c2L` | count 1 | [x] |
+| 56 | `c2L` | count 2 weighted result | [x] |
+| 57 | `c2MulrvT` | arbitrary rotation coefficients and vector | [x] |
+| 58 | `c2GJK` | each ordered shape pair: circle/circle, circle/AABB, circle/capsule, AABB/circle, AABB/AABB, AABB/capsule, capsule/circle, capsule/AABB, capsule/capsule | [x] |
+| 59 | `c2GJK` | `ax_ptr`/`bx_ptr` null-null, provided-null, null-provided, provided-provided | [x] |
+| 60 | `c2GJK` | `use_radius == 0` and `use_radius != 0`, separated and overlapping shapes | [x] |
+| 61 | `c2GJK` | `outA`, `outB`, and `iterations` each null and non-null | [x] |
+| 62 | `c2GJK` | cache null | [x] |
+| 63 | `c2GJK` | cache present with count zero (cold cache) | [x] |
+| 64 | `c2GJK` | cache reused from a preceding identical call (warm cache) | [x] |
+| 65 | `c2GJK` | cache count 1, 2, and 3 metric paths with valid indices | [x] |
+| 66 | `c2GJK` | loop termination by simplex count 3 (hit) | [x] |
+| 67 | `c2GJK` | loop termination by duplicate support point / tiny direction / distance non-improvement | [x] |
+| 68 | `c2GJK` | radius branch `dist > rA+rB && dist > FLT_EPSILON` | [x] |
+| 69 | `c2GJK` | radius overlap/near-zero branch, witnesses collapsed to midpoint | [x] |
+| 70 | `c2AABBtoAABB` | separated on each of four sides | [x] |
+| 71 | `c2AABBtoAABB` | touching and overlapping | [x] |
+| 72 | `c2AABBtoCapsule` | separated and collided | [x] |
+| 73 | `c2CapsuletoCapsule` | separated and collided | [x] |
+| 74 | `c2CircletoCircle` | separated, exactly tangent, and overlapping | [x] |
+| 75 | `c2CircletoAABB` | center outside/inside; separated, exactly tangent, overlapping | [x] |
+| 76 | `c2CircletoCapsule` | projection before A (`da < 0`) | [x] |
+| 77 | `c2CircletoCapsule` | projection on segment (`da >= 0 && db < 0`) | [x] |
+| 78 | `c2CircletoCapsule` | projection after B (`db >= 0`) | [x] |
+| 79 | `c2Collided` | all 9 ordered valid type pairs | [x] |
+| 80 | `aabb` | arbitrary input AABB coordinates, including reversed/equal bounds | [x] |
+

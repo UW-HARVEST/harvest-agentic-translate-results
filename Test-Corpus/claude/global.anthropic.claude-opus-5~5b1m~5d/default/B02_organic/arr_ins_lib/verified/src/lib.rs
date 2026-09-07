@@ -36,25 +36,10 @@ unsafe extern "C" {
     fn strlen(s: *const c_char) -> usize;
 }
 
-/// `STBDS_REALLOC(c,p,s)` -> `realloc(p,s)` for a **runtime** pointer.
-///
-/// This mirrors `lib.c:297`, the only site where the C passes a value the
-/// compiler cannot fold: `STBDS_REALLOC(NULL, (a) ? stbds_header(a) : 0, ...)`.
-/// gcc therefore emits a real `realloc` call even when `a` happens to be NULL.
-/// The `black_box` stops LLVM from path-splitting the `a == NULL` branch into a
-/// bare `malloc`, so the allocation-call sequence stays identical (see
-/// `tools/check_alloc_trace.sh`).
+/// `STBDS_REALLOC(c,p,s)` -> `realloc(p,s)`
 #[inline(always)]
 unsafe fn stbds_realloc(p: *mut c_void, s: usize) -> *mut c_void {
-    unsafe { realloc(core::hint::black_box(p), s) }
-}
-
-/// `STBDS_REALLOC(NULL, 0, s)` — the C's *literal*-NULL form
-/// (`lib.c:388`, `873`, `894`, `906`). A C compiler folds this to `malloc(s)`;
-/// letting LLVM do the same keeps the two allocation traces in lock-step.
-#[inline(always)]
-unsafe fn stbds_realloc_fresh(s: usize) -> *mut c_void {
-    unsafe { realloc(ptr::null_mut(), s) }
+    unsafe { realloc(p, s) }
 }
 
 /// `STBDS_FREE(c,p)` -> `free(p)`
@@ -66,39 +51,6 @@ unsafe fn stbds_free(p: *mut c_void) {
 #[inline(always)]
 unsafe fn c_memset(dst: *mut c_void, val: u8, n: usize) {
     unsafe { ptr::write_bytes(dst as *mut u8, val, n) }
-}
-
-/// `*(void **) addr = value`, with C semantics.
-///
-/// The C never null-checks before storing through a `realloc` result, so a
-/// failed allocation faults on the store. Going through libc `memcpy` keeps that
-/// behaviour byte-for-byte in *both* Rust profiles: a plain `(*p).field = v`
-/// would trip the debug-profile null/alignment UB check and abort instead of
-/// faulting.
-#[inline(always)]
-unsafe fn raw_store_ptr<T>(addr: usize, value: *mut T) {
-    unsafe {
-        let v = value;
-        memcpy(
-            addr as *mut c_void,
-            &v as *const *mut T as *const c_void,
-            size_of::<*mut T>(),
-        );
-    }
-}
-
-/// `*(void **) addr`, with C semantics (see `raw_store_ptr`).
-#[inline(always)]
-unsafe fn raw_load_ptr<T>(addr: usize) -> *mut T {
-    unsafe {
-        let mut v: *mut T = ptr::null_mut();
-        memcpy(
-            &mut v as *mut *mut T as *mut c_void,
-            addr as *const c_void,
-            size_of::<*mut T>(),
-        );
-        v
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +328,8 @@ unsafe fn stbds_make_hash_index(
     ot: *mut stbds_hash_index,
 ) -> *mut stbds_hash_index {
     unsafe {
-        let t = stbds_realloc_fresh(
+        let t = stbds_realloc(
+            ptr::null_mut(),
             (slot_count >> STBDS_BUCKET_SHIFT)
                 .wrapping_mul(size_of::<stbds_hash_bucket>())
                 .wrapping_add(size_of::<stbds_hash_index>())
@@ -399,12 +352,7 @@ unsafe fn stbds_make_hash_index(
         if slot_count <= STBDS_BUCKET_LENGTH {
             (*t).used_count_shrink_threshold = 0;
         }
-        assert!(
-            (*t)
-                .used_count_threshold
-                .wrapping_add((*t).tombstone_count_threshold)
-                < (*t).slot_count
-        );
+        assert!((*t).used_count_threshold + (*t).tombstone_count_threshold < (*t).slot_count);
 
         if !ot.is_null() {
             (*t).string = (*ot).string;
@@ -753,7 +701,7 @@ pub unsafe extern "C" fn stbds_hmget_key_ts(
         let keyoffset: usize = 0;
         if a.is_null() {
             let a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
-            (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+            (*stbds_header(a)).length += 1;
             c_memset(a, 0, elemsize);
             *temp = STBDS_INDEX_EMPTY;
             stbds_arr_to_hash(a, elemsize)
@@ -803,7 +751,7 @@ pub unsafe extern "C" fn stbds_hmput_default(a: *mut c_void, elemsize: usize) ->
                 ptr::null_mut()
             };
             let na = stbds_arrgrowf(base, elemsize, 0, 1);
-            (*stbds_header(na)).length = (*stbds_header(na)).length.wrapping_add(1);
+            (*stbds_header(na)).length += 1;
             c_memset(na, 0, elemsize);
             a = stbds_arr_to_hash(na, elemsize);
         }
@@ -826,7 +774,7 @@ pub unsafe extern "C" fn stbds_hmput_key(
         if a.is_null() {
             a = stbds_arrgrowf(ptr::null_mut(), elemsize, 0, 1);
             c_memset(a, 0, elemsize);
-            (*stbds_header(a)).length = (*stbds_header(a)).length.wrapping_add(1);
+            (*stbds_header(a)).length += 1;
             a = stbds_arr_to_hash(a, elemsize);
         }
 
@@ -958,12 +906,12 @@ pub unsafe extern "C" fn stbds_hmput_key(
                 raw_a = stbds_arr_to_hash(a, elemsize);
                 let _ = raw_a;
 
-                assert!((i as usize).wrapping_add(1) <= stbds_arrcap(a));
-                (*stbds_header(a)).length = i.wrapping_add(1) as usize;
+                assert!((i as usize) + 1 <= stbds_arrcap(a));
+                (*stbds_header(a)).length = (i + 1) as usize;
                 bucket = (*table).storage.add(pos >> STBDS_BUCKET_SHIFT);
                 (*bucket).hash[pos & STBDS_BUCKET_MASK] = hash;
-                (*bucket).index[pos & STBDS_BUCKET_MASK] = i.wrapping_sub(1);
-                set_stbds_temp(a, i.wrapping_sub(1));
+                (*bucket).index[pos & STBDS_BUCKET_MASK] = i - 1;
+                set_stbds_temp(a, i - 1);
 
                 let slot =
                     byte_add(a, elemsize.wrapping_mul(i as usize)) as *mut *mut c_char;
@@ -1035,7 +983,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
         let mut b = (*table).storage.add((slot >> STBDS_BUCKET_SHIFT) as usize);
         let mut i = (slot as usize) & STBDS_BUCKET_MASK;
         let old_index = (*b).index[i];
-        let final_index = stbds_arrlen(raw_a).wrapping_sub(1).wrapping_sub(1);
+        let final_index = stbds_arrlen(raw_a) - 1 - 1;
         assert!(slot < (*table).slot_count as isize);
         (*table).used_count = (*table).used_count.wrapping_sub(1);
         (*table).tombstone_count = (*table).tombstone_count.wrapping_add(1);
@@ -1079,7 +1027,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
             assert!((*b).index[i] == final_index);
             (*b).index[i] = old_index;
         }
-        (*stbds_header(raw_a)).length = (*stbds_header(raw_a)).length.wrapping_sub(1);
+        (*stbds_header(raw_a)).length -= 1;
 
         if (*table).used_count < (*table).used_count_shrink_threshold
             && (*table).slot_count > STBDS_BUCKET_LENGTH
@@ -1103,8 +1051,8 @@ pub unsafe extern "C" fn stbds_hmdel_key(
 
 unsafe fn stbds_strdup(str_: *mut c_char) -> *mut c_char {
     unsafe {
-        let len = strlen(str_).wrapping_add(1);
-        let p = stbds_realloc_fresh(len) as *mut c_char;
+        let len = strlen(str_) + 1;
+        let p = stbds_realloc(ptr::null_mut(), len) as *mut c_char;
         memmove(p as *mut c_void, str_ as *const c_void, len);
         p
     }
@@ -1113,20 +1061,13 @@ unsafe fn stbds_strdup(str_: *mut c_char) -> *mut c_char {
 const STBDS_STRING_ARENA_BLOCKSIZE_MIN: usize = 512;
 const STBDS_STRING_ARENA_BLOCKSIZE_MAX: usize = 1 << 20;
 
-/// `offsetof(stbds_string_block, next)`
-const SB_NEXT_OFF: usize = core::mem::offset_of!(stbds_string_block, next);
-/// `offsetof(stbds_string_block, storage)`
-const SB_STORAGE_OFF: usize = core::mem::offset_of!(stbds_string_block, storage);
-const _: () = assert!(SB_NEXT_OFF == 0);
-const _: () = assert!(SB_STORAGE_OFF == 8);
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stbds_stralloc(
     a: *mut stbds_string_arena,
     str_: *mut c_char,
 ) -> *mut c_char {
     unsafe {
-        let len = strlen(str_).wrapping_add(1);
+        let len = strlen(str_) + 1;
         if len > (*a).remaining {
             let mut blocksize = (*a).block as usize;
 
@@ -1137,41 +1078,37 @@ pub unsafe extern "C" fn stbds_stralloc(
             }
 
             if len > blocksize {
-                let sb = stbds_realloc_fresh(
+                let sb = stbds_realloc(
+                    ptr::null_mut(),
                     (size_of::<stbds_string_block>() - 8).wrapping_add(len),
                 ) as *mut stbds_string_block;
                 memmove(
-                    (sb as usize).wrapping_add(SB_STORAGE_OFF) as *mut c_void,
+                    (*sb).storage.as_mut_ptr() as *mut c_void,
                     str_ as *const c_void,
                     len,
                 );
                 if !(*a).storage.is_null() {
-                    // sb->next = a->storage->next;  a->storage->next = sb;
-                    let an: *mut stbds_string_block =
-                        raw_load_ptr(((*a).storage as usize).wrapping_add(SB_NEXT_OFF));
-                    raw_store_ptr((sb as usize).wrapping_add(SB_NEXT_OFF), an);
-                    raw_store_ptr(((*a).storage as usize).wrapping_add(SB_NEXT_OFF), sb);
+                    (*sb).next = (*(*a).storage).next;
+                    (*(*a).storage).next = sb;
                 } else {
-                    raw_store_ptr(
-                        (sb as usize).wrapping_add(SB_NEXT_OFF),
-                        ptr::null_mut::<stbds_string_block>(),
-                    );
+                    (*sb).next = ptr::null_mut();
                     (*a).storage = sb;
                     (*a).remaining = 0;
                 }
-                return (sb as usize).wrapping_add(SB_STORAGE_OFF) as *mut c_char;
+                return (*sb).storage.as_mut_ptr();
             } else {
-                let sb = stbds_realloc_fresh(
+                let sb = stbds_realloc(
+                    ptr::null_mut(),
                     (size_of::<stbds_string_block>() - 8).wrapping_add(blocksize),
                 ) as *mut stbds_string_block;
-                raw_store_ptr((sb as usize).wrapping_add(SB_NEXT_OFF), (*a).storage);
+                (*sb).next = (*a).storage;
                 (*a).storage = sb;
                 (*a).remaining = blocksize;
             }
         }
 
         assert!(len <= (*a).remaining);
-        let base = ((*a).storage as usize).wrapping_add(SB_STORAGE_OFF);
+        let base = (*(*a).storage).storage.as_mut_ptr() as usize;
         let p = base.wrapping_add((*a).remaining).wrapping_sub(len) as *mut c_char;
         (*a).remaining = (*a).remaining.wrapping_sub(len);
         memmove(p as *mut c_void, str_ as *const c_void, len);
@@ -1184,8 +1121,7 @@ pub unsafe extern "C" fn stbds_strreset(a: *mut stbds_string_arena) {
     unsafe {
         let mut x = (*a).storage;
         while !x.is_null() {
-            let y: *mut stbds_string_block =
-                raw_load_ptr((x as usize).wrapping_add(SB_NEXT_OFF));
+            let y = (*x).next;
             stbds_free(x as *mut c_void);
             x = y;
         }
@@ -1263,7 +1199,7 @@ pub unsafe extern "C" fn arr_ins(num: c_int) {
             for v in 1..=4 as c_int {
                 // stbds_arrmaybegrow(a,1)
                 if arr.is_null()
-                    || (*stbds_header(arr as *const c_void)).length.wrapping_add(1)
+                    || (*stbds_header(arr as *const c_void)).length + 1
                         > (*stbds_header(arr as *const c_void)).capacity
                 {
                     arr = stbds_arrgrowf(arr as *mut c_void, ELEMSIZE, 1, 0) as *mut c_int;
@@ -1271,7 +1207,7 @@ pub unsafe extern "C" fn arr_ins(num: c_int) {
                 // (a)[stbds_header(a)->length++] = v
                 let h = stbds_header(arr as *const c_void);
                 *arr.add((*h).length) = v;
-                (*h).length = (*h).length.wrapping_add(1);
+                (*h).length += 1;
             }
 
             // stbds_arrins(arr,i,num) == stbds_arrinsn(arr,i,1), arr[i] = num
@@ -1279,13 +1215,13 @@ pub unsafe extern "C" fn arr_ins(num: c_int) {
             {
                 // stbds_arraddn(a,1) == (void) stbds_arraddnindex(a,1)
                 if arr.is_null()
-                    || (*stbds_header(arr as *const c_void)).length.wrapping_add(1)
+                    || (*stbds_header(arr as *const c_void)).length + 1
                         > (*stbds_header(arr as *const c_void)).capacity
                 {
                     arr = stbds_arrgrowf(arr as *mut c_void, ELEMSIZE, 1, 0) as *mut c_int;
                 }
                 let h = stbds_header(arr as *const c_void);
-                (*h).length = (*h).length.wrapping_add(1);
+                (*h).length += 1;
 
                 // memmove(&a[i+1], &a[i], sizeof *a * (length - 1 - i))
                 let n: usize = 1;

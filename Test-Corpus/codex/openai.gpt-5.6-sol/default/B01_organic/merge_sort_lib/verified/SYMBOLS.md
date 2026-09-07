@@ -1,20 +1,31 @@
-# Exported Symbol Surface
+# Dynamic symbol surface
 
-Source library:
-`../c_src/build/libharvest-work-MGK5vE.so`
+Generated from:
 
-Inventory command:
-
-```sh
-nm -D --defined-only --format=posix \
-  ../c_src/build/libharvest-work-MGK5vE.so
+```text
+nm -D ../c_src/build/libharvest-work-68uRX7.so
+nm -D target/release/libmerge_sort_lib.so
 ```
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `merge_sort` | `T` | `merge_sort` | Present |
+## C-defined public symbols
 
-The C shared library exports one defined public symbol. The Rust shared library
-exports the same symbol with the exact name. There are no missing symbols.
-`ldd -r target/release/libmerge_sort_lib.so` also reports no unresolved
-symbols; its dynamic imports resolve through `libc` and `libgcc_s`.
+| symbol | C `.so` | Rust `.so` | status |
+|---|---:|---:|---|
+| `merge_sort` | `T` | `T` | [x] exact export present |
+
+## C dynamic dependencies
+
+These are runtime/toolchain dependencies, not library API exports:
+
+| symbol | kind |
+|---|---|
+| `_ITM_deregisterTMCloneTable` | weak runtime symbol |
+| `_ITM_registerTMCloneTable` | weak runtime symbol |
+| `__cxa_finalize@GLIBC_2.2.5` | weak libc/runtime symbol |
+| `__gmon_start__` | weak runtime symbol |
+| `memcpy@GLIBC_2.14` | undefined libc dependency |
+
+Missing C-defined symbols in Rust: **0**.
+
+Final `ldd -r target/release/libmerge_sort_lib.so` check: **0 unresolved
+symbols**.

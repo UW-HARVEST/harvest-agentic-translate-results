@@ -1,73 +1,82 @@
-# CONFIGS.md — Configuration-surface table (Phase A, gate for Phase B)
+# CONFIGS.md — Phase A configuration-surface table
 
-Derived mechanically from the C source: the axes below are the ones the C code
-actually distinguishes, not the ones that look interesting.
+Derived mechanically from the C source, the public header, and `Cargo.toml`.
 
-## Mechanical derivation of the axes
+## Axis enumeration
 
-**Public entry points** — the full set, from `c_src/include/lib.h`:
+### Axis 1 — runtime options / modes / flags
+
+Grep of the public header and source for anything settable:
+
+```sh
+grep -nE 'if|switch|#ifdef|#if |extern|global|static|set|init|config|flag|mode|option' -r c_src/src c_src/include
+# -> no matches
+```
+
+`c_src/include/lib.h` declares exactly one function and no types, no enums, no
+structs, no globals, and no configuration entry points. `c_src/src/lib.c` has no
+static/global state, no initialisation function, and no conditional compilation.
+**Axis 1 has exactly one value: "no options exist".** `rev16` is a pure function
+of its single argument.
+
+### Axis 2 — compile-time / feature configuration
+
+`translation/Cargo.toml` declares no `[features]` table, so the complete set of
+feature combinations is `{default}` = `{no-default-features}` = the empty set.
+The C side has no `#ifdef`s, so it likewise has a single configuration.
+Both combinations are still executed explicitly in Phase D.
+
+### Axis 3 — public entry points (full set, lowest level included)
 
 | entry point | signature | level |
 |-------------|-----------|-------|
-| `rev16` | `uint32_t rev16(uint32_t a)` | lowest-level *and* only; there is no convenience wrapper and nothing beneath it |
+| `rev16` | `uint32_t rev16(uint32_t a)` | this is simultaneously the lowest-level and the only entry point; there are no convenience wrappers and no internal helpers to drive separately |
 
-There is exactly one exported symbol (see `SYMBOLS.md`), so the "call
-hierarchy" is a single node and no composed pipeline exists.
+There is no composed pipeline, no state to set up, and no call hierarchy: the
+single exported symbol *is* the entire API. Driving it "the way a real consumer
+does" is exactly one call per input.
 
-**Runtime options / modes / flags:** none. `rev16` takes no flag argument,
-reads no global, reads no environment variable, and holds no state. There is no
-init/config/teardown call.
+### Axis 4 — input shapes the code special-cases
 
-**Compile-time configuration:** none. `c_src/CMakeLists.txt` defines no
-`-D` options and `lib.c` contains no `#if`/`#ifdef`.
+The body is four straight-line statements over a `uint32_t`. It contains no
+branches, so it does not *structurally* special-case any shape. It does,
+however, treat different bit positions differently, and one shape class is
+semantically distinguished: the four masks (`0xAAAA`/`0x5555`, `0xCCCC`/`0x3333`,
+`0xF0F0`/`0x0F0F`, `0xFF00`/`0x00FF`) are all 16 bits wide, so **the upper 16
+bits of the argument are discarded by the first statement**. The rows below
+therefore enumerate the bit-position and value-range shapes that can produce
+value-dependent divergence (wrong mask, wrong shift direction, wrong shift
+amount, missing truncation, signed vs unsigned shift, `<<` overflow handling).
 
-**Branches the code takes:** none — the body is four unconditional assignments
-followed by `return`. Consequently the only axis that can change the result is
-the *value* of the single argument.
+## Configuration rows
 
-**Input shapes the code effectively special-cases** — all four masks
-(`0xAAAA/0x5555`, `0xCCCC/0x3333`, `0xF0F0/0x0F0F`, `0xFF00/0x00FF`) are 16 bits
-wide, so the first statement unconditionally discards bits 16..31. That splits
-the 32-bit argument into two structurally distinct halves, giving these shape
-axes:
+Each row is a *combination* of axis values (options: none available; entry
+point: `rev16`; input shape: as stated) that the C code treats distinguishably.
+Every row is tested with many randomized inputs from a fixed-seed PRNG
+(SplitMix64, seed `0x243F_6A88_85A3_08D3`) unless the row is exhaustive by
+construction, comparing the C `.so` and Rust `.so` return values bit-for-bit.
 
-* **low half (bits 0..15)** — fully significant; sub-shapes: zero, all-ones,
-  single bit set, byte-aligned patterns, nibble-aligned patterns, alternating
-  patterns matching the mask literals, bit-reversal palindromes, arbitrary.
-* **high half (bits 16..31)** — entirely discarded; sub-shapes: zero, all-ones,
-  arbitrary. Must never affect the result.
-* **whole-word interpretations** — values that differ if the 32-bit argument
-  were ever treated as signed or narrowed (`INT32_MAX`, `0x8000_0000`,
-  `UINT32_MAX`).
-* **cardinality of the low half** — empty (0 bits set), one (1 bit set),
-  many (2..16 bits set).
-
-## Configuration-surface table
-
-Cross-product of {single entry point} × {the shape axes above}, pruned to the
-combinations the code actually distinguishes. Every row is exercised in
-`tests/differential.rs` against BOTH `.so` objects via `libloading`, with many
-randomized inputs per row (seeded, reproducible xorshift64* PRNG, seed
-`0x2545F4914F6CDD1D`).
-
-| # | entry point(s) | configuration (options set + input shape) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|-------------------------------------------|-----|
-| 1 | `rev16` | high half = 0, low half = 0 (empty; minimum input) | [x] |
-| 2 | `rev16` | high half = 0, low half = `0xFFFF` (all-ones, saturated) | [x] |
-| 3 | `rev16` | high half = 0, low half = exactly one bit set, all 16 positions (cardinality "one") | [x] |
-| 4 | `rev16` | high half = 0, low half = exactly two bits set, all 120 pairs (cardinality "many", minimal) | [x] |
-| 5 | `rev16` | high half = 0, low half = uniformly random 16-bit values (cardinality "many", 20 000 samples) | [x] |
-| 6 | `rev16` | high half = 0, low half = alternating masks `0xAAAA`, `0x5555`, `0xCCCC`, `0x3333`, `0xF0F0`, `0x0F0F`, `0xFF00`, `0x00FF` (the literals the C branches its masks on) | [x] |
-| 7 | `rev16` | high half = 0, low half = byte-shape inputs: `0x00XX`, `0xXX00` for all 256 `XX` (byte-order / swap axis of stage 4) | [x] |
-| 8 | `rev16` | high half = 0, low half = nibble-shape inputs: `0x000X`,`0x00X0`,`0x0X00`,`0xX000` for all 16 `X` (nibble axis of stage 3) | [x] |
-| 9 | `rev16` | high half = 0, low half = bit-reversal palindromes (`rev16(x) == x`), all of them enumerated | [x] |
-| 10 | `rev16` | high half = 0, **exhaustive** sweep of all 65 536 low-half values | [x] |
-| 11 | `rev16` | high half = `0xFFFF` (all-ones discarded half) × low half random (20 000 samples) | [x] |
-| 12 | `rev16` | high half = uniformly random × low half = 0 (only discarded bits vary; result must stay `0`) | [x] |
-| 13 | `rev16` | high half = uniformly random × low half = uniformly random — full 32-bit random sweep (50 000 samples) | [x] |
-| 14 | `rev16` | whole-word boundary interpretations: `0x0000_0000`, `0x0000_0001`, `0x0000_FFFF`, `0x0001_0000`, `0x7FFF_FFFF`, `0x8000_0000`, `0x8000_0001`, `0xFFFF_0000`, `0xFFFF_FFFF` | [x] |
-| 15 | `rev16` | walking single bit over the **full** 32-bit word, `1u32 << k` for `k = 0..=31` (crosses the low/high-half boundary) | [x] |
-| 16 | `rev16` | invariance / statelessness: same input called repeatedly, and inputs interleaved in random order, compared against the single-call result in both objects | [x] |
-| 17 | `rev16` | idempotence structure: `rev16(rev16(x))` composed through the `.so` for random `x` (double-application must agree between C and Rust) | [x] |
+| 1 | `rev16` | no options; exhaustive over the entire low half: every `a` in `0x0000..=0xFFFF` (65 536 calls, upper half zero) | [x] |
+| 2 | `rev16` | no options; exhaustive over the low half with the upper half saturated: `0xFFFF_0000 \| lo` for every `lo` in `0x0000..=0xFFFF` — pins the discard-upper-bits semantics | [x] |
+| 3 | `rev16` | no options; randomized over the FULL 32-bit domain, uniform (2 000 000 seeded random `u32`) | [x] |
+| 4 | `rev16` | no options; randomized low half crossed with randomized non-zero upper half (`hi << 16 \| lo`, both random, 200 000 pairs) — cross-product of the two halves | [x] |
+| 5 | `rev16` | no options; single-bit inputs `1 << k` for every `k` in `0..32` (includes bits 16–31 which must vanish) — isolates each mask/shift stage | [x] |
+| 6 | `rev16` | no options; single-bit-clear inputs `!(1 << k)` for every `k` in `0..32` | [x] |
+| 7 | `rev16` | no options; the mask constants themselves and their neighbours: `0xAAAA`, `0x5555`, `0xCCCC`, `0x3333`, `0xF0F0`, `0x0F0F`, `0xFF00`, `0x00FF` each `-1`/`+0`/`+1` — boundary values of every stage | [x] |
+| 8 | `rev16` | no options; byte/nibble-boundary and empty/one/many-bit-population shapes: `0`, `1`, `0xFFFF`, `0x8000`, `0x0100`, `0x1000`, and all values with popcount 0, 1, 15, 16 in the low half | [x] |
+| 9 | `rev16` | no options; values chosen so that `a & 0x5555` shifted left would overflow 16 bits if truncation were mis-implemented (`0x5555`, `0xFFFF`, `0xAAAA`) and values with the top low-half bit set (`0x8000..=0xFFFF` sampled) | [x] |
+| 10 | `rev16` | no options; byte-order / endianness-sensitive shapes: values whose two low bytes differ (`0x00FF`, `0xFF00`, `0x1234`, `0x00AB`, `0xAB00`) plus 100 000 randomized values with distinct bytes | [x] |
+| 11 | `rev16` | no options; repeated / idempotence-style driving of the entry point in sequence — `rev16(rev16(x))` composed through the FFI for 100 000 seeded inputs, confirming no hidden state affects a second call | [x] |
+| 12 | `rev16` | feature combination `--no-default-features` (empty feature set) applied to all rows above | [x] |
+| 13 | `rev16` | codegen configuration: the `release` cdylib (`opt-level=3`, `panic="abort"`) — LLVM can recognise the bit-reversal idiom and emit a wholly different instruction sequence, so all rows above are re-run against it | [x] |
 
-All 17 rows pass byte-for-byte between the C `.so` and the Rust `.so`.
+Measured: **2 962 395** differential C-vs-Rust comparisons, all matching
+bit-for-bit. Each row asserts its exact comparison count via `expect_calls`, so
+a loop that silently performs no work fails instead of passing vacuously.
+
+## Gate
+
+- [x] Every row passes across its randomized/exhaustive inputs, under every
+      feature combination.

@@ -1,69 +1,82 @@
-# SYMBOLS.md — public symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
+Derived mechanically from `nm -D --defined-only` on both shared objects.
+
+* C   `.so`: `c_src/build/libharvest-work-R3geiw.so`
+* Rust`.so`: `translation/target/release/libupdate_md5_lib.so`
+
+## C exported symbols (`nm -D --defined-only`, sorted)
+
+| # | symbol | type | declared in | defined in | present in Rust `.so`? |
+|---|--------|------|-------------|------------|------------------------|
+| 1 | `tflac_pack_u64le`    | `T` (global text) | (not in `lib.h`; external linkage in `lib.c`) | `c_src/src/lib.c` | YES |
+| 2 | `tflac_md5_addsample` | `T` (global text) | (not in `lib.h`; external linkage in `lib.c`) | `c_src/src/lib.c` | YES |
+| 3 | `update_md5`          | `T` (global text) | `c_src/include/lib.h` | `c_src/src/lib.c` | YES |
+
+There are no macro-generated symbols, no exported data objects, no exported
+enums/constants, and no `static` (internal-linkage) functions in `lib.c`.
+The C `.so` therefore exports exactly three non-libc symbols.
+
+## Rust exported symbols (`nm -D --defined-only`, sorted)
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-H5hJaK.so
-nm -D --defined-only translation/target/release/libupdate_md5_lib.so
+tflac_md5_addsample
+tflac_pack_u64le
+update_md5
 ```
 
-## C source inventory (`c_src/src/lib.c`, `c_src/include/lib.h`)
+## Diff
 
-The whole library is one translation unit, `src/lib.c`, with three
-non-`static` functions. There are no other C source files, so no module was
-skipped by the translation.
+```
+$ comm -23 <(nm -D --defined-only C.so  | awk '{print $3}' | sort) \
+           <(nm -D --defined-only R.so  | awk '{print $3}' | sort)
+<empty>
+```
 
-| C definition | file:line | exported |
-|---|---|---|
-| `void tflac_pack_u64le(tflac_u8 *d, tflac_u64 n)` | src/lib.c:5 | yes (not `static`) |
-| `void tflac_md5_addsample(tflac_md5 *m, tflac_u32 bits, tflac_uint val)` | src/lib.c:16 | yes (not `static`) |
-| `tflac_u32 update_md5(tflac *t, const tflac_s32 *samples)` | src/lib.c:33 | yes (declared in lib.h:22) |
+**Missing from Rust: 0.** No stubs were added; each Rust symbol is a real
+`#[no_mangle] pub unsafe extern "C"` translation of the corresponding C body.
 
-No macro-generated symbols, no global/static data objects, no `#ifdef`
-feature gates exist in the C source.
+## Undefined (imported) symbols
 
-## Symbol table comparison
+C `.so` undefined: none besides the ELF/libc glue (`__cxa_finalize`,
+`_ITM_*`, `__gmon_start__`) — `lib.c` calls no library functions.
+Rust `.so` undefined: only libc/unwind glue. No unresolved non-libc symbols.
 
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|-----------|--------|
-| 1 | `tflac_pack_u64le`    | `T` | `T` | present in both |
-| 2 | `tflac_md5_addsample` | `T` | `T` | present in both |
-| 3 | `update_md5`          | `T` | `T` | present in both |
+## ABI / layout parity (checked against the C compiler, see `tests/`)
 
-**Missing from Rust `.so`: none.** No `#[no_mangle]` wrapper had to be added
-and no untranslated C module was found.
+| type | C `sizeof` | C offsets | Rust `size_of` | Rust offsets |
+|------|-----------|-----------|----------------|--------------|
+| `tflac_md5` | 88 | `pos`@0, `total`@8, `buffer`@16 (len 72) | 88 | same |
+| `tflac`     | 96 | `md5_ctx`@0, `cur_blocksize`@88, `channels`@92 | 96 | same |
 
-## Undefined symbols in the Rust `.so`
+Signatures:
 
-`nm -D --undefined-only` on the Rust `.so` lists only libc / libgcc-unwind
-imports (`malloc`, `memcpy`, `memset`, `__errno_location`, `_Unwind_*`,
-`pthread_key_*`, `dl_iterate_phdr`, …) that come from the Rust standard
-library runtime. **0 missing/undefined non-libc symbols.**
+```c
+void      tflac_pack_u64le   (tflac_u8 *d, tflac_u64 n);
+void      tflac_md5_addsample(tflac_md5 *m, tflac_u32 bits, tflac_u64 val);
+tflac_u32 update_md5         (tflac *t, const tflac_s32 *samples);
+```
 
-## Layout / ABI parity (checked with the C compiler, `_Alignof`/`offsetof`)
+## Verification result (re-checked after all fixes)
 
-| type | C size | C align | C offsets | Rust size | Rust align |
-|---|---|---|---|---|---|
-| `tflac_md5` | 88 | 8 | `pos`@0, `total`@8, `buffer`@16 | 88 | 8 |
-| `tflac`     | 96 | 8 | `md5_ctx`@0, `cur_blocksize`@88, `channels`@92 | 96 | 8 |
+```
+$ nm -D --defined-only <C.so>  | awk '{print $3}' | sort > c_syms
+$ nm -D --defined-only <RS.so> | awk '{print $3}' | sort > r_syms
+$ comm -23 c_syms r_syms      # exported by C, missing from Rust
+                              # -> EMPTY (0 lines)
+$ diff c_syms r_syms          # -> no differences
+```
 
-Enforced in `src/lib.rs` by a `const _: ()` block of `assert!`s.
+* **Missing/undefined non-libc symbols in Rust: 0.**
+* `nm -D --undefined-only` on the Rust `.so` lists only libc/`_Unwind_*`/TLS
+  glue pulled in by the Rust runtime (`malloc`, `memcpy`, `abort`,
+  `_Unwind_Resume`, …). No unresolved symbol from this library.
+* No stubs, no `unimplemented!()`, no `todo!()` anywhere:
+  `grep -rnE 'unimplemented!|todo!|panic!\("not' src/` → 0 matches.
 
-## Automated re-check
+## Binary / driver executable
 
-`tests/phase_d_symbols.rs` re-runs this comparison as a test (`nm -D` on both
-`.so`s, C-exports ⊆ Rust-exports, no non-libc undefined symbols, the two loaded
-libraries are distinct files, and the Rust `.so` contains no
-`unimplemented!()`/`todo!()` panic strings), so parity is checked under every
-profile and feature set. `run_all.sh` prints the same diff at the end of a run.
-
-Static (non-dynamic) symbol dump of the C `.so` confirms there is nothing else
-to translate — apart from the three `T` symbols above, it contains only CRT
-glue (`_init`, `_fini`, `frame_dummy`, `register_tm_clones`, …).
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table** and the sources
-contain **no `#[cfg(feature …)]`**, so there is exactly one build
-configuration. `--no-default-features` is byte-identical to the default
-build; the test script still runs both to prove it.
+Neither build produces an executable: `c_src/CMakeLists.txt` contains only
+`add_library(... SHARED src/lib.c)` (no `add_executable`), and
+`translation/Cargo.toml` declares only `[lib]` (no `[[bin]]`, no `src/main.rs`).
+There is therefore **no stdout to compare** — that completion-gate item is N/A.

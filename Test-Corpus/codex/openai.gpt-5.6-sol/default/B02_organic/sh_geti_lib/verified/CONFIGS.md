@@ -1,65 +1,55 @@
-# Configuration Surface
+# Configuration-surface table
 
-Mechanically derived from the branches, switches, constants, and exported
-entry points in `src/lib.c`. The crate declares no Cargo features, so the only
-feature configuration is the empty/default feature set; it is exercised both
-normally and with `--no-default-features`.
+Rows are derived from branches and switches in `c_src/src/lib.c`, including all
+16 exported entry points. There are no Cargo features; the only build
+configurations are default and `--no-default-features`, which are equivalent
+but both are verified.
 
 | # | entry point(s) | configuration (options set + input shape) | |
-|---|----------------|-------------------------------------------|---|
-| V01 | `stbds_arrgrowf`, `stbds_arrfreef` | null array; requested capacity below 4, exercising minimum capacity 4 | [x] |
-| V02 | `stbds_arrgrowf`, `stbds_arrfreef` | null array; `addlen > min_cap`, so required length wins | [x] |
-| V03 | `stbds_arrgrowf`, `stbds_arrfreef` | existing array; request does not exceed capacity, pointer/capacity unchanged | [x] |
-| V04 | `stbds_arrgrowf`, `stbds_arrfreef` | existing array; request below twice capacity, so capacity doubles and bytes persist | [x] |
-| V05 | `stbds_arrgrowf`, `stbds_arrfreef` | existing array; request at/above twice capacity, explicit minimum wins | [x] |
-| V06 | `stbds_hash_string` | empty C string; randomized seeds | [x] |
-| V07 | `stbds_hash_string` | nonempty ASCII strings; randomized lengths/seeds | [x] |
-| V08 | `stbds_hash_string` | nonempty strings containing bytes `0x80..0xff` before NUL | [x] |
-| V09 | `stbds_hash_bytes` | length 0 (tail switch case 0), including null pointer | [x] |
-| V10 | `stbds_hash_bytes` | length 1 (tail case 1) | [x] |
-| V11 | `stbds_hash_bytes` | length 2 (tail case 2) | [x] |
-| V12 | `stbds_hash_bytes` | length 3 (tail case 3) | [x] |
-| V13 | `stbds_hash_bytes` | length 4 (tail case 4, signed promoted high byte) | [x] |
-| V14 | `stbds_hash_bytes` | length 5 (tail case 5) | [x] |
-| V15 | `stbds_hash_bytes` | length 6 (tail case 6) | [x] |
-| V16 | `stbds_hash_bytes` | length 7 (tail case 7) | [x] |
-| V17 | `stbds_hash_bytes` | exactly one full `size_t` block (length 8) | [x] |
-| V18 | `stbds_hash_bytes` | full block plus tails 1 through 7 (lengths 9..15) | [x] |
-| V19 | `stbds_hash_bytes` | multiple full blocks, with and without a tail | [x] |
-| V20 | `stbds_rand_seed`, `stbds_hmput_key` | seed 0 and nonzero seeds applied to newly created binary tables | [x] |
-| V21 | `stbds_hmget_key_ts`, `stbds_hmfree_func` | null binary map lookup creates default element and reports index `-1` | [x] |
-| V22 | `stbds_hmget_key` | existing default-only map with no table; binary lookup reports `header.temp = -1` | [x] |
-| V23 | `stbds_hmput_default` | null map creates one zeroed default element; second call is idempotent | [x] |
-| V24 | `stbds_hmput_key`, `stbds_hmget_key_ts`, `stbds_hmget_key` | binary keys; key widths 1, 2, 4, 8, and 16 bytes; insert then found/missing lookup | [x] |
-| V25 | `stbds_hmput_key` | binary duplicate key updates existing slot rather than increasing length | [x] |
-| V26 | `stbds_hmput_key` | binary inserts cross 6/8 load threshold, growing and rehashing table | [x] |
-| V27 | `stbds_hmdel_key` | binary delete on null map, no-table map, and missing key | [x] |
-| V28 | `stbds_hmdel_key` | binary delete final array element versus non-final element moved into its slot | [x] |
-| V29 | `stbds_hmdel_key`, `stbds_hmput_key` | binary deletion creates tombstone and later insertion reuses it | [x] |
-| V30 | `stbds_hmdel_key` | enough tombstones at slot count 8 to trigger same-size table rebuild | [x] |
-| V31 | `stbds_hmdel_key` | grown table falls below shrink threshold and halves | [x] |
-| V32 | `stbds_shmode_func`, `stbds_hmfree_func` | modes 0 (`NONE`), 1 (`DEFAULT`), 2 (`STRDUP`), and 3 (`ARENA`) create/free empty tables | [x] |
-| V33 | `stbds_shmode_func` | out-of-range mode integers are stored after conversion to `unsigned char` | [x] |
-| V34 | `stbds_hmput_key`, `stbds_hmget_key_ts` | implicit string mode (`mode >= 1`) stores borrowed key (`SH_DEFAULT`) | [x] |
-| V35 | `stbds_shmode_func`, `stbds_hmput_key`, `stbds_hmget_key` | explicit `SH_STRDUP`; caller mutates original key after insertion | [x] |
-| V36 | `stbds_shmode_func`, `stbds_hmput_key`, `stbds_hmget_key` | explicit `SH_ARENA`; empty, short, and randomized string keys | [x] |
-| V37 | `stbds_hmput_key` | string duplicate key under default, strdup, and arena ownership modes | [x] |
-| V38 | `stbds_hmdel_key` | string found/missing deletes; exact mode 1 versus out-of-range string mode 2 | [x] |
-| V39 | `stbds_hmfree_func` | null pointer, raw dynamic array with no table, and binary/string tables | [x] |
-| V40 | `stbds_stralloc` | zeroed arena; empty and short strings fit the current 512-byte block | [x] |
-| V41 | `stbds_stralloc` | repeated small strings consume a block and allocate subsequent growing blocks | [x] |
-| V42 | `stbds_stralloc` | string longer than current block, with arena storage absent versus present | [x] |
-| V43 | `stbds_stralloc`, `stbds_strreset` | lengths around 512 and 1 MiB block constants; reset restores all-zero arena | [x] |
-| V44 | `strkey` | negative, zero, and positive `int` values overwrite and return the static buffer | [x] |
-| V45 | `sh_geti` | negative and zero counts (empty workflow) | [x] |
-| V46 | `sh_geti` | positive counts: empty/one/many parity shapes, table growth, selective deletes, strdup and arena passes | [x] |
-
-## Differential Test Mapping
-
-- V01-V19: `valid_array_and_hash_surface_v01_v19`
-- V20-V31: `valid_binary_map_surface_v20_v31_and_e01_e08`
-- V32-V39: `valid_string_map_surface_v32_v39`
-- V40-V46: `valid_arena_and_public_workflow_surface_v40_v46`
-
-Every symbol call in these tests is resolved from both shared objects through
-`libloading`; no translated Rust function is linked or called directly.
+|---|----------------|--------------------------------------------|---|
+| C01 | `stbds_rand_seed` | seed `0`, ordinary seed, and `SIZE_MAX`; construct a fresh table after each | [x] |
+| C02 | `stbds_hash_string` | empty NUL-terminated string | [x] |
+| C03 | `stbds_hash_string` | nonempty ASCII strings of varying lengths | [x] |
+| C04 | `stbds_hash_string` | nonempty strings containing bytes `0x80..0xff` before NUL | [x] |
+| C05 | `stbds_hash_bytes` | zero bytes (null and non-null pointer forms) | [x] |
+| C06 | `stbds_hash_bytes` | lengths with each tail size `1..7` | [x] |
+| C07 | `stbds_hash_bytes` | one or more full 8-byte words, with and without a tail | [x] |
+| C08 | `stbds_arrgrowf` | null array, requested minimum/add length below 4 | [x] |
+| C09 | `stbds_arrgrowf` | null array, requested minimum at least 4 | [x] |
+| C10 | `stbds_arrgrowf` | existing array with request within capacity (same pointer/state) | [x] |
+| C11 | `stbds_arrgrowf` | existing array where doubling capacity wins | [x] |
+| C12 | `stbds_arrgrowf` | existing array where requested minimum/add length wins | [x] |
+| C13 | `stbds_arrfreef` | free each allocated array shape | [x] |
+| C14 | `stbds_stralloc` | first short string creates a 512-byte arena block | [x] |
+| C15 | `stbds_stralloc` | repeated short strings reuse remaining block space | [x] |
+| C16 | `stbds_stralloc` | string length exactly at/around remaining block boundary | [x] |
+| C17 | `stbds_stralloc` | string larger than current block gets a dedicated block | [x] |
+| C18 | `stbds_stralloc` | block growth progression up to the 1 MiB cap | [x] |
+| C19 | `stbds_strreset` | empty arena and arena containing regular/dedicated blocks | [x] |
+| C20 | `stbds_hmput_default` | null map creates zeroed default element | [x] |
+| C21 | `stbds_hmput_default` | existing default-only map is unchanged | [x] |
+| C22 | `stbds_hmget_key_ts`, `stbds_hmget_key` | null/default-only map lookup | [x] |
+| C23 | `stbds_shmode_func` | string ownership mode `STBDS_SH_STRDUP` (`2`) | [x] |
+| C24 | `stbds_shmode_func` | string ownership mode `STBDS_SH_ARENA` (`3`) | [x] |
+| C25 | `stbds_hmput_key` | binary mode (`0`), insert new scalar key | [x] |
+| C26 | `stbds_hmput_key` | binary mode, replace/find existing key | [x] |
+| C27 | `stbds_hmput_key` | binary keys with sizes `0`, `1`, `4`, `8`, and non-power-of-two | [x] |
+| C28 | `stbds_hmput_key` | string mode (`1`) with default borrowed-key ownership | [x] |
+| C29 | `stbds_hmput_key` | string mode with strdup ownership | [x] |
+| C30 | `stbds_hmput_key` | string mode with arena ownership | [x] |
+| C31 | `stbds_hmput_key` | enough unique keys to grow table and backing array repeatedly | [x] |
+| C32 | `stbds_hmput_key` | insert after deletion reuses a tombstone | [x] |
+| C33 | `stbds_hmget_key_ts`, `stbds_hmget_key` | present and absent binary keys in populated table | [x] |
+| C34 | `stbds_hmget_key_ts`, `stbds_hmget_key` | present and absent string keys in each ownership mode | [x] |
+| C35 | `stbds_hmdel_key` | null map, default-only map, and absent key | [x] |
+| C36 | `stbds_hmdel_key` | delete last element | [x] |
+| C37 | `stbds_hmdel_key` | delete non-last element and repair moved index | [x] |
+| C38 | `stbds_hmdel_key` | deletions trigger table shrink | [x] |
+| C39 | `stbds_hmdel_key` | deletions trigger same-size tombstone rebuild | [x] |
+| C40 | `stbds_hmfree_func` | null, binary, borrowed-string, strdup, and arena maps | [x] |
+| C41 | `strkey` | negative, zero, positive, `INT_MIN`, and `INT_MAX` | [x] |
+| C42 | `sh_geti` | negative and zero counts (empty loops/maps) | [x] |
+| C43 | `sh_geti` | one element | [x] |
+| C44 | `sh_geti` | many elements spanning hash growth/deletion paths; compare stdout bytes | [x] |
+| C45 | all hash-map entry points | out-of-range mode `-1` (binary branch) | [x] |
+| C46 | all hash-map entry points | out-of-range mode `4` (string branch plus default storage switch) | [x] |

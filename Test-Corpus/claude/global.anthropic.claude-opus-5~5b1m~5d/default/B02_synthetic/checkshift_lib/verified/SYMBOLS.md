@@ -1,107 +1,56 @@
-# SYMBOLS.md — Public symbol surface (Phase A)
+# SYMBOLS.md — Exported-symbol parity (Phase A / Phase D)
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Derived mechanically from:
 
-- C   `.so`: `c_src/build/libharvest-work-NSwXxz.so` (name comes from the parent
-  directory name via `cmake_path(GET parent FILENAME project_name)`).
-- Rust `.so`: `translation/target/release/libcheckshift_lib.so`
-  (`[lib] name = "checkshift_lib"`, `crate-type = ["cdylib"]`).
-
-Reproduce with:
-
-```sh
-nm -D --defined-only c_src/build/libharvest-work-NSwXxz.so | awk '{print $3}' | sort -u > c_syms.txt
-nm -D --defined-only translation/target/release/libcheckshift_lib.so | awk '{print $3}' | sort -u > rust_syms.txt
-comm -23 c_syms.txt rust_syms.txt   # missing from Rust -> MUST be empty
-comm -13 c_syms.txt rust_syms.txt   # extra in Rust
 ```
+nm -D --defined-only c_src/build/libharvest-work-aZUQvV.so
+nm -D --defined-only translation/target/release/libcheckshift_lib.so
+```
+
+The C library is built from a single translation unit (`c_src/src/lib.c`); there
+are no additional C source files, so there is no "whole module never
+translated" gap. All 10 C-exported functions have a real Rust implementation
+(no stubs, no `unimplemented!()`).
 
 ## Symbol table
 
-Every symbol exported by the C `.so` is also exported by the Rust `.so`, with the
-exact same name. The C source has exactly one translation unit (`src/lib.c`), and
-every non-`static` function in it is translated, so there is no missing module.
+| # | C symbol (`nm -D`, type) | Rust `.so` exports it | Rust item | Signature (C) |
+|---|--------------------------|-----------------------|-----------|---------------|
+| 1 | `multiply_with_static` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn multiply_with_static` | `int (int, int)` |
+| 2 | `add_with_static` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn add_with_static` | `int (int, int)` |
+| 3 | `xor_operation` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn xor_operation` | `int (int, int)` |
+| 4 | `shift_with_static` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn shift_with_static` | `int (int, int)` |
+| 5 | `get_operation` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn get_operation` | `operation_func (int)` |
+| 6 | `execute_operation` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn execute_operation` | `int (operation_func, int, int, const char*)` |
+| 7 | `compute_checksum` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn compute_checksum` | `unsigned int (int*, int)` |
+| 8 | `init_state` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn init_state` | `void (ComputeState*, int)` |
+| 9 | `apply_operation` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn apply_operation` | `void (ComputeState*, int, operation_func)` |
+| 10 | `checkshift` (T) | YES | `#[no_mangle] pub unsafe extern "C" fn checkshift` | `int (int, int, int, int)` |
 
-| # | symbol | C `.so` | Rust `.so` | C signature | Rust implementation |
-|---|--------|---------|-----------|-------------|---------------------|
-| 1 | `multiply_with_static` | T | T | `int (int, int)` | `pub unsafe extern "C" fn multiply_with_static` |
-| 2 | `add_with_static`      | T | T | `int (int, int)` | `pub unsafe extern "C" fn add_with_static` |
-| 3 | `xor_operation`        | T | T | `int (int, int)` | `pub unsafe extern "C" fn xor_operation` |
-| 4 | `shift_with_static`    | T | T | `int (int, int)` | `pub unsafe extern "C" fn shift_with_static` |
-| 5 | `get_operation`        | T | T | `operation_func (int)` | `pub unsafe extern "C" fn get_operation` |
-| 6 | `execute_operation`    | T | T | `int (operation_func, int, int, const char*)` | `pub unsafe extern "C" fn execute_operation` |
-| 7 | `compute_checksum`     | T | T | `unsigned int (int*, int)` | `pub unsafe extern "C" fn compute_checksum` |
-| 8 | `init_state`           | T | T | `void (ComputeState*, int)` | `pub unsafe extern "C" fn init_state` |
-| 9 | `apply_operation`      | T | T | `void (ComputeState*, int, operation_func)` | `pub unsafe extern "C" fn apply_operation` |
-| 10 | `checkshift`          | T | T | `int (int, int, int, int)` | `pub unsafe extern "C" fn checkshift` |
+Non-exported C internals that therefore need no Rust export:
 
-**C exported count: 10. Rust exported count: 10.**
+| C entity | Kind | Note |
+|----------|------|------|
+| `static_multiplier`, `static_addend`, `static_shift_amount` | file-static `int` | never mutated; modelled as Rust `const` |
+| `ops[4]` inside `get_operation` | function-local `static` | lazily-initialised table; observable behaviour is the fixed mapping |
+| `STRINGIFY`, `LOG_VALUE`, `OP_*`, `MAGIC_NUMBER`, `MASK_LOWER` | preprocessor macros | no symbols emitted |
 
-## Symbols intentionally NOT exported (`static` in C → file-local)
+## Symbol diff (Phase D gate)
 
-These are `static` in `src/lib.c`, so they are not dynamic symbols in the C `.so`
-and must not be exported by Rust either. They are modelled as private Rust
-`const`s because the C code never writes to them after initialisation.
+`comm` of the two sorted symbol-name lists:
 
-| C declaration | Rust counterpart | exported? |
-|---------------|------------------|-----------|
-| `static int static_multiplier = 3;` | `const STATIC_MULTIPLIER: c_int = 3` | no (correct) |
-| `static int static_addend = 100;` | `const STATIC_ADDEND: c_int = 100` | no (correct) |
-| `static int static_shift_amount = 2;` | `const STATIC_SHIFT_AMOUNT: c_int = 2` | no (correct) |
-| `static operation_func ops[4]` (inside `get_operation`) | local `[OperationFunc; 4]` | no (correct) |
+- C-only (missing from Rust): **0**
+- Rust-only extra `T`/`D` symbols in the crate's own namespace: **0**
+- Undefined (`U`) symbols in the Rust `.so`: libc/loader only
+  (`printf`, `malloc`, `free`, `memcpy`, `__stack_chk_fail`,
+  `_Unwind_Resume`, `rust_eh_personality`-class runtime entries).
+  No non-libc undefined symbol.
 
-## Undefined-symbol audit (Rust `.so`)
+Gate status: **PASS** — the symbol diff is empty.
 
-`nm -D --undefined-only` on the Rust `.so` lists only libc / libgcc-unwind
-imports: `printf`, `malloc`, `free`, `memcpy`, `memmove`, `memset`, `bcmp`,
-`calloc`, `realloc`, `posix_memalign`, `strlen`, `puts`, `abort`,
-`__errno_location`, `write`, `writev`, `read`, `open64`, `close`, `lseek64`,
-`stat64`, `fstat64`, `mmap64`, `munmap`, `getcwd`, `getenv`, `readlink`,
-`realpath`, `syscall`, `dl_iterate_phdr`, `pthread_key_*`,
-`pthread_setspecific`, `__tls_get_addr`, `_Unwind_*`, plus weak
-`__cxa_finalize`, `__cxa_thread_atexit_impl`, `__gmon_start__`, `gettid`,
-`statx`, `_ITM_*TMCloneTable`.
+## Feature combinations
 
-**0 missing symbols. 0 undefined non-libc symbols.**
-
-## Stricter cross-check: full dynamic symbol table
-
-`nm -D` can hide detail, so the tables were also compared with
-`readelf --dyn-syms`, filtering to non-LOCAL defined entries:
-
-```sh
-readelf --dyn-syms --wide <so> | awk 'NR>3 && $7!="UND" && $5!="LOCAL" {print $5, $4, $8}' | sort
-```
-
-Both objects produce **exactly** the same 10 lines — all `GLOBAL FUNC`, same
-names, and neither exports any extra data symbols (no `_edata` / `_end` /
-`__bss_start` on either side):
-
-```
-GLOBAL FUNC add_with_static        GLOBAL FUNC init_state
-GLOBAL FUNC apply_operation        GLOBAL FUNC multiply_with_static
-GLOBAL FUNC checkshift             GLOBAL FUNC shift_with_static
-GLOBAL FUNC compute_checksum       GLOBAL FUNC xor_operation
-GLOBAL FUNC execute_operation
-GLOBAL FUNC get_operation
-```
-
-The symbol diff is empty in BOTH directions, so there is no partially-translated
-module: `src/lib.c` is the only C translation unit and all 10 of its non-`static`
-functions are really implemented in Rust.
-
-## Result
-
-- [x] `nm -D` shows 0 symbols missing from the Rust `.so`.
-- [x] `nm -D` shows 0 extra symbols in the Rust `.so`.
-- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.
-- [x] `readelf --dyn-syms` agrees, including symbol type and binding.
-- [x] No stubs / `unimplemented!()` / fake exports: every export is a real
-      translation of the corresponding C function.
-- [x] Holds under both the `debug` and `release` profiles (checked by
-      `./verify.sh`).
-
-Beyond name parity, `tests/phase_d_hardening.rs::h1_*` asserts that
-`get_operation(k)` actually returns the address of the exported kernel symbol in
-both libraries — i.e. the `#[no_mangle]` exports are the real function bodies,
-not thunks that merely share a name.
+`translation/Cargo.toml` declares **no `[features]` table**, so the only
+buildable configuration is the default one. `--no-default-features` and the
+default build are byte-identical in terms of code paths; the test suite is run
+under both to confirm.

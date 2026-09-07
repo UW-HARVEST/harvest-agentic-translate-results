@@ -1,189 +1,169 @@
-# CONFIGS.md — configuration-surface table
+# CONFIGS.md — configuration-surface table (valid inputs)
 
-Axes derived mechanically from the branches in `c_src/src/lib.c` and the public
-surface in `c_src/include/lib.h` + `nm -D`.
+Derived mechanically from the `if`/`switch` branches in `c_src/src/lib.c` plus
+the public surface of `c_src/include/lib.h`. There are no `#ifdef`s and no
+Cargo features, so the axes are all runtime.
 
-## Public entry points
+## Axes the C actually branches on
 
-| entry point | kind |
-|---|---|
-| `load_png_mem(const uint8_t*, int)` | high-level one-shot wrapper |
-| `cp_inflate(void*, int, void*, int)` | **low-level** raw-DEFLATE entry point (exported, not in `lib.h`) |
-| `cp_fixed_table[320]` | exported **writable** table — drives `cp_build` for `btype==1` |
-| `cp_permutation_order[19]` | exported writable table — drives `cp_dynamic`'s code-length order |
-| `cp_len_extra_bits[31]`, `cp_len_base[31]` | exported writable tables — drive length decoding in `cp_block` |
-| `cp_dist_extra_bits[32]`, `cp_dist_base[32]` | exported writable tables — drive distance decoding in `cp_block` |
-| `cp_error_reason` | exported readable/writable `const char *` |
+| axis | values the C distinguishes | where |
+|------|----------------------------|-------|
+| entry point | `cp_inflate` (low level), `load_png_mem` (high level) | `lib.h` + `nm -D` |
+| DEFLATE block type (`btype`) | `0` stored, `1` fixed Huffman, `2` dynamic Huffman | `cp_inflate` switch L332 |
+| block count | single `BFINAL=1` block, multiple blocks of mixed type | `do { ... } while(!bfinal)` |
+| input pointer alignment `in & 3` | `0,1,2,3` → `first_bytes` 0..3, changes the pre-load path | `cp_inflate` L305 |
+| input tail `(in_bytes-first_bytes) & 3` | `0,1,2,3` → `final_word_available` 0/1 | `cp_inflate` L311 |
+| `cp_build` with/without lookup table | `s != NULL` (lit table, fills `s->lookup`) vs `s == NULL` (dst/len tables) | `cp_build` L127/L143 |
+| dynamic-header code-length symbols | literal 0..15, `16` (copy prev 3–6), `17` (zeros 3–10), `18` (zeros 11–138) | `cp_dynamic` switch L215 |
+| `HCLEN`/`HLIT`/`HDIST` | `nlen` 4..19, `nlit` 257..288, `ndst` 1..32 | `cp_dynamic` L209-211 |
+| back-reference distance | `== 1` (memset fast path) vs `> 1` (byte copy loop), overlapping vs non-overlapping | `cp_block` switch L286 |
+| match length | 3..258 incl. the `len_base` boundary entries (symbol 284 → 227+extra, symbol 285 → 258/0 extra bits) | `cp_len_base` |
+| PNG colour type | `0` grey (bpp 1), `2` RGB (bpp 3), `3` indexed (bpp 1), `4` grey+alpha (bpp 2), `6` RGBA (bpp 4) | `load_png_mem` switch L553 |
+| PNG per-scanline filter | `0` none, `1` sub, `2` up, `3` average, `4` paeth — **and** row 0 is special-cased (`2` is a no-op, `1`/`3`/`4` start at `x=bpp`) | `cp_unfilter` two switches |
+| `PLTE` chunk | absent, present (used only when colour type 3) | `cp_find` L646 |
+| `tRNS` chunk | absent; present with `trns_len > max index` (all alphas used); present with `trns_len <= some index` (falls back to 255) | `cp_get_alpha_for_indexed_image` |
+| IDAT layout | one chunk; many chunks that must be concatenated; chunk interleaved with unknown chunks | the two `cp_find`/`cp_chunk` IDAT loops |
+| chunk order | `PLTE` before `tRNS` before `IDAT` (the only order the C's forward-only scan can find) | `first`/`png.p` rewind logic L644-656 |
+| image shape | `1x1`, `1xN` (single column), `Nx1` (single row), `NxM`, widths crossing the `bpp` boundary | `w`,`h` |
+| zlib header | `CMF` low nibble `8`; `CINFO` `0x00..0x70`; `FLG` without `0x20` | L680-700 |
 
-## Branch axes found in the C
+## Rows (pruned cross-product — combinations the C treats differently)
 
-* `load_png_mem`: `switch (color_type)` → `0,2,3,4,6` ⇒ `bpp = 1,3,1,2,4`;
-  `if (color_type == 3)` → `cp_depalette` else `cp_convert`;
-  `cp_find("PLTE")` present/absent; `cp_find("tRNS")` present/absent;
-  IDAT loop = `cp_find` once then `cp_chunk` repeatedly ⇒ 1 vs N *consecutive* IDATs.
-* `cp_convert`: `switch (bpp)` → `1,2,3,4`.
-* `cp_get_alpha_for_indexed_image`: `!trns` / `index >= trns_len` / `index < trns_len`.
-* `cp_unfilter`: `switch (*raw++)` → `0,1,2,3,4` for the **first** row (a distinct,
-  reduced code path: `b`/`c` are forced to 0 and `x` starts at `bpp`) and again
-  for **subsequent** rows (full Sub/Up/Average/Paeth with `prev`).
-* `cp_inflate`: `switch (btype)` → `0` stored / `1` fixed / `2` dynamic;
-  `do { … } while (!bfinal)` ⇒ 1 vs N blocks; `first_bytes` = `in` alignment 0–3;
-  `last_bytes` = `(in_bytes-first_bytes) & 3` ⇒ 0–3 (`final_word_available`).
-* `cp_block`: `symbol < 256` / `== 256` / `> 256`;
-  `switch (backwards_distance) { case 1: memset; default: byte copy }`.
-* `cp_peak_bits`: `word_index < word_count` / `final_word_available` / neither.
-* `cp_dynamic`: `switch (sym)` → `16` (copy previous 3–6), `17` (0 × 3–10),
-  `18` (0 × 11–138), `default` (literal length).
-* `cp_build`: `s != NULL` (builds the 512-entry `lookup`) vs `s == NULL`; `len <= 9` vs `> 9`.
+### `cp_inflate` direct (low-level entry point)
 
-## Configuration rows
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `cp_inflate` | btype=0 stored, single final block, `in&3 == 0`, tail 0, LEN matching `bits_left/8` | [x] |
+| 2 | `cp_inflate` | btype=0 stored, `in&3 == 1,2,3` (all three `first_bytes` pre-load paths) | [x] |
+| 3 | `cp_inflate` | btype=0 stored, `LEN == 0` (empty stored block) | [x] |
+| 4 | `cp_inflate` | btype=1 fixed Huffman, literals only, out buffer exactly sized | [x] |
+| 5 | `cp_inflate` | btype=1 fixed, literals + length/distance with `distance == 1` (memset path) | [x] |
+| 6 | `cp_inflate` | btype=1 fixed, length/distance with `distance > 1`, overlapping copy (`distance < length`) | [x] |
+| 7 | `cp_inflate` | btype=1 fixed, length/distance non-overlapping (`distance >= length`) | [x] |
+| 8 | `cp_inflate` | btype=1 fixed, literals ≥ 144 (the 9-bit half of `cp_fixed_table`) | [x] |
+| 9 | `cp_inflate` | btype=1 fixed, max match length 258 (symbol 285, 0 extra bits) and 227..257 (symbol 284, 5 extra bits) | [x] |
+| 10 | `cp_inflate` | btype=1 fixed, max distance symbols 29/30 (large `dist_extra_bits`) | [x] |
+| 11 | `cp_inflate` | btype=2 dynamic, code-length alphabet using only literal lengths (no 16/17/18) | [x] |
+| 12 | `cp_inflate` | btype=2 dynamic, code-length symbol `16` (repeat previous) exercised | [x] |
+| 13 | `cp_inflate` | btype=2 dynamic, code-length symbol `17` (short zero run) exercised | [x] |
+| 14 | `cp_inflate` | btype=2 dynamic, code-length symbol `18` (long zero run, 11..138) exercised | [x] |
+| 15 | `cp_inflate` | btype=2 dynamic, `ndst == 1` (single distance code) | [x] |
+| 16 | `cp_inflate` | btype=2 dynamic, `nlit == 288`, `ndst == 32`, `nlen == 19` (maximum header) | [x] |
+| 17 | `cp_inflate` | multi-block: stored → fixed → dynamic → final | [x] |
+| 18 | `cp_inflate` | multi-block: 2+ fixed blocks with a back-reference crossing the block boundary | [x] |
+| 19 | `cp_inflate` | all 4 combinations of `(in&3, in_bytes&3)` tails so `final_word_available` is 0 and 1 | [x] |
+| 20 | `cp_inflate` | out buffer larger than needed (partial fill) | [x] |
+| 21 | `cp_inflate` | randomized raw payloads (0..4 KiB) round-tripped through a reference deflate encoder, all three block types, fixed seed | [x] |
 
-Every row is driven with **many** randomized inputs (fixed seed 0x5EED_C0DE,
-`tests/common/mod.rs::Rng`), comparing C vs Rust byte-for-byte.
+### `load_png_mem` (high-level entry point)
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `cp_inflate` | `btype=0` stored block, `bfinal=1`, LEN ∈ {1..64} random, output exactly LEN | [x] |
-| 2 | `cp_inflate` | `btype=0` stored, LEN = 0 (empty stored block) | [x] |
-| 3 | `cp_inflate` | `btype=1` fixed Huffman, literals only, all 256 byte values, lengths 1..300 | [x] |
-| 4 | `cp_inflate` | `btype=1` fixed Huffman, literal+length/distance pairs, **distance == 1** (`memset` path) | [x] |
-| 5 | `cp_inflate` | `btype=1` fixed Huffman, length/distance pairs, distance > 1, overlapping copy (`dist < len`) | [x] |
-| 6 | `cp_inflate` | `btype=1` fixed Huffman, sweep **all 29 length codes** (`cp_len_base[0..29]`, len 3..258) | [x] |
-| 7 | `cp_inflate` | `btype=1` fixed Huffman, sweep **all 30 distance codes** (`cp_dist_base[0..30]`, dist 1..32768) | [x] |
-| 8 | `cp_inflate` | `btype=2` dynamic Huffman (zlib/miniz-produced), random data, code lengths ≤ 9 (lookup-table path) | [x] |
-| 9 | `cp_inflate` | `btype=2` dynamic Huffman with code lengths > 9 (skewed symbol distribution ⇒ deep tree, binary-search path only) | [x] |
-| 10 | `cp_inflate` | `btype=2` dynamic Huffman exercising RLE code-length symbols 16/17/18 (long zero runs + repeats in the code-length alphabet) | [x] |
-| 11 | `cp_inflate` | **multi-block**: `bfinal=0` blocks followed by a final one, mixing stored/fixed/dynamic | [x] |
-| 12 | `cp_inflate` | `in` pointer alignment ∈ {0,1,2,3} (⇒ `first_bytes` 0..3) × `in_bytes` ≡ {0,1,2,3} mod 4 (⇒ `last_bytes`, `final_word_available`) | [x] |
-| 13 | `cp_inflate` | `out_bytes` exactly the decompressed size vs. larger than needed | [x] |
-| 14 | `load_png_mem` | `color_type=0` (grey, `bpp=1`), filter 0 on every row, random dims 1..17 × 1..17 | [x] |
-| 15 | `load_png_mem` | `color_type=0`, filter type **1 (Sub)** on every row | [x] |
-| 16 | `load_png_mem` | `color_type=0`, filter type **2 (Up)** on every row | [x] |
-| 17 | `load_png_mem` | `color_type=0`, filter type **3 (Average)** on every row | [x] |
-| 18 | `load_png_mem` | `color_type=0`, filter type **4 (Paeth)** on every row | [x] |
-| 19 | `load_png_mem` | `color_type=0`, **random filter type per row** (0..4), incl. row 0 taking each of the 5 reduced first-row paths | [x] |
-| 20 | `load_png_mem` | `color_type=2` (RGB, `bpp=3`), random filter per row | [x] |
-| 21 | `load_png_mem` | `color_type=4` (grey+alpha, `bpp=2`), random filter per row | [x] |
-| 22 | `load_png_mem` | `color_type=6` (RGBA, `bpp=4`), random filter per row | [x] |
-| 23 | `load_png_mem` | `color_type=3` (indexed, `bpp=1`) + PLTE, **no tRNS** (`cp_get_alpha_for_indexed_image` → 255) | [x] |
-| 24 | `load_png_mem` | `color_type=3` + PLTE + tRNS with `trns_len == palette entries` (all indices < `trns_len`) | [x] |
-| 25 | `load_png_mem` | `color_type=3` + PLTE + tRNS with `trns_len < palette entries` (mixes both branches of `cp_get_alpha_for_indexed_image`) | [x] |
-| 26 | `load_png_mem` | `color_type=3` + PLTE + tRNS where indices exceed the 256-entry palette is impossible, but PLTE **shorter than 256 entries** ⇒ `plte[c*3]` reads past the chunk (must match) | [x] |
-| 27 | `load_png_mem` | 1×1 image, every colour type (minimal shape) | [x] |
-| 28 | `load_png_mem` | w=1, h=many (tall) and w=many, h=1 (wide), every colour type | [x] |
-| 29 | `load_png_mem` | IDAT split across **2** consecutive chunks | [x] |
-| 30 | `load_png_mem` | IDAT split across **many (5+)** consecutive chunks, random split points | [x] |
-| 31 | `load_png_mem` | ancillary chunks (`gAMA`, `pHYs`, `tEXt`) interleaved before PLTE / between PLTE and IDAT | [x] |
-| 32 | `load_png_mem` | chunk order PLTE → tRNS → IDAT vs tRNS → PLTE → IDAT (the C does two sequential `cp_find`s, so order changes what is found) | [x] |
-| 33 | `load_png_mem` | zlib header CINFO sweep: `data[0] & 0xf0` ∈ {0x00,0x10,…,0x70} with CM=8 | [x] |
-| 34 | `load_png_mem` | zlib FLG `FCHECK`/`FLEVEL` bits varied (`data[1] & ~0x20`) — not validated by the C, must still decode | [x] |
-| 35 | `load_png_mem` | IDAT payload produced with **stored** deflate blocks (`btype=0`) instead of compressed | [x] |
-| 36 | `load_png_mem` | IDAT payload produced with **fixed** Huffman (`btype=1`) | [x] |
-| 37 | `load_png_mem` | IDAT payload produced with **dynamic** Huffman (`btype=2`), incl. long back-references across scanlines | [x] |
-| 38 | `load_png_mem` | trailing chunks after the last IDAT (`IEND`, plus junk) | [x] |
-| 39 | `load_png_mem` | larger image (64×64) each colour type, random pixel data, random filters — exercises `cp_block`'s copy loop and `cp_build`'s `len > 9` path | [x] |
-| 40 | tables + `cp_inflate` | `cp_fixed_table` mutated (all 8s → uniform 8-bit code lengths) before a `btype=1` block | [x] |
-| 41 | tables + `cp_inflate` | `cp_permutation_order` mutated before a `btype=2` block | [x] |
-| 42 | tables + `cp_inflate` | `cp_len_base` / `cp_len_extra_bits` mutated before a `btype=1` block with length codes | [x] |
-| 43 | tables + `cp_inflate` | `cp_dist_base` / `cp_dist_extra_bits` mutated before a `btype=1` block with distance codes | [x] |
-| 44 | tables (read) | contents of all 6 exported tables compared byte-for-byte via `dlsym` | [x] |
-| 45 | `load_png_mem` | `cp_error_reason` left over from a previous successful call is **not** cleared (state carry-over between calls) | [x] |
-| 46 | `cp_inflate` | `out_bytes` large, input decodes to fewer bytes — trailing output bytes untouched (verified deterministic via double-run) | [x] |
-| 47 | `load_png_mem` | image where `(w+1)*h*bpp` differs from `(w*bpp+1)*h` (`bpp>1`) so the `out` offset trick is exercised for every `bpp` | [x] |
-| 48 | `load_png_mem` | filter byte sweep 0..=255 on row 0 and on row 1 (valid 0..4 and invalid ≥5 in the same sweep) | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| 22 | `load_png_mem` | colour type 0 (grey, bpp 1), filter 0 on every row, 1x1 | [x] |
+| 23 | `load_png_mem` | colour type 0, filters 0..4 mixed per row, `NxM` | [x] |
+| 24 | `load_png_mem` | colour type 2 (RGB, bpp 3), filters 0..4 mixed, `NxM` | [x] |
+| 25 | `load_png_mem` | colour type 4 (grey+alpha, bpp 2), filters 0..4 mixed, `NxM` | [x] |
+| 26 | `load_png_mem` | colour type 6 (RGBA, bpp 4), filters 0..4 mixed, `NxM` | [x] |
+| 27 | `load_png_mem` | colour type 3 (indexed, bpp 1) + PLTE, no tRNS | [x] |
+| 28 | `load_png_mem` | colour type 3 + PLTE + tRNS with `trns_len` covering every index | [x] |
+| 29 | `load_png_mem` | colour type 3 + PLTE + tRNS with `trns_len` **shorter** than the max index used (255-fallback branch) | [x] |
+| 30 | `load_png_mem` | colour type 3 + PLTE shorter than 256 entries (C reads past PLTE — must agree) | [x] |
+| 31 | `load_png_mem` | row-0 filter `1` (sub, starts at `x=bpp`), all bpp | [x] |
+| 32 | `load_png_mem` | row-0 filter `2` (up — no-op on row 0), all bpp | [x] |
+| 33 | `load_png_mem` | row-0 filter `3` (average, `raw[x-bpp]/2` only), all bpp | [x] |
+| 34 | `load_png_mem` | row-0 filter `4` (paeth with `b=c=0`), all bpp | [x] |
+| 35 | `load_png_mem` | rows ≥1 filter `3` (average with both neighbours, int rounding) | [x] |
+| 36 | `load_png_mem` | rows ≥1 filter `4` (full paeth predictor, all three predictor branches) | [x] |
+| 37 | `load_png_mem` | shape `1x1` | [x] |
+| 38 | `load_png_mem` | shape `1xN` (single column, many rows) | [x] |
+| 39 | `load_png_mem` | shape `Nx1` (single row) | [x] |
+| 40 | `load_png_mem` | shape where `w*bpp` is not a multiple of 4 (unaligned scanlines) | [x] |
+| 41 | `load_png_mem` | IDAT split across 2..5 chunks | [x] |
+| 42 | `load_png_mem` | IDAT preceded by an unknown ancillary chunk (`gAMA`) so `cp_find` must skip it | [x] |
+| 43 | `load_png_mem` | zlib `CINFO` at each of `0x00,0x10,...,0x70` (all accepted window sizes) | [x] |
+| 44 | `load_png_mem` | zlib `FLG` varying in the bits the C ignores (FCHECK/FLEVEL) | [x] |
+| 45 | `load_png_mem` | IDAT payload built with btype 0 / 1 / 2 (stored / fixed / dynamic) | [x] |
+| 46 | `load_png_mem` | trailing `IEND` chunk present vs absent | [x] |
+| 47 | `load_png_mem` | randomized images: random `w,h` in 1..24, random colour type from {0,2,3,4,6}, random per-row filters 0..4, random pixel data, fixed seed, 400+ cases | [x] |
+| 48 | `load_png_mem` | randomized indexed images with random PLTE/tRNS lengths, fixed seed | [x] |
+| 49 | `load_png_mem` | large-ish image (256x256 RGBA) to exercise multi-word inflate and long matches | [x] |
+
+### Not applicable
+
+* No `[[bin]]` / `src/main.rs` in the crate and no `add_executable` in
+  `c_src/CMakeLists.txt` → **no driver binary**, so no stdout comparison.
+* No `[features]` in `Cargo.toml` → one configuration only.
 
 ---
 
-## Phase B results — every row passes across randomized inputs
+# Row → test mapping (Phase B result)
 
-Tests in `tests/phase_b_valid.rs`, one per row, seed `0x5EED_C0DE_5EED_C0DE`
-(`tests/common/mod.rs::SEED`). Row *n* is `rowNN_*`. Streams are built by
-hand-rolled DEFLATE writers in `tests/common/deflate.rs` (stored / fixed /
-dynamic, an LZ77 tokenizer, and a length-limited Huffman builder) so each axis is
-directly controllable; `flate2` is used in row 37b as an independent
-cross-check. `tests/common/png.rs` also contains an independent reference model
-of `cp_unfilter` + `cp_convert` + `cp_depalette`, so most rows assert not only
-"C == Rust" but also "C == model".
+Every row is exercised by a differential test that calls **both** `.so`s through
+their exported symbols and compares byte-for-byte. Randomised rows use a fixed
+seed. Each of the 49 rows above is checked off because its test passes; the
+mapping is:
 
-| # | test | randomized inputs | [x] |
-|---|------|-------------------|-----|
-| 1 | `row01_inflate_stored_random_len` | 200 random lengths + 7 fixed (up to 65535) + 160 across 4 `in` alignments | [x] |
-| 2 | `row02_inflate_stored_empty` | 4 alignments × 3 output sizes | [x] |
-| 3 | `row03_inflate_fixed_literals` | 8 boundary lengths (143/144/145/256/300) + 150 random | [x] |
-| 4 | `row04_inflate_fixed_distance_one_memset` | 120 random run lengths 3..258 | [x] |
-| 5 | `row05_inflate_fixed_overlapping_copy` | 200 random (prefix, dist, len) with `dist < len` | [x] |
-| 6 | `row06_inflate_all_length_codes` | all 29 length codes × low/mid/high extra-bit values | [x] |
-| 7 | `row07_inflate_all_distance_codes` | all 30 distance codes × low/mid/high, up to `dist = 32768` | [x] |
-| 8 | `row08_inflate_dynamic_shallow` | 80 streams, depth ≤ 9 (`lookup` table path) | [x] |
-| 9 | `row09_inflate_dynamic_deep` | 40 streams, asserted `max code length > 9` (binary-search path) | [x] |
-| 10 | `row10_inflate_dynamic_rle_code_lengths` | 2 RLE modes × 6 (HLIT, HDIST) shapes × 12 streams = 144 | [x] |
-| 11 | `row11_inflate_multi_block` | 60 random 2–5 block chains mixing fixed/dynamic + 30 fixed→stored | [x] |
-| 12 | `row12_inflate_alignment_matrix` | 4 alignments × 4 length residues × 20 = 320 | [x] |
-| 13 | `row13_inflate_out_bytes_slack` | 120 lengths × 5 slack sizes; also asserts the untouched tail keeps the caller's `0xAA` | [x] |
-| 14–18 | `row14`…`row18` | filter 0/1/2/3/4 on every row, 25 random geometries each | [x] |
-| 19 | `row19_grey_random_filters_and_first_row_paths` | 25 random filter vectors + all 5 first-row paths × 3 heights | [x] |
-| 20 | `row20_rgb_random_filters` | random + each fixed filter, 25 geometries each (150) | [x] |
-| 21 | `row21_greyalpha_random_filters` | same (150) | [x] |
-| 22 | `row22_rgba_random_filters` | same (150) | [x] |
-| 23 | `row23_indexed_no_trns` | 30 random geometries | [x] |
-| 24 | `row24_indexed_full_trns` | 30 random geometries, `trns_len == 256` | [x] |
-| 25 | `row25_indexed_short_trns` | `trns_len ∈ {0,1,2,17,128,255}` × 8 | [x] |
-| 26 | `row26_indexed_short_plte` | PLTE of 1/2/16/100/255 entries × 8 (C reads past the chunk; differential only) | [x] |
-| 27 | `row27_one_by_one_every_color_type` | 5 colour types × 3 block types | [x] |
-| 28 | `row28_tall_and_wide` | 5 colour types × 7 shapes incl. 1×200 and 200×1 | [x] |
-| 29 | `row29_idat_two_chunks` | 5 colour types × 6 | [x] |
-| 30 | `row30_idat_many_chunks` | 3/5/8/13 IDATs × 5 colour types | [x] |
-| 31 | `row31_ancillary_chunks` | gAMA/cHRM before, pHYs/tEXt/bKGD between, × 5 × 6 | [x] |
-| 32 | `row32_plte_trns_order` | both orders × 12 (model checked only for PLTE-first) | [x] |
-| 33 | `row33_zlib_cinfo_sweep` | all 8 valid CINFO values | [x] |
-| 34 | `row34_zlib_flg_sweep` | 8 FLG values with FDICT clear | [x] |
-| 35 | `row35_png_stored_blocks` | 5 colour types × 8 | [x] |
-| 36 | `row36_png_fixed_blocks` | literals-only and LZ77 × 5 × 6 | [x] |
-| 37 | `row37_png_dynamic_blocks` | 4 dynamic configurations × 5 × 5 | [x] |
-| 37b | `row37b_png_flate2_streams` | independent compressor, 3 levels × 5 colour types | [x] |
-| 38 | `row38_trailing_chunks` | tEXt/zTXt after the last IDAT × 5 × 6 | [x] |
-| 39 | `row39_large_images` | 64×64 all colour types × 2 encodings, plus a run-heavy 64×40 image | [x] |
-| 40 | `row40_mutated_cp_fixed_table` | 12 random-but-complete 288+32 code-length tables written into both `.so`s | [x] |
-| 41 | `row41_mutated_cp_permutation_order` | 12 random permutations of 0..18 | [x] |
-| 42 | `row42_mutated_length_tables` | 20 random `cp_len_base` / `cp_len_extra_bits` states | [x] |
-| 43 | `row43_mutated_distance_tables` | 20 random `cp_dist_base` / `cp_dist_extra_bits` states | [x] |
-| 44 | `phase_d_parity::exported_table_contents_match` | all 6 tables compared byte-for-byte via `dlsym` | [x] |
-| 45 | `row45_error_reason_carry_over` | failure then success in one child; the stale reason must survive | [x] |
-| 46 | `row13_inflate_out_bytes_slack` | asserted explicitly (tail stays `0xAA`) | [x] |
-| 47 | `row47_out_offset_trick_every_bpp` | 5 colour types × 6 shapes | [x] |
-| 48 | `row48_filter_byte_full_sweep` | filter byte 0..=255 on row 0 and row 1 × 3 colour types = 1536 | [x] |
+| rows | test | scale |
+|------|------|-------|
+| 1, 3 | `phase_b_inflate::row01_stored_aligned`, `row03_stored_empty` | 13 lengths |
+| 2 | `row02_stored_all_input_alignments` | 10 lengths × 4 alignments |
+| 4 | `row04_fixed_literals_only` | 7 sizes + all 256 literal values |
+| 5 | `row05_fixed_match_distance_one` | 8 lengths |
+| 6 | `row06_fixed_overlapping_copy` | 6 (len,dist) pairs |
+| 7 | `row07_fixed_non_overlapping_copy` | 5 (len,dist) pairs |
+| 8 | `row08_fixed_nine_bit_literals` | all of 144..255 + interleaved |
+| 9 | `row09_fixed_length_symbol_boundaries` | every length symbol + both ends of every extra-bit range |
+| 10 | `row10_fixed_distance_symbol_boundaries` | all 30 distance symbols × both ends |
+| 11 | `row11_dynamic_literal_code_lengths_only` | 4 sizes |
+| 12, 13, 14 | `row12_dynamic_cl_symbol_16`, `row13_..._17`, `row14_..._18` | each test asserts the vector really uses that CL symbol before running |
+| 15 | `row15_dynamic_ndst_one` | both CL encodings |
+| 16 | `row16_dynamic_maximum_header` | `nlit=288, ndst=32`, HCLEN swept 4..19 |
+| 17 | `row17_multiblock_fixed_dynamic_stored` | fixed → dynamic → stored(final) |
+| 18 | `row18_multiblock_backref_across_boundary` | 3 blocks, back-references crossing both boundaries |
+| 19 | `row19_input_alignment_and_tail_matrix` | 4 alignments × 4 length residues |
+| 20 | `row20_output_buffer_larger_than_needed` | 3 block types × 5 slack sizes |
+| 21 | `row21_randomized_payloads_all_block_types` (300 payloads × 5 encodings), `row21b_randomized_token_streams` (300 × 3), `row21c_randomized_multiblock` (120) | ~2400 streams |
+| 22–26 | `phase_b_png::row22_...` … `row26_rgba_mixed_filters` | every colour type × 4–5 shapes × all 6 DEFLATE encodings |
+| 27–30 | `row27_indexed_no_trns`, `row28_indexed_trns_covers_all_indices`, `row29_indexed_trns_shorter_than_max_index`, `row30_indexed_short_palette` | tRNS lengths 0..41, palettes of 1..255 entries |
+| 31–34 | `rows31_34_row0_filters` | 5 filters × 5 colour types × 5 widths |
+| 35, 36 | `rows35_36_later_row_filters`, `row36_paeth_all_predictor_branches` | 5 filters × 4 colour types × 4 shapes; 44 paeth patterns |
+| 37–40 | `rows37_40_shapes` | 12 shapes × 4 colour types, incl. `w*bpp` not a multiple of 4 |
+| 41 | `row41_idat_split_across_chunks` | 1..6 IDAT chunks |
+| 42 | `row42_ancillary_chunk_before_idat` | gAMA + cHRM + sRGB skipped by `cp_find` |
+| 43 | `row43_zlib_cinfo_sweep` | CINFO 0..7 |
+| 44 | `row44_zlib_flg_ignored_bits` | 8 FLG values |
+| 45 | `row45_all_deflate_block_types` | 4 colour types × 6 encodings |
+| 46 | `row46_iend_present_or_absent` | both |
+| 47 | `row47_randomized_images` | 420 random images (random `w,h` ≤ 24, random colour type, random per-row filters, random IDAT split, random encoding) |
+| 48 | `row48_randomized_indexed_with_palette_and_trns` | 200 random indexed images |
+| 49 | `row49_large_image` | 256×256 RGBA × 3 encodings, plus 4096×1 and 1×4096 |
 
-**Result: 47/47 tests pass** under both the release and the debug Rust `.so`.
+## Non-vacuity
 
-## Beyond the enumerated rows
+Each Phase B test first runs the vector through the **C** `.so` alone and
+asserts the C accepts it *and* decodes it to a plaintext / pixel array computed
+independently of both implementations (`common::deflate::apply` for DEFLATE
+token streams, `expected_pixels` for PNGs). Only then is the Rust `.so` compared
+against the C. So a bug in the generator cannot make the two "agree on garbage".
 
-`tests/fuzz_diff.rs` adds ~6000 randomized differential cases that nobody
-enumerated: bit-flipped valid PNGs (1200), truncations (600), random bytes as
-PNG (400), random IHDR field combinations (600), random chunk streams with
-overflowing/sign-extending declared lengths (500), random deflate streams
-(1500), mutated valid deflate streams (800), random exported-table states (300)
-and random filter/palette shapes (600). **9/9 pass.** Coverage observed:
+Two places relax this deliberately, and say so in the test:
 
-* bit-flipped PNGs: 696 decoded, 490 rejected, 14 died by signal;
-* random deflate: 18 decoded, 954 rejected, 528 died by signal.
+* **Stored DEFLATE blocks.** `cp_stored` derives the source pointer from
+  `cp_ptr`, whose bit accounting is off by a byte for some input lengths (the
+  final-word path in `cp_peak_bits` adds `bits_left` rather than
+  `last_bytes * 8`). The C therefore copies from the wrong offset. Those rows
+  assert "C accepts, and Rust matches C exactly" (`ok_loose`) rather than
+  "C produces the plaintext" — the C is ground truth.
+* **Short PLTE** (row 30). `cp_depalette` indexes `plte[c*3]` with no bound on
+  `c`, so a short palette makes the C read the bytes following the chunk. Both
+  libraries are handed an identical, deterministically padded buffer, so the
+  requirement is agreement.
 
-## Findings worth recording
+## Additional coverage beyond the table
 
-Two behaviours of the C that the tests had to be written *around*, because the
-first drafts asserted the wrong thing:
-
-1. **`cp_stored` copies from the wrong offset at most `in` alignments.**
-   `cp_ptr` computes the memcpy source as
-   `(char *)(s->words + s->word_index) - (s->count / 8)`, which only lands on
-   the payload when `in` is 2 bytes past a 4-byte boundary — i.e. exactly what
-   `load_png_mem` passes (`data + 2` off a 16-aligned `malloc`). Calling
-   `cp_inflate` directly with a 4-aligned buffer makes a stored block copy the
-   LEN/NLEN bytes instead of the data. Row 1 therefore model-checks only the
-   `in_shift == 2` case and compares the other three alignments
-   differentially. The Rust reproduces all four.
-2. **The pixel buffer's tail is uninitialised by design.** `img.pix` is
-   `malloc((img.w+1)*img.h*4)` but `cp_convert` only writes `img.w*img.h*4`
-   bytes, so the last `img.h*4` bytes are whatever `malloc` returned. The
-   harness therefore compares exactly the `w*h*4` bytes the C defines, and
-   forks the two children back-to-back from an identical heap so that even the
-   C's reads of uninitialised memory are reproducible.
+`tests/isolated.rs` adds 3694 subprocess cases that also fall under Phase B for
+the ones that succeed, including 26 cases where a run-length code overruns the
+C's `uint8_t lens[288+32]` into its own stack frame by up to 35 bytes, the C
+still decodes the block, and the Rust translation's emulated frame produces
+byte-identical output. That is the positive test for the most delicate part of
+the translation.

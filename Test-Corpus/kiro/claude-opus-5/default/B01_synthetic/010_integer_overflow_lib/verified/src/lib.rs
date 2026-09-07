@@ -70,40 +70,25 @@ const HEX_CHAR_LINE_FMT: &[u8; 6] = b"%02x\n\0";
 /// arguably a bug in the original library, but it is reproduced exactly rather
 /// than fixed.
 ///
-/// ## Why the parameter is declared `c_int` and not `c_char`
-///
-/// The exported symbol is ABI-identical either way — on the SysV AMD64 ABI a
-/// `char` argument travels in the low byte of `%edi` — but the *observable
-/// behaviour for a non-narrowed argument register differs*, and the C's
-/// behaviour is the ground truth.
-///
-/// GCC compiles the C function to
-///
-/// ```text
-/// mov    %edi,%eax
-/// mov    %al,-0x4(%rbp)      ; spill only the LOW BYTE  -> truncation
-/// movsbl -0x4(%rbp),%eax     ; reload sign-extended     -> promotion
-/// ```
-///
-/// i.e. it *re-narrows* the incoming register to 8 bits before promoting. A
-/// Rust `extern "C" fn(c_char)` instead compiles to a bare `mov %edi,%esi`,
-/// because the ABI lets the callee assume the caller already narrowed. Any
-/// caller that passes a value with non-zero high bytes — which is exactly what
-/// happens when an `int` reaches a narrow C parameter, the same situation as an
-/// out-of-range value reaching a C `enum` parameter — would then see
-/// `printHexCharLine(0x100)` print `100` in Rust but `00` in C.
-///
-/// Declaring the parameter as `c_int` and truncating explicitly reproduces
-/// GCC's `mov %al` + `movsbl` pair, making the two libraries agree for every
-/// 32-bit argument value, not just the properly narrowed ones. For a
-/// well-behaved caller passing a real `char` the behaviour is unchanged.
+/// The parameter is declared `c_int` (not `c_char`) and narrowed to `c_char`
+/// in the body **on purpose**, to match the C callee's ABI byte-for-byte. The
+/// gcc-compiled callee only trusts the low 8 bits of the incoming argument
+/// register: it does `movsbl` on the low byte, i.e. truncates to 8 bits then
+/// sign-extends back to `int`. If we declared the parameter `c_char`, LLVM
+/// tags it `signext i8` and trusts the *caller* to have already sign-extended,
+/// so it forwards the full 32-bit register unchanged. That diverges when a
+/// caller passes a value with no `char` representation (e.g. calling through a
+/// `void(*)(int)` pointer with `INT_MIN` = 0x80000000: C prints `00`, a
+/// `c_char` Rust callee would print `80000000`). Declaring `c_int` and doing
+/// `as c_char` forces the explicit truncate-then-sign-extend, reproducing
+/// gcc's `movsbl` on the low byte exactly.
 #[unsafe(no_mangle)]
 pub extern "C" fn printHexCharLine(charHex: c_int) {
-    // `mov %al, ...`: the C callee only ever looks at the low byte of the
-    // argument register.
-    let narrowed: c_char = charHex as c_char;
-    // `movsbl`: integer promotion of the signed `char` argument back to `int`.
-    let promoted: c_int = narrowed as c_int;
+    // Truncate to the low 8 bits and sign-extend, exactly as the C callee's
+    // `movsbl` does; only the low byte of the argument register is trusted.
+    let charHex: c_char = charHex as c_char;
+    // Integer promotion of the signed `char` argument to `int`.
+    let promoted: c_int = charHex as c_int;
 
     unsafe {
         printf(HEX_CHAR_LINE_FMT.as_ptr() as *const c_char, promoted);
@@ -125,14 +110,18 @@ pub extern "C" fn printHexCharLine(charHex: c_int) {
 /// `driver(0x7f)` yields `result == -128` (printed as `ffffff80`) and
 /// `driver(0xff /* -1 */)` yields `result == 0` (printed as `00`).
 ///
-/// The parameter is declared `c_int` for the same reason as
-/// [`printHexCharLine`]: GCC emits `mov %al` / `movzbl` here too, so only the
-/// low byte of the argument register may influence the result.
+/// As with `printHexCharLine`, the parameter is declared `c_int` and narrowed
+/// to `c_char` in the body to match the gcc callee's ABI. The C callee only
+/// trusts the low 8 bits of the argument register (`movsbl` on the low byte);
+/// declaring the parameter `c_char` would let LLVM tag it `signext i8` and
+/// forward the full 32-bit register, diverging when a caller passes a value
+/// with no `char` representation. Declaring `c_int` and doing `as c_char`
+/// forces the explicit truncate-then-sign-extend, immune to that assumption.
 #[unsafe(no_mangle)]
 pub extern "C" fn driver(data: c_int) {
-    // Truncate the argument register to a byte first, exactly as the C does,
-    // then add 1 in the promoted `int` domain and truncate back to `char`.
-    let narrowed: c_char = data as c_char;
-    let result: c_char = (narrowed as c_int).wrapping_add(1) as c_char;
+    // Truncate to the low 8 bits and sign-extend, exactly as the C callee's
+    // `movsbl` does; only the low byte of the argument register is trusted.
+    let data: c_char = data as c_char;
+    let result: c_char = (data as c_int).wrapping_add(1) as c_char;
     printHexCharLine(result as c_int);
 }

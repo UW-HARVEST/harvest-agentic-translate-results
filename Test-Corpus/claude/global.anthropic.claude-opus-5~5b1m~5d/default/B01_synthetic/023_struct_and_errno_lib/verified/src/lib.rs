@@ -83,51 +83,24 @@ pub struct house_t {
     pub bathrooms: c_double,
 }
 
-// static void add_floor(house_t *house)
-//
-// NOTE ON POINTER HANDLING
-//
-// These helpers take a *raw pointer*, exactly like the C, and deliberately
-// avoid two things:
-//
-//  1. Forming a Rust reference (`&mut *house`), and
-//  2. Reading/writing through a place expression (`(*house).floors`).
-//
-// Both make rustc emit a null/alignment validity check when debug assertions
-// are enabled, which `abort()`s (SIGABRT) where the C simply faults (SIGSEGV).
-// That is an observable divergence for `run(NULL, ..)` — see ERRORS.md rows
-// E10/E11. Going through a raw-ref (`&raw`, which never dereferences) plus
-// `ptr::read`/`ptr::write` compiles to the same plain load/store the C emits and
-// faults identically in every profile.
-#[inline]
-unsafe fn get_floors(house: *const house_t) -> c_int {
-    unsafe { (&raw const (*house).floors).read() }
-}
-#[inline]
-unsafe fn get_bedrooms(house: *const house_t) -> c_int {
-    unsafe { (&raw const (*house).bedrooms).read() }
-}
-#[inline]
-unsafe fn get_bathrooms(house: *const house_t) -> c_double {
-    unsafe { (&raw const (*house).bathrooms).read() }
-}
+// The helpers below take *raw pointers* rather than `&mut house_t`, mirroring
+// the C signatures exactly. This matters for fidelity: the C code performs no
+// null check, so `run(NULL, n)` dereferences a null pointer and dies with
+// SIGSEGV. Forming a Rust reference from the pointer instead would trip the
+// debug-profile "null pointer dereference" assertion and abort with SIGABRT,
+// diverging from C in debug builds. Raw pointer access reproduces the C
+// behaviour (SIGSEGV) under every profile.
 
 // static void add_floor(house_t *house)
 unsafe fn add_floor(house: *mut house_t) {
     // house->floors++;
-    unsafe {
-        let p = &raw mut (*house).floors;
-        p.write(p.read().wrapping_add(1));
-    }
+    unsafe { (*house).floors = (*house).floors.wrapping_add(1) };
 }
 
 // static void add_bedrooms(house_t *house, int extra_bedrooms)
 unsafe fn add_bedrooms(house: *mut house_t, extra_bedrooms: c_int) {
     // house->bedrooms += extra_bedrooms;
-    unsafe {
-        let p = &raw mut (*house).bedrooms;
-        p.write(p.read().wrapping_add(extra_bedrooms));
-    }
+    unsafe { (*house).bedrooms = (*house).bedrooms.wrapping_add(extra_bedrooms) };
 }
 
 // static void print_house(house_t *house)
@@ -138,9 +111,9 @@ unsafe fn print_house(house: *const house_t) {
     unsafe {
         ffi::printf(
             FMT.as_ptr() as *const c_char,
-            get_floors(house),
-            get_bedrooms(house),
-            get_bathrooms(house),
+            (*house).floors,
+            (*house).bedrooms,
+            (*house).bathrooms,
         );
     }
 }
@@ -167,8 +140,7 @@ pub unsafe extern "C" fn run(the_house: *mut house_t, extra_bedrooms: c_int) {
         add_floor(the_house);
         print_house(the_house);
         // the_house->bathrooms += 1.0;
-        let p = &raw mut (*the_house).bathrooms;
-        p.write(p.read() + 1.0);
+        (*the_house).bathrooms += 1.0;
         print_house(the_house);
         add_bedrooms(the_house, extra_bedrooms);
         print_house(the_house);

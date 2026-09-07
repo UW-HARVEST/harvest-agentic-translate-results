@@ -1,64 +1,95 @@
-# SYMBOLS.md — Phase A / Phase D symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-## Source inventory
+Derived mechanically from `nm -D` on both shared objects.
 
-The whole C library is ONE translation unit:
+Build commands:
 
-| C file | translated in Rust? | notes |
+```sh
+cmake -S c_src -B c_src/build -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build c_src/build
+#   -> c_src/build/libharvest-work-OcxwHm.so
+cargo build --release --manifest-path translation/Cargo.toml
+#   -> translation/target/release/libnext_double_lib.so
+```
+
+## C translation units covered
+
+| C source file | Rust counterpart | status |
 |---|---|---|
-| `c_src/src/lib.c` | yes — `translation/src/lib.rs` | 20 lines: `cn_rnd_next` (static) + `next_double` |
-| `c_src/include/lib.h` | yes — `cn_rnd_t` in `src/lib.rs` | 7 lines: `cn_rnd_t` typedef + `next_double` decl |
+| `c_src/src/lib.c` | `translation/src/lib.rs` | fully translated |
+| `c_src/include/lib.h` | `translation/src/lib.rs` (`cn_rnd_t`) | fully translated |
 
-No C source file is missing from the translation. There is no second module,
-no `#ifdef`-gated file, and `CMakeLists.txt` lists exactly `src/lib.c`.
+The whole C library is a single translation unit. There is no untranslated
+module.
 
-## `nm -D --defined-only` on the C `.so`
+## Exported (defined) symbols
 
-Build: `c_src/build/libharvest-work-n9KYBK.so`
-(the CMake target name is derived from the parent directory name, so the file
-name varies with the checkout directory; the tests glob for it.)
+`nm -D --defined-only <so> | awk '{print $3}' | sort`
 
-Global (`T`) text symbols, excluding weak/absolute libc/CRT bookkeeping
-(`_init`, `_fini`, `__bss_start`, `_edata`, `_end`, `_ITM_*`,
-`__gmon_start__`, `__cxa_finalize`, `_Jv_RegisterClasses`):
+| # | symbol | in C `.so` | in Rust `.so` | notes |
+|---|--------|-----------|---------------|-------|
+| 1 | `next_double` | yes | yes | `double next_double(cn_rnd_t *rnd)` / `pub unsafe extern "C" fn next_double(*mut cn_rnd_t) -> f64` |
 
-| # | symbol | type | present in Rust `.so`? |
-|---|--------|------|------------------------|
-| 1 | `next_double` | `T` (global text) | YES — `#[no_mangle] pub unsafe extern "C" fn next_double` |
+### Non-exported C symbols (intentionally not in the ABI)
 
-`cn_rnd_next` is `static` in C, so it is deliberately NOT exported. The Rust
-translation keeps it as a private `fn`, which correctly produces no dynamic
-symbol. Exporting it would be an ABI *mismatch*, not a fix.
+| C symbol | linkage | Rust counterpart | exported? |
+|---|---|---|---|
+| `cn_rnd_next` | `static` (internal) | private `fn cn_rnd_next` | no — correct, C does not export it either |
 
-## `nm -D --defined-only` on the Rust `.so`
-
-Build: `translation/target/release/libnext_double_lib.so`
-(`crate-type = ["cdylib"]`, `name = "next_double_lib"`).
-
-| # | symbol | type | in C `.so`? |
-|---|--------|------|-------------|
-| 1 | `next_double` | `T` (global text) | YES |
-
-Rust additionally emits `rust_eh_personality` / `__rust_*` allocator shims in
-some configurations; these are runtime-support symbols with no C counterpart
-and are excluded from the diff the same way libc/CRT symbols are on the C side.
-With `panic = "abort"` in `[profile.release]` the current build emits none.
+`cn_rnd_next` is `static` in C, so it is deliberately absent from `nm -D` on
+both libraries. Exporting it from Rust would be a *parity violation*, not a fix.
 
 ## Symbol diff
 
 ```
-C-only symbols (missing from Rust):   (none)
+comm -23 c_syms.txt rust_syms.txt   # in C but missing from Rust
+<empty>
+
+comm -13 c_syms.txt rust_syms.txt   # extra in Rust
+<empty>
 ```
 
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+**Result: the symbol diff is EMPTY in both directions.**
 
-Verified mechanically by `tests/differential.rs::phase_d_symbol_parity`, which
-runs `nm -D` on both `.so` files, filters the libc/CRT/Rust-runtime allowlist,
-and asserts the C-only set is empty.
+## Undefined (imported) symbols in the Rust `.so`
+
+`nm -D -u libnext_double_lib.so` lists only libc / libgcc-unwind imports pulled
+in by the Rust runtime (`memcpy`, `malloc`, `abort`, `_Unwind_*`,
+`__cxa_finalize`, `dl_iterate_phdr`, ...). There are **0 undefined non-libc
+symbols**, i.e. nothing from the translated library itself is left dangling.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**. The only build
-configuration is the default one, so "every feature combination" is a single
-combination. `tools/check_features.sh` enumerates features from `Cargo.toml`
-and confirms the set is empty before running the default-configuration tests.
+`translation/Cargo.toml` has **no `[features]` table** and no optional
+dependencies, therefore the only build configuration is the default one:
+
+```
+cargo test                              # == default == all features == no-default-features
+```
+
+`cargo test --no-default-features` and `cargo test --all-features` resolve to the
+identical feature set. Phases B–C therefore cover the complete configuration
+space; `run_verification.sh` still runs all three explicitly (x both profiles)
+and fails if a `[features]` table is ever added without extending the matrix.
+
+## Phase D result
+
+```
+== 3. symbol parity (nm -D) ==
+   C exports   : 1   [next_double ]
+   Rust exports: 1   [next_double ]
+   missing from Rust: NONE
+   extra in Rust    : NONE
+   undefined non-libc symbols in Rust .so: NONE
+```
+
+No C source was left untranslated and no symbol needed to be added, so the
+Phase A "translate the missing module" rule never had to be applied. Nothing is
+stubbed: `next_double` is a full translation of `lib.c`, and the `static` helper
+`cn_rnd_next` is correctly kept unexported to match C's internal linkage.
+
+Reproduce everything (build both libraries, diff symbols, run all phases under
+every feature combination and profile) with:
+
+```sh
+bash translation/run_verification.sh
+```

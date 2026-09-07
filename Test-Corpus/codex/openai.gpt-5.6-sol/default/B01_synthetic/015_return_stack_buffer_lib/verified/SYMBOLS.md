@@ -1,22 +1,50 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
+Generated from:
 
-Extraction command:
-
-```sh
+```text
+nm -D ../c_src/build/libdriver.so
 nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-The C library has four globally defined dynamic symbols. Runtime weak symbols
-and imported libc symbols shown by unfiltered `nm -D` are not library exports.
+## C-defined public symbols
 
-| C symbol | C type | Rust export | Status |
-|----------|--------|-------------|--------|
-| `bad` | `T` | `bad` | present |
-| `driver` | `T` | `driver` | present |
-| `good` | `T` | `good` | present |
-| `printLine` | `T` | `printLine` | present |
+| symbol | C type | Rust `.so` status |
+|---|---:|---|
+| `bad` | `T` | [x] exported as `bad` |
+| `driver` | `T` | [x] exported as `driver` |
+| `good` | `T` | [x] exported as `good` |
+| `printLine` | `T` | [x] exported as `printLine` |
 
-- [x] Missing C-defined symbols in the Rust shared library: 0
-- [x] Undefined non-runtime/non-libc C dependencies: 0
+## C shared-object dependencies
+
+These are dynamic imports/weak runtime hooks, not functions defined by this
+library and therefore are not part of the Rust export requirement.
+
+| symbol | C type |
+|---|---:|
+| `_ITM_deregisterTMCloneTable` | `w` |
+| `_ITM_registerTMCloneTable` | `w` |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` |
+| `__gmon_start__` | `w` |
+| `puts@GLIBC_2.2.5` | `U` |
+
+## Current defined-symbol diff
+
+```text
+comm -23 \
+  <(nm -D --defined-only ../c_src/build/libdriver.so | awk '{print $3}' | sort -u) \
+  <(nm -D --defined-only target/release/libdriver.so | awk '{print $3}' | sort -u)
+```
+
+Result: empty (zero missing C-defined symbols).
+
+## Completion gate
+
+- [x] Zero missing C-defined symbols in the Rust shared object.
+- [x] All five valid-configuration rows pass with fixed-seed randomized inputs
+  where inputs exist.
+- [x] The sole error-surface row passes with the exact same no-output result.
+- [x] Default and explicit `--no-default-features` release test runs pass.
+- [x] No library-owned binary target exists in either build configuration, so
+  executable stdout comparison is not applicable.

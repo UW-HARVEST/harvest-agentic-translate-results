@@ -1,32 +1,23 @@
 # Error Surface
 
-The C source and public header were mechanically searched for error returns,
-assertions, null checks, range checks, min/max constants, enums, and conditional
-rejection branches:
-
-```sh
-rg -n 'RETURN_ERROR|return\s+(-1|NULL)|assert\s*\(|if\s*\(|switch\s*\(|NULL|MIN|MAX|enum' \
-  ../c_src/src ../c_src/include
-```
-
-The search finds no rejection path. Both exported functions return `void`;
-`perform_expensive_operations` takes no arguments, and `long_exec` accepts an
-`unsigned int`, for which every ABI bit pattern is valid.
+Mechanical search covered `return`, `assert`, `if`, `switch`, `case`,
+preprocessor conditionals, `NULL`, min/max constants, and error-related names
+in `../c_src/include/` and `../c_src/src/`.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
+|---|----------|---------------------------------------------|-------------------|
 
-There are zero error-surface rows to test or check off.
+There are **0 rejection branches**. The only explicit `return` is the
+unconditional `return;` at the end of the `void long_exec(unsigned int)`
+function.
 
-## Generic FFI boundaries
+Generic FFI-boundary audit:
 
-| boundary class | applicability |
-|---|---|
-| null pointers | Not applicable: neither function accepts a pointer. |
-| zero lengths | Not applicable: neither function accepts a length. |
-| oversized lengths | Not applicable: neither function accepts a length. |
-| one past a valid range | Not representable: all `unsigned int` values are valid seeds. |
-| out-of-range enums | Not applicable: the API has no enum parameter. |
+- Neither function accepts pointers, lengths, or enums.
+- `perform_expensive_operations(void)` accepts no input arguments.
+- `long_exec(unsigned int)` accepts the full `unsigned int` range, including
+  `0` and `UINT_MAX`; these are valid-path configurations, not error cases.
+- The fixed array extent and loop counts are internal constants and cannot be
+  supplied out of range by an external caller.
 
-Seed `0` and `UINT_MAX` are valid configurations and are covered in
-`CONFIGS.md`.
+Phase C status: **complete (no applicable error rows)**.

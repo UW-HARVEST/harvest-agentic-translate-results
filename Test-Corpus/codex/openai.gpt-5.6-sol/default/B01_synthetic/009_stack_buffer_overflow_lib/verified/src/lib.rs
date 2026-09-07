@@ -30,8 +30,8 @@ pub extern "C" fn bad(data: c_int) {
     let mut buffer = [0; 10];
 
     if data >= 0 {
-        unsafe {
-            buffer.as_mut_ptr().add(data as usize).write(1);
+        if let Some(value) = buffer.get_mut(data as usize) {
+            *value = 1;
         }
         for value in buffer {
             printIntLine(value);

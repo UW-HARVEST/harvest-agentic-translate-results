@@ -1,73 +1,127 @@
 # ERRORS.md — Phase C error-surface table
 
-## Mechanical derivation
+Mechanically derived from an exhaustive grep of the *entire* C source
+(`c_src/src/lib.c`, 20 lines; `c_src/include/lib.h`, 7 lines) for every
+rejection mechanism:
 
-Every line of `c_src/src/lib.c` and `c_src/include/lib.h` was grepped for
-rejection machinery. Result of each grep over the whole C subtree:
+```sh
+grep -nE 'return -|return NULL|RETURN_ERROR|assert|errno|if *\(|NULL|\?|goto' c_src/src/lib.c c_src/include/lib.h
+```
 
-| pattern searched | hits |
+Findings: **zero** `if` statements, **zero** `assert`s, **zero** error enums,
+**zero** error-return statements, **zero** `NULL` checks, **zero** range
+checks, **zero** min/max constants, **zero** `errno` uses, **zero** `goto`s.
+
+`next_double` is *total* over its declared domain: every one of the
+2^128 possible `cn_rnd_t` states is a valid input that produces a `double`.
+The function has no failure mode and no sentinel return value — `-1.0` is not
+reachable, and neither is any NaN/Inf (see row 5).
+
+The error surface therefore consists only of the **generic C-API boundaries**
+that exist implicitly for any function taking a pointer, plus the value
+boundaries of the arithmetic. Each is listed as its own row and each has a
+differential test.
+
+| # | function | trigger (the exact invalid input/condition) | expected C result | test |
+|---|----------|----------------------------------------------|-------------------|------|
+| 1 | `next_double` | `rnd == NULL` — unchecked dereference of `rnd->state[0]` at `lib.c:4` | no error code: memory fault. Process dies from `SIGSEGV` (signal 11). C and Rust must terminate with the **same** signal / exit status. **Verified: both = `signal 11`, exit code `None`.** (**divergence D2 found & fixed here** — see below.) | `err_01_null_pointer_same_fatal_signal` |
+| 2 | `next_double` | `rnd` points to a heap block of **exactly** `sizeof(cn_rnd_t)` == 16 bytes, i.e. one byte past the object is unmapped/poisoned | no error: reads and writes stay within `state[0..2]`; no out-of-bounds access. Both must succeed with identical value and identical 16-byte final state. | `err_02_exact_size_allocation_no_overread` |
+| 3 | `next_double` | unaligned `cn_rnd_t*` (odd byte offset inside a buffer) — the C code does an aligned-typed access on a misaligned pointer | on x86-64 both perform the unaligned 8-byte accesses and return the identical value; no trap. (**divergence D1 found & fixed here** — see below.) | `err_03_misaligned_pointer` |
+| 4 | `next_double` | all-zero state `{0, 0}` — the degenerate xorshift fixed point (would be the "invalid seed" for the algorithm, but the C rejects nothing) | **no rejection.** `x = 0`, `y = 0` → `x` stays 0, state stays `{0,0}`, `value = 0`, `mantissa = 0`, `result = 0x3FF0000000000000` → returns exactly `0.0`. Sticks at `0.0` forever. | `err_04_all_zero_state_is_accepted_fixed_point` |
+| 5 | `next_double` | state chosen so the raw `value` has all 52 high bits set (`mantissa == 0xF_FFFF_FFFF_FFFF`), the largest representable output — one step past would overflow into the exponent field | `result = 0x3FFFFFFFFFFFFFFF` (== `2 - 2^-52`) → returns bits `0x3FEFFFFFFFFFFFFE` == `1.0 - 2^-52`, exactly. Never `>= 1.0`, never NaN/Inf: `mantissa` is masked to 52 bits by `>> 12`, so `(1023 << 52) \| mantissa` can never disturb the exponent field. | `err_05_mantissa_all_ones_boundary` |
+| 6 | `next_double` | `x + y` at `lib.c:11` overflows `uint64_t` (unsigned wraparound — defined in C, must be `wrapping_add` in Rust, **not** `+` which panics in debug) | wraps modulo 2^64; no trap, no error. Rust must produce the same wrapped `value` and hence the same `double`. | `err_06_return_sum_wraps_modulo_2_64` |
+| 7 | `next_double` | `x << 23` at `lib.c:7` with the top 23 bits of `x` set — bits shifted out of the 64-bit type | bits are discarded (shift count 23 < 64, so well-defined); identical result required. | `err_07_left_shift_23_discards_high_bits` |
+| 8 | `next_double` | `y >> 26` at `lib.c:9` with `y < 2^26` so the shift yields 0, and `x >> 17` with `x < 2^17` likewise | shifts to zero, no error; identical result required. | `err_08_right_shifts_to_zero` |
+| 9 | `next_double` | *out-of-range enum value across the FFI boundary* | **not applicable**: the public API declares no `enum`, no mode/flag parameter, and no integer parameter at all. `next_double` takes exactly one argument, a `cn_rnd_t*`. There is no int-typed parameter whose value could fall outside a valid variant set — every `uint64_t` state bit pattern is in range (row 4/5 cover the extremes). | documented in `err_09_no_enum_or_scalar_parameters_exist` |
+| 10 | `next_double` | zero / oversized *length* argument | **not applicable**: the API takes no length, size, or count argument. Row 2 covers the only size-related concern (the fixed 16-byte object). | documented in `err_09_no_enum_or_scalar_parameters_exist` |
+
+## Checklist
+
+- [x] 1 null pointer → same fatal signal
+- [x] 2 exact-size allocation, no over-read/over-write
+- [x] 3 misaligned pointer
+- [x] 4 all-zero degenerate state accepted, not rejected
+- [x] 5 mantissa all-ones upper boundary, output stays `< 1.0`
+- [x] 6 `x + y` unsigned wraparound
+- [x] 7 `x << 23` high-bit discard
+- [x] 8 right shifts collapsing to zero
+- [x] 9 no enum / scalar parameter exists (documented + asserted by inspection test)
+- [x] 10 no length parameter exists (documented + asserted by inspection test)
+
+## Divergences found and fixed
+
+Both were found by the Phase C error-path tests, in the **debug** profile only;
+the happy-path Phase B tests and the release build passed throughout. Both were
+fixed in the Rust (the C was never touched).
+
+### D1 — misaligned `cn_rnd_t *` aborted instead of returning a value
+
+* **Symptom:** `err_03_misaligned_pointer` / `cfg_25_misaligned_pointer`
+  ```
+  panicked at src/lib.rs:66: misaligned pointer dereference:
+  address must be a multiple of 0x8 but is 0x7f24677fa371
+  thread caused non-unwinding panic. aborting.        -> SIGABRT (6)
+  ```
+  C returned a `double`; Rust killed the process.
+* **Cause:** `next_double` did `let rnd = unsafe { &mut *rnd };`. Forming a Rust
+  reference from a misaligned raw pointer is UB and is trapped by the
+  `debug_assertions` alignment check.
+* **Fix:** `cn_rnd_next` now takes a `*mut cn_rnd_t` and accesses the state with
+  `core::ptr::addr_of_mut!` + `read_unaligned` / `write_unaligned`. No reference
+  is ever formed. This is a genuine code-level fix: the misalignment tests pass
+  even with `RUSTFLAGS="-C debug-assertions=on -C overflow-checks=on"`.
+
+### D2 — `next_double(NULL)` died with SIGABRT instead of SIGSEGV
+
+* **Symptom:** `err_01_null_pointer_same_fatal_signal`
+  ```
+  C   : code=None signal=Some(11)   # SIGSEGV
+  Rust: code=None signal=Some(6)    # SIGABRT
+  ```
+  Both "failed", but with *different* fatal signals — exactly the kind of
+  not-merely-both-failed mismatch this phase exists to catch.
+* **Cause:** the library UB-check on `read_unaligned` tests the pointer for null
+  and panics *before* the load can fault, converting the hardware fault into an
+  abort. The C has no such check and faults on the `mov`.
+* **Fix:** `[profile.dev] debug-assertions = false` / `overflow-checks = false`
+  in `Cargo.toml`, so the debug `.so` carries the same instrumentation as the
+  release `.so` (i.e. none) and matches the C in every cargo profile.
+  Rationale recorded inline in `Cargo.toml`: these checks are Rust-only
+  instrumentation with no counterpart in the C, and `overflow-checks` would also
+  panic on the `x + y` wraparound that C defines as modular.
+* **Documented residual:** if the crate is *forced* to build with
+  `RUSTFLAGS="-C debug-assertions=on"` (a non-default override that contradicts
+  the profile settings), Rust's null precondition check re-appears and the NULL
+  case again yields SIGABRT rather than SIGSEGV. Every other row, including D1,
+  passes under that override. Parity holds for all cargo profiles and all
+  feature combinations the crate actually defines.
+
+## Harness sensitivity (proof the tests can fail)
+
+Nine mutants were injected into `src/lib.rs`, each built into its own `.so` and
+loaded in place of the real one. Every mutant was caught:
+
+| mutant | failing tests |
 |---|---|
-| `return -1`, `return 0;` as sentinel, `return NULL` | 0 |
-| `RETURN_ERROR`, `GOTO_ERROR`, `CHECK`, `_ASSERT`, `FAIL` macros | 0 |
-| `assert(` / `<assert.h>` | 0 |
-| `errno`, `perror`, `strerror` | 0 |
-| `enum` (error enums or any enum) | 0 |
-| `if (`, `switch (`, `while (`, `for (`, `?:` — any branch at all | 0 |
-| explicit range / bounds check (`<=`, `>=`, or `<`/`>` used as a comparison) | 0 — the 3 `<` and 8 `>` characters in the C are all `#include <stdint.h>`, the shift operators `<<` / `>>`, and the member arrow `->` |
-| null check (`== NULL`, `!ptr`, `if (rnd)`) | 0 |
-| `#define` min/max constants / limits | 0 |
-| `malloc` / `free` / allocation failure path | 0 |
+| `value >> 12` → `>> 13` | 31 |
+| `x ^= x << 23` → `<< 22` | 33 |
+| `x ^= x >> 17` → `>> 16` | 33 |
+| `y >> 26` → `y >> 25` | 33 |
+| `wrapping_add` → `wrapping_sub` | 31 |
+| `exponent = 1023` → `1022` | 36 |
+| drop the `- 1.0` | 35 |
+| `state[0] = y` → `= x` | 32 |
+| swap the two state writes | 33 |
 
-**The C library has NO error surface.** `next_double` is straight-line code:
-it unconditionally dereferences `rnd`, mutates `rnd->state`, and returns a
-`double`. Every `uint64_t` bit pattern in `state[0]`/`state[1]` is a *valid*
-input (those are covered by `CONFIGS.md`, not here), there is no return-code
-channel, and there is no input the C code rejects.
+## Harness hazard fixed
 
-## Table
+`cargo test` does **not** rebuild a `crate-type = ["cdylib"]` artifact, so a
+stale `libnext_double_lib.so` can be silently verified — this initially masked
+D1. Mitigations now in place:
 
-There is exactly one input the C code cannot handle, and it is UB rather than a
-defined rejection. It is listed for completeness, with the generic-boundary
-rows the task requires.
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|----------------------------------------------|-------------------|------|--------|
-| E1 | `next_double` | `rnd == NULL` | Undefined behaviour: unconditional `rnd->state[0]` load with no null check ⇒ SIGSEGV on a null page. No error code is returned; there is no channel to return one. | `phase_c_e1_null_pointer_both_segfault` (forks a child per library, asserts BOTH die on the same fatal signal) | [x] |
-| E2 | `next_double` | pointer to a *misaligned* `cn_rnd_t` (odd address) | No alignment check exists. On x86-64 the `mov`/`xor` sequence tolerates unaligned 8-byte access, so the call succeeds and must return the same value as the aligned call. | `phase_c_e2_misaligned_state` | [x] |
-| E3 | `next_double` | pointer to a `cn_rnd_t` at the very end of a mapped page (no readable slack past `state[1]`) | Reads exactly 16 bytes, writes exactly 16 bytes, never past the struct ⇒ succeeds; no over-read. Rust must not over-read either. | `phase_c_e3_no_overread_past_struct` | [x] |
-| E4 | `next_double` | "out-of-range enum value across the FFI boundary" | **Not applicable / vacuous:** the C API declares no `enum`, no flag, no mode, and no integer selector parameter. The only parameter is `cn_rnd_t *`. There is no int-typed input whose domain could be exceeded, because every `uint64_t` state is valid. Documented so the requirement is discharged explicitly rather than silently skipped. | `phase_c_e4_no_enum_parameters_exist` (asserts the C header contains no `enum`) | [x] |
-| E5 | `next_double` | "zero and oversized lengths" | **Not applicable / vacuous:** the API takes no length, count, size, or buffer parameter — the struct is fixed at `uint64_t state[2]`. The degenerate *value* case (all-zero state, which makes the generator absorb at 0) is a VALID input and is covered as row C1 of `CONFIGS.md`. | `phase_c_e5_no_length_parameters_exist` | [x] |
-
-## Divergence found and fixed (row E2)
-
-Row **E2 initially FAILED**, and it was a genuine translation bug, not a test
-artifact:
-
-- The original Rust did `let rnd = unsafe { &mut *rnd };` and then indexed
-  `rnd.state[..]`. Forming a `&mut cn_rnd_t` **requires 8-byte alignment**, so
-  a misaligned `cn_rnd_t *` aborted the process
-  (`misaligned pointer dereference: address must be a multiple of 0x8`).
-- The C performs plain `uint64_t` loads/stores through the pointer with no
-  alignment check and, on x86-64, happily accepts a misaligned struct.
-- **Fix (in Rust only):** `cn_rnd_next` now takes a `*mut cn_rnd_t` and touches
-  the state exclusively via `addr_of_mut!` + `read_unaligned` /
-  `write_unaligned`, never forming a reference. The store order (`state[0]`
-  then `state[1]`) and the single-read-per-word structure of the C are
-  preserved, so aligned behaviour is bit-identical while misaligned input is now
-  tolerated exactly as the C tolerates it.
-
-## Note on row E1 and build profiles
-
-`debug_assertions` builds enable Rust's `ub_checks`, which intentionally trap a
-null dereference and `abort()` (SIGABRT) rather than faulting (SIGSEGV). That is
-a development diagnostic, not an ABI difference. The E1 test therefore makes its
-exact signal-for-signal comparison against the **release** cdylib — the shipped
-artifact, built like the C `.so` with no UB instrumentation — where both die
-with SIGSEGV. It additionally asserts the test-profile `.so` still dies fatally
-and never silently returns a value.
-
-## Completion
-
-- [x] Every row above has a passing differential test (or an explicit,
-      source-verified not-applicable justification plus a test asserting the
-      justification still holds).
+* `guard_loaded_shared_objects_are_not_stale` fails if either `.so` is older
+  than its source;
+* the harness loads the `.so` from the **same profile** the test binary was
+  built into (derived from `current_exe()`, not from mtime and not from
+  `cfg!(debug_assertions)`, which the profile settings above would make lie);
+* `run_verification.sh` always `cargo build`s before `cargo test`.

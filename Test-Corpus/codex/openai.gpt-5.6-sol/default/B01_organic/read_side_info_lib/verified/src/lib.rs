@@ -191,7 +191,7 @@ pub unsafe extern "C" fn read_side_info(
             }
             (*gr).global_gain = get_bits(bs, 8) as u8;
             (*gr).scalefac_compress = get_bits(bs, if hdr1 & 0x08 != 0 { 4 } else { 9 }) as u16;
-            (*gr).sfbtab = G_SCF_LONG[sr_idx].as_ptr();
+            (*gr).sfbtab = G_SCF_LONG.as_ptr().add(sr_idx).cast::<u8>();
             (*gr).n_long_sfb = 22;
             (*gr).n_short_sfb = 0;
 
@@ -208,11 +208,11 @@ pub unsafe extern "C" fn read_side_info(
                     scfsi &= 0x0f0f;
                     if (*gr).mixed_block_flag == 0 {
                         (*gr).region_count[0] = 8;
-                        (*gr).sfbtab = G_SCF_SHORT[sr_idx].as_ptr();
+                        (*gr).sfbtab = G_SCF_SHORT.as_ptr().add(sr_idx).cast::<u8>();
                         (*gr).n_long_sfb = 0;
                         (*gr).n_short_sfb = 39;
                     } else {
-                        (*gr).sfbtab = G_SCF_MIXED[sr_idx].as_ptr();
+                        (*gr).sfbtab = G_SCF_MIXED.as_ptr().add(sr_idx).cast::<u8>();
                         (*gr).n_long_sfb = if hdr1 & 0x08 != 0 { 8 } else { 6 };
                         (*gr).n_short_sfb = 30;
                     }

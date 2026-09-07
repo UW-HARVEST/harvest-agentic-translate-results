@@ -1,92 +1,74 @@
-# CONFIGS.md — Phase A configuration-surface table
+# CONFIGS.md — Configuration-surface table
 
-The mirror of `ERRORS.md`, for VALID inputs. Axes derived mechanically from the
-C source and the public header, not from a guess about what "matters".
+## Axes actually present in the C source
 
-## Axis enumeration
+Mechanically derived from `c_src/include/driver.h` + `c_src/src/driver.c`:
 
-### Axis 1 — runtime options / modes / flags
+- **Public entry points:** exactly one — `void driver(int x)`. There is no
+  higher-level convenience wrapper and no lower-level helper; `driver` *is* the
+  lowest-level entry point. No `static` helpers exist either.
+- **Runtime options / modes / flags:** none. No context struct, no init/destroy,
+  no setters, no globals, no environment reads, no `#ifdef` in either file
+  (`grep -c '#if' c_src/src/driver.c` → 1, the header's own include guard only).
+- **Hidden state:** none. `y` is a function-local `register int`; the function is
+  pure apart from writing to `stdout` via `printf("%d\n", …)`.
+- **Input shapes:** the single scalar `int x`. The code has **zero branches**, so
+  the only shapes the *behaviour* can distinguish are arithmetic ones:
+  1. sign of `x` (negative / zero / positive)
+  2. magnitude class of `x`: `2*x` in range vs. `2*x` overflowing `int`
+  3. magnitude class of `2*x+300`: in range vs. overflowing `int`
+  4. sign / digit-count of the *printed* result, i.e. whether `printf("%d")`
+     emits a leading `-` and how many digits (formatting shape)
+  5. `2*x+300 == 0` (the root, `x == -150`) — the only value printing `0`
+- **Output shape:** bytes written to `fd 1` by libc `printf`. Compared
+  byte-for-byte (including the trailing newline and any `-` sign) by capturing
+  `fd 1` around each call.
+- **Feature combinations:** `translation/Cargo.toml` declares **no `[features]`
+  section**, so the only build configuration is the default one (verified by
+  `cargo metadata`; the sweep is automated in `verify_all.sh`). Both `--no-default-features`
+  and the default build are exercised.
 
-Grepped the public header and the source for anything the caller can toggle:
+## Configuration rows (cross-product, pruned to what the C distinguishes)
 
-| candidate | found |
-|---|---|
-| public functions in `include/driver.h` | exactly **1**: `void driver(int x);` |
-| global/`extern` variables, setters, init/config functions | **0** |
-| environment variables read (`getenv`) | **0** |
-| `#ifdef`-selected behaviour | **0** (only the `DRIVER_H_` include guard) |
-| struct/context parameters carrying options | **0** |
-| function pointers / callbacks | **0** |
+Every row is driven through the `.so` exports of *both* libraries with many
+randomized inputs (seeded splitmix64 PRNG, fixed seed) plus the row's boundary values, and
+the captured stdout bytes are compared.
 
-**Result: the option axis is empty.** The library is stateless — there is no
-init, no context object, no flag, no mode. `driver` is simultaneously the
-highest-level convenience wrapper *and* the lowest-level entry point, so the
-Phase B instruction to "exercise the LOW-LEVEL entry points directly, not only
-the convenience wrappers" is satisfied by calling `driver` itself: there is no
-lower level to reach and no composed pipeline to hide a bug in.
+| #  | entry point(s) | configuration (options set + input shape) | [x] |
+|----|----------------|-------------------------------------------|-----|
+| 1  | `driver` | `x == 0` (zero / degenerate input; result `300`, 3 digits, no sign) | [x] |
+| 2  | `driver` | `x` small positive, `1..=1000`; no overflow; positive result | [x] |
+| 3  | `driver` | `x` small negative, `-1000..=-1`; no overflow; result crosses zero → mixed sign/formatting | [x] |
+| 4  | `driver` | `x == -150` exactly: `2*x+300 == 0`; result prints as `0` | [x] |
+| 5  | `driver` | `x` in `-149..=-1` → small positive result (1–3 digits, no sign) | [x] |
+| 6  | `driver` | `x` in `-1000..=-151` → negative result (leading `-`) | [x] |
+| 7  | `driver` | `x` mid-range positive (`2*x` and `2*x+300` both in range): random in `1001..=1_073_741_672` | [x] |
+| 8  | `driver` | `x` mid-range negative (no overflow): random in `-1_073_741_673..=-1001` | [x] |
+| 9  | `driver` | `x == 1_073_741_672` / `1_073_741_673`: last inputs with `2*x+300 <= INT_MAX`. Note `2*x+300` is always even, so the max attainable result is `INT_MAX-1 = 2147483646` | [x] |
+| 10 | `driver` | `x == 1_073_741_674` … `1_073_741_823` (`= INT_MAX/2`): `2*x` in range but `2*x+300` overflows positive → wraps negative | [x] |
+| 11 | `driver` | `x == 1_073_741_824` … `INT_MAX`: `2*x` itself overflows positive; random draws plus both endpoints | [x] |
+| 12 | `driver` | `x == -1_073_741_824` (`= INT_MIN/2`) … `-1_073_741_674`: `2*x` at/inside the negative limit | [x] |
+| 13 | `driver` | `x == -1_073_741_825` … `INT_MIN`: `2*x` overflows negative → wraps positive; random draws plus both endpoints | [x] |
+| 14 | `driver` | full-width random `int` over the entire `i32` range (uniform bit patterns, 2000 draws) — hits all of the above classes without bias | [x] |
+| 15 | `driver` | 1-digit / 2-digit / … / 10-digit result widths, and both signs, swept explicitly (`printf("%d")` formatting shape) | [x] |
+| 16 | `driver` | repeated invocation: the same value called many times in a row, and an interleaved C/Rust call sequence (no hidden state, no init order dependency) | [x] |
+| 17 | `driver` | many calls without an intervening `fflush`, so several results accumulate in the libc `stdout` buffer before comparison (buffering / output-accumulation shape) | [x] |
+| 18 | `driver` | default build (`cargo test`) — the only feature configuration; also run with `--no-default-features` and `--release` | [x] |
 
-### Axis 2 — input shapes the code distinguishes
+## Additional rows added while verifying
 
-The single parameter is a by-value `int` (32-bit, two's complement on this
-target). The source contains no branches, but the *observable* — the bytes
-`printf("%d\n", y)` writes — is value-dependent, and the arithmetic
-`y = 2*x + 300` has wrap discontinuities. Those give the real shape axes:
+| #  | entry point(s) | configuration (options set + input shape) | [x] |
+|----|----------------|--------------------------------------------|-----|
+| 19 | `driver` | ground-truth pinning: the nine boundary values of `ERRORS.md` compared against the **exact expected byte strings** (not just C == Rust), so a coordinated regression in both cannot hide (`errors_expected_exact_bytes`) | [x] |
+| 20 | `driver` | C `.so` compiled at `-O0` (the `CMakeLists.txt` default) **and** at `-O2 -DNDEBUG` — confirms the two's-complement wrap on signed-overflow inputs is what the C actually does at both optimisation levels, so the Rust `wrapping_*` translation matches either build (`verify_all.sh`) | [x] |
+| 21 | `driver` | Rust cdylib built in `debug` **and** `release` (`release` also has `panic = "abort"`) — both loaded via `libloading` (`verify_all.sh`) | [x] |
+| 22 | `driver` | **exhaustive**: every one of the 2^32 possible `int` arguments, sharded across parallel workers (`exhaustive.sh`) | [x] |
 
-- **sign of the result `y`**: positive / zero / negative (the `-` sign byte)
-- **decimal width of `y`**: 1 … 10 digits, plus the 11-char `-2147483648`
-- **overflow class**: no overflow / `2*x` wraps / `y += 300` wraps
-- **extremal values**: `INT_MIN`, `INT_MAX`, and the ±2^30 wrap thresholds
-- **cardinality**: zero calls / one call / many consecutive calls (a stateless
-  function must produce no cross-call drift; a stateful mistranslation would)
+## Notes
 
-### Axis 3 — feature combinations
-
-`translation/Cargo.toml` has **no `[features]` table** and no optional
-dependencies:
-
-```
-$ grep -n 'feature' translation/Cargo.toml
-(no output)
-```
-
-Therefore the feature powerset is the single element `{default}` = `{}`. There
-is exactly **one** configuration to test; `--no-default-features` is equivalent
-to the default build. This is verified explicitly rather than assumed (see
-`check_feature_combos.sh`).
-
-## CONFIGURATION-SURFACE TABLE
-
-Cross-product of the axes above, pruned to combinations the C actually
-distinguishes. Every row is a differential test that calls **both** `.so`s via
-`libloading` and compares stdout byte-for-byte. Rows marked "randomized" draw
-many inputs from a fixed-seed PRNG (seed `0x243F6A8885A308D3`) rather than one
-hand-picked value.
-
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|--------------------------------------------|-----|
-| C1 | `driver` | `x = 0` — identity input, result `300` | [x] |
-| C2 | `driver` | small positive `x` in `[1, 1000]`, exhaustive — no overflow, positive result | [x] |
-| C3 | `driver` | small negative `x` in `[-1000, -1]`, exhaustive — spans the `y>0 / y==0 / y<0` transition | [x] |
-| C4 | `driver` | `x` in `[-150 - 8, -150 + 8]` — exact zero-crossing of `y`, sign-byte boundary | [x] |
-| C5 | `driver` | result width 1 digit (`y` in `[0,9]`, i.e. `x` in `[-150,-146]`) | [x] |
-| C6 | `driver` | result width 2…10 digits, positive — every `printf("%d")` field-width transition | [x] |
-| C7 | `driver` | result width 2…10 digits + sign, negative — every negative field-width transition | [x] |
-| C8 | `driver` | `x = INT_MAX` (`2*x` wraps to `-2`, `y = 298`) | [x] |
-| C9 | `driver` | `x = INT_MIN` (`2*x` wraps to `0`, `y = 300`) | [x] |
-| C10 | `driver` | `x` in `[INT_MAX-32, INT_MAX]` — upper wrap region, randomized + exhaustive | [x] |
-| C11 | `driver` | `x` in `[INT_MIN, INT_MIN+32]` — lower wrap region, randomized + exhaustive | [x] |
-| C12 | `driver` | `x` near `+2^30` (`0x40000000 ± 32`) — the `2*x` overflow threshold | [x] |
-| C13 | `driver` | `x` near `-2^30` (`0xC0000000 ± 32`) — the `2*x` overflow threshold from below | [x] |
-| C14 | `driver` | `x = 0x3FFFFFFF ± small` — `2*x` just below `INT_MAX` so `y += 300` is what wraps (add-overflow, distinct from C12's mul-overflow) | [x] |
-| C15 | `driver` | `x` such that `y == INT_MAX` / `y == INT_MIN` exactly (extremal printable results) | [x] |
-| C16 | `driver` | uniformly random `x` over the **full** `i32` range, 20000 draws, fixed seed | [x] |
-| C17 | `driver` | random `x` restricted to powers of two and their neighbours `±(2^k), ±(2^k ± 1)` for k=0..31 | [x] |
-| C18 | `driver` | many consecutive calls (5000) interleaved C/Rust in one captured stream — proves statelessness and no cross-call drift | [x] |
-| C19 | `driver` | zero calls — capture harness self-check, both produce empty output (guards against the harness reporting false matches) | [x] |
-| C20 | `driver` | one call in isolation with a freshly `dlopen`ed handle each time — proves no load-time/one-shot initialisation difference | [x] |
-
-## Gate status
-
-- [x] All 20 rows pass across randomized inputs.
-- [x] Only one feature combination exists (`{default}`); all rows pass under it,
-      and under `--no-default-features` (equivalent build).
+- There is **no binary/driver executable target** in either project
+  (`c_src/CMakeLists.txt` builds only `add_library(driver SHARED …)`, and
+  `translation/Cargo.toml` has only a `[lib]` with `crate-type = ["cdylib"]`),
+  so the "compare the two binaries' stdout" step does not apply. The equivalent
+  comparison — the bytes each `.so` writes to fd 1 — is what every row above
+  asserts.

@@ -1,50 +1,25 @@
-# Dynamic symbol surface
+# Dynamic Symbol Surface
 
-Generated from:
-
-```text
-nm -D ../c_src/build/libdriver.so
-nm -D target/release/libdriver.so
-```
-
-## C-defined public symbols
-
-| symbol | C type | Rust status |
-|---|---:|---|
-| `bad` | `T` | exported with exact name |
-| `driver` | `T` | exported with exact name |
-| `good` | `T` | exported with exact name |
-| `printHexCharLine` | `T` | exported with exact name |
-| `printLine` | `T` | exported with exact name |
-
-Defined-symbol comparison:
+Source command:
 
 ```text
-comm -23 <(nm -D --defined-only ../c_src/build/libdriver.so | awk '{print $3}' | sort) \
-         <(nm -D --defined-only target/release/libdriver.so | awk '{print $3}' | sort)
+nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-Result: empty (0 C-defined symbols missing from Rust).
+The C shared library exports these five defined public symbols. The Rust status
+was obtained from `nm -D --defined-only target/release/libdriver.so`.
 
-## Other entries in the C dynamic symbol table
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `bad` | `T` | `bad` | present |
+| `driver` | `T` | `driver` | present |
+| `good` | `T` | `good` | present |
+| `printHexCharLine` | `T` | `printHexCharLine` | present |
+| `printLine` | `T` | `printLine` | present |
 
-These are runtime/libc dependencies rather than symbols defined by the C
-library. Each also occurs in the Rust library's dynamic symbol table.
+Undefined C dynamic symbols are libc/toolchain dependencies, not library API:
+`printf@GLIBC_2.2.5`, `puts@GLIBC_2.2.5`, `__cxa_finalize@GLIBC_2.2.5`,
+`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, and
+`__gmon_start__`.
 
-| symbol | C type | Rust dynamic table |
-|---|---:|---|
-| `_ITM_deregisterTMCloneTable` | `w` | present |
-| `_ITM_registerTMCloneTable` | `w` | present |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | present |
-| `__gmon_start__` | `w` | present |
-| `printf@GLIBC_2.2.5` | `U` | present |
-| `puts@GLIBC_2.2.5` | `U` | present |
-
-## Feature configurations
-
-`Cargo.toml` has no `[features]` table. The only semantic configuration is the
-feature-empty build. Verification runs it both normally and with
-`--no-default-features`.
-
-- [x] default invocation
-- [x] `--no-default-features`
+Missing defined C symbols in Rust: **0**.

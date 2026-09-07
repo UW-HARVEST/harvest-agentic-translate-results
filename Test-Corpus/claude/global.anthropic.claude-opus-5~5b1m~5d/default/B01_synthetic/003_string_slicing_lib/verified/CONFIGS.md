@@ -1,66 +1,84 @@
-# CONFIGS.md — Configuration-surface table (Phase A, gate for Phase B)
+# CONFIGS.md — Phase A: configuration-surface table
 
-Mechanically derived from `c_src/include/slicing.h` (the full public API) and
-from every branch in `c_src/src/slicing.c`.
+Derived mechanically from `c_src/include/slicing.h` and `c_src/src/slicing.c`.
 
-## Public entry points (complete)
+## Public entry points (complete set)
 
-The header exports exactly one function; there are no convenience wrappers and
-no lower level to reach past — `slice` *is* the lowest-level entry point.
+`c_src/include/slicing.h` declares exactly one function, and it is also the
+lowest-level entry point — there is no convenience wrapper layer to skip past:
 
-```c
+```
 int slice(char *mystr, int *start_ptr, int *stop_ptr);
 ```
 
 ## Axes the C code actually branches on
 
-| axis | values the C distinguishes | source |
-|------|----------------------------|--------|
-| A1 `start_ptr` presence | `NULL` ⇒ `start = 0`; non-NULL ⇒ `start = *start_ptr` + range check | `if (start_ptr)` |
-| A2 `stop_ptr` presence | `NULL` ⇒ `stop = len` (`size_t`→`int` truncation); non-NULL ⇒ `stop = *stop_ptr` + two checks | `if (stop_ptr) … else stop = len;` |
-| A3 string length `len` | `0` (empty), `1`, small, large (multi-KiB) | `strlen`, and every comparison against `len` |
-| A4 `start` position | `0` (first), interior, `len` (boundary — accepted, `>` not `>=`) | `start > len` |
-| A5 `stop` position | `start + 1` (minimal non-empty), interior, `len` (boundary — accepted) | `stop > len`, `stop <= start` |
-| A6 slice width `stop - start` | `0` (only reachable via A2=NULL with `start == len`), `1`, interior, `len` (whole string) | `printf("%.*s", stop - start, …)` precision |
-| A7 byte content of `mystr` | plain ASCII; bytes containing `%` and `\` (must be passed as *data*, never as a format string); embedded `\n`; high bytes `0x80–0xFF` (invalid UTF-8 — must survive verbatim); bytes `0x01–0x1F` | `printf("%.*s", …)` operand |
-| A8 return path | `0` (printed a slice) vs `1` (rejected — see `ERRORS.md`) | `return 0` / `return 1` |
+Extracted from every `if` / `else` in `slice()`:
 
-There are no runtime option setters, no global/`static` state, no `#ifdef`
-configuration, no enums, and no byte-order or element-width axes in this
-library — `CMakeLists.txt` defines no compile options and `slicing.c` has no
-preprocessor conditionals.
+| axis | values the C distinguishes | where |
+|---|---|---|
+| A. `start_ptr` nullness | `NULL` → `start = 0`; non-`NULL` → `start = *start_ptr` + bound check | `if (start_ptr)` |
+| B. `stop_ptr` nullness | `NULL` → `stop = len`; non-`NULL` → `stop = *stop_ptr` + two checks | `if (stop_ptr)` |
+| C. string length `len` | `0` (empty), `1`, small, large/multi-hundred | `strlen(mystr)` feeds both bound checks |
+| D. `start` position | `0`, interior, `len - 1`, `len` (upper boundary, valid) | `start > len` (unsigned compare) |
+| E. `stop` position | `start + 1` (min valid), interior, `len` (upper boundary) | `stop > len`, `stop <= start` |
+| F. slice width `stop - start` | `1`, interior, full `len` (whole string) | `printf("%.*s", stop - start, ...)` precision |
+| G. byte content | printable ASCII, bytes `0x01–0xFF` incl. high/non-UTF-8 bytes, embedded `%` and `\n` (must not be interpreted as a format string), whitespace | the `%.*s` payload |
 
-## Configuration rows (cross-product of A1×A2 × data shape, pruned to what C distinguishes)
+There are no `#ifdef` compile-time branches in the C source, no global/static
+state, no runtime option struct, and no byte-order or element-type axis: the
+only "options" are the two nullable-pointer parameters (axes A and B) and the
+values they carry.
 
-Each row is run against **many randomized inputs with a fixed seed**
-(deterministic xorshift PRNG in `tests/common/mod.rs`) and compared byte-for-byte
-between the C `.so` and the Rust `.so` — return code **and** captured `stdout`.
+Axes A × B give the four modes below; C–G are crossed within each.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [ ] |
-|---|----------------|-------------------------------------------|------|-----|
-| C1 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL` — whole string; random ASCII of random length 1..64 | `c1_both_null_ascii` | [x] |
-| C2 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`, `len == 0` (empty string) ⇒ precision `0`, prints just `\n` | `c2_both_null_empty` | [x] |
-| C3 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`, `len == 1` | `c3_both_null_single_char` | [x] |
-| C4 | `slice` | `start_ptr = NULL`, `stop_ptr = NULL`, large string (1 KiB … 8 KiB, random bytes `0x01–0xFF`) — crosses libc `printf` buffer size | `c4_both_null_large` | [x] |
-| C5 | `slice` | `start_ptr` set, `stop_ptr = NULL`, `start` random in `[0, len]` ⇒ suffix slice (includes the `start == len` boundary ⇒ width `0`) | `c5_start_only_random` | [x] |
-| C6 | `slice` | `start_ptr` set to `0`, `stop_ptr = NULL` — explicit-zero start behaves like `NULL` start | `c6_start_zero_vs_null` | [x] |
-| C7 | `slice` | `start_ptr` set to exactly `len`, `stop_ptr = NULL` — accepted boundary, empty output | `c7_start_at_len` | [x] |
-| C8 | `slice` | `start_ptr = NULL`, `stop_ptr` set, `stop` random in `[1, len]` ⇒ prefix slice | `c8_stop_only_random` | [x] |
-| C9 | `slice` | `start_ptr = NULL`, `stop_ptr` set to exactly `len` (accepted boundary) ⇒ whole string | `c9_stop_at_len` | [x] |
-| C10 | `slice` | `start_ptr` **and** `stop_ptr` set, random `0 <= start < stop <= len` ⇒ interior slice | `c10_both_set_random` | [x] |
-| C11 | `slice` | both set, minimal width: `stop == start + 1` at random positions ⇒ single character | `c11_both_set_width_one` | [x] |
-| C12 | `slice` | both set, maximal width: `start == 0`, `stop == len` ⇒ whole string via explicit bounds | `c12_both_set_full_range` | [x] |
-| C13 | `slice` | both set on a large string (1 KiB … 8 KiB), random interior window | `c13_both_set_large` | [x] |
-| C14 | `slice` | any of A1×A2, data containing `%` / `%s` / `%n` / `%%` — verifies the payload is never treated as a format string | `c14_percent_payload` | [x] |
-| C15 | `slice` | any of A1×A2, data containing high bytes `0x80–0xFF` (invalid UTF-8) | `c15_high_bytes` | [x] |
-| C16 | `slice` | any of A1×A2, data containing embedded `\n`, `\r`, `\t` and other control bytes `0x01–0x1F` | `c16_control_bytes` | [x] |
-| C17 | `slice` | slice window ending exactly at the NUL terminator vs. strictly before it (`%.*s` precision semantics) | `c17_window_vs_terminator` | [x] |
-| C18 | `slice` | repeated / interleaved calls on the same buffer (`NULL,NULL` → `start` → `stop` → both) to prove `slice` keeps no state and does not mutate `mystr`, `*start_ptr`, or `*stop_ptr` | `c18_stateless_repeat` | [x] |
-| C19 | `slice` | exhaustive sweep: for every `len` in `0..=24`, every `start` in `0..=len` × every `stop` in `0..=len`, plus the `NULL` variants of each pointer — full valid **and** invalid cross-product | `c19_exhaustive_small` | [x] |
-| C20 | `slice` | `mystr` buffer with trailing bytes **after** the NUL terminator (so `len` < allocation) — confirms nothing past the terminator is read or printed | `c20_bytes_after_nul` | [x] |
+## Configuration-surface table
+
+Every row is exercised in `translation/tests/differential.rs` with many
+randomized inputs (fixed seed, deterministic xorshift PRNG) unless the row is
+inherently a single point (e.g. the empty string with both pointers null).
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `slice` | A=`NULL`, B=`NULL`; `len == 0` (empty string) → whole-string default, prints just `\n` | [x] |
+| 2 | `slice` | A=`NULL`, B=`NULL`; `len == 1` | [x] |
+| 3 | `slice` | A=`NULL`, B=`NULL`; `len` random 2..64, printable ASCII | [x] |
+| 4 | `slice` | A=`NULL`, B=`NULL`; `len` random 256..1024 (long string, multi-buffer) | [x] |
+| 5 | `slice` | A=`NULL`, B=`NULL`; bytes drawn from the full `0x01..0xFF` range (non-UTF-8 payload) | [x] |
+| 6 | `slice` | A=`NULL`, B=`NULL`; content contains `%s`/`%n`/`%d` (format-string injection must be inert — the payload is an argument, not a format) | [x] |
+| 7 | `slice` | A=`NULL`, B=`NULL`; content contains embedded `\n`, `\t`, spaces | [x] |
+| 8 | `slice` | A=`NULL`, B non-`NULL`; `*stop_ptr == 1` (minimum valid stop when `start` defaults to 0) | [x] |
+| 9 | `slice` | A=`NULL`, B non-`NULL`; `*stop_ptr` random in `1..=len` (prefix slices), `len` random 1..64 | [x] |
+| 10 | `slice` | A=`NULL`, B non-`NULL`; `*stop_ptr == len` (full string via explicit stop, upper boundary) | [x] |
+| 11 | `slice` | A non-`NULL`, B=`NULL`; `*start_ptr == 0` (whole string via explicit start) | [x] |
+| 12 | `slice` | A non-`NULL`, B=`NULL`; `*start_ptr` random in `0..=len` (suffix slices), `len` random 1..64 | [x] |
+| 13 | `slice` | A non-`NULL`, B=`NULL`; `*start_ptr == len` (upper boundary, valid; width 0 → prints just `\n`) | [x] |
+| 14 | `slice` | A non-`NULL`, B=`NULL`; `*start_ptr == len - 1` (last character only) | [x] |
+| 15 | `slice` | A non-`NULL`, B=`NULL`; long string (256..1024) with random valid `*start_ptr` | [x] |
+| 16 | `slice` | A non-`NULL`, B non-`NULL`; `start == 0`, `stop == len` (whole string, both explicit) | [x] |
+| 17 | `slice` | A non-`NULL`, B non-`NULL`; width exactly 1 (`stop == start + 1`) at random valid `start` | [x] |
+| 18 | `slice` | A non-`NULL`, B non-`NULL`; random valid interior `0 <= start < stop <= len`, `len` random 1..64 | [x] |
+| 19 | `slice` | A non-`NULL`, B non-`NULL`; `stop == len` with random `start < len` (suffix, upper boundary on stop) | [x] |
+| 20 | `slice` | A non-`NULL`, B non-`NULL`; `start == len - 1`, `stop == len` (last character, both boundaries) | [x] |
+| 21 | `slice` | A non-`NULL`, B non-`NULL`; long string (256..1024), random valid `start`/`stop` pair | [x] |
+| 22 | `slice` | A non-`NULL`, B non-`NULL`; non-UTF-8 byte payload with a random valid `start`/`stop` pair (slice may split a would-be multi-byte sequence) | [x] |
+| 23 | `slice` | A non-`NULL`, B non-`NULL`; payload containing `%` conversions with a random valid `start`/`stop` pair | [x] |
+| 24 | `slice` | A non-`NULL`, B non-`NULL`; `len == 1`, `start == 0`, `stop == 1` (the only valid slice of a 1-char string) | [x] |
+| 25 | `slice` | aliasing: `start_ptr == stop_ptr` (same `int` object passed for both) — C reads it twice; `stop <= start` then always fires | [x] |
+| 26 | `slice` | called repeatedly in sequence on the same process (no hidden state carried between calls; interleaved success/error calls) | [x] |
+| 27 | `slice` | full-domain fuzz: random `len` 0..80, each pointer independently null with p≈1/3, bound values drawn from a mix of in-range, near-boundary, and arbitrary `i32` — return code **and** stdout compared (covers valid × invalid cross-product) | [x] |
 
 ## Feature combinations
 
-`Cargo.toml` declares no `[features]`; the default and `--no-default-features`
-builds are byte-identical. `./run_all.sh` runs the whole suite under both, in
-debug and release (release additionally exercises `panic = "abort"`).
+`translation/Cargo.toml` has **no `[features]` table**, so the crate has a
+single configuration. `cargo test`, `cargo test --no-default-features`, and
+`cargo test --all-features` compile identical code; all three are run in
+Phase D to confirm.
+
+## Binary executable
+
+`c_src/CMakeLists.txt` builds only `add_library(String_Slice SHARED ...)` —
+there is **no driver binary** in either tree, so the "compare C and Rust
+stdout from the binaries" gate is not applicable. stdout is nevertheless
+compared byte-for-byte for every row above, because `slice()` writes its
+result to stdout via `printf`.

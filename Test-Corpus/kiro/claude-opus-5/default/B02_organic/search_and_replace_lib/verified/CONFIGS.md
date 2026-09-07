@@ -1,86 +1,102 @@
-# CONFIGS.md — configuration / valid-input surface table (Phase A)
+# CONFIGS.md — configuration surface table (valid inputs)
 
-Mechanically derived from `c_src/src/lib.c`. There are no runtime options, no
-flags, no modes, no `#ifdef`s and no compile-time configuration (`CMakeLists.txt`
-sets no `target_compile_definitions`; `Cargo.toml` declares no features), so the
-configuration axes are exactly the **input shapes the C code branches on**:
+## Axes, derived from the branches the C actually takes
 
-Axes taken straight from the source:
+`c_src/src/lib.c` has no options, flags, modes, globals, `#ifdef`s or setup
+calls — the public surface is one pure function of three C strings
+(`c_src/include/lib.h`), and it *is* the lowest-level entry point (there is no
+convenience wrapper above it and no internal helper exported below it).
+`grep -n 'if\|while\|switch\|#if' c_src/src/lib.c` yields exactly these
+decision points, which define the axes:
 
-* **A1** `strstr(orig, search) == NULL` (line 23) → `strdup` early-out, vs. a match.
-* **A2** `inx_start > 0` (line 32) → prefix `malloc` branch, vs. match at offset 0
-  (`tmp` stays `NULL`, first `realloc` acts as `malloc`).
-* **A3** number of `while (p != NULL)` iterations (line 42): 1 vs. 2 vs. many.
-* **A4** `inx_start2 > from` (line 59) → gap-copy branch, vs. adjacent matches
-  (gap `== 0`, branch skipped).
-* **A5** `(from < orig_len) && from > 0` (line 78) → tail-copy branch, vs. last
-  match ending exactly at the end of `orig`.
-* **A6** `value_len` relative to `search_len`: `0` (deletion, `total_bytes_allocated`
-  does not grow), `<`, `==`, `>` (buffer shrinks / stays / grows).
-* **A7** `search_len`: `1`, `>1`, `== orig_len`, `> orig_len`.
-* **A8** rescan start `orig + inx_start + search_len` (line 53) → overlapping
-  occurrences are skipped; also lands exactly on the NUL terminator when a match
-  ends the string.
-* **A9** `orig_len`: `0`, small, large enough to force many `realloc`s.
-* **A10** byte range: ASCII, bytes `>= 0x80` (signed-`char` sensitivity of
-  `strstr`/`strncpy`), and the full `0x01..0xFF` alphabet.
-* **A11** the replacement `value` itself containing `search` → the algorithm scans
-  `orig` only, never its own output.
+| axis | source | values the code distinguishes |
+|------|--------|-------------------------------|
+| M — match presence / count | `p = strstr(...)` (L22), `while (p != NULL)` (L42), re-search (L54) | 0 matches, 1 match, 2 matches, many matches |
+| P — prefix before first match | `if (inx_start > 0)` (L32) — chooses `malloc` + `strncpy` vs. leaving `tmp = NULL` and going straight to `realloc` | match at offset 0 (no prefix) vs. offset > 0 (prefix) |
+| G — spacing of consecutive matches | `if (inx_start2 > from)` (L59) | adjacent (`inx_start2 == from`, gap skipped) vs. separated (gap copied) |
+| O — overlapping candidates | re-search starts at `orig + inx_start + search_len` (L54), so overlapping occurrences are skipped | needle that can overlap itself (`"aa"` in `"aaaa"`, `"aba"` in `"ababa"`) vs. not |
+| T — tail after last match | `if ((from < orig_len) && from > 0)` (L78) | last match ends at `orig_len` (no tail) vs. tail present |
+| V — replacement length vs. needle length | governs `total_bytes_allocated` growth and the `strncpy` count `total - tmp_offset` (L50) | `value == ""` (deletion), `value_len < search_len`, `== search_len`, `> search_len` |
+| S — needle shape | `strlen(search)` (L12) and `strstr` semantics | 1 byte, multi-byte, equal to the whole of `orig`, longer than `orig` |
+| L — subject size | number of `realloc` rounds | empty, 1 byte, short (< 32 B), long (multi-KB with hundreds of matches) |
+| B — byte values | none (byte-transparent), but `strstr`/`strncpy` are `char`-signedness sensitive | pure ASCII vs. high bytes `0x80..0xFF` |
 
-Entry points: the library has exactly one — `searchAndReplace` — and it *is* the
-lowest level; there are no convenience wrappers, no internal `static` helpers with
-external visibility, and no state to set up. Every row below therefore drives
-`searchAndReplace` through both `.so`s (C and Rust release + Rust debug) and
-compares the returned C string byte-for-byte, plus `NULL`-ness.
+`search == ""` is a valid *input* but non-terminating; it is tracked as
+`ERRORS.md` rows 10-11, not here.
 
-Every row is exercised with **many randomized inputs** generated from a fixed
-seed (SplitMix64, seed per row) rather than a single hand-picked value; the
-hand-picked shape is included as the first case of each row.
+## Rows (pruned cross-product — one row per combination the C treats differently)
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `searchAndReplace` | A1 no match, `orig == ""`, `search` non-empty, `value` random | [x] |
-| 2 | `searchAndReplace` | A1 no match, `search_len > orig_len` (A7), random `orig`/`value` | [x] |
-| 3 | `searchAndReplace` | A1 no match, `search_len == orig_len` but different bytes (A7) | [x] |
-| 4 | `searchAndReplace` | A1 no match, random `orig` over a 2-letter alphabet with `search` guaranteed absent | [x] |
-| 5 | `searchAndReplace` | A2 match at offset 0, A3 one match, A5 tail present, `value == ""` (A6 delete) | [x] |
-| 6 | `searchAndReplace` | A2 match at offset 0, one match, tail present, `value_len < search_len` | [x] |
-| 7 | `searchAndReplace` | A2 match at offset 0, one match, tail present, `value_len == search_len` | [x] |
-| 8 | `searchAndReplace` | A2 match at offset 0, one match, tail present, `value_len > search_len` | [x] |
-| 9 | `searchAndReplace` | A2 match at offset 0, one match, **no tail** (`search == orig`, A5/A7), `value` non-empty | [x] |
-| 10 | `searchAndReplace` | A2 match at offset 0, one match, no tail, `value == ""` → result is `""` | [x] |
-| 11 | `searchAndReplace` | prefix present (A2 `inx_start > 0`), one match in the middle, tail present, `value == ""` | [x] |
-| 12 | `searchAndReplace` | prefix present, one match in the middle, tail present, `value_len > search_len` | [x] |
-| 13 | `searchAndReplace` | prefix present, single match ending exactly at end of `orig` (A5 tail skipped) | [x] |
-| 14 | `searchAndReplace` | two adjacent matches (A4 gap `== 0`), random prefix/tail/value | [x] |
-| 15 | `searchAndReplace` | two matches with a non-empty gap (A4 gap branch), random prefix/tail/value | [x] |
-| 16 | `searchAndReplace` | matches at both ends: one at offset 0 and one ending at `orig_len` (A2+A5 both skipped) | [x] |
-| 17 | `searchAndReplace` | overlapping occurrences (A8), e.g. `search = "aa"` in runs of `a`, `value` random | [x] |
-| 18 | `searchAndReplace` | many matches (A3, 8..200 occurrences) → many `realloc`s, random gaps incl. zero | [x] |
-| 19 | `searchAndReplace` | `search_len == 1` (A7) over a tiny alphabet so matches are dense | [x] |
-| 20 | `searchAndReplace` | `value_len == 1`, many matches | [x] |
-| 21 | `searchAndReplace` | `value` contains `search` (A11), several matches | [x] |
-| 22 | `searchAndReplace` | high bytes only: all three arguments drawn from `0x80..0xFF` (A10) | [x] |
-| 23 | `searchAndReplace` | full byte alphabet `0x01..0xFF` for `orig`/`search`/`value`, random lengths (A10) | [x] |
-| 24 | `searchAndReplace` | large `orig` (4 KiB..64 KiB, A9) with a short `search` and random `value`, many matches | [x] |
-| 25 | `searchAndReplace` | `orig == ""` … `orig_len == 1` boundary sweep with `search_len` in `1..=3` (A9/A7 cross-product, exhaustive over a 2-letter alphabet) | [x] |
-| 26 | `searchAndReplace` | `value == ""` with many matches and no prefix → `total_bytes_allocated` stays `1` until the first gap (A6 boundary) | [x] |
-| 27 | `searchAndReplace` | exhaustive cross-product: **all** `orig` of length 0..8 over `{a,b}` (511 strings), **all** `search` of length 1..3 over `{a,b}` (14), `value` in `{"", "a", "XY", "ab", "aaa"}` — 35 770 cases, brute-forces every A1-A8 branch combination that fits in 8 bytes | [x] |
-| 28 | `searchAndReplace` | large `value` (2-8 KiB) against a 200-2000 byte `orig` with a 1-2 byte `search`: buffer grows by `value_len` per match (opposite growth pattern from row 24) | [x] |
-| 29 | `searchAndReplace` | unbounded random soak across all four alphabets, lengths 0..80, `search` half the time lifted out of `orig` so matches are dense — 2.2M cases run across 5 seeds | [x] |
+Every row is exercised through the `.so` exports of **both** libraries with
+many randomized inputs (fixed seed `0x5EED_1234`, see
+`tests/differential.rs`), except where marked *fixed* (a shape that only has
+one interesting instance).
 
-Rows 1-29 are implemented in `tests/differential.rs`, one `#[test]` per row,
-named `row01_…` .. `row27_…` plus `row24_large_input_many_reallocs` (row 28) and
-`soak_random_fuzz` (row 29); `row00_harness_loads_both_shared_objects` guards
-against a vacuously-passing harness. A row is checked off only after it passes
-for all of its randomized inputs against **both** Rust `.so` profiles
-(`target/release/libdriver.so` and `target/debug/libdriver.so`), compared against
-`c_src/build/libdriver.so`.
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|-------------------------------------------|------|-----|
+| 1 | `searchAndReplace` | M=0 matches, L=short, ASCII → `strdup` path | `cfg_01_no_match_short` | [x] |
+| 2 | `searchAndReplace` | M=0, L=empty `orig`, S=1 byte | `cfg_02_no_match_empty_orig` | [x] |
+| 3 | `searchAndReplace` | M=0, S=longer than `orig` (`search_len > orig_len`) | `cfg_03_needle_longer_than_orig` | [x] |
+| 4 | `searchAndReplace` | M=0, L=long (4 KiB), high bytes | `cfg_04_no_match_long_highbytes` | [x] |
+| 5 | `searchAndReplace` | M=1, P=no prefix, T=no tail, S=whole string (`search == orig`), V=`> search_len` | `cfg_05_whole_string_match` | [x] |
+| 6 | `searchAndReplace` | M=1, P=no prefix, T=no tail, V=`""` (delete whole string) | `cfg_06_whole_string_delete` | [x] |
+| 7 | `searchAndReplace` | M=1, P=no prefix, T=tail present, V=random length | `cfg_07_match_at_start_with_tail` | [x] |
+| 8 | `searchAndReplace` | M=1, P=prefix present, T=no tail (match at end) | `cfg_08_match_at_end_with_prefix` | [x] |
+| 9 | `searchAndReplace` | M=1, P=prefix present, T=tail present (match in the middle) | `cfg_09_match_in_middle` | [x] |
+| 10 | `searchAndReplace` | M=2, G=adjacent, P=no prefix, T=no tail | `cfg_10_two_adjacent_no_prefix_no_tail` | [x] |
+| 11 | `searchAndReplace` | M=2, G=adjacent, P=prefix, T=tail | `cfg_11_two_adjacent_prefix_tail` | [x] |
+| 12 | `searchAndReplace` | M=2, G=separated (gap copied), P=no prefix, T=no tail | `cfg_12_two_separated_no_prefix_no_tail` | [x] |
+| 13 | `searchAndReplace` | M=2, G=separated, P=prefix, T=tail | `cfg_13_two_separated_prefix_tail` | [x] |
+| 14 | `searchAndReplace` | M=many, G=all adjacent (`orig` is the needle repeated), V=`> search_len` | `cfg_14_many_adjacent_growing` | [x] |
+| 15 | `searchAndReplace` | M=many, G=all adjacent, V=`""` (pure deletion) | `cfg_15_many_adjacent_delete` | [x] |
+| 16 | `searchAndReplace` | M=many, G=mixed adjacent/separated, P/T random, S=1 byte, V=1 byte (`V == search_len`) | `cfg_16_many_mixed_len_equal` | [x] |
+| 17 | `searchAndReplace` | M=many, G=mixed, S=multi-byte, V=`< search_len` (shrinking) | `cfg_17_many_mixed_shrinking` | [x] |
+| 18 | `searchAndReplace` | M=many, G=mixed, S=multi-byte, V=`> search_len` (growing) | `cfg_18_many_mixed_growing` | [x] |
+| 19 | `searchAndReplace` | O=self-overlapping needle `"aa"`/`"aaa"` over runs of `a` (odd and even runs) | `cfg_19_overlapping_runs` | [x] |
+| 20 | `searchAndReplace` | O=partially-overlapping needle `"aba"` in `"ababababa"` | `cfg_20_overlapping_aba` | [x] |
+| 21 | `searchAndReplace` | L=long (4-16 KiB), M=hundreds of matches, V=`> search_len` → many `realloc` rounds | `cfg_21_long_many_matches` | [x] |
+| 22 | `searchAndReplace` | L=long, M=hundreds, V=`""` → many `realloc`s with zero growth | `cfg_22_long_many_matches_delete` | [x] |
+| 23 | `searchAndReplace` | B=high bytes (0x80..0xFF) in all three arguments, M=many | `cfg_23_high_bytes_many_matches` | [x] |
+| 24 | `searchAndReplace` | L=1-byte `orig`, S=1-byte needle, M=1, V=empty and non-empty | `cfg_24_single_byte` | [x] |
+| 25 | `searchAndReplace` | `value` contains the needle (no re-scan of output — must not recurse) | `cfg_25_value_contains_needle` | [x] |
+| 26 | `searchAndReplace` | `value == search` (identity replacement) | `cfg_26_identity_replacement` | [x] |
+| 27 | `searchAndReplace` | fully random alphabet-2 fuzz: `orig` 0-40 B, `search` 1-4 B, `value` 0-6 B, 200 000 cases — hits every M/P/G/O/T/V combination by construction | `cfg_27_fuzz_alphabet2` | [x] |
+| 28 | `searchAndReplace` | fully random alphabet-256 fuzz (all byte values except `NUL`): `orig` 0-64 B, `search` 1-8 B, `value` 0-16 B, 200 000 cases, each also re-run with a needle cut out of the subject so it is guaranteed to match | `cfg_28_fuzz_bytes` | [x] |
+| 29 | `searchAndReplace` | **exhaustive** over `{a,b}`: every `orig` of length 0-12 (8 191) x every `search` of length 1-3 (14) x every `value` of length 0-2 (7) = 802 718 cases — subsumes rows 5-26 at small sizes with no sampling luck | `exhaustive_alphabet2` | [x] |
+| 30 | `searchAndReplace` | **exhaustive** over `{a,b,c}`: every `orig` of length 0-7 x `search` 1-2 x `value` 0-1 = 157 440 cases — adds a third byte so "gap content differs from needle and replacement content" is covered exhaustively | `exhaustive_alphabet3` | [x] |
 
-Row 22 additionally has an exhaustive variant
-(`row22_high_bytes_exhaustive`): every shape up to 6 bytes over the high-byte
-alphabet `{0x80, 0xFF}`, which is what rules out a signed-`char` divergence
-between C `strstr`/`strncpy` and the Rust `u8` comparisons.
+## Binary / driver executable
 
-Status: **29/29 rows pass**, under both feature combinations
-(`scripts/check_features.sh`).
+`c_src/CMakeLists.txt` builds only `add_library(driver SHARED src/lib.c)` — no
+`add_executable`, and `translation/Cargo.toml` declares only `[lib] crate-type
+= ["cdylib"]` with no `[[bin]]` and no `src/main.rs`. There is therefore **no
+executable whose stdout could be compared**; that completion-gate item is
+vacuously satisfied.
+
+## Feature combinations
+
+No `[features]` in `Cargo.toml` → the default configuration is the only one.
+`tests/run_all_features.sh` enumerates feature sets from `Cargo.toml` and runs
+the whole suite for each; it finds exactly one (default).
+
+## How to reproduce
+
+```
+cd translation && tests/run_all_features.sh
+```
+
+Runs, for each feature set (one: the default) and for each of the debug and
+release cdylibs: the `nm -D` symbol diff, an `ldd -r` unresolved-import check,
+the 31 Phase B/C in-process tests (~1.15 M differential calls) and the 16
+Phase C child-process probes.
+
+## Result
+
+All 30 rows pass, in both the debug and the release cdylib.
+
+The test harness was mutation-checked: injecting `inx_start + 1` in place of
+`inx_start + search_len` at the re-search, and `inx_start + 2` in place of
+`inx_start + 1` in the prefix allocation, each made 16 of the 31 tests fail.
+(Two further mutations — `inx_start2 >= from` and `src.len() <= n` — were not
+caught because they are provably semantics-preserving: the first makes a
+zero-length gap copy, and the second differs only where both branches yield
+the same value.)

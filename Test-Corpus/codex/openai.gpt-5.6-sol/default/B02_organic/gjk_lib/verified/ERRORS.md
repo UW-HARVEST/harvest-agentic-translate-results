@@ -1,43 +1,28 @@
-# Error Surface
+# Error surface
 
-The following mechanical rejection scan was applied to `c_src/src/lib.c`:
+Mechanical searches covered `RETURN_ERROR`, negative and null returns,
+`assert`, null checks, range comparisons, enum switches, count/length uses,
+and numeric limits in `src/lib.c` and `include/lib.h`.
 
-```sh
-rg -n 'RETURN_ERROR|return[[:space:]]+(-1|NULL)|assert[[:space:]]*\(|ERROR|EINVAL|ERANGE' c_src/src/lib.c
-```
-
-It finds **zero explicit rejection/error branches**. The C code has no error
-enum, error-return macro, assertion, documented min/max input range, or
-error sentinel. Consequently, the required rejection table has zero rows.
+The C implementation has no error-return statements, error enums, assertions,
+or explicit input-rejection branches. Consequently, the exact rejection table
+has zero rows:
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|----------------------------------------------|-------------------|
 
-## Defined Boundary Behavior
+The following mandatory FFI boundary cases are not C rejections, but are
+tracked for Phase C because they define observable boundary behavior:
 
-These are the generic boundary cases that the C source handles without
-dereferencing an invalid mandatory pointer. Null mandatory pointers and an
-invalid shape type passed to `c2GJK` have undefined behavior in C, so there
-is no C result to compare for those cases.
+| # | function | boundary input | expected C result | tested |
+|---|----------|----------------|-------------------|--------|
+| B1 | `c2MakeProxy` | enum value outside `0..=2` | switch executes no case; destination bytes remain unchanged | [x] |
+| B2 | `c2Support` | `count == 0` with a readable first vertex | reads vertex zero and returns index `0` | [x] |
+| B3 | `c2Support` | count larger than proxy maximum (`16`) with 16 readable vertices | scans the full supplied count; no hard maximum | [x] |
+| B4 | `c2GJK` | null transform pointers | substitutes identity transforms | [x] |
+| B5 | `c2GJK` | null `outA`, `outB`, `iterations`, and `cache` | skips those writes and returns distance normally | [x] |
+| B6 | `gjk` | null output pointers | accepted because `c2GJK` treats outputs as optional | [x] |
+| B7 | `c2GJKSimplexMetric`, `c2D`, `c2Witness`, `c2L` | simplex count outside handled cases | default branch returns/writes zero vectors or metric zero | [x] |
+| B8 | `c2Div`, `c2Norm` | zero divisor / zero vector | IEEE-754 infinities or NaNs; no rejection | [x] |
+| B9 | pointer-taking low-level API | required data pointer is null | undefined behavior; the C API defines no error sentinel to compare | [x] |
 
-| # | function | boundary condition | expected C result | status |
-|---:|----------|--------------------|-------------------|-----|
-| E01 | `c2MakeProxy` | enum value `-1` or `3` | output proxy remains byte-unchanged | [x] |
-| E02 | `c2Support` | count `0`, valid backing pointer | returns `0` after reading element zero | [x] |
-| E03 | `c2Support` | count `-1`, valid backing pointer | returns `0` after reading element zero | [x] |
-| E04 | `c2Support` | oversized count `9`, nine-element backing array | scans all nine elements and returns strict first maximum | [x] |
-| E05 | `c2GJKSimplexMetric` | count outside `1..=3` | returns `0.0` | [x] |
-| E06 | `c2D` | count outside `1..=3` | returns `(0.0, 0.0)` | [x] |
-| E07 | `c2Witness` | count outside `1..=3` | writes `(0.0, 0.0)` to both outputs | [x] |
-| E08 | `c2L` | count outside `1..=2` | returns `(0.0, 0.0)` | [x] |
-| E09 | `c2GJK` | null `ax_ptr` | uses identity transform | [x] |
-| E10 | `c2GJK` | null `bx_ptr` | uses identity transform | [x] |
-| E11 | `c2GJK` | null `outA` | skips first witness write | [x] |
-| E12 | `c2GJK` | null `outB` | skips second witness write | [x] |
-| E13 | `c2GJK` | null `iterations` | skips iteration-count write | [x] |
-| E14 | `c2GJK` | null `cache` | skips cache read and write | [x] |
-| E15 | `c2GJK` | non-null cache with count `0` | ignores initial fields, then writes resulting cache | [x] |
-| E16 | `gjk` | null output `a` | operation completes and only `b` is written | [x] |
-| E17 | `gjk` | null output `b` | operation completes and only `a` is written | [x] |
-| E18 | `c2Div` | divisor `+0.0` or `-0.0` | returns C/IEEE-754 infinities or NaNs component-wise | [x] |
-| E19 | `c2Norm` | zero vector | returns two NaNs | [x] |

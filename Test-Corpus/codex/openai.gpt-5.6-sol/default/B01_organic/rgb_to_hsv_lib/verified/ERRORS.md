@@ -1,25 +1,19 @@
 # Error surface
 
-Mechanical searches covered `RETURN_ERROR`, negative and null returns, error
-enums, assertions, explicit range/null checks, and min/max constants in
-`../c_src/include` and `../c_src/src`. None occur. `rgb_to_hsv` returns `void`
-and performs no source-defined input rejection.
+The public ABI is `void rgb_to_hsv(float *dest, const float *src)`. The C
+implementation contains no error-return statements, error macros, assertions,
+range checks, enum arguments, length arguments, or null checks. Consequently,
+it has no recoverable error result. Its only invalid-input behavior is the
+unchecked pointer dereference below, which is compared out of process because
+it terminates the caller.
 
-The mandatory generic pointer boundaries are listed below. They are outside
-the C language's defined behavior and therefore have no error code or sentinel;
-the differential test invokes each case in an isolated process and compares
-the observed process termination.
+| # | function | trigger (the exact invalid input/condition) | expected C result | verified |
+|---|----------|----------------------------------------------|-------------------|----------|
+| 1 | `rgb_to_hsv` | `src == NULL` | process receives a memory-access fault while reading `src[0]` | [x] |
+| 2 | `rgb_to_hsv` | `dest == NULL` with a valid non-null three-float `src` | process receives a memory-access fault while writing `dest[0]` | [x] |
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
-|---|----------|---------------------------------------------|-------------------|--------|
-| 1 | `rgb_to_hsv` | `dest == NULL`, `src` points to three readable floats | invalid write; process receives `SIGSEGV` on this build | [x] |
-| 2 | `rgb_to_hsv` | `src == NULL`, `dest` points to three writable floats | invalid read; process receives `SIGSEGV` on this build | [x] |
+Generic boundary applicability:
 
-## Inapplicable generic boundaries
-
-There is no length parameter, so zero and oversized lengths cannot be passed.
-There is no enum parameter, so an out-of-range enum cannot be passed. The
-fixed input and output width is three `float` elements, established solely by
-the unconditional `src[0..2]` reads and `dest[0..2]` writes.
-The header documents no numeric valid range, so there is no numeric
-one-past-range rejection to exercise.
+- Zero and oversized lengths: not applicable; the API has no length argument.
+- One-past-range values: not applicable; the header documents no numeric range.
+- Out-of-range enum values: not applicable; the API has no enum argument.

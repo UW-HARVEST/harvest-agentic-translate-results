@@ -1,84 +1,55 @@
-# ERRORS.md — Phase C: error / rejection surface table
+# ERRORS.md — Phase A: error-surface table
 
-## Mechanical derivation
+Derived mechanically from `c_src/src/lib.c` (12 lines) and
+`c_src/include/lib.h` (1 line).
 
-The complete C implementation is 12 lines. Grepping it for **every** rejection
-mechanism a C API can use:
+## Mechanical grep for rejection constructs
 
 ```
-$ grep -n -E 'return|assert|NULL|errno|RETURN_ERROR|goto|exit|abort|#if' c_src/src/lib.c
-11:    return y;          # <- the sole `return`, and it is the success path
+$ grep -nE 'return|assert|NULL|errno|-1|if|else|switch|#if|<|>|\?|\[' \
+      src/lib.c include/lib.h
+src/lib.c:4:    static const float g_expfrac[4] = {9.31322575e-10f, 7.83145814e-10f,
+src/lib.c:5:                                       6.58544508e-10f, 5.53767716e-10f};
+src/lib.c:8:    e = ((30 * 4) > (exp_q2) ? (exp_q2) : (30 * 4));
+src/lib.c:9:    y *= g_expfrac[e & 3] * (1 << 30 >> (e >> 2));
+src/lib.c:10:    } while ((exp_q2 -= e) > 0);
+src/lib.c:11:    return y;
 ```
 
-| rejection mechanism searched | occurrences in `c_src/` |
-|---|---|
-| `return -1` / negative sentinel      | 0 |
-| `return NULL` / null sentinel        | 0 |
-| error enum / status code / `errno`   | 0 |
-| `assert` / `abort` / `exit`          | 0 |
-| explicit range check (`if` guard)    | 0 |
-| null-pointer check                   | 0 |
-| min/max validation constant          | 0 (the `30 * 4` literal is a **clamp**, not a reject) |
-| `goto` error label                   | 0 |
-| `#if` / `#ifdef` conditional         | 0 |
+Findings:
 
-### Conclusion: the error surface is EMPTY
+* `return` appears **once** (`return y;`) — the single success path. There is no
+  error return, no sentinel, no `-1`, no `NULL`.
+* **No** `assert`, **no** `errno` use, **no** `RETURN_ERROR`-style macro,
+  **no** error enum, **no** `if`/`switch` guard, **no** `#if`.
+* **No pointer parameters at all** (`float`, `int` by value), so there is no
+  null-pointer rejection and no length/size parameter to bound-check.
+* **No enum parameters**, so there is no invalid-enum-value class here; the
+  nearest analogue is an out-of-domain `int exp_q2`, covered below.
 
-`float ldexp_q2(float y, int exp_q2)` is a **total function** over its entire
-input domain (`float` x `int32`). It takes no pointers, no lengths, no enums,
-and no buffers. It has exactly one `return` statement, and it is reachable for
-every input. **There is no input for which the C code returns an error, sets a
-status, or rejects.** Any test asserting "C rejects X" would be fabricating
-behaviour the C does not have.
+`ldexp_q2` therefore has **no explicit error surface**: it is a total function
+over `(float, int)` that always returns a `float`. Consequently the rows below
+enumerate the *implicit* rejection/clamping/undefined-behaviour boundaries the C
+code actually contains — the conditions where a naive translation would diverge
+or would panic instead of returning a value. "expected C result" is the observed
+behaviour of the compiled C `.so` (gcc, x86-64, `sar %cl`), which is the ground
+truth the Rust must reproduce.
 
-Because there is no error surface, this table instead enumerates — with the
-same mechanical rigor — every **degenerate / boundary / implementation-defined
-condition** that the C code's two control-flow constructs (the `?:` clamp on
-line 8 and the `do/while` on line 10) can be driven into. These are the rows
-gated by Phase C, and each has a differential test asserting C and Rust return
-the **bit-identical** `float` (compared via `to_bits()`, so `-0.0` vs `+0.0`
-and NaN payloads are distinguished — not merely "both failed somehow").
+## Error / boundary surface table
 
-`expected C result` below is the **observed** result of the compiled C `.so`,
-not a guess.
+| # | function | trigger (the exact invalid input/condition) | expected C result | ✔ |
+|---|----------|----------------------------------------------|-------------------|---|
+| E1 | `ldexp_q2` | Implicit clamp boundary: `exp_q2 == 120` (`30*4`); ternary `(30*4) > exp_q2` is FALSE, so `e = 120` (the clamp is taken, not the pass-through) | returns a `float`; `e=120`, `exp_q2-=e` → `0`, loop exits after 1 iteration | [x] |
+| E2 | `ldexp_q2` | `exp_q2 == 119` — one step below the clamp; ternary TRUE, `e = 119` (pass-through) | returns a `float`; 1 iteration, no clamp | [x] |
+| E3 | `ldexp_q2` | `exp_q2 == 121` — one step past the clamp; forces a *second* loop iteration with residual `exp_q2 = 1` | returns a `float`; exactly 2 iterations | [x] |
+| E4 | `ldexp_q2` | Out-of-domain negative exponent: `exp_q2 < 0`. `e = exp_q2 < 0`, so `e >> 2 < 0` and `1 << 30 >> (e >> 2)` is a **negative shift count — UB in C**. Compiled as `sar %cl` (count taken mod 32). | no error/trap; returns `y * g_expfrac[e&3] * ((1<<30) >> ((e>>2)&31))`. The count **WRAPS mod 32, it does not saturate** — verified against the built C `.so`: `ldexp_q2(1.0f, -1..=-4) == 0.0` (masked count `31` → scale `0`), but `ldexp_q2(1.0f, -8) == 9.31322575e-10`, `(1.0f, -124) == 0.5`, and `(1.0f, -128) == 1.0` (`e>>2 == -32` → masked count `0` → scale `2^30`). A translation that clamped/saturated the count, or that used a checked shift, would diverge here. | [x] |
+| E5 | `ldexp_q2` | Negative index expression: `e < 0` makes `e & 3` use two's-complement low bits (`-1 & 3 == 3`, `-2 & 3 == 2`, …). A translation using a signed remainder or an unmasked index would read **out of bounds** of `g_expfrac[4]`. | no out-of-bounds access; index is always `0..=3` | [x] |
+| E6 | `ldexp_q2` | `exp_q2 == INT_MIN` (`-2147483648`): extreme of the UB path; also the value for which `exp_q2 -= e` would overflow if `e != exp_q2` | `e = INT_MIN`, `e & 3 == 0`, `e >> 2 == -536870912`, masked count `0` → scale `1<<30`; `exp_q2 -= e` is exactly `0`, no signed overflow, 1 iteration | [x] |
+| E7 | `ldexp_q2` | `exp_q2 == INT_MAX` (`2147483647`): maximal iteration count (`ceil(INT_MAX/120)` ≈ 17.9 M iterations), stresses the `exp_q2 -= e` accumulator for overflow | terminates and returns `0.0` (underflow to zero); no signed overflow because `e == 120 <= exp_q2` on every clamped iteration and the final iteration has `e == exp_q2` | [x] |
+| E8 | `ldexp_q2` | `exp_q2 == 0` — the do/while body still runs **once** (`do`, not `while`), unlike a pre-test loop | `e = 0`, scale `1<<30`, `frac = g_expfrac[0]`. Verified against the built C `.so`: the literal `9.31322575e-10f` rounds to **exactly** `2^-30`, so `g_expfrac[0] * (1<<30)` is **exactly `1.0f`** and the observable result is the identity (`ldexp_q2(1.0f, 0) == 1.0f`, bits `0x3f800000`). The row pins the literal's rounding: a translation whose constant differed by 1 ulp would diverge. | [x] |
+| E9 | `ldexp_q2` | Non-finite / degenerate `y`: `+inf`, `-inf`, `NaN` (quiet and signalling), `+0.0`, `-0.0`, subnormals — combined with a scale of `0` (from E4) produces `inf * 0 = NaN` | no trap; IEEE-754 result propagated verbatim, including NaN payload/sign and the quieting of a signalling NaN | [x] |
+| E10 | `ldexp_q2` | Overflow/underflow of the `float` product itself (e.g. `y = FLT_MAX` with `exp_q2` that scales up, `y = FLT_MIN` scaled down) | no error; saturates to `±inf` / flushes to `±0.0` per IEEE-754 round-to-nearest | [x] |
 
-## The table
-
-| # | function | trigger (exact invalid/boundary input or condition) | expected C result | test | [x] |
-|---|----------|-----------------------------------------------------|-------------------|------|-----|
-| E1 | `ldexp_q2` | `exp_q2 == 0` — clamp takes the `exp_q2` arm; shift count `0`; scale `2^30`; `frac[0]*2^30 == 1.0f` exactly | returns `y` unchanged bit-for-bit (incl. `-0.0`, `+/-inf`, qNaN payload) **except** a signalling NaN, which `mulss` quiets by setting mantissa bit 22 (`0x7FA00000 -> 0x7FE00000`, `0x7F800001 -> 0x7FC00001`) | `e1_exp_zero_is_identity` | [x] |
-| E2 | `ldexp_q2` | `exp_q2 == 120` — clamp boundary hit **exactly**; `e == 120`; `exp_q2 -= e` yields `0` so exactly 1 trip | `y * 2^-30` (1 trip). `y=1.0` -> `0x30800000` | `e2_clamp_boundary_exact` | [x] |
-| E3 | `ldexp_q2` | `exp_q2 == 121` — **one step past** the clamp; `e == 120`, then a 2nd trip with `e == 1` | 2 trips. `y=1.0` -> `0x305744fd` | `e3_one_past_clamp` | [x] |
-| E4 | `ldexp_q2` | `exp_q2 == 119` — one step **below** the clamp; single trip, `e&3 == 3`, count `29`, scale `2` | 1 trip. `y=1.0` -> `0x309837f0` | `e4_one_below_clamp` | [x] |
-| E5 | `ldexp_q2` | `exp_q2 < 0` (general) — `e` is **negative**; `e & 3` indexes `g_expfrac` with two's-complement low bits; `e >> 2` is a **negative shift count** => C **undefined behaviour** | no trap/crash; gcc x86-64 emits `sar %cl` whose count the CPU masks to 5 bits, so the shift is by `(e>>2) & 31` | `e5_negative_exp_ub_shift` | [x] |
-| E6 | `ldexp_q2` | `exp_q2 in {-1,-2,-3,-4}` — `e>>2 == -1`, masked count `== 31`, so `(1<<30)>>31 == 0` and the scale **annihilates** `y` | `+0.0` (`0x00000000`) for finite `y > 0`; `-0.0` for finite `y < 0` | `e6_scale_zero_annihilates` | [x] |
-| E7 | `ldexp_q2` | `exp_q2 == INT_MIN` (`-2147483648`) — extreme negative; `e&3 == 0`, `e>>2 == -536870912`, masked count `== 0`, scale `2^30`; `exp_q2 -= e` computes `INT_MIN - INT_MIN == 0` (**no signed overflow**) | returns `y` unchanged, bit-for-bit (identity, same as E1) | `e7_int_min` | [x] |
-| E8 | `ldexp_q2` | `exp_q2 == INT_MIN + 1 .. INT_MIN + 4` — extreme negative, non-zero residues | matches C bit-for-bit | `e7_int_min` | [x] |
-| E9 | `ldexp_q2` | `exp_q2 == INT_MAX` (`2147483647`) — maximum trip count: `ceil(2147483647/120) == 17895698` iterations of the `do/while` | terminates; `+0.0` for finite `y` (underflows after a few trips) | `e9_int_max` | [x] |
-| E10 | `ldexp_q2` | `y == +INFINITY` / `-INFINITY` with a scale of `0` (E6 trigger) — the IEEE-754 **invalid operation** `inf * 0` | quiet NaN. Asserted bit-identical to C's NaN, incl. sign+payload | `e10_inf_times_zero_scale` | [x] |
-| E11 | `ldexp_q2` | `y == NaN` (quiet, several distinct payloads incl. sign bit set) | NaN propagated; payload preserved bit-for-bit | `e11_nan_propagation` | [x] |
-| E12 | `ldexp_q2` | `y == signalling NaN` (`0x7FA00000`, `0xFFA00000`, `0x7F800001`) — sNaN across the FFI boundary | quieted by setting mantissa bit 22, **payload and sign otherwise preserved** (`0x7FA00000 -> 0x7FE00000`, `0xFFA00000 -> 0xFFE00000`, `0x7F800001 -> 0x7FC00001`) — note this differs from the `inf*0` default indefinite of E10 | `e12_snan_quieting` | [x] |
-| E13 | `ldexp_q2` | `y == +0.0` / `-0.0` — **signed-zero** sign propagation through the multiplies | zero with sign `sign(y) ^ sign(scale)`; scale >= 0 so sign preserved | `e13_signed_zero` | [x] |
-| E14 | `ldexp_q2` | `y` subnormal (`0x00000001` smallest positive subnormal, `0x007FFFFF` largest) => **gradual underflow to zero**. Note the total multiplier is `frac[e&3] * 2^(30-k)`, so a *scale* of `1` (`k == 30`) is still a multiplier of `~2^-30`; **only `k == 0` is the identity** | `+/-0.0` for every `k != 0` (even the largest subnormal flushes at `2^-30`); unchanged only at `k == 0` (`exp_q2 == 0` and the negative 128-lattice) | `e14_subnormal_underflow` | [x] |
-| E15 | `ldexp_q2` | `y == FLT_MAX` (`0x7F7FFFFF`) / `-FLT_MAX`, and `y == FLT_MIN`; combined with identity and annihilating scales | no overflow to inf (all scales are `<= 1.0`); bit-identical | `e15_extreme_finite` | [x] |
-| E16 | `ldexp_q2` | every `exp_q2` residue class `e & 3 in {0,1,2,3}` for **negative** `e` (indices produced by two's complement, e.g. `-1 & 3 == 3`) — confirms no out-of-bounds read differs | in-bounds index `0..3`; bit-identical | `e16_negative_residue_classes` | [x] |
-| E17 | `ldexp_q2` | **exhaustive** sweep of the whole "small" `exp_q2` neighbourhood `-1000 ..= 1000` crossed with 12 special `y` values — catches any off-by-one in the clamp, residue, or shift masking | bit-identical for all 2001 x 12 pairs | `e17_exhaustive_small_exp_all_special_y` | [x] |
-| E18 | `ldexp_q2` | full-`int32`-range randomized `exp_q2` (stratified so trip counts stay bounded) — the "out-of-range value across the FFI boundary" class | bit-identical | `e18_full_int_range_random` | [x] |
-
-## Boundary classes that do NOT apply (documented, not skipped)
-
-The Phase C instructions ask for null pointers, zero/oversized lengths, and
-out-of-range enum values. Mechanically, from the single declaration
-`float ldexp_q2(float y, int exp_q2);`:
-
-| generic boundary class | applicability | reasoning |
-|---|---|---|
-| **null pointer** args | **N/A** | The API has no pointer parameter. `grep -c '\*' c_src/include/lib.h` is 0. There is no pointer to pass as null. |
-| **zero / oversized length** | **N/A** | No length, size, count, or buffer parameter exists. |
-| **out-of-range enum value** | **N/A as an *invalid* value** | The API declares no `enum`. `grep -c enum c_src/` is 0. The only integer parameter is a plain `int`, for which **all 2^32 values are valid input** — there is no "no valid variant" value. This class is nonetheless covered as far as it can be: rows E5-E9, E17 and E18 push `exp_q2` across its entire `int32` domain including both extremes and the region past the internal `120` clamp, which is the closest analogue of an out-of-range value and is exactly where the C's UB shift lives. |
-| **struct / union padding** | **N/A** | No aggregate types cross the boundary. |
-| **return-value error sentinel** | **N/A** | Return type is `float`; every bit pattern is a legitimate result, so no value is reserved as a sentinel. |
-
-## Phase C gate
-
-All 18 rows have a passing differential test. **0 rows unchecked.**
+All 10 rows are covered by `tests/differential.rs`
+(`phase_c_*` tests) and are checked off only after passing against **both** the
+C and the Rust `.so`.

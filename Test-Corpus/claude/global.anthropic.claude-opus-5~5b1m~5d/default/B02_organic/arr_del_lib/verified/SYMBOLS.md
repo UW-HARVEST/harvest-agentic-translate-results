@@ -1,86 +1,93 @@
-# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Source of truth:
+Source of truth: `nm -D --defined-only` on
+`c_src/build/libharvest-work-Tzy9eC.so` (C) vs
+`translation/target/release/libarr_del_lib.so` (Rust).
+
+The C library is built from a single TU (`c_src/src/lib.c`), an inlined copy of
+`stb_ds.h` plus the two file-local helpers `strkey` / `arr_del`. Only 16 symbols
+have external linkage; everything else (`stbds_probe_position`, `stbds_log2`,
+`stbds_make_hash_index`, `stbds_siphash_bytes`, `stbds_is_key_equal`,
+`stbds_hm_find_slot`, `stbds_strdup`, `buffer`, `stbds_hash_seed`) is `static`.
+
+## Exported (T) symbols
+
+| # | symbol | C | Rust | signature |
+|---|--------|---|------|-----------|
+| 1 | `arr_del` | T | T | `void arr_del(int num)` |
+| 2 | `stbds_arrfreef` | T | T | `void stbds_arrfreef(void *a)` |
+| 3 | `stbds_arrgrowf` | T | T | `void *stbds_arrgrowf(void *a, size_t elemsize, size_t addlen, size_t min_cap)` |
+| 4 | `stbds_hash_bytes` | T | T | `size_t stbds_hash_bytes(void *p, size_t len, size_t seed)` |
+| 5 | `stbds_hash_string` | T | T | `size_t stbds_hash_string(char *str, size_t seed)` |
+| 6 | `stbds_hmdel_key` | T | T | `void *stbds_hmdel_key(void *a, size_t elemsize, void *key, size_t keysize, size_t keyoffset, int mode)` |
+| 7 | `stbds_hmfree_func` | T | T | `void stbds_hmfree_func(void *p, size_t elemsize)` |
+| 8 | `stbds_hmget_key` | T | T | `void *stbds_hmget_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` |
+| 9 | `stbds_hmget_key_ts` | T | T | `void *stbds_hmget_key_ts(void *a, size_t elemsize, void *key, size_t keysize, ptrdiff_t *temp, int mode)` |
+| 10 | `stbds_hmput_default` | T | T | `void *stbds_hmput_default(void *a, size_t elemsize)` |
+| 11 | `stbds_hmput_key` | T | T | `void *stbds_hmput_key(void *a, size_t elemsize, void *key, size_t keysize, int mode)` |
+| 12 | `stbds_rand_seed` | T | T | `void stbds_rand_seed(size_t seed)` |
+| 13 | `stbds_shmode_func` | T | T | `void *stbds_shmode_func(size_t elemsize, int mode)` |
+| 14 | `stbds_stralloc` | T | T | `char *stbds_stralloc(stbds_string_arena *a, char *str)` |
+| 15 | `stbds_strreset` | T | T | `void stbds_strreset(stbds_string_arena *a)` |
+| 16 | `strkey` | T | T | `char *strkey(int n)` |
+
+## Diff result
 
 ```
-nm -D --defined-only c_src/build/libharvest-work-f3vKdh.so
-nm -D --defined-only translation/target/release/libarr_del_lib.so
+$ diff <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
+       <(nm -D --defined-only rust.so| awk '{print $3}' | sort)
+(empty)
 ```
 
-The C translation unit is a single file (`c_src/src/lib.c`) — an inlined copy of
-`stb_ds.h` plus the `strkey` / `arr_del` helpers.  There is therefore exactly one
-module, and no C source file was skipped by the translation.
+- Missing from Rust: **none**
+- Extra in Rust: **none**
+- Undefined non-libc symbols in the Rust `.so`: **none**
+  (`nm -D -u` lists only glibc + `_Unwind_*`/`__gmon_start__`/`_ITM_*` weak refs,
+  all of which the C `.so` also pulls in from libc/libgcc.)
 
-## Table
+## Notes / not exported (deliberately)
 
-| # | symbol | in C `.so` | in Rust `.so` | notes |
-|---|--------|-----------|---------------|-------|
-| 1 | `stbds_arrgrowf`      | T | T | `#[unsafe(no_mangle)] extern "C"` |
-| 2 | `stbds_arrfreef`      | T | T | |
-| 3 | `stbds_rand_seed`     | T | T | mutates the library-global `stbds_hash_seed` |
-| 4 | `stbds_hash_string`   | T | T | |
-| 5 | `stbds_hash_bytes`    | T | T | wraps the `static` SipHash-2-4 |
-| 6 | `stbds_hmfree_func`   | T | T | |
-| 7 | `stbds_hmget_key_ts`  | T | T | |
-| 8 | `stbds_hmget_key`     | T | T | |
-| 9 | `stbds_hmput_default` | T | T | |
-| 10 | `stbds_hmput_key`    | T | T | |
-| 11 | `stbds_shmode_func`  | T | T | |
-| 12 | `stbds_hmdel_key`    | T | T | |
-| 13 | `stbds_stralloc`     | T | T | |
-| 14 | `stbds_strreset`     | T | T | |
-| 15 | `strkey`             | T | T | `sprintf`-based helper, static 256-byte buffer |
-| 16 | `arr_del`            | T | T | the only symbol declared in `include/lib.h` |
+`arr_del` is the only symbol in `include/lib.h`; the `stbds_*` symbols are
+`extern`-declared inside `lib.c` and get external linkage from their
+definitions. `strkey` is non-static in the C and therefore also exported.
 
-**Missing from Rust: 0.**  **Extra in Rust: 0** (after filtering the Rust
-runtime's own lowercase/local symbols, which `nm -D` reports as `t`/`d`/`b`
-and which are not part of the C surface).
+The C build has no `-fvisibility=hidden`, so this list is the complete surface.
 
-## `static` C functions (no symbol, but reachable through the exported ones)
+## Cargo feature combinations
 
-These are `static` in C so they do not appear in `nm -D`; they are translated as
-private Rust `fn`s and are exercised transitively by the tests listed in
-`CONFIGS.md` / `ERRORS.md`.
+`translation/Cargo.toml` declares **no `[features]` section** — there is exactly
+one build configuration (`--no-default-features` is identical to the default).
+Verified with `cargo check --no-default-features`. Phase D's "every feature
+combination" therefore collapses to the single default configuration, which is
+the one all tests run under.
 
-| C static | Rust counterpart | reached via |
-|----------|------------------|-------------|
-| `stbds_probe_position` | `stbds_probe_position` | every hash lookup |
-| `stbds_log2`           | `stbds_log2`           | `stbds_make_hash_index` |
-| `stbds_make_hash_index`| `stbds_make_hash_index`| `stbds_hmput_key`, `stbds_shmode_func`, `stbds_hmdel_key` |
-| `stbds_siphash_bytes`  | `stbds_siphash_bytes`  | `stbds_hash_bytes` |
-| `stbds_is_key_equal`   | `stbds_is_key_equal`   | `stbds_hm_find_slot`, `stbds_hmput_key` |
-| `stbds_hm_find_slot`   | `stbds_hm_find_slot`   | `stbds_hmget_key_ts`, `stbds_hmdel_key` |
-| `stbds_strdup`         | `stbds_strdup`         | `stbds_hmput_key` with `STBDS_SH_STRDUP` |
+## Verification status (Phase D)
 
-## Declared-but-not-defined in this TU
+Re-checked by `./verify.sh`, for **both** the `release` and the `debug` Rust
+`.so`, under **every** cargo feature combination (`__default__`, `__none__` —
+there are no others):
 
-`c_src/src/lib.c` declares `extern void stbds_unit_tests(void);` but never
-defines it, so it is **not** exported by the C `.so` and must not be exported by
-the Rust `.so` either.  Verified: absent from both.
-
-## Verification command
-
-```sh
-diff <(nm -D --defined-only c_src/build/*.so        | awk '{print $3}' | sort) \
-     <(nm -D --defined-only translation/target/release/libarr_del_lib.so \
-         | awk '$2=="T"{print $3}' | sort)
+```
+[ok] symbol parity release [__default__]: 16/16 symbols, diff empty
+[ok] no undefined non-libc symbols release [__default__]
+[ok] symbol parity debug   [__default__]: 16/16 symbols, diff empty
+[ok] no undefined non-libc symbols debug   [__default__]
+[ok] symbol parity release [__none__]:    16/16 symbols, diff empty
+[ok] no undefined non-libc symbols release [__none__]
+[ok] symbol parity debug   [__none__]:    16/16 symbols, diff empty
+[ok] no undefined non-libc symbols debug   [__none__]
 ```
 
-Result: empty diff (see `tests/symbols.rs`, which performs this check
-programmatically).
+Nothing had to be translated to close the gap — the Rust crate already covered
+the whole of `c_src/src/lib.c` (there is only one C translation unit, and it has
+only these 16 external definitions). No symbol is stubbed or
+`unimplemented!()`; every export is a real translation exercised by the
+differential tests, which call it **only** through `dlopen`/`dlsym` on the
+`.so`, never as a Rust function.
 
-## Build note (important)
+## How the exports are reached from the tests
 
-`cargo test` does **not** rebuild a `cdylib`-only lib target, so
-`target/release/libarr_del_lib.so` can be stale while the test binaries are
-fresh — the suite would then verify an old library.  `run_all.sh` always runs
-`cargo build --release` before `cargo test --release`, and
-`tests/common/mod.rs::rust_so_path()` refuses to run when the `.so` is older
-than `src/lib.rs`.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no** `[features]` table, so the only build
-configurations are the default one and `--no-default-features` (which is
-identical, since there is no `default` feature).  Both are checked by
-`run_all.sh`.
+`tests/common/mod.rs` `dlopen`s both `.so`s and resolves all 16 names into raw
+`extern "C"` function pointers, so the `#[unsafe(no_mangle)] pub unsafe extern
+"C"` wrappers are on the tested path. A missing or misnamed export fails at
+`Lib::open` with `missing symbol <name>`.

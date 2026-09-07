@@ -1,18 +1,23 @@
 # Error Surface
 
-Mechanical scans covered all files under `../c_src/include` and
-`../c_src/src` for error-return statements/macros, assertions, conditional
-branches, null checks, range checks, enums, and min/max constants.
+Mechanical scans covered `c_src/include/` and `c_src/src/` for
+`RETURN_ERROR`, `return -1`, `return NULL`, error enums, assertions,
+conditionals, comparisons, null checks, and min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Covered |
-|---|----------|----------------------------------------------|-------------------|---------|
+The C source contains no rejection branches, error returns, assertions, range
+checks, null checks, enums, length parameters, or min/max constants. Therefore
+the source-derived error-surface table has zero rows.
 
-There are no explicit rejection paths in the C source. `next_double` accepts a
-pointer to a `cn_rnd_t` and dereferences it without a null check. A null or
-otherwise invalid pointer therefore has undefined behavior rather than a
-defined C error result. The API has no length or enum parameters, so zero or
-oversized lengths and out-of-range enum values are not applicable.
+| # | function | trigger (the exact invalid input/condition) | expected C result | Status |
+|---|----------|----------------------------------------------|-------------------|--------|
 
-The generic null-pointer boundary is covered by
-`generic_null_pointer_behavior_matches`, which invokes each shared object's
-export in a separate subprocess and compares its termination signal.
+## Generic ABI boundary obligations
+
+These are required independently of source-side rejection branches.
+
+| # | function | boundary | expected C behavior | Status |
+|---|----------|----------|---------------------|--------|
+| G1 | `next_double` | `rnd == NULL` | no rejection exists; dereferencing the invalid pointer terminates the isolated caller process on this platform | [x] |
+
+Zero/oversized lengths and out-of-range enum values are not applicable: this
+API accepts neither a length nor an enum.

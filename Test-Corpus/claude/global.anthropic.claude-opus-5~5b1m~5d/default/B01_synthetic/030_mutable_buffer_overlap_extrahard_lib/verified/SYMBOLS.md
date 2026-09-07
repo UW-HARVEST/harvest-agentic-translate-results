@@ -2,7 +2,10 @@
 
 Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-## C `.so` (`c_src/build/libdriver.so`)
+- C:    `c_src/build/libdriver.so`
+- Rust: `translation/target/release/libdriver.so`
+
+## C `.so` exported (defined, global) symbols
 
 ```
 $ nm -D --defined-only c_src/build/libdriver.so
@@ -10,80 +13,87 @@ $ nm -D --defined-only c_src/build/libdriver.so
 0000000000001129 T fma_array
 ```
 
-Note: `inner` is `static` in `src/driver.c` and therefore **not** an exported
-symbol (confirmed: it does not appear in `nm -D`). It must NOT be exported from
-the Rust `.so` either.
-
-## Rust `.so` (`translation/target/release/libdriver.so`)
+## Rust `.so` exported (defined, global `T`) symbols
 
 ```
-$ nm -D --defined-only translation/target/release/libdriver.so | grep ' T '
+$ nm -D --defined-only translation/target/release/libdriver.so | grep -v ' [a-z] '
 0000000000011760 T driver
 0000000000011910 T fma_array
 ```
 
 ## Parity table
 
-| # | symbol | type | in C `.so` | in Rust `.so` | status |
-|---|--------|------|-----------|---------------|--------|
-| 1 | `fma_array` | `T` (func) | yes | yes | OK |
-| 2 | `driver`    | `T` (func) | yes | yes | OK |
+| # | symbol      | type | in C `.so` | in Rust `.so` | notes |
+|---|-------------|------|-----------|---------------|-------|
+| 1 | `driver`    | `T` (func) | yes | yes | `void driver(const int *data, int len)` — declared in `include/driver.h` |
+| 2 | `fma_array` | `T` (func) | yes | yes | `void fma_array(int *out, const int *mul1, const int *mul2, const int *add, int len)` — NOT in the header, but non-`static` in `src/driver.c`, so it is part of the ABI surface and must be exported |
 
-**Missing from Rust: none.**
-**Extra non-libc undefined symbols in Rust: none** (only libc/`ld` runtime
-imports such as `printf`, `memcpy`, `malloc`, unwinding stubs).
+## Non-exported C symbols (correctly absent from both)
 
-### C declarations (ground truth)
+| symbol   | reason |
+|----------|--------|
+| `inner`  | declared `static void inner(int *out, int len)` in `src/driver.c` → internal linkage, `t` not `T`. The Rust translation likewise keeps `inner` as a private `unsafe fn`. |
 
-```c
-/* include/driver.h */
-void driver(const int *data, int len);
+## Undefined / imported symbols
 
-/* src/driver.c — defined but not declared in the public header;
-   still an exported symbol with external linkage. */
-void fma_array(int *out, const int *mul1, const int *mul2, const int *add, int len);
+C imports `memcpy` and `printf` from libc. Rust imports `printf` from libc
+(the `memcpy` is `ptr::copy_nonoverlapping`, which lowers to `memcpy`).
+Both are ordinary libc imports resolved by the dynamic loader.
 
-/* src/driver.c — static, NOT exported */
-static void inner(int *out, int len);
+```
+$ nm -D --undefined-only c_src/build/libdriver.so
+                 w _ITM_deregisterTMCloneTable
+                 w _ITM_registerTMCloneTable
+                 w __cxa_finalize@GLIBC_2.2.5
+                 w __gmon_start__
+                 U memcpy@GLIBC_2.14
+                 U printf@GLIBC_2.2.5
 ```
 
-### Whole-module completeness check
+The Rust `.so` imports the same two real dependencies (`memcpy@GLIBC_2.14`,
+`printf@GLIBC_2.2.5`) plus the standard Rust-runtime set — libc allocator and
+I/O (`malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `memmove`,
+`memset`, `bcmp`, `strlen`, `read`, `write`, `writev`, `open64`, `close`,
+`lseek64`, `stat64`/`fstat64`/`statx`, `mmap64`, `munmap`, `getcwd`, `getenv`,
+`readlink`, `realpath`, `syscall`, `abort`, `__errno_location`), TLS
+(`__tls_get_addr`, `pthread_key_*`, `pthread_setspecific`,
+`__cxa_thread_atexit_impl`) and panic/backtrace unwinding (`_Unwind_*` from
+`libgcc`, `dl_iterate_phdr`). Every one of these is provided by glibc/libgcc
+and resolved by the dynamic loader.
 
-`c_src` contains exactly one translation unit (`src/driver.c`) and one public
-header (`include/driver.h`). All three functions defined in that TU
-(`fma_array`, `inner`, `driver`) have counterparts in `translation/src/lib.rs`
-(`fma_array`, `inner` as a private `unsafe fn`, `driver`). No C module was
-skipped; no symbol required stubbing.
+**Non-libc/non-libgcc undefined symbols in the Rust `.so`: 0.**
 
-## Cargo feature combinations
+## Symbol diff result
 
-`translation/Cargo.toml` declares **no `[features]` table** and no optional
-dependencies, so the only configuration is the default (empty) feature set.
-`--no-default-features` is therefore equivalent to the default build. Both are
-still exercised by `run_all.sh` for completeness.
+**Missing from Rust `.so`: NONE (0).**
+**Undefined non-libc symbols in Rust `.so`: NONE (0).**
 
-## Verification result
+No module of the C source was skipped: `c_src` contains exactly one
+translation unit (`src/driver.c`, 46 lines) and one header
+(`include/driver.h`, 28 lines), and all three of its functions
+(`fma_array`, `inner`, `driver`) are present in `translation/src/lib.rs`.
 
-* `nm -D` symbol diff (C minus Rust) is **EMPTY** for both the debug and the
-  release Rust `.so`. Verified by `run_all.sh` step 5 and by the in-suite tests
-  `d1_rust_so_exports_every_c_symbol` / `d2_static_c_function_is_not_exported_by_either`.
-* `ldd -r` reports **no** unresolved symbols in either `.so`; every undefined
-  symbol in the Rust `.so` is a versioned glibc/libgcc import
-  (`printf@GLIBC_2.2.5`, `memcpy@GLIBC_2.14`, `_Unwind_Resume`, ...).
-  Verified by `d3_rust_so_has_no_unresolved_non_libc_symbols`.
-* Both symbols are additionally proven to be `dlsym`-able and live by
-  `d4_every_c_symbol_is_dlsym_able_from_rust_so` — the whole suite only ever
-  reaches the Rust code through `dlopen` + `dlsym` on `libdriver.so`, never by
-  calling Rust functions directly, so the `#[unsafe(no_mangle)] extern "C"`
-  wrappers are themselves under test.
-* No C module was missing, so no new translation was required in this phase.
+## Automated enforcement
 
-### Build caveat found during verification
+`tests/phase_d_symbols.rs` re-derives this table at test time rather than
+trusting the snapshot above:
 
-The crate declares `crate-type = ["cdylib"]` only. `cargo test` compiles
-`src/lib.rs` into a (empty) unit-test binary but does **not** emit
-`target/<profile>/libdriver.so`. Running `cargo test` alone therefore silently
-tests whatever `.so` was last built — a mutation of `src/lib.rs` passed the
-entire suite this way. The harness now refuses to run if the `.so` is older than
-any file in `src/` (`assert_so_fresh`), and `run_all.sh` always runs
-`cargo build` before `cargo test`.
+| test | what it enforces |
+|------|------------------|
+| `d01_every_c_exported_symbol_is_exported_by_rust` | runs `nm -D --defined-only` on both `.so`s, keeps the global (uppercase-type) entries, and asserts the set difference `C \ Rust` is **empty**. Also asserts `driver` and `fma_array` are present in both by name, so a shrinking export list cannot pass silently. |
+| `d02_rust_has_no_undefined_non_libc_symbols` | runs `nm -D --undefined-only` on the Rust `.so` and asserts every unresolved name is provided by glibc or libgcc. |
+| `d03_both_libraries_resolve_and_are_callable` | `dlopen`s both objects and calls both exported symbols through the FFI, proving the names are live entry points and not just symbol-table entries. |
+
+## Completeness of the translation
+
+`c_src` is one translation unit and one header, 74 lines in total. Its three
+functions map one-to-one onto `translation/src/lib.rs`:
+
+| C | Rust | export |
+|---|------|--------|
+| `void fma_array(int*, const int*, const int*, const int*, int)` | `pub unsafe extern "C" fn fma_array` | `#[unsafe(no_mangle)]` |
+| `static void inner(int*, int)` | `unsafe fn inner` | none (matches the C's internal linkage) |
+| `void driver(const int*, int)` | `pub unsafe extern "C" fn driver` | `#[unsafe(no_mangle)]` |
+
+No C module was skipped, so no additional translation work was required in
+Phase A or Phase D; nothing is stubbed and nothing is `unimplemented!()`.

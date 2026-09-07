@@ -1,117 +1,134 @@
-# CONFIGS.md — Phase A: valid-input configuration surface
+# CONFIGS.md — Phase A configuration-surface table
 
-Mechanically derived from the branches the C code actually takes. `lib.c` has no
-runtime option struct and no `#ifdef`s, so the "options" of this library are the
-**argument-value classes that select a branch**, plus the **shapes of the buffers**
-the pointer arguments describe. The axes below are exactly the conditions the C
-source tests:
+Mechanically derived from the `if` / `switch` / guard structure of
+`c_src/src/lib.c` plus the public header `c_src/include/lib.h`.
 
-| axis | values the C code distinguishes | source |
+## Cargo feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` section**, so the
+only build configuration is the default one. There is no `#ifdef` /
+`#if` / conditional compilation anywhere in `c_src` either
+(`grep -c '#if' c_src/src/lib.c` = 0). Enumerated mechanically:
+
+```
+default (no features)      <- the only combination
+```
+
+Therefore "repeat under every feature combination" collapses to the one
+combination, but the suite is still run as `--no-default-features` and
+as default to prove it.
+
+There is **no binary/driver target** in either tree (the C
+`CMakeLists.txt` only `add_library(... SHARED)`; the Rust `[lib]` is
+`crate-type = ["cdylib"]`), so the "compare binary stdout" gate is N/A.
+
+## Axes the C code actually branches on
+
+| axis | values the code distinguishes | source |
 |---|---|---|
-| `shift_array` guard | `positions <= 0` \| `positions >= size` \| `0 < positions < size` | `lib.c:36` |
-| `shift_array` shape | `size` = 1, 2, 3, 4, 8, 64, 1024; `positions` = 1, middle, `size-1`; byte count = `(size-positions)*4` | `lib.c:37` |
-| `process_string` guard | `*str == 0` \| `*str != 0` | `lib.c:45` |
-| `process_string` shape | length 0, 1, 2, 5, 63, 255, 1024; ASCII vs. high-bit bytes (negative `char`); NUL in the interior | `lib.c:46` |
-| `apply_bitmask` operation | `0` (`& 0xF0`) \| `1` (`& 0x0F`) \| `2` (`\| 0xAA`) \| `3` (`^ 0x55`) \| default | `lib.c:57-67` |
-| `apply_bitmask` value | `0`, small, negative, `i32::MIN`, `i32::MAX`, `-1`, random 32-bit | `lib.c:58-65` |
-| `init_matrix` | always writes exactly `3*4` `int`s, values `1..12`; row-major `int (*)[4]` | `lib.c:71-83` |
-| `compare_allocations` order | `ptr1 < ptr2` → 1 \| `ptr1 > ptr2` → 2 \| `ptr1 == ptr2` → 3 (unsigned compare, `jae`/`jbe`) | `lib.c:102-108` |
-| `compare_allocations` bonus | `val1 > 0` → `+10` \| `val1 <= 0` → `+0` | `lib.c:111` |
-| `arity4` bitmask selector | `param1 % 4` ∈ `{0,1,2,3}` for `param1 >= 0`, `{0,-1,-2,-3}` for `param1 < 0` (C truncating remainder → `default:`) | `lib.c:142` |
-| `arity4` scaling | `param3 == 0` (skip) \| `param3 != 0` → `(result*param3)/100`, positive / negative / overflowing | `lib.c:152-154` |
-| `arity4` offset | `param4 == 0` (skip) \| `param4 != 0` → `result += param4` | `lib.c:156-158` |
-| `arity` dispatch | `len<2` → `-1` \| `==2` → `arity2` \| `==3` → `arity3` \| `else` → `arity4`; `len` is truncated to `unsigned char` | `lib.c:171-181` |
-| allocator state (implicit input) | `ptr1 < ptr2` \| `ptr1 > ptr2` \| `ptr1 == ptr2` — the address ordering the allocator happens to produce is a *hidden argument* of `compare_allocations` | `lib.c:86-108` |
-| pointer alignment (implicit input) | aligned \| misaligned `int*` buffers — the C code has no alignment requirement and uses plain `mov` | `lib.c:37,80,175-179` |
+| A. `arity` `len` (after `mov %al` truncation to `u8`) | `<2` (-> `-1`), `==2`, `==3`, `>=4` | `arity` |
+| B. `apply_bitmask` `operation` | `0` (`&0xF0`), `1` (`&0x0F`), `2` (`\|0xAA`), `3` (`^0x55`), anything else (identity) | `apply_bitmask` switch |
+| C. `arity4` `param1 % 4` (drives axis B from inside `arity4`) | `0,1,2,3` for `param1>=0`; `0,-1,-2,-3` for `param1<0` (negative -> identity) | `arity4` |
+| D. `arity4` `param3` | `==0` (skip), `>0`, `<0` (negative truncating division), overflow-inducing | `arity4` |
+| E. `arity4` `param4` | `==0` (skip), `!=0` | `arity4` |
+| F. `compare_allocations` `val1` sign | `>0` (`+10`), `<=0` (`+0`) | ternary on `*uninit_ptr` |
+| G. `compare_allocations` allocator state | `ptr1<ptr2` (`1`) vs `ptr1>ptr2` (`2`) — depends on **global glibc tcache LIFO order**, i.e. on the *sequence* of prior calls, not on the arguments | pointer comparison |
+| H. `shift_array` guard | `0 < positions < size` (act) vs otherwise (no-op) | `shift_array` |
+| I. `shift_array` shape | `size` = 1/2/4/many; `positions` = 1 / `size-1` / middle | memmove length `(size-positions)*4` |
+| J. `process_string` | empty (`0`), 1 char, many chars, embedded high bytes | `if (*str)` + `strlen` |
+| K. entry point | `shift_array`, `process_string`, `apply_bitmask`, `init_matrix`, `compare_allocations` (low level) / `arity4` / `arity3` / `arity2` / `arity` (composed) | header + `nm -D` |
 
-**The allocator state is a hidden input, and it is normalised.**
-`compare_allocations` (and therefore `arity4`/`arity3`/`arity2`/`arity`) returns a
-value that depends on the state of the process-wide glibc allocator: freeing
-`ptr1` then `ptr2` makes the next `malloc` pair come back in the opposite address
-order (tcache is LIFO), so a *bare* call sequence alternates between `1+bonus`
-and `2+bonus`. This is a property of the C code, not of the translation:
-`tests/probe_alloc.rs` loads the **same C `.so` twice** (two `dlopen`s of two
-copies) and shows the two C instances diverging from each other in exactly the
-same way.
+### Critical note on axis G (drives the whole test design)
 
-Rather than assume anything about that state, every row below that reaches
-`malloc` calls `common::normalize_allocator(order)` immediately before the
-library call. That helper takes `tcache_count` chunks of `sizeof(int)` out of the
-allocator and releases them highest-address-first or lowest-address-first, which
-*forces* the library to observe `ptr1 < ptr2` or `ptr1 > ptr2`. Consequently:
+`compare_allocations` does `malloc(4)` twice, compares the two
+**addresses**, then `free`s them in order `ptr1, ptr2`. glibc's tcache
+is LIFO, so the *next* call gets them back swapped. Measured:
 
-* the differential comparison is fully deterministic (the tcache is
-  thread-local, so parallel test threads cannot interfere — verified by 40
-  repeated runs of the suite);
-* **both** branches of `lib.c:102-108` are exercised on purpose, and each row's
-  expected value (`order + bonus`) is asserted, not just C-vs-Rust equality;
-* the third branch, `ptr1 == ptr2` (`result = 3`), cannot be produced by a real
-  allocator and is covered by row C52 through an interposed `malloc`.
+```
+8 consecutive calls, same args (5,6): [11, 11, 12, 11, 12, 12, 11, 12]
+```
 
-Nothing may allocate between `normalize_allocator` and the call it protects,
-because a small Rust allocation would land in the same tcache bin.
+The return value therefore depends on **process-global allocator
+history**, not on the inputs. Both `.so`s share one glibc heap when
+`dlopen`ed into the same process, so naively interleaving
+`c(x); r(x); c(x); r(x)` yields `[(11,12),(11,12),...]` — a *false*
+divergence that is an artifact of the shared heap.
 
-Every row is exercised with `ITERS = 400` pseudo-random inputs (xorshift64\*,
-fixed seed derived from the row id, so runs are reproducible) drawn from the
-value classes of that row, comparing C vs. Rust **byte for byte** (return values
-and, for the pointer-taking entry points, the full contents of the output buffer
-including guard bytes on both sides).
+**Consequence:** axis G is turned from nondeterministic noise into a
+*controlled input axis*. Immediately before every call that reaches
+`compare_allocations`, the harness normalizes the glibc tcache 32-byte
+bin:
 
-Test file: `tests/phase_b_valid.rs`. `[x]` = passing across all randomized inputs.
+```rust
+let a = malloc(4); let b = malloc(4);
+let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+// tcache is LIFO: the LAST pointer freed is handed back FIRST.
+if want_ascending { free(hi); free(lo); }   // -> ptr1 < ptr2, result 1
+else              { free(lo); free(hi); }   // -> ptr1 > ptr2, result 2
+```
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|-------------------------------------------|------|-----|
-| C1  | `shift_array` | `size=1`, `positions` random in `1..=1` … guard always fails (`positions >= size`) → no-op; random contents | `c1_shift_size1` | [x] |
-| C2  | `shift_array` | `size=2`, `positions=1` (only in-range value); random contents | `c2_shift_size2_pos1` | [x] |
-| C3  | `shift_array` | `size=3`, `positions ∈ {1,2}`; random contents | `c3_shift_size3` | [x] |
-| C4  | `shift_array` | `size=4`, `positions ∈ {1,2,3}` (the shape `arity4` uses); random contents | `c4_shift_size4` | [x] |
-| C5  | `shift_array` | `size=8`, `positions ∈ 1..=7`; random contents incl. `i32::MIN/MAX` | `c5_shift_size8` | [x] |
-| C6  | `shift_array` | `size=64`, `positions ∈ 1..=63`; overlapping `memmove` of many bytes | `c6_shift_size64` | [x] |
-| C7  | `shift_array` | `size=1024`, `positions ∈ {1, 512, 1023}`; large overlapping move | `c7_shift_size1024` | [x] |
-| C8  | `shift_array` | `positions == size-1` (minimum move: 1 element) for `size ∈ 2..=64` | `c8_shift_pos_is_size_minus_1` | [x] |
-| C9  | `shift_array` | `positions == 1` (maximum move: `size-1` elements) for `size ∈ 2..=64` | `c9_shift_pos_1_varied_size` | [x] |
-| C10 | `shift_array` | guard-boundary sweep: `positions ∈ {-1,0,1,size-1,size,size+1}` × `size ∈ 0..=8`, exhaustive | `c10_shift_guard_boundary_sweep` | [x] |
-| C11 | `process_string` | length 1 string, random non-zero byte (incl. `0x80..=0xFF`, i.e. negative `char`) | `c11_process_len1` | [x] |
-| C12 | `process_string` | length 2..=8, random printable bytes | `c12_process_short` | [x] |
-| C13 | `process_string` | length 5 = the literal `"Hello"` used by `arity4` | `c13_process_hello` | [x] |
-| C14 | `process_string` | length 63/255/1024, random non-zero bytes | `c14_process_long` | [x] |
-| C15 | `process_string` | interior NUL: `strlen` stops early although the buffer continues | `c15_process_interior_nul` | [x] |
-| C16 | `process_string` | all-`0xFF` buffer (every `char` negative) of random length | `c16_process_high_bytes` | [x] |
-| C17 | `apply_bitmask` | `operation=0` (`value & 0xF0`); random `value` incl. extremes | `c17_bitmask_op0` | [x] |
-| C18 | `apply_bitmask` | `operation=1` (`value & 0x0F`) | `c18_bitmask_op1` | [x] |
-| C19 | `apply_bitmask` | `operation=2` (`value \| 0xAA`) | `c19_bitmask_op2` | [x] |
-| C20 | `apply_bitmask` | `operation=3` (`value ^ 0x55`) | `c20_bitmask_op3` | [x] |
-| C21 | `apply_bitmask` | `operation` random over the full `i32` range × `value` random (cross-product incl. all `default:` values) | `c21_bitmask_random_op` | [x] |
-| C22 | `init_matrix` | exact `3×4` `int` buffer surrounded by guard words; pre-filled with random garbage | `c22_init_matrix_exact` | [x] |
-| C23 | `init_matrix` | called twice in a row on the same buffer (idempotence) and on an oversized buffer, checking only 12 words change | `c23_init_matrix_repeat_and_oversized` | [x] |
-| C24 | `compare_allocations` | `val1 > 0` (`+10` bonus taken), `val2` random | `c24_cmp_alloc_val1_pos` | [x] |
-| C25 | `compare_allocations` | `val1 == 0` (bonus skipped), `val2` random | `c25_cmp_alloc_val1_zero` | [x] |
-| C26 | `compare_allocations` | `val1 < 0` (bonus skipped), `val2` random incl. `i32::MIN` | `c26_cmp_alloc_val1_neg` | [x] |
-| C27 | `compare_allocations` | `val1 = i32::MAX` / `i32::MIN` / `1` / `-1` boundary values | `c27_cmp_alloc_boundaries` | [x] |
-| C28 | `arity4` | `param1 % 4 == 0`, `param3 == 0`, `param4 == 0` | `c28_arity4_m0_p3z_p4z` | [x] |
-| C29 | `arity4` | `param1 % 4 == 1`, `param3 == 0`, `param4 == 0` | `c29_arity4_m1_p3z_p4z` | [x] |
-| C30 | `arity4` | `param1 % 4 == 2`, `param3 == 0`, `param4 == 0` | `c30_arity4_m2_p3z_p4z` | [x] |
-| C31 | `arity4` | `param1 % 4 == 3`, `param3 == 0`, `param4 == 0` | `c31_arity4_m3_p3z_p4z` | [x] |
-| C32 | `arity4` | `param1 < 0` with `param1 % 4 ∈ {-1,-2,-3}` (negative remainder → `default:`), `param3 == 0`, `param4 == 0` | `c32_arity4_negmod_p3z_p4z` | [x] |
-| C33 | `arity4` | `param3 > 0` small (`1..=100`), `param4 == 0` — scaling path, all four `param1 % 4` classes | `c33_arity4_p3_small_pos` | [x] |
-| C34 | `arity4` | `param3 < 0` small (`-100..=-1`), `param4 == 0` — negative scaling, truncation toward zero | `c34_arity4_p3_small_neg` | [x] |
-| C35 | `arity4` | `param3` huge (`i32::MIN`, `i32::MAX`, random) → `result*param3` overflows and wraps, `param4 == 0` | `c35_arity4_p3_overflow` | [x] |
-| C36 | `arity4` | `param3 == 0`, `param4 != 0` (offset only), random incl. extremes | `c36_arity4_p4_only` | [x] |
-| C37 | `arity4` | `param3 != 0` **and** `param4 != 0` (both paths, fully random) | `c37_arity4_p3_and_p4` | [x] |
-| C38 | `arity4` | all four parameters fully random over `i32` (unconstrained cross-product) | `c38_arity4_fully_random` | [x] |
-| C39 | `arity4` | boundary corners: every combination of `{i32::MIN,-100,-4,-1,0,1,4,100,i32::MAX}` for `param1`/`param3`, random `param2`/`param4` | `c39_arity4_corner_grid` | [x] |
-| C40 | `arity2` | `param3`/`param4` forced to `0` by the wrapper; `p1` covering all `% 4` classes, `p2` random | `c40_arity2_random` | [x] |
-| C41 | `arity2` | `p1`/`p2` boundary values (`i32::MIN`, `i32::MAX`, `0`, `±1`) | `c41_arity2_boundaries` | [x] |
-| C42 | `arity3` | `p3 == 0` (scaling skipped) | `c42_arity3_p3_zero` | [x] |
-| C43 | `arity3` | `p3 != 0`, small and overflowing, `p1` covering all `% 4` classes | `c43_arity3_p3_nonzero` | [x] |
-| C44 | `arity` | `len == 2` → `arity2`, 2-element `params` buffer, random contents | `c44_arity_len2` | [x] |
-| C45 | `arity` | `len == 3` → `arity3`, 3-element buffer | `c45_arity_len3` | [x] |
-| C46 | `arity` | `len == 4` → `arity4`, 4-element buffer | `c46_arity_len4` | [x] |
-| C47 | `arity` | `len ∈ 5..=255` → `arity4` (only the first 4 elements are read), longer buffers | `c47_arity_len_5_to_255` | [x] |
-| C48 | `arity` | `len` aliasing through the `unsigned char` truncation: `258→2`, `259→3`, `260→4`, `65538→2`, `-1→255`, `i32::MAX→255` | `c48_arity_len_truncation_aliases` | [x] |
-| C49 | `arity` | exhaustive `len ∈ 0..=511` (both valid and rejecting) with a fixed 4-element buffer | `c49_arity_len_exhaustive_0_511` | [x] |
-| C50 | pipeline | `arity` → `arity3`/`arity2` → `arity4` → `process_string` + `shift_array` + `apply_bitmask` + `init_matrix` + `compare_allocations` driven end-to-end through the **dispatcher only**, fully random `len`/`params` (composed-pipeline check) | `c50_pipeline_random_end_to_end` | [x] |
-| C51 | all 9 exports | randomized *interleaved* call sequence across every entry point (shared-state check: no entry point may leave state that changes a later one), replayed per library under both address orderings | `c51_interleaved_all_entry_points` | [x] |
-| C52 | `compare_allocations` | address ordering forced with an interposed `malloc`: `ptr1 < ptr2` (→1), `ptr1 > ptr2` (→2) and `ptr1 == ptr2` (→3, unreachable with a real allocator; also pins that the `+10` bonus is decided by the value *in memory*, i.e. `val2`, not by `val1`) × 9 `(val1,val2)` sign/boundary combinations | `phase_c_errors::e24_pointer_order_branches` | [x] |
-| C53 | `arity`, `init_matrix`, `shift_array`, `process_string` | **misaligned** buffers (`+1`, `+2`, `+3` bytes) — the C API imposes no alignment and uses plain `mov`, so this is a valid input shape | `phase_c_errors::e25_misaligned_pointers` | [x] |
-| C54 | every entry point | both cargo profiles (`dev`, `release`) and all three feature selections (`default`, `--no-default-features`, `--all-features`), plus each profile's tests run against the *other* profile's `.so` via `RUST_LIB_PATH` | `run_all.sh` | [x] |
+Verified deterministic for both libraries and both arms:
+
+```
+asc=true   compare_allocations( 5,6) -> (C 11, Rust 11) x8
+asc=true   compare_allocations(-5,6) -> (C  1, Rust  1) x8
+asc=false  compare_allocations( 5,6) -> (C 12, Rust 12) x8
+asc=false  compare_allocations(-5,6) -> (C  2, Rust  2) x8
+```
+
+So `asc` becomes an explicit configuration axis (`G=asc` / `G=desc`) and
+**both** pointer-ordering arms of `compare_allocations` are exercised
+deliberately, in-process, pairwise. Rows below marked `norm` are run
+under *both* `G=asc` and `G=desc`.
+
+## Configuration table
+
+`R` = randomized, fixed seed (`SplitMix64`, seed `0x5EED_1234_ABCD`),
+1000+ vectors per row unless stated. `pair` = in-process pairwise
+compare. `norm` = in-process pairwise compare with the tcache normalized
+before *every* call, run twice: once with `G=asc` and once with `G=desc`.
+
+| # | entry point(s) | configuration (options set + input shape) | mode | pass |
+|---|----------------|--------------------------------------------|------|-----|
+| 1 | `apply_bitmask` | `operation = 0`, `value` R over full `i32` range | pair | [x] |
+| 2 | `apply_bitmask` | `operation = 1`, `value` R over full `i32` range | pair | [x] |
+| 3 | `apply_bitmask` | `operation = 2`, `value` R over full `i32` range | pair | [x] |
+| 4 | `apply_bitmask` | `operation = 3`, `value` R over full `i32` range | pair | [x] |
+| 5 | `apply_bitmask` | `operation` R over full `i32` (mostly `default:`) x `value` R; plus exhaustive `operation` in `-8..=8` and `{INT_MIN, INT_MAX}` | pair | [x] |
+| 6 | `apply_bitmask` | boundary `value`s: `0, ±1, 0xFF, 0xF0, 0x0F, 0xAA, 0x55, INT_MIN, INT_MAX` x `operation 0..=4` cross-product | pair | [x] |
+| 7 | `process_string` | length 1 byte, all 255 non-NUL first-byte values | pair | [x] |
+| 8 | `process_string` | length 2..64, R bytes in `1..=255` (no interior NUL) | pair | [x] |
+| 9 | `process_string` | long string (256, 1024, 4096 bytes) | pair | [x] |
+| 10 | `process_string` | interior NUL at position `k` (`strlen` stops early, buffer longer) | pair | [x] |
+| 11 | `process_string` | high-bit bytes only (`0x80..0xFF`) — `char` signedness of `if (*str)` | pair | [x] |
+| 12 | `init_matrix` | writes exactly 12 `int`s, `1..12` row-major; verify with guard cells before/after the 12-slot buffer | pair | [x] |
+| 13 | `init_matrix` | called twice on the same buffer / on a pre-dirtied buffer (R fill) — must fully overwrite | pair | [x] |
+| 14 | `shift_array` | `size = 4`, `positions = 1` (the shape `arity4` uses), R contents | pair | [x] |
+| 15 | `shift_array` | `size` R in `1..=64` x `positions` R in `1..size` (guard passes), R contents | pair | [x] |
+| 16 | `shift_array` | `positions = size - 1` (memmove length exactly 1 elem) | pair | [x] |
+| 17 | `shift_array` | `positions` in the middle, large `size` (`32`, `64`) — overlapping memmove | pair | [x] |
+| 18 | `shift_array` | `size = 1` (no valid `positions`; guard always false) | pair | [x] |
+| 19 | `shift_array` | `size = 2`, `positions = 1` (smallest acting case) | pair | [x] |
+| 20 | `compare_allocations` | `val1 > 0` (`+10` arm), R `val1` in `1..=INT_MAX`, R `val2` | norm | [x] |
+| 21 | `compare_allocations` | `val1 <= 0` (`+0` arm), R `val1` in `INT_MIN..=0`, R `val2` | norm | [x] |
+| 22 | `compare_allocations` | long run (512 calls) of R `(val1, val2)` — pins the full tcache LIFO sequence | norm | [x] |
+| 23 | `arity4` | `param1 % 4 == 0` (`param1 = 4k, k>=0`) x `param3 = 0` x `param4 = 0` | norm | [x] |
+| 24 | `arity4` | `param1 % 4 == 1` x `param3 = 0` x `param4 = 0` | norm | [x] |
+| 25 | `arity4` | `param1 % 4 == 2` x `param3 = 0` x `param4 = 0` | norm | [x] |
+| 26 | `arity4` | `param1 % 4 == 3` x `param3 = 0` x `param4 = 0` | norm | [x] |
+| 27 | `arity4` | `param1 < 0` so `param1 % 4` in `{-1,-2,-3}` -> `default:` identity x `param3 = 0` x `param4 = 0` | norm | [x] |
+| 28 | `arity4` | `param1 < 0`, `param1 % 4 == 0` (`param1 = -4k`) x `param3 = 0` x `param4 = 0` | norm | [x] |
+| 29 | `arity4` | `param3 > 0` (`1, 2, 99, 100, 101, R`) x `param4 = 0`, R `param1`/`param2` | norm | [x] |
+| 30 | `arity4` | `param3 < 0` (negative truncating division) x `param4 = 0`, R `param1`/`param2` | norm | [x] |
+| 31 | `arity4` | `param3 = 0` x `param4 != 0` (R, both signs) | norm | [x] |
+| 32 | `arity4` | `param3 != 0` **and** `param4 != 0` (both steps run, R both signs) | norm | [x] |
+| 33 | `arity4` | full-range R `(param1, param2, param3, param4)` over all of `i32`, 2000 vectors | norm | [x] |
+| 34 | `arity4` | boundary cross-product: each param in `{INT_MIN, -101, -100, -1, 0, 1, 100, 101, INT_MAX}` (9^4 = 6561 combos, all of them) | norm | [x] |
+| 35 | `arity2` | R `(p1, p2)` full range — must equal `arity4(p1,p2,0,0)` | norm | [x] |
+| 36 | `arity3` | R `(p1, p2, p3)` full range, incl. `p3 = 0` and boundary `p3` | norm | [x] |
+| 37 | `arity` | `len = 2` -> `arity2`, R `params[0..2]` | norm | [x] |
+| 38 | `arity` | `len = 3` -> `arity3`, R `params[0..3]` | norm | [x] |
+| 39 | `arity` | `len = 4` -> `arity4`, R `params[0..4]` | norm | [x] |
+| 40 | `arity` | `len` in `5..=255` (all of them) -> `arity4`, reads only `params[0..4]` | norm | [x] |
+| 41 | `arity` | `len` needing truncation: `256..=520` and `{1000, 65535, 65536, INT_MAX, -1, -2, -256, INT_MIN}` x R `params` | norm | [x] |
+| 42 | mixed sequence | interleave `arity`, `arity2`, `arity3`, `arity4`, `compare_allocations` in one R-ordered 1000-call sequence — pins composed allocator interaction across entry points | norm | [x] |

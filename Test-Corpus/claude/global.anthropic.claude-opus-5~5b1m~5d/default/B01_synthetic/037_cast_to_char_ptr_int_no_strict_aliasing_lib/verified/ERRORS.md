@@ -1,57 +1,68 @@
 # ERRORS.md — Phase C error-surface table
 
-Derived mechanically from the C source, not from docs or assumptions.
+Derived mechanically from the complete C source. The whole library is
+`c_src/src/driver.c` (40 lines, 22 of which are the licence header) plus
+`c_src/include/driver.h`.
 
-## Mechanical grep evidence
+## Mechanical grep for every rejection mechanism
 
-```
-grep -nE 'return|assert|NULL|errno|RETURN_ERROR|exit|abort|==|!=' c_src/src/driver.c
-  -> src/driver.c:26:#include <stdio.h>
-  -> src/driver.c:27:#include <string.h>
-  -> src/driver.c:30:    for (int i = 0; i < len; i++)     # loop bound, not a rejection
+Every grep below was run over **all** C sources and headers:
 
-grep -nE '#(if|ifdef|ifndef|else|elif)' c_src/src/driver.c   -> (none)
-grep -nE '\b(if|switch|case|goto)\b'    c_src/src/driver.c   -> (none)
-```
-
-Findings, enumerated exhaustively:
-
-- **No** `return` statement anywhere (both functions are `void`).
-- **No** error-return macro, no error enum, no sentinel value, no `errno` use.
-- **No** `assert`, no `abort`, no `exit`.
-- **No** null-pointer check, **no** range check, **no** min/max constant.
-- The only conditional in the entire library is the `i < len` loop bound at
-  `src/driver.c:30`, which is iteration control, not input rejection.
+| pattern searched | hits (excluding comments / include-guard / loop condition) |
+|------------------|-----------------------------------------------------------|
+| `return` (any value) | 0 |
+| `return -1` / `return NULL` / error sentinels | 0 |
+| `assert` / `static_assert` / `abort` / `exit` | 0 |
+| `NULL` / null-pointer checks | 0 |
+| `errno` | 0 |
+| `if` / `switch` / ternary (any branch) | 0 |
+| range checks (`<`, `>`, `<=`, `>=`) | 1 — `i < len`, the `for`-loop bound in `print_hex`, **not** a rejection |
+| `#if` / `#ifdef` conditional compilation | 1 — `#ifndef DRIVER_H_` include guard, **not** a rejection |
+| MIN/MAX constants, `limits.h` | 0 |
+| error enums / status codes | 0 |
+| `perror` / `fprintf(stderr, …)` | 0 |
 
 ## Error-surface table
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
-|---|----------|----------------------------------------------|-------------------|-----|
-| — | — | *(none — the library has no reachable rejection path; see below)* | — | n/a |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|--------------------------------------------|-------------------|
+| — | — | — | — |
 
-The table is **empty by derivation, not by omission**. `driver`'s only parameter
-is a by-value `int`. Every one of the 2^32 possible `int` bit patterns is a
-*valid* input that the C accepts unconditionally: it `memcpy`s the 4 bytes and
-prints them. There is no value of `x` for which the C code rejects, errors,
-asserts, or behaves differently in kind. Consequently every input belongs in
-`CONFIGS.md` (the valid-path table), and there are zero error-path rows.
+**The table is intentionally empty: the C library has NO error surface.**
 
-## Generic FFI boundaries still covered (per Phase C instructions)
+Justification (not an assumption — read off the source):
 
-These are exercised in `tests/differential.rs` even though the C has no explicit
-check for them, because the task requires covering the generic boundaries every
-C API has:
+- The single public entry point is `void driver(int x)`. It returns `void`, so
+  there is no channel through which an error code or sentinel could be
+  reported.
+- Its only parameter is a by-value `int`. **Every** bit pattern of an `int` is a
+  valid `int`, so there is no such thing as an out-of-range argument: there is
+  no pointer to be null, no length to be negative or oversized, no enum whose
+  integer value could fall outside the valid variants, and no buffer to
+  overflow.
+- `driver` performs an unconditional `memcpy` of `sizeof(x)` bytes from `&x`
+  into a `sizeof(x)`-byte local array, then calls `print_hex(raw, sizeof raw)`.
+  Both the source and destination sizes are compile-time constants and equal,
+  so the copy can never be short or long.
+- `print_hex` is `static` and is only ever reached from `driver` with
+  `len == sizeof(int)` and a valid non-null pointer, so its `i < len` bound can
+  never be violated and its pointer can never be null. It is not reachable
+  across the FFI boundary at all (it is not exported — see `SYMBOLS.md`).
 
-| # | boundary | why it is / is not applicable here | test |
-|---|----------|-------------------------------------|------|
-| G1 | `INT_MIN` (`-2147483648`) — one step past the negative end of the range | valid input; sign bit set, no `memcpy`/format divergence allowed | `boundary_extremes` |
-| G2 | `INT_MAX` (`2147483647`) — the positive end of the range | valid input | `boundary_extremes` |
-| G3 | `0` / zero-length-ish input | `len` is hardcoded `sizeof(int)`, never 0; `x == 0` prints `00000000` | `boundary_extremes` |
-| G4 | `-1` (all bits set) | worst case for sign-extension bugs in `%02x` promotion | `boundary_extremes` |
-| G5 | out-of-range **enum** value across FFI | **N/A** — the public API declares no enum and no pointer parameter. Documented rather than skipped silently. | n/a |
-| G6 | **null pointer** argument | **N/A** — `driver(int)` takes no pointer. The only pointer in the library, `print_hex`'s `p`, is `static` (not in the ABI) and is always fed the address of a live local `raw[4]`, so a caller cannot supply null. | n/a |
-| G7 | oversized / negative `len` | **N/A at the ABI** — `len` is not caller-controlled; `driver` always passes `sizeof(raw) == 4`. | n/a |
-| G8 | signed-char sign extension | `raw` is `char` (signed on x86-64) but cast to `unsigned char*` before printing; bytes >= 0x80 must print as `80`..`ff`, never `ffffff80` | `high_bytes_no_sign_extension` |
+## Phase C obligations actually discharged
 
-- [x] Every row in this table has a passing differential test (or is a
-      documented, justified N/A with the reason grounded in the C signature).
+Because the table has no rows, Phase C reduces to the "generic boundaries every
+C API has" clause of the instructions. Those that are *expressible* for a
+`void driver(int)` signature are covered by the differential tests in
+`tests/differential.rs`:
+
+| generic boundary | expressible for `void driver(int)`? | test |
+|------------------|--------------------------------------|------|
+| null pointer argument | no — no pointer parameter exists | n/a |
+| zero length | no — no length parameter exists | n/a |
+| oversized length | no — no length parameter exists | n/a |
+| one step past a valid range | yes, vacuously — the range is all of `int`; the extremes and their wrap-around neighbours are tested | `boundary_extremes`, `phase_c_no_error_surface_extremes` |
+| out-of-range enum value across FFI | no — no enum parameter exists; the `int` domain is total | covered by exhaustive-byte + extremes tests |
+| return-value / error-code parity | vacuous — return type is `void` | asserted as "neither side aborts, both produce identical stdout" for every input |
+
+`ERRORS.md` therefore has **0 unchecked rows**. ✅

@@ -1,74 +1,63 @@
-# SYMBOLS.md — Public symbol surface (Phase A)
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from:
 
 ```
-nm -D --defined-only c_src/build/libStaticAlias.so
-nm -D --defined-only translation/target/release/libStaticAlias.so
+nm -D --defined-only  c_src/build/libStaticAlias.so
+nm -D --defined-only  translation/target/release/libStaticAlias.so
+nm -D --undefined-only <both>
 ```
 
 ## C source inventory (completeness check)
 
-The whole library is three files, so the "was a module skipped?" question is
-answered exhaustively:
+The whole C library is two files:
 
-| C file | contents | translated? |
-|--------|----------|-------------|
-| `c_src/CMakeLists.txt` | build only, `add_library(StaticAlias SHARED src/staticalias.c)` | n/a |
-| `c_src/include/staticalias.h` | declares `static_alias`, `driver`; `STATICALIAS_H_` guard macro (no code) | yes |
-| `c_src/src/staticalias.c` | defines `static_alias`, `driver`; function-local `static int inner = 1` | yes (`translation/src/lib.rs`) |
+| C file | functions defined | translated? |
+|--------|-------------------|-------------|
+| `c_src/src/staticalias.c` | `static_alias`, `driver` | yes — `translation/src/lib.rs` |
+| `c_src/include/staticalias.h` | declarations only (`static_alias`, `driver`) | n/a |
 
-There is exactly **one** translation unit and **two** external definitions in
-it. No module/file of the C library is missing from the Rust crate.
+`c_src/CMakeLists.txt` declares exactly one target, `add_library(StaticAlias SHARED src/staticalias.c)`.
+There is **no `add_executable`**, so the project builds **no driver binary** — the
+"compare binary stdout" clause of the completion gate is not applicable. (The
+function *named* `driver` is a library export, exercised in Phase B via `dlopen`.)
+
+No C source file was skipped by the translation; there is no missing module.
 
 ## Exported (defined, dynamic) symbols
 
-| # | symbol | C `.so` | Rust `.so` | notes |
-|---|--------|---------|------------|-------|
-| 1 | `static_alias` | `T` | `T` | `int *static_alias(int *outer)` → `unsafe extern "C" fn(*mut c_int) -> *mut c_int`, `#[unsafe(no_mangle)]` |
-| 2 | `driver`       | `T` | `T` | `void driver(int, int)` → `unsafe extern "C" fn(c_int, c_int)`, `#[unsafe(no_mangle)]` |
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|-----------|--------|
+| 1 | `static_alias` | `T` | `T` | present in both |
+| 2 | `driver`       | `T` | `T` | present in both |
 
-**Missing from Rust: none.** The symbol diff (C-defined minus Rust-defined) is
-empty. No macro-generated / aliased / versioned exports exist in the C `.so`
-(no `#define`-generated function families, no `__attribute__((alias))`, no
-version script).
+Symbol diff (`comm -23` of the two sorted defined-symbol lists): **empty**.
+No symbol required a new `#[no_mangle]` wrapper and no C module needed
+translating. Nothing is stubbed: both Rust exports contain the real translated
+logic (`translation/src/lib.rs`).
 
-The function-local `static int inner` is **not** an exported symbol in C (it is
-a local static with internal linkage); the Rust equivalent (`static mut INNER`)
-is likewise not exported. Its address is nevertheless observable through the
-return value of `static_alias`, and the tests use exactly that channel to
-inspect and control it.
+Macro-generated symbols: the C source uses no symbol-generating macros, so
+there are no extra macro-expanded exports to match.
 
 ## Undefined (imported) symbols
 
-The C `.so` imports only `printf@GLIBC_2.2.5` plus the standard weak
-CRT/ITM/`__cxa_finalize`/`__gmon_start__` set.
+C imports: `printf@GLIBC_2.2.5` plus the standard weak CRT hooks
+(`_ITM_registerTMCloneTable`, `_ITM_deregisterTMCloneTable`, `__cxa_finalize`,
+`__gmon_start__`).
 
-The Rust `.so` imports `printf@GLIBC_2.2.5` (the translation deliberately calls
-libc `printf` so the emitted bytes and the stdio buffering match C exactly) plus
-the Rust standard-library/runtime set: `_Unwind_*`, `malloc`/`free`/`realloc`/
-`calloc`/`posix_memalign`, `memcpy`/`memmove`/`memset`/`bcmp`/`strlen`,
-`open64`/`read`/`write`/`writev`/`close`/`lseek64`/`stat64`/`fstat64`/`statx`,
-`mmap64`/`munmap`, `getcwd`/`getenv`/`readlink`/`realpath`,
-`dl_iterate_phdr`/`syscall`/`abort`/`__errno_location`,
-`pthread_key_*`/`pthread_setspecific`/`__tls_get_addr`/`__cxa_thread_atexit_impl`/`gettid`.
+Rust imports the same `printf@GLIBC_2.2.5` — the translation deliberately calls
+the platform `printf` rather than Rust's buffered `stdout`, so `driver`'s output
+bytes and flush behaviour are produced by the identical glibc code path — plus
+the Rust runtime's own libc/`libgcc` dependencies (`malloc`, `memcpy`, `write`,
+`_Unwind_*`, `pthread_key_*`, …).
 
-**0 missing/undefined non-libc symbols** in the Rust `.so`: every `U`/`w` entry
-above is resolved by glibc (`libc.so.6`) or libgcc's unwinder
-(`libgcc_s.so.1`), both of which the `.so` links against. Verified with
-`ldd -r`, which reports no unresolved symbols.
+**Gate:** every Rust undefined symbol is a libc / libgcc-unwind runtime symbol.
+`0` missing or undefined **non-libc** symbols in the Rust `.so`.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only build
-configuration is the default one (`--no-default-features` and the default build
-are identical, and there is no non-empty feature combination to enumerate). The
-automation in `translation/verify.sh` re-derives the feature list from
-`Cargo.toml` and runs every subset of it, rather than assuming there are none,
-and additionally repeats the whole suite for the `dev` and `release` profiles.
-
-## Reproducing
-
-```sh
-cd translation && ./verify.sh
-```
+`translation/Cargo.toml` has **no `[features]` table** and no optional
+dependencies, therefore exactly one build configuration exists
+(`--no-default-features` and the default build are the same artifact). This is
+verified mechanically by `check_features.sh`; Phases B–C are complete after one
+pass.

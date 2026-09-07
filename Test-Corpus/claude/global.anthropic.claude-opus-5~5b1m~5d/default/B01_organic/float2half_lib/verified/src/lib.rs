@@ -8,6 +8,10 @@
 //! The translation is intentionally a literal one: the tables are byte-for-byte
 //! copies of the C ones and the arithmetic reproduces C's unsigned wrapping and
 //! narrowing-cast semantics exactly, including any quirks of the original.
+//!
+//! Note that the conversion **truncates** the mantissa (`>> m__shift[j]`, i.e.
+//! round-toward-zero); it is deliberately not a round-to-nearest float-to-half
+//! conversion, and this behaviour is reproduced as-is.
 
 #![allow(non_upper_case_globals)]
 
@@ -155,9 +159,11 @@ pub extern "C" fn float2half(flt: f32) -> u16 {
     let base = M_BASE[j] as u32;
     let shift = M_SHIFT[j] as u32;
 
-    // Every table entry is < 32, so the shift never exceeds u32's width.
+    // Every table entry is in 13..=24, so the shift never exceeds u32's width.
     let mantissa = (n & 0x007f_ffff) >> shift;
 
     // C computes the sum in `uint32_t` and then truncates to `uint16_t`.
+    // The maximum attainable sum is exactly 0xffff, so nothing is ever
+    // discarded, but the intermediate is kept 32-bit to match C exactly.
     base.wrapping_add(mantissa) as u16
 }

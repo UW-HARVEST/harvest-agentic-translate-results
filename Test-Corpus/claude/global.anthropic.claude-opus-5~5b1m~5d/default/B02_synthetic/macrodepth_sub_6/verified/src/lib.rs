@@ -3,4 +3,4 @@
 pub mod mdconfig;
 pub mod mdcore;
 
-pub use mdcore::{g_op, g_op_name, helper_call, helper_ptr, op_add, op_mul, op_sub, use_generated};
+pub use mdcore::{helper_call, helper_ptr, op_add, op_mul, op_sub, use_generated, G_OP, G_OP_NAME};

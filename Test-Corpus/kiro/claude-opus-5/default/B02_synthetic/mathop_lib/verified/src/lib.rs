@@ -93,22 +93,6 @@ type MathOperation = unsafe extern "C" fn(c_int, c_int, c_int) -> c_int;
 /// Number of history slots the C code allocates and the fixed cap it enforces.
 const HISTORY_CAPACITY: c_int = 10;
 
-/// `sizeof(ComputationResult)` and its field offsets, as probed on this target
-/// (see the `#[repr(C)]` definition above). Used by the byte-offset accesses in
-/// `perform_computation_with_history`.
-const RESULT_STRIDE: isize = 24;
-const OFF_VALUE: isize = 0;
-const OFF_TIMESTAMP: isize = 8;
-const OFF_STATUS: isize = 16;
-
-const _: () = {
-    assert!(core::mem::size_of::<ComputationResult>() == RESULT_STRIDE as usize);
-    assert!(core::mem::align_of::<ComputationResult>() == 8);
-    assert!(core::mem::offset_of!(ComputationResult, value) == OFF_VALUE as usize);
-    assert!(core::mem::offset_of!(ComputationResult, timestamp) == OFF_TIMESTAMP as usize);
-    assert!(core::mem::offset_of!(ComputationResult, status) == OFF_STATUS as usize);
-};
-
 /// Signed 32-bit division/remainder with exactly C's observable behaviour on
 /// this target, including the `INT_MIN / -1` overflow case.
 ///
@@ -142,104 +126,6 @@ fn c_divrem(a: c_int, b: c_int) -> (c_int, c_int) {
 #[inline]
 fn c_divrem(a: c_int, b: c_int) -> (c_int, c_int) {
     (a.wrapping_div(b), a.wrapping_rem(b))
-}
-
-// ---------------------------------------------------------------------------
-// Unchecked loads and stores.
-//
-// The C code dereferences its `ComputationResult**` / `int*` out-parameters
-// without validating them, so a NULL (or misaligned) argument makes the *load
-// itself* fault with `SIGSEGV`. Rust's `*ptr` place projections carry a
-// debug-assertions-only null/alignment check that panics instead, which in an
-// `extern "C"` function becomes `SIGABRT` — a different observable outcome
-// from the C for the same input, and one that appears only in `dev` builds.
-//
-// Issuing the memory access directly keeps the fault (and every non-faulting
-// access) identical in every build profile.
-//
-// Field offsets used by the callers below come from the pinned `ComputationResult`
-// ABI: `value` at +0 (4 bytes), `timestamp` at +8 (8 bytes), `status` at +16
-// (4 bytes), total size 24, alignment 8.
-// ---------------------------------------------------------------------------
-
-#[cfg(target_arch = "x86_64")]
-#[inline]
-unsafe fn raw_load64(p: *const u64) -> u64 {
-    let v: u64;
-    unsafe {
-        core::arch::asm!(
-            "mov {v}, qword ptr [{p}]",
-            p = in(reg) p,
-            v = out(reg) v,
-            options(nostack),
-        );
-    }
-    v
-}
-
-#[cfg(target_arch = "x86_64")]
-#[inline]
-unsafe fn raw_store64(p: *mut u64, v: u64) {
-    unsafe {
-        core::arch::asm!(
-            "mov qword ptr [{p}], {v}",
-            p = in(reg) p,
-            v = in(reg) v,
-            options(nostack),
-        );
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[inline]
-unsafe fn raw_load32(p: *const u32) -> u32 {
-    let v: u32;
-    unsafe {
-        core::arch::asm!(
-            "mov {v:e}, dword ptr [{p}]",
-            p = in(reg) p,
-            v = out(reg) v,
-            options(nostack),
-        );
-    }
-    v
-}
-
-#[cfg(target_arch = "x86_64")]
-#[inline]
-unsafe fn raw_store32(p: *mut u32, v: u32) {
-    unsafe {
-        core::arch::asm!(
-            "mov dword ptr [{p}], {v:e}",
-            p = in(reg) p,
-            v = in(reg) v,
-            options(nostack),
-        );
-    }
-}
-
-// Portable fallbacks. These carry Rust's debug-only pointer validity check, so
-// on a non-x86-64 target a NULL out-parameter aborts rather than segfaulting in
-// `dev` builds; `release` builds (the shipped artifact) fault like the C does.
-#[cfg(not(target_arch = "x86_64"))]
-#[inline]
-unsafe fn raw_load64(p: *const u64) -> u64 {
-    unsafe { core::ptr::read(p) }
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline]
-unsafe fn raw_store64(p: *mut u64, v: u64) {
-    unsafe { core::ptr::write(p, v) }
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline]
-unsafe fn raw_load32(p: *const u32) -> u32 {
-    unsafe { core::ptr::read(p) }
-}
-#[cfg(not(target_arch = "x86_64"))]
-#[inline]
-unsafe fn raw_store32(p: *mut u32, v: u32) {
-    unsafe { core::ptr::write(p, v) }
 }
 
 // ---------------------------------------------------------------------------
@@ -384,12 +270,8 @@ pub extern "C" fn allocate_results(count: c_int) -> *mut ComputationResult {
 ///                                      int* history_count);
 /// ```
 ///
-/// Faithful to the original, including the unchecked out-parameters, the
-/// unchecked allocation result and the hard-coded capacity of 10.
-///
-/// Every access to `*history` / `*history_count` / `(*history)[i]` goes through
-/// the `raw_*` helpers so that an invalid pointer faults exactly where and how
-/// the C's load or store would, in every build profile.
+/// Faithful to the original, including the unchecked allocation result and the
+/// hard-coded capacity of 10.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn perform_computation_with_history(
     a: c_int,
@@ -403,28 +285,26 @@ pub unsafe extern "C" fn perform_computation_with_history(
 
         let result = math_func(a, b, 0);
 
-        // `if (*history == NULL)`
-        let mut hist = raw_load64(history as *const u64) as *mut ComputationResult;
-        if hist.is_null() {
-            // `*history = allocate_results(10); *history_count = 0;`
-            hist = allocate_results(HISTORY_CAPACITY);
-            raw_store64(history as *mut u64, hist as u64);
-            raw_store32(history_count as *mut u32, 0);
+        // The loads and stores below go through `core::ptr::{read, write}`
+        // rather than plain `*p` dereferences on purpose. A plain deref makes
+        // rustc emit a null-pointer *check* whenever `-Cdebug-assertions` is
+        // on, which turns C's SIGSEGV into a Rust `panic_nounwind` (SIGABRT).
+        // The C code performs an unchecked load, so `ptr::read`/`ptr::write`
+        // are used to keep the fault identical in every build profile.
+        if core::ptr::read(history).is_null() {
+            core::ptr::write(history, allocate_results(HISTORY_CAPACITY));
+            core::ptr::write(history_count, 0);
         }
 
-        // `if (*history_count < 10)`
-        let count = raw_load32(history_count as *const u32) as c_int;
+        let count = core::ptr::read(history_count);
         if count < HISTORY_CAPACITY {
-            // `(*history)[*history_count]` — 24-byte stride.
-            let slot = (hist as *mut u8).offset(count as isize * RESULT_STRIDE);
-            // `.value = result;`
-            raw_store32(slot.offset(OFF_VALUE) as *mut u32, result as u32);
-            // `.timestamp = get_computation_timestamp();`
-            raw_store64(slot.offset(OFF_TIMESTAMP) as *mut u64, get_computation_timestamp() as u64);
-            // `.status = STATUS_SUCCESS;`
-            raw_store32(slot.offset(OFF_STATUS) as *mut u32, STATUS_SUCCESS as u32);
-            // `(*history_count)++;`
-            raw_store32(history_count as *mut u32, count.wrapping_add(1) as u32);
+            let slot = core::ptr::read(history).offset(count as isize);
+            // Field-wise stores, exactly like the C code: the struct's padding
+            // bytes are left untouched.
+            core::ptr::write(&raw mut (*slot).value, result);
+            core::ptr::write(&raw mut (*slot).timestamp, get_computation_timestamp());
+            core::ptr::write(&raw mut (*slot).status, STATUS_SUCCESS);
+            core::ptr::write(history_count, count.wrapping_add(1));
         }
 
         result

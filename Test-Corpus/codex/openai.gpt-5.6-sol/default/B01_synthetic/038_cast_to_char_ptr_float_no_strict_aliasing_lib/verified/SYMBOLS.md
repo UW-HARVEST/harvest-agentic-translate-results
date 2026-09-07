@@ -1,25 +1,35 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
+Reference library: `../c_src/build/libdriver.so`
 
-Command: `nm -D ../c_src/build/libdriver.so`
+Derived with:
 
-| Symbol | C kind | Rust `nm -D` parity | Classification |
-|--------|--------|---------------------|----------------|
-| `_ITM_deregisterTMCloneTable` | weak undefined | present | toolchain runtime |
-| `_ITM_registerTMCloneTable` | weak undefined | present | toolchain runtime |
-| `__cxa_finalize@GLIBC_2.2.5` | weak undefined | present | libc runtime |
-| `__gmon_start__` | weak undefined | present | toolchain runtime |
-| `driver` | defined global (`T`) | present as defined global (`T`) | public API |
-| `printf@GLIBC_2.2.5` | undefined | present | libc dependency |
-| `putchar@GLIBC_2.2.5` | undefined | present | libc dependency |
+```text
+nm -D ../c_src/build/libdriver.so
+nm -D --defined-only ../c_src/build/libdriver.so
+```
 
-## Defined Public API
+## Public defined symbols
 
-| Symbol | C | Rust | Missing |
-|--------|---|------|---------|
-| `driver` | `T` | `T` | no |
+| symbol | C `.so` | Rust `.so` | status |
+|--------|----------|------------|--------|
+| `driver` | `0000000000001173 T driver` | `00000000000118b0 T driver` | present |
 
-- [x] Zero C-defined public symbols are missing from the Rust shared library.
-- [x] Zero C non-libc dynamic dependencies are absent from the Rust dynamic
-  symbol table.
+Missing C public symbols in Rust: **0** — [x] verified after the final release
+build with an empty `comm -23` diff.
+
+## Undefined imports in the C `.so`
+
+These are dynamic imports, not public functions implemented by this library:
+
+| symbol | kind |
+|--------|------|
+| `_ITM_deregisterTMCloneTable` | weak toolchain import |
+| `_ITM_registerTMCloneTable` | weak toolchain import |
+| `__cxa_finalize@GLIBC_2.2.5` | weak libc import |
+| `__gmon_start__` | weak toolchain import |
+| `printf@GLIBC_2.2.5` | libc import |
+| `putchar@GLIBC_2.2.5` | libc import |
+
+The C library has no undefined project/library symbols. `ldd -r` reports no
+unresolved relocations for either shared library.

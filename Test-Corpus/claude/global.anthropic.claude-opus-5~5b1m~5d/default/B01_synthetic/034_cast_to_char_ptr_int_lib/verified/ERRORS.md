@@ -1,64 +1,48 @@
-# ERRORS.md — Phase C error-surface table
+# ERRORS.md — Phase C: ERROR-SURFACE TABLE
 
-Derived mechanically from `c_src/src/driver.c` and `c_src/include/driver.h`.
-
-## Mechanical grep of every rejection construct
+Derived mechanically from the complete C source (`c_src/src/driver.c`,
+`c_src/include/driver.h` — 37 + 29 lines, all of it comments except 14 code
+lines). The grep for every rejection idiom:
 
 ```
-grep -nE 'return|RETURN_ERROR|NULL|assert|errno|exit|abort|goto|\?:' c_src/src/driver.c
+grep -nE 'return|assert|NULL|errno|RETURN_ERROR|if *\(|else|switch|case|#if|MAX|MIN|<=|>=' \
+     src/driver.c include/driver.h
 ```
 
-Findings, exhaustively:
+matches **only** `include/driver.h:24:#ifndef DRIVER_H_` (the include guard).
 
-* `return` statements: **none** (both functions are `void` and fall off the end).
-* error-return macros (`RETURN_ERROR`, `CHECK`, …): **none**.
-* `NULL` / null-pointer checks: **none**.
-* `assert` / `static_assert`: **none**.
-* `errno`, `exit`, `abort`, `longjmp`: **none**.
-* explicit range / min / max checks or named limit constants: **none**.
-* error enums or sentinel values: **none**; the only public function returns
-  `void`, so there is no channel through which an error could be reported.
-* the only conditional in the whole library is the loop bound `i < len` in
-  `print_hex`, and `len` is not caller-controlled: `driver` always passes the
-  compile-time constant `sizeof(x)` (`4`).
+Therefore, mechanically:
 
-**Conclusion: the C library has an empty error surface.** `void driver(int x)`
-accepts every one of the 2^32 possible `int` bit patterns, reports nothing, and
-cannot fail. There is no invalid input to construct. Inventing rows here (e.g.
-"null pointer rejected") would contradict the C, which is the ground truth.
+- error-return macros (`RETURN_ERROR`, …): **0**
+- `return -1` / `return NULL` / any value-returning `return`: **0**
+  (`driver` and `print_hex` are both `void`; neither contains a `return`)
+- error enums / status codes: **0**
+- `assert`: **0** (`<assert.h>` is never included)
+- explicit range checks / null checks: **0**
+- `MIN`/`MAX` constants: **0**
+- `#ifdef` feature branches in code: **0**
 
-## Error-surface table
+The C library has **no error/rejection surface**: `driver(int x)` is total over
+its entire input domain (every one of the 2^32 `int` values is valid) and can
+never fail or reject. The rows below are therefore the *implicit* rejection /
+boundary conditions plus the generic FFI boundaries that every C API has, each
+with the exact result the C actually produces.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|---------------------------------------------|-------------------|------|--------|
-| E1 | `driver` | *(no rejection construct exists anywhere in the library)* | n/a — unreachable, nothing to assert | n/a | n/a (vacuous) |
+|---|----------|----------------------------------------------|-------------------|------|--------|
+| 1 | `print_hex` (internal) | `len <= 0` — the only conditional in the library is the loop guard `i < len`, so a non-positive `len` skips the body entirely | prints nothing but the trailing `"\n"`; no read of `p`; no error. **Unreachable via the public API**: `driver` always passes the compile-time constant `sizeof(int)` (= 4 > 0). Verified structurally (Rust `while i < len` has identical guard) — not reachable at the FFI boundary in either library, so the two libraries are trivially identical on it. | structural / N/A | [x] |
+| 2 | `print_hex` (internal) | `p == NULL` — no null check exists; C would dereference it | undefined behaviour in C. **Unreachable via the public API**: `driver` always passes `&x`, the address of its own by-value stack parameter, which is never null. No public entry point accepts a pointer, so *there is no null-pointer input to this library*. | structural / N/A | [x] |
+| 3 | `driver` | `x = INT_MIN` (`-2147483648`) — lowest value one step past the negative end of the range | no rejection; prints the 4 little-endian bytes `00000080` + `"\n"` | `err_row3_int_min` | [x] |
+| 4 | `driver` | `x = INT_MAX` (`2147483647`) — highest value, one step *below* the wrap-around | no rejection; prints `ffffff7f` + `"\n"` | `err_row4_int_max` | [x] |
+| 5 | `driver` | `x = -1` (all bits set) — the classic "error sentinel" value a caller might pass | no rejection; prints `ffffffff` + `"\n"` | `err_row5_minus_one` | [x] |
+| 6 | `driver` | `x = 0` — the "zero length / empty" analogue for a scalar API | no rejection; prints `00000000` + `"\n"` | `err_row6_zero` | [x] |
+| 7 | `driver` | **Out-of-range value passed across the FFI boundary as a wider integer.** A C `int` parameter, like a C enum, accepts whatever bit pattern the ABI register holds. Calling `driver` through the signature `extern "C" fn(i64)` with a value whose bits 32..63 are garbage (e.g. `0x7FFF_FFFF_DEAD_BEEF`, `i64::MIN`, `u32::MAX as i64 + 1`) is a real input both libraries must handle identically. | SysV AMD64: the callee reads only `%edi`, i.e. the low 32 bits; the upper bits are ignored. Result is the low 32 bits printed little-endian, e.g. `0x7FFF_FFFF_DEAD_BEEF` -> `efbeadde` + `"\n"` | `err_row7_oversized_arg_truncation` | [x] |
+| 8 | `driver` | Value one step past the *unsigned* range boundary, `0x1_0000_0000` (= `u32::MAX as i64 + 1`), passed as above | low 32 bits are all zero -> prints `00000000` + `"\n"` | `err_row7_oversized_arg_truncation` | [x] |
+| 9 | `driver` | Repeated invocation / state corruption: the library has no global or `static` mutable state, so no call can put it into a bad state | every call is independent; output is a pure function of `x` | `err_row9_no_hidden_state` | [x] |
 
-Because the table has no real rows, Phase C is discharged by testing the
-*generic* FFI boundary conditions that every C API has, which for this ABI
-(`void driver(int)`) are the extremes and unusual bit patterns of the single
-`int` parameter. These ARE the "one step past a documented valid range" and
-"out-of-range enum value" cases for this signature: an `int` parameter has no
-invalid values, so every such probe must be accepted identically by both
-libraries rather than rejected.
+## Verdict
 
-| # | boundary probed | rationale | test | status |
-|---|-----------------|-----------|------|--------|
-| B1 | `INT_MIN` (`-2147483648`) | one step past the negative end of the range | `boundary_extremes` | [x] pass |
-| B2 | `INT_MAX` (`2147483647`) | one step past the positive end of the range | `boundary_extremes` | [x] pass |
-| B3 | `INT_MIN + 1`, `INT_MAX - 1` | one step inside each extreme | `boundary_extremes` | [x] pass |
-| B4 | `0` | all-zero bit pattern; every `%02x` group is `00` | `boundary_extremes` | [x] pass |
-| B5 | `-1` (`0xffffffff`) | all-ones bit pattern; sign-extension trap for `%02x` | `boundary_extremes` | [x] pass |
-| B6 | `0x80000000` as unsigned reinterpreted to `int` | sign bit only; UB-adjacent conversion a caller can still make | `boundary_extremes` | [x] pass |
-| B7 | out-of-range "enum-like" ints (`-2`, `256`, `65536`, `0x7fffffff`, `12345678`) passed where a C enum would be | C enums accept any `int`; no variant check exists, so both must print the raw bytes | `out_of_range_enum_values` | [x] pass |
-| B8 | values whose bytes contain `0x00` and `0x0a` (`10`, `2560`, `0x0a000a00`, `0x000a0000`) | embedded NUL / newline bytes must not truncate or add framing | `embedded_nul_and_newline_bytes` | [x] pass |
-| B9 | values with a single byte in `0x80..0xff` at each of the 4 positions | catches `char`-vs-`unsigned char` sign-extension in `%02x` (would print `ffffffXX`) | `high_bit_per_byte_position` | [x] pass |
-| B10 | 4096 exhaustive-ish + randomized `int` values (fixed seed) | value-dependent formatting over the whole 32-bit range | `randomized_full_range` | [x] pass |
-| B11 | repeated / interleaved calls (C then Rust then C, 1000x) | shared `FILE *stdout` state, no cross-call state corruption | `interleaved_calls_share_stdout` | [x] pass |
-
-Note on null pointers and lengths: `driver`'s only parameter is a by-value
-`int`, and the pointer/length pair (`print_hex`'s `p` and `len`) is *not*
-reachable from outside the `.so` — `print_hex` is `static` and unexported in C,
-so a null pointer or a zero/oversized length is not an input an external caller
-can supply. Both libraries hard-code `&x` and `sizeof(int)`. This is verified
-structurally by the symbol diff in `SYMBOLS.md` (no `print_hex` export in
-either `.so`) and asserted in the test `print_hex_is_not_exported_by_either`.
+- [x] Every row above has a passing differential test (or is structurally
+      unreachable at the FFI boundary and documented as such).
+- [x] Both libraries agree byte-for-byte on every row — including the same
+      *absence* of any error code, since neither has an error channel.

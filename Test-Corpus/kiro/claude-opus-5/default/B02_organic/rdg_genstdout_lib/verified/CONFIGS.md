@@ -1,84 +1,71 @@
-# CONFIGS.md — Phase A configuration-surface table (valid inputs)
+# CONFIGS.md — configuration / valid-input surface table
 
-## Axes derived from the C source
+Mirror of `ERRORS.md` for **valid** inputs. Axes derived mechanically from the
+branches the C actually takes.
 
-`c_src/src/lib.c` has no runtime options struct, no global state and no
-setters — every axis is an *argument* or an *input shape*. The axes the C code
-actually branches on:
+## Axes the C code branches on
 
-**A. Entry point** (both public, both in `nm -D`; `extractFilename` is the
-low-level one, `FIO_createFilename_fromOutDir` the composed one)
-- `extractFilename(path, separator)`
-- `FIO_createFilename_fromOutDir(path, outDirName, suffixLen)`
-
-**B. Compile-time separator selection** (`#if defined(_MSC_VER) || __MINGW32__
-|| __MSVCRT__`): `'\\'` + a second `extractFilename(.., '/')` pass on Windows,
-plain `'/'` elsewhere. The reference CMake/Linux build takes the `'/'` branch,
-so that is the only reachable configuration and the Rust mirrors it.
-
-**C. `separator` argument of `extractFilename`** — the full `char` domain,
-widened to `int` at the `strrchr` call: `'/'`, other printable, `'\0'`, and
-high-bit/negative bytes (`0x80`, `0xFF`).
-
-**D. `path` shape** — the `strrchr` outcome: separator absent / present once /
-present many times / at index 0 only / as the last byte (empty basename) /
-`path` empty / long / non-ASCII bytes.
-
-**E. `outDirName` shape** — the `line 45` branch: last byte `== '/'` vs `!= '/'`;
-plus length 0 / 1 / many, embedded separators, non-ASCII bytes.
-
-**F. `suffixLen`** — feeds the allocation size and the guaranteed zero tail:
-`0` / `1` / small / large-but-allocatable / wrapping (`SIZE_MAX`).
+| axis | source of the branch | values the C distinguishes |
+|---|---|---|
+| A. entry point | `include/lib.h` + external linkage in `lib.c` | `extractFilename` (low level), `FIO_createFilename_fromOutDir` (composed) |
+| B. `separator` value (only a parameter of `extractFilename`; hard-wired to `'/'` inside `FIO_...`) | `strrchr(path, separator)`, `lib.c:9` | `'/'`, `'\\'`, `'\0'`, ordinary ASCII, high-bit (negative `char`), full `-128..=127` sweep |
+| C. separator occurrence in `path` | `if (search == NULL)`, `lib.c:11` | absent / exactly once / many / first byte / last byte / only byte / adjacent runs |
+| D. `path` length | implicit in `strrchr`/`strlen` | 0, 1, small, long (> 256 bytes) |
+| E. `path` byte content | none — raw bytes, no validation | ASCII, embedded high-bit bytes, arbitrary random non-NUL bytes |
+| F. `outDirName` last byte | `if (outDirName[strlen(outDirName)-1] == separator)`, `lib.c:45` | `== '/'` (branch 1: no separator inserted) / `!= '/'` (branch 2: separator inserted) |
+| G. `outDirName` length | `strlen(outDirName)`, and the `-1` subscript | 0 (out-of-bounds read, see E8), 1, small, long |
+| H. `suffixLen` | allocation size only, `lib.c:38` | 0, 1, small, large-but-allocatable, near-`SIZE_MAX` (wrapping — see E10) |
+| I. build-time platform switch | `#if defined(_MSC_VER) \|\| defined(__MINGW32__) \|\| defined(__MSVCRT__)`, `lib.c:27,34` | Windows branch (`'\\'` + second `extractFilename(.., '/')` pass) / **non-Windows branch (`'/'`, single pass)** — the CMake+GCC/Linux reference build takes the non-Windows branch, so that is the only configuration the `.so` under test realises. The Rust mirrors this and the Windows branch is unreachable in both. |
+| J. Cargo feature combinations | `translation/Cargo.toml` | the crate declares **no** `[features]` table, so the only combinations are: default, `--no-default-features`. Both are verified. |
 
 ## Rows (pruned cross-product of the combinations the C distinguishes)
 
-Every row is driven with **many randomized inputs** (`SplitMix64`, fixed seed
-`0x5DEECE66D` per row) through **both** `.so` exports and compared
-byte-for-byte, including the full `calloc`ed buffer (used bytes *and* the
-zero tail).
+Every row is exercised with **many randomized inputs** (fixed seed, deterministic
+xorshift PRNG in the test harness) against both `.so`s, comparing the full
+returned bytes.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|-------------------------------------------|------|-----|
-| 1 | `extractFilename` | `separator='/'`, random path **containing no `/`** (random length 0..64, random printable+non-ASCII bytes) | `cfg_01_extract_no_separator` | [x] |
-| 2 | `extractFilename` | `separator='/'`, random path with **exactly one** `/` at a random interior index | `cfg_02_extract_one_separator` | [x] |
-| 3 | `extractFilename` | `separator='/'`, random path with **many** `/` at random indices (last-occurrence semantics) | `cfg_03_extract_many_separators` | [x] |
-| 4 | `extractFilename` | `separator='/'`, path where `/` is the **final byte** (empty basename result) | `cfg_04_extract_trailing_separator` | [x] |
-| 5 | `extractFilename` | `separator='/'`, path where `/` is at **index 0** only ("/name") | `cfg_05_extract_leading_separator` | [x] |
-| 6 | `extractFilename` | `separator='/'`, **empty** path `""` | `cfg_06_extract_empty_path` | [x] |
-| 7 | `extractFilename` | random **non-`/` separator** byte (0x01..0x7F), random path that may or may not contain it | `cfg_07_extract_random_ascii_separator` | [x] |
-| 8 | `extractFilename` | random **high-bit / negative separator** byte (0x80..0xFF) — exercises `char`→`int` widening — with random paths containing high-bit bytes | `cfg_08_extract_highbit_separator` | [x] |
-| 9 | `extractFilename` | `separator='\0'` on random non-empty paths (matches the terminator, returns one-past-the-end) | `cfg_09_extract_nul_separator` | [x] |
-| 10 | `extractFilename` | long paths (256..1024 bytes) with dense random separators | `cfg_10_extract_long_paths` | [x] |
-| 11 | `FIO_createFilename_fromOutDir` | `outDirName` **ends with `/`**, path with **no** separator, `suffixLen=0` | `cfg_11_fio_outdir_slash_path_plain_suffix0` | [x] |
-| 12 | `FIO_createFilename_fromOutDir` | `outDirName` **ends with `/`**, path **with** separators, `suffixLen=0` | `cfg_12_fio_outdir_slash_path_nested_suffix0` | [x] |
-| 13 | `FIO_createFilename_fromOutDir` | `outDirName` **does not end with `/`**, path with **no** separator, `suffixLen=0` | `cfg_13_fio_outdir_plain_path_plain_suffix0` | [x] |
-| 14 | `FIO_createFilename_fromOutDir` | `outDirName` **does not end with `/`**, path **with** separators, `suffixLen=0` | `cfg_14_fio_outdir_plain_path_nested_suffix0` | [x] |
-| 15 | `FIO_createFilename_fromOutDir` | `outDirName` ends with `/`, path ends with `/` (**empty basename**), random `suffixLen` 0..8 | `cfg_15_fio_empty_basename` | [x] |
-| 16 | `FIO_createFilename_fromOutDir` | `outDirName` of length **1** (`"/"` → separator branch, and one random non-`/` byte → insert branch), random path | `cfg_16_fio_outdir_len1_both_branches` | [x] |
-| 17 | `FIO_createFilename_fromOutDir` | `outDirName` containing **multiple** embedded separators (`a/b/c` and `a/b/c/`), random path | `cfg_17_fio_outdir_multi_component` | [x] |
-| 18 | `FIO_createFilename_fromOutDir` | `suffixLen = 1` (smallest non-zero tail), both `outDirName` branches, random path | `cfg_18_fio_suffixlen_one` | [x] |
-| 19 | `FIO_createFilename_fromOutDir` | random `suffixLen` in 0..=64 (zero-tail length sweep), both branches, random path | `cfg_19_fio_suffixlen_sweep` | [x] |
-| 20 | `FIO_createFilename_fromOutDir` | large-but-allocatable `suffixLen` (1 MiB..4 MiB), both branches — verifies the entire multi-MiB zero tail matches | `cfg_20_fio_suffixlen_large` | [x] |
-| 21 | `FIO_createFilename_fromOutDir` | `path` = `""` (empty) with both `outDirName` branches, random `suffixLen` | `cfg_21_fio_empty_path` | [x] |
-| 22 | `FIO_createFilename_fromOutDir` | **non-ASCII / high-bit** bytes throughout `path` and `outDirName` (byte-transparency), both branches | `cfg_22_fio_highbit_bytes` | [x] |
-| 23 | `FIO_createFilename_fromOutDir` | long inputs: `outDirName` 128..512 bytes, `path` 128..512 bytes with dense separators, random `suffixLen` | `cfg_23_fio_long_inputs` | [x] |
-| 24 | `FIO_createFilename_fromOutDir` | fully randomized fuzz over **all** axes at once (random outDir/path bytes incl. `/`, random terminal byte, random `suffixLen` 0..=256) × 4096 iterations | `cfg_24_fio_full_random_fuzz` | [x] |
-| 25 | composed pipeline | `extractFilename` result fed by the caller into `FIO_createFilename_fromOutDir` (real-consumer usage: basename-of-basename), randomized | `cfg_25_pipeline_extract_then_fio` | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| C1 | `extractFilename` | `separator='/'`, random ASCII paths **containing** `'/'` at random positions, len 1..64 | [x] |
+| C2 | `extractFilename` | `separator='/'`, random ASCII paths **without** any `'/'` (NULL branch) — assert same *pointer offset* returned | [x] |
+| C3 | `extractFilename` | `separator='/'`, path length 0 (empty string) | [x] |
+| C4 | `extractFilename` | `separator='/'`, path length 1: `"/"` and one random non-`'/'` byte | [x] |
+| C5 | `extractFilename` | `separator='/'`, `'/'` is the **first** byte only (`"/abc"`) | [x] |
+| C6 | `extractFilename` | `separator='/'`, `'/'` is the **last** byte (`"abc/"`) → empty filename | [x] |
+| C7 | `extractFilename` | `separator='/'`, **many** `'/'` incl. adjacent runs (`"a//b///c"`) → last occurrence wins | [x] |
+| C8 | `extractFilename` | `separator='/'`, long paths (256..1024 random bytes) with random `'/'` density | [x] |
+| C9 | `extractFilename` | `separator='\\'` (the Windows separator, reachable here only as an explicit argument) over random paths containing/not containing `'\\'` | [x] |
+| C10 | `extractFilename` | `separator='\0'` — matches the terminator; returns `path+strlen+1` | [x] |
+| C11 | `extractFilename` | `separator` swept over **every** value `-128..=127`, against a fixed path containing all 255 non-NUL byte values | [x] |
+| C12 | `extractFilename` | `separator` high-bit / negative (`0x80..0xFF` as signed `char`) with random paths built from bytes `0x80..0xFF` | [x] |
+| C13 | `extractFilename` | `separator` passed as an out-of-`char`-range `int` across FFI (`256`, `-129`, `0x1FF`, `i32::MIN`, `i32::MAX`) | [x] |
+| C14 | `extractFilename` | random paths of arbitrary non-NUL bytes (`0x01..0xFF`) × random `separator` from those bytes | [x] |
+| C15 | `FIO_createFilename_fromOutDir` | branch F1: `outDirName` **ends with** `'/'`; random paths **with** `'/'`; `suffixLen=0` | [x] |
+| C16 | `FIO_createFilename_fromOutDir` | branch F1: `outDirName` ends with `'/'`; random paths **without** `'/'`; `suffixLen=0` | [x] |
+| C17 | `FIO_createFilename_fromOutDir` | branch F2: `outDirName` does **not** end with `'/'`; random paths **with** `'/'`; `suffixLen=0` | [x] |
+| C18 | `FIO_createFilename_fromOutDir` | branch F2: `outDirName` does not end with `'/'`; random paths **without** `'/'`; `suffixLen=0` | [x] |
+| C19 | `FIO_createFilename_fromOutDir` | branch F1/F2 × `suffixLen = 1` (random) | [x] |
+| C20 | `FIO_createFilename_fromOutDir` | branch F1/F2 × random `suffixLen` in `2..4096` — verifies the zero-filled tail from `calloc` | [x] |
+| C21 | `FIO_createFilename_fromOutDir` | branch F1/F2 × `suffixLen = 1<<20` (large but allocatable) | [x] |
+| C22 | `FIO_createFilename_fromOutDir` | `outDirName == "/"` (length 1, F1 with minimal prefix) × random paths | [x] |
+| C23 | `FIO_createFilename_fromOutDir` | `outDirName` length 1, non-`'/'` (F2 with minimal prefix) × random paths | [x] |
+| C24 | `FIO_createFilename_fromOutDir` | `outDirName` long (256..1024 random bytes) × both F branches × random `suffixLen` | [x] |
+| C25 | `FIO_createFilename_fromOutDir` | `path == ""` (empty) × both F branches × random `suffixLen` | [x] |
+| C26 | `FIO_createFilename_fromOutDir` | `path` ends with `'/'` (empty filename) × both F branches | [x] |
+| C27 | `FIO_createFilename_fromOutDir` | `path == "/"` × both F branches | [x] |
+| C28 | `FIO_createFilename_fromOutDir` | `path` with many `'/'` and adjacent runs × both F branches | [x] |
+| C29 | `FIO_createFilename_fromOutDir` | `outDirName` with embedded high-bit bytes, last byte `'/'` and last byte non-`'/'` | [x] |
+| C30 | `FIO_createFilename_fromOutDir` | `path` with embedded high-bit bytes (incl. `0xFF`, i.e. `-1` as signed `char`) × both F branches | [x] |
+| C31 | `FIO_createFilename_fromOutDir` | `outDirName == ""` (length 0 → the `[-1]` out-of-bounds read) with a controlled sentinel byte before the buffer, sentinel `= '/'` and sentinel `!= '/'` | [x] |
+| C32 | `FIO_createFilename_fromOutDir` | full random fuzz: random `path`, random `outDirName`, random `suffixLen in 0..64`, 20000 iterations, seeded | [x] |
+| C33 | composed pipeline | `extractFilename(path,'/')` result fed as the `path` of `FIO_createFilename_fromOutDir`, and the `FIO_...` result fed back into `extractFilename` — cross-library round-trip (C→Rust and Rust→C mixed) over random inputs | [x] |
+| C34 | build config | every row above re-run under `--no-default-features` (the crate declares no features, so this is the complete feature space) | [x] |
+| C35 | build config | every row above re-run against the **debug** Rust `.so` as well as the **release** `.so` (catches `overflow-checks` divergence in the allocation-size arithmetic) | [x] |
 
-## Beyond content equality
+## Binary executable
 
-Matching buffer *contents* does not by itself pin the allocation the C code
-makes. Two further checks close that gap:
-
-* a deterministic under-allocation guard in the harness
-  (`malloc_usable_size(p) >= required`, which glibc always satisfies), and
-* `tests/phase_e_alloc.rs`, which `LD_PRELOAD`s a `calloc` interposer
-  (`tests/support/calloc_probe.c`) and compares the **exact** `(nmemb, size)`
-  request both implementations make across 320+ configurations, including the
-  wrapping (`SIZE_MAX`) and allocation-failure (`1<<63`) cases.
-
-## Feature combinations
-
-`Cargo.toml` has no `[features]` table → the single configuration is the
-default. `run_all_feature_combos.sh` enumerates it (plus the explicit
-`--no-default-features` build) and runs the whole suite for each.
+`c_src/CMakeLists.txt` declares only `add_library(driver SHARED src/lib.c)` —
+there is **no** `add_executable`, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]` with no `[[bin]]` and no `src/main.rs`. There is
+no driver binary, so the "compare binary stdout byte-for-byte" gate is
+**not applicable**; it is satisfied vacuously.

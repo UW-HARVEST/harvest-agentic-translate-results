@@ -1,92 +1,81 @@
-# ERRORS.md — Error / rejection surface table (Phase A, gates Phase C)
+# ERRORS.md — error / rejection surface table
 
-## Mechanical derivation
+## How this was derived
 
-Every way the C source can reject input, found by exhaustively reading both C
-files (15 lines of code total):
+Mechanical grep over the *library* sources only (`c_src/include/lib.h`,
+`c_src/src/lib.c`; `c_src/build/CMakeFiles/.../CMakeCCompilerId.c` is CMake's
+compiler-probe file and is not part of the library):
 
 ```
-$ grep -nE 'RETURN_ERROR|return|assert|NULL|errno|abort|exit|<|>|==|!=' c_src/src/lib.c c_src/include/lib.h
-c_src/include/lib.h:3:  int hdr_compare(const uint8_t *h1, const uint8_t *h2);
-c_src/src/lib.c:3:      static int hdr_valid(const uint8_t *h) {
-c_src/src/lib.c:4:          return h[0] == 0xff && ((h[1] & 0xF0) == 0xf0 || (h[1] & 0xFE) == 0xe2) &&
-c_src/src/lib.c:5:                 ((((h[1]) >> 1) & 3) != 0) && (((h[2]) >> 4) != 15) &&
-c_src/src/lib.c:6:                 ((((h[2]) >> 2) & 3) != 3);
-c_src/src/lib.c:9:      int hdr_compare(const uint8_t *h1, const uint8_t *h2) {
-c_src/src/lib.c:10:         return hdr_valid(h2) && ((h1[1] ^ h2[1]) & 0xFE) == 0 &&
-c_src/src/lib.c:11:                ((h1[2] ^ h2[2]) & 0x0C) == 0 &&
-c_src/src/lib.c:12:                !((((h1[2]) & 0xF0) == 0) ^ (((h2[2]) & 0xF0) == 0));
-c_src/src/lib.c:13:     }
+grep -nE 'return|assert|NULL|errno|enum|#if|#ifdef|-1|malloc|free|size|len' c_src/src/lib.c c_src/include/lib.h
 ```
 
-Findings that shape this table:
+Findings:
 
-- There are **no** error macros, no `errno`, no error enum, no `assert`, no
-  `abort`, no `NULL` check, no allocation, and no `#ifdef` in the C source.
-- There are **no enum parameters** anywhere in the public API (`lib.h` declares
-  one function taking two `const uint8_t *`), so "out-of-range enum value across
-  the FFI boundary" has no instance in this library. The analogous class of
-  input — a byte value with no meaningful interpretation, e.g. a reserved
-  bitrate/sampling-rate field — *does* exist and is rows 4–6 below.
-- The function's only failure signal is its **return value: `0` = rejected,
-  `1` = accepted** (`int`, produced by C's `&&`/`!` operators, which yield
-  exactly `0` or `1`). "Same error code" in Phase C therefore means "both sides
-  return the identical `int`".
-- Each term of the two `&&` chains is a distinct rejection branch, and C's `&&`
-  **short-circuits**: a rejection at term *n* means terms *n+1…* are never
-  evaluated, so `h1` is never dereferenced when `hdr_valid(h2)` is false. That
-  short-circuit is itself an observable behaviour (row 11) and is tested.
+* `return` statements: **2** (one per function) — both are a single boolean
+  expression, not an error/success branch.
+* `assert`: **0**. `NULL` checks: **0**. `errno`: **0**. error enums / error
+  macros (`RETURN_ERROR`, …): **0**. `return -1` / `return NULL`: **0**.
+* allocation / length / count parameters: **0** — the API takes two raw
+  `const uint8_t *` and no length.
+* `#if` / `#ifdef` / conditional compilation: **0**.
+* Min/max constants: the only constants are the bit masks and shift/compare
+  literals `0xff, 0xF0, 0xf0, 0xFE, 0xe2, 0x0C, 15, 3, 2, 1, 0` (line-tagged
+  above), all used as bit tests.
 
-## Error-surface table
+So this library has **no error channel**: `hdr_compare` returns `int` `1` or `0`
+only. "Rejection" therefore means *returning 0*, and the exhaustive set of
+distinct rejection branches is the set of `&&` / `||` sub-conditions that can
+make the expression false. Each row below is one such branch, taken straight
+from the source text — 5 from `hdr_valid` (reached through `hdr_compare(h1,h2)`
+on `h2`) and 3 from `hdr_compare` itself.
 
-Rows 1–5 are the rejection branches inside `hdr_valid`, reached via
-`hdr_compare`'s first term with `h = h2`. Rows 6–9 are `hdr_compare`'s own
-terms. Rows 10–13 are the generic FFI boundary conditions.
+`hdr_valid` is `static` and unexported, so its rejections are only observable
+via `hdr_compare`'s second argument.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| 1 | `hdr_valid` (via `hdr_compare`, `h=h2`) | `h2[0] != 0xff` — first sync byte wrong. Any of the 255 non-`0xff` values, with `h2[1]`/`h2[2]`/`h1` otherwise fully valid & matching | returns `0` |
-| 2 | `hdr_valid` (via `hdr_compare`) | `(h2[1] & 0xF0) != 0xf0` **and** `(h2[1] & 0xFE) != 0xe2` — second sync byte in neither accepted class. The 238 values outside `{0xe2,0xe3} ∪ [0xf0,0xff]` | returns `0` |
-| 3 | `hdr_valid` (via `hdr_compare`) | `((h2[1] >> 1) & 3) == 0` — reserved MPEG layer field, *even though* term 2 passed. Exactly `h2[1] ∈ {0xf0,0xf1,0xf8,0xf9}` | returns `0` |
-| 4 | `hdr_valid` (via `hdr_compare`) | `(h2[2] >> 4) == 15` — reserved/bad bitrate index. Exactly `h2[2] ∈ [0xf0,0xff]` | returns `0` |
-| 5 | `hdr_valid` (via `hdr_compare`) | `((h2[2] >> 2) & 3) == 3` — reserved sampling-rate field. Exactly `h2[2] & 0x0C == 0x0C` (64 values), with `(h2[2]>>4) != 15` so row 4 did not already fire | returns `0` |
-| 6 | `hdr_compare` | `hdr_valid(h2) == 0` (the aggregate first term) — any h2 rejected by rows 1–5, for arbitrary `h1` | returns `0` |
-| 7 | `hdr_compare` | `((h1[1] ^ h2[1]) & 0xFE) != 0` — `h1[1]` differs from valid `h2[1]` in any bit except bit 0 (i.e. `h1[1] ∉ {h2[1] & 0xFE, h2[1] \| 0x01}`) | returns `0` |
-| 8 | `hdr_compare` | `((h1[2] ^ h2[2]) & 0x0C) != 0` — sampling-rate bits (bits 2–3) of `h1[2]` differ from `h2[2]`, with rows 1–7 passing | returns `0` |
-| 9 | `hdr_compare` | `((h1[2] & 0xF0) == 0) != ((h2[2] & 0xF0) == 0)` — exactly one of the two headers has a zero (free-format) bitrate nibble, with rows 1–8 passing | returns `0` |
-| 10 | `hdr_compare` | `h1 == NULL` **while** `hdr_valid(h2)` is false — legal in C because `&&` short-circuits before `h1` is read | returns `0`, no crash |
-| 11 | `hdr_compare` | `h1` pointing at an unmapped non-null address (`0x1`), and `h1` placed at the last readable byte before a `PROT_NONE` guard page, **while** `hdr_valid(h2)` is false — same short-circuit guarantee: bytes `h1[1]`, `h1[2]` must never be touched | returns `0`, no crash |
-| 12 | `hdr_compare` | `h1 == h2` (aliasing the same 3 bytes) with a valid header — the `^`/nibble terms all compare a byte with itself | returns `1` (accept), for every valid `h2` |
-| 13 | `hdr_compare` | reading only 3 bytes: `h1[0]` is **never** dereferenced by the C at all (no term mentions `h1[0]`), and neither side may read `h[3]` or beyond | result independent of `h1[0]`; buffers of exactly 3 bytes suffice for both sides |
+## The table
 
-Notes on conditions deliberately **not** in the table because the C has
-undefined behaviour there and so has no "expected result" to match:
-`h2 == NULL`, or `h2`/`h1` shorter than 3 bytes when the corresponding bytes are
-actually reached. The C dereferences `h2[0]` unconditionally, so a null `h2`
-segfaults; the Rust translation reproduces that same unconditional dereference
-(deliberately — a silent null check would *diverge* from the C). Row 10/11 cover
-the null/short case that the C *does* define, via short-circuiting.
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|---------------------------------------------|-------------------|-----|
+| 1 | `hdr_compare` → `hdr_valid(h2)` | `h2[0] != 0xff` (any of the 255 other first bytes; sync byte missing) | `0` | [x] |
+| 2 | `hdr_compare` → `hdr_valid(h2)` | `(h2[1] & 0xF0) != 0xf0` **and** `(h2[1] & 0xFE) != 0xe2` (second byte in neither accepted class: not high-nibble `0xF`, not `0xE2`/`0xE3`) | `0` | [x] |
+| 3 | `hdr_compare` → `hdr_valid(h2)` | `((h2[1] >> 1) & 3) == 0` (layer field zero, e.g. `h2[1] == 0xf0` or `0xf1`) | `0` | [x] |
+| 4 | `hdr_compare` → `hdr_valid(h2)` | `(h2[2] >> 4) == 15` (high nibble of third byte all-ones, `h2[2] >= 0xf0`) | `0` | [x] |
+| 5 | `hdr_compare` → `hdr_valid(h2)` | `((h2[2] >> 2) & 3) == 3` (bits 2–3 of third byte both set, `h2[2] & 0x0C == 0x0C`) | `0` | [x] |
+| 6 | `hdr_compare` | `h2` valid but `((h1[1] ^ h2[1]) & 0xFE) != 0` (second bytes differ in any of bits 1–7) | `0` | [x] |
+| 7 | `hdr_compare` | `h2` valid, byte-1 masks agree, but `((h1[2] ^ h2[2]) & 0x0C) != 0` (third bytes differ in bit 2 and/or bit 3) | `0` | [x] |
+| 8 | `hdr_compare` | `h2` valid, rows 6–7 pass, but `((h1[2] & 0xF0) == 0) ^ ((h2[2] & 0xF0) == 0)` — exactly one of the two third-byte high nibbles is zero | `0` | [x] |
 
-## Phase C check-off
+## Generic FFI boundary conditions (not in the table above, tested anyway)
 
-| # | test | status |
-|---|------|--------|
-| 1 | `err_row01_bad_sync_byte0` | [x] pass |
-| 2 | `err_row02_byte1_neither_class` | [x] pass |
-| 3 | `err_row03_byte1_reserved_layer` | [x] pass |
-| 4 | `err_row04_byte2_bitrate_15` | [x] pass |
-| 5 | `err_row05_byte2_samplerate_3` | [x] pass |
-| 6 | `err_row06_invalid_h2_any_h1` | [x] pass |
-| 7 | `err_row07_byte1_mismatch_above_bit0` | [x] pass |
-| 8 | `err_row08_byte2_samplerate_mismatch` | [x] pass |
-| 9 | `err_row09_freeformat_nibble_mismatch` | [x] pass |
-| 10 | `err_row10_null_h1_with_invalid_h2` | [x] pass |
-| 11 | `err_row11_unreadable_h1_with_invalid_h2` | [x] pass |
-| 12 | `err_row12_aliased_pointers` | [x] pass |
-| 13 | `err_row13_no_overread_past_three_bytes` | [x] pass |
-| — | `err_generic_boundaries_and_out_of_range_field_values` (generic boundaries: every byte position swept 0..=255, one step past every field boundary, all-`0x00`/all-`0xff`) | [x] pass |
+| # | condition | expected C behaviour | how tested | [x] |
+|---|-----------|----------------------|-----------|-----|
+| G1 | `h1 == NULL` while `h2` is **invalid** | `0`, and `h1` is never dereferenced (`&&` short-circuits) — no fault | differential, both `.so`s called with a real null pointer | [x] |
+| G2 | `h1 == NULL` while `h2` is **valid** | undefined behaviour in C (unconditional `h1[1]` load) — **not testable**, documented, deliberately not exercised | n/a (documented) | [x] |
+| G3 | `h2 == NULL` | undefined behaviour in C (`hdr_valid` loads `h2[0]` unconditionally) — **not testable**, documented, deliberately not exercised | n/a (documented) | [x] |
+| G4 | read-extent / "oversized length": does the C read past byte 2? | never reads `h1[0]`, never reads any index `> 2`; reads `h2[2]`/`h1[1]`/`h1[2]` only when the preceding `&&` terms hold | `mmap` + `PROT_NONE` guard page placed immediately after the header so any over-read faults; asserted for both `.so`s | [x] |
+| G5 | out-of-range enum value across the FFI boundary | **N/A** — the API has no `enum`, no flag, and no integer-mode parameter (grep for `enum` returns 0 hits). Every one of the 2^8 values of every byte parameter is in range and meaningful; there is no "one past the valid range" scalar. Full coverage instead comes from the exhaustive byte sweeps in Phase B. | exhaustive 2^24 `h2` sweep + exhaustive 2^16 `h1` sweep | [x] |
+| G6 | return-value domain | C returns only `0` or `1` (`&&` yields `int` 0/1); Rust must not return e.g. `-1` or `2` | asserted on every differential call | [x] |
+| G7 | non-NULL but unaligned / arbitrary pointer | `uint8_t` loads have no alignment requirement; every odd/even offset must behave identically | headers placed at every offset 0..7 inside a buffer | [x] |
 
-All 13 rows live in `tests/phase_c_errors.rs`. Row 13's guard page is
-**self-validating**: a forked child reads the first guard byte and the test
-asserts it dies with `SIGSEGV`/`SIGBUS`, so the over-read check cannot pass
-vacuously.
+## Row → test mapping
+
+| rows | test |
+|------|------|
+| 1 | `phase_c_errors::err01_bad_sync_byte` (all 255 wrong sync bytes × 64 vectors) |
+| 2 | `phase_c_errors::err02_byte1_in_neither_class` (all 238 rejected byte-1 values) |
+| 3 | `phase_c_errors::err03_layer_zero` (all 4 layer-0 values) |
+| 4 | `phase_c_errors::err04_nibble_all_ones` (all 16 values `0xF0..0xFF`) |
+| 5 | `phase_c_errors::err05_sbits_three` (all 60 values with `S==3`, nibble ≠ 15) |
+| 6 | `phase_c_errors::err06_byte1_mask_fe_mismatch_exhaustive_masks` (all 254 XOR masks touching `0xFE`) |
+| 7 | `phase_c_errors::err07_byte2_mask_0c_mismatch_exhaustive` (exhaustive `(h2[2], h1[2])` pairs) |
+| 8 | `phase_c_errors::err08_high_nibble_zeroness_xor_exhaustive` (exhaustive, isolated from rows 6–7) |
+| G1 | `phase_c_errors::g01_null_h1_with_invalid_h2` |
+| G2, G3 | not testable (C dereferences unconditionally → UB); documented above |
+| G4 | `phase_c_errors::g04_no_read_past_byte_two` (`mmap` + `PROT_NONE` guard page) |
+| G5 | `phase_c_errors::g05_no_enum_or_flag_parameter_in_the_api` (asserts the header still declares no enum/flag, so the row cannot rot) + exhaustive byte coverage in `phase_b_sweeps` |
+| G6 | asserted on **every** differential call by `common::Pair::assert_same`, plus `g06_g07_return_domain_and_unaligned` |
+| G7 | `phase_c_errors::g06_g07_return_domain_and_unaligned` (odd offsets) and `phase_b_configs::row27_pointer_placement_and_alignment` |
+
+All 12 tests in `tests/phase_c_errors.rs` pass against both `.so`s, under both
+feature combinations and both build profiles.

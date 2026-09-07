@@ -1,63 +1,50 @@
-# SYMBOLS.md — public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+C source translated: `c_src/src/driver.c` (the ONLY `.c` file in the project,
+per `c_src/CMakeLists.txt`: `add_library(driver SHARED src/driver.c)`).
+Public header: `c_src/include/driver.h`.
 
-* C   : `c_src/build/libdriver.so`            (cmake, gcc, `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`)
-* Rust: `translation/target/release/libdriver.so` (`crate-type = ["cdylib"]`)
-
-## C `.so` exported symbols (`nm -D --defined-only`)
+## `nm -D --defined-only` on the C `.so`
 
 ```
+$ nm -D --defined-only c_src/build/libdriver.so
 0000000000001175 T driver
 0000000000001119 T print_foo
 ```
 
-The C translation unit `src/driver.c` contains exactly three top-level entities:
+(`printf@GLIBC_2.2.5` is *undefined* / imported, not exported — not part of the
+surface. No data symbols, no macro-generated symbols, no weak symbols.)
 
-| C entity            | linkage             | exported? |
-|---------------------|---------------------|-----------|
-| `typedef struct {...} foo_t` | type, no symbol | n/a |
-| `void print_foo(const foo_t *foo)` | external (no `static`) | **yes** |
-| `void driver(unsigned int, unsigned int, bool, int)` | external, declared in `include/driver.h` | **yes** |
-
-Note: `print_foo` is *not* declared in the public header, but it is **not
-`static`**, so it has external linkage and is a real part of the `.so`'s ABI
-surface. It is therefore verified as a first-class entry point (Phase B/C),
-not treated as an internal helper.
-
-## Rust `.so` exported symbols (filtered to non-Rust-runtime symbols)
+## `nm -D --defined-only` on the Rust `.so`
 
 ```
+$ nm -D --defined-only translation/target/release/libdriver.so | grep -v ' [wWuv] '
 0000000000011710 T driver
 0000000000011740 T print_foo
 ```
 
 ## Parity table
 
-| # | symbol      | in C `.so` | in Rust `.so` | status |
-|---|-------------|-----------|---------------|--------|
-| 1 | `driver`    | T         | T             | ✅ present, `#[no_mangle] extern "C"` |
-| 2 | `print_foo` | T         | T             | ✅ present, `#[no_mangle] extern "C"` |
+| # | symbol      | type | in C `.so` | in Rust `.so` | status | notes |
+|---|-------------|------|-----------|---------------|--------|-------|
+| 1 | `driver`    | `T` (func) | yes | yes | OK | `void driver(unsigned int, unsigned int, bool, int)`; Rust `#[no_mangle] extern "C" fn driver(c_uint, c_uint, u8, c_int)` |
+| 2 | `print_foo` | `T` (func) | yes | yes | OK | `void print_foo(const foo_t *)`; not declared in `driver.h` but has external linkage in C, so it IS part of the exported ABI surface |
 
-**Symbol diff (C minus Rust): EMPTY.** No symbol required translation work and
-no stubs exist — both functions are fully translated in `src/lib.rs`.
+**Missing from Rust: NONE.**
+**Extra non-libc undefined symbols in Rust: NONE** (only `printf` + the usual
+glibc/`__cxa`/unwind imports, which the C `.so` also imports).
 
-Undefined (imported) symbols of the Rust `.so` are libc/Rust-runtime only
-(`printf`, `memcpy`, unwinding/personality-free because `panic = "abort"`).
-`nm -D -u` shows no missing non-libc symbols.
+### Non-exported C internals
 
-Reproduce with:
+| C entity | kind | exported? | Rust counterpart |
+|----------|------|-----------|------------------|
+| `foo_t` (`typedef struct { unsigned int x:2; unsigned int y:3; bool b:1; int z; }`) | type | no (types have no symbols) | `#[repr(C)] pub struct foo_t { bits: u8, z: c_int }` — 8 bytes, align 4, matching the SysV/ELF bit-field layout (x = bits 0..1, y = bits 2..4, b = bit 5 of byte 0; `z` at offset 4) |
+
+### Verification command
 
 ```sh
-diff <(nm -D --defined-only c_src/build/libdriver.so            | awk '{print $3}' | sort) \
-     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort \
-       | grep -vE '^(_|rust_|__rust)')
+diff <(nm -D --defined-only c_src/build/libdriver.so           | awk '{print $3}' | sort) \
+     <(nm -D --defined-only translation/target/release/libdriver.so \
+         | grep -v ' [wWuv] ' | awk '{print $3}' | sort)
 ```
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table** and no optional
-dependencies, so the only build configuration is the default one
-(`--no-default-features` is equivalent to the default). This is verified by
-`scripts/check_features.sh`, which enumerates features from `Cargo.toml` and
-loops over every combination.
+=> empty diff (see `tests/symbols.rs::symbol_parity_c_vs_rust`).

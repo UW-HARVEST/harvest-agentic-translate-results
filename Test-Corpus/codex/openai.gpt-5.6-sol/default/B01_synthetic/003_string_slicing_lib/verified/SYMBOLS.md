@@ -1,32 +1,24 @@
 # Dynamic Symbol Surface
 
-Generated from:
+Derived from:
 
 ```text
-nm -D c_src/build/libString_Slice.so
-nm -D translation/target/release/libString_Slice.so
+nm -D --defined-only ../c_src/build/libString_Slice.so
 ```
 
-## Public C exports
+The C shared object has one defined public dynamic symbol.
 
-| C symbol | C type | Rust type | Status |
-|----------|--------|-----------|--------|
-| `slice` | `T` | `T` | [x] |
+| C symbol | C type | Rust symbol | Status |
+|----------|--------|-------------|--------|
+| `slice` | `T` (global text) | `slice` | [x] exported |
 
-Missing Rust exports: **0**
+The complete unfiltered C `nm -D` output also contains only these imported or
+weak runtime symbols: `_ITM_deregisterTMCloneTable`,
+`_ITM_registerTMCloneTable`, `__cxa_finalize`, `__gmon_start__`, `printf`,
+`puts`, and `strlen`. They are not C-library API definitions and therefore do
+not require Rust exports.
 
-## C dynamic imports
+## Completion check
 
-These are undefined dependencies, not public library exports.
-
-| Symbol | Type | Provider |
-|--------|------|----------|
-| `_ITM_deregisterTMCloneTable` | weak undefined | compiler runtime |
-| `_ITM_registerTMCloneTable` | weak undefined | compiler runtime |
-| `__cxa_finalize@GLIBC_2.2.5` | weak undefined | libc |
-| `__gmon_start__` | weak undefined | compiler runtime |
-| `printf@GLIBC_2.2.5` | undefined | libc |
-| `puts@GLIBC_2.2.5` | undefined | libc |
-| `strlen@GLIBC_2.2.5` | undefined | libc |
-
-Undefined non-libc application symbols: **0**
+- [x] Every C-defined public dynamic symbol is exported by the Rust `.so`.
+- [x] Missing C-defined symbols: 0.

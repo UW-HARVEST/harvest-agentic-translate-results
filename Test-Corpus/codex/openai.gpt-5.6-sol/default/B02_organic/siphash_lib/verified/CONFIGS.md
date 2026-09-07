@@ -1,52 +1,45 @@
-# Configuration Surface
+# Configuration surface
 
-The built C library uses 64-bit `size_t`, so one complete input word is eight
-bytes. `stbds_hash_bytes` branches on:
+The C library has no compile-time or Cargo feature switches. Its public
+dynamic API consists of `stbds_hash_bytes` and `siphash`.
 
-1. whether the complete-word loop executes zero, one, or multiple times; and
-2. the exact tail size selected by `switch (len - i)`, from 0 through 7.
+For `stbds_hash_bytes`, control flow is determined by the number of complete
+`sizeof(size_t)` blocks and by each of the eight tail lengths selected by the
+fall-through `switch`. On this build target `sizeof(size_t) == 8`. Each row is
+tested over many randomized byte sequences and seeds; the "many" rows also
+randomize the complete-block count.
 
-The table is that mechanically derived cross-product. Every hash row covers
-random byte contents (including bytes below and above `0x80`), random seeds
-(including `0` and `SIZE_MAX`), and pointer offsets 0 through 7. Multiple-word
-rows also include large valid buffers because C defines no maximum length.
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `stbds_hash_bytes` | 0 complete blocks + tail 0 (length 0) | [x] |
+| 2 | `stbds_hash_bytes` | 0 complete blocks + tail 1 (length 1) | [x] |
+| 3 | `stbds_hash_bytes` | 0 complete blocks + tail 2 (length 2) | [x] |
+| 4 | `stbds_hash_bytes` | 0 complete blocks + tail 3 (length 3) | [x] |
+| 5 | `stbds_hash_bytes` | 0 complete blocks + tail 4 (length 4) | [x] |
+| 6 | `stbds_hash_bytes` | 0 complete blocks + tail 5 (length 5) | [x] |
+| 7 | `stbds_hash_bytes` | 0 complete blocks + tail 6 (length 6) | [x] |
+| 8 | `stbds_hash_bytes` | 0 complete blocks + tail 7 (length 7) | [x] |
+| 9 | `stbds_hash_bytes` | 1 complete block + tail 0 (length 8) | [x] |
+| 10 | `stbds_hash_bytes` | 1 complete block + tail 1 (length 9) | [x] |
+| 11 | `stbds_hash_bytes` | 1 complete block + tail 2 (length 10) | [x] |
+| 12 | `stbds_hash_bytes` | 1 complete block + tail 3 (length 11) | [x] |
+| 13 | `stbds_hash_bytes` | 1 complete block + tail 4 (length 12) | [x] |
+| 14 | `stbds_hash_bytes` | 1 complete block + tail 5 (length 13) | [x] |
+| 15 | `stbds_hash_bytes` | 1 complete block + tail 6 (length 14) | [x] |
+| 16 | `stbds_hash_bytes` | 1 complete block + tail 7 (length 15) | [x] |
+| 17 | `stbds_hash_bytes` | 2 or more complete blocks + tail 0 | [x] |
+| 18 | `stbds_hash_bytes` | 2 or more complete blocks + tail 1 | [x] |
+| 19 | `stbds_hash_bytes` | 2 or more complete blocks + tail 2 | [x] |
+| 20 | `stbds_hash_bytes` | 2 or more complete blocks + tail 3 | [x] |
+| 21 | `stbds_hash_bytes` | 2 or more complete blocks + tail 4 | [x] |
+| 22 | `stbds_hash_bytes` | 2 or more complete blocks + tail 5 | [x] |
+| 23 | `stbds_hash_bytes` | 2 or more complete blocks + tail 6 | [x] |
+| 24 | `stbds_hash_bytes` | 2 or more complete blocks + tail 7 | [x] |
+| 25 | `siphash` | nonnegative `init`; generated 64-byte sequence does not wrap at byte 255 | [x] |
+| 26 | `siphash` | nonnegative `init`; generated 64-byte sequence wraps at byte 255 | [x] |
+| 27 | `siphash` | negative `init`; signed-to-byte conversion in generated sequence | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `stbds_hash_bytes` | zero complete words + 0 tail bytes (`len = 0`); null and non-null pointers | [x] |
-| 2 | `stbds_hash_bytes` | zero complete words + 1 tail byte (`len = 1`) | [x] |
-| 3 | `stbds_hash_bytes` | zero complete words + 2 tail bytes (`len = 2`) | [x] |
-| 4 | `stbds_hash_bytes` | zero complete words + 3 tail bytes (`len = 3`) | [x] |
-| 5 | `stbds_hash_bytes` | zero complete words + 4 tail bytes (`len = 4`) | [x] |
-| 6 | `stbds_hash_bytes` | zero complete words + 5 tail bytes (`len = 5`) | [x] |
-| 7 | `stbds_hash_bytes` | zero complete words + 6 tail bytes (`len = 6`) | [x] |
-| 8 | `stbds_hash_bytes` | zero complete words + 7 tail bytes (`len = 7`) | [x] |
-| 9 | `stbds_hash_bytes` | one complete word + 0 tail bytes (`len = 8`) | [x] |
-| 10 | `stbds_hash_bytes` | one complete word + 1 tail byte (`len = 9`) | [x] |
-| 11 | `stbds_hash_bytes` | one complete word + 2 tail bytes (`len = 10`) | [x] |
-| 12 | `stbds_hash_bytes` | one complete word + 3 tail bytes (`len = 11`) | [x] |
-| 13 | `stbds_hash_bytes` | one complete word + 4 tail bytes (`len = 12`) | [x] |
-| 14 | `stbds_hash_bytes` | one complete word + 5 tail bytes (`len = 13`) | [x] |
-| 15 | `stbds_hash_bytes` | one complete word + 6 tail bytes (`len = 14`) | [x] |
-| 16 | `stbds_hash_bytes` | one complete word + 7 tail bytes (`len = 15`) | [x] |
-| 17 | `stbds_hash_bytes` | multiple complete words + 0 tail bytes (`len = 8k`, `k >= 2`) | [x] |
-| 18 | `stbds_hash_bytes` | multiple complete words + 1 tail byte (`len = 8k + 1`, `k >= 2`) | [x] |
-| 19 | `stbds_hash_bytes` | multiple complete words + 2 tail bytes (`len = 8k + 2`, `k >= 2`) | [x] |
-| 20 | `stbds_hash_bytes` | multiple complete words + 3 tail bytes (`len = 8k + 3`, `k >= 2`) | [x] |
-| 21 | `stbds_hash_bytes` | multiple complete words + 4 tail bytes (`len = 8k + 4`, `k >= 2`) | [x] |
-| 22 | `stbds_hash_bytes` | multiple complete words + 5 tail bytes (`len = 8k + 5`, `k >= 2`) | [x] |
-| 23 | `stbds_hash_bytes` | multiple complete words + 6 tail bytes (`len = 8k + 6`, `k >= 2`) | [x] |
-| 24 | `stbds_hash_bytes` | multiple complete words + 7 tail bytes (`len = 8k + 7`, `k >= 2`) | [x] |
-| 25 | `siphash` | full operation: generate 64 wrapping bytes from any `int init` that avoids signed-overflow UB, hash lengths 0 through 63, and print all 64 rows | [x] |
-
-## Other axes
-
-| Axis | C treatment |
-|------|-------------|
-| Byte order | Input words and output bytes are explicitly assembled little-endian. |
-| Element type | Input is always treated as `unsigned char *`. |
-| Seed | `size_t`; no mode branch or restricted value. |
-| `siphash` initialization | `int`; no mode branch or restricted value, except that signed overflow is undefined C behavior. |
-| Runtime options, modes, flags | None. |
-| Compile-time feature branches | None. |
-| Rust Cargo features | None declared. |
+The hash `seed` does not select a control-flow branch, but every hash row
+randomizes it, including `0`, `SIZE_MAX`, and high-bit values. Randomized input
+bytes likewise include all byte values, covering the C integer-promotion
+behavior in word and tail assembly.

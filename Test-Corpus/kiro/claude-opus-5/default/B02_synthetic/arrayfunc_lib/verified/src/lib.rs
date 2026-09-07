@@ -118,10 +118,6 @@ pub extern "C" fn modulo_operation(a: c_int, b: c_int, _unused1: c_int, _unused2
 /// Exact order of checks preserved: upper bound, lower bound, then NaN.
 /// (NaN fails both relational tests, so it reaches the `d != d` case.)
 #[unsafe(no_mangle)]
-// `d != d` is kept verbatim from `lib.c:82` rather than rewritten to
-// `d.is_nan()`; the two are identical in codegen and the literal form preserves
-// the line-by-line correspondence with the C source.
-#[allow(clippy::eq_op)]
 pub extern "C" fn safe_double_to_int(d: c_double) -> c_int {
     if d >= c_int::MAX as c_double {
         return c_int::MAX;
@@ -149,11 +145,6 @@ pub extern "C" fn compute_scaled_value(base: c_int, scale_factor: c_double) -> c
 /// Compares the *addresses* of two elements, exactly as the C does. No lower
 /// bound check on the indices is performed (faithful to the original).
 #[unsafe(no_mangle)]
-/// # Safety
-/// `arr` must be a valid `ResultArray*`. As in the C, the indices are only
-/// checked against `arr->count` from above — a negative index or a `count`
-/// larger than the real array forms an out-of-bounds address (never
-/// dereferenced), exactly as `&arr->data[idx]` does in C.
 pub unsafe extern "C" fn compare_results_in_array(
     arr: *mut ResultArray,
     idx1: c_int,
@@ -178,10 +169,6 @@ pub unsafe extern "C" fn compare_results_in_array(
 }
 
 #[unsafe(no_mangle)]
-/// # Safety
-/// `arr` must be a valid `ResultArray*`. `values` must point to at least
-/// `min(count, 10)` `int`s; when that is zero, `values` is never read (so NULL
-/// is accepted), matching the C.
 pub unsafe extern "C" fn init_result_array(
     arr: *mut ResultArray,
     values: *mut c_int,
@@ -204,10 +191,6 @@ pub unsafe extern "C" fn init_result_array(
 
 /// Translation of the `FOREACH` macro loop: walks `arr->data[0 .. arr->count)`.
 #[unsafe(no_mangle)]
-/// # Safety
-/// `arr` must be a valid `ResultArray*` and `op` a callable function pointer.
-/// A negative `arr->count` makes the loop run off the end of the array, exactly
-/// as the `count_iter != size` guard in the C `FOREACH` macro does.
 pub unsafe extern "C" fn process_with_foreach(arr: *mut ResultArray, op: OperationFunc) -> c_int {
     let mut total: c_int = 0;
 
@@ -232,8 +215,6 @@ pub unsafe extern "C" fn process_with_foreach(arr: *mut ResultArray, op: Operati
 }
 
 #[unsafe(no_mangle)]
-/// # Safety
-/// `arr` must be a valid `ResultArray*`; elements `0..arr->count` are read.
 pub unsafe extern "C" fn compute_weighted_sum(arr: *mut ResultArray) -> c_int {
     let mut sum: c_int = 0;
 

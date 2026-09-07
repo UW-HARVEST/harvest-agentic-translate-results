@@ -46,6 +46,9 @@ pub unsafe extern "C" fn hsl_to_rgb(dest: *mut f32, src: *const f32) {
     let c = mul(sub(1.0, abs(sub(add(l, l), 1.0))), s);
     let m = sub(l, mul(c, 0.5));
     let remainder = unsafe { fmodf(div(h, 60.0), 2.0) };
+    // Match the ground-truth C shared object's emitted `mulss`: the
+    // parenthesized factor is the destination operand and `c` is the source.
+    // This order determines which payload survives when both are NaNs.
     let x = mul(sub(1.0, abs(sub(remainder, 1.0))), c);
 
     let rgb = if h >= 0.0 && h < 60.0 {

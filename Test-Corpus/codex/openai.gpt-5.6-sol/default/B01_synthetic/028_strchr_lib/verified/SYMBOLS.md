@@ -1,23 +1,23 @@
-# Exported Symbol Surface
+# Dynamic symbol surface
 
-Source binary: `../c_src/build/libdriver.so`
-
-Command used:
+Generated from:
 
 ```text
 nm -D --defined-only ../c_src/build/libdriver.so
+nm -D --defined-only target/release/libdriver.so
 ```
 
-| C symbol | C type | Rust symbol present | Rust implementation |
-|----------|--------|---------------------|---------------------|
-| `driver` | `T` | yes | `src/lib.rs` |
-| `foo` | `T` | yes | `src/lib.rs` |
+The C shared object's defined public dynamic symbols are:
 
-The C shared library exports no other defined dynamic symbols. The corresponding
-command on `target/release/libdriver.so` reports both exact names.
+| symbol | C type | Rust export | status |
+|--------|--------|-------------|--------|
+| `driver` | `T` | `T` | present |
+| `foo` | `T` | `T` | present |
 
-Completion:
+The remaining entries printed by plain `nm -D` for the C object are undefined
+runtime/libc imports (`printf`, `strchr`, `_ITM_*`, `__cxa_finalize`, and
+`__gmon_start__`), not symbols implemented by this library.
 
-- [x] Every defined dynamic C symbol is exported by Rust.
-- [x] Missing-symbol diff is empty.
-- [x] Rust has no undefined non-libc project symbols.
+- [x] Every C-defined public dynamic symbol is exported by the Rust `.so` with
+      the exact same name.
+- [x] Missing C-defined symbols: 0.

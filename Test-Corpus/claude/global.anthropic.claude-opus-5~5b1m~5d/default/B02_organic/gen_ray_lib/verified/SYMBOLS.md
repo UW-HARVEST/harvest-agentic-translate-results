@@ -1,75 +1,87 @@
 # SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Source of truth: `nm -D --defined-only` on the C shared object
+(`c_src/build/libharvest-work-3c68uJ.so`, name derived from the parent
+directory by `CMakeLists.txt`) vs. the Rust cdylib
+(`translation/target/release/libgen_ray_lib.so`).
 
-* C  `.so`: `c_src/build/libharvest-work-wVEwSX.so` (gcc 11.5, `CMAKE_BUILD_TYPE=""` → `-O0`)
-* Rust `.so`: `translation/target/release/libgen_ray_lib.so`
-
-Regenerate / re-diff with:
+Regenerate with:
 
 ```sh
-./check_symbols.sh
+nm -D --defined-only c_src/build/*.so                  | awk '{print $3}' | sort > c_syms.txt
+nm -D --defined-only translation/target/*/libgen_ray_lib.so | awk '{print $3}' | sort > r_syms.txt
+comm -23 c_syms.txt r_syms.txt   # missing from Rust  -> MUST be empty
+comm -13 c_syms.txt r_syms.txt   # extra in Rust
 ```
 
-## Exported (`T`) symbols
+`c_src/src/lib.c` has exactly two `static inline` helpers
+(`c2SignedDistPointToPlane_OneDimensional`, `c2RayToPlane_OneDimensional`);
+those have internal linkage in C and therefore correctly have no exported
+counterpart in Rust. Every other function in `lib.c` has external linkage and
+appears below.
 
-| # | C symbol | in C `.so` | in Rust `.so` | C source | notes |
-|---|----------|-----------|---------------|----------|-------|
-|  1 | `c2V`             | T | T | `src/lib.c:32`  | ctor |
-|  2 | `c2Dot`           | T | T | `src/lib.c:39`  | |
-|  3 | `c2Len`           | T | T | `src/lib.c:43`  | calls `sqrtf` |
-|  4 | `c2Add`           | T | T | `src/lib.c:47`  | |
-|  5 | `c2Sub`           | T | T | `src/lib.c:53`  | |
-|  6 | `c2Mulvs`         | T | T | `src/lib.c:59`  | |
-|  7 | `c2Div`           | T | T | `src/lib.c:65`  | reciprocal multiply |
-|  8 | `c2Norm`          | T | T | `src/lib.c:69`  | |
-|  9 | `c2Minv`          | T | T | `src/lib.c:73`  | ternary `min`, not `fminf` |
-| 10 | `c2Maxv`          | T | T | `src/lib.c:78`  | ternary `max`, not `fmaxf` |
-| 11 | `c2Skew`          | T | T | `src/lib.c:83`  | |
-| 12 | `c2Absv`          | T | T | `src/lib.c:90`  | ternary `abs`, not `fabsf` |
-| 13 | `c2RaytoCircle`   | T | T | `src/lib.c:94`  | writes `*out` |
-| 14 | `c2AABBtoAABB`    | T | T | `src/lib.c:112` | |
-| 15 | `c2RaytoAABB`     | T | T | `src/lib.c:139` | writes `*out` |
-| 16 | `c2CCW90`         | T | T | `src/lib.c:203` | |
-| 17 | `c2MulmvT`        | T | T | `src/lib.c:210` | |
-| 18 | `c2AABBtoPoint`   | T | T | `src/lib.c:217` | |
-| 19 | `c2CircleToPoint` | T | T | `src/lib.c:225` | |
-| 20 | `c2RaytoCapsule`  | T | T | `src/lib.c:231` | writes `*out` |
-| 21 | `c2CastRay`       | T | T | `src/lib.c:294` | dispatch on `C2_TYPE`; **no `default:`** |
-| 22 | `gen_ray`         | T | T | `src/lib.c:306` | public header entry point |
+## Symbol table (22 C symbols, 22 Rust symbols, 0 missing, 0 extra)
 
-**22 / 22 present. Symbol diff is EMPTY.**
+| # | symbol | C signature | in C `.so` | in Rust `.so` | status |
+|---|--------|-------------|-----------|---------------|--------|
+| 1 | `c2V` | `c2v c2V(float, float)` | yes | yes | OK |
+| 2 | `c2Dot` | `float c2Dot(c2v, c2v)` | yes | yes | OK |
+| 3 | `c2Len` | `float c2Len(c2v)` | yes | yes | OK |
+| 4 | `c2Add` | `c2v c2Add(c2v, c2v)` | yes | yes | OK |
+| 5 | `c2Sub` | `c2v c2Sub(c2v, c2v)` | yes | yes | OK |
+| 6 | `c2Mulvs` | `c2v c2Mulvs(c2v, float)` | yes | yes | OK |
+| 7 | `c2Div` | `c2v c2Div(c2v, float)` | yes | yes | OK |
+| 8 | `c2Norm` | `c2v c2Norm(c2v)` | yes | yes | OK |
+| 9 | `c2Minv` | `c2v c2Minv(c2v, c2v)` | yes | yes | OK |
+| 10 | `c2Maxv` | `c2v c2Maxv(c2v, c2v)` | yes | yes | OK |
+| 11 | `c2Skew` | `c2v c2Skew(c2v)` | yes | yes | OK |
+| 12 | `c2Absv` | `c2v c2Absv(c2v)` | yes | yes | OK |
+| 13 | `c2RaytoCircle` | `int c2RaytoCircle(c2Ray, c2Circle, c2Raycast*)` | yes | yes | OK |
+| 14 | `c2AABBtoAABB` | `int c2AABBtoAABB(c2AABB, c2AABB)` | yes | yes | OK |
+| 15 | `c2RaytoAABB` | `int c2RaytoAABB(c2Ray, c2AABB, c2Raycast*)` | yes | yes | OK |
+| 16 | `c2CCW90` | `c2v c2CCW90(c2v)` | yes | yes | OK |
+| 17 | `c2MulmvT` | `c2v c2MulmvT(c2m, c2v)` | yes | yes | OK |
+| 18 | `c2AABBtoPoint` | `int c2AABBtoPoint(c2AABB, c2v)` | yes | yes | OK |
+| 19 | `c2CircleToPoint` | `int c2CircleToPoint(c2Circle, c2v)` | yes | yes | OK |
+| 20 | `c2RaytoCapsule` | `int c2RaytoCapsule(c2Ray, c2Capsule, c2Raycast*)` | yes | yes | OK |
+| 21 | `c2CastRay` | `int c2CastRay(c2Ray, const void*, C2_TYPE, c2Raycast*)` | yes | yes | OK |
+| 22 | `gen_ray` | `int gen_ray(c2Raycast*, c2Raycast*, c2Raycast*, float x18)` | yes | yes | OK |
 
-## `static` (non-exported) C functions — deliberately NOT exported by Rust either
+## Internal-linkage C functions (correctly NOT exported)
 
-| C symbol | C source | in C `.so` | in Rust `.so` |
-|----------|----------|-----------|---------------|
-| `c2SignedDistPointToPlane_OneDimensional` | `src/lib.c:120` (`static inline`) | local `t` only | private `fn` |
-| `c2RayToPlane_OneDimensional`              | `src/lib.c:125` (`static inline`) | local `t` only | private `fn` |
+| C function | linkage | Rust counterpart |
+|---|---|---|
+| `c2SignedDistPointToPlane_OneDimensional` | `static inline` | private `signed_dist_point_to_plane_one_dimensional` |
+| `c2RayToPlane_OneDimensional` | `static inline` | private `ray_to_plane_one_dimensional` |
 
-## Undefined / imported symbols
+## Undefined (imported) symbols
 
-| C `.so` undefined | Rust `.so` |
-|-------------------|------------|
-| `sqrtf@GLIBC_2.2.5` (`U`)      | inlined `sqrtss` (no import needed) |
-| `__cxa_finalize@GLIBC_2.2.5` (`w`) | present (glibc/`std` startup) |
-| `_ITM_deregisterTMCloneTable` (`w`) | n/a (weak, transaction-memory stub) |
-| `_ITM_registerTMCloneTable` (`w`)   | n/a (weak, transaction-memory stub) |
-| `__gmon_start__` (`w`)              | n/a (weak, profiling stub) |
+The C `.so` imports `sqrtf` from `libm`. The Rust `.so` implements the same
+operation with `f32::sqrt` (a single `sqrtss`, bit-identical to glibc's
+`sqrtf`, including the `-NaN` indefinite produced for negative arguments), so
+it has no `libm` dependency. No non-libc symbol is undefined in the Rust
+`.so`.
 
-0 missing/undefined **non-libc** symbols in the Rust `.so`. The Rust `.so`
-additionally exports the usual `std`/`unwind`-related symbols, which is a
-superset and therefore harmless.
+## Types crossing the FFI boundary (SysV AMD64 classification)
 
-## Feature combinations
+| type | size | classification | passed in |
+|---|---|---|---|
+| `c2v` {f32,f32} | 8 | SSE | one xmm (packed) |
+| `c2Raycast` {f32,c2v} | 12 | SSE,SSE | xmm0,xmm1 (return: xmm0/xmm1) |
+| `c2Circle` {c2v,f32} | 12 | SSE,SSE | xmm0,xmm1 |
+| `c2AABB` {c2v,c2v} | 16 | SSE,SSE | xmm0,xmm1 |
+| `c2Capsule` {c2v,c2v,f32} | 20 | MEMORY | stack |
+| `c2Ray` {c2v,c2v,f32} | 20 | MEMORY | stack |
+| `c2m` {c2v,c2v} | 16 | SSE,SSE | xmm0,xmm1 |
 
-`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
-feature combination that exists is the default (empty) one. Verified by
-`grep -n '^\[features\]' Cargo.toml` → no match. Phase D's "every feature
-combination" therefore collapses to:
+All are `#[repr(C)]` in Rust with identical field order, so the Rust
+`extern "C"` declarations use the same classification. Verified indirectly by
+the differential tests: every struct-by-value argument and return value is
+compared bit-for-bit.
 
-* `cargo test` (default)
-* `cargo test --no-default-features` (identical — no default features exist)
-* `cargo test --release`
+## Completion
 
-All three are run by `./run_all.sh`.
+- [x] `nm -D` diff C -> Rust is **empty** (0 missing symbols).
+- [x] `nm -D` diff Rust -> C is **empty** (0 extra symbols).
+- [x] No stubs / `unimplemented!()` — every symbol is a real translation.
+- [x] 0 undefined non-libc symbols in the Rust `.so`.

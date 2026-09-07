@@ -95,7 +95,10 @@ unsafe fn find_node_by_id(id: c_int) -> *mut Node {
 
 /// C: static int add_node(int id, int parent_id, double value)
 unsafe fn add_node(id: c_int, parent_id: c_int, value: f64) -> c_int {
-    if NODE_COUNT as usize >= MAX_NODES {
+    // C compares two `int`s: `if (node_count >= MAX_NODES)`. Keep the signed
+    // comparison so a negative `node_count` behaves the same way it does in C
+    // (a `usize` cast would wrap and take the opposite branch).
+    if NODE_COUNT >= MAX_NODES as c_int {
         return STATUS_ERROR;
     }
 
@@ -387,4 +390,130 @@ unsafe fn initialize_test_data() {
     add_node(5, 2, 30.875);
     add_node(6, 3, 40.0625);
     add_node(7, 4, 12.5);
+}
+
+// ---------------------------------------------------------------------------
+// Test-only probe surface.
+//
+// The public ABI is a single function, and because `initialize_test_data()` is
+// never called the `0001`/`0002`/`0004` arms always short-circuit on the NULL
+// node lookup. That makes most of the translation unit unreachable from
+// outside, so a purely ABI-level differential test cannot observe it.
+//
+// This module re-exposes the internal `static` functions *for tests only*. It
+// is gated on `#[cfg(test)]`, so `cargo build`/`cargo build --release` compile
+// it away entirely and the shipped `cdylib` keeps exporting exactly one symbol
+// (`jumpnode`), identical to the C `.so`. Integration tests reach it by
+// including this file with `#[path = "../src/lib.rs"]` (a `--test` compilation
+// has `cfg(test)` enabled).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+pub mod probe {
+    use super::*;
+
+    /// Resets `node_count` to 0 so each probe test starts from the same state
+    /// the process starts in.
+    pub fn reset() {
+        unsafe {
+            NODE_COUNT = 0;
+        }
+    }
+
+    pub fn node_count() -> c_int {
+        unsafe { NODE_COUNT }
+    }
+
+    pub fn set_node_count(n: c_int) {
+        unsafe {
+            NODE_COUNT = n;
+        }
+    }
+
+    pub fn add_node(id: c_int, parent_id: c_int, value: f64) -> c_int {
+        unsafe { super::add_node(id, parent_id, value) }
+    }
+
+    /// Field readers, so a test can compare `node_storage` contents against the
+    /// C side element by element (bit-exactly for the `double`).
+    pub fn node_id(index: c_int) -> c_int {
+        unsafe {
+            let base = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+            (*base.offset(index as isize)).id
+        }
+    }
+
+    pub fn node_parent_id(index: c_int) -> c_int {
+        unsafe {
+            let base = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+            (*base.offset(index as isize)).parent_id
+        }
+    }
+
+    pub fn node_value(index: c_int) -> f64 {
+        unsafe {
+            let base = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+            (*base.offset(index as isize)).value
+        }
+    }
+
+    pub fn node_data(index: c_int, k: c_int) -> c_int {
+        unsafe {
+            let base = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+            (*base.offset(index as isize)).data[k as usize]
+        }
+    }
+
+    pub fn initialize_test_data() {
+        unsafe { super::initialize_test_data() }
+    }
+
+    /// Returns the index of the found node, or -1 for NULL, so the sentinel
+    /// crosses the comparison boundary as a plain integer.
+    pub fn find_node_index(id: c_int) -> c_int {
+        unsafe {
+            let p = super::find_node_by_id(id);
+            if p.is_null() {
+                -1
+            } else {
+                let base = core::ptr::addr_of_mut!(NODE_STORAGE) as *mut Node;
+                p.offset_from(base) as c_int
+            }
+        }
+    }
+
+    pub fn compute_size_metric(bytes: &[u8]) -> c_int {
+        // `bytes` must be NUL-terminated.
+        assert_eq!(bytes.last().copied(), Some(0), "probe input must be NUL-terminated");
+        unsafe { super::compute_size_metric(bytes.as_ptr() as *const c_char) }
+    }
+
+    pub fn safe_double_to_int(value: f64) -> c_int {
+        super::safe_double_to_int(value)
+    }
+
+    /// Sums `array[start_offset .. size]` backwards, exactly as the C does.
+    /// Callers must keep `0 <= start_offset` and `size <= array.len()`;
+    /// negative offsets are out-of-bounds reads in the C original and are not
+    /// probed.
+    pub fn process_backward(array: &mut [c_int], size: usize, start_offset: c_int) -> c_int {
+        assert!(size <= array.len());
+        assert!(start_offset >= 0);
+        unsafe { super::process_backward(array.as_mut_ptr(), size, start_offset) }
+    }
+
+    /// Formats `"Node_%d_Depth_%d"` and returns the bytes written (no NUL).
+    pub fn sprintf_node_depth(node_id: c_int, depth: c_int) -> Vec<u8> {
+        let mut buf: [c_char; 50] = [0; 50];
+        unsafe {
+            super::c_sprintf_node_depth(buf.as_mut_ptr(), node_id, depth);
+        }
+        let mut out = Vec::new();
+        for &b in buf.iter() {
+            if b == 0 {
+                break;
+            }
+            out.push(b as u8);
+        }
+        out
+    }
 }

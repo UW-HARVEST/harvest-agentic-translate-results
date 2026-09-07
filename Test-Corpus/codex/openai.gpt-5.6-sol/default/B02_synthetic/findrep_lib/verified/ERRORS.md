@@ -1,31 +1,22 @@
-# Error surface
+# Error-surface table
 
-Mechanical searches covered every `return`, `if`, assertion spelling, null
-constant, error macro spelling, and min/max/threshold spelling in
-`../c_src/src/lib.c` and `../c_src/include/lib.h`.
+Mechanical source scan covered `return`, `assert`, `NULL`, `if`, comparison
+operators, and octal min/max constants in `c_src/src/lib.c` and
+`c_src/include/lib.h`.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
+The C API defines no error enum, error-return macro, `assert`, `return -1`, or
+`return NULL`. It does not validate pointer arguments. The distinct input
+rejections/suppressions it does implement are:
 
-There are **no explicit input rejections** in the C source: no error-return
-macro, `return -1`, `return NULL`, error enum, `assert`, null-pointer check, or
-invalid-range return.
+| # | function | trigger (the exact invalid input/condition) | expected C result | tested |
+|---|----------|----------------------------------------------|-------------------|--------|
+| 1 | `divide_multiplier` | divisor `b == 0` | skip division, increment `operation_count`, return the unchanged `multiplier` | [x] |
+| 2 | `validate_and_normalize` | positive `value < 0100` (64), excluding zero | return lower bound `0100` (64) | [x] |
+| 3 | `validate_and_normalize` | positive `value > 0777` (511) | return upper bound `0777` (511) | [x] |
+| 4 | `process_octal_string` | `dest == NULL` (generic FFI pointer boundary; C has no check) | process terminates with the C library's native fault behavior | [x] |
+| 5 | `find_and_replace_char` | `str == NULL` (generic FFI pointer boundary; C has no check) | process terminates with the C library's native fault behavior | [x] |
+| 6 | `divide_multiplier` | current `multiplier == INT_MIN` and divisor `b == -1` | process terminates with the C library's native integer-division fault | [x] |
 
-The following branches are not rejections and therefore belong to the valid
-configuration surface:
-
-- `divide_multiplier`: `b == 0` skips division, increments
-  `operation_count`, and returns the unchanged multiplier.
-- `validate_and_normalize`: positive values below octal `0100` return `0100`;
-  positive values above octal `0777` return `0777`.
-
-Generic FFI boundaries not represented by a C rejection row:
-
-- Null `dest` for `process_octal_string` and null `str` for
-  `find_and_replace_char` are unchecked C undefined behavior. Differential
-  tests invoke them in child processes and compare process termination:
-  **passed for C and Rust**.
-- No public function accepts an explicit length or enum parameter, so
-  oversized-length and out-of-range-enum rejection cases do not exist.
-- Zero integer arguments are valid inputs and are covered in `CONFIGS.md`.
-- Long but valid NUL-terminated strings are covered in `CONFIGS.md`: **passed**.
+There are no length parameters, public enum parameters, or documented
+one-past-enum values in this API. Zero and extreme integer values are valid
+inputs and are covered in `CONFIGS.md`.

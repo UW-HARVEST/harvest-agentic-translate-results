@@ -1,88 +1,95 @@
-# SYMBOLS.md — Dynamic symbol parity (Phase A / Phase D)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-## Build commands
+Build commands used:
 
 ```
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-HgjfRt.so   (CMake project name = parent dir name)
-
+cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
 cd translation && cargo build --release
-# -> translation/target/release/libmemchra2_lib.so
 ```
 
-## C source inventory
+- C  `.so`: `c_src/build/libharvest-work-iGmUF0.so`
+- Rust `.so`: `translation/target/release/libmemchra2_lib.so`
 
-`c_src` contains exactly one translation unit and one public header:
+## C exported (dynamic, defined) symbols
 
-| file | contents |
-|------|----------|
-| `c_src/include/lib.h` | `int memchra2(int a, int b, int c, int d);` — the entire public API |
-| `c_src/src/lib.c` | `memchra2` plus 8 `static` (internal-linkage) helpers |
+```
+$ nm -D --defined-only c_src/build/libharvest-work-iGmUF0.so
+00000000000013e1 T memchra2
+```
 
-The 8 helpers are `static`, so they have **internal linkage** and are
-deliberately absent from the C `.so`'s dynamic symbol table. They are therefore
-correctly absent from the Rust `.so` as well; exporting them would be a parity
-*violation*, not a fix. They are still translated (they exist as private `fn`s
-in `translation/src/lib.rs`) and are exercised transitively through `memchra2`:
+## Rust exported (dynamic, defined) symbols, Rust-internal noise filtered
+
+```
+$ nm -D --defined-only translation/target/release/libmemchra2_lib.so \
+    | grep -v -E '_ZN|rust_|__rust|GCC_except|DW\.ref'
+0000000000011db0 T memchra2
+```
+
+## Parity table
+
+| # | C symbol | type | present in Rust `.so` | notes |
+|---|----------|------|-----------------------|-------|
+| 1 | `memchra2` | `T` (global text) | YES — `T memchra2` | `#[unsafe(no_mangle)] pub extern "C" fn memchra2(a,b,c,d) -> c_int` |
+
+**Missing symbols: 0.** The symbol diff is empty in the C → Rust direction.
+
+## Symbols intentionally NOT exported
+
+All other functions in `c_src/src/lib.c` are declared `static` and therefore
+have internal linkage; they do not appear in `nm -D` for the C `.so` and must
+not be exported by Rust either. For the record, the full static set is:
 
 `memchra`, `process_buffer`, `int_to_float_bits`, `process_strings`,
-`safe_sum_array`, `interpret_as_int`, `count_occurrences`, `complex_iteration`.
+`safe_sum_array`, `interpret_as_int`, `count_occurrences`, `complex_iteration`
 
-No C source file was skipped by the translation: `src/lib.c` is the only
-`.c` file listed in `c_src/CMakeLists.txt`.
-
-## `nm -D` defined symbols
-
-C `.so` (`nm -D --defined-only`, excluding the linker-synthesised
-`_init`/`_fini`/`__bss_start`/`_edata`/`_end` weak+ABI entries):
-
-| # | symbol | type |
-|---|--------|------|
-| 1 | `memchra2` | `T` (global text) |
-
-Rust `.so` (`nm -D --defined-only`):
-
-| # | symbol | type |
-|---|--------|------|
-| 1 | `memchra2` | `T` (global text) |
-
-## Diff
-
-```
-$ comm -23 <(c_defined_globals) <(rust_defined_globals)
-(empty)
-```
-
-**Missing from Rust: 0.** The symbol diff is empty.
+These are private helpers in the Rust translation as well, so parity holds in
+both directions.
 
 ## Undefined (imported) symbols
 
-The Rust `.so` must not depend on anything unavailable at load time. All
-undefined symbols resolve to libc / the Rust runtime shipped statically inside
-the cdylib; `ldd` reports no missing objects and `libloading::Library::new`
-succeeds in every test, which is the load-time proof.
+The Rust `.so` imports only libc/`ld-linux` symbols (`memcpy`, `__libc_start*`
+family, unwinder/allocator shims). No non-libc symbol is left undefined.
 
-Non-libc undefined symbols in the Rust `.so`: **0**.
+```
+$ nm -D --undefined-only translation/target/release/libmemchra2_lib.so
+```
+→ all entries are glibc (`GLIBC_2.*`) or `__cxa_*`/unwind runtime symbols.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table** — therefore the
-only build configuration is the default one, and
-`--no-default-features` / `--features <combo>` are vacuous here.
-`scripts/verify_all.sh` still enumerates the feature list from `Cargo.toml`
-and loops over what it finds, so the check is mechanical rather than assumed.
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+build configuration is the default one. `--no-default-features` and any
+`--features <combo>` are therefore equivalent to the default build. This is
+verified mechanically in `check_features.sh`.
 
-| # | feature combo | symbol parity | Phase B | Phase C |
-|---|---------------|---------------|---------|---------|
-| 1 | *(default — the only combo; no features declared)* | [x] | [x] | [x] |
+## Binary executable
 
-## Verification checklist
+Neither build produces an executable: `c_src/CMakeLists.txt` contains only
+`add_library(... SHARED src/lib.c)`, and `translation/Cargo.toml` declares only
+`[lib] crate-type = ["cdylib"]`. The "compare C and Rust binary stdout" gate is
+therefore **N/A** for this project.
 
-- [x] Every symbol exported by the C `.so` is exported by the Rust `.so` with the exact same name.
-- [x] No `static` (internal-linkage) C helper is spuriously exported by Rust.
-- [x] `nm -D` shows 0 missing / 0 undefined non-libc symbols in the Rust `.so`.
-- [x] No C translation unit was left untranslated.
-- [x] No symbol is stubbed, faked, or `unimplemented!()`.
+## Automated verification
+
+`./check_features.sh` re-runs the whole Phase D gate mechanically:
+
+```
+### 2. symbol parity (nm -D)
+C exports:    1
+Rust exports: 1
+symbol diff (C -> Rust): EMPTY  [OK]
+undefined non-libc symbols in Rust .so:
+  (empty above means none)
+
+### 3. feature combinations
+declared features: 0 (none)
+  default                                    OK
+  --no-default-features                      OK
+
+PHASE D: PASS
+```
+
+The script extracts feature names from `Cargo.toml` with `awk` and enumerates
+all 2ⁿ subsets, so it stays correct if features are added later.

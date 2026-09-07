@@ -1,15 +1,19 @@
-# Configuration Surface
+# Configuration surface
 
-Mechanical enumeration covered all C-defined public symbols from `nm -D`, the
-public header, and every runtime `if`/`for` branch in the C source. There are no
-Cargo features, C preprocessor feature modes, option setters, enums, formats,
-byte-order modes, or caller-supplied sizes/counts.
+Mechanically derived from the public/exported entry points, the
+`line != NULL` branch, the `useGood` branch, C integer formatting, and the
+fixed no-argument operations.
 
-| # | entry point(s) | configuration (options set + input shape) | |
-|---|----------------|-------------------------------------------|-|
-| 1 | `printLine` | Non-null NUL-terminated C string; randomized empty and non-empty byte strings | [x] |
-| 2 | `printIntLine` | Full C `int` domain; randomized negative, zero, positive, `INT_MIN`, and `INT_MAX` values | [x] |
-| 3 | `bad` | Parameterless direct call; undersized `alloca(10)` path and ten-element copy | [x] |
-| 4 | `good` | Parameterless direct call; `alloca(10*sizeof(int))` path and ten-element copy | [x] |
-| 5 | `driver` | `useGood == 0`, selecting `bad` | [x] |
-| 6 | `driver` | `useGood != 0`, selecting `good`; randomized positive and negative C `int` values | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `printLine` | Non-null, empty NUL-terminated byte string. | [x] |
+| 2 | `printLine` | Non-null, non-empty NUL-terminated byte string (randomized lengths and byte values excluding interior NUL). | [x] |
+| 3 | `printIntLine` | Any C `int`, including negative, zero, positive, `INT_MIN`, and `INT_MAX` (randomized). | [x] |
+| 4 | `bad` | No arguments; execute the fixed undersized-stack-allocation path. | [x] |
+| 5 | `good` | No arguments; execute the fixed correctly-sized-stack-allocation path. | [x] |
+| 6 | `driver` | `useGood == 0`, selecting `bad`. | [x] |
+| 7 | `driver` | `useGood != 0`, selecting `good` (randomized positive and negative nonzero C `int` values). | [x] |
+
+There are no Cargo features, C preprocessor feature flags, runtime modes
+other than `driver`'s zero/nonzero selector, element types, lengths, byte-order
+options, or format selectors.

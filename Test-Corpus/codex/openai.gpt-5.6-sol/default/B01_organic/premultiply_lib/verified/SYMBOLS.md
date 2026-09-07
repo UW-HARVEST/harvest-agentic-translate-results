@@ -1,17 +1,29 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Derived from:
+Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-RrubW1.so
+nm -D ../c_src/build/libharvest-work-9Toehl.so
+nm -D --defined-only target/release/libpremultiply_lib.so
 ```
 
-| C symbol | C type | Rust symbol | Status |
-|----------|--------|-------------|--------|
-| `premultiply` | `T` | `premultiply` | present |
+## C dynamic symbols
 
-The C shared object has no other defined dynamic symbols. Its weak undefined
-runtime symbols (`_ITM_*`, `__cxa_finalize`, and `__gmon_start__`) are not
-library API exports.
+| Type | Symbol | Classification |
+|---|---|---|
+| `w` | `_ITM_deregisterTMCloneTable` | Toolchain weak undefined symbol |
+| `w` | `_ITM_registerTMCloneTable` | Toolchain weak undefined symbol |
+| `w` | `__cxa_finalize@GLIBC_2.2.5` | Toolchain/libc weak undefined symbol |
+| `w` | `__gmon_start__` | Toolchain weak undefined symbol |
+| `T` | `premultiply` | Public library export |
 
-Missing C API symbols in Rust: **0**
+## Required defined-export parity
+
+| C symbol | Rust symbol | Status |
+|---|---|---|
+| `premultiply` | `premultiply` | [x] exact-name export present |
+
+There are no missing C-defined public symbols in the Rust shared library.
+The four lowercase-`w` entries are undefined toolchain hooks, not library
+implementations.
+

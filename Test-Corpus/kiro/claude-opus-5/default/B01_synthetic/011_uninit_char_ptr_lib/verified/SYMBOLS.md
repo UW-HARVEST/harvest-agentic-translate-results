@@ -1,70 +1,82 @@
-# SYMBOLS.md — dynamic-symbol parity
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from:
+Derived mechanically from `nm -D` on both shared objects.
 
-```sh
+```
 nm -D --defined-only c_src/build/libdriver.so
 nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-The whole C library is one translation unit (`c_src/CMakeLists.txt` →
-`add_library(driver SHARED src/driver.c)`), and `src/driver.c` defines exactly
-four external functions. There are no macro-generated symbols, no namespace or
-renaming macros, and no other C source files — so the complete C export surface
-is these four names.
-
 ## Defined (exported) symbols
 
-| # | C symbol | C type | Rust `.so` exports it? | Rust definition |
-|---|----------|--------|------------------------|-----------------|
-| 1 | `printLine` | `T` (text, global) | yes | `src/lib.rs` — `#[unsafe(no_mangle)] pub extern "C" fn printLine` |
-| 2 | `bad`       | `T` | yes | `src/lib.rs` — `#[unsafe(no_mangle)] pub extern "C" fn bad` |
-| 3 | `good`      | `T` | yes | `src/lib.rs` — `#[unsafe(no_mangle)] pub extern "C" fn good` |
-| 4 | `driver`    | `T` | yes | `src/lib.rs` — `#[unsafe(naked)] #[unsafe(no_mangle)] pub extern "C" fn driver` |
+The C library is built by CMake from a single translation unit (`src/driver.c`)
+with no visibility attributes and no renaming macros, so linker names equal
+source names.
 
-On x86-64 all four are `#[unsafe(naked)]` transcriptions of the C build's
-disassembly; `mod portable` carries `#[inline(never)]` equivalents for other
-architectures. Both sets export the same four names.
+| # | C symbol | type | exported by C `.so` | exported by Rust `.so` | status |
+|---|----------|------|---------------------|------------------------|--------|
+| 1 | `printLine` | `T` (text, global) | yes | yes | MATCH |
+| 2 | `bad`       | `T` | yes | yes | MATCH |
+| 3 | `good`      | `T` | yes | yes | MATCH |
+| 4 | `driver`    | `T` | yes | yes | MATCH |
 
-**Missing from the Rust `.so`: none.** No module of the C source was skipped;
-`src/driver.c` is translated in full. Nothing is stubbed or `unimplemented!()`.
+Only `driver` is declared in the public header (`include/driver.h`); `printLine`,
+`bad` and `good` have external linkage in `driver.c` and are therefore part of
+the `.so`'s dynamic symbol surface too. All four are treated as public entry
+points and are tested directly (Phase B/C), not just through `driver`.
 
-Verified automatically by `tests/differential.rs::phase_d_symbol_parity`, which
-shells out to `nm -D` on both objects and asserts the set difference
-(C-defined minus Rust-defined) is empty.
+**Missing symbols: none.** No `#[no_mangle]` wrapper had to be added and no C
+module was left untranslated — `src/driver.c` is the entire library. Nothing is
+stubbed or `unimplemented!()`.
+
+## Symbol diff
+
+```
+comm -3 <(nm -D --defined-only C   | awk '{print $NF}' | sort) \
+        <(nm -D --defined-only RUST| awk '{print $NF}' | sort)
+```
+
+Result: **empty**. Exported-symbol parity is exact.
 
 ## Undefined (imported) symbols
 
-The C `.so` imports `puts@GLIBC_2.2.5` plus the usual weak toolchain symbols
-(`__cxa_finalize`, `__gmon_start__`, `_ITM_*TMCloneTable`).
+The C `.so` imports only `puts@GLIBC_2.2.5` (gcc lowers
+`printf("%s\n", line)` to `puts(line)`) plus the usual weak CRT hooks
+(`_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
 
-The Rust `.so` imports `puts@GLIBC_2.2.5` (the translation calls `puts`
-directly, matching gcc's lowering of `printf("%s\n", line)`), the same weak
-toolchain symbols, and additionally:
+The Rust `.so` imports `puts@GLIBC_2.2.5` — the same call the C makes, so
+stdout formatting and buffering are shared — plus libc/`libgcc` runtime symbols
+pulled in by the Rust standard library (`malloc`, `memcpy`, `write`, `_Unwind_*`,
+`pthread_*`, …).
 
-* glibc entry points pulled in by the Rust standard library:
-  `abort bcmp calloc close dl_iterate_phdr free fstat64 getcwd getenv lseek64
-  malloc memcpy memmove memset mmap64 munmap open64 posix_memalign
-  pthread_key_create pthread_key_delete pthread_setspecific read readlink
-  realloc realpath stat64 strlen syscall write writev __errno_location
-  __tls_get_addr`, weak `gettid`, `statx`, `__cxa_thread_atexit_impl`;
-* the libgcc unwinder ABI: `_Unwind_Backtrace _Unwind_GetDataRelBase
-  _Unwind_GetIP _Unwind_GetIPInfo _Unwind_GetLanguageSpecificData
-  _Unwind_GetRegionStart _Unwind_GetTextRelBase _Unwind_Resume _Unwind_SetGR
-  _Unwind_SetIP`.
+**0 missing/undefined non-libc symbols.** Every Rust import is either libc
+(`GLIBC_*`), the unwinder shipped in `libgcc_s` (`_Unwind_*@GCC_*`), or a weak
+CRT hook. There are no unresolved references to project code; verified by
+loading the Rust `.so` with `dlopen(..., RTLD_NOW)`, which resolves every
+relocation eagerly and succeeds.
 
-All of these resolve out of `libc.so.6` / `libgcc_s.so.1`, which are present on
-any target that can run the C library. **0 missing/undefined non-libc symbols:**
-`dlopen(..., RTLD_NOW)` on the Rust `.so` succeeds, which by definition means
-every undefined symbol was bound eagerly — asserted by
-`tests/differential.rs::phase_d_rtld_now_resolves_every_import`.
+## Feature / configuration surface
 
-## Feature combinations
+`translation/Cargo.toml` declares **no `[features]` table**, so the only build
+configuration is the default one. Neither side builds an executable
+(`Cargo.toml` has no `[[bin]]`, `c_src/CMakeLists.txt` has no
+`add_executable`), so there is no driver-binary stdout comparison to make.
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-buildable configuration is the default (empty) feature set. `cargo test
---no-default-features` is therefore identical to `cargo test`; both are run by
-`scripts/verify.sh`. There are no `#[cfg(feature = ...)]` sites in `src/lib.rs`
-(`grep -c 'feature' src/lib.rs` → 0). The only `cfg` axis is
-`target_arch = "x86_64"` vs. not, and this host is x86-64, so the naked-asm
-`driver` is the code under test.
+## Automated check
+
+Symbol parity is not just a one-off command; it is enforced by
+`tests/phase_d_symbols.rs` (4 tests, all passing):
+
+* `every_c_symbol_is_exported_by_rust` — diffs `nm -D --defined-only` between the
+  two objects and requires the difference to be empty. It first asserts the C
+  side actually contains `driver`/`printLine`/`bad`/`good`, so a parsing failure
+  cannot produce a vacuously empty diff.
+* `rust_has_no_unresolved_project_symbols` — requires every Rust import to be
+  `@GLIBC_*`, `@GCC_*`/`_Unwind_*`, or a weak CRT hook, then `dlopen`s the Rust
+  `.so` with `RTLD_NOW` as positive proof that nothing is left dangling.
+* `both_libraries_resolve_all_four_entry_points_by_name` — resolves all four
+  symbols through `dlsym` in **both** objects, proving the Rust exports are
+  callable by an external consumer and not merely present in the symbol table.
+
+Re-run with `cargo test --test phase_d_symbols`. Verified under all three
+feature combinations via `scripts/all_features.sh`.

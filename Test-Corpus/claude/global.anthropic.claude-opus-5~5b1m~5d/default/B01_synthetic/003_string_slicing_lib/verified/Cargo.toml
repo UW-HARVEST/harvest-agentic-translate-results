@@ -11,6 +11,26 @@ path = "src/lib.rs"
 [dev-dependencies]
 libloading = "0.8"
 
+# All integration tests redirect file descriptor 1 (a process-global resource)
+# around each call into the loaded shared libraries in order to capture what
+# `printf` emits. libtest's default harness runs cases on multiple threads and
+# writes its own progress lines to stdout, which would contaminate the capture,
+# so each target uses a sequential runner instead (see tests/harness/mod.rs).
+[[test]]
+name = "phase_b_configs"
+path = "tests/phase_b_configs.rs"
+harness = false
+
+[[test]]
+name = "phase_c_errors"
+path = "tests/phase_c_errors.rs"
+harness = false
+
+[[test]]
+name = "phase_d_symbols"
+path = "tests/phase_d_symbols.rs"
+harness = false
+
 [profile.release]
 panic = "abort"
 

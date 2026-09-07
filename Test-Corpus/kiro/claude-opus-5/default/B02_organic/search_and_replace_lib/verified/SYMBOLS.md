@@ -1,65 +1,60 @@
-# SYMBOLS.md — public symbol surface (Phase A)
+# SYMBOLS.md — public symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-Build commands used:
-
-```sh
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .   # -> c_src/build/libdriver.so
-cd translation && cargo build --release                              # -> translation/target/release/libdriver.so
-cd translation && cargo build                                        # -> translation/target/debug/libdriver.so
+```
+nm -D --defined-only c_src/build/libdriver.so
+nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-## C source inventory (completeness check)
+## C source surface
 
-The whole library is one translation unit; nothing is conditionally compiled.
+`c_src/` contains exactly one translation unit (`src/lib.c`, 90 lines) and one
+public header (`include/lib.h`, 1 line):
 
-| C file | public declarations | translated in Rust? |
-|---|---|---|
-| `c_src/include/lib.h` | `char *searchAndReplace(const char*, const char*, const char*)` | yes — `src/lib.rs` |
-| `c_src/src/lib.c` | `searchAndReplace` (only non-static definition in the file) | yes — `src/lib.rs` |
+```c
+char *searchAndReplace(const char *orig, const char *search, const char *value);
+```
 
-`c_src/CMakeLists.txt` lists exactly one source file (`src/lib.c`), defines no
-`target_compile_definitions`, and the source contains no `#ifdef`-gated
-alternative implementations, so there is no untranslated module and no
-macro-generated / namespaced symbol variants to reproduce.
+There are no macros that generate symbol names, no `#ifdef`-gated extra
+entry points, no additional `.c` files, and no binary/driver target in
+`CMakeLists.txt` (`add_library(driver SHARED src/lib.c)` only). So the entire
+public surface is a single function; no C module was left untranslated.
 
-## Defined dynamic symbols (`nm -D --defined-only`)
+## Defined dynamic symbols
 
-| symbol | C `.so` | Rust `.so` (release) | Rust `.so` (debug) | status |
-|---|---|---|---|---|
-| `searchAndReplace` | `T` | `T` | `T` | present in both — OK |
+| # | symbol | in C `.so` | in Rust `.so` | notes |
+|---|--------|-----------|---------------|-------|
+| 1 | `searchAndReplace` | yes (`T`) | yes (`T`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn` in `src/lib.rs` |
 
-Symbol diff (`comm -23` of the C defined-symbol name list against the Rust
-defined-symbol name list): **empty**. No symbol had to be added and no C source
-had to be newly translated.
+Symbol diff (C defined ∖ Rust defined): **empty**.
+Symbol diff (Rust defined ∖ C defined): **empty**.
 
-The Rust `.so` additionally exports nothing of its own: its defined dynamic
-symbol set is exactly `{searchAndReplace}`, i.e. it is neither missing nor
-over-exporting relative to the C `.so`.
+## Undefined (imported) symbols
 
-## Undefined dynamic symbols (`nm -D --undefined-only`)
+Both objects import only libc / toolchain symbols; none are unresolved
+project symbols.
 
-* C `.so`: `malloc`, `realloc`, `strdup`, `strlen`, `strncpy`, `strstr`
-  (+ the usual weak `_ITM_*`, `__cxa_finalize`, `__gmon_start__` stubs).
-* Rust `.so`: `malloc`, `realloc`, `strdup`, `strlen` plus the Rust `std`
-  runtime's own libc / `libgcc_s` imports (`memcpy`, `memmove`, `memset`,
-  `bcmp`, `calloc`, `free`, `posix_memalign`, `abort`, `__errno_location`,
-  `pthread_key_*`, `dl_iterate_phdr`, `_Unwind_*`, file/`stat` syscall
-  wrappers used by panic backtraces, …).
+* C imports: `malloc`, `realloc`, `strdup`, `strlen`, `strncpy`, `strstr`,
+  `__cxa_finalize`, `__gmon_start__`, `_ITM_*`.
+* Rust imports: the same `malloc`, `realloc`, `strdup`, `strlen` plus the usual
+  Rust-runtime libc/unwind set (`memcpy`, `memmove`, `memset`, `free`,
+  `_Unwind_*`, `dl_iterate_phdr`, …). All are provided by `libc.so.6` /
+  `libgcc_s.so.1`; `ldd` resolves every one.
 
-**0 missing / undefined non-libc symbols in the Rust `.so`**: every undefined
-entry resolves against `libc.so.6` or `libgcc_s.so.1`, both of which
-`ldd translation/target/release/libdriver.so` shows as satisfied. The Rust
-build does not import `strstr`/`strncpy` because those two are open-coded
-(`c_strstr` / `c_strncpy`) — that is an implementation detail, not a missing
-export.
+`strncpy` and `strstr` are absent from the Rust imports because the
+translation open-codes them (`c_strncpy`, `c_strstr`) — this is an
+implementation detail, not a missing export.
+
+## Result
+
+- [x] 0 symbols missing from the Rust `.so`.
+- [x] 0 extra non-libc symbols exported by the Rust `.so`.
+- [x] 0 unresolved non-libc undefined symbols in the Rust `.so`.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the complete set
-of feature combinations is a single one: the default (empty) feature set.
-`scripts/check_features.sh` enumerates the features from `Cargo.toml` and runs
-`cargo check` / `cargo test` for every combination (default,
-`--no-default-features`) to prove this mechanically rather than by assumption.
+`translation/Cargo.toml` declares **no `[features]` table**, therefore the only
+feature configuration that exists is the default (empty) one. `cargo check
+--no-default-features` is equivalent to the default build. Verified by
+`grep -n '^\[features\]' Cargo.toml` → no match.

@@ -1,64 +1,69 @@
-# ERRORS.md — Phase A: error-surface table
+# ERRORS.md — Error-surface table
 
-## Mechanical derivation (what was grepped, and what was found)
+Mechanically derived by grepping `c_src/src/lib.c` and `c_src/include/lib.h`
+for every rejection mechanism:
 
-Ran over the **entire** C source (`c_src/include/lib.h`, `c_src/src/lib.c`):
+```
+$ grep -nE 'return|assert|RETURN_ERROR|NULL|if|switch|<|>|==|!=|MIN|MAX|errno|abort|exit' c_src/src/lib.c
+3:tflac_u32 max_size_frame(tflac_u32 blocksize, tflac_u32 channels, tflac_u32 bitdepth) {
+4:    return 18U + channels +
+5:           (((blocksize * bitdepth * (channels * (channels != 2))) +
+6:             (blocksize * bitdepth * (channels == 2)) +
+7:             (blocksize * (bitdepth + (bitdepth != 32)) * (channels == 2)) +
+```
 
-| grep pattern | matches |
-|---|---|
-| `return -1` / `return NULL` / `return 0` / `RETURN_ERROR` / `ERROR` / `_ERR` / `errno` | **none** |
-| `assert` | **none** |
-| `goto` / `exit(` / `abort(` | **none** |
-| `if` / `else` / `switch` / `case` / `while` / `for` / `do` / `?:` | **none** |
-| `#if` / `#ifdef` / `#ifndef` / `#else` / `#elif` / `#define` | **none** |
-| `*` (pointer decl) / `[` (array) / `struct` / `union` / `enum` | **none** (the `*` hits are multiplications only) |
+Findings:
 
-**Result: the C library has ZERO explicit rejection paths.**
-`max_size_frame` is a *total*, pure function of three `uint32_t` values. It
-takes no pointers (so there is no null-pointer surface), no lengths/buffers (so
-there is no oversized-length surface), and no enums (so there is no
-out-of-range-enum-variant surface — `uint32_t` makes **all** 2³² values of each
-parameter legal input that the C accepts and answers). There is no error code,
-no sentinel return, and no way to make it fail.
+* `return` statements: exactly **1**, and it is the unconditional success
+  return of a computed value. There is no error return.
+* `assert` / `RETURN_ERROR` / `abort` / `exit` / `errno`: **0 occurrences**.
+* `NULL` / pointer arguments: **0** — all three parameters are `uint32_t` by
+  value, so there is no null-pointer or out-of-bounds surface at all.
+* `if` / `switch` / early-out statements: **0**. The `!=` / `==` occurrences on
+  lines 5–7 are *arithmetic* comparison operators used as 0/1 multipliers, not
+  rejections.
+* Range checks, min/max constants, enums: **0**. `18U`, `7`, `8`, `2`, `32` are
+  arithmetic constants, not validity bounds.
+* Return type is `tflac_u32` (unsigned), so there is no `-1` sentinel space and
+  no `NULL` sentinel space.
 
-Because there is no rejection surface to compare, the equivalent
-"must-not-diverge" surface is the set of **implicit** boundaries the C
-arithmetic itself distinguishes: the 4 predicates (`channels != 2`,
-`channels == 2` ×2, `bitdepth != 32`), unsigned wraparound at 2³², the
-multiplicative annihilations (`×0`), and the `(x + 7) / 8` ceiling. Each row
-below is one such condition, with the exact value the C produces (computed
-from the C semantics and asserted against the real C `.so`).
+## Rejection table
 
-## Error / boundary surface table
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| — | `max_size_frame` | *(none — the C function has no rejection path)* | n/a |
 
-`MAX` = `0xFFFFFFFF` = 4294967295. Argument order: `(blocksize, channels, bitdepth)`.
+**The error surface is empty by construction.** `max_size_frame` is a total
+function on `(u32, u32, u32)`: every one of the 2^96 input triples is "valid"
+and produces a defined `u32` (unsigned arithmetic wraps modulo 2^32; the only
+division is by the literal `8`, so division-by-zero is impossible).
 
-| # | function | trigger (the exact invalid/boundary input or condition) | expected C result | [x] |
-|---|----------|----------------------------------------------------------|-------------------|-----|
-| E1 | `max_size_frame` | `channels = 0` — annihilates `t1` via `channels * (channels != 2)`; no rejection | `18` (for any bs, bd) | [x] |
-| E2 | `max_size_frame` | `blocksize = 0` — zero-length block is **not** rejected; all 3 terms vanish | `18 + channels` (`(0,2,16)` → `20`) | [x] |
-| E3 | `max_size_frame` | `bitdepth = 0` with `channels != 2` — invalid FLAC depth, **accepted** | `18 + channels` (`(4096,1,0)` → `19`) | [x] |
-| E4 | `max_size_frame` | `bitdepth = 0` with `channels == 2` — `t3 = bs*(0+1)` survives | `(4096,2,0)` → `532` | [x] |
-| E5 | `max_size_frame` | `bitdepth = 32` exactly — `(bitdepth != 32)` is **false**, drops the +1 | `(4096,2,32)` → `32788` | [x] |
-| E6 | `max_size_frame` | `bitdepth = 31` — one step below the boundary, `+1` applies | `(4096,2,31)` → `32276` | [x] |
-| E7 | `max_size_frame` | `bitdepth = 33` — one step **past** the documented max depth, accepted, `+1` applies | `(4096,2,33)` → `34324` | [x] |
-| E8 | `max_size_frame` | `channels = 2` exactly — stereo path (`t1 = 0`, `t2`+`t3` live) | `(4096,2,16)` → `16916` | [x] |
-| E9 | `max_size_frame` | `channels = 1` — one below the stereo boundary | `(4096,1,16)` → `8211` | [x] |
-| E10 | `max_size_frame` | `channels = 3` — one above the stereo boundary | `(4096,3,16)` → `24597` | [x] |
-| E11 | `max_size_frame` | `blocksize = MAX` — `bs*bd` wraps mod 2³² | `(MAX,1,1)` → `19` | [x] |
-| E12 | `max_size_frame` | `bitdepth = MAX` with `channels == 2` — `bitdepth + 1` wraps to `0`, killing `t3` | `(4096,2,MAX)` → `536870420` | [x] |
-| E13 | `max_size_frame` | `channels = MAX` — `18 + channels` itself overflows | `(1,MAX,1)` → `17` | [x] |
-| E14 | `max_size_frame` | all three = `MAX` — maximal simultaneous overflow | `(MAX,MAX,MAX)` → `17` | [x] |
-| E15 | `max_size_frame` | `channels = MAX-17` — makes `18 + channels` land exactly on `0` | `(0,MAX-17,0)` → `0` | [x] |
-| E16 | `max_size_frame` | sum-`+7` wraparound: `t1` near `MAX` so `+ 7` wraps past 0 | `(MAX,1,MAX)` → `20` | [x] |
-| E17 | `max_size_frame` | `blocksize = 65536` — one step past FLAC's 16-bit max blocksize, accepted | `(65536,8,32)` → `2097178` | [x] |
-| E18 | `max_size_frame` | division-by-8 truncation floor: `sum = 7` (`bs=0,ch=1,bd=1` → `7/8 = 0`) | `19` | [x] |
-| E19 | `max_size_frame` | division-by-8 carry: `sum = 8` (`bs=1,ch=1,bd=1`) → quotient steps to `1` | `20` | [x] |
-| E20 | `max_size_frame` | `bitdepth = MAX` with `channels != 2` — `bd+1` wrap is **unused** on this branch | `(1,1,MAX)` → `19` | [x] |
-| E21 | `max_size_frame` | all 8 residues of `sum mod 8` — proves identical truncating (not rounding) division | `bs=0..9,ch=1,bd=1` → `19,20,20,20,20,20,20,20,20,21` | [x] |
-| E22 | `max_size_frame` | division by zero is **impossible** (divisor is the literal `8`); no trap path exists in either impl | never traps, always returns | [x] |
-| E23 | `max_size_frame` | N/A-by-construction rejections, asserted to be absent identically in both: null pointer, zero/oversized length, out-of-range enum variant — the API takes no pointer, no length, and no enum, so **every** bit pattern of all 3 args is valid input. Covered by exhaustive/random sweeps over the full `u32` domain incl. all values one step past every documented FLAC range (`0`, `9`, `33`, `65536`). | both return normally with identical values, never an error sentinel | [x] |
+## Generic boundaries covered anyway (Phase C tests)
 
-All 23 rows are exercised by `tests/errors.rs` (Phase C), each calling **both**
-`.so`s through `libloading` and asserting the C value, the Rust value, and the
-independently computed expected value all agree.
+Because the table has no rows, Phase C instead exhaustively covers the generic
+boundaries that could still make C and Rust diverge. Each is a differential
+test asserting *identical* returned `u32` (the function's only observable
+result), not merely "both failed":
+
+| # | boundary class | inputs exercised | test |
+|---|----------------|------------------|------|
+| E1 | zero arguments | every subset of `{blocksize, channels, bitdepth}` set to `0` (all 8 combinations) | `err_zero_arguments` |
+| E2 | `u32::MAX` / oversized lengths | every subset set to `u32::MAX` (all 27 combos over `{0,1,MAX}`) | `err_extremes_cross_product` |
+| E3 | one step past the "documented" ranges | `channels` ∈ {1,2,3} (past the `==2` special case), `bitdepth` ∈ {31,32,33} (past the `!=32` special case), `blocksize` ∈ {0,1,65535,65536} | `err_one_past_range` |
+| E4 | out-of-range "enum-like" values across FFI | `channels` and `bitdepth` given values with no musical meaning (0, 7, 255, 256, 0x7FFF_FFFF, 0x8000_0000, `u32::MAX`) — C accepts any `int`/`uint32_t` bit pattern | `err_out_of_range_enum_like` |
+| E5 | multiplication overflow (wraparound) | triples chosen so `blocksize * bitdepth * channels` exceeds 2^32, incl. exact 2^32 multiples and `+7` carry at the wrap point | `err_overflow_wraparound` |
+| E6 | sign-bit / high-bit values | args with bit 31 set, so a signed mis-translation would differ | `err_high_bit_values` |
+| E7 | exhaustive small domain | all `blocksize,channels,bitdepth ∈ [0,64]^3` (274 625 triples) | `err_exhaustive_small_cube` |
+
+## Status
+
+All rows in the rejection table: **0 rows exist** (nothing to check — proven by
+the greps above, not assumed). All generic-boundary rows **E1–E7 pass** against
+both `.so`s (`cargo test --release`, tests `err_*`), plus `deep_stress_50m`
+(50 000 000 random triples + exhaustive `(channels, bitdepth) ∈ [0,300]²`
+against 8 blocksizes) passes with 0 divergences.
+
+The differential harness was validated with a **negative control**: changing
+the Rust `18u32` constant to `19u32` made `config_row_01` fail with
+`C .so returned 20 ... Rust .so returned 21`, confirming the tests can actually
+detect divergence. The injected change was reverted.

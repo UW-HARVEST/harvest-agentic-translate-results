@@ -1,95 +1,95 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Configuration / valid-input surface table (Phase A)
 
-Derived mechanically from `c_src/include/lib.h` and every branch in
-`c_src/src/lib.c`.
+## Mechanical derivation of the axes
 
-## Axes the C actually branches on
-
-**Runtime options / modes / flags:** none.
-`lib.h` exposes exactly one entry point and it takes no flag, mode, enum, or
-context argument:
+Public API surface (the entire header, `c_src/include/lib.h`, 1 line):
 
 ```c
 void rgb_to_hsv(float *dest, const float *src);
 ```
 
-There are no `#ifdef`s in `lib.c`, no global configuration state, no
-initialisation function, and no `[features]` section in `translation/Cargo.toml`
-(verified). So the configuration cross-product is driven **entirely** by input
-shape, and the only feature combination is the default one (see Phase D).
+There is exactly **one** public entry point, and it is simultaneously the
+lowest-level and the highest-level one — there is no convenience wrapper layered
+over a lower-level primitive, so "test the low-level entry points too" collapses
+onto this single function.
 
-**Entry points:** `rgb_to_hsv` is simultaneously the lowest-level and the only
-public entry point — there is no convenience wrapper above it and no internal
-helper below it (the min/max reductions are open-coded ternaries, not calls). It
-is therefore always exercised directly through its `.so` export, never via a
-wrapper.
+Runtime option / mode / flag axes: **none.** Greps for preprocessor and
+conditional constructs over the whole C source return:
 
-**Input-shape axes the code special-cases** (each maps to a real branch or a
-real value-dependent path):
+```
+grep -nE "^#"       -> src/lib.c:1: #include "lib.h"      (no #ifdef, no #define, no build-time modes)
+grep -nE "if|switch|\?" src/lib.c:
+  13:  min = (((min) < (g)) ? (min) : (g));
+  14:  min = (((min) < (b)) ? (min) : (b));
+  15:  max = (((max) > (g)) ? (max) : (g));
+  16:  max = (((max) > (b)) ? (max) : (b));
+  19:  if (delta == 0 || max == 0) { ... return; }
+  26:  if (r == max)
+  28:  else if (g == max)
+  33:  if (h < 0)
+```
 
-- A1 — which channel holds `max`: `r` (line 26), `g` (line 28), or the `else`
-  fallthrough (line 30). Three-way, and ties change which one wins.
-- A2 — `delta == 0` vs `delta != 0` (line 19, first disjunct).
-- A3 — `max == 0` vs `max != 0` (line 19, second disjunct) — independently
-  reachable from A2 because `max` can be `0` while `delta > 0`.
-- A4 — sign of `h` before line 33: `h < 0` (wrap by `+360`) vs `h >= 0`.
-- A5 — magnitude class of the channels: normal, subnormal, `0`, huge
-  (`FLT_MAX`-scale, where `delta` can overflow), and mixed-exponent pairs where
-  `max - min` loses precision.
-- A6 — sign class: all non-negative (the intended 0..1 domain), all negative,
-  mixed sign, signed zeros.
-- A7 — non-finite: `NaN` (in each of the 3 positions, and in combinations),
-  `+inf`, `-inf`.
-- A8 — pointer/buffer shape: disjoint `dest`/`src`, `dest == src` (in-place),
-  and partially overlapping (`src ± 1`).
-- A9 — value distribution within the canonical `[0,1]` domain, including the
-  exact hue boundaries (0/60/120/180/240/300/360°) and near-tie values where
-  `r`, `g`, `b` differ by 1 ULP.
+So all nine branches the C takes are driven purely by the **values** of
+`src[0..=2]`. The configuration axes are therefore the value-shape axes:
 
-## Configuration table
+- **A1 — which channel holds `max`** (the line 26/28/else three-way split):
+  `r`, `g`, `b`, and the tie cases (`r==g`, `g==b`, `r==b`, `r==g==b`), because
+  the chain `if (r==max) / else if (g==max) / else` resolves ties by *position*,
+  not by value.
+- **A2 — the ternary min/max chain (lines 13–16)**: which operand each `<`/`>`
+  keeps. Distinguishes ordinary ordering from the cases where a comparison is
+  **false because an operand is NaN**, which makes the ternaries keep the
+  opposite operand from what `fminf`/`f32::min` would.
+- **A3 — the `delta == 0 || max == 0` early return (line 19)**: achromatic
+  (`r==g==b`), `max` exactly `+0.0`, `max` exactly `-0.0`, and the distinct case
+  `max == 0` while `delta != 0` (negative inputs) which short-circuits a
+  *chromatic* input onto the achromatic path.
+- **A4 — the `h < 0` wrap (line 33)**: only reachable on the `r == max` branch,
+  requires `g < b`. Also the `h` exactly `0` / exactly `-0.0` boundary.
+- **A5 — numeric class of the components**: normalized `[0,1]`, `0..255`,
+  negative, mixed sign, `±0.0`, subnormal, `f32::MAX`-scale (so `max-min`
+  overflows to `+inf`), `±inf`, NaN, and arbitrary raw bit patterns.
+- **A6 — buffer/pointer shape** (the only non-value axis the signature permits):
+  distinct `dest`/`src`, `dest == src`, partially overlapping, padded
+  (`len > 3`), and misaligned. Overlap/alignment rows live in `ERRORS.md`
+  (E4–E8); the distinct-buffer shape is the baseline for every row here.
 
-One row per combination the C treats differently. Every row is driven with
-**many randomized inputs** (fixed seed `0x5EED_1234_ABCD_0001`, a SplitMix64
-generator) plus the row's pinned edge values, and asserts the 3 output `f32`s
-are **bitwise identical** between the C `.so` and the Rust `.so`.
+Rows below are the cross-product of A1–A5, pruned to the combinations the C
+actually distinguishes. Every row is driven with **many randomized inputs**
+(fixed seed `0x5EED_1234`, SplitMix64) inside the stated class, not one hand-picked
+value, and compared bit-for-bit between the C `.so` and the Rust `.so`.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| C1 | `rgb_to_hsv` | canonical domain: uniform random `r,g,b ∈ [0,1]`, disjoint buffers (the ordinary consumer case; covers A1 all three, A2/A3 false, A4 both) | `cfg_c1_unit_domain_random` | [x] |
-| C2 | `rgb_to_hsv` | `r` strict max, `g > b` ⇒ `h >= 0`, no wrap (A1=r, A4=false) | `cfg_c2_r_max_no_wrap` | [x] |
-| C3 | `rgb_to_hsv` | `r` strict max, `g < b` ⇒ `h < 0` ⇒ `+360` wrap (A1=r, A4=true) | `cfg_c3_r_max_wrap` | [x] |
-| C4 | `rgb_to_hsv` | `g` strict max (A1=g, `h = 2 + (b-r)/delta`) | `cfg_c4_g_max` | [x] |
-| C5 | `rgb_to_hsv` | `b` strict max ⇒ `else` branch (A1=else, `h = 4 + (r-g)/delta`) | `cfg_c5_b_max` | [x] |
-| C6 | `rgb_to_hsv` | achromatic `r == g == b`, random magnitude ⇒ A2 true, early return | `cfg_c6_achromatic_random` | [x] |
-| C7 | `rgb_to_hsv` | near-achromatic: channels differing by 1–4 ULP, so `delta` is subnormal-to-tiny and `s`/`h` are catastrophically ill-conditioned (A2 false but barely, A5 subnormal) | `cfg_c7_one_ulp_apart` | [x] |
-| C8 | `rgb_to_hsv` | exact two-channel ties: `r==g>b`, `g==b>r`, `r==b>g` — exercises the `if/else if` priority (A1 ties) | `cfg_c8_two_channel_ties` | [x] |
-| C9 | `rgb_to_hsv` | exact hue boundaries: the 6 primary/secondary colours and the 0/60/120/180/240/300 degree points, at several `v` and `s` levels | `cfg_c9_hue_boundaries` | [x] |
-| C10 | `rgb_to_hsv` | all channels negative (A6 all-negative): `max`, `v`, and `s` go negative; `s = delta/max` is negative | `cfg_c10_all_negative` | [x] |
-| C11 | `rgb_to_hsv` | mixed-sign channels (A6 mixed) — includes the `max == 0, delta > 0` early return (A3) reached from random data | `cfg_c11_mixed_sign` | [x] |
-| C12 | `rgb_to_hsv` | signed zeros in every one of the 8 `{±0.0}³` combinations (A6 signed zero; tie-breaking of `<`/`>` on `-0.0 == +0.0`) | `cfg_c12_signed_zero_grid` | [x] |
-| C13 | `rgb_to_hsv` | subnormal channels (A5 subnormal): random subnormal `r,g,b`, plus `MIN_POSITIVE`, smallest subnormal `1e-45`, and subnormal/normal mixes | `cfg_c13_subnormals` | [x] |
-| C14 | `rgb_to_hsv` | huge magnitudes (A5 huge): `±FLT_MAX`-scale, where `max - min` overflows to `inf` and `delta/max` can overflow | `cfg_c14_huge_magnitudes` | [x] |
-| C15 | `rgb_to_hsv` | wide dynamic range (A5 mixed exponent): one channel near `FLT_MAX`, another near `FLT_MIN`, so `delta` and the quotients lose all precision | `cfg_c15_wide_exponent_spread` | [x] |
-| C16 | `rgb_to_hsv` | fully unconstrained bit-pattern fuzz (A5+A6+A7 jointly): all 3 channels are uniformly random 32-bit patterns reinterpreted as `f32`, so `NaN`s, `inf`s, subnormals and wild exponents all occur naturally | `cfg_c16_random_bit_patterns` | [x] |
-| C17 | `rgb_to_hsv` | non-finite grid (A7): the cross-product of `{NaN, +inf, -inf, 0.0, -0.0, 1.0, -1.0, FLT_MAX, -FLT_MAX, FLT_MIN}` over all 3 channels (1000 combinations, exhaustive) | `cfg_c17_nonfinite_grid` | [x] |
-| C18 | `rgb_to_hsv` | in-place, `dest == src` (A8 exact alias), over random `[0,1]` and random bit patterns | `cfg_c18_inplace_alias` | [x] |
-| C19 | `rgb_to_hsv` | partial overlap `dest = src + 1` and `dest = src - 1` (A8 partial alias), verifying the whole 5-element window afterwards | `cfg_c19_partial_overlap` | [x] |
-| C20 | `rgb_to_hsv` | 8-bit-quantised inputs `k/255.0` for `k ∈ 0..=255` (the real-world image-pixel shape), random triples plus the full grey ramp | `cfg_c20_u8_quantised` | [x] |
-| C21 | `rgb_to_hsv` | bulk sequential invocation over a large buffer (many pixels, one call per pixel) to confirm no cross-call state and identical results in sequence | `cfg_c21_bulk_sequence` | [x] |
+## The table
 
-## Feature combinations
-
-`translation/Cargo.toml` has **no `[features]` section**, so the default
-configuration is the only feature combination. `run_all.sh` still enumerates the
-powerset mechanically (so a future feature is picked up automatically) and runs
-the whole suite under `--no-default-features` as well, against **both** the
-debug and the release cdylib — the release profile sets `panic = "abort"` and
-the debug profile enables `debug_assertions`, and those really do exercise
-different code paths (see the E23/E24 divergence recorded in `ERRORS.md`).
-
-## Gate status
-
-- [x] Every row above passes across its randomized inputs, comparing C `.so`
-      output to Rust `.so` output bit-for-bit.
-- [x] Verified under default features and `--no-default-features`, against the
-      debug cdylib and the release cdylib (4 combinations, all green).
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| C1 | `rgb_to_hsv` | achromatic, `r == g == b`, random value in `(0,1]` → `delta == 0`, early return, `h=s=0`, `v=max` | [x] |
+| C2 | `rgb_to_hsv` | achromatic, `r == g == b`, random value in `(1, 1e30]` → `delta == 0` early return at large magnitude | [x] |
+| C3 | `rgb_to_hsv` | all channels exactly `+0.0` → both `delta == 0` **and** `max == 0` true | [x] |
+| C4 | `rgb_to_hsv` | `r` strict max, `g > b`, all in `[0,1]` → `r==max` branch, `h` in `(0,60)`, no wrap | [x] |
+| C5 | `rgb_to_hsv` | `r` strict max, `g < b`, all in `[0,1]` → `r==max` branch, `h < 0`, wrap `+= 360` taken | [x] |
+| C6 | `rgb_to_hsv` | `r` strict max, `g == b` exactly → `r==max` branch with `h` computed as `±0.0` before scaling, wrap boundary not taken | [x] |
+| C7 | `rgb_to_hsv` | `g` strict max, random `r`,`b` in `[0,1]` → `2 + (b-r)/delta` branch | [x] |
+| C8 | `rgb_to_hsv` | `b` strict max, random `r`,`g` in `[0,1]` → `else` / `4 + (r-g)/delta` branch | [x] |
+| C9 | `rgb_to_hsv` | tie `r == g > b` → chain resolves to the **`r==max`** branch (position-based tie-break) | [x] |
+| C10 | `rgb_to_hsv` | tie `g == b > r` → chain resolves to the **`g==max`** branch | [x] |
+| C11 | `rgb_to_hsv` | tie `r == b > g` → chain resolves to the **`r==max`** branch | [x] |
+| C12 | `rgb_to_hsv` | uniformly random triple in `[0,1]` (typical normalized consumer input; hits A1/A4 at random) | [x] |
+| C13 | `rgb_to_hsv` | uniformly random triple in `[0,255]` (8-bit-style unnormalized input) | [x] |
+| C14 | `rgb_to_hsv` | mixed sign: `max > 0` with at least one negative channel → `delta > max`, so `s > 1` (out of nominal range, unchecked) | [x] |
+| C15 | `rgb_to_hsv` | all channels negative → `max < 0`, `delta != 0`, `max != 0` → full chromatic path with negative `s` and negative `v` | [x] |
+| C16 | `rgb_to_hsv` | `max` lands on exactly `0` while `delta != 0` (e.g. one channel `+0.0`, others negative) → `max == 0` short-circuits a chromatic input to the achromatic early return | [x] |
+| C17 | `rgb_to_hsv` | signed-zero shapes: every combination of `+0.0`/`-0.0` across the 3 channels (8 cases, exhaustive) → probes `max == 0` with `max == -0.0` and the sign of the stored `v` | [x] |
+| C18 | `rgb_to_hsv` | exactly one NaN, in `r` (position 0) → ternary chain keeps non-NaN operands per the literal C order | [x] |
+| C19 | `rgb_to_hsv` | exactly one NaN, in `g` (position 1) | [x] |
+| C20 | `rgb_to_hsv` | exactly one NaN, in `b` (position 2) | [x] |
+| C21 | `rgb_to_hsv` | two or three NaNs — all 4 remaining NaN masks, with random finite values in the other slots and random NaN payloads/signs | [x] |
+| C22 | `rgb_to_hsv` | `+inf` in one random channel, finite elsewhere → `max == inf`, `delta == inf`, ratio `finite/inf == 0` | [x] |
+| C23 | `rgb_to_hsv` | `-inf` in one random channel, finite elsewhere → `min == -inf`, `delta == inf` | [x] |
+| C24 | `rgb_to_hsv` | both `+inf` and `-inf` present → `delta == inf` and `inf/inf == NaN` propagating into `h` | [x] |
+| C25 | `rgb_to_hsv` | subnormal components (random denormal bit patterns) → `delta` subnormal or `0`; `delta/max` may be a normal ratio | [x] |
+| C26 | `rgb_to_hsv` | `f32::MAX`-scale opposite-sign components → `max - min` **overflows to `+inf`** while `max` is finite → `s == inf` | [x] |
+| C27 | `rgb_to_hsv` | near-identical channels: `min = nextafter(max, -inf)` → smallest possible non-zero `delta`, `(g-b)/delta` overflow-prone | [x] |
+| C28 | `rgb_to_hsv` | one-step-past-nominal-range boundaries: components drawn from `{-0.0, +0.0, nextafter(0,-1), nextafter(0,+1), 1.0, nextafter(1,-1), nextafter(1,+1), f32::MIN_POSITIVE, f32::MAX, f32::MIN}` — exhaustive 10³ = 1000 triples | [x] |
+| C29 | `rgb_to_hsv` | fully random raw 32-bit patterns per channel (mixes NaNs, infinities, denormals, huge and tiny magnitudes) — the broadest fuzz row | [x] |
+| C30 | `rgb_to_hsv` | random triples restricted to a tiny value alphabet `{-2,-1,-0.0,0.0,0.5,1,2}` so ties and equalities occur with high probability — stresses the A1 tie-break and A3 branches jointly | [x] |

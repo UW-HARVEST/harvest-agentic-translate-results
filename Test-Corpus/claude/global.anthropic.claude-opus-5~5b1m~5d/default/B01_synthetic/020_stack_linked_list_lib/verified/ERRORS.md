@@ -1,69 +1,32 @@
 # ERRORS.md — Phase C error-surface table
 
-Mechanically derived from every rejection/error path in `c_src/src/simplestruct.c`
-and `c_src/include/simplestruct.h`.
+Mechanically derived from every rejection / early-return / sentinel in the C
+source. Grep basis:
 
-## Mechanical inventory of the C source
-
-Full grep of every `return`, branch, assert, range check and limit constant:
-
-```
-simplestruct.c:27:    if (head) {                        <- the only null check
-simplestruct.c:29:        while (head->next) {           <- loop guard, not a rejection
-simplestruct.c:31:            if (head->value < smallest) {  <- data compare, not a rejection
-simplestruct.c:35:        return smallest;               <- success return
-simplestruct.c:37:    else return -1;                    <- THE ONLY ERROR RETURN
+```sh
+grep -n 'return\|assert\|if (\|NULL\|<\|>' c_src/src/simplestruct.c c_src/include/simplestruct.h
 ```
 
-Findings:
+The C library contains exactly ONE rejection construct: the `else return -1;`
+branch guarded by `if (head)`. There are no `assert`s, no error enums, no
+range checks, no min/max constants, and no other `return` of a sentinel.
 
-* error-return macros (`RETURN_ERROR`, `CHECK`, goto-fail): **none**
-* `assert` / `static_assert`: **none**
-* error enums / status codes: **none** (return type is a bare `int`)
-* explicit range checks, min/max constants, length/size checks: **none**
-* null checks: **exactly one** — `if (head)` at line 27
-* allocation (which could fail): **none** — the function never allocates
+| # | function | trigger (exact invalid input/condition) | expected C result | test | status |
+|---|----------|------------------------------------------|-------------------|------|--------|
+| 1 | `smallestValue` | `head == NULL` (the `if (head)` guard fails, `else return -1`) | returns `-1` | `err_row1_null_head` | [x] |
 
-So the C library has exactly **one** distinct rejection path. Everything else the
-function does is unconditional traversal of caller-owned memory.
+## Generic FFI boundary cases (required even though not in the table above)
 
-## Error-surface table
+| # | function | trigger | expected C result | test | status |
+|---|----------|---------|-------------------|------|--------|
+| G1 | `smallestValue` | NULL pointer (same as row 1, asserted independently and repeatedly) | `-1` | `err_row1_null_head` | [x] |
+| G2 | `smallestValue` | single node, `value == -1` — sentinel collision: valid result indistinguishable from the NULL error | `-1` (NOT an error) | `err_sentinel_collision_minus_one` | [x] |
+| G3 | `smallestValue` | list length 0 handled only via NULL (no length parameter exists → no "zero length" other than NULL) | `-1` | `err_row1_null_head` | [x] |
+| G4 | `smallestValue` | oversized / extreme values: `INT_MIN`, `INT_MAX` as node values (one step past nothing — full `int` range is valid) | the true minimum, incl. `INT_MIN` | `err_extreme_int_values` | [x] |
+| G5 | `smallestValue` | `INT_MIN` present together with `-1` (checks no signed-comparison / sentinel confusion) | `INT_MIN` | `err_extreme_int_values` | [x] |
+| G6 | `smallestValue` | very long list (10_000 nodes) — traversal depth / recursion-vs-loop divergence | true minimum | `err_long_list_no_stack_divergence` | [x] |
+| G7 | `smallestValue` | no enum parameters exist in this API, so there is no out-of-range enum value to pass. Documented as N/A. | N/A | — | [x] N/A |
+| G8 | `smallestValue` | misaligned / garbage non-NULL pointer | UNDEFINED BEHAVIOUR in C — deliberately NOT tested (would be UB in both, no defined result to compare) | UB | — | [x] excluded |
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|----------------------------------------------|-------------------|------|--------|
-| E1 | `smallestValue` | `head == NULL` (the `if (head)` test fails, control reaches `else return -1`) | returns `-1` | `err_e1_null_head` | [x] PASS |
-
-## Generic FFI boundary cases required by Phase C
-
-These are not separate C rejection branches (the C code has only E1), but Phase C
-mandates covering the generic boundaries of any C API. Each is exercised
-differentially against both `.so`s.
-
-| # | boundary | construction | expected C result | test | status |
-|---|----------|--------------|-------------------|------|--------|
-| B1 | null pointer | `smallestValue(NULL)` — same as E1, asserted repeatedly/idempotently | `-1` | `err_b1_null_repeated` | [x] PASS |
-| B2 | zero length | a list of zero nodes is *only* representable as `NULL` (no count parameter exists) | `-1` | `err_b2_zero_length_is_null` | [x] PASS |
-| B3 | minimum non-empty length | 1-node list, `next == NULL`; loop body never runs | node's own `value` | `err_b3_single_node` | [x] PASS |
-| B4 | sentinel/return-value collision | a valid list whose true minimum **is** `-1`; C cannot distinguish this from the NULL error | `-1` (ambiguous by design — must be reproduced, not "fixed") | `err_b4_minus_one_ambiguity` | [x] PASS |
-| B5 | value one step past range, low | list containing `INT_MIN` (`-2147483648`) in first / middle / last position | `INT_MIN` | `err_b5_int_min` | [x] PASS |
-| B6 | value one step past range, high | list where every node is `INT_MAX` (`2147483647`) | `INT_MAX` | `err_b6_int_max` | [x] PASS |
-| B7 | signedness trap | values whose bit patterns are large *unsigned* numbers but negative as `int` (e.g. `0x80000000`, `0xFFFFFFFF`); an unsigned comparison would pick a different winner | signed `<` semantics | `err_b7_signed_compare` | [x] PASS |
-| B8 | oversized length | very long list (100 000 nodes) — checks no recursion-depth/stack limit divergence | correct minimum, no overflow | `err_b8_oversized_length` | [x] PASS |
-| B9 | out-of-range enum across FFI | **N/A — no enum exists.** The public API has no enum, mode or flag parameter; the sole parameter is a pointer and the sole return is a bare `int`. Documented here so the row is explicitly discharged rather than silently skipped. The nearest analogue, an arbitrary non-pointer-valued `int` reinterpreted as the parameter, is undefined behaviour in C (wild pointer dereference) and is therefore *not* a testable input — only `NULL` is a defined invalid pointer value. | n/a | — | [x] N/A (justified) |
-
-## Notes on what is deliberately NOT tested
-
-The C contract requires `head` to be `NULL` or a valid, `NULL`-terminated,
-acyclic chain. The following are undefined behaviour in the C original, so there
-is no "correct C result" to match and a differential test would compare two
-undefined behaviours:
-
-* dangling / unaligned / wild non-null pointers,
-* cyclic lists (`while (head->next)` never terminates in C — the Rust loop
-  behaves identically, but the test would hang, so it is excluded),
-* a `next` pointer that is non-null but not a valid `ListNode`.
-
-## Gate status
-
-- [x] Every row in this table has a passing differential test (or is explicitly
-      justified as N/A). Phase C complete.
+All rows tested in `tests/differential.rs` against BOTH `.so` files loaded via
+`libloading`.

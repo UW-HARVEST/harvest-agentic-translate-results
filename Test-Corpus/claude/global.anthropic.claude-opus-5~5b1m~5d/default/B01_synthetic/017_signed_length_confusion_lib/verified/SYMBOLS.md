@@ -1,75 +1,40 @@
 # SYMBOLS.md — Public symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Derived mechanically from `nm -D` on both shared libraries.
 
-Build commands used:
+* C: `c_src/build/libdriver.so`
+* Rust: `translation/target/release/libdriver.so`
 
-```sh
-cd c_src && mkdir -p build && cd build && \
-  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-```
+## Defined (exported) symbols
 
-## C `.so` (`c_src/build/libdriver.so`)
+`nm -D --defined-only`
 
-```
-000000000000115b T driver
-0000000000001139 T printLine
-```
+| # | symbol | C `.so` | Rust `.so` | signature (from `c_src/include/driver.h` / `c_src/src/driver.c`) |
+|---|--------|---------|------------|------------------------------------------------------------------|
+| 1 | `driver`    | `T` | `T` | `void driver(int data)` — declared in the public header |
+| 2 | `printLine` | `T` | `T` | `void printLine(const char *line)` — not in the header, but non-`static` in `driver.c`, therefore an exported public symbol |
 
-## Rust `.so` (`translation/target/release/libdriver.so`)
-
-```
-0000000000011750 T driver
-0000000000011800 T printLine
-```
-
-## Parity table
-
-| # | symbol    | type | in C `.so` | in Rust `.so` | source of truth        | notes |
-|---|-----------|------|-----------|---------------|------------------------|-------|
-| 1 | `driver`  | `T` (text, global) | yes | yes | `c_src/src/driver.c:38`, declared in `c_src/include/driver.h:27` | `void driver(int data)` |
-| 2 | `printLine` | `T` (text, global) | yes | yes | `c_src/src/driver.c:30` | `void printLine(const char *line)`; not declared in the public header but has external linkage in C, therefore it is part of the exported ABI and IS exported by the Rust `.so` too |
-
-## Missing-symbol analysis
-
-`diff` of the two sorted symbol-name lists is **empty**:
-
-```sh
-diff <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort) \
-     <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
-# -> no output
-```
-
-* 0 symbols missing from the Rust `.so`.
-* 0 symbols are stubs / `unimplemented!()`: both functions are full translations of the C
-  bodies (see `translation/src/lib.rs`).
-* No C source file in `c_src/` was left untranslated — the library consists of the single
-  translation unit `src/driver.c` (see `c_src/CMakeLists.txt`, which lists exactly one
-  source file).
+**Symbol diff (C exported − Rust exported): EMPTY.** No symbol needed to be added
+and no C source file was left untranslated (`driver.c` is the only C source in
+`CMakeLists.txt`, and both of its non-`static` functions are translated and
+exported with `#[unsafe(no_mangle)] pub unsafe extern "C"`).
 
 ## Undefined (imported) symbols
 
-The Rust `.so` imports only libc / language-runtime symbols; `ldd -r` reports **no**
-unresolved symbol for either library (checked by
-`tests/phase_d_symbols.rs::d3_rust_library_has_no_undefined_non_libc_symbols`):
+`nm -D --undefined-only`
 
-```sh
-ldd -r c_src/build/libdriver.so                    # no "undefined symbol" lines
-ldd -r translation/target/release/libdriver.so     # no "undefined symbol" lines
-```
+C imports: `memset`, `puts`, `strncpy` (+ weak `_ITM_*`, `__cxa_finalize`,
+`__gmon_start__`).
 
-Observed difference in *imports* (not in exports, and not observable in behaviour):
-LLVM rewrites `printf("%s\n", s)` into `puts(s)`, so the Rust `.so` imports `puts`
-where the unoptimised C object imports `printf`. The two emit the exact same bytes on
-the exact same `FILE *stdout` stream; this is verified explicitly — including with
-stdout switched to **unbuffered** mode, where the choice of writer would be most
-visible — by `tests/phase_b_configs.rs::c22_buffering_pipe_vs_file` (row C23 of
-`CONFIGS.md`). Beyond that, the Rust `.so` imports `memset`/`strncpy` plus the usual
-glibc + Rust `std` entries (`malloc`, `write`, `_Unwind_*`, `__cxa_*`, …).
+Note: the C compiler rewrites `printf("%s\n", line)` into `puts(line)`, which is
+why `printf` does not appear. The Rust build performs the *same* rewrite, so
+`puts` is imported by both — the emitted byte stream and stdio buffering
+behaviour are therefore identical.
 
-## Feature combinations
+Rust imports: the same libc entry points (`memset`, `puts`, `strncpy`) plus the
+Rust runtime's standard libc/unwinder set (`malloc`, `free`, `memcpy`,
+`_Unwind_*`, `dl_iterate_phdr`, …).
 
-`translation/Cargo.toml` declares **no** `[features]` table, so the only build
-configuration is the default one (`--no-default-features` and the default build produce
-identical symbol sets). Verified by script in `run_all.sh`.
+**0 missing / 0 undefined non-libc symbols in the Rust `.so`.** Every undefined
+symbol in the Rust library resolves against glibc / libgcc, exactly as for the C
+library; there are no unresolved references to code that was not translated.

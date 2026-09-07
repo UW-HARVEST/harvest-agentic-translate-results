@@ -1,71 +1,55 @@
-# ERRORS.md — Error / rejection surface table
+# ERRORS.md — error / rejection surface table
 
-Derived mechanically from `c_src/src/lib.c` and `c_src/include/lib.h`.
-
-## Mechanical grep evidence
+Derived mechanically from `c_src/src/lib.c`. The grep sweep for every
+rejection idiom found:
 
 ```sh
-grep -nE 'assert|RETURN_ERROR|NULL|errno|ERROR|_MIN|_MAX|enum|#if' \
-     c_src/src/lib.c c_src/include/lib.h
-# -> (no matches)
-
-grep -n 'default:' c_src/src/lib.c
-# -> 98:    default:      (in BTAC1C2_PredictSample)
-#    222:   default:      (in BTAC1C2_GetPredictFunc)
-#    269:   default:      (in get_predict_func)
-
-grep -n 'return' c_src/src/lib.c        # -> 15 returns, none is an error sentinel
+grep -n 'RETURN_ERROR\|return -1\|return NULL\|assert\|errno\|exit(\|abort(' c_src/src/lib.c
+#   -> no matches
+grep -n 'if *(\|MAX\|MIN\|<=\|>=' c_src/src/lib.c
+#   -> no matches (no explicit range checks, no null checks, no min/max constants)
+grep -n 'switch\|default:' c_src/src/lib.c
+#   -> 22, 98 | 185, 222 | 232, 269   (three switches, each with a `default:`)
 ```
 
-Findings that shape this table:
+So this library has **no error codes, no error enums, no asserts, no null
+checks, and no explicit range checks**. Its *entire* rejection surface is the
+`default:` arm of the three `switch (pfcn)` statements — an out-of-domain
+`pfcn` is "rejected" by falling through to a fallback value rather than by
+returning an error code. Each distinct `default:` / out-of-domain branch gets
+its own row.
 
-- There are **no** `assert`s, **no** error macros, **no** error enums, **no**
-  `NULL` checks, **no** `errno` use, and **no** `#if`/`#ifdef` in the C.
-- The only public entry point, `int get_predict_func(int pfcn)`, takes a
-  single `int` and **no pointers**, so there is no null-pointer, length, or
-  buffer surface to abuse at the exported ABI boundary. Generic
-  null/zero-length/oversized-length probes are therefore **not applicable**
-  to the exported API; the equivalent generic boundary probes for an `int`
-  parameter are the extreme and just-past-valid-range integer values, which
-  are rows 4–11 below.
-- The library's entire "rejection" behaviour lives in the three `default:`
-  arms. `pfcn` is used exactly like a C enum tag (valid tags `0..=11`), so
-  any `int` with no valid variant is a real input, covered below.
+`pfcn` is a plain `int` parameter (not an `enum`), so the C accepts any 32-bit
+value; every value outside the switch's case labels is a real input the C
+handles and the Rust must handle identically.
 
-## The table
+## Table
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result |
-|----|----------|----------------------------------------------|-------------------|
-| 1  | `get_predict_func` (`default:` @ line 269) | `pfcn` outside `0..=11` — `result` is left at its initialiser | returns `0` |
-| 2  | `BTAC1C2_GetPredictFunc` (`default:` @ line 222) | `pfcn` outside `0..=11` — no specialised predictor exists | returns `(void*)BTAC1C2_PredictSample` (the generic fallback), **not** `NULL`; observable only as row 1's `0` because `get_predict_func`'s `default:` arm never compares it |
-| 3  | `BTAC1C2_PredictSample` (`default:` @ line 98) | `pfcn` outside `0..=15` | `pred = 0`, returns `0`. Not reachable through the exported ABI: the pointer `BTAC1C2_GetPredictFunc` returns is only ever *compared*, never called, and the function has internal linkage. Documented for completeness. |
-| 4  | `get_predict_func` | `pfcn == 12` — first value one step past the valid range `0..=11` (and the first `firfx` FIR arm of `BTAC1C2_PredictSample`) | returns `0` |
-| 5  | `get_predict_func` | `pfcn == 13, 14, 15` — remaining FIR arms; still no specialised `_PfnNN` | returns `0` |
-| 6  | `get_predict_func` | `pfcn == 16` — one step past the *widest* internal `case` range (`0..=15`) | returns `0` |
-| 7  | `get_predict_func` | `pfcn == -1` — one step below the valid range | returns `0` |
-| 8  | `get_predict_func` | `pfcn == INT_MIN` (`-2147483648`) | returns `0` |
-| 9  | `get_predict_func` | `pfcn == INT_MAX` (`2147483647`) | returns `0` |
-| 10 | `get_predict_func` | `pfcn` = arbitrary large negative values (out-of-range "enum" tags crossing the FFI boundary) | returns `0` |
-| 11 | `get_predict_func` | `pfcn` = arbitrary large positive values (out-of-range "enum" tags crossing the FFI boundary) | returns `0` |
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|----------------------------------------------|-------------------|------|--------|
+| 1 | `get_predict_func` (line 269 `default:`) | `pfcn == 12` — first value past the 0..11 domain of `BTAC1C2_GetPredictFunc`; also a *valid* label for `BTAC1C2_PredictSample`'s switch, so it is the trickiest boundary | `0` (`result` keeps its initialiser; `BTAC1C2_GetPredictFunc` returned `&BTAC1C2_PredictSample`, which matches no `case`) | `err_row01_pfcn_12` | [x] |
+| 2 | `get_predict_func` (line 269 `default:`) | `pfcn == 13, 14, 15` — the remaining `BTAC1C2_PredictSample` case labels, still outside `GetPredictFunc`'s 0..11 domain | `0` for each | `err_row02_pfcn_13_14_15` | [x] |
+| 3 | `get_predict_func` (line 269 `default:`) | `pfcn == 16` — first value past *every* case label in *every* switch in the file | `0` | `err_row03_pfcn_16` | [x] |
+| 4 | `get_predict_func` (line 269 `default:`) | `pfcn == -1` — one step below the low end of the valid domain | `0` | `err_row04_pfcn_minus_1` | [x] |
+| 5 | `get_predict_func` (line 269 `default:`) | `pfcn < -1` (arbitrary negative, e.g. `-2, -12, -16, -1000`) | `0` for each | `err_row05_pfcn_negative` | [x] |
+| 6 | `get_predict_func` (line 269 `default:`) | `pfcn == INT_MAX` (`2147483647`) — extreme positive, exercises the switch's jump-table/range lowering | `0` | `err_row06_pfcn_int_max` | [x] |
+| 7 | `get_predict_func` (line 269 `default:`) | `pfcn == INT_MIN` (`-2147483648`) — extreme negative; note `pfcn - 12` would overflow, so any lowering that computes the jump-table offset must not mis-dispatch | `0` | `err_row07_pfcn_int_min` | [x] |
+| 8 | `get_predict_func` (line 269 `default:`) | out-of-range "enum-like" values crossing the FFI boundary: values that would be plausible variants of a 4-bit predictor-function enum but have no matching `case` — `0x10, 0xFF, 0x100, 0xFFFF, 0x10000, 0x7FFFFFFE` | `0` for each | `err_row08_out_of_range_enum_values` | [x] |
+| 9 | `get_predict_func` (line 269 `default:`) | bit-pattern aliasing: values congruent to a *valid* index modulo a power of two (`16, 32, 256, 4096, -16, -256`, and `k + 65536` for k in 0..11). A masking bug (`pfcn & 15`, `pfcn & 7`) would wrongly return `1` | `0` for each | `err_row09_masking_aliases` | [x] |
+| 10 | `get_predict_func` (line 269 `default:`) | exhaustive sweep of the whole near-domain `-2048..=2048`, plus 200k pseudo-random `i32` values (fixed seed) | `1` iff `0 <= pfcn <= 11`, else `0` | `err_row10_exhaustive_and_random` | [x] |
+| 11 | `BTAC1C2_GetPredictFunc` (line 222 `default:`) | `pfcn` outside 0..11 | returns `(void *)BTAC1C2_PredictSample` (the fallback pointer, **not** `NULL`) — observable only indirectly: `get_predict_func` then returns `0` because that pointer matches no `case` | covered transitively by rows 1–10; `static`, so not FFI-reachable | [x] |
+| 12 | `BTAC1C2_PredictSample` (line 98 `default:`) | `pfcn < 0` or `pfcn > 15` | `pred = 0` | not FFI-reachable (`static`, and `get_predict_func` never calls it); verified by source inspection — Rust `_ => { pred = 0; }` | [x] |
 
-Note on rows 4–11: the C API has no way to *signal* rejection other than
-returning `0`, and `0` is also what a hypothetical "predictor lookup
-mismatch" would produce. The tests assert the exact returned value (`0`),
-not merely "both failed somehow", and additionally assert C and Rust return
-byte-identical `int`s for every probe.
+## Notes on non-reachable rows
 
-## Status
+Rows 11 and 12 concern `static` C functions with local (`t`) linkage. They are
+absent from `nm -D` for both libraries, so no differential FFI test can call
+them directly; row 11 is exercised transitively (every row 1–10 goes through
+it), and row 12's Rust counterpart was checked against the C by reading both
+sources. This is documented rather than stubbed — no fake export was added to
+make them appear callable.
 
-| # | test | status |
-|---|------|--------|
-| 1  | `err_row1_default_arm_out_of_range` | [x] PASS |
-| 2  | `err_row2_fallback_pointer_not_null` | [x] PASS |
-| 3  | `err_row3_generic_fallback_unreachable` | [x] PASS |
-| 4  | `err_row4_pfcn_12` | [x] PASS |
-| 5  | `err_row5_pfcn_13_14_15` | [x] PASS |
-| 6  | `err_row6_pfcn_16` | [x] PASS |
-| 7  | `err_row7_pfcn_minus_1` | [x] PASS |
-| 8  | `err_row8_int_min` | [x] PASS |
-| 9  | `err_row9_int_max` | [x] PASS |
-| 10 | `err_row10_large_negative_random` | [x] PASS |
-| 11 | `err_row11_large_positive_random` | [x] PASS |
+Deliberately *not* tested as "null pointer" cases: `get_predict_func` takes no
+pointer parameters, so there is no null-pointer input to construct at the ABI
+boundary. The `*mut c_int` / `*mut btac1c_idxstate` parameters exist only on the
+non-exported predictors.

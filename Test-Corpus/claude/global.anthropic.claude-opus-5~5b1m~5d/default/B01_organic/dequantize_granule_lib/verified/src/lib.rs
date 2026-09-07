@@ -122,13 +122,17 @@ pub unsafe extern "C" fn dequantize_granule(
     let mut j: c_int = 0;
     while j < 4 {
         let mut dst: *mut f32 = grbuf.wrapping_offset(group_size.wrapping_mul(j) as isize);
-        // Base of `sci->bitalloc`; indexed with a raw offset so that an
-        // out-of-range `total_bands` reproduces the C code's out-of-bounds
-        // reads into the following struct members.
-        let bitalloc: *const u8 = std::ptr::addr_of!((*sci).bitalloc).cast::<u8>();
-        let nbands: c_int = 2i32.wrapping_mul((*sci).total_bands as c_int);
+        // Base of `sci->bitalloc`; derived from the *struct* base so the raw
+        // pointer's provenance spans the whole object.  Indexed with a raw
+        // offset so that an out-of-range `total_bands` reproduces the C code's
+        // out-of-bounds reads into the following struct members.
+        let bitalloc: *const u8 = (sci as *const u8)
+            .wrapping_offset(std::mem::offset_of!(L12_scale_info, bitalloc) as isize);
         let mut i: c_int = 0;
-        while i < nbands {
+        // `2 * sci->total_bands` is the loop condition in C and is therefore
+        // re-evaluated on every iteration (it is *not* hoisted, which matters if
+        // `grbuf` aliases `sci`).
+        while i < 2i32.wrapping_mul((*sci).total_bands as c_int) {
             let ba: c_int = *bitalloc.wrapping_offset(i as isize) as c_int;
             if ba != 0 {
                 if ba < 17 {

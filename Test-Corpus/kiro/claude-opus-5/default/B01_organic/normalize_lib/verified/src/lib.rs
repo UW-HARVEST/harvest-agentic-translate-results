@@ -6,18 +6,7 @@
 //! The header declares no namespace-renaming macros, so the linker symbol
 //! matches the source-level name exactly.
 
-use std::ffi::{c_int, c_void};
-
-unsafe extern "C" {
-    /// The C source calls `memset` directly, so this translation does too.
-    ///
-    /// `core::ptr::write_bytes` would be the idiomatic choice, but it carries an
-    /// enabled `check_language_ub` precondition assert that aborts on a null
-    /// destination — even for a zero length — which would diverge from the C's
-    /// `SIGSEGV`/no-op behaviour. Calling libc's `memset` reproduces the C
-    /// exactly, including `memset(NULL, 0, 0)` being harmless.
-    fn memset(dest: *mut c_void, c: c_int, n: usize) -> *mut c_void;
-}
+use std::ffi::c_int;
 
 /// Translation of:
 ///
@@ -54,26 +43,13 @@ unsafe extern "C" {
 ///
 /// Same contract as the C function: `src` must be readable for `size`
 /// elements, and `dest` writable for `size` elements.
-///
-/// # Why `wrapping_add` + `read`/`write` instead of `*p.offset(i)`
-///
-/// A language-level raw dereference (`*p.offset(i)`) makes rustc insert
-/// `-Cub-checks` assertions (enabled by default whenever `debug-assertions` is
-/// on). Those turn C's *observable* behaviour on an invalid pointer — a
-/// `SIGSEGV` from the faulting access — into a Rust `SIGABRT` with a
-/// "null pointer dereference occurred" message. Since this function is a
-/// drop-in ABI replacement for the C one, that difference is itself a
-/// divergence: a caller passing `NULL` must get the same signal from both
-/// libraries in every build profile. `wrapping_add` has no preconditions and
-/// `ptr::read`/`ptr::write` carry no enabled UB check, so the faulting access
-/// reaches the hardware exactly as the C compiler's does.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn normalize(dest: *mut f32, src: *const f32, size: c_int) {
     let mut sum: f32 = 0.0f32;
 
     let mut i: c_int = 0;
     while i < size {
-        let v = unsafe { src.wrapping_add(i as usize).read() };
+        let v = unsafe { *src.offset(i as isize) };
         sum += v * v;
         i += 1;
     }
@@ -82,14 +58,14 @@ pub unsafe extern "C" fn normalize(dest: *mut f32, src: *const f32, size: c_int)
         sum = 1.0f32 / sum.sqrt();
         i = 0;
         while i < size {
-            let v = unsafe { src.wrapping_add(i as usize).read() };
-            unsafe { dest.wrapping_add(i as usize).write(v * sum) };
+            let v = unsafe { *src.offset(i as isize) };
+            unsafe { *dest.offset(i as isize) = v * sum };
             i += 1;
         }
     } else if dest as *const f32 != src {
         // Reproduce C's `size * sizeof(float)` size_t arithmetic, including
         // the wraparound for negative `size`.
         let len = (size as i64 as u64).wrapping_mul(std::mem::size_of::<f32>() as u64) as usize;
-        unsafe { memset(dest as *mut c_void, 0, len) };
+        unsafe { std::ptr::write_bytes(dest as *mut u8, 0u8, len) };
     }
 }

@@ -1,105 +1,103 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
 
-Derived mechanically from `nm -D` on both shared libraries.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
 Build commands used:
 
 ```
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+cd c_src && mkdir -p build && cd build && \
+  cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+# -> c_src/build/libString_Slice.so
+
 cd translation && cargo build --release
+# -> translation/target/release/libString_Slice.so
 ```
 
-Artifacts:
+## C source inventory
 
-* C:    `c_src/build/libString_Slice.so`
-* Rust: `translation/target/release/libString_Slice.so`
+`c_src` contains exactly one translation unit and one public header:
 
-## Public (defined, dynamic) symbols
+| file | public declarations |
+|------|---------------------|
+| `c_src/include/slicing.h` | `int slice(char *mystr, int *start_ptr, int *stop_ptr);` |
+| `c_src/src/slicing.c` | definition of `slice` (only function in the file) |
 
-`nm -D --defined-only` output, verbatim:
+There are no namespace/renaming macros, no macro-generated symbol families, no
+`#ifdef`-gated alternate entry points, and no second module. So the complete
+public surface is a single function.
+
+## `nm -D --defined-only` — C `.so`
 
 ```
-$ nm -D --defined-only c_src/build/libString_Slice.so
 0000000000001129 T slice
+```
 
-$ nm -D --defined-only translation/target/release/libString_Slice.so
+(One global text symbol. `nm -D` on the C library also lists the usual
+libc imports as *undefined* — `printf`, `strlen`, `_ITM_*`, `__gmon_start__`,
+`__cxa_finalize` — which are not part of the exported surface.)
+
+## `nm -D --defined-only` — Rust `.so`
+
+```
 00000000000117a0 T slice
 ```
 
-| # | C symbol | type | Rust `.so` exports it? | notes |
-|---|----------|------|------------------------|-------|
-| 1 | `slice`  | `T` (global text) | YES | `#[unsafe(no_mangle)] pub unsafe extern "C" fn slice` in `src/lib.rs` |
-
-`include/slicing.h` declares exactly one prototype:
-
-```c
-int slice(char *mystr, int *start_ptr, int *stop_ptr);
-```
-
-There are no namespace/renaming macros, no macro-generated symbol families, no
-exported globals, and no additional translation units in `CMakeLists.txt`
-(`add_library(String_Slice SHARED src/slicing.c)` — a single source file).
-Therefore the complete public surface is the single symbol `slice`, and no C
-module was left untranslated.
-
 ## Symbol diff
 
-```
-$ diff <(nm -D --defined-only c_src/build/libString_Slice.so    | awk '{print $NF}' | sort) \
-       <(nm -D --defined-only translation/target/release/libString_Slice.so | awk '{print $NF}' | sort)
-```
+| symbol | in C `.so` | in Rust `.so` | status |
+|--------|-----------|---------------|--------|
+| `slice` | yes (`T`) | yes (`T`) | OK — exported via `#[unsafe(no_mangle)] pub unsafe extern "C" fn slice` |
 
-Result: **empty** — 0 symbols missing from the Rust `.so`.
+**Missing from Rust: none.** No implementation gaps, no un-exported
+implementations, no untranslated C modules. No stubs were added.
 
-The Rust `.so` defines no extra *public API* symbols beyond `slice`; the Rust
-`.so` does reference more *undefined* symbols than the C one, but every one of
-them is libc / libgcc-unwind runtime support pulled in by the Rust standard
-library, not an unresolved library symbol:
+## Undefined (imported) non-libc symbols in the Rust `.so`
 
-| Rust undefined symbol group | origin | libc / runtime? |
-|-----------------------------|--------|-----------------|
-| `printf`, `puts`, `strlen`, `memcpy`, `memmove`, `memset`, `bcmp`, `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `abort`, `getenv`, `getcwd`, `readlink`, `realpath`, `open64`, `close`, `read`, `write`, `writev`, `lseek64`, `stat64`, `fstat64`, `statx`, `mmap64`, `munmap`, `syscall`, `dl_iterate_phdr`, `__errno_location`, `gettid` | glibc | yes |
-| `pthread_key_create`, `pthread_key_delete`, `pthread_setspecific`, `__tls_get_addr`, `__cxa_thread_atexit_impl`, `__cxa_finalize` | glibc / TLS + atexit | yes |
-| `_Unwind_*` | libgcc unwinder (Rust panic/backtrace machinery) | yes (runtime) |
-| `_ITM_registerTMCloneTable`, `_ITM_deregisterTMCloneTable`, `__gmon_start__` | weak, standard ELF/GCC boilerplate — also present in the C `.so` | yes |
+`nm -D --undefined-only` on the Rust `.so` lists 52 entries, every one of
+which is glibc or the platform unwinder / GCC runtime:
 
-The C `.so` requires `printf`, `puts` and `strlen`. `puts` appears because GCC
-rewrites the three literal `printf("Error: ...\n")` calls into `puts("Error: ...")`.
-That is a byte-for-byte equivalent transformation on stdout, so the Rust side
-keeping `printf` for those messages is correct (verified differentially in
-`tests/differential.rs`).
+* the two the translation actually calls: `printf@GLIBC_2.2.5`,
+  `strlen@GLIBC_2.2.5`
+* `puts@GLIBC_2.2.5` — LLVM's standard `printf("literal\n")` -> `puts("literal")`
+  peephole applied to the three fixed error messages. Behaviourally identical
+  (same stream, same bytes, same buffering); confirmed byte-for-byte by the
+  Phase C tests and by the multi-call stream-ordering test C14.
+* allocator / memory / syscall wrappers pulled in by the Rust standard library
+  (`malloc`, `calloc`, `realloc`, `free`, `memcpy`, `memmove`, `memset`, `bcmp`,
+  `posix_memalign`, `mmap64`, `munmap`, `read`, `write`, `writev`, `open64`,
+  `close`, `lseek64`, `stat64`, `fstat64`, `statx`, `getcwd`, `getenv`,
+  `readlink`, `realpath`, `syscall`, `abort`, `__errno_location`)
+* thread/TLS and unwinder symbols (`pthread_key_*`, `pthread_setspecific`,
+  `__tls_get_addr`, `gettid`, `dl_iterate_phdr`, `_Unwind_*@GCC_*`)
+* the usual weak link-editor hooks (`_ITM_*`, `__cxa_finalize`,
+  `__cxa_thread_atexit_impl`, `__gmon_start__`)
 
-**Non-libc undefined symbols in the Rust `.so`: 0.**
+**There are no unresolved project-level symbols.**
+
+**Gate: 0 missing symbols, 0 undefined non-libc symbols. PASS.**
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` section**, so the only build
-configuration is the default (empty feature set):
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+build configuration is the default one (`--no-default-features` is equivalent
+and also builds/tests clean — verified by
+`run_tests.sh`). Phases B and C therefore cover every feature
+combination that exists.
 
-```
-$ grep -n '^\[features\]' translation/Cargo.toml ; echo "exit=$?"
-exit=1
-```
+## Harness self-validation (negative controls)
 
-`--no-default-features` and the default build are therefore the same
-configuration; both are exercised (see `run_all_feature_combos.sh`).
+Passing differential tests only mean something if the harness can actually see
+a divergence. Three bugs were injected into `src/lib.rs`, rebuilt, and the
+suite re-run; each was caught, and the original file was restored afterwards:
 
-## How to reproduce
+| injected bug | detected by |
+|--------------|-------------|
+| `start > len` done as a **signed** comparison instead of C's `int`→`size_t` promotion (so a negative start is accepted) | `phase_b_valid` aborted with SIGSEGV on the resulting out-of-bounds read |
+| `stop <= start` weakened to `stop < start` (off-by-one; an empty explicit slice wrongly accepted) | `c13_full_cross_product_fuzz`, `c14_sequential_calls_stream_order`, `c15_aliased_index_pointers`, `exhaustive_small_domain` |
+| the two `stop` checks swapped, so `stop <= start` runs before `stop > len` | `e5_stop_negative_precedence`, `e6_stop_int_extremes`, `generic_boundary_sweep` |
 
-```
-./verify.sh            # builds C + Rust, diffs nm -D, runs the whole suite
-                       # over every feature combo × {debug, release}
-./mutation_check.sh     # negative control: injects 15 behaviour changes into
-                       # src/lib.rs and asserts the suite catches each one
-```
-
-`verify.sh` exists because plain `cargo test` is **not** sufficient here:
-
-* `cargo test` does not rebuild a `cdylib` artifact, so the suite would `dlopen`
-  a stale `target/*/libString_Slice.so` and pass vacuously. `verify.sh` runs
-  `cargo build` first, pins the library with `SLICE_RUST_SO`, and the harness
-  additionally refuses to run against a `.so` older than `src/lib.rs`.
-* The tests redirect the process-wide stdout file descriptor, so they must run
-  single-threaded — otherwise libtest's own progress output lands inside a
-  capture. The harness asserts `RUST_TEST_THREADS=1`.
+A **staleness guard** was also added to the harness
+(`tests/common/mod.rs::assert_not_stale`) after discovering that `cargo test`
+alone does **not** emit the `cdylib` — without it the suite silently tested a
+previously built `.so`. The harness now refuses to run if the `.so` it would
+load is older than anything in `src/`.

@@ -8,25 +8,28 @@
 //! `<math.h>`. On x86-64 glibc `__FLT_EVAL_METHOD__ == 0`, so
 //! `float_t` is `float` (4 bytes).
 //!
-//! Confirmed against the compiled C shared object: `dot_product` / `normalize`
-//! use `movss` / `mulss` and a 4-byte element stride
-//! (`lea 0x0(,%rax,4),%rdx`), i.e. they walk their arguments as `float *`,
-//! while `match` (which sees `match.h`) walks its arrays as `double *`.
+//! Confirmed against the compiled C shared object: `spectral_contrast` uses
+//! `movss` / `mulss` / `cvtss2sd` / `cvtsd2ss` and a 4-byte element stride, i.e.
+//! it walks its arguments as `float *`, while `match` (which sees `match.h`)
+//! walks its arrays as `double *`.
 //!
 //! This is a bug in the original C, and per the translation contract it is
 //! reproduced exactly: `spectral_contrast` operates on `f32` elements.
 //!
-//! ## Aliasing
+//! ## Why raw pointers instead of slices
 //!
-//! `include/match.h` has no `restrict`, so `spectral_contrast(a, a, n)` is a
-//! legal call that normalises one buffer twice. Everything below therefore
-//! works on raw pointers rather than `&mut [f32]`: two overlapping `&mut`
-//! slices would be instant Rust UB and LLVM's `noalias` could reorder the
-//! `normalize` passes.
+//! Every loop here is `for(i = 0; i < length; i++)`, so a non-positive `length`
+//! performs **zero** iterations and never dereferences its arguments -- the C
+//! accepts `spectral_contrast(NULL, NULL, 0)` and returns `+0.0`. Conversely a
+//! positive `length` with a `NULL` pointer must fault exactly where the C faults.
+//! Building a `&[f32]` up front would do neither: it would trip Rust's
+//! `slice::from_raw_parts` null/alignment precondition (an abort, not a
+//! segfault, and only in debug builds). Walking raw pointers reproduces both
+//! behaviours in every build profile.
 
 use std::ffi::c_int;
 
-use crate::fp::{add_sd, cvtsd2ss, cvtss2sd, mul_ss};
+use crate::fp::{add_sd, mul_ss};
 
 /// `static double dot_product(float_t *a, float_t *b, int length)`
 ///
@@ -34,61 +37,57 @@ use crate::fp::{add_sd, cvtsd2ss, cvtss2sd, mul_ss};
 /// multiply happens in single precision (`mulss`), and only the *result* is
 /// widened to `double` before being accumulated (`cvtss2sd` + `addsd`).
 ///
-/// GCC at `-O0` emits, per iteration:
-/// ```text
-///   movss  (a+4i),%xmm1        ; a[i]  -- loaded first
-///   movss  (b+4i),%xmm0        ; b[i]  -- loaded second
-///   mulss  %xmm1,%xmm0         ; dst = b[i], src = a[i]
-///   cvtss2sd %xmm0,%xmm0
-///   movsd  sum,%xmm1
-///   addsd  %xmm1,%xmm0         ; dst = product, src = sum
-///   movsd  %xmm0,sum
-/// ```
-/// so `b[i]` is the multiply's destination and the *product* is the add's
-/// destination. See `crate::fp` for why those roles must be pinned.
+/// GCC emits, per iteration:
 ///
-/// # Safety
-/// `a` and `b` must each be valid for `length` `f32` reads. They may alias.
-unsafe fn dot_product(a: *const f32, b: *const f32, length: usize) -> f64 {
+/// ```text
+/// movss    a[i], %xmm1        ; xmm1 = a[i]
+/// movss    b[i], %xmm0        ; xmm0 = b[i]
+/// mulss    %xmm1, %xmm0       ; DEST = b[i], SRC = a[i]
+/// cvtss2sd %xmm0, %xmm0
+/// movsd    sum,  %xmm1
+/// addsd    %xmm1, %xmm0       ; DEST = product, SRC = sum
+/// movsd    %xmm0, sum
+/// ```
+///
+/// so the multiply's destination is `b[i]` (not `a[i]`) and the add's
+/// destination is the *product* (not the accumulator). Both roles are pinned
+/// explicitly because SSE resolves a two-NaN operand pair in favour of the
+/// destination; see `crate::fp`.
+unsafe fn dot_product(a: *const f32, b: *const f32, length: c_int) -> f64 {
     let mut sum: f64 = 0.0;
-    for i in 0..length {
-        let ai = unsafe { *a.add(i) };
-        let bi = unsafe { *b.add(i) };
-        sum = add_sd(cvtss2sd(mul_ss(bi, ai)), sum);
+    let mut i: c_int = 0;
+    while i < length {
+        let av = unsafe { *a.offset(i as isize) };
+        let bv = unsafe { *b.offset(i as isize) };
+        sum = add_sd(mul_ss(bv, av) as f64, sum);
+        i += 1;
     }
     sum
 }
 
 /// `static void normalize(float_t *v, int length)`
 ///
-/// `magnitude` comes from `sqrt(dot_product(v, v, length))`; the C calls libm's
-/// `sqrt` through the PLT, which on x86-64 is `sqrtsd`. `dot_product(v, v)` is
-/// a sum of squares, so it is never negative -- only `+0.0`, positive, `+inf`
-/// or `NaN` reach `sqrt`, and for all of those `sqrtsd` and `f64::sqrt` agree
-/// bit-for-bit (including the NaN payload).
-///
 /// `v[i] /= magnitude` where `v[i]` is `float` and `magnitude` is `double`:
-/// widen, divide in double precision, then narrow back to `float`
-/// (`cvtss2sd` / `divsd` / `cvtsd2ss`). There is no divide-by-zero guard, so an
-/// all-zero vector yields `0.0/0.0` in every lane.
+/// widen, divide in double precision, then truncate back to `float`
+/// (`cvtss2sd` / `divsd` / `cvtsd2ss`). `DIVSD`'s destination is fixed by the
+/// operand order, so no helper is needed.
 ///
-/// # Safety
-/// `v` must be valid for `length` `f32` reads and writes.
-unsafe fn normalize(v: *mut f32, length: usize) {
+/// The C calls glibc `sqrt` through the PLT; on x86-64 that is the `sqrtsd`
+/// instruction, which is what `f64::sqrt` lowers to as well. `dot_product(v, v)`
+/// is a sum of squares, so it is never negative and only the NaN and `+inf`
+/// cases are interesting -- both propagate identically.
+unsafe fn normalize(v: *mut f32, length: c_int) {
     let magnitude = unsafe { dot_product(v, v, length) }.sqrt();
-    for i in 0..length {
-        let x = unsafe { *v.add(i) };
-        unsafe { *v.add(i) = cvtsd2ss(cvtss2sd(x) / magnitude) };
+    let mut i: c_int = 0;
+    while i < length {
+        let p = unsafe { v.offset(i as isize) };
+        unsafe { *p = ((*p as f64) / magnitude) as f32 };
+        i += 1;
     }
 }
 
-/// Internal entry point taking raw pointers, so `match` can reach the same code
-/// path the C `match` reaches through the PLT.
-///
-/// # Safety
-/// `a` and `b` must each be valid for `length` `f32` reads and writes. They may
-/// alias.
-pub(crate) unsafe fn spectral_contrast_raw(a: *mut f32, b: *mut f32, length: usize) -> f64 {
+/// Body of `spectral_contrast`, shared with `match`'s call through the PLT.
+pub(crate) unsafe fn spectral_contrast_raw(a: *mut f32, b: *mut f32, length: c_int) -> f64 {
     unsafe {
         normalize(a, length);
         normalize(b, length);
@@ -101,12 +100,5 @@ pub(crate) unsafe fn spectral_contrast_raw(a: *mut f32, b: *mut f32, length: usi
 /// Public ABI symbol. Note the element type is `f32` (see module docs).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn spectral_contrast(a: *mut f32, b: *mut f32, length: c_int) -> f64 {
-    // Every loop in this translation unit is `for(i = 0; i < length; i++)`, so
-    // a non-positive `length` degenerates to zero iterations:
-    //   dot_product -> +0.0, sqrt(+0.0) -> +0.0, normalize -> no-op, result
-    //   +0.0 -- and the pointers are never dereferenced, so even NULL is fine.
-    if length <= 0 {
-        return 0.0;
-    }
-    unsafe { spectral_contrast_raw(a, b, length as usize) }
+    unsafe { spectral_contrast_raw(a, b, length) }
 }

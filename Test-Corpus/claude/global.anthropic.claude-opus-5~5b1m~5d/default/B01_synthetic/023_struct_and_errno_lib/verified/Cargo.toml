@@ -14,4 +14,13 @@ libloading = "0.8"
 [profile.release]
 panic = "abort"
 
+# The C library performs no null checks: `run(NULL, n)` and `driver(NULL)`
+# dereference a null pointer and die with SIGSEGV. Rust's debug-profile
+# UB checks would instead panic ("null pointer dereference occurred") and
+# abort with SIGABRT, so the dev profile would not be byte/signal-identical to
+# the C library. Disabling them keeps every profile faithful to the C.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
 [workspace]

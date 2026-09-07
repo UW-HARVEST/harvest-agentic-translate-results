@@ -1,21 +1,38 @@
 # Dynamic Symbol Surface
 
-Derived from:
+Source library:
+`../c_src/build/libharvest-work-eBuD7L.so`
 
-```text
-nm -D --defined-only ../c_src/build/libharvest-work-Dl8FUR.so
+Rust library:
+`target/release/libmd5_digest_lib.so`
+
+Inventory command:
+
+```sh
+nm -D ../c_src/build/libharvest-work-eBuD7L.so
 ```
 
-Toolchain-provided undefined weak symbols are not public library definitions
-and are excluded. The C library has one defined dynamic symbol.
+Every entry emitted by `nm -D` for the C shared object is listed below.
+`T` is a symbol defined and exported by the library; lowercase `w` entries are
+weak runtime imports rather than public C API definitions.
 
-| C symbol | C type | Rust symbol | Status |
-|----------|--------|-------------|--------|
-| `md5_digest` | `T` | `md5_digest` | [x] present |
+| C type | symbol | C-defined public API | present in Rust `nm -D` | status |
+|--------|--------|----------------------|-------------------------|--------|
+| `w` | `_ITM_deregisterTMCloneTable` | no | yes | runtime import |
+| `w` | `_ITM_registerTMCloneTable` | no | yes | runtime import |
+| `w` | `__cxa_finalize@GLIBC_2.2.5` | no | yes | runtime import |
+| `w` | `__gmon_start__` | no | yes | runtime import |
+| `T` | `md5_digest` | yes | yes, exact name | exported |
 
-Missing C symbols in Rust: **0**
+Defined-public-symbol comparison:
 
-Verified for the sole Cargo feature configuration (no features are declared),
-both with default feature handling and `--no-default-features`. Rust's
-undefined dynamic entries are standard `libc`/`libgcc_s` runtime dependencies;
-there are no unresolved application/library symbols.
+```sh
+comm -23 \
+  <(nm -D --defined-only ../c_src/build/libharvest-work-eBuD7L.so |
+    awk '$2 ~ /^[TDBR]$/ { print $3 }' | sort -u) \
+  <(nm -D --defined-only target/release/libmd5_digest_lib.so |
+    awk '$2 ~ /^[TDBR]$/ { print $3 }' | sort -u)
+```
+
+Result: empty (zero missing C-defined public symbols).
+

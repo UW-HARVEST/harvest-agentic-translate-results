@@ -68,26 +68,41 @@ static mut INNER: c_int = 1;
 ///
 /// # Safety
 ///
-/// `outer` must be a valid, aligned, dereferenceable and writable pointer to an
-/// `int`, exactly as required by the C original.
+/// `outer` must be a valid, dereferenceable and writable pointer to an `int`,
+/// exactly as required by the C original. Alignment is *not* required: the C
+/// original places no alignment requirement on the generated access either (see
+/// the note in the body), and a misaligned `outer` behaves identically to the C.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn static_alias(outer: *mut c_int) -> *mut c_int {
     let inner: *mut c_int = &raw mut INNER;
 
+    // `outer` is accessed with `read_unaligned` / `write_unaligned` rather than
+    // `*outer`. gcc compiles the C `*outer` to a plain x86-64 `mov`, which places
+    // no alignment requirement on the address and faults only when the address
+    // itself is unmapped. `read_unaligned`/`write_unaligned` lower to exactly that
+    // and, unlike `*outer`, carry no alignment precondition, so a misaligned
+    // `int*` reads and writes normally, matching the C artifact, instead of
+    // tripping a debug-build assertion. (A null or unmapped `outer` raises SIGSEGV
+    // exactly as the C does in the release cdylib; in a `debug-assertions` build
+    // `core`'s optional UB precondition check may abort first instead — that check
+    // is documented as optional and is absent from the shipped artifact.)
+    //
+    // `inner` points at `INNER`, which is always well-aligned and never null, so
+    // it is read/written directly.
     unsafe {
-        if *outer >= *inner {
+        if outer.read_unaligned() >= inner.read() {
             // `inner += *outer;` — read the addend first so that the
             // `outer == inner` aliasing case doubles `inner`, as C does.
-            let addend = *outer;
+            let addend = outer.read_unaligned();
             // wrapping_add reproduces the two's-complement wraparound that the
             // C signed-overflow (UB) case exhibits in practice; it is not a
             // behaviour change for any non-overflowing input.
-            *inner = (*inner).wrapping_add(addend);
+            inner.write(inner.read().wrapping_add(addend));
             inner
         } else {
             // `*outer += inner;`
-            let addend = *inner;
-            *outer = (*outer).wrapping_add(addend);
+            let addend = inner.read();
+            outer.write_unaligned(outer.read_unaligned().wrapping_add(addend));
             outer
         }
     }

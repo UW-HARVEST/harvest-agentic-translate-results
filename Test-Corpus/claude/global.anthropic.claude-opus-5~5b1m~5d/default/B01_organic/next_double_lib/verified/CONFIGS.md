@@ -1,86 +1,100 @@
 # CONFIGS.md — Phase B configuration-surface table
 
-## Mechanical derivation of the axes
+## Axes mechanically derived from the C source
 
-Grepping the public header + source for option/mode machinery:
+The C library has **one** public entry point and **no** runtime options,
+modes, flags, `#ifdef`s, `switch`es, or `if`s. `grep -c 'if\|switch\|#if' c_src/src/lib.c` → 0.
+So the configuration surface is entirely the **input shape** of the single
+in/out parameter, `cn_rnd_t { uint64_t state[2] }`.
 
-| axis candidate | present in C? |
+Axes that the C code's arithmetic actually distinguishes:
+
+| axis | values the code branches on / is sensitive to |
 |---|---|
-| runtime option / mode / flag setter | **none** — the only public symbol is `next_double`; no setters, no context config, no globals |
-| `#ifdef` / `#if` compile-time variants | **none** |
-| element type / width selector | **none** — state is fixed `uint64_t[2]` |
-| count / length / size parameter | **none** |
-| byte-order handling | **none explicit** — but the C uses type-punning `*(double *)&result`, so the mapping u64-bits → `double` is host-endian-dependent, and the Rust `f64::from_bits` must agree on the host. Exercised by every row (all rows compare raw bit patterns). |
+| **A. entry point** | `next_double` (the only export); `cn_rnd_next` reached *through* it (`static`, not directly callable) |
+| **B. `state[0]` (`x`) shape** | `0`; `1`; `u64::MAX`; only low 17 bits set (`x >> 17 == 0`); only high 23 bits set (`x << 23 == 0`); single-bit walks; random |
+| **C. `state[1]` (`y`) shape** | `0`; `1`; `u64::MAX`; only low 26 bits set (`y >> 26 == 0`); high bits only; single-bit walks; random |
+| **D. call count / sequence length** | 1 (single step); 2 (first state rotation visible); many (1..=1000, long stream) |
+| **E. observed output** | return `double` **raw bits** (`to_bits`), *and* the mutated `state[0]`, `state[1]` after the call — state mutation is an output, not just the return |
+| **F. mantissa shape of `value`** | `mantissa == 0` → exactly `0.0`; `mantissa == all ones` → `1.0-2^-52`; low 12 bits of `value` vary but `mantissa` fixed → identical `double`, different state |
+| **G. `x + y` overflow** | no wrap; wraps modulo 2^64 |
+| **H. instance multiplicity** | one generator; several independent generators interleaved (no hidden global state) |
+| **I. memory layout of the arg** | stack struct; heap `Box`; element of an array of `cn_rnd_t` (neighbour untouched); misaligned pointer |
+| **J. driver binary** | **none** — `c_src/CMakeLists.txt` builds only `add_library(... SHARED src/lib.c)`; there is no `add_executable`, and `translation/Cargo.toml` declares only `[lib] crate-type=["cdylib"]` with no `[[bin]]` and no `src/main.rs`. No stdout comparison is applicable. |
 
-So the configuration surface is **not** flags; it is the *input shape* of the
-only input that exists — the 128-bit generator state — plus the *call
-sequencing* (the function is stateful, so N-th call ≠ 1st call).
-
-The full set of public entry points is the single lowest-level entry point
-`next_double`; there are no convenience wrappers to prefer over it, so every
-row drives `next_double` directly through the `.so` export.
-
-Axes actually distinguished by the code:
-
-- **A. `state[0]` (`x`) bit shape** — feeds `x ^= x<<23`, `x ^= x>>17`. Values
-  that make the high 23 bits / low 17 bits significant behave differently.
-- **B. `state[1]` (`y`) bit shape** — feeds `x ^= y ^ (y>>26)` and the
-  `x + y` return, which is the only place unsigned **wrapping overflow** can
-  occur (`x.wrapping_add(y)` vs C's modular `uint64_t` add).
-- **C. mantissa extraction** — `value >> 12` keeps the top 52 bits; the low 12
-  bits of `value` are *discarded*. Rows must include values differing only in
-  the low 12 bits (same output) and values differing in bit 12 (different).
-- **D. `1023 << 52 | mantissa` then `- 1.0`** — the subtraction is exact for
-  results in `[1.0, 2.0)`, and produces `0.0` exactly when mantissa is 0.
-- **E. call sequencing / state advance** — 1 call vs 2 vs many; the state must
-  match after each call, not just the returned double.
+Every row below is checked by calling **both** `.so`s through `libloading`
+(never Rust directly) and comparing the return value's raw `f64` bits **and**
+the post-call `state[0]`/`state[1]` byte-for-byte. Rows marked "randomized"
+use `N` pseudo-random inputs from a fixed-seed SplitMix64 (seed `0x2545F491_4F6CDD1D`)
+for reproducibility.
 
 ## Table
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
+| # | entry point(s) | configuration (options set + input shape) | [x] |
 |---|----------------|--------------------------------------------|-----|
-| C1 | `next_double` | **Degenerate all-zero state**: `state = [0, 0]`. Absorbing: `x` stays 0, return 0, mantissa 0, result exactly `1.0 - 1.0 = 0.0`, state stays `[0,0]`. Repeated 8×. | [x] |
-| C2 | `next_double` | **All-ones state**: `state = [u64::MAX, u64::MAX]`. Maximises every shift and forces `x + y` to wrap. | [x] |
-| C3 | `next_double` | **`x = 0`, `y` random non-zero** — the `x ^= x<<23; x ^= x>>17` chain is a no-op, only the `y` term contributes. 256 seeds. | [x] |
-| C4 | `next_double` | **`x` random non-zero, `y = 0`** — the `y ^ (y>>26)` term and the `+ y` term vanish; pure xorshift on `x`. 256 seeds. | [x] |
-| C5 | `next_double` | **Both random full-range** `u64` (the general case). 4096 seeds, single call each. | [x] |
-| C6 | `next_double` | **Wrapping-add boundary (axis B)**: `y` chosen so the post-shift `x + y` crosses `2^64` (`x` random, `y = 0u64.wrapping_sub(x_after)` ± small delta), plus `x+y == 2^64-1` and `== 2^64` exactly. | [x] |
-| C7 | `next_double` | **Low-12-bits-discarded equivalence (axis C)**: pairs of states whose `cn_rnd_next` results differ only in bits 0..11 must give the *same* double; differing in bit 12 must give a *different* one. Verified against C, not assumed. | [x] |
-| C8 | `next_double` | **Mantissa extremes (axis D)**: states driven to mantissa `0` (result `0.0`), mantissa `0xF_FFFF_FFFF_FFFF` (result nextafter(1.0,0) below 1.0), and mantissa `1` (smallest positive `2^-52`). Exact bit compare of the returned `double`. | [x] |
-| C9 | `next_double` | **Single-bit states (axis A×B sweep)**: for every bit position i in 0..64, the three states `(1<<i, 0)`, `(0, 1<<i)` and `(1<<i, 1<<i)` — 192 states covering every bit in isolation — catches off-by-one in the 23/17/26 shift constants. | [x] |
-| C10 | `next_double` | **Alternating / structured bit patterns**: `0xAAAA...`, `0x5555...`, `0xFFFF_FFFF_0000_0000`, `0x0000_0000_FFFF_FFFF`, `0x8000...0`, `0x1`, and their 6×6 cross-product for `(x, y)`. | [x] |
-| C11 | `next_double` | **Long sequential run (axis E)**: one shared state, 100 000 consecutive `next_double` calls; every returned `double` bit pattern AND the full 128-bit state after every call compared C-vs-Rust. This is the "full operation end to end" pipeline case. | [x] |
-| C12 | `next_double` | **Many independent short runs (axis E)**: 1024 random seeds × 16 calls each, comparing the whole 16-value output vector and the final state — catches divergence that only shows up after state feedback. | [x] |
-| C13 | `next_double` | **Range invariant across a large sample**: every result from a 200 000-sample run must lie in `[0.0, 1.0)` for BOTH libraries and be bit-identical (guards against a Rust `from_bits` / endianness mismatch producing an in-range-looking but different value). | [x] |
-| C14 | `next_double` | **In/out state aliasing & struct layout**: caller passes the same `cn_rnd_t` repeatedly and also reads `state` between calls; asserts `size_of::<cn_rnd_t>() == 16`, `align == 8`, and that Rust writes back both words in the same order/positions as C. | [x] |
+| 1 | `next_double` | `state = {0, 0}` (degenerate fixed point), 1 call | [x] |
+| 2 | `next_double` | `state = {0, 0}`, 1000 sequential calls (must stay pinned) | [x] |
+| 3 | `next_double` | `state = {u64::MAX, u64::MAX}`, 1 call | [x] |
+| 4 | `next_double` | `state = {u64::MAX, u64::MAX}`, 1000 sequential calls | [x] |
+| 5 | `next_double` | `state = {1, 0}` and `{0, 1}` (minimal non-zero seeds), 1 call each | [x] |
+| 6 | `next_double` | single-bit walk: `state = {1<<i, 0}` for all `i` in 0..64, 1 call | [x] |
+| 7 | `next_double` | single-bit walk: `state = {0, 1<<i}` for all `i` in 0..64, 1 call | [x] |
+| 8 | `next_double` | single-bit walk on both: `state = {1<<i, 1<<j}` for all 64x64 pairs, 1 call | [x] |
+| 9 | `next_double` | randomized `state`, 1 call — 20 000 inputs (axis B x C random) | [x] |
+| 10 | `next_double` | randomized `state`, 2 calls (state rotation `state[0] <- y` observable) — 5 000 inputs | [x] |
+| 11 | `next_double` | randomized `state`, 1000-call stream, compare all 1000 returns + final state — 200 seeds | [x] |
+| 12 | `next_double` | `x >> 17 == 0`: `state[0]` restricted to low 17 bits, random `state[1]` — 5 000 inputs | [x] |
+| 13 | `next_double` | `x << 23 == 0`: `state[0]` restricted to high 23 bits, random `state[1]` — 5 000 inputs | [x] |
+| 14 | `next_double` | `y >> 26 == 0`: `state[1]` restricted to low 26 bits, random `state[0]` — 5 000 inputs | [x] |
+| 15 | `next_double` | `y` restricted to high 38 bits (`y >> 26` fully populated), random `state[0]` — 5 000 inputs | [x] |
+| 16 | `next_double` | `x + y` wraps modulo 2^64 — seeds solved so the final sum overflows — 2 000 inputs | [x] |
+| 17 | `next_double` | `x + y` does **not** wrap — seeds solved so the final sum fits — 2 000 inputs | [x] |
+| 18 | `next_double` | `mantissa == 0` → return must be exactly `+0.0` (bits `0x0000000000000000`) | [x] |
+| 19 | `next_double` | `mantissa == 0xF_FFFF_FFFF_FFFF` → return must be exactly `1.0 - 2^-52` (bits `0x3FEFFFFFFFFFFFFE`) | [x] |
+| 20 | `next_double` | `value` differing only in its low 12 bits → identical `double`, **different** state — 2 000 pairs | [x] |
+| 21 | `next_double` | output-range invariant on random seeds: `0.0 <= r < 1.0`, never NaN/Inf, both libs — 20 000 inputs | [x] |
+| 22 | `next_double` | H: 8 independent `cn_rnd_t` instances interleaved round-robin, 500 rounds (no shared global state) | [x] |
+| 23 | `next_double` | I: arg is an element of `[cn_rnd_t; 4]`; assert neighbouring elements are byte-identical after the call (no OOB write) — 2 000 inputs | [x] |
+| 24 | `next_double` | I: arg on the heap (`Box<cn_rnd_t>`) vs on the stack — same seed must give same result in both libs — 2 000 inputs | [x] |
+| 25 | `next_double` | I: misaligned `cn_rnd_t*` (odd byte offset in a `[u8]` buffer) — 1 000 inputs | [x] |
+| 26 | `next_double` | E: state mutation contract — after 1 call, `state[0]` must equal the pre-call `state[1]` in both libs — 5 000 inputs | [x] |
+| 27 | `next_double` | cross-check: C-then-Rust vs Rust-then-C on a *shared* struct — a Rust step must be able to continue a C-produced state and vice versa, 200 alternating rounds x 50 seeds | [x] |
+| 28 | `cn_rnd_next` (via `next_double`) | low-level generator exercised through 100 000 consecutive steps from one seed, comparing every raw `f64` bit and both state words (long-run drift detection) | [x] |
+| 29 | driver binary | **N/A** — no `add_executable` in CMakeLists.txt, no `[[bin]]`/`src/main.rs` in the crate. Asserted by a test that both facts hold. | [x] |
+| 30 | feature combos | default == `--no-default-features` == `--all-features` (no `[features]` table); all rows re-run under each | [x] |
 
-## Completion
+## Phase B result
 
-- [x] Every row passes across randomized inputs (fixed seed, reproducible).
+All 30 rows pass. Executed via `run_verification.sh`, which builds both `.so`s
+and runs the full suite under every feature combination x profile:
 
-Randomization uses a fixed-seed SplitMix64 defined in the test file, so runs are
-byte-for-byte reproducible and independent of any external RNG crate.
-
-## How to reproduce
-
-```bash
-# C reference .so
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-
-# Rust cdylib + differential suite, all feature combos x both profiles
-cd translation && bash tools/check_features.sh
+```
+  <default> <dev>                    43 tests ok
+  <default> --release                43 tests ok
+  --no-default-features <dev>        43 tests ok
+  --no-default-features --release    43 tests ok
+  --all-features <dev>               43 tests ok
+  --all-features --release           43 tests ok
 ```
 
-`tools/check_features.sh` extracts the feature list from `Cargo.toml`
-(currently empty ⇒ 1 combination), builds the cdylib in the matching profile
-(`cargo test` does not build a cdylib-only lib target), and runs all 23 tests
-under both `debug` and `release`.
+Randomized rows use a fixed-seed SplitMix64 (`0x2545F4914F6CDD1D`, per-row
+salted), so every run is reproducible. Total differential calls per profile:
+roughly 1.1 M `next_double` invocations per library.
 
-## Harness self-check (mutation test)
+Every comparison checks BOTH observable outputs:
+* the returned `double` as **raw bits** (`f64::to_bits`), which distinguishes
+  `+0.0` from `-0.0` and every NaN payload — plain `f64 ==` would not;
+* the **mutated 16-byte `cn_rnd_t`** after the call.
 
-To confirm the rows are not vacuously passing, the shift constant in the Rust
-`cn_rnd_next` was flipped from `>> 17` to `>> 18` and the suite re-run:
-**14 of the 15 Phase B tests failed** in both profiles (only C1, the all-zero
-absorbing state, is insensitive to that constant — as expected, since every
-intermediate is 0). The constant was then restored and the suite passes again.
+Row 25 (misaligned pointer) is where divergence **D1** was found — see
+`ERRORS.md`. Row 29's premise (no driver binary) is asserted by a test rather
+than assumed, so it fails loudly if an `add_executable`/`[[bin]]` is ever added
+and a stdout comparison becomes required.
+
+Rows 16/17/18/19/20 need seeds that land on a specific arithmetic outcome
+(wraparound, `mantissa == 0`, `mantissa == all ones`). These are constructed by
+inverting the generator (`seed_for_value`, using the invertibility of
+`x ^= x << 23` and `x ^= x >> 17`) rather than by rejection sampling, which
+could never hit a 1-in-2^52 target. `meta_seed_for_value_is_exact` validates the
+inversion itself over 5 000 random cases. The inverted model is used ONLY to
+*choose* inputs — the C `.so` remains the sole oracle for expected output.

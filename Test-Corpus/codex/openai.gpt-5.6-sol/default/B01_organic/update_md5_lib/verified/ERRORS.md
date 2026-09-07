@@ -1,30 +1,36 @@
-# Error Surface
+# Error surface
 
-Mechanical scan scope: `../c_src/include/lib.h` and
-`../c_src/src/lib.c`.
+Mechanical scan inputs:
 
-The scan covered `RETURN_ERROR`, `return -1`, `return NULL`, all other return
-statements, `assert`, null checks, explicit range checks, error enums, and
-min/max constants. The C source contains no rejection or error path. Its only
-return statement returns the normal `update_md5` result.
+```text
+../c_src/include/lib.h
+../c_src/src/lib.c
+```
 
-| # | function | trigger (the exact invalid input/condition) | expected C result |
-|---|----------|----------------------------------------------|-------------------|
-| - | - | No explicit C rejection branches exist | - |
+Patterns inspected include error-return statements/macros, `assert`, null
+checks, range comparisons, enums, and min/max constants.
 
-## Generic FFI Boundaries
+## Explicit C rejections
 
-These are required boundary probes, not entries in the error-surface table:
+| # | function | trigger (the exact invalid input/condition) | expected C result | Status |
+|---|----------|----------------------------------------------|-------------------|--------|
 
-| # | entry point | boundary | status |
-|---|-------------|----------|--------|
-| G1 | `tflac_pack_u64le` | null destination pointer | [x] |
-| G2 | `tflac_md5_addsample` | null context pointer | [x] |
-| G3 | `update_md5` | null `tflac` pointer | [x] |
-| G4 | `update_md5` | null samples pointer with non-null `tflac` | [x] |
+There are no explicit rejection branches, error returns, assertions, null
+checks, enums, documented ranges, or length parameters in the C source.
 
-The API has no length parameter, enum parameter, documented numeric range, or
-error sentinel. Zero and oversized lengths and out-of-range enum values are
-therefore not representable at this FFI boundary. Null pointers are
-unconditionally dereferenced by C, so the probes compare process termination
-rather than an error return.
+## Generic FFI boundary probes
+
+These are required generic probes, not explicit C rejection branches. Because
+the C implementation dereferences these pointers without checking them, each
+probe is isolated in a subprocess and compares the exact process termination
+status.
+
+| # | function | trigger (the exact invalid input/condition) | expected C result | Status |
+|---|----------|----------------------------------------------|-------------------|--------|
+| G1 | `tflac_pack_u64le` | `d == NULL` | process terminates with the platform access-violation signal | [x] |
+| G2 | `tflac_md5_addsample` | `m == NULL` | process terminates with the platform access-violation signal | [x] |
+| G3 | `update_md5` | `t == NULL`, valid `samples` | process terminates with the platform access-violation signal | [x] |
+| G4 | `update_md5` | valid `t`, `samples == NULL` | process terminates with the platform access-violation signal | [x] |
+
+Zero/oversized lengths and one-past-range enum values are not applicable:
+none of the three exported functions accepts a length or enum parameter.

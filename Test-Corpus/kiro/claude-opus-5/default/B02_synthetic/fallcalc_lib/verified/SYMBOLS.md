@@ -1,87 +1,57 @@
-# SYMBOLS.md — Symbol parity: C `.so` vs Rust `.so`
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+Derived mechanically from:
 
-- C `.so`:    `c_src/build/libharvest-work-lEcaeQ.so`
-- Rust `.so`: `translation/target/release/libfallcalc_lib.so`
+```
+nm -D --defined-only c_src/build/libharvest-work-LVd8bU.so
+nm -D --defined-only translation/target/release/libfallcalc_lib.so
+```
 
-Regenerate / re-verify with `./check_symbols.sh` in the crate root.
+The C library is built from a single translation unit (`c_src/src/lib.c`); every
+non-`static` function in that file becomes a dynamic symbol. `c_src/include/lib.h`
+only declares `fallcalc`, but the other five functions are also exported because
+none of them are marked `static`. All six must therefore be exported by Rust.
 
-## C source inventory (`c_src/src/lib.c`)
+## Exported (dynamic, defined) symbols
 
-Every non-`static` function definition in the single C translation unit. There
-is exactly one C source file (`src/lib.c` per `c_src/CMakeLists.txt`), so no
-module was skipped by the translation.
+| # | symbol | C `.so` | Rust `.so` | C definition site | Rust definition site |
+|---|--------|---------|-----------|-------------------|----------------------|
+| 1 | `safe_double_to_int`           | T | T | `c_src/src/lib.c:48`  | `src/lib.rs` `#[unsafe(no_mangle)] pub extern "C"` |
+| 2 | `process_array_reverse`        | T | T | `c_src/src/lib.c:67`  | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C"` |
+| 3 | `switch_fallthrough_calculator`| T | T | `c_src/src/lib.c:79`  | `src/lib.rs` `#[unsafe(no_mangle)] pub extern "C"` |
+| 4 | `allocate_and_compute`         | T | T | `c_src/src/lib.c:102` | `src/lib.rs` `#[unsafe(no_mangle)] pub extern "C"` |
+| 5 | `foreach_sum`                  | T | T | `c_src/src/lib.c:126` | `src/lib.rs` `#[unsafe(no_mangle)] pub unsafe extern "C"` |
+| 6 | `fallcalc`                     | T | T | `c_src/src/lib.c:137` | `src/lib.rs` `#[unsafe(no_mangle)] pub extern "C"` |
 
-| C definition | external linkage | declared in `include/lib.h` | translated in `src/lib.rs` |
-|---|---|---|---|
-| `int safe_double_to_int(double)` | yes | no | yes |
-| `int process_array_reverse(int *, int)` | yes | no | yes |
-| `int switch_fallthrough_calculator(int, int)` | yes | no | yes |
-| `int allocate_and_compute(int, double)` | yes | no | yes |
-| `int foreach_sum(int *, int)` | yes | no | yes |
-| `int fallcalc(int, int, int, int)` | yes | yes | yes |
+**Missing from Rust `.so`: 0.**
+**Extra in Rust `.so`: 0.**
 
-Non-function C constructs, for completeness — none of these produce a symbol:
-
-| construct | kind | notes |
-|---|---|---|
-| `FOREACH(item, array, count)` | function-like macro | expanded inline inside `foreach_sum`; emits no symbol |
-| `OCTAL_MASK_1` = `0777` = 511 | object-like macro | no symbol |
-| `OCTAL_MASK_2` = `0100` = 64 | object-like macro | no symbol |
-| `OCTAL_FLAG` = `0200` = 128 | object-like macro | no symbol |
-| `OCTAL_BASE` = `010` = 8 | object-like macro | no symbol |
-| `DataPoint` = `{ int value; double coefficient; }` | typedef struct | no symbol; `#[repr(C)]` in Rust |
-
-There are no global/static variables, so no `B`/`D`/`R` data symbols exist on
-either side.
-
-## Exported (defined) symbols
-
-`nm -D --defined-only`, Rust side filtered of Rust-internal symbols
-(`_ZN…` mangled items, `__rust_*`, `__rdl_*`, `__rg_*`).
-
-| # | symbol | C `.so` | Rust `.so` | status |
-|---|--------|---------|------------|--------|
-| 1 | `safe_double_to_int` | `T` | `T` | OK |
-| 2 | `process_array_reverse` | `T` | `T` | OK |
-| 3 | `switch_fallthrough_calculator` | `T` | `T` | OK |
-| 4 | `allocate_and_compute` | `T` | `T` | OK |
-| 5 | `foreach_sum` | `T` | `T` | OK |
-| 6 | `fallcalc` | `T` | `T` | OK |
-
-**Symbols exported by C but MISSING from Rust: 0.**
-
-No `#[no_mangle]` wrapper had to be added and no C module had to be translated
-from scratch: `c_src/src/lib.c` is the only C source file and all six of its
-external-linkage functions were already present and exported.
+There are no macro-generated symbols. `FOREACH`, `OCTAL_MASK_1`, `OCTAL_MASK_2`,
+`OCTAL_FLAG`, `OCTAL_BASE` are object-like / statement macros and produce no
+symbols. `DataPoint` is a `typedef struct` with no associated symbol.
 
 ## Undefined (imported) symbols
 
-| symbol | C `.so` | Rust `.so` | notes |
-|--------|---------|------------|-------|
-| `malloc@GLIBC_2.2.5` | `U` | `U` | Rust binds libc `malloc` directly, not Rust's global allocator, so allocation-failure behaviour is identical |
-| `free@GLIBC_2.2.5` | `U` | `U` | same |
-| `_ITM_deregisterTMCloneTable` | `w` | — | toolchain-emitted weak stub |
-| `_ITM_registerTMCloneTable` | `w` | — | toolchain-emitted weak stub |
-| `__cxa_finalize@GLIBC_2.2.5` | `w` | `w` | toolchain-emitted weak stub |
-| `__gmon_start__` | `w` | — | toolchain-emitted weak stub |
+C imports only `malloc@GLIBC_2.2.5` and `free@GLIBC_2.2.5` (plus the standard
+weak `_ITM_*` / `__cxa_finalize` / `__gmon_start__` stubs).
 
-**Undefined non-libc symbols in the Rust `.so`: 0.** The Rust `.so` imports
-only libc (`malloc`, `free`, plus the usual libc/`ld.so` runtime entries) and
-loads with `RTLD_NOW` without unresolved references — verified by the
-`libloading` tests, which open it eagerly and would fail on any missing symbol.
+Rust imports the same `malloc`/`free` (bound via `unsafe extern "C"` so the two
+libraries share the exact same allocator, which matters for allocation-failure
+parity) plus the Rust runtime's libc/`_Unwind_*` dependencies
+(`memcpy`, `abort`, `dl_iterate_phdr`, `_Unwind_Resume`, …).
 
-## Rust `math.h` mapping
-
-The C code includes `math.h` for `isnan`/`isinf`; both are compiler builtins at
-`-O0` and generate no imported symbol. Rust uses `f64::is_nan` /
-`f64::is_infinite`, which are equivalent bit-level predicates.
+**Undefined non-libc / non-runtime symbols in Rust: 0.** Every `U` entry in the
+Rust `.so` resolves against `libc.so.6` / `libgcc_s.so.1`, which is confirmed by
+the fact that `libloading::Library::new` succeeds (`RTLD_NOW`) in every test.
 
 ## Feature combinations
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-configuration is the default one (`--no-default-features` and the default build
-are the same build). Verified mechanically by `./check_features.sh`. There are
-also no `#[cfg(...)]` attributes in `src/lib.rs` and no `#ifdef` conditionals on
-behaviour in `c_src/src/lib.c`.
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+buildable configuration is the default one (`--no-default-features` and the
+default build are identical). `enumerate_features.sh` re-derives this
+mechanically; Phase D therefore has exactly one combination to cover.
+
+The crate declares `crate-type = ["cdylib"]` only — **no binary target**, and
+`c_src/CMakeLists.txt` declares only `add_library(... SHARED ...)` — **no C
+driver executable**. The "compare binaries' stdout" clause is therefore vacuous
+for this project.

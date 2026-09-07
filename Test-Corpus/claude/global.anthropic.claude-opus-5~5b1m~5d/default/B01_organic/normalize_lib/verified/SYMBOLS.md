@@ -1,103 +1,53 @@
-# SYMBOLS.md — Phase A: public symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
 Derived mechanically from `nm -D` on both shared objects.
 
-## Build commands
-
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/lib<parent-dir-name>.so   (CMakeLists derives the project name
-#    from the *parent* directory of c_src, so the file name is environment
-#    dependent; the tests glob `c_src/build/*.so`.)
-
-# Rust
-cd translation && cargo build --release
-# -> translation/target/release/libnormalize_lib.so
-```
+* C `.so`:    `c_src/build/libharvest-work-Pdk2bS.so`
+* Rust `.so`: `translation/target/release/libnormalize_lib.so`
 
 ## C source inventory (completeness check)
 
-`c_src/CMakeLists.txt` compiles exactly one translation unit:
+The whole C library is two files:
 
-| C file | translated? | Rust location |
-|--------|-------------|---------------|
-| `c_src/src/lib.c` | yes | `translation/src/lib.rs` |
+| C file | functions defined |
+|--------|-------------------|
+| `c_src/include/lib.h` | (declaration only) `void normalize(float *dest, const float *src, int size);` |
+| `c_src/src/lib.c`     | `normalize` |
 
-`c_src/include/lib.h` declares exactly one prototype:
+There are **no other translation units**, no macro-generated symbol families, no
+`#ifdef`-gated extra modules. So the complete public surface is exactly one
+function. Nothing was skipped by the translation step.
 
-```c
-void normalize(float *dest, const float *src, int size);
-```
+## Exported (defined) symbols — `nm -D --defined-only`
 
-There is no second module, no macro-generated symbol family, no `#ifdef`-gated
-alternative implementation, and no static/internal helper. The whole library is
-one function, so no C source was skipped by the translation step.
+| # | symbol | C `.so` | Rust `.so` | status |
+|---|--------|---------|------------|--------|
+| 1 | `normalize` | `T` (0x1119) | `T` (0x11690) | ✅ present in both |
 
-## `nm -D --defined-only` — C `.so`
+Symbol diff (`comm -23` of the two sorted defined-symbol lists): **empty**.
 
-```
-0000000000001119 T normalize
-```
+## Undefined symbols — `nm -D --undefined-only`
 
-Exported (defined, dynamic) symbols: **1**
+C `.so` needs: `memset`, `sqrtf` (+ the standard weak
+`_ITM_*` / `__cxa_finalize` / `__gmon_start__` glibc/CRT markers).
 
-## `nm -D --defined-only` — Rust `.so`
+Rust `.so` needs: `memset`, `memcpy`, `memmove`, `bcmp`, `malloc`, `calloc`,
+`realloc`, `free`, `posix_memalign`, `abort`, `getenv`, `getcwd`, `readlink`,
+`realpath`, `open64`, `close`, `read`, `write`, `writev`, `lseek64`, `stat64`,
+`fstat64`, `statx`, `mmap64`, `munmap`, `strlen`, `syscall`, `dl_iterate_phdr`,
+`__errno_location`, `__tls_get_addr`, `pthread_key_*`, `pthread_setspecific`,
+`gettid`, `_Unwind_*`, plus the same weak CRT markers.
 
-```
-0000000000011c30 T normalize
-```
+`sqrtf` is not an undefined import in the Rust `.so` because `f32::sqrt`
+lowers to the `sqrtss` instruction inline; this is the same IEEE-754
+correctly-rounded operation glibc's `sqrtf` performs, so behaviour is identical.
 
-Exported (defined, dynamic) symbols: **1**
+All remaining Rust imports are **libc / libgcc-unwind runtime** symbols pulled in
+by `std` (allocator, panic machinery, backtrace support). There are **0 missing or
+undefined non-libc symbols**.
 
-## Symbol diff
+## Gate
 
-| symbol | C `.so` | Rust `.so` | status |
-|--------|---------|------------|--------|
-| `normalize` | `T` | `T` | present in both — OK |
-
-**Missing from Rust `.so`: none. Extra in Rust `.so`: none. Diff is EMPTY.**
-
-## Undefined (imported) symbols
-
-C `.so` imports: `memset@GLIBC_2.2.5`, `sqrtf@GLIBC_2.2.5`, plus the standard
-weak CRT symbols (`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
-`__cxa_finalize`, `__gmon_start__`).
-
-Rust `.so` imports only libc (`memset`, `memcpy`, `malloc`, `free`, `open64`,
-`read`, `write`, …), the `_Unwind_*` family from `libgcc_s`, and the same weak
-CRT symbols. These are the Rust standard library / panic-machinery imports that
-every `cdylib` carries.
-
-**Non-libc / non-runtime undefined symbols in the Rust `.so`: 0.**
-
-Notably the Rust `.so` does *not* import `sqrtf`: `f32::sqrt` lowers to the
-`llvm.sqrt.f32` intrinsic, i.e. a single `sqrtss` instruction. Both that
-instruction and glibc's `sqrtf` are IEEE-754 correctly-rounded for the
-single-precision square root, so results are bit-identical for every input the
-C code can reach (`sum > 0.0f`, hence never negative, never NaN).
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no** `[features]` table, so the only
-configurations that exist are the (empty) default feature set and
-`--no-default-features`, which are identical. Both are still exercised
-explicitly by `run_all.sh` per Phase D.
-
-## Results
-
-`tests/symbols.rs` re-derives both symbol sets by shelling out to `nm -D` at
-test time and fails if the C set is not a subset of the Rust set, so the parity
-claim above is enforced rather than asserted. Step 3 of `run_all.sh` repeats the
-same `comm -23` diff for every feature combination x profile:
-
-```
-symbol parity OK  [default/dev]                  (1 C symbol, all present)
-symbol parity OK  [default/release]              (1 C symbol, all present)
-symbol parity OK  [--no-default-features/dev]    (1 C symbol, all present)
-symbol parity OK  [--no-default-features/release](1 C symbol, all present)
-```
-
-Missing symbols: **0**. Unresolved non-libc / non-runtime symbols in the Rust
-`.so`: **0** (checked by `grep -E '^_ZN|^_R[A-Za-z]'` over `nm -D -u`).
+- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+- [x] Every symbol the C `.so` exports is exported by the Rust `.so` with the
+      exact same name.

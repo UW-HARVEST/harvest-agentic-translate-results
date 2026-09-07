@@ -1,20 +1,15 @@
 # Dynamic Symbol Surface
 
-Generated from:
+Derived from:
 
 ```text
 nm -D --defined-only ../c_src/build/libdriver.so
-nm -D --defined-only target/release/libdriver.so
 ```
 
-| C symbol | C type | Rust symbol | Rust type | Status |
-|----------|--------|-------------|-----------|--------|
-| `parse_number` | `T` | `parse_number` | `T` | present |
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `parse_number` | `T` (global text) | `parse_number` | [x] |
 
-Defined C API symbols: 1
-
-Missing from Rust: 0
-
-The C library's remaining dynamic symbols are weak toolchain symbols or
-undefined libc dependencies (`free`, `malloc`, `memcpy`, and `strtod`), not
-library exports.
+The C library's undefined symbols are `malloc`, `free`, `memcpy`, and `strtod`
+from libc, plus weak compiler/runtime hooks. They are dependencies rather than
+public API exports and therefore are not parity targets.

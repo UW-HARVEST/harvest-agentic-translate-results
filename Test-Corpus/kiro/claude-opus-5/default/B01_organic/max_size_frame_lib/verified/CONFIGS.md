@@ -1,70 +1,140 @@
-# CONFIGS.md — configuration-surface table
+# CONFIGS.md — Phase B configuration-surface table
 
-Derived mechanically from the single C expression in `c_src/src/lib.c`:
+Derived mechanically from the branches the C code actually takes.
 
-```c
-tflac_u32 max_size_frame(tflac_u32 blocksize, tflac_u32 channels, tflac_u32 bitdepth) {
-    return 18U + channels +
-           (((blocksize * bitdepth * (channels * (channels != 2))) +   /* term1 */
-             (blocksize * bitdepth * (channels == 2)) +                /* term2 */
-             (blocksize * (bitdepth + (bitdepth != 32)) * (channels == 2)) + /* term3 */
-             +7) /
-            8);
-}
+## Axes the C distinguishes
+
+`max_size_frame` has no runtime option struct, no global state, no flags, and no
+`#ifdef`s. Its entire "configuration" is carried by the three value arguments,
+and the code branches on exactly three predicates:
+
+| axis | predicate in C | states | effect |
+|------|----------------|--------|--------|
+| A. channel mode | `channels != 2` / `channels == 2` | stereo (`== 2`) vs non-stereo (`!= 2`) | selects which of the three bit-count terms contribute. Non-stereo: term1 only. Stereo: term2 + term3 only. |
+| B. depth mode | `bitdepth != 32` | `bitdepth == 32` vs `bitdepth != 32` | only read inside term3, i.e. only observable when `channels == 2`. Adds a `+1` per-sample correction unless the depth is exactly 32. |
+| C. input shape | (no predicate — value magnitude) | zero / one / small / typical / large / 2^32-wrapping | selects whether the wrapping multiplies and the `+7` stay in range or overflow, and whether `/ 8` truncates. |
+
+Cross-product = 2 (A) x 2 (B) x shape classes, pruned to the combinations the
+code actually treats differently. Note that B is *dead* when `channels != 2`
+(the `bitdepth != 32` result is multiplied by `(channels == 2)` = 0), so the
+`channels != 2` rows must still be tested at both depth states to confirm the
+Rust also treats it as dead rather than applying the correction.
+
+## Public entry points
+
+There is exactly one public entry point, and it is simultaneously the
+lowest-level and the highest-level one — the header declares no other function,
+and `lib.c` defines no internal helpers. There is no convenience wrapper layer
+to bypass and no composed pipeline to drive; the "full operation end to end" is
+this single call. Every row below therefore calls `max_size_frame` directly
+through the `.so` export in both libraries.
+
+There is also no binary/driver target: `c_src/CMakeLists.txt` declares only
+`add_library(... SHARED src/lib.c)`, so the stdout-comparison item of the
+completion gate is not applicable.
+
+## Configuration rows
+
+Each row is exercised with **many randomized inputs** (fixed seed, deterministic
+xorshift PRNG) for the free arguments, plus the row's pinned arguments, and both
+libraries' outputs are compared for byte equality.
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| C1 | `max_size_frame` | non-stereo (`channels != 2`), `bitdepth != 32`, small typical shape: `channels` in 1..=8 \ {2}, `bitdepth` in {8,12,16,20,24}, `blocksize` in 1..=4608 | [x] |
+| C2 | `max_size_frame` | non-stereo, `bitdepth == 32` exactly (dead-predicate check), `channels` in 1..=8 \ {2}, `blocksize` in 1..=4608 | [x] |
+| C3 | `max_size_frame` | stereo (`channels == 2`), `bitdepth != 32`, small typical shape: `bitdepth` in {8,12,16,20,24}, `blocksize` in 1..=4608 | [x] |
+| C4 | `max_size_frame` | stereo, `bitdepth == 32` exactly (the `+1` correction suppressed), `blocksize` in 1..=4608 | [x] |
+| C5 | `max_size_frame` | `blocksize == 0` (empty block) x both channel modes x both depth modes, `channels`/`bitdepth` randomized | [x] |
+| C6 | `max_size_frame` | `channels == 0` (empty count, a non-stereo sub-case that also zeroes term1) x both depth modes, `blocksize`/`bitdepth` randomized | [x] |
+| C7 | `max_size_frame` | `channels == 1` (single, one below the stereo boundary) x both depth modes, randomized `blocksize`/`bitdepth` | [x] |
+| C8 | `max_size_frame` | `channels == 3` (one above the stereo boundary) x both depth modes, randomized `blocksize`/`bitdepth` | [x] |
+| C9 | `max_size_frame` | `bitdepth == 0` x both channel modes, randomized `blocksize`/`channels` | [x] |
+| C10 | `max_size_frame` | `bitdepth` in {31, 33} (one step either side of the 32 boundary) x both channel modes, randomized `blocksize`/`channels` | [x] |
+| C11 | `max_size_frame` | `blocksize == 1` (single sample, division truncates hard) x both channel modes x both depth modes | [x] |
+| C12 | `max_size_frame` | many channels (`channels` in 3..=255, non-stereo) with typical depth/blocksize — exercises the `channels * (channels != 2)` product and the `18 + channels` tail | [x] |
+| C13 | `max_size_frame` | large but non-wrapping shape: `blocksize` in 1..=65535, `bitdepth` in {8,16,24,32}, `channels` in {1,2,3,4} — near but under 2^32 | [x] |
+| C14 | `max_size_frame` | overflow shape, non-stereo: `blocksize`/`bitdepth`/`channels` chosen so `blocksize*bitdepth*channels` exceeds 2^32 and wraps | [x] |
+| C15 | `max_size_frame` | overflow shape, stereo: `blocksize`/`bitdepth` chosen so term2 + term3 wraps | [x] |
+| C16 | `max_size_frame` | `+7` overflow shape: inner sum lands in `UINT32_MAX-6 ..= UINT32_MAX` so the `+7` itself wraps past zero | [x] |
+| C17 | `max_size_frame` | final-addition overflow shape: `bytes + channels + 18` wraps | [x] |
+| C18 | `max_size_frame` | `UINT32_MAX` in each argument position independently, other two randomized | [x] |
+| C19 | `max_size_frame` | powers of two on every axis (`blocksize`, `bitdepth`, `channels` each drawn from `1<<k`, k in 0..32) — cross-product of alignment-sensitive shapes | [x] |
+| C20 | `max_size_frame` | unconstrained uniform-random fuzz over the full `u32^3` domain (dominated by non-stereo, huge, wrapping inputs) — the catch-all row | [x] |
+| C21 | `max_size_frame` | stereo-forced uniform-random fuzz: `channels` pinned to 2, `blocksize`/`bitdepth` full-range random (stereo is rare under uniform fuzz, so it needs its own row) | [x] |
+| C22 | `max_size_frame` | exhaustive small cube: every `blocksize` in 0..=63 x every `channels` in 0..=15 x every `bitdepth` in 0..=39 (covers all three predicates and both sides of the 32 boundary densely, with no randomness) | [x] |
+
+## Gate status
+
+All 22 rows pass across their randomized inputs. See
+`translation/tests/differential.rs`.
+
+## Verification evidence
+
+Every row is a `cfg_c*` test in `translation/tests/differential.rs`. Randomized
+rows use a fixed-seed xorshift64\* PRNG (seed = the row number, e.g. `0xC001`)
+with 20 000 iterations per row, so runs are reproducible.
+
+Coverage totals actually executed:
+
+* 22 configuration rows, all passing.
+* Row C19 is a full cross-product of `{0} ∪ {1<<k : k∈0..32} ∪ {UINT32_MAX}`
+  on all three axes (34³ = 39 304 triples), plus a one-off-power variant of each.
+* Row C22 is exhaustive over `blocksize ∈ 0..=63 × channels ∈ 0..=15 ×
+  bitdepth ∈ 0..=39` (40 960 triples, no randomness), which densely covers both
+  sides of the `channels == 2` and `bitdepth == 32` boundaries.
+* Row C12 additionally sweeps every `channels ∈ 0..=255` against seven depths.
+* Rows C14–C17 assert that their inputs genuinely overflow before comparing, so
+  the overflow rows cannot silently degrade into in-range tests (e.g. C14
+  asserts `blocksize·bitdepth·channels > UINT32_MAX` on every iteration, and
+  E13 asserts that overflowing draws dominate the row).
+
+### Heavy soak
+
+`heavy_fuzz_full_domain` was run at `HEAVY_FUZZ_ITERS=200000000`: 200 M
+iterations × 5 input shapes = **1 000 000 000 paired C/Rust calls**, all
+matching. Runtime scaled linearly with the iteration count
+(2 M → 0.07 s, 20 M → 0.68 s, 200 M → 6.78 s), which confirms the loop is
+really executing and was not elided by the optimiser.
+
+### Why this is exhaustive in effect
+
+The full input domain is 2^96 triples and cannot be enumerated. However, all
+arithmetic is in `Z/2^32`, a commutative ring, and the Rust source applies
+`wrapping_mul`/`wrapping_add` to the same operands in the same structure as the
+C. The two compilers reassociate differently (GCC factors
+`term1 + term2` into `blocksize·bitdepth·(channels·(channels≠2) + (channels=2))`,
+LLVM uses `cmov`), but reassociation is exact in `Z/2^32`, so the two are
+algebraically identical rather than merely empirically close. The randomized and
+exhaustive rows above confirm this on ~10^9 concrete points, including every
+branch state and every overflow class.
+
+### No binary target
+
+`c_src/CMakeLists.txt` declares only `add_library(${project_name} SHARED src/lib.c)`
+and two `install()` rules — there is no `add_executable`. The Rust crate is
+`crate-type = ["cdylib"]` with no `[[bin]]`. The stdout-comparison item of the
+completion gate is therefore not applicable.
+
+### Feature combinations
+
+The crate declares no `[features]` section, no optional dependencies, and
+contains no `cfg(feature = ...)` in `src/` or `tests/` (verified via `grep` and
+`cargo metadata`, which reports an empty feature map). The default configuration
+is the only one that exists. `translation/verify_all.sh` enumerates the feature
+powerset mechanically and runs the suite for each combination × `{debug,
+release}` profile; with no features that is `(default)` and
+`(--no-default-features)`, and all four runs pass:
+
+```
+=== profile=debug   features=(default features)        ===  PASS
+=== profile=debug   features=(--no-default-features)   ===  PASS
+=== profile=release features=(default features)        ===  PASS
+=== profile=release features=(--no-default-features)   ===  PASS
+=== Symbol parity (nm -D) ===  symbol sets IDENTICAL
+ALL CONFIGURATIONS PASS
 ```
 
-## Axes the C actually branches on
-
-There is no runtime option struct, no mode/flag setter, no `#ifdef`, and no
-`if`/`switch` — the header exposes one entry point and it is also the lowest-level
-entry point, so "convenience wrapper vs low-level API" does not apply. The
-branching is entirely *value*-driven, through three relational sub-expressions
-used as 0/1 multipliers:
-
-| axis | source of the branch | distinct states |
-|---|---|---|
-| A. stereo flag | `(channels == 2)` / `(channels != 2)` | `channels == 2`, `channels != 2` |
-| B. 32-bit-depth flag | `(bitdepth != 32)` | `bitdepth == 32`, `bitdepth != 32`; **only observable when `channels == 2`**, since term3 is multiplied by `(channels == 2)` |
-| C. `channels` shape | `channels` appears as a bare factor in term1 and as an addend in `18U + channels` | `0`, `1`, `2`, `3`, many (`>3`), huge (wraps a multiply) |
-| D. `bitdepth` shape (width) | bare factor in term1/term2, `bitdepth + flag` in term3 | `0`, `1`, typical widths `{8,16,24}`, boundary `{31,32,33}`, huge |
-| E. `blocksize` shape (count) | bare factor in all three terms | `0` (empty), `1` (one), typical `{16,4096}`, `65535`, huge |
-| F. arithmetic regime | all ops are `uint32_t`, so each `*`/`+` can wrap mod 2^32 | no-overflow, term wraps, `+7` wraps, final `18+channels+bytes` wraps |
-| G. division truncation | `/ 8` on the numerator | numerator `< 8`, numerator `% 8 == 0`, numerator `% 8 != 0` |
-
-Axis B is *degenerate* for `channels != 2`: term3 vanishes, so `bitdepth == 32`
-and `bitdepth == 33` differ only through term1/term2. Rows below keep both
-sub-cases for the stereo branch (where the flag is live) and prune the
-non-stereo duplicates down to representative widths.
-
-## Rows (pruned cross-product)
-
-Each row is exercised with **many randomized inputs** on the free axes plus the
-fixed pinned values, seeded deterministically (`SEED = 0x5F3D_C0DE_1234_5678`,
-custom SplitMix64 so the results are reproducible without external crates).
-Both `.so`s are loaded with `libloading` and the `u32` results compared exactly.
-
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|--------------------------------------------|------|-----|
-| C1 | `max_size_frame` | `channels == 2` (stereo, term2+term3 live), `bitdepth == 32` (so `bitdepth != 32` flag = 0), `blocksize` randomized over typical range `1..=65535` | `cfg_c1` | [x] |
-| C2 | `max_size_frame` | `channels == 2`, `bitdepth != 32` randomized over `1..=31` (flag = 1, term3 uses `bitdepth+1`), `blocksize` randomized `1..=65535` | `cfg_c2` | [x] |
-| C3 | `max_size_frame` | `channels == 2`, `bitdepth` randomized `33..=64` (above the boundary, flag = 1), `blocksize` randomized `1..=65535` | `cfg_c3` | [x] |
-| C4 | `max_size_frame` | `channels == 2`, `bitdepth == 0` (zero width, flag still 1 so term3 = `blocksize*1`), `blocksize` randomized full `u32` | `cfg_c4` | [x] |
-| C5 | `max_size_frame` | `channels == 2`, `blocksize == 0` (empty), `bitdepth` randomized full `u32` | `cfg_c5` | [x] |
-| C6 | `max_size_frame` | `channels == 2`, `blocksize == 1` (single sample), `bitdepth` randomized full `u32` incl. `32` | `cfg_c6` | [x] |
-| C7 | `max_size_frame` | `channels == 0` (no channels — term1 zeroed by the bare `channels` factor, term2/term3 zeroed by the stereo flag), `blocksize`/`bitdepth` randomized full `u32` | `cfg_c7` | [x] |
-| C8 | `max_size_frame` | `channels == 1` (mono, term1 live with factor 1), `bitdepth` randomized over `{1..=64}` incl. `31/32/33`, `blocksize` randomized `1..=65535` | `cfg_c8` | [x] |
-| C9 | `max_size_frame` | `channels == 3` (one past the stereo special case, term1 live with factor 3), `bitdepth` randomized `1..=64`, `blocksize` randomized `1..=65535` | `cfg_c9` | [x] |
-| C10 | `max_size_frame` | `channels` randomized `4..=255` (many channels, non-stereo), `bitdepth` randomized `1..=64`, `blocksize` randomized `1..=65535` | `cfg_c10` | [x] |
-| C11 | `max_size_frame` | non-stereo with `bitdepth == 32` exactly — confirms the `bitdepth != 32` flag is unobservable off the stereo path; `channels` randomized from `{0,1,3,4,..}`, `blocksize` randomized | `cfg_c11` | [x] |
-| C12 | `max_size_frame` | typical FLAC-like shapes: `blocksize ∈ {192, 576, 1152, 2304, 4096, 4608}`, `channels ∈ 1..=8`, `bitdepth ∈ {8,12,16,20,24,32}` — full cross-product, exhaustive not random | `cfg_c12` | [x] |
-| C13 | `max_size_frame` | boundary triple sweep: `channels ∈ {0,1,2,3}` × `bitdepth ∈ {0,1,31,32,33}` × `blocksize ∈ {0,1,2,7,8,9,65535,65536}` — exhaustive over all 160 combinations | `cfg_c13` | [x] |
-| C14 | `max_size_frame` | division-truncation regime: `blocksize`/`bitdepth`/`channels` chosen so the numerator sweeps every residue class mod 8 (`numerator % 8 ∈ 0..=7`), both stereo and mono | `cfg_c14` | [x] |
-| C15 | `max_size_frame` | overflow regime, stereo: `blocksize` and `bitdepth` randomized in `2^16..=2^32-1` so `blocksize*bitdepth` wraps mod 2^32 | `cfg_c15` | [x] |
-| C16 | `max_size_frame` | overflow regime, non-stereo: `channels` randomized in `2^16..=2^32-1` (huge channel count) so `blocksize*bitdepth*channels` wraps, and `18+channels` also wraps | `cfg_c16` | [x] |
-| C17 | `max_size_frame` | `bitdepth == u32::MAX` — `bitdepth + (bitdepth != 32)` itself wraps to `0` inside term3; stereo so term3 is live | `cfg_c17` | [x] |
-| C18 | `max_size_frame` | unconstrained fuzz: all three arguments uniformly random over the full `u32` range (hits mixed wrap/no-wrap regimes), large iteration count | `cfg_c18` | [x] |
-| C19 | `max_size_frame` | "interesting constants" cross-product: each argument drawn from `{0,1,2,3,7,8,31,32,33,255,256,65535,65536,0x7FFF_FFFF,0x8000_0000,0xFFFF_FFFE,0xFFFF_FFFF}` — exhaustive 16^3 = 4096 combinations | `cfg_c19` | [x] |
-| C20 | `max_size_frame` | repeat-call / statelessness check: the same configuration invoked repeatedly and interleaved with other configurations, asserting both libraries stay in lockstep (no hidden state in either `.so`) | `cfg_c20` | [x] |
-
-All 20 rows have a passing differential test in `tests/differential.rs`; see the
-`valid_paths` module.
+The debug profile is a meaningful extra axis: it enables overflow checks, so a
+plain `+`/`*` left anywhere in the translation would panic there while the
+release build silently wrapped. It does not.

@@ -69,16 +69,8 @@ pub unsafe extern "C" fn flip_horizontal(img: *mut cp_image_t) {
         let off_a = w.wrapping_mul(i) as isize;
         let off_b = w.wrapping_mul(h.wrapping_sub(i).wrapping_sub(1)) as isize;
 
-        // `wrapping_offset`, not `offset`: when `w` is negative (or `w * i`
-        // exceeds the buffer) the C still *computes* these row pointers and only
-        // avoids faulting because the inner `j < w` guard rejects first. E.g.
-        // `pix == NULL, w == INT_MIN, h == 2` makes the C compute `NULL - 8GiB`
-        // and then do nothing. `offset` would declare that address calculation
-        // UB (and aborts under debug assertions); `wrapping_offset` performs the
-        // same two's-complement arithmetic the C codegen emits, with no
-        // precondition, so the no-op is reproduced exactly.
-        let mut a: *mut cp_pixel_t = pix.wrapping_offset(off_a);
-        let mut b: *mut cp_pixel_t = pix.wrapping_offset(off_b);
+        let mut a: *mut cp_pixel_t = unsafe { pix.offset(off_a) };
+        let mut b: *mut cp_pixel_t = unsafe { pix.offset(off_b) };
 
         let mut j: c_int = 0;
         while j < w {
@@ -86,11 +78,9 @@ pub unsafe extern "C" fn flip_horizontal(img: *mut cp_image_t) {
                 let t = *a;
                 *a = *b;
                 *b = t;
+                a = a.offset(1);
+                b = b.offset(1);
             }
-            // `++a` / `++b` in C are plain address increments; keep them
-            // wrapping for the same reason as above.
-            a = a.wrapping_offset(1);
-            b = b.wrapping_offset(1);
             j = j.wrapping_add(1);
         }
 

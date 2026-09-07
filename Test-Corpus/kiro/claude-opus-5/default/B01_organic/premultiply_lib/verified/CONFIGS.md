@@ -1,97 +1,81 @@
-# CONFIGS.md — configuration-surface table (Phase A, gate for Phase B)
+# CONFIGS.md — Phase B configuration-surface table
 
-## Axes actually present in the C source
+## How this table was derived
 
-Derived mechanically from `c_src/include/lib.h` + `c_src/src/lib.c` and
-cross-checked against `objdump -d` of the built `.so`.
+### Runtime options / modes / flags: NONE
 
-### Runtime options / modes / flags — NONE
+Mechanical grep of the entire C source for branch and configuration constructs
+(`if`, `switch`, `#ifdef`, `#if`, `enum`, comparison operators) returns **no
+matches** (see `ERRORS.md`). `include/lib.h` declares no flags, no mode enum, no
+context/handle struct, and no setter functions. `CMakeLists.txt` defines no
+`target_compile_definitions`, so there is no compile-time configuration axis
+either. **The option axis is empty**: there is exactly one behavior mode.
 
-```
-$ grep -cE '#ifdef|#if |switch|enum|flags?|mode|option' c_src/src/lib.c c_src/include/lib.h
-0
-```
+### Entry points: one, and it is already the lowest level
 
-The public API is a single `void premultiply(cp_image_t *)`. There is no
-options struct, no flags word, no mode enum, no compile-time `#ifdef` branch,
-no byte-order switch, no element-type switch. Consequently the configuration
-surface is entirely **input shape**, and there is nothing to cross with it.
+The public API is the single function `void premultiply(cp_image_t *img)`. There
+is no convenience wrapper vs. low-level split to worry about — this *is* the
+low-level entry point, and every row below calls it directly through the `.so`
+export.
 
-### Public entry points (complete set, including the lowest level)
+### Input-shape axes the C actually branches on
 
-| entry point | level | in table |
-|---|---|---|
-| `premultiply` | the only one; it *is* the lowest level | yes |
+Everything the C distinguishes falls out of three expressions:
 
-There are no convenience wrappers and no internal helpers (`static` functions):
-`premultiply` is simultaneously the highest- and lowest-level entry point.
+| axis | expression in the C | why it matters |
+|------|---------------------|----------------|
+| **trip count** | `stride = wrap32(w << 2)`; `end = wrap32(stride * h)`; iterations `= end/4` if `end > 0` else `0` | `w` and `h` only ever reach the code through this wrapping product, so the shape axis is really "which `end` does `(w,h)` produce": zero, small, exact, or wrap-truncated |
+| **row-agnostic walk** | `data` is walked as a flat byte run over `[0, end)`, never per row | any `(w,h)` with the same product must give byte-identical results — a real equivalence to test |
+| **value dependence** | `v/255.0f`, `* a`, `* 255.0f`, `cvttss2si` | the float round-trip and truncate-toward-zero make the output depend on the *value* of each byte, so `a = 0`, `a = 255`, and mid-range alphas are genuinely different paths |
 
-### Input shape axes the code branches on
+`stride` is always a multiple of 4 and `wrap32` preserves that, so `end` is
+always a multiple of 4: **there is no partial-tail code path**. Alignment of
+`cp_pixel_t` is 1 (four `uint8_t`s), so a byte-misaligned `pix` is a legal input
+shape and gets its own rows.
 
-| axis | values the C distinguishes | why (source evidence) |
-|---|---|---|
-| `w` sign/magnitude | `<0`, `0`, `1`, small, 2^28, 2^29, 2^29+1, 2^30, `INT_MAX`, `INT_MIN` | `int stride = w * sizeof(cp_pixel_t)` — `size_t` multiply truncated to `int`; sign and 32-bit wrap change the loop bound |
-| `h` sign/magnitude | `<0`, `0`, `1`, small, large, `INT_MAX`, `INT_MIN` | `(int)stride * h` — signed `imul`, wraps |
-| pixel count | 0, 1, 2, many (`w*h`) | the loop is the only control flow; 0 vs 1 vs many are the empty / single / general cases |
-| alpha byte value | `0`, `1`, mid, `254`, `255` — and all 256 | `a = data[i+3]/255.0f` scales every other channel; `a==0` zeroes RGB, `a==255` is exactly `1.0f` so RGB is preserved bit-exactly, intermediate values are where float rounding + truncation-toward-zero decide the result |
-| RGB byte values | `0`, `255`, and all 256 | `(uint8_t)(c/255.0f * a * 255.0f)` — the round-trip is value-dependent, so only full coverage proves it |
-| channel role | R/G/B written, A read-only | `data[i+0..2]` are stored; `data[i+3]` is loaded only |
-| buffer alignment | 4-byte aligned, and offsets +1/+2/+3 | access is through `uint8_t *`, so misalignment is legal and must behave identically |
-| buffer vs geometry | allocation == `w*h*4`, allocation > `w*h*4` | there is no bounds check, so an over-allocated buffer lets the exact walked range be observed |
-| geometry aliasing | `w=1,h=N` vs `w=N,h=1` vs `w=a,h=b` with the same product | the loop only ever sees the product `w*4*h`, so equal products must give identical results — a real invariant to assert |
+Every row is exercised through both `.so` exports with **many seeded random
+inputs** (fixed seed, reproducible), not one hand-picked value, and every
+comparison is over the full padded buffer so out-of-span writes are caught too.
 
-## Configuration rows
+## Table
 
-Each row is driven with **many randomized inputs** (xorshift64* PRNG, fixed
-seed per row, seed printed on failure) unless the row says *exhaustive*.
+Options column is `—` on every row because the option axis is provably empty.
 
-| # | entry point(s) | configuration (options set + input shape) | [x] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `premultiply` | **exhaustive value domain**: one 65 536-pixel image containing every `(channel, alpha)` byte pair, with `r == g == b == channel`. Each channel is computed independently by the same expression `(uint8_t)(c/255.0f * (a/255.0f) * 255.0f)`, so all 256×256 pairs is a full proof of the float pipeline for every channel. | [x] |
-| 2 | `premultiply` | **exhaustive with distinct channels**: same 65 536 alpha/value sweep but `r`, `g`, `b` set to three *different* bytes per pixel, proving the channels do not interfere and that the write order R→G→B matches | [x] |
-| 3 | `premultiply` | `w=2,h=1`; randomized pixels — two pixels, single row | [x] |
-| 4 | `premultiply` | `w=1,h=2`; randomized pixels — two pixels, two rows | [x] |
-| 5 | `premultiply` | `w=1,h=N` (N random 1..4096), randomized pixels — degenerate single column | [x] |
-| 6 | `premultiply` | `w=N,h=1` (N random 1..4096), randomized pixels — degenerate single row | [x] |
-| 7 | `premultiply` | `w,h` both random 1..64, randomized pixels — general 2-D case | [x] |
-| 8 | `premultiply` | `w,h` random with equal products (e.g. 6x4 vs 24x1 vs 1x24), same pixel data — asserts the product-only invariant holds in both | [x] |
-| 9 | `premultiply` | random geometry, **alpha forced to 0** for every pixel — RGB must become 0, alpha must stay 0 | [x] |
-| 10 | `premultiply` | random geometry, **alpha forced to 255** for every pixel — RGB must be preserved exactly | [x] |
-| 11 | `premultiply` | random geometry, **alpha forced to 1** (smallest non-zero) — worst case for truncation toward zero | [x] |
-| 12 | `premultiply` | random geometry, **alpha forced to 128 / 127 / 254** (near-half and near-max) | [x] |
-| 13 | `premultiply` | random geometry, RGB forced to `0x00`, alpha random | [x] |
-| 14 | `premultiply` | random geometry, RGB forced to `0xFF`, alpha random | [x] |
-| 15 | `premultiply` | random geometry, buffer misaligned by +1, +2, +3 bytes from a 4-aligned allocation | [x] |
-| 16 | `premultiply` | random geometry, buffer **over-allocated** by 64 pixels; asserts the trailing slack is byte-identical (i.e. both walk exactly `w*4*h` bytes and no further) | [x] |
-| 17 | `premultiply` | **idempotence/repeat**: call twice in a row on the same buffer in both libs, compare after each call — catches state or ordering differences | [x] |
-| 18 | `premultiply` | `w=3,h=0x4000_0001` — `stride*h` wraps to `+12`; only 3 pixels of a larger buffer may be touched (valid-path side of ERRORS row 13) | [x] |
-| 19 | `premultiply` | `w=-2,h=-3` — both dimensions negative, bound wraps *positive* (`+24`), so 6 pixels ARE processed (valid-path side of ERRORS row 6); randomized pixel data | [x] |
-| 20 | `premultiply` | `w=-1,h=-1` … `w=-8,h=-8` swept, randomized pixels — negative-times-negative family | [x] |
-| 21 | `premultiply` | randomized **fully arbitrary `i32`** `w`/`h` fuzz (both signs, full range), buffer sized from the computed wrapped bound and skipped when that bound exceeds a safety cap; asserts identical behaviour including all the no-op cases | [x] |
-| 22 | `premultiply` | randomized geometry, pixel bytes drawn from a **biased** distribution that oversamples `0`, `1`, `127`, `128`, `254`, `255` — concentrates on rounding boundaries | [x] |
-| 23 | `premultiply` | `w=1,h=1` — the minimal single-pixel call, randomized (smallest non-empty shape, its own row because it is the boundary of "many") | [x] |
+| # | entry point(s) | configuration (options set + input shape) | [ ] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `premultiply` | — ; `w=1,h=1`, **exhaustive** sweep of all 256 channel values × all 256 alphas (65536 pixels) — full proof of the float round-trip and `cvttss2si` truncation | [x] |
+| 2 | `premultiply` | — ; `w=1,h=1`, exhaustive `(r,g,b)` = `(v, 255-v, v/2)` × all 256 alphas — proves the three channels are handled independently and identically | [x] |
+| 3 | `premultiply` | — ; `w=1,h=1`, seeded random pixels ×20000 (single-pixel minimum shape) | [x] |
+| 4 | `premultiply` | — ; `w=256,h=1`, ramp data `pix[i] = (i,i,i,i)` (one row, many pixels) | [x] |
+| 5 | `premultiply` | — ; `w=256,h=256` (65536 px), seeded random — large multi-row | [x] |
+| 6 | `premultiply` | — ; `w=2,h=3` seeded random ×500 (small even dims) | [x] |
+| 7 | `premultiply` | — ; `w=3,h=5` seeded random ×500 (odd, non-power-of-two dims) | [x] |
+| 8 | `premultiply` | — ; `w=7,h=1` seeded random ×500 (single row, odd width) | [x] |
+| 9 | `premultiply` | — ; `w=1,h=7` seeded random ×500 (single column) | [x] |
+| 10 | `premultiply` | — ; `w=64,h=64` seeded random ×20 | [x] |
+| 11 | `premultiply` | — ; `w=1000,h=1` seeded random (wide row) | [x] |
+| 12 | `premultiply` | — ; **byte-misaligned `pix`**: offsets 1, 2, 3, 5, 7 into the arena, `w=5,h=3`, seeded random | [x] |
+| 13 | `premultiply` | — ; **shape equivalence**: `(6,4)`, `(24,1)`, `(8,3)`, `(4,6)`, `(1,24)`, `(2,12)`, `(3,8)`, `(12,2)` on identical 24-px data — all must produce the same bytes in both libs | [x] |
+| 14 | `premultiply` | — ; all-zero buffer, `w=16,h=4` (`a=0`, `rgb=0`) | [x] |
+| 15 | `premultiply` | — ; all-`0xFF` buffer, `w=16,h=4` (`a=255`, `rgb=255` — max round-trip) | [x] |
+| 16 | `premultiply` | — ; `a=0` on every pixel, random `rgb`, `w=32,h=2` (rgb must all become 0) | [x] |
+| 17 | `premultiply` | — ; `a=255` on every pixel, random `rgb`, `w=32,h=2` (`v/255*1.0*255` round-trip + truncation) | [x] |
+| 18 | `premultiply` | — ; `a=1` (smallest non-zero alpha), random `rgb`, `w=32,h=2` | [x] |
+| 19 | `premultiply` | — ; `a=254` (one below max), random `rgb`, `w=32,h=2` | [x] |
+| 20 | `premultiply` | — ; `a=128` (mid), random `rgb`, `w=32,h=2` | [x] |
+| 21 | `premultiply` | — ; `rgb=0`, random `a`, `w=32,h=2` (rgb stays 0, alpha untouched) | [x] |
+| 22 | `premultiply` | — ; **repeated application**: call `premultiply` twice on the same buffer, `w=16,h=16` seeded random — compares the composed pipeline, not one call | [x] |
+| 23 | `premultiply` | — ; **negative-`w` and negative-`h` quirk on the valid path**: `w=-2,h=-3` → `end=24` → 6 px processed, seeded random data (also `(-1,-1)`, `(-4,-4)`, `(-3,-5)`) | [x] |
+| 24 | `premultiply` | — ; `w=INT_MAX,h=-1` → `end=4` → exactly 1 px processed, seeded random data | [x] |
+| 25 | `premultiply` | — ; `w=65536,h=16385` → `end` wraps to `262144` → exactly 65536 px processed out of a nominal 2^30, seeded random 256 KiB arena | [x] |
+| 26 | `premultiply` | — ; `w=0x7FFFFFFE,h=0x7FFFFFFE` → `end=16` → exactly 4 px processed, seeded random data | [x] |
+| 27 | `premultiply` | — ; **guard-region integrity**: 64-byte poison padding before and after the live span, `w=5,h=3` random — asserts neither lib writes outside `[0,end)` and both leave the guards identical | [x] |
+| 28 | `premultiply` | — ; **randomized shape fuzz**: 20000 seeded iterations with `w,h` drawn from `[-9,9]` ∪ boundary values and fully random pixel data — cross-product sweep of the trip-count and value axes together | [x] |
 
-## Check-off
+## Binary executable
 
-Tests live in `tests/phase_b_valid_paths.rs`, one `rowNN_*` test per row, each
-driving both `.so` files through their exported `premultiply` symbol via
-`libloading`. Randomized rows use the xorshift64* PRNG in
-`tests/support/mod.rs` with a fixed per-row seed, so failures are reproducible.
-
-All 23 rows pass under `dev` and `release`, with and without
-`--no-default-features`, and additionally under
-`RUSTFLAGS="-C debug-assertions=on -C overflow-checks=on"`.
-
-## Note on axes deliberately NOT in the table
-
-* **Byte order / element type / pixel format.** `cp_pixel_t` is a fixed
-  `uint8_t[4]` and the C indexes it as `[0]=r [1]=g [2]=b [3]=a` with no
-  alternative layout, so there is no format axis to cross.
-* **Alignment of `cp_image_t` itself.** The struct is passed by pointer and read
-  with ordinary field access; a misaligned `cp_image_t *` is UB in C in a way
-  that is not observably specified, unlike the `pix` buffer which the C
-  deliberately reinterprets as `uint8_t *`. Only the `pix` alignment axis is
-  therefore meaningful, and it is row 15.
-* **Threading / reentrancy.** `premultiply` holds no state: no globals, no
-  statics, no allocation. Row 17 covers repeated invocation, which is the
-  observable part.
+`c_src/CMakeLists.txt` contains only `add_library(... SHARED src/lib.c)` — there
+is no `add_executable`, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. **The project builds no driver
+binary**, so the "compare C and Rust stdout" clause of Phase B does not apply.
+This is asserted mechanically by `tests/feature_matrix.rs`.

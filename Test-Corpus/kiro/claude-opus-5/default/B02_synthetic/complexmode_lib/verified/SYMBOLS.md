@@ -1,64 +1,70 @@
-# SYMBOLS.md — Phase A symbol surface
+# SYMBOLS.md — Public symbol parity (Phase A / Phase D)
 
-Derived mechanically from `nm -D` on both shared objects.
-
-* C  `.so`: `c_src/build/libharvest-work-tzqyqR.so` (name follows the parent
-  directory name, so tests glob `c_src/build/lib*.so`)
-* Rust `.so`: `translation/target/release/libcomplexmode_lib.so`
+Sources:
+- C  `.so`: `c_src/build/libharvest-work-9IYgVv.so`
+- Rust `.so`: `translation/target/release/libcomplexmode_lib.so`
 
 Commands used:
 
 ```sh
-nm -D --defined-only c_src/build/lib*.so
-nm -D --defined-only translation/target/release/libcomplexmode_lib.so
+nm -D --defined-only c_src/build/libharvest-work-9IYgVv.so   | awk '{print $3}' | sort
+nm -D --defined-only translation/target/release/libcomplexmode_lib.so | awk '{print $3}' | sort
+comm -23 c_syms r_syms      # symbols in C but NOT in Rust  -> MUST be empty
+nm -D --undefined-only translation/target/release/libcomplexmode_lib.so
 ```
 
-## Exported (defined) symbols
+## Defined (exported) symbols
 
-| # | C symbol (`nm -D` on C `.so`) | C type | present in Rust `.so` | Rust definition |
-|---|-------------------------------|--------|-----------------------|-----------------|
-| 1 | `create_result_string` | `T` | YES (`T`) | `src/lib.rs` — `#[unsafe(no_mangle)] pub unsafe extern "C" fn create_result_string` |
-| 2 | `check_permissions`    | `T` | YES (`T`) | `src/lib.rs` — `#[unsafe(no_mangle)] pub extern "C" fn check_permissions` |
-| 3 | `safe_add`             | `T` | YES (`T`) | `src/lib.rs` — `#[unsafe(no_mangle)] pub extern "C" fn safe_add` |
-| 4 | `multiply_with_log`    | `T` | YES (`T`) | `src/lib.rs` — `#[unsafe(no_mangle)] pub unsafe extern "C" fn multiply_with_log` |
-| 5 | `copy_and_sum`         | `T` | YES (`T`) | `src/lib.rs` — `#[unsafe(no_mangle)] pub unsafe extern "C" fn copy_and_sum` |
-| 6 | `compare_operations`   | `T` | YES (`T`) | `src/lib.rs` — `#[unsafe(no_mangle)] pub unsafe extern "C" fn compare_operations` |
-| 7 | `complexmode`          | `T` | YES (`T`) | `src/lib.rs` — `#[unsafe(no_mangle)] pub unsafe extern "C" fn complexmode` |
+| # | symbol | in C `.so` | in Rust `.so` | C source | note |
+|---|--------|-----------|---------------|----------|------|
+| 1 | `check_permissions`   | T | T | `lib.c:47`  | leaf predicate |
+| 2 | `compare_operations`  | T | T | `lib.c:90`  | wraps `strcmp` |
+| 3 | `complexmode`         | T | T | `lib.c:99`  | only symbol in `include/lib.h` |
+| 4 | `copy_and_sum`        | T | T | `lib.c:67`  | malloc + memcpy + sum |
+| 5 | `create_result_string`| T | T | `lib.c:38`  | malloc(64) + snprintf |
+| 6 | `multiply_with_log`   | T | T | `lib.c:59`  | out-param `char**` |
+| 7 | `safe_add`            | T | T | `lib.c:51`  | permission-gated add |
 
-Only `complexmode` is declared in the public header `c_src/include/lib.h`; the
-other six have external linkage in `c_src/src/lib.c` (no `static`), so they are
-part of the `.so`'s ABI surface and are tested as public entry points.
+`create_result_string`, `check_permissions`, `safe_add`, `multiply_with_log`,
+`copy_and_sum` and `compare_operations` are **not** declared in
+`include/lib.h`, but they have external linkage in `src/lib.c`, so they are real
+public ABI symbols of the C `.so` and are tested as such.
 
-**Symbol diff (C defined − Rust defined): EMPTY.** No macro-generated symbols
-exist in this library (no symbol-emitting macros in the C source).
+There are no macro-generated symbols in this library (the only macros are
+`READ_PERM`/`WRITE_PERM`/`EXEC_PERM`, which are integer constants).
 
-There are no `D`/`B`/`R` (data) symbols in the C `.so`: the C file declares no
-non-`static` globals. Nothing to mirror.
+## Symbol diff
 
-## Undefined (imported) symbols
+```
+$ comm -23 /tmp/c_syms.txt /tmp/r_syms.txt
+(empty)
+```
 
-The C `.so` imports, from libc:
-`free`, `malloc`, `memcpy`, `printf`, `puts`, `snprintf`, `strcmp`
-(plus the weak `_ITM_*`, `__cxa_finalize`, `__gmon_start__` glibc boilerplate).
+**0 symbols missing from the Rust `.so`.** No module of the C source was left
+untranslated: `src/lib.c` is the only C translation unit and all 7 of its
+external functions are present in `src/lib.rs` with `#[unsafe(no_mangle)]
+pub extern "C"` wrappers. No stubs, no `unimplemented!()`.
 
-Note `strcpy` does **not** appear: GCC expands `strcpy` with a literal source
-into inline stores. Likewise several `printf("...\n")` calls are rewritten by
-GCC into `puts`. Both are byte-for-byte equivalent on stdout, so the Rust
-translation's use of `printf`/`strcpy` from libc is ABI- and output-compatible.
+## Undefined symbols in the Rust `.so`
 
-The Rust `.so` imports the same libc functions plus the Rust standard
-library's own libc/unwind dependencies (`_Unwind_*`, `pthread_key_*`, `mmap64`,
-`memset`, `calloc`, `realloc`, …). All are ordinary libc/libgcc symbols
-resolved by the loader.
+All undefined symbols are libc / libgcc-unwind / Rust-runtime imports:
 
-**0 missing symbols. 0 undefined non-libc symbols in the Rust `.so`.**
+`printf snprintf malloc free memcpy strcmp strlen memmove memset bcmp calloc
+realloc posix_memalign puts abort __errno_location __cxa_finalize
+__cxa_thread_atexit_impl __tls_get_addr pthread_key_* dl_iterate_phdr
+getcwd getenv gettid open64 close read write writev lseek64 fstat64 stat64
+statx mmap64 munmap readlink realpath syscall _Unwind_* _ITM_* __gmon_start__`
 
-Verified with `ldd -r` (no unresolved symbols) — see
-`tests/differential.rs::symbol_parity` which re-checks the diff at test time.
+**0 undefined non-libc symbols.** (`strcpy` does not appear: LLVM lowered the
+`strcpy` of the string literals in `complexmode` into `memcpy`/stores, which is
+behaviourally identical for NUL-terminated literals of known length.)
 
-## Feature combinations
+The C `.so` imports `printf malloc free memcpy strcmp strcpy snprintf puts` —
+i.e. the Rust translation deliberately calls the *same* libc routines rather
+than re-implementing formatting/allocation, so `stdout` buffering and heap
+ownership are byte-identical.
 
-`translation/Cargo.toml` declares **no `[features]` table**, so the only
-configuration is the default one. Phase D's "every feature combination"
-therefore reduces to a single combo; `cargo test --no-default-features` is
-still exercised to prove it.
+## Gate
+
+- [x] `nm -D` shows 0 missing symbols in the Rust `.so`.
+- [x] `nm -D` shows 0 undefined non-libc symbols in the Rust `.so`.

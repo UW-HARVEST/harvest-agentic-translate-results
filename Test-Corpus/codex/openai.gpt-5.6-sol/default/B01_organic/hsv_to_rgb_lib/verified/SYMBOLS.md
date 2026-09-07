@@ -3,17 +3,34 @@
 Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-GPFm3T.so
+nm -D c_src/build/libharvest-work-5VbiqP.so
+nm -D --defined-only c_src/build/libharvest-work-5VbiqP.so
 ```
 
-| C symbol | C type | Rust symbol | Rust type | Status |
-|----------|--------|-------------|-----------|--------|
-| `hsv_to_rgb` | `T` | `hsv_to_rgb` | `T` | present |
+## Public symbols defined by the C library
 
-The C shared object has one defined public dynamic symbol. The Rust shared
-object exports the same symbol with the exact name. There are zero missing
-symbols.
+| symbol | C type | Rust `.so` status |
+|---|---:|---|
+| `hsv_to_rgb` | `T` | present as `T` |
 
-The C object's undefined dynamic symbols are runtime/libc/libm dependencies:
-`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`, and `floorf`. None is part of this library's public API.
+Missing public symbols: **0**
+
+Phase D exact defined-export diff:
+
+```text
+C only:    (empty)
+Rust only: (empty)
+```
+
+## Other C dynamic-symbol entries
+
+These entries appear in the complete `nm -D` output but are not public
+symbols defined by this library.
+
+| symbol | type | classification |
+|---|---:|---|
+| `_ITM_deregisterTMCloneTable` | `w` | optional toolchain runtime hook |
+| `_ITM_registerTMCloneTable` | `w` | optional toolchain runtime hook |
+| `__cxa_finalize@GLIBC_2.2.5` | `w` | optional C runtime dependency |
+| `__gmon_start__` | `w` | optional toolchain runtime hook |
+| `floorf@GLIBC_2.2.5` | `U` | imported libm function |

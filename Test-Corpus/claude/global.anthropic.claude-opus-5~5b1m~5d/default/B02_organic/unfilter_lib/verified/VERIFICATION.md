@@ -1,107 +1,131 @@
-# VERIFICATION.md — what was checked, how, and what was found
+# Verification report
 
-## How to reproduce
+Differential verification of the Rust translation in `src/lib.rs` against the C
+ground truth in `../c_src/src/lib.c`.
 
-```bash
-# C reference library, exactly as the task describes
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
+Reproduce everything with:
 
-# everything, for every cargo feature combination and both cargo profiles
-cd translation && ./run_all.sh          # ~12 min
-cd translation && ./run_all.sh --quick  # ~3 min, skips the fuzz targets
+```sh
+cd translation && ./run_verification.sh
 ```
 
-`cargo test` alone also works: the harness builds whatever it needs (the C
-reference, a `-DNDEBUG` build of the same C source, the stack-layout variant
-used as the UB oracle, and the Rust cdylib with the running test binary's
-feature set).
+Both libraries are loaded with `libloading` and called **only** through their
+exported symbols, so the `#[no_mangle] extern "C"` wrappers are themselves under
+test — no Rust function is ever called directly.
 
-## Harness design (`tests/common/mod.rs`)
+## What is built
 
-* **Both libraries are loaded with `libloading`** and driven only through their
-  exported symbols — the `#[no_mangle] extern "C"` wrappers are part of what is
-  under test. Nothing calls the Rust crate directly.
-* Every case runs in a **`fork()`ed child** on a shared-memory scratch region:
-  * a crash, an `abort()` from a live `assert()`, or an infinite loop in either
-    library cannot take the runner down (and cannot be mistaken for a normal
-    return);
-  * the region is fully zeroed and prefilled identically before each of the two
-    runs, and the input is placed at the same offset and the same 4-byte
-    alignment, so the C code's deliberate over-reads/over-writes *around* the
-    nominal buffers are comparable;
-  * writes the child makes to the exported tables cannot leak into another case,
-    which is what makes the "writable global as a runtime option" rows clean.
-* The compared `Outcome` is `(wait status, return value, cp_error_reason string,
-  the whole scratch region, the normalised assert diagnostic)`. The assert
-  diagnostic is captured from the child's stderr through a pipe and normalised
-  to ``lib.c:{line}: {func}: Assertion `{expr}' failed.``, so "the *same* assert
-  fired" is a checked property.
-* `run()` is serialised on the mutex that owns the single scratch region.
-* A child that exits *normally* without filling in the result header raises a
-  loud `HARNESS ERROR` instead of being reported as a library outcome.
+| artefact | how | notes |
+|----------|-----|-------|
+| C, asserts **live** | `cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .` | the task's own command; `CMAKE_BUILD_TYPE` is empty so `NDEBUG` is *not* defined and `assert()` calls `__assert_fail` |
+| C, `NDEBUG` | `cmake -S c_src -B cbuild_release -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build cbuild_release` | the configuration the translation targets |
+| Rust cdylib | `cargo build --release` | `target/release/libunfilter_lib.so` |
 
-## Test inventory
+Both C builds are tested against the Rust `.so`.
 
-| file | tests | what it covers |
-|------|-------|----------------|
-| `tests/symbols_diff.rs` | 6 | `nm -D` parity (names **and** sizes), `RTLD_NOW` resolution, `static` helpers absent from both, default contents of all six writable tables, `cp_state_t` layout vs. a C probe |
-| `tests/unfilter_diff.rs` | 19 | `CONFIGS.md` rows 1..22 for `unfilter`: `h <= 0`, all five filters on row 0 and on later rows, the full 5×5 filter cross product, per-row random filters over 3..12 rows, `bpp ∈ {0,1,2,3,4,8,16,33}`, `bpp == len`, `bpp > len`, `w == 0`, negative `w`/`bpp`/`len`, pointer skew, a 1..64 × 1..48 shape sweep, `cp_paeth`/Average value patterns, and an exhaustive `w ∈ -2..5 × h ∈ -1..3 × bpp ∈ -2..4 ×` all filter combinations |
-| `tests/unfilter_errors.rs` | 8 | `ERRORS.md` rows 9..13: all 251 invalid row-0 filter bytes, invalid filters on later rows (with the partial mutation), `h <= 0` touching nothing, `raw == NULL`, the `raw[x] += 0` prologue walking off the buffer, `INT_MIN`/`INT_MAX` scalars |
-| `tests/inflate_valid.rs` | 24 | `CONFIGS.md` rows 23..64: every literal value, every length code (0..28) and distance code (0..29) with boundary and random extra bits, `distance == 1` (memset path), non-overlapping and overlapping copies, dynamic blocks over the full `HLIT`/`HDIST`/`HCLEN` ranges and all four code-length run modes, 9..14-bit trees, stored blocks 0..2051 bytes at all four alignments, stored-after-bit-packed, 2..4-block streams with cross-block back-references, all `in` alignments and `in_bytes` residues, exact/oversized `out_bytes`, third-party (`flate2`) streams at levels 0/1/6/9, and each of the six writable tables overridden |
-| `tests/inflate_errors.rs` | 23 | `ERRORS.md` rows 1..8 and 14..36: all six error strings including their check *order*, `out_bytes` 0/negative, `out == NULL`, `in == NULL`, `in_bytes` 0/negative/`INT_MIN`/`INT_MIN+1`, the unchecked stored-block over-read, and all six reachable `assert()` sites (two of them via hand-derived inputs) plus a proof sketch for the four unreachable ones |
-| `tests/inflate_fuzz.rs` | 6 | 5881 randomized corrupt `cp_inflate` inputs (random bytes, long random bytes, truncations, single-bit mutations, random dynamic headers) and 4000 randomized `unfilter` argument sets, every divergence checked against the UB oracle |
+## Test layout
 
-Total: **86 tests**, all passing in every feature combination × cargo profile ×
-cdylib profile that `run_all.sh` enumerates.
+| file | phase | contents |
+|------|-------|----------|
+| `tests/common/mod.rs` | harness | `dlopen`s both `.so`s; `diff_unfilter*` (in-process) and `diff_inflate_batch` (**fork-isolated**, shared-memory arena) |
+| `tests/common/deflate.rs` | harness | a small DEFLATE *writer* (bit writer, canonical Huffman, fixed/stored/dynamic block emitters, complete-tree constructors) so tests can aim at individual `cp_inflate` code paths |
+| `tests/symbols.rs` | D | `nm -D` parity, unresolved-import check, byte-identical exported data tables |
+| `tests/phase_b_unfilter.rs` | B | `CONFIGS.md` rows 1–15 |
+| `tests/phase_b_inflate.rs` | B | `CONFIGS.md` rows 16–34 |
+| `tests/phase_c_errors.rs` | C | `ERRORS.md` rows 1–34 + null pointers + a 2000-case malformed-input fuzz |
 
-## Changes made to the translation
+`cp_inflate` is run in a forked child because the assert-enabled C build dies
+with `SIGABRT` on malformed input, and because in `Release` a few corrupt
+dynamic-Huffman headers make the C code write outside its own stack frame.
+Isolating each call lets the harness tell "returned an error" apart from "the C
+library self-destructed", and keeps one bad input from taking the run down.  A
+child processes as many cases as it survives; when it dies the parent marks that
+case and re-forks after it.
 
-| # | change | why |
-|---|--------|-----|
-| 1 | `c-asserts` cargo feature (**on by default**) that translates all 10 `assert()`s from `c_src/src/lib.c`, writing a glibc-shaped diagnostic to stderr and calling `abort()` | the reference `.so` is built with **no** `CMAKE_BUILD_TYPE`, so `NDEBUG` is *not* defined and `__assert_fail` is linked in; the previous translation dropped the asserts, so it returned a value where the reference library died with `SIGABRT`. `--no-default-features` reproduces a `-DNDEBUG` build instead |
-| 2 | `cp_decode`'s assert uses `wrapping_shr` | `len = 32 - (key & 0xF)` is 32 when the tree entry has a zero code length, and gcc emits a 32-bit variable shift (`shr %cl, %esi`), i.e. the count is taken mod 32 |
-| 3 | `unfilter`'s `for (x = 0; x < bpp; x++) raw[x] += 0;` prologue is now performed with `read_volatile`/`write_volatile` instead of being folded away | the add is a no-op but the access is not: with a large `bpp` the C library faults there, and LLVM deletes a non-volatile `x += 0` |
-| 4 | `[profile.dev] overflow-checks = false, debug-assertions = false` | the crate reproduces the C source's UB (writing through a NULL `out`, negative-stride `unfilter` accesses, wrap-around arithmetic); Rust's debug UB checks turned those into Rust aborts, so a `cargo build` (dev) artifact behaved differently from the C library. With this, the dev-profile cdylib passes the same suite as the release one |
-| 5 | `[features]`, `[dev-dependencies]` (`libloading`, `libc`, `flate2`) | test harness |
+## Completion gate
 
-No other behavioural change was needed: everything else in
-`translation/src/lib.rs` already matched, including the quirks listed below.
+- [x] **`SYMBOLS.md`: symbol diff EMPTY.**  Both `.so`s export exactly the same
+      9 symbols (`cp_dist_base`, `cp_dist_extra_bits`, `cp_error_reason`,
+      `cp_fixed_table`, `cp_inflate`, `cp_len_base`, `cp_len_extra_bits`,
+      `cp_permutation_order`, `unfilter`), with matching `nm` kinds.  Nothing
+      was stubbed: `src/lib.rs` translates every function in `lib.c`, including
+      the `static` ones that are dead in the C translation unit too
+      (`cp_make_pixel*`, `cp_make32`, `cp_chunk`, `cp_find`).  The Rust `.so`
+      has 0 unresolved non-libc imports.  Asserted by
+      `tests/symbols.rs::rust_so_exports_every_c_symbol` and
+      `::rust_so_has_no_unresolved_non_libc_symbols`.
+- [x] **Phase B: every row of `CONFIGS.md` (1–34) passes** across randomized
+      inputs from the fixed seed `0x5EED_1234`, comparing the return value, the
+      **whole** output buffer, and `cp_error_reason`.  Happy-path rows also
+      assert the decode actually succeeded and produced the expected plaintext,
+      so "both fail identically" cannot masquerade as a pass.  Coverage
+      includes: all 5 filter types × row-0/row-`y` variants × `bpp 1..4`, all 4
+      block types, all 29 length symbols and all 30 distance symbols (with the
+      extreme value of every extra-bit class), all 16
+      `(first_bytes, last_bytes)` alignment combinations, hand-built dynamic
+      headers at both extremes (`HLIT 257/288`, `HDIST 1/32`, `HCLEN 5/19`,
+      code-length symbols 16/17/18), Huffman codes of depth 1..15, multi-block
+      `BFINAL` chains, 64 KiB payloads, 32 KiB back-references, and the composed
+      `cp_inflate` → `unfilter` pipeline.
+- [x] **No binary target exists**, so the stdout comparison does not apply:
+      `Cargo.toml` declares only `crate-type = ["cdylib"]` (no `[[bin]]`, no
+      `src/main.rs`), and `c_src/CMakeLists.txt` declares only
+      `add_library(... SHARED)`.  Verified by inspection and by
+      `tests/symbols.rs`.
+- [x] **Phase C: every row of `ERRORS.md` (1–34) has a passing error-path
+      differential test** that asserts the *same* sentinel and the *same*
+      `cp_error_reason` string, not merely "both failed".  Plus the generic
+      boundaries: `NULL` in/out pointers, `in_bytes`/`out_bytes` of `0`, `-1`
+      and `i32::MIN`, and the **full 0..255 domain of the filter byte**
+      (the out-of-range-`enum` class, exhaustively, on 1/2/3-row images).
+      Rows 13–22 are the `assert()`s: `err13_to_22_asserts_are_live_in_the_assert_build`
+      proves they really do fire (`SIGABRT`) in the configuration the task's
+      `cmake ..` produces, and `err13_to_22_release_build_matches_rust` proves
+      the `NDEBUG` build and Rust agree exactly on the same inputs.
+- [x] **All of the above hold under every feature combination.**  `Cargo.toml`
+      declares **no `[features]` table**, so the configuration space is a single
+      point; `run_verification.sh` enumerates it programmatically anyway and runs
+      the full suite under `default`, `--no-default-features` and
+      `--all-features`.  All three pass, and the script would expand to the full
+      powerset if features were ever added.
 
-## C quirks that the translation reproduces (verified, not "fixed")
+## Divergences found
 
-* `cp_stored`'s length check is **inverted**: it rejects a stored block when
-  *more* input remains than `LEN` announces, so a stored block is only accepted
-  as the last thing in the stream — and then `memcpy(s->out, p, LEN)` runs with
-  **no** output-bounds check at all.
-* `cp_peak_bits` adds `s->bits_left` (not `last_bytes * 8`) to `count` when it
-  loads the final partial word, permanently over-counting. That is what makes
-  `cp_ptr`'s source pointer wrong for stored blocks, and it is also the only way
-  to reach `cp_ptr`'s and `cp_read_bits`'s asserts.
-* `cp_build` returns `first[15]`, which does **not** count the length-15 codes,
-  so symbols with 15-bit codes are outside the range `cp_decode` searches.
-* `cp_decode` reads `tree[lo - 1]`, i.e. one `u32` *before* `lit`/`dst`/`len`
-  inside `cp_state_t`, whenever its binary search ends at `lo == 0`. The
-  translation derives all three sub-array pointers from the base of the same
-  allocation and uses a `#[repr(C)]` struct with the verified layout, so this
-  reads the same bytes.
-* `unfilter`'s row-0 `case 2` (Up) is a no-op, `case 4` (Paeth) degenerates to
-  `case 1` (Sub), and the row-0 `case 1/3/4` loops start at `x = bpp` while the
-  later rows' `case 1` starts at `x = 0`.
-* `unfilter` validates nothing: `NULL`, negative `w`/`h`/`bpp`, and
-  `w * bpp` overflow all just happen.
+**Zero.**  Across all of Phase B, all of Phase C, and a 2000-case malformed
+input fuzz (random bytes, single-bit flips of valid streams, multi-bit flips,
+truncations, all four input alignments):
 
-## Known, documented divergences
+```
+fuzz: 2000 cases, 1999 matched, 1 the C library killed itself on, 0 divergences
+```
 
-Exactly one class, and it is provably undefined behaviour in the C source:
-`cp_dynamic` writes past `uint8_t lens[288 + 32]`, and in the reference build
-gcc puts that function's own `int` locals right behind that array — so at
-`n == 364` the code-length loop zeroes its own counter and the C library spins
-forever. See `ERRORS.md` rows 35/36 and the "unavoidable divergences" section.
+The single unmatched case is one where the C library destroys itself — a corrupt
+dynamic-Huffman header yields code lengths `>= 16`, and `cp_build` then indexes
+its 16-entry `counts`/`codes`/`first` stack arrays out of bounds (`lib.c:143`,
+`lib.c:154`).  That is undefined behaviour whose effect depends on the C
+compiler's stack layout, so it is not reproducible by construction; the Rust
+translation uses 256-entry tables and stays memory-safe instead.  The
+assert-enabled C build catches this input with
+`assert(len < 16)` before it can corrupt anything.
 
-The harness proves the classification mechanically rather than asserting it: it
-builds the same unmodified `c_src/src/lib.c` a *second* time with
-`-fstack-protector-all --param=ssp-buffer-size=1`, which only moves the
-function-local variables. An input whose behaviour differs between those two C
-builds cannot depend on anything but the frame layout. Measured over 5881
-randomized corrupt inputs: 37 layout-dependent, **0 unexplained**.
+Four test *expectations* of mine were wrong and had to be corrected against the
+C, never the other way round; all four are genuine C quirks now documented in
+`ERRORS.md` §E:
+
+1. `cp_stored` performs **no** output-bounds check (it `memcpy`s `LEN` bytes
+   regardless of `out_bytes`).
+2. `cp_stored`'s copy source is only correct when the input length is a multiple
+   of 4, because `cp_ptr()` does not account for the `final_word` refill path.
+3. A stored block can only be the last block in a stream (so miniz level-0
+   output over 64 KiB is rejected).
+4. With `len == 0` and `bpp > 0`, `unfilter`'s row-`y` prologue overwrites the
+   filter bytes of later rows, making its return value data-dependent.
+
+## Known configuration caveat
+
+The verified artefact is the crate's declared `[profile.release]` cdylib
+(`panic = "abort"`, `overflow-checks = false`, `debug-assertions = false`).  A
+cdylib built with the `dev` profile behaves identically on every input above
+*except* the already-UB `NULL`-pointer ones, where `core::ptr`'s own debug
+assertion fires and the process dies with `SIGABRT` instead of the C library's
+`SIGSEGV`.  This is noted in `tests/phase_c_errors.rs::err_null_pointers`.

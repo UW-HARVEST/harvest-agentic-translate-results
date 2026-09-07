@@ -1,94 +1,161 @@
-# ERRORS.md — error / rejection surface table (Phase A, gate for Phase C)
+# ERRORS.md — Error / rejection surface table (Phase C gate)
 
-Derived mechanically from `c_src/src/lib.c` by grepping **every** `return`,
-`if`, and comparison against a limit constant. There are **no** `assert`s
-(`grep -c assert c_src/src/lib.c` → 0), no error enums, and no
-`RETURN_ERROR`-style macros in this library; rejection is expressed via
-sentinel return values (`-1`, `NULL`, `0.0`, `INT_MAX`, `INT_MIN`, `0`) and via
-silently-skipped blocks.
+Derived mechanically from `c_src/src/lib.c` by grepping for every rejection
+construct. The complete inventory of such constructs in the file is:
 
-Limit constants found: `MAX_NODES = 100`, `MAX_NAME_LEN = 50`, `INT_MAX`,
-`INT_MIN`.
+```
+$ grep -n 'return -1\|return NULL\|return 0\|INT_MAX\|INT_MIN\|assert\|!= NULL\|== NULL\|if (' c_src/src/lib.c
+```
 
-## Table
+* error-return statements: `return -1;` (×1), `return NULL;` (×1),
+  `return 0.0;` (×1), `return 0;` (×1 in `process_string`, ×1 in
+  `safe_double_to_int`), `return INT_MAX;` (×1), `return INT_MIN;` (×1)
+* `assert`: **none** in the file
+* error enums / error codes: **none** — there is no `enum` anywhere in the
+  library, so there is no named error type. (See "Out-of-range enum values"
+  below for how that generic boundary class is covered instead.)
+* explicit range / null / guard checks: `node_count >= MAX_NODES`,
+  `node == NULL`, `selected_node != NULL`, `second_node != NULL`, `*str`,
+  `*name_ptr`, `node_storage[i].active`, `d > (double)INT_MAX`,
+  `d < (double)INT_MIN`, `d != d`
+* min/max constants: `MAX_NODES 100`, `MAX_NAME_LEN 50`, `INT_MAX`, `INT_MIN`
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|----|----------|---------------------------------------------|-------------------|------|-----|
-| 1  | `add_node` | `node_count >= MAX_NODES` (L45): the 101st and every later insertion | returns `-1`; `node_count` stays `100`; storage untouched | `err_01_add_node_capacity_exhausted` | [x] |
-| 2  | `add_node` | boundary: exactly the 100th insertion (`node_count == 99`) — must still succeed | returns `99` | `err_02_add_node_last_slot_succeeds` | [x] |
-| 3  | `add_node` | `name` longer than `MAX_NAME_LEN - 1` (49) — `strncpy` truncates, no source NUL copied | returns index; stored name = first 49 bytes, `name[49] == '\0'` | `err_03_add_node_name_overlong_truncates` | [x] |
-| 4  | `add_node` | `name = NULL` → `strncpy(dst, NULL, 49)` dereferences NULL (UB) | process dies on SIGSEGV | `err_04_null_name_crashes_both` (subprocess-isolated) | [x] || 5  | `find_node_by_id` | no stored node has `id == id` (L64–69) | returns `NULL` | `err_05_find_absent_id_returns_null` | [x] |
-| 6  | `find_node_by_id` | called while `node_count == 0` (empty store) — loop body never runs | returns `NULL` | `err_06_find_on_empty_store_returns_null` | [x] |
-| 7  | `find_node_by_id` | a node with that `id` exists but `active == 0` (L65 `&& active`) | returns `NULL` (node is invisible) | `err_07_find_inactive_returns_null` | [x] |
-| 8  | `find_node_by_id` | out-of-range/extremal ids: `INT_MIN`, `INT_MAX`, `0`, `-1` | returns `NULL` (no node uses them) | `err_08_find_extremal_ids_return_null` | [x] |
-| 9  | `get_children_count` | no node has `parent_id == parent_id` | returns `0` | `err_09_children_count_no_match_zero` | [x] |
-| 10 | `get_children_count` | matching children exist but all have `active == 0` (L75) | returns `0` | `err_10_children_count_all_inactive_zero` | [x] |
-| 11 | `get_children_count` | empty store (`node_count == 0`) | returns `0` | `err_11_children_count_empty_store_zero` | [x] |
-| 12 | `calculate_subtree_sum` | `find_node_by_id(node_id) == NULL` (L84–85) | returns `0.0` (positive zero) | `err_12_subtree_sum_absent_node_zero` | [x] |
-| 13 | `calculate_subtree_sum` | root exists but every child has `active == 0` (L91) | returns only the root's own `value` | `err_13_subtree_sum_inactive_children` | [x] |
-| 14 | `calculate_subtree_sum` | node's `value` is NaN / ±inf — no guard, propagates | returns NaN / ±inf verbatim (bitwise compare) | `err_14_subtree_sum_nonfinite_value` | [x] |
-| 15 | `process_string` | `*str == '\0'` (L102 guard false) — empty string | returns `0` | `err_15_process_string_empty_returns_zero` | [x] |
-| 16 | `process_string` | `str = NULL` → `*str` dereferences NULL (UB) | process dies on SIGSEGV | `err_16_null_string_crashes_both` (subprocess-isolated) | [x] |
-| 17 | `process_string` | bytes ≥ 0x80: `char` is signed on this ABI so `(int)(*str)` sign-extends negative | running total decreases; result may be negative | `err_17_process_string_high_bit_bytes_signed` | [x] |
-| 18 | `process_string` | accumulator overflows `int` (very long high-value string) | wraps (gcc `-O0` two's complement) | `err_18_process_string_accumulator_overflow` | [x] |
-| 19 | `safe_double_to_int` | `d > (double)INT_MAX` (L113) | returns `INT_MAX` | `err_19_sdti_above_int_max` | [x] |
-| 20 | `safe_double_to_int` | `d < (double)INT_MIN` (L116) | returns `INT_MIN` | `err_20_sdti_below_int_min` | [x] |
-| 21 | `safe_double_to_int` | `d != d`, i.e. NaN (L120) — reached only *after* the two range tests, both of which are false for NaN | returns `0` | `err_21_sdti_nan_returns_zero` | [x] |
-| 22 | `safe_double_to_int` | `d == +INFINITY` → caught by L113 | returns `INT_MAX` | `err_22_sdti_pos_inf` | [x] |
-| 23 | `safe_double_to_int` | `d == -INFINITY` → caught by L116 | returns `INT_MIN` | `err_23_sdti_neg_inf` | [x] |
-| 24 | `safe_double_to_int` | one step past the range: `nextafter((double)INT_MAX, +inf)` and `nextafter((double)INT_MIN, -inf)` | `INT_MAX` / `INT_MIN` | `err_24_sdti_one_step_past_range` | [x] |
-| 25 | `safe_double_to_int` | exactly on the range boundary: `(double)INT_MAX`, `(double)INT_MIN` — **not** rejected (strict `>` / `<`) | `INT_MAX` / `INT_MIN` via `(int)d`, not via the guards | `err_25_sdti_exact_boundaries` | [x] |
-| 26 | `safe_double_to_int` | signalling/quiet NaN with a non-canonical payload, and `-NaN` | returns `0` for every NaN bit pattern | `err_26_sdti_nan_payloads` | [x] |
-| 27 | `safe_double_to_int` | `-0.0` — passes all guards, `(int)(-0.0) == 0` | returns `0` | `err_27_sdti_negative_zero` | [x] |
-| 28 | `maxnmin` | `(param1 % 6) + 1` names no node ⇒ `selected_node == NULL` (L142). C `%` truncates toward zero, so any `param1 < 0` with `param1 % 6 != 0` yields an id `<= 0`. | whole first block skipped (no name sum, no subtree sum) | `err_28_maxnmin_selected_node_null` | [x] |
-| 29 | `maxnmin` | `(param2 % 6) + 1` names no node ⇒ `second_node == NULL` (L158) | second block skipped (no `value * param3` term) | `err_29_maxnmin_second_node_null` | [x] |
-| 30 | `maxnmin` | `*name_ptr == '\0'` (L145) — guard is false only for an empty name; unreachable for the six hard-coded nodes but a real branch | `process_string` not called | `err_30_maxnmin_empty_name_branch` | [x] |
-| 31 | `maxnmin` | `param3 == -1` ⇒ `(double)(param3 + 1) == 0.0` ⇒ division by zero | `±inf` (or NaN if numerator is 0), then `* param4`; `safe_double_to_int` maps NaN→`0`, `+inf`→`INT_MAX`, `-inf`→`INT_MIN` | `err_31_maxnmin_div_by_zero` | [x] |
-| 32 | `maxnmin` | `param3 == -1` **and** `param1 + param2 == 0` ⇒ `0.0 / 0.0` = NaN | NaN → final term `0` | `err_32_maxnmin_zero_over_zero_nan` | [x] |
-| 33 | `maxnmin` | `param3 == -1` and `param4 == 0` ⇒ `±inf * 0.0` = NaN | NaN → final term `0` | `err_33_maxnmin_inf_times_zero_nan` | [x] |
-| 34 | `maxnmin` | `param3 == INT_MAX` ⇒ `param3 + 1` signed overflow ⇒ wraps to `INT_MIN` | denominator `-2147483648.0` | `err_34_maxnmin_param3_overflow` | [x] |
-| 35 | `maxnmin` | `param1 + param2` signed overflow (e.g. both `INT_MAX`) | wraps to `-2` before the `(double)` cast | `err_35_maxnmin_sum_overflow` | [x] |
-| 36 | `maxnmin` | all four params `INT_MIN` / `INT_MAX` (extremal corners) | matches C exactly | `err_36_maxnmin_extremal_corners` | [x] |
-| 37 | `maxnmin` | `param4 % 3` negative ⇒ `parent_id <= 0` ⇒ `get_children_count` returns 0 | `children * 10 == 0` | `err_37_maxnmin_parent_id_nonpositive` | [x] |
-| 38 | `maxnmin` | called after the store was filled to `MAX_NODES` — `maxnmin` resets `node_count = 0` first, so it always succeeds and leaves `node_count == 6` | identical result to a fresh call; store observably rebuilt | `err_38_maxnmin_resets_full_store` | [x] |
-| 39 | out-of-range "enum"/int across FFI | this ABI has no C `enum` parameter; the equivalent class is an arbitrary `int` with no meaningful variant fed to every `int` parameter (`add_node` id/parent_id, `find_node_by_id`, `get_children_count`, `calculate_subtree_sum`, all four `maxnmin` params) | no validation anywhere; both sides must agree bit-for-bit on the full `i32` domain | `err_39_arbitrary_int_domain_all_entry_points` | [x] |
+One row per distinct rejection branch. `[x]` = differential test written and
+passing against **both** `.so`s.
 
-## Deliberately not tested (unbounded recursion, UB with no defined result)
-`calculate_subtree_sum` recurses on any node whose `parent_id` equals the
-current `node_id`. A self-parented node (`add_node(7, 7, …)`) or a
-`parent_id`/`id` cycle recurses until the stack is exhausted in **both**
-implementations. The Rust translation reproduces the structure faithfully
-(no cycle detection was added). Exercising it would only crash the harness,
-so it is documented rather than executed. `err_04` / `err_16` cover the two
-NULL-deref UB sites in an isolated subprocess instead.
+| # | function | trigger (the exact invalid input/condition) | expected C result | [x] |
+|---|----------|----------------------------------------------|-------------------|-----|
+| E01 | `add_node` | `node_count >= MAX_NODES` — call it a 101st time after 100 successful adds | returns `-1`, `node_count` unchanged (stays 100), storage not written | [x] |
+| E02 | `add_node` | `name` longer than `MAX_NAME_LEN-1` (50, 51, 200 bytes) | silently truncated: `name[0..49]` = first 49 src bytes, `name[49] = '\0'`; returns the new index | [x] |
+| E03 | `add_node` | `name` exactly `MAX_NAME_LEN-1` == 49 bytes (boundary, one step below truncation) | all 49 bytes copied, `name[49]='\0'`, no truncation | [x] |
+| E04 | `add_node` | `name` is the empty string `""` | `name` stays all-NUL, node still added, returns new index | [x] |
+| E05 | `add_node` | `value` is NaN / `+inf` / `-inf` | accepted verbatim, no rejection; stored bit-pattern must match | [x] |
+| E06 | `add_node` | `id`/`parent_id` at `INT_MIN` / `INT_MAX` (out-of-range ints across FFI) | accepted verbatim, no rejection | [x] |
+| E07 | `find_node_by_id` | `node_count == 0` (pristine library, loop body never runs) | returns `NULL` | [x] |
+| E08 | `find_node_by_id` | `id` matches no stored node | returns `NULL` | [x] |
+| E09 | `find_node_by_id` | node with matching `id` exists but its `active` field is `0` (caller zeroed it through the returned `Node*`) | returns `NULL` — the inactive node is skipped | [x] |
+| E10 | `find_node_by_id` | two stored nodes share the same `id` | returns the **first** (lowest index) active match, not the last | [x] |
+| E11 | `get_children_count` | `parent_id` matches no stored node | returns `0` (not an error code — `0` is also the legitimate "no children" answer) | [x] |
+| E12 | `get_children_count` | all candidate children have `active == 0` | returns `0` — inactive children are not counted | [x] |
+| E13 | `calculate_subtree_sum` | `find_node_by_id(node_id) == NULL` (unknown id, or empty storage, or inactive node) | returns `0.0` exactly (positive zero) | [x] |
+| E14 | `calculate_subtree_sum` | node found but a descendant's `value` is NaN / `inf` | NaN / `inf` propagates into the sum; **not** rejected | [x] |
+| E15 | `process_string` | empty string `""` — outer `if (*str)` is false | returns `0` | [x] |
+| E16 | `process_string` | bytes with the high bit set (`0x80`..`0xFF`) | `char` is **signed** on this ABI, so each contributes a **negative** value; sum can be negative | [x] |
+| E17 | `process_string` | long string whose byte sum overflows `int` | signed overflow wraps (both sides must wrap identically) | [x] |
+| E18 | `safe_double_to_int` | `d > (double)INT_MAX`, e.g. `2147483648.0`, `2147483647.5`, `1e300` | returns `INT_MAX` (2147483647) | [x] |
+| E19 | `safe_double_to_int` | `d == +INFINITY` (hits branch E18) | returns `INT_MAX` | [x] |
+| E20 | `safe_double_to_int` | `d < (double)INT_MIN`, e.g. `-2147483649.0`, `-2147483648.5`, `-1e300` | returns `INT_MIN` (-2147483648) | [x] |
+| E21 | `safe_double_to_int` | `d == -INFINITY` (hits branch E20) | returns `INT_MIN` | [x] |
+| E22 | `safe_double_to_int` | `d` is NaN — **note the C check order**: the two range compares are evaluated *first* and both are false for NaN, so NaN falls through to `d != d` | returns `0` | [x] |
+| E23 | `safe_double_to_int` | `d` exactly `2147483647.0` (== `(double)INT_MAX`, one step *inside* the range) | `>` is false → returns `2147483647` via the `(int)d` cast, not via the clamp | [x] |
+| E24 | `safe_double_to_int` | `d` exactly `-2147483648.0` (== `(double)INT_MIN`, one step *inside* the range) | `<` is false → returns `-2147483648` via the `(int)d` cast | [x] |
+| E25 | `safe_double_to_int` | negative fraction, e.g. `-2.7`, and `-0.5` | truncates toward **zero**: `-2`, `0` (not floor) | [x] |
+| E26 | `safe_double_to_int` | `-0.0` | returns `0` | [x] |
+| E27 | `maxnmin` | `param1` negative with `param1 % 6 != 0`, so `node_id = (param1%6)+1 <= 0` → `find_node_by_id` returns `NULL` | the entire first block (name sum + subtree sum) is **skipped**; contributes 0 | [x] |
+| E28 | `maxnmin` | `param2` negative with `param2 % 6 != 0`, so `second_node_id <= 0` → `NULL` | the second block (`value * param3`) is **skipped**; contributes 0 | [x] |
+| E29 | `maxnmin` | `param3 == -1` → `(double)(param3 + 1) == 0.0`, with `param1+param2 != 0` | float division by zero → `±inf`, then `*= param4` → `±inf` (or NaN if `param4 == 0`) → `safe_double_to_int` clamps to `INT_MAX`/`INT_MIN` (or 0 for NaN) | [x] |
+| E30 | `maxnmin` | `param3 == -1` **and** `param1 + param2 == 0` → `0.0 / 0.0` | NaN → `*= param4` stays NaN → `safe_double_to_int` returns `0` | [x] |
+| E31 | `maxnmin` | `param3 == INT_MAX` → `param3 + 1` signed-overflows | wraps to `INT_MIN`; denominator `-2147483648.0` | [x] |
+| E32 | `maxnmin` | `param1 + param2` signed-overflows (e.g. `INT_MAX, INT_MAX`, or `INT_MIN, INT_MIN`) | wraps modulo 2^32 before the `(double)` conversion | [x] |
+| E33 | `maxnmin` | `param4 == -2` (or any `param4 % 3 == -2`) → `parent_id = -1`, which **equals the seeded root's `parent_id`** | `get_children_count(-1)` returns `1`, adding 10 — an easy-to-miss non-zero result for a "negative" id | [x] |
+| E34 | `maxnmin` | `param4 % 3 == -1` → `parent_id = 0`, matching no node | `get_children_count(0)` returns `0`, adding 0 | [x] |
+| E35 | `maxnmin` | `param3` huge (`INT_MAX`) so `second_node->value * param3` exceeds `INT_MAX` | `safe_double_to_int` clamps the product to `INT_MAX` | [x] |
+| E36 | `maxnmin` | every parameter at `INT_MIN` / `INT_MAX` simultaneously (all four out-of-range extremes at once) | must match exactly, including all the wrapping above | [x] |
+| E37 | `maxnmin` | called twice in a row, and called *after* the caller has pushed its own nodes with `add_node` | `node_count = 0` is reset at entry, so prior nodes are logically discarded and the 6 seeds are rewritten at indices 0..5 — the result is independent of prior state | [x] |
+| E38 | `add_node` | called *after* `maxnmin`, i.e. `node_count == 6` | appends at index 6 and returns `6` (state left behind by `maxnmin` is visible) | [x] |
 
-## Note on rows 4 and 16 (the two NULL-dereference sites)
+## Deliberately-unreachable branches (documented, not testable)
 
-`add_node`'s `strncpy` and `process_string`'s `*str` both dereference their
-pointer argument with no NULL check, so `NULL` is undefined behaviour in C. The
-C `.so` faults with `SIGSEGV`, and so does the **release** Rust `.so` — the
-artifact that corresponds to the C shared library.
+| # | function | branch | why untestable |
+|---|----------|--------|----------------|
+| U01 | `maxnmin` | `if (*name_ptr)` false | all six seeded names (`"root"`, `"child1"`, …) are non-empty, so this is dead code; there is no public way to make a seeded name empty before the check. |
+| U02 | `process_string` | inner `while (*str)` when outer `if (*str)` was true | the outer `if` is redundant with the first `while` test; both are exercised by any non-empty string. |
 
-A **debug** Rust build additionally carries rustc's `-C debug-assertions` UB
-checks, which notice the NULL dereference before it faults and panic; a panic
-escaping an `extern "C"` function aborts, so the debug `.so` dies with
-`SIGABRT` instead of `SIGSEGV`. That is the compiler's deliberate tripwire on
-input that has no defined behaviour in C either, not a behavioural divergence
-in the translation. `assert_deadly_signals_match` therefore requires:
+## Not tested because the C itself is undefined behaviour
 
-- C always faults with `SIGSEGV`;
-- the release Rust `.so` faults with the *same* signal as C;
-- the debug Rust `.so` also dies (never returns), with `SIGABRT`.
+Calling these would crash *both* libraries; a "differential test" of a segfault
+proves nothing and would abort the test binary, so they are documented instead
+of executed.
 
-Both are verified: `run_all_combos.sh` runs the suite against both profiles.
+| function | input | C behaviour |
+|---|---|---|
+| `add_node` | `name == NULL` | `strncpy` dereferences NULL → SIGSEGV |
+| `process_string` | `str == NULL` | `*str` dereferences NULL → SIGSEGV |
+| `calculate_subtree_sum` | a node that is its own ancestor (`parent_id` cycle, constructible via the mutable `Node*` from `find_node_by_id`) | infinite recursion → stack-overflow SIGSEGV |
 
-## Divergence found and fixed
+The Rust translation reproduces each of these (raw-pointer deref, unbounded
+recursion) rather than "fixing" them into a graceful error, which is the correct
+behaviour for a faithful translation. `tests/errors_diff.rs` asserts the
+NULL-pointer cases crash in a **forked child** for both libraries, so the
+equivalence is still checked without killing the test process.
 
-Phase B/C found exactly one real divergence, in the floating-point accumulation
-of `calculate_subtree_sum`. It is documented in `CONFIGS.md` (rows 45–47) and in
-the `addsd` helper in `src/lib.rs`: gcc lowers `sum += calculate_subtree_sum(...)`
-to `addsd %xmm1,%xmm0` with the **child's** value in the destination register, and
-x86 `addsd` returns the destination operand when it is a NaN — so the child's NaN
-sign and payload win over the accumulator's, the opposite of what `sum += child`
-produces in Rust. Reachable from the public API because `add_node` accepts an
-arbitrary `double`.
+## Out-of-range enum values
+
+The C library declares **no `enum` types**, so there is no enum-with-no-valid-
+variant case to pass across FFI. The equivalent class of bug for this API is an
+`int` parameter with no meaningful interpretation. That is covered
+systematically: rows E06, E27, E28, E31, E32, E33, E34, E36 pass `INT_MIN`,
+`INT_MAX`, `-1`, `0` and "one step past" values into every `int` parameter of
+every entry point, and `tests/errors_diff.rs` additionally sweeps
+`param1..param4` over all residues mod 6 and mod 3 including negatives.
+
+## Row → test mapping (all in `tests/errors_diff.rs`)
+
+| rows | test |
+|---|---|
+| E01 | `e01_add_node_rejects_past_capacity` |
+| E02, E03, E04 | `e02_e03_e04_add_node_name_truncation_boundary` |
+| E05, E06 | `e05_e06_add_node_accepts_extreme_inputs` |
+| E07 | `e07_find_on_empty_storage_is_null` |
+| E08 | `e08_find_absent_id_is_null` |
+| E09 | `e09_find_inactive_node_is_null` |
+| E10 | `e10_find_duplicate_returns_first_match` |
+| E11, E12 | `e11_e12_children_count_zero_cases` |
+| E13 | `e13_subtree_sum_not_found_is_positive_zero` |
+| E14 | `e14_subtree_sum_propagates_nan_and_inf` |
+| E15 | `e15_process_string_empty_is_zero` |
+| E16 | `e16_process_string_signed_char_negative_sums` |
+| E17 | `e17_process_string_accumulator_wraps` |
+| E18..E26 | `e18_to_e26_safe_double_to_int_all_branches` |
+| E27, E28 | `e27_e28_maxnmin_null_node_blocks_skipped` |
+| E29, E30 | `e29_e30_maxnmin_division_by_zero` |
+| E31, E32 | `e31_e32_maxnmin_signed_overflow_wraps` |
+| E33, E34 | `e33_e34_maxnmin_parent_id_negative_and_zero` |
+| E35 | `e35_maxnmin_value_times_param3_clamps` |
+| E36 | `e36_maxnmin_all_extremes` |
+| E37, E38 | `e37_e38_maxnmin_state_reset_and_leftovers` |
+| NULL pointers | `null_pointer_crash_parity` (+ `crash_harness`, `#[ignore]`d) |
+
+Each test asserts the *specific* sentinel, not merely "both failed": `-1` from a
+full store, `NULL` (not just "some pointer"), `+0.0` with bit pattern
+`0x0000000000000000` (distinguished from `-0.0`), `INT_MAX` / `INT_MIN` / `0`
+from `safe_double_to_int`, and index `6` from the post-`maxnmin` append.
+
+## NULL-pointer parity result
+
+The two UB-on-NULL entry points are exercised in a forked child (a re-exec of the
+test binary), and the parent compares the exit status:
+
+| input | C | Rust |
+|---|---|---|
+| `process_string(NULL)` | killed by signal 11 (SIGSEGV) | killed by signal 11 (SIGSEGV) |
+| `add_node(1, -1, NULL, 1.0)` | killed by signal 11 (SIGSEGV) | killed by signal 11 (SIGSEGV) |
+
+Identical exit code *and* signal, so the Rust reproduces the C's crash rather
+than turning it into a graceful error or a different fault.
+
+## Self-parenting node (cycle) — confirmed reproduced
+
+While running E05/E06 with `id == parent_id`, the test process died with
+`has overflowed its stack`. That is the documented `U`-class behaviour: the C
+recurses forever on a node that is its own parent, and the Rust translation does
+too. The test now skips `calculate_subtree_sum` for `id == parent_id` (and
+`tests/maxnmin_diff.rs` row C37 carries a shadow-model cycle/blow-up detector for
+the same reason), so the equivalence is documented rather than asserted by
+crashing the runner.
+
+## Result
+
+**All 38 rows have a passing error-path differential test.**
+`tests/errors_diff.rs`: 22 passed, 0 failed, 1 ignored (the internal crash
+harness, which is invoked as a subprocess by `null_pointer_crash_parity`).

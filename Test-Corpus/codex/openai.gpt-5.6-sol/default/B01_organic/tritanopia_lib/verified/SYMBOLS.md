@@ -1,20 +1,20 @@
 # Dynamic symbol surface
 
-Derived from:
+Generated from:
 
 ```text
-nm -D --defined-only ../c_src/build/libharvest-work-Ha9tNx.so
-nm -D --defined-only target/release/libtritanopia_lib.so
+nm -D --defined-only ../c_src/build/libharvest-work-6bgy6Y.so
 ```
 
-| C symbol | Type | Rust export | Status |
-|----------|------|-------------|--------|
-| `tritanopia` | `T` (global function) | `tritanopia` | [x] |
+| C address | type | symbol | Rust export | status |
+|-----------|------|--------|-------------|--------|
+| `0000000000001670` | `T` | `tritanopia` | `tritanopia` | [x] |
 
-The C dynamic table also imports `pow@GLIBC_2.29` from libm and contains the
-usual weak ELF runtime entries (`_ITM_*`, `__cxa_finalize`, and
-`__gmon_start__`). These are dependencies rather than public definitions.
-Rust likewise imports `pow@GLIBC_2.29`. There are no missing C-defined dynamic
-symbols.
+The complete C dynamic table also contains weak toolchain symbols
+`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
+and `__gmon_start__`, plus the undefined system-library dependency `pow`.
+These are not library API exports. The only defined public C symbol is
+`tritanopia`.
 
-Final `comm` diff of C-defined symbols against Rust-defined symbols: empty.
+Completion check: [x] zero C API symbols are missing from the Rust shared
+object.

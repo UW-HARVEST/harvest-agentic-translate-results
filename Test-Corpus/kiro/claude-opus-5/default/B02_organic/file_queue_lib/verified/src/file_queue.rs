@@ -221,7 +221,7 @@ pub unsafe extern "C" fn Init_FileQueue(
         (*fileq).flags = 0;
 
         (*fileq).day = (*p).tm_mday;
-        (*fileq).year = (*p).tm_year.wrapping_add(1900);
+        (*fileq).year = (*p).tm_year + 1900;
 
         strncpy((*fileq).mon.as_mut_ptr(), s_month((*p).tm_mon), 3);
         memset(
@@ -276,7 +276,7 @@ pub unsafe extern "C" fn Read_FileMon(
         }
 
         (*fileq).day = (*p).tm_mday;
-        (*fileq).year = (*p).tm_year.wrapping_add(1900);
+        (*fileq).year = (*p).tm_year + 1900;
         strncpy((*fileq).mon.as_mut_ptr(), s_month((*p).tm_mon), 3);
 
         /* Get latest file */

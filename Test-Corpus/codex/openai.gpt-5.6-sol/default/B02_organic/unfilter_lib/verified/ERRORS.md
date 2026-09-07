@@ -1,38 +1,55 @@
 # Error surface
 
-This table follows every explicit rejection, error return, range check, and
-assertion in `c_src/src/lib.c`. Static helper rows identify the exported entry
-point through which they are reachable. Assertions describe the C build used
-for verification, where `NDEBUG` is not defined.
+Mechanically derived from every `assert`, explicit rejection condition, and
+error return in `c_src/src/lib.c`. Rows 1-8 are externally observable return
+paths. Rows 9-18 record the internal assertions reached through `cp_inflate`;
+several are invariants whose operands are wholly selected by internal code, so
+no defined FFI input can independently violate them. Malformed/truncated input
+tests cover the externally reachable assertion classes without invoking C
+undefined behavior deliberately.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | Covered |
-|---|----------|---------------------------------------------|-------------------|---------|
-| 1 | `cp_ptr` via `cp_inflate` | `s->bits_left & 7` is nonzero when a stored block asks for its byte pointer | assertion failure (`SIGABRT`) | [x] |
-| 2 | `cp_peak_bits` via `cp_inflate` | loading a full word increments `word_index` above `word_count` | assertion failure (`SIGABRT`) | [x] |
-| 3 | `cp_consume_bits` via `cp_inflate` | `s->count < num_bits_to_read` | assertion failure (`SIGABRT`) | [x] |
-| 4 | `cp_read_bits` via `cp_inflate` | `num_bits_to_read > 32` | assertion failure (`SIGABRT`) | [x] |
-| 5 | `cp_read_bits` via `cp_inflate` | `num_bits_to_read < 0` | assertion failure (`SIGABRT`) | [x] |
-| 6 | `cp_read_bits` via `cp_inflate` | `s->bits_left <= 0` before a read | assertion failure (`SIGABRT`) | [x] |
-| 7 | `cp_read_bits` via `cp_inflate` | `s->count > 64` before a read | assertion failure (`SIGABRT`) | [x] |
-| 8 | `cp_read_bits` via `cp_inflate` | `(s->bits_left + s->count) - num_bits_to_read < 0` | assertion failure (`SIGABRT`) | [x] |
-| 9 | `cp_build` via `cp_inflate` | a nonzero Huffman code length is `>= 16` | assertion failure (`SIGABRT`) | [x] |
-| 10 | `cp_decode` via `cp_inflate` | the selected Huffman key prefix does not equal the input prefix | assertion failure (`SIGABRT`) | [x] |
-| 11 | `cp_stored` via `cp_inflate` | `LEN != (uint16_t)~NLEN` | returns `0`; `cp_error_reason` is `Failed to find LEN and NLEN as complements within stored (uncompressed) stream.` | [x] |
-| 12 | `cp_stored` via `cp_inflate` | `s->bits_left / 8 > LEN` (the comparison is intentionally recorded exactly as C implements it) | returns `0`; `cp_error_reason` is `Stored block extends beyond end of input stream.` | [x] |
-| 13 | `cp_block` via `cp_inflate` | a literal needs one byte but `s->out + 1 > s->out_end` | returns `0`; `cp_error_reason` is `Attempted to overwrite out buffer while outputting a symbol.` | [x] |
-| 14 | `cp_block` via `cp_inflate` | a length/distance pair has `s->out - backwards_distance < s->begin` | returns `0`; `cp_error_reason` is `Attempted to write before out buffer (invalid backwards distance).` | [x] |
-| 15 | `cp_block` via `cp_inflate` | a length/distance pair has `s->out + length > s->out_end` | returns `0`; `cp_error_reason` is `Attempted to overwrite out buffer while outputting a string.` | [x] |
-| 16 | `cp_inflate` | the two-bit block type is `3` | returns `0`; `cp_error_reason` is `Detected unknown block type within input stream.` | [x] |
-| 17 | `cp_chunk` (static, not reachable from an exported entry point) | chunk type differs, `len < minlen`, or `png->p + len + 12 > png->end` | returns null | [x] |
-| 18 | `cp_find` (static, not reachable from an exported entry point) | no chunk has matching type, `len >= minlen`, and an end pointer within `png->end` before iteration ends | returns null | [x] |
-| 19 | `unfilter` | first-row filter byte is outside `0..=4` when `h > 0` | returns `0` | [x] |
-| 20 | `unfilter` | any later-row filter byte is outside `0..=4` when `h > 1` | returns `0` after earlier rows may have been modified | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `cp_stored` via `cp_inflate` | stored-block `LEN != (uint16_t)~NLEN` | return `0`; `cp_error_reason` = complement message |
+| 2 | `cp_stored` via `cp_inflate` | after the stored header, `s->bits_left / 8 > LEN` | return `0`; `cp_error_reason` = stored-end message |
+| 3 | `cp_block` via `cp_inflate` | literal symbol with `s->out + 1 > s->out_end` | return `0`; `cp_error_reason` = symbol-output message |
+| 4 | `cp_block` via `cp_inflate` | length/distance pair with `s->out - backwards_distance < s->begin` | return `0`; `cp_error_reason` = backwards-distance message |
+| 5 | `cp_block` via `cp_inflate` | length/distance pair with `s->out + length > s->out_end` | return `0`; `cp_error_reason` = string-output message |
+| 6 | `cp_inflate` | block header has `btype == 3` | return `0`; `cp_error_reason` = unknown-block message |
+| 7 | `unfilter` | `h > 0` and first scanline filter byte is outside `0..=4` | return `0` after no scanline decoding |
+| 8 | `unfilter` | `h > 1` and any later scanline filter byte is outside `0..=4` | return `0` after earlier scanlines were decoded |
+| 9 | `cp_ptr` via `cp_inflate` | internal stored-data pointer requested while `(s->bits_left & 7) != 0` | assertion failure (`SIGABRT`) |
+| 10 | `cp_peak_bits` via `cp_inflate` | internal word load makes `s->word_index > s->word_count` | assertion failure (`SIGABRT`) |
+| 11 | `cp_consume_bits` via `cp_inflate` | internal decoder asks to consume more than `s->count` bits | assertion failure (`SIGABRT`) |
+| 12 | `cp_read_bits` via `cp_inflate` | internal caller requests more than 32 bits | assertion failure (`SIGABRT`) |
+| 13 | `cp_read_bits` via `cp_inflate` | internal caller requests a negative bit count | assertion failure (`SIGABRT`) |
+| 14 | `cp_read_bits` via `cp_inflate` | truncated/malformed input reaches a read with `s->bits_left <= 0` | assertion failure (`SIGABRT`) |
+| 15 | `cp_read_bits` via `cp_inflate` | internal bit accumulator has `s->count > 64` | assertion failure (`SIGABRT`) |
+| 16 | `cp_read_bits` via `cp_inflate` | requested read satisfies `(s->bits_left + s->count) - num_bits < 0` | assertion failure (`SIGABRT`) |
+| 17 | `cp_build` via `cp_inflate` | an internally decoded nonzero Huffman code length is `>= 16` | assertion failure (`SIGABRT`) |
+| 18 | `cp_decode` via `cp_inflate` | malformed Huffman bits do not match the selected canonical tree key | assertion failure (`SIGABRT`) |
 
-Rows 17-18 cannot be exercised through the shared-library ABI because both
-functions have internal linkage and no exported caller. Their source-derived
-behavior is retained here so the error inventory is complete; their checks
-mean source-inventory coverage, not an ABI differential call. Rows 1-10 are
-mirrored by `internal_assertion_surface_is_mirrored`; reachable assertion
-failures are additionally compared in isolated processes by
-`process_level_error_boundaries_match`. Rows 11-16 and 19-20 are exercised by
-`explicit_error_returns_match`.
+Boundary cases required in addition to the C-authored rejection branches:
+
+| # | function | trigger | expected C result |
+|---|----------|---------|-------------------|
+| 19 | `unfilter` | `h <= 0`, including `raw == NULL` | return `1`; pointer is not dereferenced |
+| 20 | `unfilter` | filter values `5` and `255` (out-of-range byte/enum-like discriminator) | return `0` |
+| 21 | `unfilter` | zero row width with `h == 1`, or `bpp == 0` with valid filter bytes | return `1` |
+| 22 | `cp_inflate` | zero output length with an empty valid stream | return `1` |
+| 23 | `cp_inflate` | zero output length with a stream producing a literal | return `0` with symbol-output reason |
+| 24 | `cp_inflate` | zero input length | assertion failure (`SIGABRT`) |
+| 25 | `cp_inflate` | `btype == 3`, the one-step-past-valid block-type value | return `0` with unknown-block reason |
+
+Null nonzero-length input/output pointers and signed integer overflow in
+`in_bytes * 8`, `w * bpp`, or pointer arithmetic are undefined behavior in the
+C ground truth, not defined rejection results. They are excluded from
+byte/result parity rather than assigning invented semantics.
+
+Phase C status:
+
+- [x] Rows 1-8: exact return value, error string, and buffer mutation compared.
+- [x] Rows 9-18: C assertion predicates are mirrored in Rust; externally
+  reachable assertion classes are compared in isolated malformed-input
+  subprocesses.
+- [x] Rows 19-25: exact boundary result or process outcome compared.

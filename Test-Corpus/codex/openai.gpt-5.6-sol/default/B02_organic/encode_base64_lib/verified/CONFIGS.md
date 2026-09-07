@@ -1,26 +1,23 @@
-# Configuration Surface
+# Configuration-surface table
 
-The sole public entry point is `encode_base64`. It has no compile-time
-features, enums, byte-order settings, or mutable state. The rows below cover
-the runtime sizing mode and every data shape/value class distinguished by the
-C branches. Alphabet-class rows overlap the sizing rows intentionally: they
-make every branch of the private `encode` helper observable through the public
-FFI entry point.
+The public header exposes one entry point and no runtime option setters, modes,
+flags, enums, or compile-time features. Rows below come from the branches in
+`encode_base64`: exact-zero size selects `strlen`; the loop distinguishes
+zero/one/many iterations and final groups containing 1, 2, or 3 bytes; explicit
+sizes can include NUL and high-bit bytes; and `encode` distinguishes sextet
+ranges `0..25`, `26..51`, `52..61`, `62`, and `63`.
 
-| # | entry point(s) | configuration (options set + input shape) | tested |
-|---|----------------|--------------------------------------------|--------|
-| 1 | `encode_base64` | `size == 0`; `src` is an empty NUL-terminated string, so `strlen(src) == 0` and the loop is skipped | [x] |
-| 2 | `encode_base64` | `size == 0`; nonempty NUL-terminated input with derived length `1 mod 3` | [x] |
-| 3 | `encode_base64` | `size == 0`; nonempty NUL-terminated input with derived length `2 mod 3` | [x] |
-| 4 | `encode_base64` | `size == 0`; nonempty NUL-terminated input with derived length `0 mod 3` | [x] |
-| 5 | `encode_base64` | explicit positive `size`, `size mod 3 == 1`; binary input may contain embedded NUL and high-bit bytes | [x] |
-| 6 | `encode_base64` | explicit positive `size`, `size mod 3 == 2`; binary input may contain embedded NUL and high-bit bytes | [x] |
-| 7 | `encode_base64` | explicit positive `size`, `size mod 3 == 0`; binary input may contain embedded NUL and high-bit bytes | [x] |
-| 8 | `encode_base64` | explicit `size` in `-3..=-1`; C does not reject it, allocation succeeds, and the loop is skipped | [x] |
-| 9 | `encode_base64` | emitted six-bit values in `0..=25`, selecting `A` through `Z` | [x] |
-| 10 | `encode_base64` | emitted six-bit values in `26..=51`, selecting `a` through `z` | [x] |
-| 11 | `encode_base64` | emitted six-bit values in `52..=61`, selecting `0` through `9` | [x] |
-| 12 | `encode_base64` | emitted six-bit value `62`, selecting `+` | [x] |
-| 13 | `encode_base64` | emitted six-bit value `63`, selecting `/` | [x] |
-
-All rows pass with default features and `--no-default-features`.
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `encode_base64` | explicit negative size `-1..=-3`; non-null source; loop executes zero times and allocation succeeds | [x] |
+| 2 | `encode_base64` | inferred size (`size == 0`), empty C string (`strlen == 0`) | [x] |
+| 3 | `encode_base64` | inferred size, non-empty C-string length `len % 3 == 1` | [x] |
+| 4 | `encode_base64` | inferred size, non-empty C-string length `len % 3 == 2` | [x] |
+| 5 | `encode_base64` | inferred size, non-empty C-string length `len % 3 == 0` | [x] |
+| 6 | `encode_base64` | explicit positive size, `size % 3 == 1` (one-byte padded final group) | [x] |
+| 7 | `encode_base64` | explicit positive size, `size % 3 == 2` (two-byte padded final group) | [x] |
+| 8 | `encode_base64` | explicit positive size, `size % 3 == 0` (un-padded final group) | [x] |
+| 9 | `encode_base64` | explicit size includes embedded NUL bytes, so bytes after NUL are encoded | [x] |
+| 10 | `encode_base64` | explicit size is shorter than the backing input; only the prefix is encoded | [x] |
+| 11 | `encode_base64` | explicit size with bytes `0x80..0xff` (signed-`char` source values converted to `unsigned char`) | [x] |
+| 12 | `encode_base64` | inputs whose generated sextets cover all five `encode` result branches, including exact values 62 (`+`) and 63 (`/`) | [x] |

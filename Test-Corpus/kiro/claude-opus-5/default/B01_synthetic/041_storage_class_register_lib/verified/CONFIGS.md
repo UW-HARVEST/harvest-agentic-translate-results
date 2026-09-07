@@ -1,112 +1,114 @@
-# CONFIGS.md — Phase A configuration-surface table
+# Phase A.3 — Configuration-surface table
 
-## How this table was derived (mechanical scan of `c_src/`)
+Derived mechanically from the C source and the public header, the same way
+`ERRORS.md` is derived.
 
-Axes are taken from what the C source actually branches on / special-cases:
+## Axis enumeration (what the C actually branches on)
 
-```sh
-# public entry points (the whole public header, minus licence + include guard):
-grep -vE '^//|^$' c_src/include/driver.h
-#   #ifndef DRIVER_H_ / #define DRIVER_H_
-#   void driver(int x);
-#   #endif //DRIVER_H_
+### Axis 1 — public entry points (the FULL set, lowest level included)
 
-# runtime options / modes / flags:
-grep -rnE "\b(if|else|switch|case)\b|#if|#ifdef" c_src/src c_src/include
-#   -> only the `#ifndef DRIVER_H_` include guard. ZERO runtime branches.
+`nm -D --defined-only c_src/build/libdriver.so` gives one strong symbol, and
+`c_src/include/driver.h` declares one prototype:
 
-# state / configuration objects:
-grep -rnE "\b(enum|struct|typedef|union|static|extern|const)\b" c_src/src c_src/include
-#   -> no matches. No globals, no context struct, no init/teardown, no setters.
-
-# cargo feature flags in the Rust crate:
-grep -n "\[features\]" translation/Cargo.toml     # -> no matches
+```c
+void driver(int x);
 ```
 
-**Findings that bound this table:**
+There is therefore exactly **one** public entry point, and it *is* the
+lowest-level one — there is no convenience/one-shot wrapper layered over a
+lower-level API, and no `static` internal helper that a wrapper composes. No
+context/handle object exists, so there is no setup-then-run pipeline to drive.
+Axis 1 has a single value: `driver`.
 
-- The public API is exactly ONE entry point, `void driver(int x)`, and it is
-  simultaneously the highest- *and* lowest-level entry point — there is no
-  convenience wrapper layered over a lower-level API, no init/config/run
-  three-step pipeline, and no state to set up. `nm -D` confirms `driver` is the
-  only exported symbol (see `SYMBOLS.md`).
-- There are ZERO runtime options, modes or flags: no enum parameters, no
-  bitmask flags, no context/handle, no globals, no environment reads, no
-  `#ifdef`-selected variants. So the option axis of the cross-product is a
-  single point, and the cross-product reduces to the input-shape axis alone.
-- The Rust crate declares no `[features]`, so the only feature combination is
-  the default one (see the "Feature combinations" section below).
+### Axis 2 — runtime options / modes / flags
 
-The remaining axes the code genuinely distinguishes are therefore the *value
-classes of the single `int` argument*, which fall out of the two arithmetic
-operations (`2*x`, `+300`) and of `printf("%d\n", ...)` formatting:
+`grep -nE 'if|switch|#if|else|enum|struct|typedef|extern|global|static' c_src/src/driver.c c_src/include/driver.h`
+returns only the `DRIVER_H_` include guard. The header exposes no setter, no
+option struct, no flags parameter, and no global variable; the `.so` exports no
+data symbols (`nm -D --defined-only` shows no `B`/`D`/`R` entries). There is
+**no runtime option and no compile-time `#ifdef` configuration** to toggle.
+Axis 2 has a single value: *none*.
 
-- **arithmetic regime**: no overflow / add-only overflow / multiply overflow
-  (positive) / multiply overflow (negative);
-- **sign of the printed result**: positive, zero, negative (`%d` emits a `-`);
-- **field width of the printed result**: 1..10 digits, i.e. every digit-count
-  `%d` can produce, plus the widest negative (`-2147483648`, 11 chars);
-- **argument-register shape at the ABI boundary**: clean 32-bit argument vs a
-  64-bit argument word with non-zero upper half (callee reads `%edi` only);
-- **call multiplicity / stdio state**: single call vs many calls in sequence
-  (exercises stdio buffering and that no hidden state accumulates between
-  calls), and interleaving C and Rust calls against the same `stdout`.
+### Axis 3 — input shape / value class
 
-## Configuration-surface table
+The only input is one `int` passed by value. There is no size, count, width,
+element type, format, byte order, or emptiness axis — no buffer, no length, no
+array. What the C *does* distinguish on that `int` is the arithmetic and the
+`%d` conversion:
 
-Each row = one meaningful combination of the axes above that the C treats
-differently. Every row is driven through *both* `.so` exports with MANY
-randomized inputs (fixed seed `0x5EED_D1FF_C0FFEE01`, see
-`tests/differential.rs`), not one hand-picked value; the assertion is
-byte-for-byte equality of everything written to `stdout`.
+* `2*x` — wraps (two's complement) once `|x| > INT_MAX/2`.
+* `y += 300` — wraps once `2*x > INT_MAX - 300`.
+* `printf("%d\n", y)` — glibc's `%d` branches on `y`'s sign (emits `-` or not),
+  on `y == 0` (special-cased digit emission), and on the decimal digit count
+  (1..10 digits) when converting.
 
-| # | entry point(s) | configuration (options set + input shape) | pass |
-|---|----------------|-------------------------------------------|-----|
-| C1 | `driver` | No options exist. Small positive `x` in `[1, 1000]`, no overflow, result positive, 3-4 printed digits. Randomized. | [x] |
-| C2 | `driver` | Small negative `x` in `[-1000, -1]`: result may be positive OR negative (`2x+300` crosses zero at `x = -150`), exercising the `-` sign path. Randomized. | [x] |
-| C3 | `driver` | `x = 0` — the "empty"/identity input. Prints the bare constant `300`. Deterministic single value. | [x] |
-| C4 | `driver` | `x` chosen so the result is exactly `0` (`x = -150`) and exactly `±1` (`x = -149`, `x = -151`) — sign-transition boundary of `%d`. Deterministic. | [x] |
-| C5 | `driver` | Result digit-count sweep: `x` chosen so `2x+300` has 1,2,3,...,10 digits, positive and negative, incl. `-2147483648` (widest). Deterministic set + randomized within each width band. | [x] |
-| C6 | `driver` | Mid-range `x` in `[1001, 1073741673]`: no overflow at all, large positive result. Randomized. | [x] |
-| C7 | `driver` | Add-only-overflow band `x` in `[1073741674, 1073741823]`: `2*x` fits, `+300` wraps. Randomized. | [x] |
-| C8 | `driver` | Multiply-overflow band, positive: `x` in `[1073741824, INT_MAX]`. Randomized. | [x] |
-| C9 | `driver` | Multiply-overflow band, negative: `x` in `[INT_MIN, -1073741825]`. Randomized. | [x] |
-| C10 | `driver` | Mid-range negative, no overflow: `x` in `[-1073741824, -1001]`. Randomized. | [x] |
-| C11 | `driver` | Unrestricted full-range `x` drawn uniformly from all 2^32 values (all four arithmetic regimes mixed), many iterations. Randomized. | [x] |
-| C12 | `driver` | Powers of two and their neighbours (`±(1<<k)`, `±(1<<k)-1`, `±(1<<k)+1` for `k = 0..31`) — bit-pattern shapes the `lea`/`add` sequence could plausibly special-case. Deterministic sweep. | [x] |
-| C13 | `driver` | ABI shape: same value passed through a `void(*)(i64)`-typed pointer with non-zero upper 32 bits (and as an out-of-range "enum" value). Callee must read the low half only. Randomized. | [x] |
-| C14 | `driver` | Call multiplicity / no residual state: a long randomized sequence of calls through the SAME `dlopen` handle, output accumulated across all calls and compared as one byte stream (stdio buffering + statelessness). Randomized. | [x] |
-| C15 | `driver` | Interleaved C/Rust calls against the same process `stdout` (alternating C, Rust, C, Rust ...), verifying identical interleaving/flush behaviour rather than merely identical per-call bytes. Randomized. | [x] |
+Giving these value classes: zero, small ±, the exact `y == 0` preimage
+(`x == -150`), sign-flip neighbourhood of `y`, every decimal-digit-count
+boundary of `y`, the `2*x` overflow boundary, the `+300` overflow boundary, and
+the domain extremes `INT_MIN`/`INT_MAX`.
 
-## Feature combinations
+### Axis 4 — observable output channel state
 
-`translation/Cargo.toml` declares no `[features]` table and no optional
-dependencies, so the complete set of feature combinations is:
+`driver` has no return value; its **entire** observable effect is bytes written
+to the process's `stdout` via libc `printf`. A real consumer's `stdout` is in
+one of glibc's three buffering modes, and the consumer interleaves its own
+stdio writes with calls into the library. Buffering mode and interleaving are
+genuine state the code interacts with (writing via a different mechanism —
+e.g. Rust's `std::io::stdout`, which holds its own buffer — would reorder bytes
+relative to a C caller's writes while still producing the right bytes in
+isolation). Axis 4 values: fully buffered (redirected fd), line buffered,
+unbuffered, plus call-multiplicity (one call / many calls per flush) and
+interleaving with the caller's own `printf`.
 
-| combination | command |
-|-------------|---------|
-| default (= empty feature set) | `cargo test` |
-| explicit no-default-features (identical, since there are no default features) | `cargo test --no-default-features` |
+## CONFIGURATION-SURFACE TABLE
 
-Both are executed by `run_all.sh`; there is no third configuration to cover.
+Pruned cross-product of Axis 3 × Axis 4 (Axes 1 and 2 are single-valued).
+Every row is run against BOTH `.so`s through `libloading` and compared
+byte-for-byte; rows marked *randomized* use many property-style inputs from a
+fixed-seed PRNG.
 
-## Are these rows actually discriminating? (mutation evidence)
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|--------------------------------------------|-----|
+| 1 | `driver` | options: none. `x == 0` (zero value) → `y == 300`; stdout fully buffered | [x] |
+| 2 | `driver` | options: none. `x` small positive, `1..=1000` exhaustive; fully buffered | [x] |
+| 3 | `driver` | options: none. `x` small negative, `-1000..=-1` exhaustive; fully buffered | [x] |
+| 4 | `driver` | options: none. `x == -150`, the exact preimage of `y == 0` (`printf` zero special case); fully buffered | [x] |
+| 5 | `driver` | options: none. sign-flip neighbourhood of `y`: `x ∈ {-152,-151,-150,-149,-148}` (`y` crosses 0, `-` sign appears/disappears); fully buffered | [x] |
+| 6 | `driver` | options: none. every decimal-digit-count boundary of `y` (1→2→…→10 digits, both signs): `x` such that `y ∈ {±1,±9,±10,±99,±100,±999,±1000,…,±1000000000, INT_MAX, INT_MIN}`; fully buffered | [x] |
+| 7 | `driver` | options: none. `2*x` signed-overflow boundary: `x ∈ {INT_MAX/2-1, INT_MAX/2, INT_MAX/2+1, INT_MIN/2-1, INT_MIN/2, INT_MIN/2+1}`; fully buffered | [x] |
+| 8 | `driver` | options: none. `y += 300` overflow boundary: `x ∈ [INT_MAX/2 - 151, INT_MAX/2 - 147]` (`2*x + 300` crosses `INT_MAX`); fully buffered | [x] |
+| 9 | `driver` | options: none. domain extremes `x ∈ {INT_MIN, INT_MIN+1, INT_MAX-1, INT_MAX}`; fully buffered | [x] |
+| 10 | `driver` | options: none. *randomized* full `i32` domain, uniform, fixed seed, 20000 draws; fully buffered | [x] |
+| 11 | `driver` | options: none. *randomized* near-overflow band `x ∈ [INT_MAX/2 - 4096, INT_MAX/2 + 4096]`, fixed seed, 8000 draws; fully buffered | [x] |
+| 12 | `driver` | options: none. *randomized* near-overflow band `x ∈ [INT_MIN/2 - 4096, INT_MIN/2 + 4096]`, fixed seed, 8000 draws; fully buffered | [x] |
+| 13 | `driver` | options: none. *randomized* narrow band around zero `x ∈ [-4096, 4096]`, fixed seed, 8000 draws; fully buffered | [x] |
+| 14 | `driver` | options: none. many calls (5000, *randomized* fixed seed) accumulated in ONE stdout flush — checks byte ordering across a whole buffered run, not per call; fully buffered | [x] |
+| 15 | `driver` | options: none. stdout **line buffered** (`setvbuf _IOLBF`), *randomized* inputs, many calls | [x] |
+| 16 | `driver` | options: none. stdout **unbuffered** (`setvbuf _IONBF`), *randomized* inputs, many calls | [x] |
+| 17 | `driver` | options: none. caller's own `printf` writes **interleaved** between library calls, fully buffered — checks the library shares the caller's stdio buffer rather than a private one | [x] |
+| 18 | `driver` | options: none. caller's own `write(2)` (raw fd, unbuffered) interleaved with library calls under a fully buffered stdout — checks flush timing matches | [x] |
+| 19 | `driver` | options: none. *randomized* full domain, the SAME input replayed through C then Rust then C again — checks the call is stateless/idempotent in both (no hidden accumulator) | [x] |
+| 20 | `driver` | options: none. exhaustive sweep of a strided slice of the full domain (`x = INT_MIN + k*3_999_971`, all `k` until wrap, ~1074 points) — covers all magnitude decades and both signs uniformly | [x] |
 
-A green suite is only meaningful if it can fail. Five mutants were injected
-into `src/lib.rs`, rebuilt, and run through the same suite; the original file
-was then restored and verified byte-identical (`md5sum`
-`2483fc6873b78a5d3d5f9e26aa717caf`).
+All 20 rows pass. There is one feature combination (`Cargo.toml` has no
+`[features]` section), so the table is complete as written.
 
-| mutant | change | detected by | rows that correctly still passed |
-|--------|--------|-------------|----------------------------------|
-| M1 | `wrapping_add(300)` -> `wrapping_add(301)` | 21 of 23 tests, each naming the first diverging input (e.g. `C1: divergence for driver(498)`) | E7 (compares error status, not bytes) and `phase_d_symbol_parity` — correctly insensitive |
-| M2 | `wrapping_mul`/`wrapping_add` -> plain `*` / `+`, **debug** profile (overflow checks on) | C7 (panic at the `+300`), C8, C9, E1, E4 (panic at the `2*x`), C11 | C1 — no overflow in that band, so passing is correct |
-| M3 | signature widened to `i64`, `(x.wrapping_mul(2) as i32)` | **nobody — and that is correct**: multiplication mod 2^32 is invariant to the upper half, so this mutant is behaviourally equivalent, not a real defect | all rows |
-| M4 | high half leaked into the result: `+ ((x >> 32) as i32)` | C13 and E6 only | C1, C11, C12 — they pass clean 32-bit arguments, so passing is correct |
-| M5 | libc `printf` -> Rust `println!` (identical bytes, different buffering) | C15 (C's fully-buffered output vs Rust's line-flushed output interleave differently) and E7 (`println!` panics -> `SIGABRT` where the C silently ignores the failed write) | C1, C11, C14 — per-call bytes are identical, which is exactly why the interleaving row exists |
+## Harness validation (why "all rows pass" is meaningful here)
 
-M2 is the evidence that `wrapping_mul`/`wrapping_add` in the translation is
-*required*, not incidental: the C compiles to `lea`/`add` on 32-bit registers
-and wraps, so any checked-arithmetic translation aborts in a debug build on
-inputs the C accepts. M4 and M5 are the evidence that the ABI row (C13) and the
-interleaving row (C15) each catch a class of defect no other row catches.
+A green differential suite proves nothing unless the harness can actually see a
+divergence. Five deliberately mutated Rust implementations were built in a
+throwaway copy of the crate (`/tmp`, since deleted; neither `c_src/` nor the real
+crate was touched) and run through the same suite. Every mutant was caught:
+
+| mutant | tests that FAILED |
+|--------|-------------------|
+| `y += 301` instead of `300` | 27 of 31 |
+| `saturating_mul` / `saturating_add` instead of `wrapping_*` | 18 |
+| `i64` widening + `clamp` instead of two's-complement wraparound | 17 |
+| `println!` instead of libc `printf` (correct digits, wrong output channel) | 1 — **only row 18** |
+| `#[no_mangle]` removed (impl present, symbol not exported) | 29, incl. both `sym_*` tests |
+
+The fourth mutant is the point of rows 17–18: it emits byte-identical digits and
+passes all 16 value-shape rows, and is caught only by the row that interleaves a
+raw `write(2)` with buffered library output. Without axis 4 in this table, that
+class of divergence would have gone unnoticed.

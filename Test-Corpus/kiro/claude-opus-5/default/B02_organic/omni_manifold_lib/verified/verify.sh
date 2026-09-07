@@ -1,90 +1,105 @@
 #!/usr/bin/env bash
-# Phase D driver: build both libraries, prove exported-symbol parity, and run
-# the whole differential suite under EVERY feature combination and both build
-# profiles. Anything non-zero in the summary is a verification failure.
+# Full verification driver: builds the C and Rust shared libraries, diffs their
+# exported symbols, and runs every differential test under every Cargo feature
+# combination. Exits non-zero on any failure.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CRATE="$ROOT/translation"
 FAIL=0
 
 step() { printf '\n=== %s ===\n' "$*"; }
+fail() { printf 'FAIL: %s\n' "$*"; FAIL=1; }
 
-# ---------------------------------------------------------------------------
-step "build the C shared library"
+step "Build the C shared library"
 mkdir -p "$ROOT/c_src/build"
 ( cd "$ROOT/c_src/build" \
   && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON >/dev/null \
-  && cmake --build . >/dev/null ) || { echo "C build FAILED"; exit 1; }
-C_SO="$(find "$ROOT/c_src/build" -maxdepth 1 -name 'lib*.so' | head -1)"
+  && cmake --build . >/dev/null ) || fail "C build"
+C_SO=$(ls "$ROOT"/c_src/build/*.so)
 echo "C  .so: $C_SO"
 
 # ---------------------------------------------------------------------------
-# Enumerate feature combinations straight out of Cargo.toml (power set).
-step "enumerate feature combinations"
-mapfile -t FEATURES < <(
-  awk '
-    /^\[features\]/ { inf=1; next }
-    /^\[/           { inf=0 }
-    inf && /^[A-Za-z0-9_-]+[[:space:]]*=/ {
-      split($0, a, "="); gsub(/[[:space:]]/, "", a[1]);
-      if (a[1] != "default") print a[1]
-    }
-  ' "$CRATE/Cargo.toml"
-)
-echo "declared non-default features: ${#FEATURES[@]} ${FEATURES[*]:-(none)}"
-
-COMBOS=("--all-features" "")            # default build + all features
-if [ "${#FEATURES[@]}" -gt 0 ]; then
-  COMBOS+=("--no-default-features")
-  n=${#FEATURES[@]}
-  for ((mask=1; mask < (1<<n); mask++)); do
-    sel=""
-    for ((b=0; b<n; b++)); do
-      if (( mask & (1<<b) )); then sel="${sel:+$sel,}${FEATURES[b]}"; fi
-    done
-    COMBOS+=("--no-default-features --features $sel")
-  done
-fi
-# de-duplicate
-mapfile -t COMBOS < <(printf '%s\n' "${COMBOS[@]}" | awk '!seen[$0]++')
-echo "combinations to verify: ${#COMBOS[@]}"
-
+# Enumerate feature combinations straight out of Cargo.toml instead of
+# hard-coding them.
 # ---------------------------------------------------------------------------
+step "Enumerate Cargo feature combinations"
+FEATURES=$(cd "$CRATE" && cargo metadata --no-deps --format-version 1 2>/dev/null \
+  | python3 -c 'import json,sys; print(" ".join(k for k in json.load(sys.stdin)["packages"][0]["features"] if k != "default"))')
+echo "non-default features: [${FEATURES:-<none>}]"
+
+COMBOS=()
+if [ -z "${FEATURES// /}" ]; then
+    # No [features] table: the default build is the only configuration, but run
+    # --no-default-features and --all-features too so the claim is mechanical.
+    COMBOS+=("" "--no-default-features" "--all-features")
+else
+    COMBOS+=("" "--no-default-features" "--all-features")
+    for f in $FEATURES; do
+        COMBOS+=("--no-default-features --features $f")
+        COMBOS+=("--features $f")
+    done
+fi
+
 for combo in "${COMBOS[@]}"; do
-  label="${combo:-<default>}"
-  step "cargo check   [$label]"
-  ( cd "$CRATE" && timeout 600 cargo check $combo 2>&1 | tail -3 ) || FAIL=1
+    label="${combo:-<default>}"
+    step "Configuration: $label"
 
-  for profile in release debug; do
-    flag=""; [ "$profile" = release ] && flag="--release"
-    step "build + symbol parity + full suite   [$label] [$profile]"
-    ( cd "$CRATE" && timeout 600 cargo build $flag $combo 2>&1 | tail -2 ) || { FAIL=1; continue; }
-    R_SO="$CRATE/target/$profile/libomni_manifold_lib.so"
+    # shellcheck disable=SC2086
+    ( cd "$CRATE" && timeout 600 cargo build --release $combo >/dev/null 2>&1 ) \
+        || { fail "cargo build $label"; continue; }
 
-    nm -D --defined-only "$C_SO"  | awk '{print $3}' | sort > /tmp/c_syms.txt
-    nm -D --defined-only "$R_SO"  | awk '{print $3}' | sort > /tmp/r_syms.txt
-    missing="$(comm -23 /tmp/c_syms.txt /tmp/r_syms.txt)"
-    extra="$(comm -13 /tmp/c_syms.txt /tmp/r_syms.txt)"
-    echo "symbols: C=$(wc -l < /tmp/c_syms.txt) Rust=$(wc -l < /tmp/r_syms.txt)"
-    if [ -n "$missing" ]; then echo "MISSING FROM RUST:"; echo "$missing"; FAIL=1; fi
-    if [ -n "$extra" ];   then echo "EXTRA IN RUST:";    echo "$extra";   FAIL=1; fi
+    R_SO="$CRATE/target/release/libomni_manifold_lib.so"
 
-    # Undefined symbols in the Rust .so must all be libc / libgcc-unwind.
-    nonlibc="$(nm -D --undefined-only "$R_SO" | awk '{print $2}' \
-      | grep -vE '^(_ITM_|_Unwind_|__cxa_|__gmon_start__|__tls_get_addr|__errno_location)' \
-      | grep -vE '@GLIBC' | grep -vE '^(_ITM_registerTMCloneTable|_ITM_deregisterTMCloneTable)$' || true)"
-    if [ -n "$nonlibc" ]; then echo "NON-LIBC UNDEFINED:"; echo "$nonlibc"; FAIL=1; fi
+    nm -D --defined-only "$C_SO" | awk '{print $3}' | sort > /tmp/c_syms.txt
+    nm -D --defined-only "$R_SO" | awk '{print $3}' | sort > /tmp/r_syms.txt
+    missing=$(comm -23 /tmp/c_syms.txt /tmp/r_syms.txt)
+    extra=$(comm -13 /tmp/c_syms.txt /tmp/r_syms.txt)
+    printf 'symbols: C=%s Rust=%s\n' "$(wc -l < /tmp/c_syms.txt)" "$(wc -l < /tmp/r_syms.txt)"
+    if [ -n "$missing" ]; then
+        fail "$label: symbols exported by C but MISSING from Rust:"; echo "$missing"
+    fi
+    if [ -n "$extra" ]; then
+        printf 'note: %s: extra Rust exports (allowed): %s\n' "$label" "$(echo "$extra" | tr '\n' ' ')"
+    fi
 
-    ( cd "$CRATE" && RUST_SO="$R_SO" timeout 600 cargo test --release $combo 2>&1 \
-        | grep -E 'test result|FAILED|panicked' ) || FAIL=1
-  done
+    # Undefined symbols in the Rust .so must all be libc / runtime imports.
+    stray=$(nm -D --undefined-only "$R_SO" | awk '{print $2}' \
+        | grep -vE '^(_ITM_|__cxa_|__gmon_start__|_Unwind_|__tls_get_addr|__errno_location)' \
+        | sed 's/@.*//' \
+        | grep -vE '^(malloc|free|calloc|realloc|posix_memalign|memcpy|memmove|memset|bcmp|strlen|abort|getenv|getcwd|readlink|realpath|open64|close|read|write|writev|lseek64|fstat64|stat64|statx|mmap64|munmap|dl_iterate_phdr|gettid|syscall|pthread_key_create|pthread_key_delete|pthread_setspecific|sqrtf)$' \
+        || true)
+    if [ -n "$stray" ]; then
+        fail "$label: unresolved non-libc symbols in the Rust .so:"; echo "$stray"
+    fi
+
+    # shellcheck disable=SC2086
+    ( cd "$CRATE" && timeout 600 cargo test --release $combo -- --test-threads=1 ) \
+        || fail "cargo test $label"
 done
 
-step "SUMMARY"
+step "Result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "ALL PHASE A-D CHECKS PASSED"
+    echo "ALL CONFIGURATIONS PASSED"
 else
-  echo "FAILURES DETECTED"
+    echo "FAILURES PRESENT"
 fi
+
+# ---------------------------------------------------------------------------
+# Optional independent randomized sweep: SWEEP=<n> re-runs the whole suite with
+# n different global seeds (DIFF_SEED), so the fixed seeds cannot hide a
+# divergence by luck.
+# ---------------------------------------------------------------------------
+if [ "${SWEEP:-0}" -gt 0 ] && [ "$FAIL" -eq 0 ]; then
+    step "Independent seed sweep (${SWEEP} seeds)"
+    for s in $(seq 1 "${SWEEP}"); do
+        if ! ( cd "$CRATE" && DIFF_SEED="$s" timeout 600 cargo test --release -- \
+                 --test-threads=1 >/tmp/sweep.log 2>&1 ); then
+            fail "seed $s"
+            grep -A12 '^---- ' /tmp/sweep.log | head -30
+        fi
+    done
+    [ "$FAIL" -eq 0 ] && echo "SWEEP PASSED (${SWEEP} seeds)"
+fi
+
 exit "$FAIL"

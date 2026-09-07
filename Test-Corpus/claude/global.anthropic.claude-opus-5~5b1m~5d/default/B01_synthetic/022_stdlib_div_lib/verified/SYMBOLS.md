@@ -2,78 +2,67 @@
 
 Derived mechanically from `nm -D` on both shared objects.
 
-Commands used:
-
-```sh
-nm -D --defined-only c_src/build/libdriver.so
-nm -D --defined-only translation/target/release/libdriver.so
-nm -D --undefined-only <each>
+```
+C   : c_src/build/libdriver.so
+Rust: translation/target/release/libdriver.so
 ```
 
-## C `.so` exported (defined, dynamic) symbols
+## Public (defined, dynamic) symbols exported by the C `.so`
 
-The whole C library is one translation unit (`c_src/src/driver.c`) declaring one
-public function in `c_src/include/driver.h`:
+`nm -D --defined-only c_src/build/libdriver.so`
 
-```c
-void driver(int x, int y);
-```
+| # | symbol | type | C declaration (`c_src/include/driver.h`) | exported by Rust `.so`? |
+|---|--------|------|------------------------------------------|-------------------------|
+| 1 | `driver` | `T` (global text) | `void driver(int x, int y);` | YES — `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver(x: c_int, y: c_int)` |
 
-| # | symbol | type | present in Rust `.so`? | notes |
-|---|--------|------|------------------------|-------|
-| 1 | `driver` | `T` (text, global) | YES (`T driver`) | `#[unsafe(no_mangle)] pub unsafe extern "C" fn driver(c_int, c_int)` |
+The C library is a single translation unit (`c_src/src/driver.c`) containing a
+single non-static function. There are no macro-generated symbols, no exported
+data symbols, no `static` helpers promoted to global linkage, and no additional
+C source files. Therefore the complete public surface is the one row above.
 
-There are no macro-generated exports, no exported data symbols, no versioned
-symbols, and no other translation units in `c_src/` — `ls c_src/src` yields only
-`driver.c`. Therefore the export set is complete at one symbol; nothing had to be
-translated or wrappered to close a gap.
-
-## Symbol diff
+### Verification
 
 ```
-C defined, missing from Rust:   (none)
+$ nm -D --defined-only c_src/build/libdriver.so | awk '{print $3}' | sort > /tmp/c.syms
+$ nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort > /tmp/r.syms
+$ comm -23 /tmp/c.syms /tmp/r.syms      # in C but missing from Rust
+<empty>
 ```
 
-The diff is EMPTY. Verified by `scratch/symcheck.sh`, which fails the build if a
-C-exported symbol is absent from the Rust `.so`.
+**0 symbols missing from the Rust `.so`.** No module of the C source was left
+untranslated; no stubs were introduced.
 
 ## Undefined (imported) symbols
 
-C `.so` imports, ignoring weak toolchain hooks (`_ITM_*`, `__cxa_finalize`,
-`__gmon_start__`):
+The C `.so` imports, from libc:
 
-| symbol | source |
-|--------|--------|
-| `div@GLIBC_2.2.5` | `<stdlib.h>` |
-| `printf@GLIBC_2.2.5` | `<stdio.h>` |
+| symbol | used by |
+|--------|---------|
+| `div@GLIBC_2.2.5` | `driver` |
+| `printf@GLIBC_2.2.5` | `driver` |
+| `__cxa_finalize`, `__gmon_start__`, `_ITM_*registerTMCloneTable` | weak, toolchain-generated |
 
-The Rust `.so` imports both of these same libc symbols (it calls them via
-`extern "C"` rather than reimplementing them), plus the usual Rust runtime set:
-`_Unwind_*`, `malloc`/`calloc`/`realloc`/`free`/`posix_memalign`, `memcpy`,
-`memmove`, `memset`, `bcmp`, `strlen`, `abort`, `__errno_location`,
-`__tls_get_addr`, `pthread_key_*`, `dl_iterate_phdr`, `open64`/`read`/`write`/
-`writev`/`close`/`lseek64`/`stat64`/`fstat64`/`statx`, `mmap64`/`munmap`,
-`getcwd`/`getenv`/`readlink`/`realpath`, `syscall`, `gettid`.
+The Rust `.so` imports the same two functional symbols — `div@GLIBC_2.2.5` and
+`printf@GLIBC_2.2.5` — because the translation deliberately delegates to the
+identical libc routines rather than re-implementing them. This is what makes
+the degenerate inputs (see `ERRORS.md`) trap identically.
 
-All are libc / libgcc_s symbols resolved by the dynamic loader. There are **0
-missing or unresolvable non-libc undefined symbols**; confirmed with:
+The Rust `.so` additionally imports the usual Rust runtime/libc set
+(`_Unwind_*`, `malloc`, `memcpy`, `mmap64`, `pthread_key_create`, `dl_iterate_phdr`,
+`abort`, …). These are **all libc / libgcc_s symbols pulled in by the Rust
+standard library**, not undefined project symbols:
 
-```sh
-ldd -r translation/target/release/libdriver.so
+```
+$ nm -D --undefined-only translation/target/release/libdriver.so \
+    | grep -v 'GLIBC\|GCC_\|_ITM_\|__gmon_start__'
+<empty>
 ```
 
-which reports no unresolved symbols.
+**0 missing/undefined non-libc symbols in the Rust `.so`.** ✔
 
-## Reusing libc is deliberate, not a shortcut
+## Completion checklist for this artifact
 
-Because the Rust translation forwards to the identical `div(3)` and `printf(3)`
-implementations, the fatal-signal behaviour for the trapping inputs
-(`y == 0`, and `INT_MIN / -1`) is reproduced exactly rather than being converted
-into a Rust panic or a wrapped/checked division. See `ERRORS.md` rows 1–3.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares no `[features]` table and no optional
-dependencies, so the only configuration is the default (empty) feature set.
-`--no-default-features` and the default build are therefore the same code, and
-both are still exercised by the test script for completeness.
+- [x] Every `nm -D` defined symbol of the C `.so` is exported by the Rust `.so` with the exact same name.
+- [x] `comm -23 c.syms r.syms` is empty.
+- [x] No `unimplemented!()`, `todo!()`, or behaviour-faking stub exists in `translation/src`.
+- [x] Every undefined symbol in the Rust `.so` resolves to libc/libgcc.

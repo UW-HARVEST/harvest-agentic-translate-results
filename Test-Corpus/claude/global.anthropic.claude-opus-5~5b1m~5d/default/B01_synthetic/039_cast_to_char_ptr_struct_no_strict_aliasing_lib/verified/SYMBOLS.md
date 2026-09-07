@@ -1,47 +1,64 @@
-# SYMBOLS.md — Public symbol surface (Phase A)
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D --defined-only` on both shared objects.
+Derived mechanically from `nm -D` on both shared libraries.
 
-Build commands used:
-
-```
-cd c_src && mkdir -p build && cd build && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-cd translation && cargo build --release
-```
-
-## C source inventory (completeness check)
-
-`c_src/CMakeLists.txt` compiles exactly one translation unit:
-
-| C source file | translated in Rust? | where |
-|---|---|---|
-| `c_src/src/driver.c` | yes | `translation/src/lib.rs` |
-| `c_src/include/driver.h` (declares `void driver(int)`) | yes | `driver` export |
-
-There are no other `.c` files in the project, so no module was skipped.
-
-## Symbol table
-
-`T` = exported text symbol. Filtered to non-libc, defined, dynamic symbols.
-
-| # | symbol | C `.so` | Rust `.so` | linkage in C | notes |
-|---|--------|---------|------------|--------------|-------|
-| 1 | `driver` | T | T | `extern` (public, from `driver.h`) | `void driver(int floors)`; Rust: `#[unsafe(no_mangle)] pub extern "C" fn driver(floors: c_int)` |
-| — | `print_hex` | absent (static) | absent (private `unsafe fn`) | `static` — not part of the ABI | correctly NOT exported by Rust; exporting it would be a parity failure in the other direction |
-
-## Diff result
+Commands:
 
 ```
-$ diff <(nm -D --defined-only c_src/build/libdriver.so       | awk '{print $3}' | sort) \
-       <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
-(empty)
+nm -D --defined-only c_src/build/libdriver.so
+nm -D --defined-only translation/target/release/libdriver.so
 ```
 
-- Missing from Rust: **none**
-- Undefined non-libc symbols in Rust `.so`: **none** (only `printf` from `libc`,
-  which the C `.so` also imports).
+## Defined (exported) symbols
 
-Automated in `tests/differential.rs::symbol_parity_c_vs_rust`, which shells out to
-`nm -D` on both objects at test time and asserts the C set is a subset of the Rust set.
+| symbol | in C `.so` | in Rust `.so` | notes |
+|--------|-----------|---------------|-------|
+| `driver` | T (yes) | T (yes) | `void driver(int x)` — the only public API (`c_src/include/driver.h`) |
 
-- [x] `nm -D` shows 0 missing/undefined non-libc symbols in Rust.
+`print_hex` is `static` in `c_src/src/driver.c`, therefore not part of the ABI and
+not expected in `nm -D` of either library. It is verified indirectly through
+`driver`, which is its only caller.
+
+## Symbol diff
+
+```
+comm -3 <(nm -D --defined-only c_src/build/libdriver.so | awk '{print $3}' | sort) \
+        <(nm -D --defined-only translation/target/release/libdriver.so | awk '{print $3}' | sort)
+```
+
+Result: **empty** — 0 symbols missing from the Rust `.so`.
+
+The Rust `.so` exports no *extra* non-runtime symbols either (only `driver`).
+
+## Undefined symbols (imports)
+
+C: `printf`, `putchar` (+ weak `_ITM_*`, `__cxa_finalize`, `__gmon_start__`).
+
+Rust: the same `printf` / `putchar` plus the usual Rust std + unwinder /
+allocator libc imports (`_Unwind_*`, `malloc`, `memcpy`, `abort`, …). All are
+libc / compiler-runtime symbols; there are **0 missing/undefined non-libc
+symbols**.
+
+Note the Rust translation deliberately calls the C runtime's `printf` (declared
+`extern "C"`) rather than Rust's `println!`, so stdout buffering and byte output
+match the C library exactly.
+
+## Feature combinations
+
+`translation/Cargo.toml` declares **no `[features]` section**, so the only
+configuration is the default (empty) feature set:
+
+```
+cargo check                              # default
+cargo check --no-default-features        # identical (no features exist)
+```
+
+Both are exercised; symbol parity holds in both.
+
+## Binary targets
+
+Neither `c_src/CMakeLists.txt` (a single `add_library(driver SHARED ...)`) nor
+`translation/Cargo.toml` (`crate-type = ["cdylib"]`, no `[[bin]]`) builds an
+executable driver, so the "compare binary stdout" gate is not applicable. The
+equivalent coverage is obtained by capturing the library's stdout through the
+FFI boundary (see `tests/differential.rs`).

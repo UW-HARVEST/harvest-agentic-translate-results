@@ -1,19 +1,25 @@
 # Configuration Surface
 
-The public API contains one entry point and no runtime options, mutable state,
-feature flags, element types, formats, or byte-order modes. Its implementation
-branches on two input predicates:
+The sole public entry point is `max_size_frame(blocksize, channels, bitdepth)`.
+The C implementation branches only on `channels == 2` and `bitdepth == 32`.
+There are no runtime options, modes, flags, state objects, element types, byte
+orders, formats, compile-time features, or additional entry points.
 
-- `channels == 2` versus `channels != 2`
-- `bitdepth == 32` versus `bitdepth != 32`
-
-`blocksize` has no branch, so every row exercises randomized values plus `0`,
-`1`, `UINT32_MAX - 1`, and `UINT32_MAX`. Non-equal classes include their scalar
-boundaries and values adjacent to the special value.
+Each row includes fixed boundary cases plus many fixed-seed randomized inputs.
+The randomized domains include zero, one, large values, and values that cause
+intermediate `uint32_t` arithmetic to wrap.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `max_size_frame` | `channels == 2`, `bitdepth == 32`; randomized and boundary `blocksize` | [x] |
-| 2 | `max_size_frame` | `channels == 2`, `bitdepth != 32`; randomized and boundary `blocksize` and bit depth | [x] |
-| 3 | `max_size_frame` | `channels != 2`, `bitdepth == 32`; randomized and boundary `blocksize` and channel count | [x] |
-| 4 | `max_size_frame` | `channels != 2`, `bitdepth != 32`; randomized and boundary values for all scalar classes | [x] |
+| 1 | `max_size_frame` | `channels == 2`, `bitdepth == 32`; `blocksize` spans the full `uint32_t` domain | [x] |
+| 2 | `max_size_frame` | `channels == 2`, `bitdepth != 32`; `blocksize` and non-32 `bitdepth` span the full `uint32_t` domain | [x] |
+| 3 | `max_size_frame` | `channels != 2`, `bitdepth == 32`; `blocksize` and non-2 `channels` span the full `uint32_t` domain | [x] |
+| 4 | `max_size_frame` | `channels != 2`, `bitdepth != 32`; all three values span their applicable `uint32_t` domains | [x] |
+
+## Feature combinations
+
+`Cargo.toml` defines no features, so the only feature configuration is the
+default/no-feature build.
+
+- [x] Default feature invocation passes.
+- [x] `--no-default-features` invocation passes.

@@ -1,25 +1,29 @@
 //! Shared differential-test harness.
 //!
-//! Both the C reference `.so`s and the Rust cdylib are loaded with `libloading`
-//! and driven purely through their exported C symbols -- no Rust function is
-//! ever called directly, so the `#[no_mangle]` wrappers are under test too.
+//! Loads BOTH shared objects through `libloading` and calls everything across
+//! the FFI boundary, exactly as an external C consumer would:
 //!
-//! Environment variables (set by `../run_tests.sh`):
-//!   * `SPX_C_BUILD`  -- directory of the matching C cmake build tree
-//!                       (default: `../cbuild/<backend>-<secpar>-<thash>`)
-//!   * `SPX_RUST_SO`  -- path of the Rust cdylib built with the same features
-//!                       (default: `target/release/libsphincs_core_det.so`)
+//!   * C   : `<repo>/cbuild/<backend>-<thash>-<secpar>/libcref.so`
+//!           (the untouched CMake object files for `sphincs_obj` + `rng.c`,
+//!            with `lib<backend>.so` pulled in via `DT_NEEDED`)
+//!   * Rust: `<repo>/translation/target/release/libsphincs_core_det.so`
+//!
+//! No Rust library function is ever called directly -- every value compared in
+//! these tests came out of a `dlsym`'d symbol.
 
 #![allow(dead_code)]
 #![allow(non_snake_case)]
 
-use libloading::os::unix::{Library, RTLD_GLOBAL, RTLD_LAZY, RTLD_LOCAL};
-use std::ffi::CString;
+use libloading::{Library, Symbol};
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
-// ===========================================================================
-// Parameters -- an INDEPENDENT re-derivation from the C headers, so a wrong
-// constant in src/params.rs cannot hide itself.
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Build configuration, derived from the *test crate's* features.
+// The params below are transcribed independently from
+// c_src/app/params/params-sphincs-<backend>-<secpar>.h so that a bug in the
+// Rust crate's own params.rs cannot hide (see cfg_sizes_match, CONFIGS row 1).
+// ---------------------------------------------------------------------------
 
 pub const BACKEND: &str = if cfg!(feature = "sha2") {
     "sha2"
@@ -31,95 +35,61 @@ pub const BACKEND: &str = if cfg!(feature = "sha2") {
     "haraka"
 };
 
-pub const THASH: &str = if cfg!(feature = "simple") {
-    "simple"
-} else {
+pub const THASH: &str = if cfg!(feature = "robust") {
     "robust"
+} else {
+    "simple"
 };
 
-// app/params/params-sphincs-<backend>-<secpar>.h
-#[cfg(feature = "256f")]
-pub const SECPAR: &str = "256f";
-#[cfg(all(feature = "256s", not(feature = "256f")))]
-pub const SECPAR: &str = "256s";
-#[cfg(all(feature = "192f", not(any(feature = "256f", feature = "256s"))))]
-pub const SECPAR: &str = "192f";
-#[cfg(all(
-    feature = "192s",
-    not(any(feature = "256f", feature = "256s", feature = "192f"))
-))]
-pub const SECPAR: &str = "192s";
-#[cfg(all(
-    feature = "128f",
-    not(any(
-        feature = "256f",
-        feature = "256s",
-        feature = "192f",
-        feature = "192s"
-    ))
-))]
-pub const SECPAR: &str = "128f";
-#[cfg(all(
-    not(feature = "128f"),
-    not(any(
-        feature = "256f",
-        feature = "256s",
-        feature = "192f",
-        feature = "192s"
-    ))
-))]
-pub const SECPAR: &str = "128s";
-
-pub const SPX_N: usize = match SECPAR.as_bytes() {
-    b"128s" | b"128f" => 16,
-    b"192s" | b"192f" => 24,
-    _ => 32,
+pub const SECPAR: &str = if cfg!(feature = "256f") {
+    "256f"
+} else if cfg!(feature = "256s") {
+    "256s"
+} else if cfg!(feature = "192f") {
+    "192f"
+} else if cfg!(feature = "192s") {
+    "192s"
+} else if cfg!(feature = "128f") {
+    "128f"
+} else {
+    "128s"
 };
 
-pub const SPX_FULL_HEIGHT: usize = match SECPAR.as_bytes() {
-    b"128s" => 63,
-    b"128f" => 66,
-    b"192s" => 63,
-    b"192f" => 66,
-    b"256s" => 64,
-    _ => 68,
-};
+/// (SPX_N, SPX_FULL_HEIGHT, SPX_D, SPX_FORS_HEIGHT, SPX_FORS_TREES, big_hash)
+const fn secpar_tuple() -> (usize, usize, usize, usize, usize, u32) {
+    if cfg!(feature = "256f") {
+        (32, 68, 17, 9, 35, 1)
+    } else if cfg!(feature = "256s") {
+        (32, 64, 8, 14, 22, 1)
+    } else if cfg!(feature = "192f") {
+        (24, 66, 22, 8, 33, 1)
+    } else if cfg!(feature = "192s") {
+        (24, 63, 7, 14, 17, 1)
+    } else if cfg!(feature = "128f") {
+        (16, 66, 22, 6, 33, 0)
+    } else {
+        (16, 63, 7, 12, 14, 0)
+    }
+}
 
-pub const SPX_D: usize = match SECPAR.as_bytes() {
-    b"128s" => 7,
-    b"128f" => 22,
-    b"192s" => 7,
-    b"192f" => 22,
-    b"256s" => 8,
-    _ => 17,
-};
-
-pub const SPX_FORS_HEIGHT: usize = match SECPAR.as_bytes() {
-    b"128s" => 12,
-    b"128f" => 6,
-    b"192s" => 14,
-    b"192f" => 8,
-    b"256s" => 14,
-    _ => 9,
-};
-
-pub const SPX_FORS_TREES: usize = match SECPAR.as_bytes() {
-    b"128s" => 14,
-    b"128f" => 33,
-    b"192s" => 17,
-    b"192f" => 33,
-    b"256s" => 22,
-    _ => 35,
-};
-
-/// `SPX_SHA512` / `SPX_BLAKE512`: 1 for the 192/256-bit parameter sets.
-pub const BIG_HASH: bool = SPX_N >= 24;
+pub const SPX_N: usize = secpar_tuple().0;
+pub const SPX_FULL_HEIGHT: usize = secpar_tuple().1;
+pub const SPX_D: usize = secpar_tuple().2;
+pub const SPX_FORS_HEIGHT: usize = secpar_tuple().3;
+pub const SPX_FORS_TREES: usize = secpar_tuple().4;
+/// `SPX_SHA512` / `SPX_BLAKE512` -- 1 for the 192/256 sets, 0 for 128.
+pub const BIG_HASH: u32 = secpar_tuple().5;
 
 pub const SPX_WOTS_W: usize = 16;
 pub const SPX_WOTS_LOGW: usize = 4;
-pub const SPX_ADDR_BYTES: usize = 32;
 pub const SPX_WOTS_LEN1: usize = 8 * SPX_N / SPX_WOTS_LOGW;
-pub const SPX_WOTS_LEN2: usize = 3; // SPX_N is 16/24/32 -> 8 < N <= 136 -> 3
+pub const SPX_WOTS_LEN2: usize = if SPX_N <= 8 {
+    2
+} else if SPX_N <= 136 {
+    3
+} else {
+    4
+};
 pub const SPX_WOTS_LEN: usize = SPX_WOTS_LEN1 + SPX_WOTS_LEN2;
 pub const SPX_WOTS_BYTES: usize = SPX_WOTS_LEN * SPX_N;
 pub const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / SPX_D;
@@ -128,10 +98,12 @@ pub const SPX_FORS_BYTES: usize = (SPX_FORS_HEIGHT + 1) * SPX_FORS_TREES * SPX_N
 pub const SPX_BYTES: usize =
     SPX_N + SPX_FORS_BYTES + SPX_D * SPX_WOTS_BYTES + SPX_FULL_HEIGHT * SPX_N;
 pub const SPX_PK_BYTES: usize = 2 * SPX_N;
-pub const SPX_SK_BYTES: usize = 2 * SPX_N + SPX_PK_BYTES;
+pub const SPX_SK_BYTES: usize = 4 * SPX_N;
 pub const CRYPTO_SEEDBYTES: usize = 3 * SPX_N;
+pub const SPX_ADDR_BYTES: usize = 32;
 
-// Address field offsets: sha2 uses its own layout (sha2_offsets.h).
+// Address field offsets: sha2 uses the compressed 22-byte layout, the other
+// three backends the 32-byte layout (lib/<backend>/include/<backend>_offsets.h).
 pub const SPX_OFFSET_LAYER: usize = if cfg!(feature = "sha2") { 0 } else { 3 };
 pub const SPX_OFFSET_TREE: usize = if cfg!(feature = "sha2") { 1 } else { 8 };
 pub const SPX_OFFSET_TYPE: usize = if cfg!(feature = "sha2") { 9 } else { 19 };
@@ -141,43 +113,149 @@ pub const SPX_OFFSET_HASH_ADDR: usize = if cfg!(feature = "sha2") { 21 } else { 
 pub const SPX_OFFSET_TREE_HGT: usize = if cfg!(feature = "sha2") { 17 } else { 27 };
 pub const SPX_OFFSET_TREE_INDEX: usize = if cfg!(feature = "sha2") { 18 } else { 28 };
 
-// ---------------------------------------------------------------------------
-// spx_ctx layout (context.h).  Every test allocates CTX_SIZE bytes; the Rust
-// struct for sha2 always carries `state_seeded_512` while the C one omits it
-// when SPX_SHA512 == 0, so the buffer is sized for the larger of the two.
-// ---------------------------------------------------------------------------
-
-pub const CTX_OFF_PUB_SEED: usize = 0;
-pub const CTX_OFF_SK_SEED: usize = SPX_N;
-/// sha2 only
-pub const CTX_OFF_STATE_SEEDED: usize = 2 * SPX_N;
-/// sha2 only
-pub const CTX_OFF_STATE_SEEDED_512: usize = 2 * SPX_N + 40;
-/// haraka only (`uint64_t[10][8]`, 8-byte aligned; 2*SPX_N is a multiple of 8)
-pub const CTX_OFF_TWEAKED512: usize = 2 * SPX_N;
-/// haraka only (`uint32_t[10][8]`)
-pub const CTX_OFF_TWEAKED256: usize = 2 * SPX_N + 640;
-
-/// Number of bytes of `spx_ctx` that BOTH implementations actually use, i.e.
-/// the part that can be compared after `initialize_hash_function`.
-pub const CTX_LIVE: usize = if cfg!(feature = "sha2") {
-    if BIG_HASH {
-        2 * SPX_N + 40 + 72
-    } else {
-        2 * SPX_N + 40
-    }
-} else if cfg!(any(feature = "shake", feature = "blake")) {
-    2 * SPX_N
-} else {
+/// `sizeof(spx_ctx)` for the active configuration, from `app/include/context.h`.
+pub const CTX_BYTES: usize = if cfg!(feature = "sha2") {
+    // pub_seed + sk_seed + state_seeded[40] (+ state_seeded_512[72] iff SPX_SHA512)
+    2 * SPX_N + 40 + if BIG_HASH == 1 { 72 } else { 0 }
+} else if cfg!(feature = "haraka") {
+    // pub_seed + sk_seed (8-aligned) + u64[10][8] + u32[10][8]
     2 * SPX_N + 640 + 320
+} else {
+    2 * SPX_N
 };
 
-/// Allocation size (generous, identical for both sides).
-pub const CTX_SIZE: usize = 2 * SPX_N + 1024 + 64;
+/// Address types passed to `set_type` (`app/include/address.h`).
+pub const ADDR_TYPES: [u32; 7] = [0, 1, 2, 3, 4, 5, 6];
 
-// ===========================================================================
-// Reproducible PRNG: xorshift64* with a fixed seed.
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Library loading
+// ---------------------------------------------------------------------------
+
+pub struct Libs {
+    pub c: Library,
+    pub r: Library,
+    pub c_path: PathBuf,
+    pub r_path: PathBuf,
+}
+
+fn repo_root() -> PathBuf {
+    // CARGO_MANIFEST_DIR = <repo>/translation
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("translation/ has a parent")
+        .to_path_buf()
+}
+
+pub fn c_lib_path() -> PathBuf {
+    repo_root()
+        .join("cbuild")
+        .join(format!("{}-{}-{}", BACKEND, THASH, SECPAR))
+        .join("libcref.so")
+}
+
+pub fn rust_lib_path() -> PathBuf {
+    // `SPHINCS_RUST_SO` lets a runner point at a .so in a dedicated
+    // CARGO_TARGET_DIR, so parallel runs for different feature sets cannot
+    // clobber each other's artifact.
+    if let Ok(p) = std::env::var("SPHINCS_RUST_SO") {
+        return PathBuf::from(p);
+    }
+    let base = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target"));
+    base.join("release").join("libsphincs_core_det.so")
+}
+
+static LIBS: OnceLock<Libs> = OnceLock::new();
+
+pub fn libs() -> &'static Libs {
+    LIBS.get_or_init(|| {
+        let c_path = c_lib_path();
+        let r_path = rust_lib_path();
+        assert!(
+            c_path.exists(),
+            "missing C reference .so at {c_path:?}\n\
+             build it with: ./build_c.sh {BACKEND} {THASH} {SECPAR} && \
+             ./link_cref.sh {BACKEND} {THASH} {SECPAR}"
+        );
+        assert!(
+            r_path.exists(),
+            "missing Rust .so at {r_path:?}\n\
+             build it with: cargo build --release --no-default-features \
+             --features {BACKEND},{THASH},{SECPAR}"
+        );
+        // SAFETY: both objects are plain C-ABI libraries with no constructors
+        // that run arbitrary code. Loaded with the default RTLD_LOCAL so their
+        // identically-named symbols do not collide.
+        let c = unsafe { Library::new(&c_path) }.expect("dlopen C .so");
+        let r = unsafe { Library::new(&r_path) }.expect("dlopen Rust .so");
+
+        // Guard against a STALE target/release/libsphincs_core_det.so left over
+        // from a build with different features -- otherwise every test would
+        // compare apples to oranges and report bogus divergences.
+        for (which, lib) in [("C", &c), ("Rust", &r)] {
+            let f: Symbol<unsafe extern "C" fn() -> u64> = unsafe { lib.get(b"crypto_sign_bytes") }
+                .expect("crypto_sign_bytes");
+            let got = unsafe { f() };
+            assert_eq!(
+                got, SPX_BYTES as u64,
+                "{which} .so was built for a DIFFERENT configuration than this test \
+                 ({BACKEND}/{THASH}/{SECPAR}, SPX_BYTES={SPX_BYTES}): its \
+                 crypto_sign_bytes() returned {got}. Rebuild it:\n  \
+                 cargo build --release --no-default-features --features \
+                 {BACKENDplaceholder}",
+                BACKENDplaceholder = format!("{BACKEND},{THASH},{SECPAR}")
+            );
+        }
+
+        Libs {
+            c,
+            r,
+            c_path,
+            r_path,
+        }
+    })
+}
+
+/// Look up `name` in both libraries and hand the two symbols to `f`.
+///
+/// Panics with a clear message if either library is missing the symbol -- which
+/// is itself a Phase-D parity failure.
+#[macro_export]
+macro_rules! both {
+    ($name:expr, $ty:ty) => {{
+        let l = $crate::common::libs();
+        let cs: libloading::Symbol<$ty> = unsafe { l.c.get($name.as_bytes()) }
+            .unwrap_or_else(|e| panic!("C .so is missing `{}`: {e}", $name));
+        let rs: libloading::Symbol<$ty> = unsafe { l.r.get($name.as_bytes()) }
+            .unwrap_or_else(|e| panic!("Rust .so is missing `{}`: {e}", $name));
+        (cs, rs)
+    }};
+}
+
+/// Fetch a *data* symbol (e.g. `DRBG_ctx`, `cst`) from both libraries.
+#[macro_export]
+macro_rules! both_data {
+    ($name:expr, $ty:ty) => {{
+        let l = $crate::common::libs();
+        let cs: libloading::Symbol<*mut $ty> = unsafe { l.c.get($name.as_bytes()) }
+            .unwrap_or_else(|e| panic!("C .so is missing data `{}`: {e}", $name));
+        let rs: libloading::Symbol<*mut $ty> = unsafe { l.r.get($name.as_bytes()) }
+            .unwrap_or_else(|e| panic!("Rust .so is missing data `{}`: {e}", $name));
+        (*cs, *rs)
+    }};
+}
+
+pub fn sym<'a, T>(lib: &'a Library, name: &str) -> Symbol<'a, T> {
+    unsafe { lib.get(name.as_bytes()) }
+        .unwrap_or_else(|e| panic!("missing symbol `{name}`: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic PRNG (xorshift64*) -- fixed seed for reproducibility.
+// ---------------------------------------------------------------------------
+
+pub const RNG_SEED: u64 = 0x00C0_FFEE_1234_5678;
 
 pub struct Rng(u64);
 
@@ -209,254 +287,131 @@ impl Rng {
         self.fill(&mut v);
         v
     }
-    pub fn below(&mut self, n: u64) -> u64 {
-        if n == 0 {
-            0
-        } else {
-            self.next_u64() % n
+    /// Uniform-ish value in `0..n` (n > 0).
+    pub fn below(&mut self, n: u32) -> u32 {
+        self.next_u32() % n
+    }
+    pub fn addr(&mut self) -> [u32; 8] {
+        let mut a = [0u32; 8];
+        for w in a.iter_mut() {
+            *w = self.next_u32();
         }
+        a
     }
 }
 
-/// The fixed seed used by every test in this suite.
-pub const SEED: u64 = 0x243F_6A88_85A3_08D3;
+/// Number of randomized iterations for a cheap row.
+pub const N_ITER: usize = 8;
+/// Number of randomized iterations for an expensive (whole-signature) row.
+pub const N_ITER_SLOW: usize = 2;
 
-// ===========================================================================
-// Loading both sides
-// ===========================================================================
-
-pub struct Side {
-    libs: Vec<Library>,
-    pub name: &'static str,
-}
-
-impl Side {
-    /// Address of an exported symbol, searched over all handles of this side.
-    pub fn addr(&self, sym: &str) -> usize {
-        let c = CString::new(sym).unwrap();
-        for l in &self.libs {
-            unsafe {
-                if let Ok(s) = l.get::<usize>(c.as_bytes_with_nul()) {
-                    return *s;
-                }
-            }
-        }
-        panic!("{}: symbol `{}` not found", self.name, sym);
-    }
-
-    pub fn has(&self, sym: &str) -> bool {
-        let c = CString::new(sym).unwrap();
-        for l in &self.libs {
-            unsafe {
-                if l.get::<usize>(c.as_bytes_with_nul()).is_ok() {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    pub fn data(&self, sym: &str) -> *mut u8 {
-        self.addr(sym) as *mut u8
-    }
-}
-
-pub struct Pair {
-    pub c: Side,
-    pub rust: Side,
-}
-
-fn repo_root() -> std::path::PathBuf {
-    // CARGO_MANIFEST_DIR = <root>/translation
-    let md = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
-    std::path::Path::new(&md).parent().unwrap().to_path_buf()
-}
-
-fn c_build_dir() -> std::path::PathBuf {
-    if let Ok(d) = std::env::var("SPX_C_BUILD") {
-        return std::path::PathBuf::from(d);
-    }
-    repo_root()
-        .join("cbuild")
-        .join(format!("{}-{}-{}", BACKEND, SECPAR, THASH))
-}
-
-fn rust_so() -> std::path::PathBuf {
-    if let Ok(d) = std::env::var("SPX_RUST_SO") {
-        return std::path::PathBuf::from(d);
-    }
-    repo_root()
-        .join("translation/target/release/libsphincs_core_det.so")
-}
-
-fn open(path: &std::path::Path, flags: i32) -> Library {
-    unsafe {
-        Library::open(Some(path), flags)
-            .unwrap_or_else(|e| panic!("dlopen({}) failed: {}", path.display(), e))
-    }
-}
-
-/// Loads (1) libcrypto, (2) the C hash-backend lib, (3) the C deterministic
-/// core lib -- all `RTLD_GLOBAL|RTLD_LAZY` because the two SPHINCS+ objects
-/// reference each other -- and (4) the Rust cdylib, `RTLD_LOCAL` so that it
-/// cannot be interposed by (or interpose on) the C symbols.
-pub fn load() -> Pair {
-    let cb = c_build_dir();
-    let core = cb.join("app/libsphincs_core_det.so");
-    let back = cb.join(format!("lib/{0}/lib{0}.so", BACKEND));
-    assert!(
-        core.exists(),
-        "missing C build {} -- run ../build_c.sh {} {} {}",
-        core.display(),
-        BACKEND,
-        SECPAR,
-        THASH
-    );
-
-    let mut cl = Vec::new();
-    // libcrypto provides the EVP_* symbols rng.c needs.
-    unsafe {
-        if let Ok(l) = Library::open(
-            Some(std::path::Path::new("libcrypto.so.3")),
-            RTLD_LAZY | RTLD_GLOBAL,
-        ) {
-            cl.push(l);
-        }
-    }
-    cl.push(open(&back, RTLD_LAZY | RTLD_GLOBAL));
-    cl.push(open(&core, RTLD_LAZY | RTLD_GLOBAL));
-    // Search the core first (it owns crypto_sign*/rng), then the backend.
-    cl.reverse();
-
-    // RTLD_DEEPBIND (glibc, 0x8) is essential: the two C objects had to be
-    // brought in RTLD_GLOBAL (they reference each other), which would otherwise
-    // let them interpose on the Rust cdylib's *data* symbols -- e.g. the Rust
-    // `DRBG_ctx` reference would bind to the C `DRBG_ctx`.  DEEPBIND makes the
-    // Rust object prefer its own definitions, exactly as a standalone consumer
-    // linking only against it would see.
-    const RTLD_DEEPBIND: i32 = 0x8;
-    let rl = vec![open(&rust_so(), RTLD_LAZY | RTLD_LOCAL | RTLD_DEEPBIND)];
-
-    let pair = Pair {
-        c: Side {
-            libs: cl,
-            name: "C",
-        },
-        rust: Side {
-            libs: rl,
-            name: "Rust",
-        },
-    };
-    check_config(&pair);
-    pair
-}
-
-/// Guards against the classic footgun of this setup: a `.so` left over from a
-/// *different* feature/parameter combination.  Both sides must agree with the
-/// constants this test binary was compiled with.
-fn check_config(p: &Pair) {
-    type FLen = unsafe extern "C" fn() -> u64;
-    type FSetType = unsafe extern "C" fn(*mut u32, u32);
-    for side in [&p.c, &p.rust] {
-        for (sym, want) in [
-            ("crypto_sign_bytes", SPX_BYTES as u64),
-            ("crypto_sign_publickeybytes", SPX_PK_BYTES as u64),
-            ("crypto_sign_secretkeybytes", SPX_SK_BYTES as u64),
-            ("crypto_sign_seedbytes", CRYPTO_SEEDBYTES as u64),
-        ] {
-            let g: FLen = unsafe { std::mem::transmute::<usize, FLen>(side.addr(sym)) };
-            let got = unsafe { g() };
-            assert_eq!(
-                got, want,
-                "{} .so was built for a DIFFERENT parameter set: {}() = {} but this test \
-                 expects {} for {}/{}/{}.  Rebuild with the same cargo features / CMake \
-                 cache variables (use ../run_tests.sh).",
-                side.name, sym, got, want, BACKEND, THASH, SECPAR
-            );
-        }
-        // The address-field layout differs between sha2 and the rest.
-        let st: FSetType = unsafe { std::mem::transmute::<usize, FSetType>(side.addr("SPX_set_type")) };
-        let mut addr = [0u32; 8];
-        unsafe { st(addr.as_mut_ptr(), 0xAB) };
-        let bytes = unsafe { std::slice::from_raw_parts(addr.as_ptr() as *const u8, 32) };
-        assert_eq!(
-            bytes[SPX_OFFSET_TYPE], 0xAB,
-            "{} .so uses a different SPX_OFFSET_TYPE than {} expects ({}); \
-             the .so was built for another backend.",
-            side.name, BACKEND, SPX_OFFSET_TYPE
-        );
-    }
-}
-
-/// One shared instance for the whole test binary (dlopen is not cheap and the
-/// C `DRBG_ctx` is process-global state we want to keep in one place).
-pub fn libs() -> &'static Pair {
-    use std::sync::OnceLock;
-    static P: OnceLock<Pair> = OnceLock::new();
-    P.get_or_init(load)
-}
-
-unsafe impl Send for Side {}
-unsafe impl Sync for Side {}
-
-// ===========================================================================
+// ---------------------------------------------------------------------------
 // Comparison helpers
-// ===========================================================================
+// ---------------------------------------------------------------------------
 
 #[track_caller]
-pub fn eq_bytes(what: &str, a: &[u8], b: &[u8]) {
-    if a != b {
-        let n = a.len().min(b.len());
+pub fn eq_bytes(what: &str, c: &[u8], r: &[u8]) {
+    if c != r {
+        let n = c.len().min(r.len());
         let mut first = n;
         for i in 0..n {
-            if a[i] != b[i] {
+            if c[i] != r[i] {
                 first = i;
                 break;
             }
         }
         panic!(
-            "{}/{}/{}/{}: {} differs (len C={} Rust={}, first diff at {})\n  C   = {}\n  Rust= {}",
-            BACKEND,
-            THASH,
-            SECPAR,
-            what,
-            what,
-            a.len(),
-            b.len(),
-            first,
-            hex(&a[..a.len().min(first + 32)]),
-            hex(&b[..b.len().min(first + 32)]),
+            "{what}: C/Rust differ (cfg {BACKEND}/{THASH}/{SECPAR})\n\
+             lens: C={} R={}\n\
+             first differing byte at {first}\n\
+             C[{first}..]: {}\n\
+             R[{first}..]: {}",
+            c.len(),
+            r.len(),
+            hex(&c[first..(first + 32).min(c.len())]),
+            hex(&r[first..(first + 32).min(r.len())]),
         );
     }
 }
 
 #[track_caller]
-pub fn eq<T: PartialEq + std::fmt::Debug>(what: &str, a: T, b: T) {
-    assert!(
-        a == b,
-        "{}/{}/{}/{}: C={:?} Rust={:?}",
-        BACKEND,
-        THASH,
-        SECPAR,
-        what,
-        a,
-        b
+pub fn eq<T: PartialEq + std::fmt::Debug>(what: &str, c: T, r: T) {
+    assert_eq!(
+        c, r,
+        "{what}: C/Rust differ (cfg {BACKEND}/{THASH}/{SECPAR})"
     );
 }
 
 pub fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{:02x}", x)).collect()
+    b.iter().map(|x| format!("{x:02X}")).collect()
 }
 
-/// A fresh, zeroed `spx_ctx`-sized buffer.
-pub fn new_ctx() -> Vec<u8> {
-    vec![0u8; CTX_SIZE]
+/// A freshly zeroed `spx_ctx` byte image of the right size for this config.
+pub fn new_ctx_buf() -> Vec<u8> {
+    vec![0u8; CTX_BYTES]
 }
 
-/// Fill the `pub_seed`/`sk_seed` fields of a ctx buffer.
-pub fn seed_ctx(ctx: &mut [u8], rng: &mut Rng) {
-    let ps = rng.bytes(SPX_N);
-    let ss = rng.bytes(SPX_N);
-    ctx[CTX_OFF_PUB_SEED..CTX_OFF_PUB_SEED + SPX_N].copy_from_slice(&ps);
-    ctx[CTX_OFF_SK_SEED..CTX_OFF_SK_SEED + SPX_N].copy_from_slice(&ss);
+/// Build an `spx_ctx` image with the given seeds, then run
+/// `SPX_initialize_hash_function` in the given library so that the sha2
+/// midstate / haraka tweaked constants are populated.
+pub fn init_ctx(lib: &Library, pub_seed: &[u8], sk_seed: &[u8]) -> Vec<u8> {
+    assert_eq!(pub_seed.len(), SPX_N);
+    assert_eq!(sk_seed.len(), SPX_N);
+    let mut buf = new_ctx_buf();
+    buf[..SPX_N].copy_from_slice(pub_seed);
+    buf[SPX_N..2 * SPX_N].copy_from_slice(sk_seed);
+    let f: Symbol<unsafe extern "C" fn(*mut u8)> = sym(lib, "SPX_initialize_hash_function");
+    unsafe { f(buf.as_mut_ptr()) };
+    buf
 }
+
+/// Same seeds -> one initialised ctx image per library.
+pub fn init_ctx_pair(pub_seed: &[u8], sk_seed: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let l = libs();
+    (
+        init_ctx(&l.c, pub_seed, sk_seed),
+        init_ctx(&l.r, pub_seed, sk_seed),
+    )
+}
+
+/// `DRBG_ctx` is a *process-global* mutable in each `.so` (exactly as in C), so
+/// any test that seeds it or consumes from it -- directly via `randombytes`, or
+/// indirectly via `crypto_sign_keypair` / `crypto_sign_signature` /
+/// `crypto_sign` -- must hold this lock for the whole sequence. Without it the
+/// libtest thread pool interleaves two tests' DRBG draws and both see garbage.
+static DRBG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[must_use = "hold the guard for the whole DRBG-dependent sequence"]
+pub fn drbg_guard() -> std::sync::MutexGuard<'static, ()> {
+    DRBG_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Seed both DRBGs identically (the NIST KAT entropy input 0x00..0x2F).
+pub fn seed_both_drbgs(entropy: &[u8; 48]) {
+    let (c, r) = both!(
+        "randombytes_init",
+        unsafe extern "C" fn(*mut u8, *mut u8)
+    );
+    let mut e1 = *entropy;
+    let mut e2 = *entropy;
+    unsafe {
+        c(e1.as_mut_ptr(), std::ptr::null_mut());
+        r(e2.as_mut_ptr(), std::ptr::null_mut());
+    }
+}
+
+pub fn kat_entropy() -> [u8; 48] {
+    let mut e = [0u8; 48];
+    for (i, b) in e.iter_mut().enumerate() {
+        *b = i as u8;
+    }
+    e
+}
+
+/// Message lengths that straddle every hash block/rate boundary the four
+/// backends use (sha256/blake256: 64, sha512/blake512: 128, shake256 rate: 136,
+/// haraka sponge rate: 32) plus the degenerate and multi-block cases.
+pub const MLENS: &[usize] = &[
+    0, 1, 31, 32, 33, 55, 56, 63, 64, 65, 71, 72, 111, 112, 127, 128, 129, 135, 136, 137, 167, 168,
+    169, 1000,
+];

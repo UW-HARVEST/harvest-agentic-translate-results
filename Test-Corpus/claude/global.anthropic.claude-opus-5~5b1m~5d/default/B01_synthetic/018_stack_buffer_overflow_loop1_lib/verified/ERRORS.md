@@ -1,47 +1,42 @@
-# ERRORS.md — error-surface table
+# ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/driver.c` (83 lines, the only C source) and
-`c_src/include/driver.h`. Grep results for every rejection mechanism:
+Mechanically derived by grepping the whole C source for every rejection /
+error path construct:
 
 ```
-$ grep -nE 'return|assert|NULL|ERROR|errno|exit|abort|<|>|==|!=' c_src/src/driver.c
-32:    if(line != NULL)          <- the ONLY input rejection in the library
-50:        for (i = 0; i < 10; i++)   <- fixed loop bound, not an input check
-61:    data = NULL;              <- assignment, immediately overwritten
-66:        for (i = 0; i < 10; i++)   <- fixed loop bound, not an input check
-75:    if (useGood)              <- mode dispatch, not a rejection
+grep -n 'return\|NULL\|assert\|if *(\|exit\|abort\|errno\|-1' c_src/src/driver.c c_src/include/driver.h
 ```
 
-Facts about this library's error surface:
+Findings — the complete set of conditional / rejection constructs in the C:
 
-* Every public function returns `void`. There is **no** error code, no sentinel
-  return, no `errno` use, no output parameter, and no error enum anywhere.
-* There is exactly **one** guard on an input value: the `line != NULL` test in
-  `printLine`.
-* There are **no** `assert`s, no `RETURN_ERROR`-style macros, no explicit range
-  checks, and no min/max constants.
-* There are **no enum types** in the public API, so "out-of-range enum value"
-  degenerates to "out-of-range `int`" for `driver(int useGood)`, which C treats
-  as a plain truthiness test — every `int` bit pattern is a *valid* input and is
-  covered here as well as in `CONFIGS.md`.
+| location | construct |
+|----------|-----------|
+| `driver.c:31` `printLine` | `if (line != NULL) { printf("%s\n", line); }` — the ONLY null check in the library |
+| `driver.c:58` `good`      | `data = NULL;` then immediately reassigned — dead store, not a check |
+| `driver.c:71` `driver`    | `if (useGood) { good(); } else { bad(); }` — branch, not an error |
+| everywhere               | no `assert`, no `return -1`, no `return NULL`, no error enum, no `errno` use, no range check, no min/max constant, no allocation-failure check |
 
-Therefore "the same error/rejection" is observable only as **the exact bytes
-written to `stdout`** (the empty byte string being the rejection outcome).
+All five public functions return `void`; the library has **no error codes and
+no sentinel return values**. The only *observable* "rejection" of input is
+`printLine` silently producing no output for a `NULL` argument. Everything else
+is exercised as "the same (possibly undefined-behaviour-adjacent) observable
+output for out-of-domain inputs".
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | [x] |
-|---|----------|----------------------------------------------|-------------------|------|-----|
-| E1 | `printLine` | `line == NULL` (`if(line != NULL)` false at driver.c:32) | returns normally, writes **0 bytes** to stdout, no crash | `err_e1_print_line_null` | [x] |
-| E2 | `printLine` | `line` points at an empty string `""` (guard passes, zero-length payload) | writes exactly `"\n"` (1 byte) | `err_e2_print_line_empty` | [x] |
-| E3 | `printLine` | `line` payload contains `printf` conversion specifiers (`%s`, `%n`, `%d`, `%%`) — data must NOT be interpreted as a format string | specifiers echoed literally, then `'\n'` | `err_e3_print_line_format_specifiers` | [x] |
-| E4 | `printLine` | `line` payload contains embedded `\n`, `\t`, `\r`, `\0`-adjacent and non-UTF-8 (0x80..0xFF) bytes | bytes copied verbatim up to the first NUL, then `'\n'` | `err_e4_print_line_non_utf8_and_control` | [x] |
-| E5 | `printLine` | oversized payload: length far past any stdio buffer (`BUFSIZ`, 4 KiB, 64 KiB, 1 MiB) | full payload then `'\n'`, no truncation | `err_e5_print_line_oversized` | [x] |
-| E6 | `printIntLine` | boundary / one-past-range integers: `INT_MIN`, `INT_MIN+1`, `INT_MAX`, `INT_MAX-1`, `-1`, `0` | `%d` rendering incl. the non-negatable `-2147483648` | `err_e6_print_int_line_boundaries` | [x] |
-| E7 | `driver` | `useGood == 0` — the *only* value routed to the intentionally buggy `bad()` (CWE-806 `alloca(10)` under-allocation) | runs `bad()`, prints `"0\n"`, must not abort/trap | `err_e7_driver_zero_selects_bad` | [x] |
-| E8 | `driver` | out-of-`bool`-range `int` values `-1`, `2`, `INT_MIN`, `INT_MAX`, `0x100`, `0xFFFF_FF00` — a C `int` accepts any bit pattern where an enum/bool was implied | any non-zero → `good()`; identical `"0\n"`; Rust must use `!= 0`, not `== 1` | `err_e8_driver_out_of_range_int` | [x] |
-| E9 | `bad` | called directly (bypassing `driver`), the out-of-bounds-write path itself | prints `"0\n"` and returns normally | `err_e9_bad_direct_no_trap` | [x] |
-| E10 | `good`/`bad` | called repeatedly / alternately, so a corrupted frame from `bad()` would surface on a later call | every call prints `"0\n"`, unchanged | `err_e10_repeated_alternating_calls` | [x] |
+## Error / rejection rows
 
-Non-cases (documented so they are not silently skipped): passing a non-NUL-terminated
-buffer to `printLine`, or a wild non-NULL pointer, is undefined behaviour in the C
-(`printf`/`puts` read until a NUL). Those are not tested because the C has no defined
-result to match against.
+| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
+|---|----------|----------------------------------------------|-------------------|------|--------|
+| E1 | `printLine` | `line == NULL` | no output at all, returns normally (the `if (line != NULL)` guard rejects it) | `err_e1_print_line_null` | [x] |
+| E2 | `printLine` | `line` points at an empty string `""` (zero-length, not NULL — passes the guard) | prints a single `"\n"` | `err_e2_print_line_empty` | [x] |
+| E3 | `printLine` | `line` contains `printf` conversion specifiers (`"%s %d %n"`) — passed as the *argument*, not the format | prints the literal bytes + `"\n"` (no format interpretation) | `err_e3_print_line_percent` | [x] |
+| E4 | `printLine` | oversized `line` (64 KiB, larger than any stdio buffer) | prints all 65536 bytes + `"\n"` | `err_e4_print_line_oversized` | [x] |
+| E5 | `printLine` | `line` containing embedded non-ASCII / high bytes (0x80..0xFF) up to the NUL | prints the raw bytes verbatim + `"\n"` | `err_e5_print_line_high_bytes` | [x] |
+| E6 | `printIntLine` | `INT_MIN` (`-2147483648`) — one step past the negative end of the `int` range | prints `-2147483648\n` | `err_e6_print_int_line_int_min` | [x] |
+| E7 | `printIntLine` | `INT_MAX` (`2147483647`) — the positive extreme | prints `2147483647\n` | `err_e7_print_int_line_int_max` | [x] |
+| E8 | `printIntLine` | `0` and `-1` (sentinel-looking values) | prints `0\n` / `-1\n` | `err_e8_print_int_line_sentinels` | [x] |
+| E9 | `driver` | `useGood == 0` (the false branch — "rejects" the good path) | runs `bad()`, prints `0\n` | `err_e9_driver_zero` | [x] |
+| E10 | `driver` | `useGood` = out-of-range "enum-like" ints with no meaningful variant: `2`, `-1`, `INT_MIN`, `INT_MAX`, `0x100`, `0xFFFF` (C `int` accepts any value; every non-zero one is truthy) | runs `good()` for every non-zero value, prints `0\n` | `err_e10_driver_out_of_range_enum` | [x] |
+| E11 | `bad` | called directly with its intentionally under-sized `alloca(10)` (CWE-806 over-read/overflow of 40 bytes into a 10-byte allocation) | still prints `0\n` (the surplus stores land in caller-frame stack slack); must not crash | `err_e11_bad_direct_overflow` | [x] |
+| E12 | `good` | called directly (the `data = NULL` dead store must not be observable as a null deref) | prints `0\n` | `err_e12_good_direct` | [x] |
+
+All 12 rows have passing differential tests in `tests/differential.rs`.

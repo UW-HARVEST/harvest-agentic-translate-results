@@ -1,76 +1,71 @@
-# Configuration surface
+# Valid configuration surface
 
-Rows are derived from every exported entry point and each branch axis in
-`src/lib.c`. "Random finite" includes positive, negative, zero, boundary
-equality, and varied magnitudes. Each checked row is exercised repeatedly with
-a fixed-seed generator through both shared-library FFI boundaries.
+Mechanically derived from every exported function and each `if`/`switch` branch
+in `c_src/src/lib.c`. There are no Cargo features and no executable target.
+Randomized rows use a fixed seed and include finite values plus signed zero,
+infinities, NaNs, and boundary/tie values where the C operation defines them.
 
 | # | entry point(s) | configuration (options set + input shape) | status |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `c2V` | random finite scalar pair | [x] |
-| 2 | `c2Mulvs`, `c2Add`, `c2Sub` | random finite vectors/scalar | [x] |
-| 3 | `c2Dot`, `c2Det2` | random finite vector pairs | [x] |
-| 4 | `c2Maxv`, `c2Minv`, `c2Clampv` | each comparison arm, equality, ordered bounds | [x] |
-| 5 | `c2RotIdentity`, `c2xIdentity` | no-input identity constructors | [x] |
-| 6 | `c2Len`, `c2Div`, `c2Norm` | nonzero finite vectors and nonzero divisor | [x] |
-| 7 | `c2Neg`, `c2Skew`, `c2CCW90` | random finite vectors | [x] |
-| 8 | `c2Mulrv`, `c2MulrvT`, `c2Mulxv` | random finite rotations/transforms/vectors | [x] |
-| 9 | `c2BBVerts` | random AABB, four output vertices | [x] |
-| 10 | `c2MakeProxy` | circle: one vertex plus radius | [x] |
-| 11 | `c2MakeProxy` | AABB: four vertices and zero radius | [x] |
-| 12 | `c2MakeProxy` | capsule: two vertices plus radius | [x] |
-| 13 | `c2GJKSimplexMetric` | `count` default/0/1 | [x] |
-| 14 | `c2GJKSimplexMetric` | `count == 2` segment length | [x] |
-| 15 | `c2GJKSimplexMetric` | `count == 3` signed triangle determinant | [x] |
-| 16 | `c22` | Voronoi region A (`v <= 0`) | [x] |
-| 17 | `c22` | Voronoi region B (`v > 0 && u <= 0`) | [x] |
-| 18 | `c22` | segment interior (`v > 0 && u > 0`) | [x] |
-| 19 | `c23` | vertex region A | [x] |
-| 20 | `c23` | vertex region B | [x] |
-| 21 | `c23` | vertex region C | [x] |
-| 22 | `c23` | edge region AB | [x] |
-| 23 | `c23` | edge region BC | [x] |
-| 24 | `c23` | edge region CA | [x] |
-| 25 | `c23` | triangle interior/default | [x] |
-| 26 | `c2D` | simplex `count == 1` | [x] |
-| 27 | `c2D` | `count == 2`, positive determinant | [x] |
-| 28 | `c2D` | `count == 2`, nonpositive determinant | [x] |
-| 29 | `c2D` | `count == 3` and unsupported/default count | [x] |
-| 30 | `c2Support` | `count <= 1` | [x] |
-| 31 | `c2Support` | many vertices, first remains maximum or ties | [x] |
-| 32 | `c2Support` | many vertices, later strict maximum | [x] |
-| 33 | `c2Witness` | simplex `count == 1` | [x] |
-| 34 | `c2Witness` | simplex `count == 2` | [x] |
-| 35 | `c2Witness` | simplex `count == 3` | [x] |
-| 36 | `c2Witness` | unsupported/default simplex count | [x] |
-| 37 | `c2L` | simplex `count == 1` | [x] |
-| 38 | `c2L` | simplex `count == 2` | [x] |
-| 39 | `c2L` | unsupported/default simplex count | [x] |
-| 40 | `c2GJK` | circle-circle; radius off and on | [x] |
-| 41 | `c2GJK` | circle-AABB; radius off and on | [x] |
-| 42 | `c2GJK` | circle-capsule; radius off and on | [x] |
-| 43 | `c2GJK` | AABB-circle; radius off and on | [x] |
-| 44 | `c2GJK` | AABB-AABB; radius off and on | [x] |
-| 45 | `c2GJK` | AABB-capsule; radius off and on | [x] |
-| 46 | `c2GJK` | capsule-circle; radius off and on | [x] |
-| 47 | `c2GJK` | capsule-AABB; radius off and on | [x] |
-| 48 | `c2GJK` | capsule-capsule; radius off and on | [x] |
-| 49 | `c2GJK` | each shape pair with null versus explicit transforms | [x] |
-| 50 | `c2GJK` | each shape pair with all output pointers present versus null | [x] |
-| 51 | `c2GJK` | null cache, zero-count cache, and warm cache reused on changed shapes | [x] |
-| 52 | `c2GJK` | separated, touching/radius-overlap, and simplex-hit geometry | [x] |
-| 53 | `c2AABBtoAABB` | separated on each axis, touching, and overlapping | [x] |
-| 54 | `c2AABBtoCapsule` | separated, touching, and overlapping | [x] |
-| 55 | `c2CapsuletoCapsule` | separated, touching, and overlapping | [x] |
-| 56 | `c2CircletoCircle` | separated, exactly tangent, and overlapping | [x] |
-| 57 | `c2CircletoAABB` | center by side/corner/inside; tangent and overlap | [x] |
-| 58 | `c2CircletoCapsule` | nearest region A endpoint (`da < 0`) | [x] |
-| 59 | `c2CircletoCapsule` | nearest segment interior (`da >= 0 && db < 0`) | [x] |
-| 60 | `c2CircletoCapsule` | nearest region B endpoint (`db >= 0`) | [x] |
-| 61 | `c2Collided` | all 9 ordered valid type pairs | [x] |
-| 62 | `reverse_collide` | random finite `(x, y, r)`, including each output bit | [x] |
-| 63 | scalar/vector/transform entry points | signed zero, infinities, subnormals, maxima, and distinct quiet-NaN payloads | [x] |
-| 64 | `c2GJK`, collision predicates, `reverse_collide` | signed zero, infinities, subnormals, maxima, and distinct quiet-NaN payloads | [x] |
-
-Cargo features: none are declared, so the only feature combination is
-`--no-default-features` (identical to the default build).
+|---|----------------|--------------------------------------------|--------|
+| 1 | `c2V` | arbitrary `x`, `y` bit patterns | [x] |
+| 2 | `c2Mulvs`, `c2Sub`, `c2Add`, `c2Dot`, `c2Det2`, `c2Neg`, `c2Skew`, `c2CCW90` | arbitrary vectors/scalar; includes signed zero and non-finite values | [x] |
+| 3 | `c2Maxv` | independently `a.x > b.x` / false and `a.y > b.y` / false, including equality and NaN comparisons | [x] |
+| 4 | `c2Minv` | independently `a.x < b.x` / false and `a.y < b.y` / false, including equality and NaN comparisons | [x] |
+| 5 | `c2Clampv` | each component below, within, or above `[lo, hi]`, including boundary equality | [x] |
+| 6 | `c2RotIdentity`, `c2xIdentity` | no-input identity constructors | [x] |
+| 7 | `c2BBVerts` | arbitrary AABB, four output vertices | [x] |
+| 8 | `c2MakeProxy` | circle shape (`type=0`) | [x] |
+| 9 | `c2MakeProxy` | AABB shape (`type=1`) | [x] |
+| 10 | `c2MakeProxy` | capsule shape (`type=2`) | [x] |
+| 11 | `c2Len`, `c2Norm` | nonzero finite vector | [x] |
+| 12 | `c2Len`, `c2Norm` | zero/signed-zero vector and non-finite components | [x] |
+| 13 | `c2Div` | finite nonzero divisor | [x] |
+| 14 | `c2Div` | positive zero, negative zero, infinity, and NaN divisor | [x] |
+| 15 | `c2GJKSimplexMetric` | simplex count 1 | [x] |
+| 16 | `c2GJKSimplexMetric` | simplex count 2 (segment length) | [x] |
+| 17 | `c2GJKSimplexMetric` | simplex count 3 (signed triangle determinant) | [x] |
+| 18 | `c2Mulrv`, `c2MulrvT`, `c2Mulxv` | arbitrary rotations/transforms and vectors | [x] |
+| 19 | `c22` | `v <= 0` selects vertex A | [x] |
+| 20 | `c22` | `v > 0 && u <= 0` selects vertex B | [x] |
+| 21 | `c22` | `v > 0 && u > 0` keeps edge AB | [x] |
+| 22 | `c23` | vertex-A Voronoi branch | [x] |
+| 23 | `c23` | vertex-B Voronoi branch | [x] |
+| 24 | `c23` | vertex-C Voronoi branch | [x] |
+| 25 | `c23` | edge-AB Voronoi branch | [x] |
+| 26 | `c23` | edge-BC Voronoi branch | [x] |
+| 27 | `c23` | edge-CA Voronoi branch | [x] |
+| 28 | `c23` | triangle-interior fallback branch | [x] |
+| 29 | `c2D` | simplex count 1 | [x] |
+| 30 | `c2D` | simplex count 2 and positive determinant selects `c2Skew` | [x] |
+| 31 | `c2D` | simplex count 2 and nonpositive determinant selects `c2CCW90` | [x] |
+| 32 | `c2Support` | one vertex | [x] |
+| 33 | `c2Support` | multiple vertices with a unique later maximum | [x] |
+| 34 | `c2Support` | multiple vertices with tied maxima; first maximum retained | [x] |
+| 35 | `c2Witness` | simplex count 1 | [x] |
+| 36 | `c2Witness` | simplex count 2 weighted witness | [x] |
+| 37 | `c2Witness` | simplex count 3 weighted witness | [x] |
+| 38 | `c2L` | simplex count 1 | [x] |
+| 39 | `c2L` | simplex count 2 weighted closest point | [x] |
+| 40 | `c2GJK` | each ordered shape pair in `{circle,AABB,capsule}²`, identity transforms via null pointers, `use_radius=0`, separated/touching/overlapping data | [x] |
+| 41 | `c2GJK` | each ordered shape pair, identity transforms, `use_radius!=0`, separated/touching/overlapping data | [x] |
+| 42 | `c2GJK` | all four null/provided transform-pointer combinations with translated/rotated shapes | [x] |
+| 43 | `c2GJK` | all optional output-pointer combinations (`outA`, `outB`, `iterations`) including all null and all provided | [x] |
+| 44 | `c2GJK` | null cache (cold start) | [x] |
+| 45 | `c2GJK` | provided zero-count cache (cold start then cache write) | [x] |
+| 46 | `c2GJK` | provided populated reusable cache (cache read then write) | [x] |
+| 47 | `c2GJK` | populated cache rejected by the metric guard, forcing cold start | [x] |
+| 48 | `c2GJK` | loop exits by simplex hit (`count == 3`) | [x] |
+| 49 | `c2GJK` | loop exits by duplicate support pair / no progress | [x] |
+| 50 | `c2GJK` | radius adjustment keeps separated witnesses (`dist > rA+rB` and epsilon) | [x] |
+| 51 | `c2GJK` | radius adjustment collapses witnesses for overlap/touch/epsilon distance | [x] |
+| 52 | `c2AABBtoAABB` | overlap/intersection including touching boundary | [x] |
+| 53 | `c2AABBtoAABB` | separated along each of the four tested axes | [x] |
+| 54 | `c2AABBtoCapsule` | collision and separation | [x] |
+| 55 | `c2CapsuletoCapsule` | collision and separation | [x] |
+| 56 | `c2CircletoCircle` | overlap, exact tangent (strict false), and separation | [x] |
+| 57 | `c2CircletoAABB` | center below/inside/above each slab; overlap, tangent, separation | [x] |
+| 58 | `c2CircletoCapsule` | closest point before endpoint A (`da < 0`) | [x] |
+| 59 | `c2CircletoCapsule` | closest point on segment (`da >= 0 && db < 0`) | [x] |
+| 60 | `c2CircletoCapsule` | closest point after endpoint B (`db >= 0`) | [x] |
+| 61 | `c2Collided` | all 9 ordered valid type pairs, exercising argument reversal branches | [x] |
+| 62 | `reverse_collide` | randomized `(x,y,r)` plus boundary/tangent values spanning returned collision bitmasks | [x] |

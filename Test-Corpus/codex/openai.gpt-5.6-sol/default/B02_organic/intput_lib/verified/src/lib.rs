@@ -767,7 +767,6 @@ pub unsafe extern "C" fn stbds_shmode_func(elem_size: usize, mode: c_int) -> *mu
 }
 
 #[unsafe(no_mangle)]
-#[allow(unused_comparisons)]
 pub unsafe extern "C" fn stbds_hmdel_key(
     hash_array: *mut c_void,
     elem_size: usize,
@@ -802,7 +801,6 @@ pub unsafe extern "C" fn stbds_hmdel_key(
         (*table).used_count -= 1;
         (*table).tombstone_count += 1;
         (*header(raw_array)).temp = 1;
-        assert!((*table).used_count >= 0);
         (*bucket).hash[bucket_slot] = HASH_DELETED;
         (*bucket).index[bucket_slot] = INDEX_DELETED;
     }
@@ -855,7 +853,7 @@ pub unsafe extern "C" fn stbds_hmdel_key(
         bucket = unsafe { (*table).storage.add(slot as usize >> BUCKET_SHIFT) };
         bucket_slot = slot as usize & BUCKET_MASK;
         unsafe {
-            assert_eq!((*bucket).index[bucket_slot], final_index);
+            assert!((*bucket).index[bucket_slot] == final_index);
             (*bucket).index[bucket_slot] = old_index;
         }
     }
@@ -1038,8 +1036,8 @@ pub unsafe extern "C" fn intput(number: c_int) {
         put(&mut map, number, 7);
         put(&mut map, 11, 3);
         put(&mut map, 9, number);
-        assert_eq!(get(&mut map, 9), number);
-        assert_eq!(get(&mut map, 11), 3);
-        assert_eq!(get(&mut map, number), 7);
+        assert!(get(&mut map, 9) == number);
+        assert!(get(&mut map, 11) == 3);
+        assert!(get(&mut map, number) == 7);
     }
 }

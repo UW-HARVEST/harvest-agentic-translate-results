@@ -1,102 +1,112 @@
 #!/usr/bin/env bash
-# Sensitivity check for the differential suite.
+# Mutation / negative-control harness.
 #
-# Deliberately breaks the Rust translation in ways a sloppy translator plausibly
-# would, and proves the suite CATCHES each one. Every mutation must make at least
-# one test fail. src/lib.rs is restored after each mutation (and on exit).
+# Proves the differential test suite is NOT vacuous: each mutation below injects
+# a specific class of behavioural divergence into the Rust translation, and the
+# suite MUST fail for every one of them. Any "MISSED" line is a blind spot in
+# the tests.
 #
-#   ./mutation_check.sh
-#
-# Exit status = number of mutations that escaped detection (0 is the goal, apart
-# from the mutations explicitly listed as observationally equivalent).
-set -u
+# The original src/lib.rs is restored (and verified byte-identical) after every
+# mutation, and again at exit via a trap.
+
+set -uo pipefail
 cd "$(dirname "$0")"
 
-SRC=src/lib.rs
-BAK=$(mktemp)
-cp "$SRC" "$BAK"
-restore() { cp "$BAK" "$SRC"; }
-trap 'restore; rm -f "$BAK"' EXIT
+ORIG=".lib.rs.orig"
+cp src/lib.rs "$ORIG"
 
-FAILS=0
-ESCAPED=()
+restore() {
+  cp "$ORIG" src/lib.rs
+}
+trap 'restore; cargo build --offline -q >/dev/null 2>&1; rm -f "$ORIG"' EXIT
 
-# run_mutation <description> <perl-expr> [expect_equivalent]
-run_mutation() {
-    desc=$1; expr=$2; equiv=${3:-no}
+pass=0
+miss=0
+noop=0
+
+run_mut() {
+  local name="$1"; shift
+  restore
+  perl -0pi -e "$1" src/lib.rs
+
+  if cmp -s "$ORIG" src/lib.rs; then
+    echo "?? NO-OP    : $name  (pattern did not match -- mutation not applied)"
+    noop=$((noop+1))
+    return
+  fi
+
+  if ! cargo build --offline -q >/dev/null 2>&1; then
+    echo "?? NOBUILD  : $name  (mutant does not compile)"
+    noop=$((noop+1))
     restore
-    perl -0pi -e "$expr" "$SRC"
-    if diff -q "$BAK" "$SRC" >/dev/null; then
-        echo "ERROR: mutation did not apply: $desc"
-        FAILS=$((FAILS+1)); return
-    fi
-    out=$(timeout 600 cargo test --release 2>&1)
-    if echo "$out" | grep -qE '^test result: FAILED|^error: test failed|SIGSEGV|signal'; then
-        n=$(echo "$out" | grep -cE '^test .* FAILED$')
-        echo "CAUGHT   (${n} failing tests): $desc"
-    elif [ "$equiv" = equivalent ]; then
-        echo "EQUIV    (no observable difference, by design): $desc"
-    else
-        echo "SURVIVED (suite still green!): $desc"
-        ESCAPED+=("$desc")
-        FAILS=$((FAILS+1))
-    fi
+    return
+  fi
+
+  # ALLOW_STALE is deliberately NOT set: the freshness guard must see the new .so.
+  if timeout 300 cargo test --offline -q >/dev/null 2>&1; then
+    echo "!! MISSED   : $name  <-- TEST SUITE BLIND SPOT"
+    miss=$((miss+1))
+  else
+    echo "OK DETECTED : $name"
+    pass=$((pass+1))
+  fi
+  restore
 }
 
-echo "=== mutation sensitivity check ==="
+echo "=== Mutation battery (every mutant MUST be detected) ==="
 
-run_mutation 'EINVAL 22 -> 21 on the !dst / numElem==0 branch' \
-  's/if dst\.is_null\(\) \|\| num_elem == 0 \{\n        return 22;/if dst.is_null() || num_elem == 0 {\n        return 21;/'
+run_mut "M1  ERANGE return code 34 -> 33" \
+  's/\n    unsafe \{ \*dst = 0 \};\n    34\n\}/\n    unsafe { *dst = 0 };\n    33\n}/'
 
-run_mutation 'EINVAL 22 -> 21 on the !src branch' \
-  's/if src\.is_null\(\) \{\n        unsafe \{ \*dst = 0 \};\n        return 22;/if src.is_null() {\n        unsafe { *dst = 0 };\n        return 21;/'
+run_mut "M2  drop the dst[0]=0 side effect on the ERANGE path" \
+  's/\n    unsafe \{ \*dst = 0 \};\n    34\n\}/\n    34\n}/'
 
-run_mutation 'ERANGE 34 -> 33 on truncation' \
-  's/unsafe \{ \*dst = 0 \};\n    34\n\}/unsafe { *dst = 0 };\n    33\n}/'
+run_mut "M3  drop the dst[0]=0 side effect on the NULL-src path" \
+  's/    if src\.is_null\(\) \{\n        unsafe \{ \*dst = 0 \};\n        return 22;/    if src.is_null() {\n        return 22;/'
 
-run_mutation 'numElem==0 also zeroes dst[0] (C leaves dst completely untouched)' \
-  's/if dst\.is_null\(\) \|\| num_elem == 0 \{\n        return 22;/if dst.is_null() || num_elem == 0 {\n        if !dst.is_null() { unsafe { *dst = 0 }; }\n        return 22;/'
+run_mut "M4  EINVAL return code 22 -> 21 on the null-dst check" \
+  's/    if dst\.is_null\(\) \|\| num_elem == 0 \{\n        return 22;\n    \}/    if dst.is_null() || num_elem == 0 {\n        return 21;\n    }/'
 
-run_mutation 'check !src BEFORE numElem==0 (wrong short-circuit order)' \
-  's/if dst\.is_null\(\) \|\| num_elem == 0 \{\n        return 22;\n    \}/if dst.is_null() {\n        return 22;\n    }/; s/(if src\.is_null\(\) \{\n        unsafe \{ \*dst = 0 \};\n        return 22;\n    \})/$1\n    if num_elem == 0 { return 22; }/'
+run_mut "M5  validate src BEFORE numElem (wrong check order -- diverges on E5)" \
+  's/    if dst\.is_null\(\) \|\| num_elem == 0 \{\n        return 22;\n    \}\n\n    \/\/ `if \(!src\) \{ dst\[0\] = 0; return 22; \}`\n    if src\.is_null\(\) \{\n        unsafe \{ \*dst = 0 \};\n        return 22;\n    \}/    if dst.is_null() { return 22; }\n    if src.is_null() { unsafe { *dst = 0 }; return 22; }\n    if num_elem == 0 { return 22; }/'
 
-run_mutation 'copy-loop bound  ptr < end  ->  ptr <= end' \
-  's/    while ptr < end \{\n        let c/    while ptr <= end {\n        let c/'
+run_mut "M6  off-by-one window: dst + (numElem - 1)" \
+  's/let end: \*mut wchar_t = dst\.wrapping_add\(num_elem\);/let end: *mut wchar_t = dst.wrapping_add(num_elem.saturating_sub(1));/'
 
-run_mutation 'scan-loop bound  ptr < end  ->  ptr <= end  (extra OOB read only)' \
-  's/while ptr < end && unsafe \{ \*ptr \} != 0/while ptr <= end \&\& unsafe { *ptr } != 0/' \
-  equivalent
+run_mut "M7  treat wchar_t as UNSIGNED when testing for NUL" \
+  's/while ptr < end \&\& unsafe \{ \*ptr \} != 0 \{/while ptr < end \&\& (unsafe { *ptr } as u32) != 0u32 \&\& (unsafe { *ptr }) > 0 {/'
 
-run_mutation 'NUL-terminate on truncation at dst[numElem-1] instead of dst[0]' \
-  's/unsafe \{ \*dst = 0 \};\n    34\n\}/unsafe { *dst.wrapping_add(num_elem - 1) = 0 };\n    34\n}/'
+run_mut "M8  zero-pad the rest of the window after a successful copy" \
+  's/        if c == 0 \{\n            return 0;\n        \}/        if c == 0 {\n            while ptr < end { unsafe { *ptr = 0 }; ptr = ptr.wrapping_add(1); }\n            return 0;\n        }/'
 
-run_mutation 'no write at all on truncation (drop the dst[0]=0)' \
-  's/unsafe \{ \*dst = 0 \};\n    34\n\}/34\n}/'
+run_mut "M9  numElem == 0 also clears dst[0] (spurious side effect)" \
+  's/    if dst\.is_null\(\) \|\| num_elem == 0 \{\n        return 22;\n    \}/    if dst.is_null() { return 22; }\n    if num_elem == 0 { unsafe { *dst = 0 }; return 22; }/'
 
-run_mutation 'saturating instead of wrapping dst+numElem (misses the overflow case)' \
-  's/dst\.wrapping_add\(num_elem\)/((dst as usize).saturating_add(num_elem.saturating_mul(4))) as *mut wchar_t/'
+run_mut "M10 wchar_t mapped to u16 instead of i32 (ABI\/truncation bug)" \
+  's/#\[cfg\(not\(windows\)\)\]\npub type wchar_t = i32;\n#\[cfg\(windows\)\]\npub type wchar_t = u16;/pub type wchar_t = u16;/'
 
-run_mutation 'off-by-one: end = dst + numElem - 1' \
-  's/let end: \*mut wchar_t = dst\.wrapping_add\(num_elem\);/let end: *mut wchar_t = dst.wrapping_add(num_elem).wrapping_sub(1);/'
+run_mut "M11 guarantee NUL termination on truncation (a 'fix' the C does not do)" \
+  's/\n    unsafe \{ \*dst = 0 \};\n    34\n\}/\n    unsafe { *end.wrapping_sub(1) = 0 };\n    unsafe { *dst = 0 };\n    34\n}/'
 
-run_mutation 'terminator consumed but not written into dst' \
-  's/        unsafe \{ \*ptr = c \};\n        ptr = ptr\.wrapping_add\(1\);\n        if c == 0 \{\n            return 0;\n        \}/        if c == 0 {\n            return 0;\n        }\n        unsafe { *ptr = c };\n        ptr = ptr.wrapping_add(1);/'
+run_mut "M12 first loop starts at dst+1, skipping dst[0]" \
+  's/    let mut ptr: \*mut wchar_t = dst;/    let mut ptr: *mut wchar_t = dst;\n    let _ = \&mut ptr;/; s/    while ptr < end \&\& unsafe \{ \*ptr \} != 0 \{/    ptr = ptr.wrapping_add(1);\n    while ptr < end \&\& unsafe { *ptr } != 0 {/'
 
-run_mutation 'scan stops on negative wchar_t (signedness bug)' \
-  's/while ptr < end && unsafe \{ \*ptr \} != 0/while ptr < end \&\& unsafe { *ptr } > 0/'
+run_mut "M15 second loop bound uses <= end (writes one element past the window)" \
+  's/    while ptr < end \{\n        let c = unsafe \{ \*src_ptr \};/    while ptr <= end {\n        let c = unsafe { *src_ptr };/'
 
-run_mutation 'wrong wchar_t width (i16 instead of i32)' \
-  's/pub type wchar_t = i32;/pub type wchar_t = i16;/'
+run_mut "M16 empty src short-circuits to return 0 without checking room" \
+  's/    let mut src_ptr: \*const wchar_t = src;/    if unsafe { *src } == 0 { unsafe { *dst = 0 }; return 0; }\n    let mut src_ptr: *const wchar_t = src;/'
 
-run_mutation 'src pointer not advanced (copies src[0] forever)' \
-  's/        src_ptr = src_ptr\.wrapping_add\(1\);\n//'
+run_mut "M13 copy loop writes src AFTER incrementing (shifted by one)" \
+  's/        let c = unsafe \{ \*src_ptr \};\n        src_ptr = src_ptr\.wrapping_add\(1\);/        src_ptr = src_ptr.wrapping_add(1);\n        let c = unsafe { *src_ptr };/'
 
-run_mutation 'skip the scan loop entirely (always overwrite from dst[0])' \
-  's/    while ptr < end && unsafe \{ \*ptr \} != 0 \{\n        ptr = ptr\.wrapping_add\(1\);\n    \}//'
+run_mut "M14 return 0 instead of 34 when the destination is unterminated" \
+  's/\n    unsafe \{ \*dst = 0 \};\n    34\n\}/\n    unsafe { *dst = 0 };\n    0\n}/'
 
-restore
-echo "=== done: $FAILS mutation(s) escaped detection ==="
-if [ ${#ESCAPED[@]} -gt 0 ]; then
-    printf '  escaped: %s\n' "${ESCAPED[@]}"
+echo
+echo "detected=$pass  missed=$miss  skipped=$noop"
+if [ "$miss" -ne 0 ]; then
+  echo "RESULT: FAIL -- the suite has blind spots"
+  exit 1
 fi
-exit "$FAILS"
+echo "RESULT: PASS -- every mutant was detected"

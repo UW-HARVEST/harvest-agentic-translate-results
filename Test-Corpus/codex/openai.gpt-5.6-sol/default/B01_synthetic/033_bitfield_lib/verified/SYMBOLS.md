@@ -1,24 +1,21 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Generated from:
+Derived from:
 
 ```text
 nm -D --defined-only ../c_src/build/libdriver.so
 ```
 
-| C symbol | Type | C source | Rust export | Status |
-|----------|------|----------|-------------|--------|
-| `driver` | `T` | `include/driver.h`, `src/driver.c` | `extern "C" fn driver` | [x] |
-| `print_foo` | `T` | `src/driver.c` | `extern "C" fn print_foo` | [x] |
+Only externally callable `T` symbols are part of the library API. ELF
+toolchain bookkeeping symbols are not exported as public `T` symbols by
+`nm -D --defined-only`.
 
-The mechanically sorted defined-symbol sets are identical. The C library has
-no other defined dynamic symbols:
+| C symbol | Rust symbol | Status |
+|----------|-------------|--------|
+| `driver` | `driver` | [x] exact export present |
+| `print_foo` | `print_foo` | [x] exact export present |
 
-```text
-driver
-print_foo
-```
+Completion:
 
-The C library's undefined dynamic symbols are the libc function `printf` and
-weak ELF/toolchain hooks (`_ITM_*`, `__cxa_finalize`, and `__gmon_start__`).
-There are no undefined project symbols.
+- [x] Every public C dynamic symbol is exported by the Rust shared library.
+- [x] Missing-symbol diff is empty.

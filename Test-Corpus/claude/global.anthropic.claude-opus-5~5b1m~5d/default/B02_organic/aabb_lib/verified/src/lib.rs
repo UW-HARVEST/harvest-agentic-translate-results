@@ -1,30 +1,17 @@
 //! Rust translation of `c_src/src/lib.c` (a cute_c2 / tinyc2 derived 2D
 //! collision library).
 //!
-//! Every non-`static` function of the C translation unit has external linkage
-//! and is therefore exported by the C shared object; every one of them is
-//! re-exported here with the exact same linker name, signature and
-//! (bit-for-bit) behaviour.
+//! Every non-static function of the C translation unit is exported by the C
+//! shared object, so every one of them is re-exported here with the exact same
+//! linker name, signature and (bit-for-bit) behaviour.
 //!
-//! # Fidelity notes
-//!
-//! * All arithmetic is `f32` and is performed in exactly the same order as the
-//!   C source.
-//! * The C library is built by `c_src/CMakeLists.txt` without any
-//!   `CMAKE_BUILD_TYPE`, i.e. at `-O0`, so gcc emits one scalar SSE instruction
-//!   per source-level operation with no reassociation and no FMA contraction.
-//!   Consequently the *only* place where a naive Rust transcription can differ
-//!   is NaN payload/sign propagation, which on x86 SSE is
-//!   **destination-operand-wins** (see [`ssf`]). The operand that ends up in
-//!   the destination register is not always the left-hand side of the C
-//!   expression (gcc `-O0` picks it from its evaluation order), so each
-//!   operation below records the order taken from
-//!   `objdump -d` of the reference `.so`.
-//! * Quirks / bugs of the original are preserved verbatim: the nonsensical
-//!   `metric < -1.0e8f` cache-validation conjunct, the missing `default:` in
-//!   `c2MakeProxy`, the argument swapping in `c2Collided`, `c2L`'s `case 3`
-//!   falling into `default:`, `c2Support`'s unconditional `verts[0]` read, and
-//!   `c2GJKSimplexMetric`'s `default:` falling through into `case 1:`.
+//! Notes on fidelity:
+//!   * All arithmetic is performed on `f32` in exactly the same order as the C
+//!     code so that results are bit-identical (no `f32::max`/`min` which have
+//!     different NaN semantics than C's `?:` idiom).
+//!   * Bugs / quirks of the original are preserved (e.g. the nonsensical
+//!     `metric < -1.0e8f` cache-validation test, the missing `default:` in
+//!     `c2MakeProxy`, the `c2Collided` argument swapping, ...).
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -36,96 +23,10 @@ use std::ffi::{c_int, c_void};
 // Constants used by the original source (spelled out there as literals).
 // ---------------------------------------------------------------------------
 
-/// `3.40282346638528859811704183484516925e+38F` (FLT_MAX), `.rodata` 0x7f7fffff
+/// `3.40282346638528859811704183484516925e+38F` (FLT_MAX)
 const C2_FLT_MAX: f32 = 3.402_823_466_385_288_598_117_041_834_845_169_25e+38;
-/// `1.19209289550781250000000000000000000e-7F` (FLT_EPSILON), `.rodata` 0x34000000
+/// `1.19209289550781250000000000000000000e-7F` (FLT_EPSILON)
 const C2_EPSILON: f32 = 1.192_092_895_507_812_5e-7;
-/// gcc constant-folds `FLT_EPSILON * FLT_EPSILON` to `.rodata` 0x28800000.
-const C2_EPSILON_SQ: f32 = f32::from_bits(0x2880_0000);
-
-// ---------------------------------------------------------------------------
-// x86 SSE scalar-arithmetic emulation (NaN propagation fidelity)
-// ---------------------------------------------------------------------------
-//
-// For `ADDSS/SUBSS/MULSS/DIVSS xmm_dst, xmm_src`:
-//   * if `dst` is a NaN, the result is `dst` with the quiet bit forced on;
-//   * else if `src` is a NaN, the result is `src` with the quiet bit forced on;
-//   * otherwise the IEEE-754 result (which for an invalid operation such as
-//     `inf - inf`, `0 * inf` or `0 / 0` is the "real indefinite" QNaN
-//     `0xffc00000`).
-//
-// Rust's `a op b` lowers to the same instruction but LLVM is free to choose
-// which side lands in the destination register, so the NaN winner is not
-// stable. Making the rule explicit removes that dependency on codegen while
-// leaving the numeric result untouched for every non-NaN input.
-
-/// Force the quiet bit of a NaN on (identity for a QNaN, quietens an SNaN),
-/// preserving sign and payload — exactly what SSE does.
-#[inline(always)]
-fn quiet(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() | 0x0040_0000)
-}
-
-/// Which operand's NaN an SSE arithmetic instruction returns, if any.
-#[inline(always)]
-fn ssf(dst: f32, src: f32) -> Option<f32> {
-    if dst.is_nan() {
-        Some(quiet(dst))
-    } else if src.is_nan() {
-        Some(quiet(src))
-    } else {
-        None
-    }
-}
-
-/// `ADDSS dst, src`
-#[inline(always)]
-fn addss(dst: f32, src: f32) -> f32 {
-    match ssf(dst, src) {
-        Some(v) => v,
-        None => dst + src,
-    }
-}
-
-/// `SUBSS dst, src`
-#[inline(always)]
-fn subss(dst: f32, src: f32) -> f32 {
-    match ssf(dst, src) {
-        Some(v) => v,
-        None => dst - src,
-    }
-}
-
-/// `MULSS dst, src`
-#[inline(always)]
-fn mulss(dst: f32, src: f32) -> f32 {
-    match ssf(dst, src) {
-        Some(v) => v,
-        None => dst * src,
-    }
-}
-
-/// `DIVSS dst, src`
-#[inline(always)]
-fn divss(dst: f32, src: f32) -> f32 {
-    match ssf(dst, src) {
-        Some(v) => v,
-        None => dst / src,
-    }
-}
-
-/// `XORPS x, signmask` — gcc materialises C's unary `-` on a float as a plain
-/// sign-bit flip, which (unlike an arithmetic negation) never quietens an SNaN.
-#[inline(always)]
-fn fneg(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() ^ 0x8000_0000)
-}
-
-/// `SQRTSS` — the C calls `sqrtf` from libm, which on x86-64 is `sqrtss`.
-#[inline(always)]
-fn sqrtss(x: f32) -> f32 {
-    x.sqrt()
-}
 
 // ---------------------------------------------------------------------------
 // C2_TYPE
@@ -288,6 +189,59 @@ const _: () = {
 // Small vector helpers (each one is also a public C symbol)
 // ---------------------------------------------------------------------------
 
+/// Materialise a float negation exactly where the C source performs it.
+///
+/// The C library is compiled without optimisation, so `-x` is always emitted as
+/// a standalone `xorps` sign flip whose result is then fed to the following
+/// `mulss`/`addss`.  LLVM, in contrast, happily rewrites `(-x) * y` into
+/// `-(x * y)` and `(-x) * y + z` into `z - x * y`; those are value-identical for
+/// every finite input but produce a different *sign bit* when a NaN flows
+/// through.  An optimisation barrier keeps the emitted sequence (and therefore
+/// the NaN payload/sign propagation) identical to the C build.
+#[inline]
+fn cneg(x: f32) -> f32 {
+    std::hint::black_box(-x)
+}
+
+/// Quiet a (possibly signalling) NaN exactly the way an x86 SSE arithmetic
+/// instruction does: set the mantissa MSB, keep the sign and the rest of the
+/// payload.
+#[inline(always)]
+fn quiet(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() | 0x0040_0000)
+}
+
+/// x86 scalar-SSE `OP dst, src` NaN-selection semantics.
+///
+/// The C build is unoptimised, so each arithmetic expression in `lib.c` is one
+/// instruction with a fixed destination register.  Reproducing which operand is
+/// the destination is what makes NaN payload propagation bit-identical; the
+/// explicit NaN branch also stops LLVM from commuting or reassociating the
+/// operands behind our back.
+#[inline(always)]
+fn sse2(dst: f32, src: f32, op: impl FnOnce(f32, f32) -> f32) -> f32 {
+    if dst.is_nan() {
+        quiet(dst)
+    } else if src.is_nan() {
+        quiet(src)
+    } else {
+        op(dst, src)
+    }
+}
+
+/// `addss dst, src`
+#[inline(always)]
+fn addss(dst: f32, src: f32) -> f32 { sse2(dst, src, |a, b| a + b) }
+/// `subss dst, src`
+#[inline(always)]
+fn subss(dst: f32, src: f32) -> f32 { sse2(dst, src, |a, b| a - b) }
+/// `mulss dst, src`
+#[inline(always)]
+fn mulss(dst: f32, src: f32) -> f32 { sse2(dst, src, |a, b| a * b) }
+/// `divss dst, src`
+#[inline(always)]
+fn divss(dst: f32, src: f32) -> f32 { sse2(dst, src, |a, b| a / b) }
+
 #[unsafe(no_mangle)]
 pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
     let mut a = c2v { x: 0.0, y: 0.0 };
@@ -296,10 +250,6 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
     a
 }
 
-/// ```c
-/// a.x *= b; a.y *= b;
-/// ```
-/// gcc: `mulss` with the *vector component* in the destination.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(mut a: c2v, b: f32) -> c2v {
     a.x = mulss(a.x, b);
@@ -328,10 +278,6 @@ pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
     c2Maxv(lo, c2Minv(a, hi))
 }
 
-/// ```c
-/// a.x -= b.x; a.y -= b.y;
-/// ```
-/// gcc: `subss` with `a`'s component in the destination.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
     a.x = subss(a.x, b.x);
@@ -339,20 +285,9 @@ pub extern "C" fn c2Sub(mut a: c2v, b: c2v) -> c2v {
     a
 }
 
-/// ```c
-/// return a.x * b.x + a.y * b.y;
-/// ```
-/// gcc `-O0`:
-/// ```text
-/// mulss %xmm0,%xmm1   ; xmm1 = a.x (dst) * b.x
-/// mulss %xmm2,%xmm0   ; xmm0 = b.y (dst) * a.y
-/// addss %xmm1,%xmm0   ; xmm0 = (a.y*b.y) (dst) + (a.x*b.x)
-/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    let t_x = mulss(a.x, b.x);
-    let t_y = mulss(b.y, a.y);
-    addss(t_y, t_x)
+    addss(mulss(b.y, a.y), mulss(a.x, b.x))
 }
 
 #[unsafe(no_mangle)]
@@ -374,56 +309,24 @@ pub extern "C" fn c2xIdentity() -> c2x {
     x
 }
 
-/// `sqrtf(c2Dot(a, a))`
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Len(a: c2v) -> f32 {
-    sqrtss(c2Dot(a, a))
+    c2Dot(a, a).sqrt()
 }
 
-/// ```c
-/// return a.x * b.y - a.y * b.x;
-/// ```
-/// gcc `-O0`:
-/// ```text
-/// mulss %xmm1,%xmm0   ; xmm0 = b.y (dst) * a.x
-/// mulss %xmm2,%xmm1   ; xmm1 = b.x (dst) * a.y
-/// subss %xmm1,%xmm0   ; xmm0 = (a.x*b.y) (dst) - (a.y*b.x)
-/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Det2(a: c2v, b: c2v) -> f32 {
-    let t0 = mulss(b.y, a.x);
-    let t1 = mulss(b.x, a.y);
-    subss(t0, t1)
+    subss(mulss(b.y, a.x), mulss(b.x, a.y))
 }
 
-/// ```c
-/// return c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y);
-/// ```
-/// gcc `-O0` (arguments evaluated right-to-left):
-/// ```text
-/// ; second argument
-/// mulss %xmm0,%xmm1   ; xmm1 = a.s (dst) * b.x
-/// mulss %xmm2,%xmm0   ; xmm0 = b.y (dst) * a.c
-/// addss %xmm0,%xmm3   ; xmm3 = (a.s*b.x) (dst) + (a.c*b.y)
-/// ; first argument
-/// mulss %xmm1,%xmm0   ; xmm0 = b.x (dst) * a.c
-/// mulss %xmm2,%xmm1   ; xmm1 = b.y (dst) * a.s
-/// subss %xmm1,%xmm0   ; xmm0 = (a.c*b.x) (dst) - (a.s*b.y)
-/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
-    let y = addss(mulss(a.s, b.x), mulss(b.y, a.c));
-    let x = subss(mulss(b.x, a.c), mulss(b.y, a.s));
-    c2V(x, y)
+    c2V(
+        subss(mulss(b.x, a.c), mulss(b.y, a.s)),
+        addss(mulss(a.s, b.x), mulss(b.y, a.c)),
+    )
 }
 
-/// ```c
-/// a.x += b.x; a.y += b.y;
-/// ```
-/// gcc `-O0` puts **`b`'s** component in the destination:
-/// ```text
-/// addss %xmm1,%xmm0   ; xmm0 = b.x (dst) + a.x
-/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(mut a: c2v, b: c2v) -> c2v {
     a.x = addss(b.x, a.x);
@@ -438,13 +341,13 @@ pub extern "C" fn c2Mulxv(a: c2x, b: c2v) -> c2v {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Neg(a: c2v) -> c2v {
-    c2V(fneg(a.x), fneg(a.y))
+    c2V(cneg(a.x), cneg(a.y))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Skew(a: c2v) -> c2v {
     let mut b = c2v { x: 0.0, y: 0.0 };
-    b.x = fneg(a.y);
+    b.x = cneg(a.y);
     b.y = a.x;
     b
 }
@@ -453,14 +356,10 @@ pub extern "C" fn c2Skew(a: c2v) -> c2v {
 pub extern "C" fn c2CCW90(a: c2v) -> c2v {
     let mut b = c2v { x: 0.0, y: 0.0 };
     b.x = a.y;
-    b.y = fneg(a.x);
+    b.y = cneg(a.x);
     b
 }
 
-/// ```c
-/// return c2Mulvs(a, 1.0f / b);
-/// ```
-/// gcc: `divss` with the literal `1.0f` in the destination.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
     c2Mulvs(a, divss(1.0f32, b))
@@ -471,56 +370,26 @@ pub extern "C" fn c2Norm(a: c2v) -> c2v {
     c2Div(a, c2Len(a))
 }
 
-/// ```c
-/// return c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y);
-/// ```
-/// gcc `-O0`:
-/// ```text
-/// ; second argument
-/// xorps %xmm0,%xmm1   ; xmm1 = -a.s (plain sign flip)
-/// mulss %xmm0,%xmm1   ; xmm1 = (-a.s) (dst) * b.x
-/// mulss %xmm2,%xmm0   ; xmm0 = b.y (dst) * a.c
-/// addss %xmm0,%xmm3   ; xmm3 = ((-a.s)*b.x) (dst) + (a.c*b.y)
-/// ; first argument
-/// mulss %xmm0,%xmm1   ; xmm1 = a.c (dst) * b.x
-/// mulss %xmm2,%xmm0   ; xmm0 = b.y (dst) * a.s
-/// addss %xmm0,%xmm1   ; xmm1 = (a.c*b.x) (dst) + (a.s*b.y)
-/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
-    let y = addss(mulss(fneg(a.s), b.x), mulss(b.y, a.c));
-    let x = addss(mulss(a.c, b.x), mulss(b.y, a.s));
-    c2V(x, y)
+    c2V(
+        addss(mulss(a.c, b.x), mulss(b.y, a.s)),
+        addss(mulss(cneg(a.s), b.x), mulss(b.y, a.c)),
+    )
 }
 
 // ---------------------------------------------------------------------------
 // Proxies
 // ---------------------------------------------------------------------------
 
-/// ```c
-/// void c2BBVerts(c2v *out, c2AABB *bb) {
-///     out[0] = bb->min;
-///     out[1] = c2V(bb->max.x, bb->min.y);
-///     out[2] = bb->max;
-///     out[3] = c2V(bb->min.x, bb->max.y);
-/// }
-/// ```
-///
-/// Every `bb->` load in the C happens *after* the preceding `out[...]` store, so
-/// a caller whose `out` buffer overlaps `*bb` observes the partially updated
-/// box — which is perfectly well defined C and is reachable in practice
-/// (`c2MakeProxy` passes `p->verts` as `out`, and `p` itself as `bb` would
-/// overlap). Each field is therefore re-read from the raw pointer at exactly the
-/// point the C reads it, and no `&`/`&mut` reference to `*bb` is ever created,
-/// so the aliasing stays legal on the Rust side too.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2BBVerts(out: *mut c2v, bb: *mut c2AABB) {
     unsafe {
-        use std::ptr::{addr_of, read};
-        *out.add(0) = read(addr_of!((*bb).min));
-        *out.add(1) = c2V(read(addr_of!((*bb).max.x)), read(addr_of!((*bb).min.y)));
-        *out.add(2) = read(addr_of!((*bb).max));
-        *out.add(3) = c2V(read(addr_of!((*bb).min.x)), read(addr_of!((*bb).max.y)));
+        let bb = &*bb;
+        *out.add(0) = bb.min;
+        *out.add(1) = c2V(bb.max.x, bb.min.y);
+        *out.add(2) = bb.max;
+        *out.add(3) = c2V(bb.min.x, bb.max.y);
     }
 }
 
@@ -612,7 +481,6 @@ fn simplex3(s: &mut c2Simplex) {
     let uCA = c2Dot(a, c2Sub(a, c));
     let vCA = c2Dot(c, c2Sub(c, a));
     let area = c2Det2(c2Sub(b, a), c2Sub(c, a));
-    // gcc: `mulss` with the `c2Det2` result in the destination, `area` as src.
     let uABC = mulss(c2Det2(b, c), area);
     let vABC = mulss(c2Det2(c, a), area);
     let wABC = mulss(c2Det2(a, b), area);
@@ -701,127 +569,46 @@ pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c
     }
 }
 
-/// gcc emits `den * s->X.u` as `mulss` with **`u`** in the destination.
-#[inline(always)]
-fn wu(u: f32, den: f32) -> f32 {
-    mulss(u, den)
-}
-
-/// `pA.verts[i]` where `i` comes from a caller-supplied `c2GJKCache`.
-///
-/// The C code indexes `c2v verts[8]` with the raw cached index, so anything
-/// outside `[0, 8)` is an out-of-bounds read and anything in
-/// `[proxy.count, 8)` is an *uninitialised* read (see `ERRORS.md` rows U4/U2).
-/// Neither is a value the C source defines, and it is not reproducible, so the
-/// Rust side stays memory-safe: in-range slots read the (zero-initialised)
-/// array exactly like the C reads its slots, and an out-of-range index yields
-/// `(0, 0)` instead of faulting. Every index the library itself ever stores
-/// into a cache is `< proxy.count`, so this is unreachable for any cache that
-/// was produced by `c2GJK`.
-#[inline(always)]
-fn proxy_vert(p: &c2Proxy, i: c_int) -> c2v {
-    if i >= 0 && (i as usize) < p.verts.len() {
-        p.verts[i as usize]
-    } else {
-        c2v { x: 0.0, y: 0.0 }
-    }
-}
-
 fn witness(s: &c2Simplex) -> (c2v, c2v) {
     let den = divss(1.0f32, s.div);
     match s.count {
         1 => (s.verts[0].sA, s.verts[0].sB),
         2 => (
             c2Add(
-                c2Mulvs(s.verts[0].sA, wu(s.verts[0].u, den)),
-                c2Mulvs(s.verts[1].sA, wu(s.verts[1].u, den)),
+                c2Mulvs(s.verts[0].sA, mulss(s.verts[0].u, den)),
+                c2Mulvs(s.verts[1].sA, mulss(s.verts[1].u, den)),
             ),
             c2Add(
-                c2Mulvs(s.verts[0].sB, wu(s.verts[0].u, den)),
-                c2Mulvs(s.verts[1].sB, wu(s.verts[1].u, den)),
+                c2Mulvs(s.verts[0].sB, mulss(s.verts[0].u, den)),
+                c2Mulvs(s.verts[1].sB, mulss(s.verts[1].u, den)),
             ),
         ),
         3 => (
             c2Add(
                 c2Add(
-                    c2Mulvs(s.verts[0].sA, wu(s.verts[0].u, den)),
-                    c2Mulvs(s.verts[1].sA, wu(s.verts[1].u, den)),
+                    c2Mulvs(s.verts[0].sA, mulss(s.verts[0].u, den)),
+                    c2Mulvs(s.verts[1].sA, mulss(s.verts[1].u, den)),
                 ),
-                c2Mulvs(s.verts[2].sA, wu(s.verts[2].u, den)),
+                c2Mulvs(s.verts[2].sA, mulss(s.verts[2].u, den)),
             ),
             c2Add(
                 c2Add(
-                    c2Mulvs(s.verts[0].sB, wu(s.verts[0].u, den)),
-                    c2Mulvs(s.verts[1].sB, wu(s.verts[1].u, den)),
+                    c2Mulvs(s.verts[0].sB, mulss(s.verts[0].u, den)),
+                    c2Mulvs(s.verts[1].sB, mulss(s.verts[1].u, den)),
                 ),
-                c2Mulvs(s.verts[2].sB, wu(s.verts[2].u, den)),
+                c2Mulvs(s.verts[2].sB, mulss(s.verts[2].u, den)),
             ),
         ),
         _ => (c2V(0.0, 0.0), c2V(0.0, 0.0)),
     }
 }
 
-/// ```c
-/// void c2Witness(c2Simplex *s, c2v *a, c2v *b) {
-///     float den = 1.0f / s->div;
-///     switch (s->count) { case 1: *a = s->a.sA; *b = s->a.sB; break; ... }
-/// }
-/// ```
-///
-/// The C stores `*a` **before** it evaluates the `*b` expression, so a caller
-/// that points `a` into `*s` (legal C, e.g. `&s->a.sB`) makes the `*b`
-/// computation observe the already-stored value. The internal GJK call site uses
-/// two disjoint locals and so is unaffected, but the exported entry point has to
-/// interleave the stores exactly like the C. All reads go through raw pointers;
-/// no reference to `*s` is created, so the aliasing is legal on the Rust side.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) {
     unsafe {
-        use std::ptr::{addr_of, read};
-        macro_rules! g {
-            ($i:expr, $f:ident) => {
-                read(addr_of!((*s).verts[$i].$f))
-            };
-        }
-        // `den` is computed from `s->div` before the switch, i.e. before any
-        // store through `a` or `b` could disturb it.
-        let den = divss(1.0f32, read(addr_of!((*s).div)));
-        match read(addr_of!((*s).count)) {
-            1 => {
-                *a = g!(0, sA);
-                *b = g!(0, sB);
-            }
-            2 => {
-                *a = c2Add(
-                    c2Mulvs(g!(0, sA), wu(g!(0, u), den)),
-                    c2Mulvs(g!(1, sA), wu(g!(1, u), den)),
-                );
-                *b = c2Add(
-                    c2Mulvs(g!(0, sB), wu(g!(0, u), den)),
-                    c2Mulvs(g!(1, sB), wu(g!(1, u), den)),
-                );
-            }
-            3 => {
-                *a = c2Add(
-                    c2Add(
-                        c2Mulvs(g!(0, sA), wu(g!(0, u), den)),
-                        c2Mulvs(g!(1, sA), wu(g!(1, u), den)),
-                    ),
-                    c2Mulvs(g!(2, sA), wu(g!(2, u), den)),
-                );
-                *b = c2Add(
-                    c2Add(
-                        c2Mulvs(g!(0, sB), wu(g!(0, u), den)),
-                        c2Mulvs(g!(1, sB), wu(g!(1, u), den)),
-                    ),
-                    c2Mulvs(g!(2, sB), wu(g!(2, u), den)),
-                );
-            }
-            _ => {
-                *a = c2V(0.0, 0.0);
-                *b = c2V(0.0, 0.0);
-            }
-        }
+        let (wa, wb) = witness(&*s);
+        *a = wa;
+        *b = wb;
     }
 }
 
@@ -830,8 +617,8 @@ fn lerp_point(s: &c2Simplex) -> c2v {
     match s.count {
         1 => s.verts[0].p,
         2 => c2Add(
-            c2Mulvs(s.verts[0].p, wu(s.verts[0].u, den)),
-            c2Mulvs(s.verts[1].p, wu(s.verts[1].u, den)),
+            c2Mulvs(s.verts[0].p, mulss(s.verts[0].u, den)),
+            c2Mulvs(s.verts[1].p, mulss(s.verts[1].u, den)),
         ),
         _ => c2V(0.0, 0.0),
     }
@@ -883,19 +670,16 @@ pub unsafe extern "C" fn c2GJK(
             let cache_was_good = (*cache).count != 0;
             if cache_was_good {
                 let n = (*cache).count;
-                // The C loop is `for (i = 0; i < cache->count; ++i)` and both
-                // `cache->iA[i]` and `s.verts[i]` are 3/4-element arrays, so a
-                // `count` above 4 is out-of-bounds (documented UB, see
-                // ERRORS.md U2). Clamp to the storage the C struct actually
-                // has so the Rust side stays memory-safe.
+                // `n` is at most 3 for any cache produced by this library;
+                // the bound keeps the index arithmetic in range.
                 let bound = if n > 3 { 3 } else { n };
                 let mut i: c_int = 0;
                 while i < bound {
                     let idx = i as usize;
                     let iA = (*cache).iA[idx];
                     let iB = (*cache).iB[idx];
-                    let sA = c2Mulxv(ax, proxy_vert(&pA, iA));
-                    let sB = c2Mulxv(bx, proxy_vert(&pB, iB));
+                    let sA = c2Mulxv(ax, pA.verts[iA as usize]);
+                    let sB = c2Mulxv(bx, pB.verts[iB as usize]);
                     let vtx = &mut s.verts[idx];
                     vtx.iA = iA;
                     vtx.sA = sA;
@@ -919,10 +703,7 @@ pub unsafe extern "C" fn c2GJK(
                 } else {
                     metric_old
                 };
-                // gcc folds `max_metric * 2.0f` into `addss %xmm0,%xmm0`;
-                // `mulss(max_metric, 2.0)` is bit-identical for every input
-                // (same value, same NaN winner).
-                if !(min_metric < mulss(max_metric, 2.0f32) && metric < -1.0e8f32) {
+                if !(min_metric < addss(max_metric, max_metric) && metric < -1.0e8f32) {
                     cache_was_read = 1;
                 }
             }
@@ -948,8 +729,6 @@ pub unsafe extern "C" fn c2GJK(
         let mut hit: c_int = 0;
         while iter < 20 {
             save_count = s.count;
-            // `int saveA[3]` in C; `s.count` is at most 3 for any simplex this
-            // library can build, so the clamp is never observable.
             let sc = if save_count > 4 { 4 } else { save_count };
             let mut i: c_int = 0;
             while i < sc {
@@ -978,20 +757,16 @@ pub unsafe extern "C" fn c2GJK(
             d0 = d1;
 
             let d = direction(&s);
-            if c2Dot(d, d) < C2_EPSILON_SQ {
+            if c2Dot(d, d) < C2_EPSILON * C2_EPSILON {
                 break;
             }
 
             let iA = c2Support(pA.verts.as_ptr(), pA.count, c2MulrvT(ax.r, c2Neg(d)));
-            let sA = c2Mulxv(ax, proxy_vert(&pA, iA));
+            let sA = c2Mulxv(ax, pA.verts[iA as usize]);
             let iB = c2Support(pB.verts.as_ptr(), pB.count, c2MulrvT(bx.r, d));
-            let sB = c2Mulxv(bx, proxy_vert(&pB, iB));
-            // `c2sv *v = verts + s.count;` — `s.count` is provably in `1..=2`
-            // at this point (a 3-simplex `break`s above with `hit`, and any
-            // `count >= 4` coming from a cache `break`s on the epsilon test
-            // during the first iteration), so this is always in bounds. The
-            // `get_mut` keeps that guarantee enforced rather than assumed.
-            if let Some(vtx) = s.verts.get_mut(s.count as usize) {
+            let sB = c2Mulxv(bx, pB.verts[iB as usize]);
+            {
+                let vtx = &mut s.verts[s.count as usize];
                 vtx.iA = iA;
                 vtx.sA = sA;
                 vtx.iB = iB;
@@ -1024,9 +799,7 @@ pub unsafe extern "C" fn c2GJK(
         } else if use_radius != 0 {
             let rA = pA.radius;
             let rB = pB.radius;
-            // gcc: `addss` with `rA` in the destination.
-            let rsum = addss(rA, rB);
-            if dist > rsum && dist > C2_EPSILON {
+            if dist > addss(rA, rB) && dist > C2_EPSILON {
                 dist = subss(dist, addss(rA, rB));
                 let n = c2Norm(c2Sub(b, a));
                 a = c2Add(a, c2Mulvs(n, rA));
@@ -1127,12 +900,11 @@ pub extern "C" fn c2CapsuletoCapsule(A: c2Capsule, B: c2Capsule) -> c_int {
     1
 }
 
-/// gcc: `r2 = A.r + B.r` becomes `addss` with **`B.r`** in the destination.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2CircletoCircle(A: c2Circle, B: c2Circle) -> c_int {
     let c = c2Sub(B.p, A.p);
     let d2 = c2Dot(c, c);
-    let mut r2 = addss(B.r, A.r);
+    let mut r2 = addss(A.r, B.r);
     r2 = mulss(r2, r2);
     (d2 < r2) as c_int
 }
@@ -1146,8 +918,6 @@ pub extern "C" fn c2CircletoAABB(A: c2Circle, B: c2AABB) -> c_int {
     (d2 < r2) as c_int
 }
 
-/// gcc: `r = A.r + B.r` becomes `addss` with **`B.r`** in the destination;
-/// `da / c2Dot(n, n)` is `divss` with `da` in the destination.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2CircletoCapsule(A: c2Circle, B: c2Capsule) -> c_int {
     let n = c2Sub(B.b, B.a);
@@ -1180,9 +950,7 @@ pub unsafe extern "C" fn c2Collided(
     unsafe {
         match typeA {
             C2_TYPE_CIRCLE => match typeB {
-                C2_TYPE_CIRCLE => {
-                    c2CircletoCircle(*(A as *const c2Circle), *(B as *const c2Circle))
-                }
+                C2_TYPE_CIRCLE => c2CircletoCircle(*(A as *const c2Circle), *(B as *const c2Circle)),
                 C2_TYPE_AABB => c2CircletoAABB(*(A as *const c2Circle), *(B as *const c2AABB)),
                 C2_TYPE_CAPSULE => {
                     c2CircletoCapsule(*(A as *const c2Circle), *(B as *const c2Capsule))
@@ -1192,9 +960,7 @@ pub unsafe extern "C" fn c2Collided(
             C2_TYPE_AABB => match typeB {
                 C2_TYPE_CIRCLE => c2CircletoAABB(*(B as *const c2Circle), *(A as *const c2AABB)),
                 C2_TYPE_AABB => c2AABBtoAABB(*(A as *const c2AABB), *(B as *const c2AABB)),
-                C2_TYPE_CAPSULE => {
-                    c2AABBtoCapsule(*(A as *const c2AABB), *(B as *const c2Capsule))
-                }
+                C2_TYPE_CAPSULE => c2AABBtoCapsule(*(A as *const c2AABB), *(B as *const c2Capsule)),
                 _ => 0,
             },
             C2_TYPE_CAPSULE => match typeB {

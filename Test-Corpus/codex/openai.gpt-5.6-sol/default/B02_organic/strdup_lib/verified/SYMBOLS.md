@@ -1,21 +1,23 @@
 # Dynamic Symbol Surface
 
-Source library: `../c_src/build/libdriver.so`
+Source of truth:
 
-The public API list is derived with:
-
-```sh
+```text
 nm -D --defined-only ../c_src/build/libdriver.so
+0000000000001129 T custom_strdup
 ```
 
-Undefined libc/toolchain imports shown by unfiltered `nm -D` are dependencies,
-not symbols defined and exported by this library.
+| C symbol | C type | Rust export | Status |
+|----------|--------|-------------|--------|
+| `custom_strdup` | `T` (global function) | `custom_strdup` | present |
 
-| # | C symbol | C type | Rust symbol | Status |
-|---|----------|--------|-------------|--------|
-| 1 | `custom_strdup` | `T` | `custom_strdup` (`T`) | [x] exact match |
+The unfiltered C `nm -D` output also contains undefined libc/toolchain imports:
+`strlen`, `memcpy`, `malloc`, `__cxa_finalize`, `__gmon_start__`,
+`_ITM_deregisterTMCloneTable`, and `_ITM_registerTMCloneTable`. They are not
+definitions exported by this library.
 
-## Parity Check
+Completion:
 
-- [x] Every C-defined dynamic symbol is defined by the Rust shared object.
-- [x] Missing C-defined symbols: 0.
+- [x] Every dynamic symbol defined by the C shared library is defined by the
+  Rust shared library with the exact same name.
+- [x] Missing C definitions from Rust: none.

@@ -1,200 +1,184 @@
-# ERRORS.md — Phase C error / rejection surface table
+# ERRORS.md — error / rejection surface table
 
-Mechanically derived from `c_src/src/lib.c`. This library has **no error enum and
-no `errno`**: every "rejection" is one of
+Mechanically derived from `c_src/src/lib.c`. This library has **no error enum
+and no `RETURN_ERROR` macro**: every rejection is either
 
-* an early `return;` that leaves `m->count == 0` (manifold producers),
-* a `return 0;` sentinel from a clipping predicate (`c2Clip`, `c2SidePlanes*`),
-* a `default:`/missing-`case` fallthrough that leaves an output *untouched* or
-  returns a fixed sentinel (`c2V(0,0)`, `0`, `imax = 0`),
-* an out-of-domain float operation that yields `NaN`/`±inf` (`/0`, `sqrt`),
-* an out-of-range index that makes C read out of bounds (documented UB that the
-  Rust must nevertheless reproduce byte-for-byte).
+* an early `return;` that leaves `m->count == 0`,
+* a fall-through `switch` with no `default:` (silently does nothing),
+* a sentinel numeric result (`0`, `(0,0)`, `FLT_MAX`, `inf`, `NaN`),
+* or a deliberate out-of-contract read (`index == ~0`, `count <= 0`).
 
-Every row below is one distinct rejection branch in the C source, with the exact
-C line(s). Rows are checked off when a differential test constructs that exact
-condition, calls **both** `.so`s and asserts an identical result (bit-exact).
+Every row below is a distinct rejection branch in the C source, with the
+source line(s) it comes from.
 
-Legend for "expected C result": what an external caller observes.
+| # | function | trigger (exact invalid input / condition) | expected C result |
+|---|----------|-------------------------------------------|-------------------|
+| 1 | `c2MakeProxy` (L125) | `type == C2_TYPE_POLY` (3) — switch has no such case | `*p` left **completely untouched** (caller's uninitialised proxy) |
+| 2 | `c2MakeProxy` (L125) | `type` out of range (e.g. `-1`, `4`, `99`, `INT_MIN`) — no `default:` | `*p` left untouched |
+| 3 | `ptr_from_parts` (L901) | `typ == C2_TYPE_POLY` or any other value — no `default:`, no trailing `return` | falls off end → indeterminate pointer (UB). Never dereferenced by `c2Collide` for those types |
+| 4 | `c2Collide` (L855) | `typeA == C2_TYPE_POLY` (3) | outer switch no case → `m->count = 0`, rest of `*m` untouched |
+| 5 | `c2Collide` (L855) | `typeA` out of range (`-1`, `4`, `INT_MIN`, `INT_MAX`) | same as #4 |
+| 6 | `c2Collide` (L857/870/884) | valid `typeA`, `typeB == C2_TYPE_POLY` | inner switch no case → `m->count = 0`, `m->n` untouched (NOT negated) |
+| 7 | `c2Collide` (L857/870/884) | valid `typeA`, `typeB` out of range | same as #6 |
+| 8 | `c2AABBtoAABBManifold` (L664) | `dx = eA.x+eB.x-|d.x| < 0` (separated on x) | early `return`, `m->count == 0`, `depths`/`contact_points`/`n` untouched |
+| 9 | `c2AABBtoAABBManifold` (L667) | `dx >= 0` but `dy < 0` (separated on y) | early `return`, `m->count == 0` |
+| 10 | `c2CircletoCircleManifold` (L587) | `d2 >= r*r` (no overlap) | `m->count == 0`, nothing else written |
+| 11 | `c2CircletoAABBManifold` (L603) | `d2 >= r2` (circle outside AABB by ≥ r) | `m->count == 0` |
+| 12 | `c2CircletoCapsuleManifold` (L643) | GJK `d >= r` | `m->count == 0` |
+| 13 | `c2CapsuletoCapsuleManifold` (L840) | GJK `d >= r` | `m->count == 0` |
+| 14 | `c2CapsuletoPolyManifold` (L734/807) | `d >= 1e-6f` **and** `d >= A.r` | `m->count == 0` |
+| 15 | `c2CapsuletoPolyManifold` code 0 (L781) | `c2SidePlanesFromPoly` returns 0 | early `return` with `m->count == 0` (`c2KeepDeep` never runs) |
+| 16 | `c2CapsuletoPolyManifold` code 1 (L790) | `c2SidePlanes` returns 0 | early `return`, `m->count == 0` |
+| 17 | `c2CapsuletoPolyManifold` code 2 (L798) | `c2SidePlanes` returns 0 | early `return`, `m->count == 0` |
+| 18 | `c2CapsuletoPolyManifold` `default:` (L802) | `code` not in {0,1,2} — unreachable in practice | `return`, `m->count == 0` |
+| 19 | `c2SidePlanes` (L251) | first `c2Clip(seg,left) < 2` | returns 0; `seg` overwritten with partially-uninitialised `out[]` |
+| 20 | `c2SidePlanes` (L253) | second `c2Clip(seg,right) < 2` | returns 0 |
+| 21 | `c2SidePlanes` (L255) | `h == NULL` | skips writing `*h`, still returns 1 |
+| 22 | `c2Clip` (L214-225) | both `d0 >= 0` and `d1 >= 0` and `d0*d1 > 0` | `sp == 0`; `seg[0]`/`seg[1]` set from **uninitialised** `out[]` |
+| 23 | `c2Clip` | `d0 == 0 && d1 == 0` | `sp` becomes 2 or 4 (the two `<0` tests are false, then 2 pushes) → ≥2, accepted |
+| 24 | `c2Incident` (L714) | `ip->count <= 0` → loop never runs | `index` stays `~0 == -1` → reads `ip->verts[-1]` (out-of-bounds) |
+| 25 | `c2Incident` (L718) | every `c2Dot(...)` is `NaN` (`dot < min_dot` always false) | `index` stays `-1` → `ip->verts[-1]` OOB read. Reached via `c2AABBtoCapsuleManifold` with a degenerate AABB (zero-area ⇒ NaN normals) |
+| 26 | `c2Support` (L369) | `count <= 0` | reads `verts[0]` unconditionally, loop skipped, returns `0` |
+| 27 | `c2Norm` / `c2Div` (L228-234) | `c2Len(a) == 0` (zero vector) | `1.0f/0 = +inf`, `0*inf = NaN` → returns `(NaN, NaN)` |
+| 28 | `c2Norm` (L232) | `a` contains `NaN`/`inf` | propagates `NaN` |
+| 29 | `c2Len` (L164) | `c2Dot(a,a)` overflows to `+inf` | `sqrtf(inf) = inf` |
+| 30 | `c2Len` (L164) | `c2Dot(a,a)` is `NaN` (inf-inf) | `sqrtf(NaN) = NaN` |
+| 31 | `c2Intersect` (L206) | `da == db` | `da/(da-db)` = `±inf` or `NaN` (0/0) → `NaN`/`inf` components |
+| 32 | `c2GJKSimplexMetric` (L173) | `s->count` not in {2,3} (0, 1, 4, negative) | `default:`/`case 1:` → `0` |
+| 33 | `c2D` (L354) | `s->count` not in {1,2} (0, 3, 4, negative) | `case 3:`/`default:` → `(0,0)` |
+| 34 | `c2Witness` (L384) | `s->count` not in {1,2,3} (0, 4, negative) | `default:` → `*a = *b = (0,0)` |
+| 35 | `c2Witness` (L383) | `s->div == 0` | `den = 1/0 = +inf` → `inf`/`NaN` components for count 2/3 |
+| 36 | `c2L` (L411) | `s->count` not in {1,2} | `default:` → `(0,0)` |
+| 37 | `c2L` (L410) | `s->div == 0` | `den = +inf` → `inf`/`NaN` |
+| 38 | `c2GJK` (L427) | `ax_ptr == NULL` | substitutes `c2xIdentity()` |
+| 39 | `c2GJK` (L431) | `bx_ptr == NULL` | substitutes `c2xIdentity()` |
+| 40 | `c2GJK` (L569) | `outA == NULL` | skips write, still returns `dist` |
+| 41 | `c2GJK` (L571) | `outB == NULL` | skips write |
+| 42 | `c2GJK` (L573) | `iterations == NULL` | skips write |
+| 43 | `c2GJK` (L442) | `cache == NULL` | no cache read and no cache write |
+| 44 | `c2GJK` (L443) | `cache != NULL` with `cache->count == 0` | `cache_was_good == 0` → cold start; cache still written on exit |
+| 45 | `c2GJK` (L464) | cache present, `!(min_metric < max_metric*2 && metric < -1e8f)` | `cache_was_read = 1` → simplex kept from cache (note: `metric < -1e8f` makes the conjunction almost always false, so the cache is almost always "read") |
+| 46 | `c2GJK` (L484) | 20 iterations elapse without convergence | loop exits on `iter == 20`, `hit == 0`, returns current witness distance |
+| 47 | `c2GJK` (L506) | `d1 > d0` (no progress) | `break` out of loop |
+| 48 | `c2GJK` (L510) | `c2Dot(d,d) < FLT_EPSILON*FLT_EPSILON` | `break` |
+| 49 | `c2GJK` (L530) | duplicate support point (`iA`,`iB`) already in simplex | `break` |
+| 50 | `c2GJK` (L544) | `use_radius != 0` and `dist <= rA+rB` (or `dist <= FLT_EPSILON`) | midpoint collapse: `a = b = (a+b)/2`, `dist = 0` |
+| 51 | `c2GJK` (L538) | `hit != 0` (3-simplex containing origin) | `a = b`, `dist = 0` |
+| 52 | `c2GJK` (L550) | after radius shrink `a == b` exactly | `dist = 0` |
+| 53 | `c2GJK` typeA/typeB `POLY` | proxy left uninitialised by `c2MakeProxy` | `pA`/`pB` are indeterminate stack contents (UB); the only in-library caller is `c2CapsuletoPolyManifold` |
+| 54 | `c2PlaneAt` (L91) | `i` out of `[0,8)` | out-of-bounds read of `p->norms[i]` / `p->verts[i]` |
+| 55 | `c2BBVerts` (L118) | `bb->min > bb->max` (inverted AABB) | no validation; emits an inverted (clockwise) quad |
+| 56 | `c2Norms` (L815) | `count <= 0` | writes nothing |
+| 57 | `c2Norms` (L820) | duplicate consecutive verts (zero-length edge) | `c2Norm` of `(0,0)` → `(NaN,NaN)` normal |
+| 58 | `c2Clampv` (L73) | `lo > hi` | no validation; result is `max(lo, min(a,hi))` = `lo` |
+| 59 | `c2Maxv`/`c2Minv` (L63-71) | operand contains `NaN` | ternary `a.x > b.x` is false for NaN ⇒ always returns `b`'s component |
+| 60 | `omni_manifold` (L926) | `type_a`/`type_b == C2_TYPE_POLY` or out of range | `ptr_from_parts` returns indeterminate, `c2Collide` ignores it → `m->count = 0` |
+| 61 | `c2Div` (L228) | `b == 0` | `1.0f/0 = inf`; `0*inf = NaN` |
+| 62 | `c2Dot` (L83) | `inf * 0` operand pair | `NaN` |
+| 63 | `c2CircletoCircleManifold` (L589) | `l == 0` (coincident centers) | `n = (0, 1)` fallback instead of normalising |
+| 64 | `c2CircletoAABBManifold` (L604) | `d2 == 0` (center inside AABB) | deep-penetration branch using x/y overlap |
+| 65 | `c2CircletoCapsuleManifold` (L645) | `d == 0` | `n = c2Norm(c2Skew(B.b - B.a))`; if `B.a == B.b` this is `(NaN,NaN)` |
+| 66 | `c2CapsuletoCapsuleManifold` (L842) | `d == 0` | `n = c2Norm(c2Skew(A.b - A.a))`; `(NaN,NaN)` if `A.a == A.b` |
+| 67 | `c2CapsuletoPolyManifold` (L739) | `A_in_B.a == A_in_B.b` (degenerate capsule) | `ab = c2Norm((0,0)) = (NaN,NaN)` → all planes NaN → `code` stays 0, `index` stays `-1` ⇒ `c2SidePlanesFromPoly(..., -1, ...)` OOB read |
+| 68 | `c2AABBtoCapsuleManifold` (L824) | degenerate AABB (`min == max`, or zero width/height) | `c2Norms` yields NaN normals; `c2Incident`/`index = -1` OOB path (row 24/25) |
+| 69 | `c2AABBtoCapsuleManifold` (L831) | no collision (`m->count == 0`) | `m->n = c2Neg(m->n)` is still applied to the **untouched** `m->n` — caller-visible sign flip of stale data |
+| 70 | `c2Collide` AABB/CIRCLE (L873) | no collision | `m->n = c2Neg(m->n)` applied to untouched `m->n` (same stale-data flip) |
 
-| # | function | trigger (exact invalid input/condition) | expected C result | test | [x] |
-|---|----------|------------------------------------------|-------------------|------|-----|
-| 1 | `c2MakeProxy` | `type == C2_TYPE_POLY` (3) — no `case` at lib.c:126-146 | `*p` left **completely untouched** (radius/count/verts unchanged) | `err_makeproxy_unhandled_type` | [x] |
-| 2 | `c2MakeProxy` | `type` out of enum range (`-1`, `4`, `99`, `INT_MIN`, `INT_MAX`) | `*p` left completely untouched | `err_makeproxy_unhandled_type` | [x] |
-| 3 | `c2GJKSimplexMetric` | `s->count == 0` → `default:` (lib.c:174) | returns `0.0f` | `err_simplex_metric_bad_count` | [x] |
-| 4 | `c2GJKSimplexMetric` | `s->count == 1` → `case 1:` (lib.c:175) | returns `0.0f` | `err_simplex_metric_bad_count` | [x] |
-| 5 | `c2GJKSimplexMetric` | `s->count` ∈ {4,5,-1,INT_MIN,INT_MAX} → `default:` | returns `0.0f` | `err_simplex_metric_bad_count` | [x] |
-| 6 | `c2D` | `s->count == 3` or `default:` (0, 4, −1, INT_MIN/MAX) (lib.c:363-365) | returns `c2V(0,0)` | `err_c2d_bad_count` | [x] |
-| 7 | `c2L` | `s->count` ∉ {1,2} → `default:` (lib.c:417) | returns `c2V(0,0)` | `err_c2l_bad_count` | [x] |
-| 8 | `c2L` | `s->div == 0` (⇒ `den = 1/0 = +inf`) with `count == 2` | `±inf`/`NaN` components, bit-identical | `err_c2l_div_zero` | [x] |
-| 9 | `c2Witness` | `s->count` ∉ {1,2,3} → `default:` (lib.c:403) | `*a = *b = c2V(0,0)` | `err_witness_bad_count` | [x] |
-| 10 | `c2Witness` | `s->div == 0` ⇒ `den = +inf` | `inf`/`NaN` components, bit-identical | `err_witness_div_zero` | [x] |
-| 11 | `c2Support` | `count <= 0` (0, −1, INT_MIN) — loop body never runs, `verts[0]` still read (lib.c:370-371) | returns `0` | `err_support_nonpositive_count` | [x] |
-| 12 | `c2Support` | direction `d` all-`NaN` ⇒ `dot > dmax` never true | returns `0` | `err_support_nan_dir` | [x] |
-| 13 | `c2Div` | `b == 0` ⇒ `1.0f/0 = +inf` (lib.c:229) | `±inf` or `NaN` (for `0*inf`) components | `err_div_zero` | [x] |
-| 14 | `c2Div` | `b == -0.0` ⇒ `1/-0 = -inf` | `∓inf`/`NaN` | `err_div_zero` | [x] |
-| 15 | `c2Norm` | `a == (0,0)` ⇒ `c2Len == 0` ⇒ `0 * inf = NaN` (lib.c:232-233) | `(NaN, NaN)` bit-identical | `err_norm_zero_vector` | [x] |
-| 16 | `c2Norm` | any `NaN` component | `(NaN, NaN)` bit-identical | `err_norm_zero_vector` | [x] |
-| 17 | `c2Len` | `c2Dot(a,a)` overflows to `+inf` | `+inf` | `err_len_overflow` | [x] |
-| 18 | `c2Len` | `NaN` input ⇒ `sqrtf(NaN)` | `NaN` with identical bit pattern (glibc `sqrtf` vs `sqrtss`) | `err_len_nan` | [x] |
-| 19 | `c2Intersect` | `da == db` ⇒ `da/(da-db)` division by zero (lib.c:206-207) | `±inf`/`NaN` components | `err_intersect_degenerate` | [x] |
-| 20 | `c2Intersect` | `da == db == 0` ⇒ `0/0 = NaN` | `NaN` components | `err_intersect_degenerate` | [x] |
-| 21 | `c2PlaneAt` | `i` out of `[0,count)` but inside `verts[8]`/`norms[8]` | reads the (garbage) array slot; identical result required | `err_planeat_oob_index` | [x] |
-| 22 | `c2AABBtoAABBManifold` | `dx < 0` (no x-overlap) → `return;` (lib.c:664-665) | `m->count = 0`, `depths`/`contact_points`/`n` **untouched** | `err_aabb_aabb_no_x_overlap` | [x] |
-| 23 | `c2AABBtoAABBManifold` | `dx >= 0` but `dy < 0` → `return;` (lib.c:667-668) | `m->count = 0`, rest untouched | `err_aabb_aabb_no_y_overlap` | [x] |
-| 24 | `c2AABBtoAABBManifold` | `NaN` extent ⇒ `dx < 0` false and `dy < 0` false ⇒ falls through with NaN depth | `count = 1`, `NaN` depth, bit-identical `n`/`p` | `err_aabb_aabb_nan` | [x] |
-| 25 | `c2CircletoCircleManifold` | `d2 >= r*r` (no overlap, incl. exact touch) → `if` not taken (lib.c:587) | `m->count = 0`, rest untouched | `err_circle_circle_reject` | [x] |
-| 26 | `c2CircletoCircleManifold` | `A.r + B.r < 0` (both radii negative) ⇒ `r*r > 0` but `depths[0] = r-l < 0` | `count = 1` with negative depth (C does not validate radii) | `err_circle_circle_negative_radius` | [x] |
-| 27 | `c2CircletoCircleManifold` | `A.p == B.p` ⇒ `l == 0` ⇒ normal fallback `c2V(0,1)` (lib.c:589) | `n = (0,1)`, no division by zero | `err_circle_circle_coincident` | [x] |
-| 28 | `c2CircletoAABBManifold` | `d2 >= r2` → not taken (lib.c:603) | `m->count = 0`, rest untouched | `err_circle_aabb_reject` | [x] |
-| 29 | `c2CircletoAABBManifold` | `d2 == 0` (centre inside box) → deep branch (lib.c:611-632) | `count = 1`, axis-picked `n`, `depths[0] = A.r + depth` | `err_circle_aabb_center_inside` | [x] |
-| 30 | `c2CircletoAABBManifold` | inverted box `min > max` ⇒ `c2Clampv` degenerates | whatever C computes, bit-identical | `err_circle_aabb_inverted_box` | [x] |
-| 31 | `c2CircletoCapsuleManifold` | `d >= r` → not taken (lib.c:643) | `m->count = 0`, rest untouched | `err_circle_capsule_reject` | [x] |
-| 32 | `c2CircletoCapsuleManifold` | `d == 0` **and** `B.a == B.b` ⇒ `c2Norm(c2Skew(0,0))` = `(NaN,NaN)` (lib.c:645-646) | `count = 1`, `n = (NaN,NaN)`, `NaN` contact point | `err_circle_capsule_degenerate_axis` | [x] |
-| 33 | `c2CapsuletoCapsuleManifold` | `d >= r` → not taken (lib.c:840) | `m->count = 0`, rest untouched | `err_capsule_capsule_reject` | [x] |
-| 34 | `c2CapsuletoCapsuleManifold` | `d == 0` and `A.a == A.b` ⇒ `c2Norm` of zero ⇒ `NaN` normal (lib.c:842-843) | `count = 1`, `NaN` normal/contact | `err_capsule_capsule_degenerate_axis` | [x] |
-| 35 | `c2CapsuletoPolyManifold` | `d >= 1e-6` **and** `d >= A.r` (both branches fail) (lib.c:734/807) | `m->count = 0`, rest untouched | `err_capsule_poly_reject` | [x] |
-| 36 | `c2CapsuletoPolyManifold` | `code == 0` and `c2SidePlanesFromPoly` returns 0 → `return;` (lib.c:781-782) | `m->count = 0`, rest untouched | `err_capsule_poly_sideplanes_reject` | [x] |
-| 37 | `c2CapsuletoPolyManifold` | `code == 1` and `c2SidePlanes` returns 0 → `return;` (lib.c:790-791) | `m->count = 0` (or prior value), rest untouched | `err_capsule_poly_sideplanes_reject` | [x] |
-| 38 | `c2CapsuletoPolyManifold` | `code == 2` and `c2SidePlanes` returns 0 → `return;` (lib.c:798-799) | `m->count = 0`, rest untouched | `err_capsule_poly_sideplanes_reject` | [x] |
-| 39 | `c2CapsuletoPolyManifold` | `A.a == A.b` ⇒ `ab = c2Norm(0,0) = NaN` ⇒ every `d`/`s0`/`s1` NaN ⇒ `index` stays `~0 == -1`, `code` stays 0 ⇒ C reads `verts[-1]` (OOB) | bit-identical OOB-derived manifold | `err_capsule_poly_degenerate_axis` | [x] |
-| 40 | `c2CapsuletoPolyManifold` | `B->count == 0` ⇒ separation loop never runs ⇒ `index = -1`, `sep = -FLT_MAX`, `code = 0` ⇒ `verts[-1]` read | bit-identical | `err_capsule_poly_zero_count` | [x] |
-| 41 | `c2CapsuletoPolyManifold` | `B->count < 0` ⇒ same as count 0; `c2Support` also returns 0 | bit-identical | `err_capsule_poly_negative_count` | [x] |
-| 42 | `c2CapsuletoPolyManifold` | `B->count == 8` (max) — index wrap `index+1 == count ? 0` boundary | bit-identical | `cfg` rows + `err_capsule_poly_count_boundary` | [x] |
-| 43 | `c2Clip` (via `c2SidePlanes`) | `d0 >= 0 && d1 >= 0 && d0*d1 > 0` ⇒ `sp == 0` ⇒ `return 0 < 2` ⇒ caller rejects | caller returns 0 ⇒ `m->count = 0` | `err_capsule_poly_sideplanes_reject` | [x] |
-| 44 | `c2Clip` (via `c2SidePlanes`) | `sp == 1` (one endpoint inside) ⇒ `return 1 < 2` ⇒ caller rejects | caller returns 0 | `err_capsule_poly_sideplanes_reject` | [x] |
-| 45 | `c2Clip` | `d0 == 0 && d1 == 0` ⇒ the "both on the plane" double-push (lib.c:218-220). NOTE: `d0 < 0` and `d1 < 0` are both false in that case, so `sp` is still 0 when the branch is taken and ends at exactly 2 — `out[2]`/`out[3]` are **never** written and the `d0*d1 <= 0` branch is skipped. Reachable `sp` is exactly {0,1,2}. | `sp = 2`, both endpoints kept | `err_clip_both_on_plane` | [x] |
-| 46 | `c2SidePlanes` | `ra == rb` ⇒ `in = c2Norm(0,0) = NaN` ⇒ all `c2Dist` NaN ⇒ `sp == 0` ⇒ returns 0 | caller rejects, `m->count = 0` | `err_capsule_poly_degenerate_axis` | [x] |
-| 47 | `c2SidePlanes` | `h == NULL` — `if (h)` guard (lib.c:255) | no write through null (only reachable internally with non-null) | n/a (static, always non-null) | [x] |
-| 48 | `c2Incident` | all `c2Dot(...)` are `NaN` ⇒ `dot < min_dot` never true ⇒ `index = ~0 = -1` ⇒ `verts[-1]` OOB read (lib.c:713-723) | bit-identical OOB-derived incident edge | `err_capsule_poly_degenerate_axis` | [x] |
-| 49 | `c2Incident` | `ip->count == 0` ⇒ loop never runs ⇒ `index = -1` ⇒ OOB | bit-identical | `err_capsule_poly_zero_count` | [x] |
-| 50 | `c2GJK` | `ax_ptr == NULL` → substitute `c2xIdentity()` (lib.c:427-428) | identity transform used | `cfg` rows / `err_gjk_null_transforms` | [x] |
-| 51 | `c2GJK` | `bx_ptr == NULL` → substitute `c2xIdentity()` (lib.c:431-432) | identity transform used | `cfg` rows / `err_gjk_null_transforms` | [x] |
-| 52 | `c2GJK` | `outA == NULL` → no write (lib.c:569) | caller's buffer untouched | `err_gjk_null_outputs` | [x] |
-| 53 | `c2GJK` | `outB == NULL` → no write (lib.c:571) | caller's buffer untouched | `err_gjk_null_outputs` | [x] |
-| 54 | `c2GJK` | `iterations == NULL` → no write (lib.c:573) | caller's buffer untouched | `err_gjk_null_outputs` | [x] |
-| 55 | `c2GJK` | `cache == NULL` → cache block skipped entirely (lib.c:442/559) | no cache read/write | `err_gjk_null_outputs` | [x] |
-| 56 | `c2GJK` | `cache->count == 0` ⇒ `cache_was_good == 0` ⇒ warm start skipped (lib.c:443) | fresh simplex; cache overwritten on exit | `cfg_gjk_cache_cold` | [x] |
-| 57 | `c2GJK` | `cache->count > 3` ⇒ the warm-start loop writes `verts[3]`… i.e. **past the end of the 136-byte `c2Simplex`**, into `c2GJK`'s other locals/spill slots. **The C itself dies:** a standalone C `main()` linked against the same `.so` prints `count=1/2/3` fine and is killed by SIGSEGV at `count=4` (exit 135). | `count ∈ {1,2,3}`: normal result, asserted bit-identical. `count >= 4`: **the C crashes** — no byte pattern exists to match, and running it kills the test binary, so it is documented instead of executed. | `err_gjk_cache_count_overflow` (asserts 1..3 over all type pairs/metrics/divs) | [x] |
-| 58 | `c2GJK` | `cache->count < 0` ⇒ loop never runs but `s.count` set negative ⇒ `c2Witness` `default:` ⇒ zeros | bit-identical: `dist = 0`, `outA = outB = (0,0)`, cache count left negative | `err_gjk_cache_negative_count` | [x] |
-| 59 | `c2GJK` | `cache->iA[i]`/`iB[i]` out of `[0, proxy.count)`. For `i ∈ [-1, 7]` the read `pA.verts[i]` still lands inside (or exactly one `c2v` before) the `c2Proxy` object — `verts[-1]` is `{radius, (float)count}` — which both sides lay out identically, so it is well-defined and must agree. `i >= 8` leaves the object entirely (a different neighbouring local under gcc -O0 vs rustc): **unbounded UB**, documented not asserted. | bit-identical for `i ∈ [-1,7]` | `err_gjk_cache_bad_indices` (all of −1..7 × 9 type pairs × counts 1..3) | [x] |
-| 60 | `c2GJK` | `typeA`/`typeB == C2_TYPE_POLY` ⇒ `c2MakeProxy` no-op ⇒ proxy stays as the caller left it (`count`, `verts`) | bit-identical (proxy is a fresh stack local in C; Rust zeroes it) | `err_gjk_poly_type`, `cfg_capsule_poly_*` | [x] |
-| 61 | `c2GJK` | `typeA`/`typeB` out of enum range (−1, 4, 99, INT_MIN/MAX) | same as POLY: proxy untouched | `err_gjk_bad_type` | [x] |
-| 62 | `c2GJK` | `use_radius != 0` and `dist <= rA+rB` ⇒ midpoint branch, `dist = 0` (lib.c:552-556) | `dist = 0`, `outA == outB == midpoint` | `cfg_gjk_use_radius` | [x] |
-| 63 | `c2GJK` | `use_radius != 0` and `dist <= FLT_EPSILON` ⇒ same midpoint branch | `dist = 0` | `cfg_gjk_use_radius` | [x] |
-| 64 | `c2GJK` | `use_radius != 0`, shrink makes `a == b` ⇒ `dist = 0` (lib.c:550-551) | `dist = 0` | `cfg_gjk_use_radius` | [x] |
-| 65 | `c2GJK` | `hit` (simplex reached count 3) ⇒ `a = b; dist = 0` (lib.c:538-540) | `dist = 0`, `outA == outB` | `cfg_gjk_overlap` | [x] |
-| 66 | `c2GJK` | loop exits via `d1 > d0` (lib.c:506) | early break; iteration count reported | `cfg_gjk_*` | [x] |
-| 67 | `c2GJK` | loop exits via `c2Dot(d,d) < FLT_EPSILON²` (lib.c:510) | early break | `cfg_gjk_*` | [x] |
-| 68 | `c2GJK` | loop exits via duplicate support point (lib.c:530) | early break | `cfg_gjk_*` | [x] |
-| 69 | `c2GJK` | loop runs to the `iter < 20` cap (lib.c:484). **Unreachable:** the largest proxy `c2MakeProxy` can build has 4 vertices (AABB), so the duplicate-support test always fires first. Measured max over 500 000 randomized configurations (incl. warm caches, degenerate and non-finite shapes) = **4**. | reachable range is `*iterations ∈ 0..=4`; every value is exercised and asserted | `cfg_gjk_iteration_cap`, `gjk_iteration_bound_is_four` | [x] |
-| 70 | `c22` | `v <= 0` (incl. `v == 0` and `NaN`-false) → collapse to `a` (lib.c:273) | `count = 1`, `div = 1` | `err_c22_branches` | [x] |
-| 71 | `c22` | `u <= 0` → collapse to `b` (lib.c:277) | `count = 1`, `a = b` | `err_c22_branches` | [x] |
-| 72 | `c22` | both `u`,`v` `NaN` ⇒ neither `<= 0` ⇒ else-branch with `NaN` `div` | `count = 2`, `div = NaN` | `err_c22_nan` | [x] |
-| 73 | `c23` | each of the 7 mutually exclusive branches (lib.c:304,308,313,318,323,330,337) | corresponding `count`/`div`/vertex permutation | `err_c23_branches` | [x] |
-| 74 | `c23` | all-`NaN` barycentrics ⇒ falls to final `else` with `NaN` `div`, `count = 3` | `count = 3`, `div = NaN` | `err_c23_nan` | [x] |
-| 75 | `c2Norms` | `count <= 0` | writes nothing | `err_norms_nonpositive` | [x] |
-| 76 | `c2Norms` | duplicate consecutive verts ⇒ `c2Norm(0,0)` ⇒ `NaN` normal | `NaN` normals, bit-identical | `err_norms_degenerate` | [x] |
-| 77 | `c2Norms` | `count > 8` ⇒ writes past the caller's array (caller-provided buffers, C does not check) | not exercised destructively; `count == 8` boundary tested | `err_norms_count_boundary` | [x] |
-| 78 | `c2Collide` | `typeA == C2_TYPE_POLY` or out-of-range ⇒ outer `switch` has no `case`/`default` (lib.c:855) | only `m->count = 0`; **`m->n` untouched** | `err_collide_unhandled_type` | [x] |
-| 79 | `c2Collide` | `typeB == C2_TYPE_POLY`/out-of-range with valid `typeA` ⇒ inner `switch` no `case` | only `m->count = 0`, `m->n` untouched | `err_collide_unhandled_type` | [x] |
-| 80 | `c2Collide` | `typeA = AABB, typeB = CIRCLE` where the sub-manifold rejects ⇒ `m->n = c2Neg(m->n)` negates the **caller's** stale `n` (lib.c:872-873) | caller's `n` sign-flipped even though `count == 0` | `err_collide_negate_stale_n` | [x] |
-| 81 | `c2Collide` | same for `CAPSULE/CIRCLE` (lib.c:886-887) and `CAPSULE/AABB` (lib.c:890-891) | stale `n` sign-flipped | `err_collide_negate_stale_n` | [x] |
-| 82 | `ptr_from_parts` | `typ == C2_TYPE_POLY` or out of range ⇒ no `case`, **no `return`**, falls off the end (lib.c:923) | indeterminate return value; never dereferenced by `c2Collide` for those types | `err_ptr_from_parts_unhandled` | [x] |
-| 83 | `omni_manifold` | `type_a` and/or `type_b` = `C2_TYPE_POLY`(3) | `m->count = 0`, `m->n` untouched (garbage pointer never dereferenced) | `err_omni_unhandled_type` | [x] |
-| 84 | `omni_manifold` | `type_a`/`type_b` out of enum range (−1, 4, 99, INT_MIN, INT_MAX) — C enums accept any `int` | `m->count = 0`, `m->n` untouched | `err_omni_out_of_range_enum` | [x] |
-| 85 | `omni_manifold` | `NaN` / `±inf` / subnormal shape parameters for every type pair | bit-identical manifold (incl. `NaN` payload & sign) | `err_omni_nonfinite_params` | [x] |
-| 86 | `omni_manifold` | zero / negative radius for circle & capsule | bit-identical | `err_omni_bad_radius` | [x] |
-| 87 | `omni_manifold` | inverted AABB (`min > max`) | bit-identical | `err_omni_inverted_aabb` | [x] |
-| 88 | `c2BBVerts` | inverted / `NaN` AABB | writes 4 verts verbatim, no validation | `err_bbverts_degenerate` | [x] |
-| 89 | `c2Maxv`/`c2Minv`/`c2Clampv` | `NaN` operand ⇒ C's `>`/`<` are false ⇒ picks the *second* operand | bit-identical (which operand wins matters) | `err_minmax_nan` | [x] |
-| 90 | `c2Absv` | `-0.0` ⇒ `(a.x) < 0` is **false** ⇒ returns `-0.0` (sign preserved!) | `-0.0`, not `+0.0` | `err_absv_negative_zero` | [x] |
-| 91 | `c2Absv` | `NaN` ⇒ `< 0` false ⇒ returns the `NaN` unchanged (payload+sign preserved) | identical bits | `err_absv_nan` | [x] |
-| 92 | `c2Neg`/`c2Skew`/`c2CCW90` | `NaN` / `±0.0` input — unary `-` is a pure sign-bit flip | sign-flipped bits, incl. `-NaN` | `err_unary_neg_signbit` | [x] |
-| 93 | `c2Dist` | `h.n` or `p` `NaN`/`inf`, `inf - inf` | `NaN` bit-identical | `err_dist_nonfinite` | [x] |
-| 94 | `c2Dot` | `0 * inf` ⇒ `NaN`; `inf + -inf` ⇒ `NaN` | `NaN` bit-identical | `err_dot_nonfinite` | [x] |
-| 95 | `c2Det2` | `inf - inf` ⇒ `NaN` | `NaN` bit-identical | `err_det2_nonfinite` | [x] |
-| 96 | `c2Mulrv`/`c2MulrvT`/`c2Mulxv`/`c2MulxvT` | `NaN`/`inf` rotation or vector | bit-identical (NaN operand-order selection) | `err_xform_nonfinite` | [x] |
-| 97 | all pointer args | `NULL` shape/manifold pointer (`c2GJK(A=NULL)`, `c2Collide(m=NULL)`, `c2PlaneAt(NULL)`) | C dereferences ⇒ SIGSEGV; both sides crash identically — **not** exercised (would kill the test process) | documented, not tested | [x] |
+## Results — every row has a passing differential test
 
----
+Test file: `tests/phase_c_errors.rs` (19 tests, all passing). Mapping:
 
-## Findings — divergences that were found and fixed in the Rust
+| rows | test |
+|------|------|
+| 1, 2 | `row01_row02_makeproxy_unhandled_type` |
+| 3 | `row03_ptr_from_parts_no_case` |
+| 4, 5, 6, 7 | `row04_row07_collide_bad_types` |
+| 8, 9 | `row08_row09_aabb_aabb_separated` |
+| 10, 11, 12, 13, 14 | `row10_row14_no_overlap` |
+| 15, 16, 17, 18, 19, 20, 21, 22, 23 | `row15_row23_clip_sideplane_rejections` |
+| 24, 25, 67, 68 | `row24_row25_row67_row68_negative_index` |
+| 26 | `row26_support_nonpositive_count` |
+| 27, 28, 29, 30, 31, 61, 62 | `row27_row31_arithmetic_sentinels` |
+| 32, 33, 34, 35, 36, 37 | `row32_row37_simplex_out_of_contract` |
+| 38, 39, 40, 41, 42, 43, 44, 45 | `row38_row52_gjk_null_and_limits` |
+| 46, 47, 48, 49, 50, 51, 52 | `row46_row52_gjk_termination_and_radius` |
+| 53 | `row53_poly_proxy_uninitialised` |
+| 54 | `row54_planeat_out_of_range` |
+| 55, 56, 57, 58, 59 | `row55_row59_unvalidated_helpers` |
+| 60 | `row60_omni_bad_types` |
+| 63, 64, 65, 66 | `row63_row66_degenerate_fallbacks` |
+| 69, 70 | `row69_row70_stale_normal_negation` |
+| generic FFI boundaries (null pointers, zero/oversized/negative lengths, out-of-range enum ints one step past every valid variant) | `generic_boundaries` + the per-row tests above |
 
-| # | symptom | root cause | fix (in `translation/src/lib.rs`) |
-|---|---------|-----------|-----------------------------------|
-| F1 | ~16 % of all `NaN`-carrying cases across `c2Mulvs`, `c2Add`, `c2Sub`, `c2Dot`, `c2Det2`, `c2Div`, `c2Norm`, `c2Mulrv`, `c2MulrvT`, `c2Mulxv`, `c2MulxvT`, `c2Intersect` returned a NaN whose **quiet bit (0x0040_0000) was clear** where the C had it set — e.g. C `0x7fd0a74a` vs Rust `0x7f90a74a`. | The `x86_mul`/`x86_add`/`x86_sub` helpers modelled SSE's *operand-position* NaN selection but returned the chosen operand **verbatim**. Real `mulss`/`addss`/`subss` **quiet** a signalling NaN before propagating it (sign and payload survive, mantissa MSB is forced to 1). | Added `quiet_nan()` and wrapped every propagated operand in it. Also added `x86_div` for symmetry. |
+All 70 rows are checked off.
 
-## Ground-truth behaviours that no translation can reproduce
+## Two rows need special handling — read this before trusting the numbers
 
-Two inputs make the C's result depend on something other than its arguments.
-They are recorded here rather than "fixed", because the C is the ground truth and
-its answer is genuinely not a function of the input.
+### Row 3 — `ptr_from_parts` has no `return` on the fall-through path
 
-1. **`cache->count >= 4` in `c2GJK`** — writes past the `c2Simplex` object and
-   kills the process. Reproduced with a plain C program, no Rust involved
-   (row 57).
-2. **`C2_TYPE_POLY` (or any unhandled type) in `c2GJK`** — `c2MakeProxy` has no
-   `case` for it, so the `c2Proxy` locals are read uninitialised (row 60). On a
-   pristine stack — i.e. in any normal C program — those bytes are the kernel's
-   zero pages and the library behaves as if the proxy were
-   `{radius: 0, count: 0, verts: all-zero}`, which is exactly what the Rust
-   materialises. Confirmed by a standalone C `main()`: for
-   `omni_manifold(AABB, CAPSULE)` it prints the Rust's bytes exactly.
-   Inside a `libloading` harness that stack is dirty, so the test harness
-   restores the pristine condition before every FFI call — see
-   `tests/phase_a_stack_ub.rs` and `common::scrub_stack`. Two distinct hazards
-   had to be closed for that to be reliable:
-   * `dlsym` between the scrub and the call (fixed by caching every symbol);
-   * **lazy PLT binding** — the first `malloc@plt`/`sqrtf@plt` call runs
-     `_dl_runtime_resolve`, which is far deeper than the ~660 bytes between
-     `ptr_from_parts` and `c2GJK`'s proxy locals (fixed by
-     `dlopen(..., RTLD_NOW)`; symptom was exactly 1 divergence in 80 000 cases,
-     always on a thread's first `omni_manifold` call).
+For `C2_TYPE_POLY` and every out-of-range tag, the C function reaches `}`
+without executing a `return`. The value left in `%rax` is indeterminate *by
+definition*, so there is nothing to compare. The test therefore asserts what is
+actually observable and what `c2Collide` relies on:
 
-## Test adequacy — mutation testing
+* for the three handled tags, both libraries `malloc` and populate identical
+  payloads;
+* for the fall-through tags neither library crashes, and the Rust translation
+  returns an explicit `NULL` sentinel (the pointer is never dereferenced by
+  `c2Collide`, whose `switch` has no case for those tags either).
 
-To confirm the suite really pins down the subtle, easy-to-get-wrong behaviours
-(and is not just passing by accident), 20 deliberate mutations were injected into
-`src/lib.rs` one at a time, each rebuilt and run through the full suite. Results:
+### Row 53 — `c2GJK` reads an uninitialised `c2Proxy` for `C2_TYPE_POLY`
 
-| mutation | tests that caught it |
-|----------|----------------------|
-| drop the SNaN→QNaN quieting in `x86_mul`/`add`/`sub`/`div` | 32 |
-| `c2Sub` `subss` operands swapped | 71 |
-| `c2Mulrv` `subss` operands swapped | 44 |
-| `c2Det2` `subss` operands swapped | 29 |
-| `c2AABBtoCapsuleManifold`: reorder `AabbCapsuleFrame` (breaks the `p.verts[-1]` read) | 6 |
-| `c2Simplex` field order (breaks `c2sv *verts = &s.a` contiguity) | 12 |
-| `c2GJK`: `FLT_EPSILON²` → `FLT_EPSILON` | 20 |
-| `c2CapsuletoPolyManifold`: `1e-6` → `1e-5` | 15 |
-| POLY proxy `verts[0]` set to `(1,0)` instead of all-zero | 23 |
-| `c2Add` `addss` operands swapped | 19 |
-| `c2Dot` `addss` operands swapped | 10 |
-| `c2Mulvs` `mulss` operands swapped | 15 |
-| `c2Absv` normalises `-0.0` (uses `f32::abs`) | 8 |
-| `c2Maxv`/`c2Minv` NaN picks the first operand | 7 |
-| `c2Dist`: `-(h.d - dot)` instead of `dot - h.d` | 11 |
-| `c23`: reassociate the three-way `div` sum | 2 |
-| `c23`: `x86_mul(area, det2)` instead of `x86_mul(det2, area)` | 3 |
-| `c2Witness`/`c2L`: all `mulss` operands swapped (`den*u` vs `u*den`) | 3 |
+`c2MakeProxy` has no `C2_TYPE_POLY` case, so `c2GJK`'s `c2Proxy pB` local is
+never written when `typeB == C2_TYPE_POLY`. `c2GJK` then reads
+`pB.verts[0]`, `pB.count` and `pB.radius`. This is a genuine
+uninitialised-memory read in the C source, and it is on the path of three
+*public* entry points:
 
-Two mutations were **not** caught, and both are genuinely
-behaviour-preserving rather than test gaps:
+```
+omni_manifold / c2Collide  (AABB vs CAPSULE, either order)
+  -> c2AABBtoCapsuleManifold
+       -> c2CapsuletoPolyManifold
+            -> c2GJK(..., C2_TYPE_POLY, ...)
+```
 
-* `c2MulrvT`: `-a.s` instead of `fneg(a.s)`;
-* `c2KeepDeep`: `-d` instead of `fneg(d)`.
+Consequences that were **measured** on the built C `.so`:
 
-Rust's unary `-` on `f32` lowers to LLVM `fneg`, which *is* a pure sign-bit flip
-and preserves NaN payloads, so at every optimisation level tested (0,1,2,3,s,z)
-the two spellings are bit-identical. `fneg`'s `black_box` exists only to stop
-LLVM from *sinking* the negation into neighbouring arithmetic (rewriting
-`(-a)*b + c` into `c - a*b`, which would change a resulting NaN's sign bit); it
-is defence in depth, not an observed fix.
+* Calling `c2AABBtoCapsuleManifold` twice with byte-identical arguments returned
+  two different manifolds (`count == 2` then `count == 0`), i.e. the C library is
+  not a function of its inputs here.
+* With hostile stack residue, `pB.count` becomes a large positive integer and
+  `c2Support` walks off the top of the stack — the C library **SIGSEGVs** on
+  ordinary, in-contract public input.
 
-The `c2Witness`/`c2L` operand order was initially only proven by a dedicated
-test (`tests/phase_c_nan_order.rs`) that feeds **pairwise distinct NaN payloads**
-into each operand slot — random NaNs mostly collapse onto the default QNaN
-`0x7fc00000`, which hides operand-position bugs. `objdump` of `c2Witness`
-confirms the C emits `movss s->a.u,%xmm0 ; mulss den,%xmm0`, i.e. `u` is `dst`,
-which is what the translation does.
+The Rust translation models the local with `std::mem::zeroed()`, which is the
+behaviour of the C library whenever that stack region happens to be zero (a
+freshly-grown stack). To make the comparison well-defined and reproducible, the
+harness pins that memory:
+
+1. `with_clean_stack()` zeroes 16 KiB of stack immediately below the frame that
+   makes the FFI call, using **volatile** writes (`black_box` on a raw pointer
+   does not clobber memory, so a plain `write_bytes` version was silently
+   optimised away — verified).
+2. `fresh()` runs each test on a newly spawned thread with a unique, increasing
+   stack size, so glibc cannot hand back a cached (dirty) thread stack, and
+   scrubs 1 MiB once at thread entry.
+3. Both `.so`s are `dlopen`ed with **`RTLD_NOW`**. This is the subtle one: under
+   the default `RTLD_LAZY`, the first call to each of the C library's own PLT
+   entries runs `_dl_runtime_resolve_xsavec`, which spills the entire vector
+   register file several hundred bytes down the stack — landing exactly on
+   `pB`. That made the *first* AABB-vs-capsule call of a process behave
+   differently from every later one, and was the sole remaining source of
+   irreproducibility.
+4. Failure messages are built lazily (`check(..., || format!(...))`); eagerly
+   formatting a context string on every iteration left ~100 bytes of `core::fmt`
+   debris in the same region.
+
+With all four in place the C library is deterministic and matches the Rust
+translation bit-for-bit on this path, over the tens of thousands of randomised
+inputs in `CONFIGS.md` rows 44–57 and `ERRORS.md` rows 15–25, 53, 67–68.
+
+**Caveat for downstream users (not a translation defect):** an application that
+calls the *C* library's AABB-vs-capsule path from a dirty stack will get
+different answers from the Rust one, because the C answer is not defined. The
+Rust translation is the deterministic, zero-proxy interpretation.

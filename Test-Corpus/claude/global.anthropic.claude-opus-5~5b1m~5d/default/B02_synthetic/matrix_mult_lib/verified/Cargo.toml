@@ -8,11 +8,26 @@ name = "driver"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
-[dev-dependencies]
-libloading = "0.8"
-libc = "0.2"
-
 [profile.release]
 panic = "abort"
 
+# The C sources deliberately perform operations that are UB in C (dereferencing
+# the NULL `matrix_t*` that `allocate_matrix` may return, signed `int` overflow
+# in `multiply_matrices` and in `matrix_to_string`'s `buffer_size`). The
+# translation reproduces them bit-for-bit with `wrapping_*` arithmetic and raw
+# pointer derefs, which is exactly what the C compiler emits.
+#
+# Rust's dev profile would otherwise turn those same operations into
+# `debug_assertions` panics ("null pointer dereference occurred") and abort with
+# SIGABRT where the C build faults with SIGSEGV — a difference in the *profile*,
+# not in the translation. Disabling those checks here keeps the debug artifact
+# byte-compatible with the C build as well, so the differential suite passes
+# against `target/debug/libdriver.so` too.
+[profile.dev]
+debug-assertions = false
+overflow-checks = false
+
 [workspace]
+
+[dev-dependencies]
+libloading = "0.8"

@@ -1,25 +1,28 @@
 # Error Surface
 
-Mechanical scan scope: `../c_src/include/lib.h` and
-`../c_src/src/lib.c`.
+The following source scan was used:
+
+```text
+rg -n 'RETURN_ERROR|return\s+-1|return\s+NULL|return\s+[A-Z_]*ERROR|assert\s*\(|if\s*\(|switch\s*\(|#if|#ifdef|#ifndef|NULL|MIN|MAX|enum' ../c_src/include/lib.h ../c_src/src/lib.c
+```
+
+It found no rejection branch, error return, assertion, null check, explicit
+range check, error enum, or min/max input constant. `crc16` always returns a
+`uint16_t` CRC for inputs satisfying its pointer/length precondition.
 
 | # | function | trigger (the exact invalid input/condition) | expected C result | verified |
 |---|----------|----------------------------------------------|-------------------|----------|
 
-There are zero rows. The C source has no error-return macro, error enum,
-`assert`, explicit range check, null check, or rejection branch. `crc16`
-requires `d` to identify `len` readable bytes when `len > 0`; violating that
-precondition is undefined behavior, not a C rejection result. For `len == 0`,
-the pointer is not dereferenced, including when it is null.
+There are therefore **0 explicit C rejection rows**.
 
-## Generic FFI Boundaries
+## Generic FFI boundaries
 
-| boundary | coverage | [ ] |
-|----------|----------|-----|
-| Null `d`, zero `len` | Both libraries return the initial CRC | [x] |
-| Null `d`, nonzero `len` | Exact process outcomes compared in isolated subprocesses for lengths 1 and 8 | [x] |
-| Zero length | Null and non-null pointers, randomized initial CRCs | [x] |
-| Large representable length | 1,048,576 and 1,048,583 readable bytes | [x] |
-| Maximum `uint32_t` length with null `d` | Exact undefined-behavior process outcomes compared in isolated subprocesses | [x] |
-| One past documented range | Not representable: the C API exposes the full `uint32_t` domain | N/A |
-| Out-of-range enum | N/A: the public API has no enum parameter | N/A |
+| Boundary | C behavior | Coverage |
+|----------|------------|----------|
+| `d == NULL`, `len == 0` | Defined: no dereference; returns the initial CRC unchanged | [x] |
+| non-null `d`, `len == 0` | Defined: no dereference; returns the initial CRC unchanged | [x] |
+| large valid length (16 MiB + 7 bytes) | Defined: exercises sustained slicing and a maximum-size tail | [x] |
+| `d == NULL`, `len > 0` | Undefined behavior in C; there is no error/sentinel to compare | N/A |
+| `len` exceeds the readable allocation | Undefined behavior in C; there is no error/sentinel to compare | N/A |
+| out-of-range enum | No enum parameters exist | N/A |
+| one past a documented numeric range | No narrower documented range exists; all `uint16_t` CRC and `uint32_t` length values are representable | N/A |

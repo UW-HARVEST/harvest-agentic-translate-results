@@ -1,65 +1,84 @@
-# CONFIGS.md — Phase B configuration-surface table
+# CONFIGS.md — Phase A: configuration-surface table
 
-The mirror of `ERRORS.md`, for **valid** inputs. Axes derived mechanically from
-the branches the C actually takes.
+## Axes the C code actually branches on
 
-## Axes the C branches on
+Derived from `c_src/include/lib.h` (one entry point) and every `if` / `switch` /
+loop-bound in `c_src/src/lib.c`.
 
-| axis | values the C distinguishes | source |
-|------|----------------------------|--------|
-| A. `operation_mode` | `0001`(1), `0002`(2), `0003`(3), `0004`(4), everything else (`default:`) | `switch` at lib.c:121 |
-| B. library node state | (i) `node_count == 0` / `node_storage` all-zero — the **only** state reachable in the shipped `.so`, because `initialize_test_data` is `static` and never called; (ii) the 7-node tree that `initialize_test_data` builds, reachable only through the test shim | lib.c:37-38, 209-219 |
-| C. `node_id` | found vs not found; and *which* node (root `id=1` with `parent_id==-1`, depth-1 `id=2,3`, depth-2 `id=4,5,6`, depth-3 `id=7`) | `find_node_by_id`, lib.c:45-53 |
-| D. `depth` | case 1: `0`, `<` chain length, `>=` chain length (loop-exit reason: counter vs `parent_id == -1` vs parent lookup failure). case 2: `0`, `1..15`, `==16`, `>16` (`process_backward` start offset vs `size`), `<0` (UB). case 3: any (only its decimal width matters). case 4: any (scales by `1.0 + depth*0.1`; `0`, positive, negative, extreme) | lib.c:130, 78-84, 165, 183 |
-| E. `flags` | case 2: multiplied by 16 (full `int` range, sign matters). case 3: masked `& 0177` — only low 7 bits matter, sign of the rest irrelevant. cases 1/4/default: **ignored** | lib.c:161, 169 |
-| F. decimal width of `node_id` / `depth` | case `0003` only: 1..11 characters each (incl. `-` sign), driving `strlen` and hence the metric | `sprintf` + `compute_size_metric`, lib.c:165-167 |
-| G. `node_count > 2` | case `0004` only: enables the backward `node_storage` scan of the last ≤3 nodes | lib.c:187-198 |
-| H. `safe_double_to_int` saturation | value `> 2147483647.0`, in range, `< -2147483648.0` | lib.c:100-109 |
+| axis | values the C distinguishes | where |
+|------|---------------------------|-------|
+| `operation_mode` (arg 1) | `0001`, `0002`, `0003`, `0004`, anything else (`default:`) | `switch`, lib.c:121 |
+| `node_id` (arg 2) | found in `node_storage` vs. not found; which node (leaf / mid / root / chain) | `find_node_by_id`, lib.c:45-53 |
+| `depth` (arg 3) | mode 1: `<=0` (loop never runs), `1..chain-length`, `>chain-length`; mode 2: `0`, `1..15`, `==16`, `>16`, `<0` (UB); mode 3: any int, incl. `0`, negatives, `INT_MIN`/`INT_MAX` (digit count changes the string length ⇒ changes the result); mode 4: scales `1.0 + depth*0.1`, incl. values that drive the clamp | lib.c:130, 159, 165, 183 |
+| `flags` (arg 4) | mode 2: multiplied by `16`; mode 3: masked `& 0177` (only low 7 bits matter, sign-independent); modes 1/4: ignored | lib.c:161, 169 |
+| library state: `node_count` | `0` (the shipped `.so` — `initialize_test_data` is `static` and never called ⇒ *permanent*), `1`, `2`, `>2` (unlocks the backward-walk block in mode 4), `MAX_NODES` | lib.c:38, 47, 56, 187 |
+| parent chain shape | `parent_id == -1` (root, stops the mode-1 walk), parent present, parent id dangling (`find_node_by_id` returns NULL ⇒ `break`) | lib.c:130-134 |
+| `sprintf` string length | `strlen("Node_%d_Depth_%d")` varies 15..34 with the digit counts and signs of `node_id`/`depth` | lib.c:165, 89-98 |
 
-There are **no** compile-time `#ifdef`s and no runtime option/flag setters in the
-C: the whole public API is the single function `int jumpnode(int,int,int,int)`
-(`c_src/include/lib.h`). Axis B is the only piece of hidden state.
+There are no compile-time `#ifdef`s and no runtime option setters: the library
+is stateless from the caller's point of view, so `state` is only varied via the
+`initialize_test_data` hook (see below).
 
-## Cross-product, pruned to combinations the C treats differently
+## Two test surfaces
 
-`state=Z` means the default, zero/empty library state (the shipped `.so`
-behaviour); `state=T` means the 7-node tree, exercised through the shim +
-`expose_init_test_data` feature. All rows use many randomized inputs with a
-fixed seed unless a specific value is named.
+* **S1 — shipped `.so` (default features).** `node_count == 0` forever, so modes
+  1/2/4 short-circuit into their error returns and mode 3 is the only computing
+  path. Tested C-`.so`-vs-Rust-`.so` through `libloading`.
+* **S2 — populated state (`expose_init_test_data`).** A C harness
+  (`tests/c_harness/harness.c`) `#include`s `c_src/src/lib.c` verbatim and
+  exports `jumpnode_initialize_test_data`, matching the Rust feature hook. This
+  is the only way to reach `find_node_by_id` hits, `add_node`,
+  `process_backward`, `safe_double_to_int`'s clamps and mode 4's backward walk.
+  `c_src/` itself is not modified. Test data:
+  `1(root,100.5) 2(p1,50.25) 3(p1,75.75) 4(p2,25.125) 5(p2,30.875) 6(p3,40.0625) 7(p4,12.5)`,
+  every node's `data[] = {0100,0200,0300,0400}`.
 
-| # | entry point(s) | configuration (options set + input shape) | test | [x] |
-|---|----------------|-------------------------------------------|------|-----|
-| 1 | `jumpnode` | mode=1, state=Z, random `node_id`/`depth`/`flags` over full `int` range → node never found | `cfg_row1_mode1_empty_state` | [x] |
-| 2 | `jumpnode` | mode=2, state=Z, random `node_id`/`depth`/`flags` → node never found | `cfg_row2_mode2_empty_state` | [x] |
-| 3 | `jumpnode` | mode=3, state=Z, `node_id`/`depth` = small single-digit values (width 1) | `cfg_row3_mode3_width1` | [x] |
-| 4 | `jumpnode` | mode=3, state=Z, `node_id`/`depth` spanning **every** decimal width 1..10 positive and 1..11 negative (incl. `INT_MIN`, `INT_MAX`, `0`, `-1`, ±9, ±10, ±99, ±100, ±10^k, ±(10^k−1)) | `cfg_row4_mode3_all_widths` | [x] |
-| 5 | `jumpnode` | mode=3, state=Z, `flags` covering all 128 values of `flags & 0177` plus random full-range `flags` (high bits must be ignored, incl. negative) | `cfg_row5_mode3_flag_mask` | [x] |
-| 6 | `jumpnode` | mode=3, state=Z, randomized `node_id`×`depth`×`flags` full-range property sweep | `cfg_row6_mode3_random_sweep` | [x] |
-| 7 | `jumpnode` | mode=4, state=Z, random `node_id`/`depth`/`flags` → node never found | `cfg_row7_mode4_empty_state` | [x] |
-| 8 | `jumpnode` | mode ∉ {1,2,3,4}, state=Z, randomized full-range `int` modes + all of −8..12 | `cfg_row8_default_branch` | [x] |
-| 9 | `jumpnode` | state=Z, randomized 4-tuples over *all* four arguments simultaneously (full `int` range, mode biased to hit every branch) — the end-to-end property sweep | `cfg_row9_full_random_property` | [x] |
-| 10 | `jumpnode_initialize_test_data` + `jumpnode` | mode=1, state=T, `node_id`=1 (root, `parent_id==-1`) — loop exits immediately on the `parent_id == -1` guard, all `depth` 0..8 | `cfg_row10_mode1_root` | [x] |
-| 11 | `jumpnode_initialize_test_data` + `jumpnode` | mode=1, state=T, `node_id`∈{2,3} (chain length 1), `depth` 0..8 — exits by `parent_id == -1` after 1 step | `cfg_row11_mode1_depth1_nodes` | [x] |
-| 12 | `jumpnode_initialize_test_data` + `jumpnode` | mode=1, state=T, `node_id`∈{4,5,6} (chain length 2) and `7` (chain length 3), `depth` 0..8 — covers "loop ends because counter ran out" (`depth` < chain) and "ends at root" | `cfg_row12_mode1_deep_nodes` | [x] |
-| 13 | `jumpnode_initialize_test_data` + `jumpnode` | mode=1, state=T, every `node_id` 1..7 × randomized large `depth` (incl. `INT_MAX`) — accumulation must still terminate at the root | `cfg_row13_mode1_huge_depth` | [x] |
-| 14 | `jumpnode_initialize_test_data` + `jumpnode` | mode=1, state=T, `node_id` not present (0, 8, negative, `INT_MIN`) → error 18 even with data loaded | `cfg_row14_mode1_missing_id` | [x] |
-| 15 | `jumpnode_initialize_test_data` + `jumpnode` | mode=2, state=T, every `node_id` 1..7 × `depth` 0..15 (`process_backward` sums `temp_array[depth..16]`) × `flags`=0 | `cfg_row15_mode2_depth_in_range` | [x] |
-| 16 | `jumpnode_initialize_test_data` + `jumpnode` | mode=2, state=T, `depth` ∈ {16, 17, 100, `INT_MAX`} — empty backward loop, result is purely `16*flags` | `cfg_row16_mode2_depth_past_end` | [x] |
-| 17 | `jumpnode_initialize_test_data` + `jumpnode` | mode=2, state=T, `depth` 0..16 × randomized `flags` in the non-overflowing range (both signs) — exercises `result += 16*flags` | `cfg_row17_mode2_flags` | [x] |
-| 18 | `jumpnode_initialize_test_data` + `jumpnode` | mode=3, state=T — must be identical to state=Z (case 3 never touches node state) | `cfg_row18_mode3_state_independent` | [x] |
-| 19 | `jumpnode_initialize_test_data` + `jumpnode` | mode=4, state=T, every `node_id` 1..7 × `depth` 0..8 — `sqrt` accumulation over `data[]` = {0100,0200,0300,0400} = {64,128,192,256}, plus the `node_count > 2` backward scan of the last 3 nodes | `cfg_row19_mode4_tree` | [x] |
-| 20 | `jumpnode_initialize_test_data` + `jumpnode` | mode=4, state=T, `depth` negative / large positive / `INT_MIN` / `INT_MAX` — `1.0 + depth*0.1` scaling drives `safe_double_to_int` into **both** saturation clamps and through 0 | `cfg_row20_mode4_scaling_saturation` | [x] |
-| 21 | `jumpnode_initialize_test_data` + `jumpnode` | mode ∉ {1,2,3,4}, state=T → still 130 (state-independent) | `cfg_row21_default_with_state` | [x] |
-| 22 | `jumpnode_initialize_test_data` (repeated) + `jumpnode` | idempotence / statefulness: call init 1×, 2×, 3× and re-run a fixed script of `jumpnode` calls — `node_count` must be reset to 7 each time, so results must be stable | `cfg_row22_init_idempotent` | [x] |
-| 23 | `jumpnode` then `jumpnode_initialize_test_data` then `jumpnode` | ordering: the *same* call must give the error code before init and the computed value after — verifies the hidden static state transition in both libraries | `cfg_row23_state_transition` | [x] |
-| 24 | `jumpnode_initialize_test_data` + `jumpnode` | state=T, randomized 4-tuple property sweep over all four arguments (mode biased across 1..4 and out-of-range; `depth` restricted to ≥0 for mode 2, see ERRORS.md row 10) | `cfg_row24_tree_random_property` | [x] |
-| 25 | `jumpnode` | interleaving of all 5 modes in one process, randomized order, state=Z — verifies no cross-call state leakage (`temp_array`/`buffer` are locals) | `cfg_row25_mode_interleaving` | [x] |
+## Rows — one per combination the C treats differently
+
+Every row is exercised with many randomized inputs (fixed seed `0x5EED_1234`,
+xorshift64\*) over the free arguments, not a single hand-picked value.
+
+| # | entry point(s) | configuration (options set + input shape) | surface | test fn | [ ] |
+|---|----------------|-------------------------------------------|---------|---------|-----|
+| 1 | `jumpnode` | mode 3, `node_id`/`depth` small non-negative (short strings), `flags` random | S1 | `cfg_row1_mode3_small` | [x] |
+| 2 | `jumpnode` | mode 3, `node_id`/`depth` negative (minus signs lengthen the string) | S1 | `cfg_row2_mode3_negative` | [x] |
+| 3 | `jumpnode` | mode 3, `node_id`/`depth` at digit-count boundaries `0, ±1, ±9, ±10, ±99, ±100, ±999999999, ±1000000000, INT_MIN, INT_MAX` (cross product) | S1 | `cfg_row3_mode3_digit_boundaries` | [x] |
+| 4 | `jumpnode` | mode 3, `flags` sweeping the `& 0177` mask: all 128 residues, plus negative `flags`, `INT_MIN`, `INT_MAX` | S1 | `cfg_row4_mode3_flag_mask` | [x] |
+| 5 | `jumpnode` | mode 3, fully random `int` in all four args | S1 | `cfg_row5_mode3_fuzz` | [x] |
+| 6 | `jumpnode` | mode 1 on empty storage (`node_count==0`) — random `node_id`/`depth`/`flags` | S1 | `cfg_row6_mode1_empty` | [x] |
+| 7 | `jumpnode` | mode 2 on empty storage — random args (incl. negative/huge `depth`, which is *safe* here because it returns before `process_backward`) | S1 | `cfg_row7_mode2_empty` | [x] |
+| 8 | `jumpnode` | mode 4 on empty storage — random args | S1 | `cfg_row8_mode4_empty` | [x] |
+| 9 | `jumpnode` | unknown mode (`default:`), random args | S1 | `cfg_row9_default_mode` | [x] |
+| 10 | `jumpnode` | S1 whole-surface fuzz: mode drawn from `{-3..8, INT_MIN, INT_MAX, random}` × random args | S1 | `cfg_row10_s1_fuzz_all_modes` | [x] |
+| 11 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 1 from the **root** node (`id=1`, `parent_id==-1`) with `depth` in `-5..40` | S2 | `cfg_row11_mode1_root` | [x] |
+| 12 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 1 from a **1-hop** node (`id=2,3`), `depth` `-5..40` — exercises `depth` shorter than / equal to / longer than the chain | S2 | `cfg_row12_mode1_one_hop` | [x] |
+| 13 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 1 from the **deepest chain** (`id=7 → 4 → 2 → 1`), `depth` `-5..40` | S2 | `cfg_row13_mode1_deep_chain` | [x] |
+| 14 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 1 with **every** existing id × every `depth` in `-2..12` × random `flags` (flags must be ignored) | S2 | `cfg_row14_mode1_all_ids` | [x] |
+| 15 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 1 with a **non-existent** id (still the error path, but with non-empty storage) | S2 | `cfg_row15_mode1_missing_id` | [x] |
+| 16 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 2, existing id, `depth` `0..=16` (in-bounds `process_backward`: full sum, partial sums, empty sum at `depth==16`), `flags` small random | S2 | `cfg_row16_mode2_inbounds` | [x] |
+| 17 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 2, existing id, `depth > 16` (loop never runs ⇒ result is purely `16*flags`) | S2 | `cfg_row17_mode2_depth_past_end` | [x] |
+| 18 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 2, `flags` large enough that `16*flags` wraps `int` (cross-check that both sides wrap identically) | S2 | `cfg_row18_mode2_flag_wrap` | [x] |
+| 19 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 4, existing id, `depth` `-20..40` — exercises `1.0+depth*0.1` incl. the sign flip at `depth==-10` and the `node_count>2` backward walk over the last 3 nodes | S2 | `cfg_row19_mode4_depth_sweep` | [x] |
+| 20 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 4 with extreme `depth` (`±10^9`, `INT_MIN`, `INT_MAX`) driving `safe_double_to_int` into both clamps | S2 | `cfg_row20_mode4_clamps` | [x] |
+| 21 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 3 (state must make no difference) + `default:` mode, random args | S2 | `cfg_row21_mode3_and_default_with_state` | [x] |
+| 22 | `jumpnode_initialize_test_data` + `jumpnode` | **repeated** init (`node_count` reset each time) interleaved with calls — confirms the reset semantics and that storage does not grow | S2 | `cfg_row22_repeated_init` | [x] |
+| 23 | `jumpnode_initialize_test_data` + `jumpnode` | init, then S2 whole-surface fuzz: random mode `{-3..8}` × id `{-3..12}` × `depth` `{0..=16}` (mode-2-safe) × random `flags` | S2 | `cfg_row23_s2_fuzz` | [x] |
+| 24 | `jumpnode_initialize_test_data` + `jumpnode` | init, then mode 4 with `node_count` exactly `1` and `2` (backward-walk block *disabled*) vs `>2` (enabled) — driven by a harness hook that inits then truncates | S2 | `cfg_row24_mode4_small_count` | [x] |
+| 25 | `jumpnode_initialize_test_data` + `jumpnode` | `add_node` filled to `MAX_NODES` (100) and one past — capacity behaviour, then mode 4's walk over a full table | S2 | `cfg_row25_max_nodes` | [x] |
 
 ## Feature combinations
 
-| # | cargo invocation | rows covered |
-|---|------------------|--------------|
-| 1 | `cargo test` (default, no features) | 1–9, 25 (rows 10–24 need the export hook and are skipped) |
-| 2 | `cargo test --no-default-features --features expose_init_test_data` | 1–25 |
+`translation/Cargo.toml` declares exactly one feature, `expose_init_test_data`,
+with no default features. Full cross-product = 2 configurations:
 
-Driven by `check_all_features.sh`.
+| combo | cargo flags | rows covered |
+|-------|-------------|--------------|
+| (none) | `--no-default-features` | 1-10 (S1). Rows 11-25 skip: the hook symbol is absent, which the test asserts. |
+| `expose_init_test_data` | `--no-default-features --features expose_init_test_data` | 1-25 (S1 rows must still pass unchanged — the feature may not alter default behaviour) |
+
+## Binary executable
+
+`c_src/CMakeLists.txt` builds only `add_library(... SHARED src/lib.c)`; there is
+no driver executable, and `translation/Cargo.toml` declares only
+`crate-type = ["cdylib"]` with no `[[bin]]`. The "compare binary stdout"
+checklist item is therefore **not applicable**.

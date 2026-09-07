@@ -1,140 +1,56 @@
-# SYMBOLS.md — Phase A: exported-symbol surface
+# SYMBOLS.md — Phase A symbol surface
 
-Derived mechanically from `nm -D` on both shared objects.
+C shared object: `c_src/build/libharvest-work-Xoijma.so`
+Rust shared object: `translation/target/release/libupdate_frame_header_lib.so`
 
-## How the artifacts were produced
+## `nm -D --defined-only` on the C `.so`
 
-```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-# -> c_src/build/libharvest-work-KtEZ0h.so   (name comes from the parent dir name,
-#                                             see cmake_path(...) in CMakeLists.txt)
-
-# Rust
-cd translation && cargo build --release --offline
-# -> translation/target/release/libupdate_frame_header_lib.so
+```
+00000000000010f9 T update_frame_header
 ```
 
-## C source inventory (completeness check)
+## `nm -D --defined-only` on the Rust `.so`
 
-The whole library is two files; nothing was skipped by the translation step.
+```
+00000000000116b0 T update_frame_header
+```
 
-| C file | translated to | status |
-|--------|---------------|--------|
-| `c_src/include/lib.h` | `translation/src/lib.rs` (`tflac_u8`, `tflac_u32`, `struct tflac`) | complete |
-| `c_src/src/lib.c` | `translation/src/lib.rs` (`enum TFLAC_CHANNEL_MODE`, `update_frame_header`) | complete |
+## Parity table
 
-`add_library(... SHARED src/lib.c)` in `CMakeLists.txt` confirms `src/lib.c` is the
-only translation unit, so there is no un-translated module.
+| # | symbol | type | in C `.so` | in Rust `.so` | notes |
+|---|--------|------|-----------|--------------|-------|
+| 1 | `update_frame_header` | `T` (global text) | yes | yes | `#[unsafe(no_mangle)] pub unsafe extern "C" fn update_frame_header(*mut tflac)` |
 
-## Defined dynamic symbols
+**Symbol diff (C − Rust): EMPTY.** 0 missing symbols, 0 undefined non-libc
+symbols in the Rust `.so`.
 
-`nm -D --defined-only <so>`:
+## Non-exported C entities (deliberately not symbols)
 
-| # | symbol | C `.so` | Rust `.so` | type | notes |
-|---|--------|---------|------------|------|-------|
-| 1 | `update_frame_header` | `T` (0x10f9) | `T` (0x11c60) | func | `void update_frame_header(tflac *t)`; exported from Rust via `#[unsafe(no_mangle)] pub unsafe extern "C" fn` |
+| C entity | file | linkage | Rust counterpart |
+|----------|------|---------|------------------|
+| `struct tflac` / `typedef tflac` | `include/lib.h` | type only | `#[repr(C)] pub struct tflac` |
+| `typedef uint8_t tflac_u8` | `include/lib.h` | type only | `pub type tflac_u8 = u8` |
+| `typedef uint32_t tflac_u32` | `include/lib.h` | type only | `pub type tflac_u32 = u32` |
+| `enum TFLAC_CHANNEL_MODE` | `src/lib.c` | type only, file-local | `mod channel_mode` consts |
 
-**Symbol diff (C minus Rust): EMPTY.** No symbol is missing from the Rust `.so`,
-so no `#[no_mangle]` wrapper had to be added and no C module had to be translated.
+## ABI layout verification
 
-### Symbols intentionally NOT exported
+Compiled probe against `c_src/include/lib.h` (gcc, x86-64):
 
-These exist in the C source but have no linkage, so they must not (and do not)
-appear in `nm -D` for either library:
+```
+size=24 align=4 off=0 4 8 12 16 20
+```
 
-| C entity | reason |
-|----------|--------|
-| `enum TFLAC_CHANNEL_MODE` + its 5 enumerators | file-local enum type/constants in `src/lib.c`; no object emitted |
-| `typedef uint8_t tflac_u8` / `typedef uint32_t tflac_u32` | typedefs |
-| `struct tflac` / `typedef struct tflac tflac` | type only; the caller owns the storage |
+Rust `#[repr(C)] struct tflac { u32, u32, u32, u8, u32, u32 }` yields
+`size_of == 24`, `align_of == 4`, offsets `0, 4, 8, 12, 16, 20` — identical.
+The 3 padding bytes after `channel_mode` (offsets 13..16) are untouched by both
+implementations; the differential tests assert the full 24-byte image matches,
+including those bytes.
 
-## Undefined dynamic symbols
+## Build / feature configurations
 
-`nm -D --undefined-only <so>`:
-
-* C: `_ITM_deregisterTMCloneTable` (w), `_ITM_registerTMCloneTable` (w),
-  `__cxa_finalize@GLIBC_2.2.5` (w), `__gmon_start__` (w) — all weak/libc.
-* Rust: the same four, plus **libc/libgcc-unwinder imports pulled in by `std`**
-  (`_Unwind_*@GCC_*`, `__errno_location`, `__tls_get_addr`, `abort`, `bcmp`,
-  `calloc`, `close`, `dl_iterate_phdr`, `free`, `fstat64`, `getcwd`, `getenv`,
-  `gettid`, `lseek64`, `malloc`, `memcpy`, `memmove`, `memset`, `mmap64`,
-  `munmap`, `open64`, `posix_memalign`, `pthread_key_*`, `pthread_setspecific`,
-  `read`, `readlink`, `realloc`, `realpath`, `stat64`, `statx`, `strlen`,
-  `syscall`, `write`, `writev`).
-
-**0 missing / undefined non-libc symbols in the Rust `.so`.** Every undefined
-entry above resolves from `libc.so.6` / `libgcc_s.so.1`, which is why
-`Library::new()` on the Rust `.so` succeeds in the tests.
-
-## ABI of the shared type
-
-`struct tflac` is passed by pointer, so its layout is part of the ABI. Measured
-with `offsetof`/`sizeof` on the C side (gcc 11.5, x86-64):
-
-| field | C offset | Rust `#[repr(C)]` offset |
-|-------|----------|-------------------------|
-| `samplerate` (`u32`) | 0 | 0 |
-| `channels` (`u32`) | 4 | 4 |
-| `bitdepth` (`u32`) | 8 | 8 |
-| `channel_mode` (`u8`) | 12 | 12 |
-| *(padding)* | 13..15 | 13..15 |
-| `frame_header` (`u32`) | 16 | 16 |
-| `cur_blocksize` (`u32`) | 20 | 20 |
-| `sizeof` / `align` | 24 / 4 | 24 / 4 |
-
-The differential tests do not use a Rust `struct` at all: they build the 24-byte
-record byte-by-byte at these offsets inside a guarded buffer and compare all
-bytes (including the 3 padding bytes) afterwards, which also proves neither
-implementation writes outside the record.
-
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, so the only build
-configuration is the default one (`--no-default-features` is also equivalent
-here — there are no optional deps and no `cfg(feature = ...)` in `src/lib.rs`).
-The tests are nevertheless run under `--no-default-features` as well to prove it.
-
-## Completion gate (Phase D)
-
-Run `./verify.sh` from the crate root to re-check everything below.
-
-- [x] `SYMBOLS.md`: `nm -D` diff (C minus Rust) is EMPTY for both the debug and
-      the release cdylib; 0 undefined non-libc symbols in the Rust `.so`.
-      Enforced by `tests/phase_d_symbols.rs` (3 tests) and by `verify.sh`.
-- [x] Phase B: all 33 rows of `CONFIGS.md` pass — `tests/phase_b_configs.rs`
-      (33 tests, ~30 million differential comparisons per run).
-- [x] Phase C: all 21 rows of `ERRORS.md` have a passing differential test —
-      `tests/phase_c_errors.rs` (23 tests, including the NULL-pointer
-      subprocess test and the out-of-range-enum cross product).
-- [x] All of the above hold for EVERY feature combination (`<default>`,
-      `--no-default-features`, `--all-features` — the crate declares no
-      `[features]`, so these are all the configurations that exist) AND for both
-      Rust build profiles (debug and release cdylib), i.e. 6 runs of the full
-      suite.
-
-### Harness self-check (mutation testing)
-
-To prove the suite is not vacuously passing, 11 deliberate bugs were injected
-into `src/lib.rs` one at a time and the suite re-run:
-
-| injected bug | detected? |
-|--------------|-----------|
-| `bitdepth 20` code `5` → `4` | yes |
-| `samplerate < 65536` → `<= 65536` | yes |
-| `channels.wrapping_sub(1)` → `saturating_sub(1)` | yes |
-| `cur_blocksize <= 256` → `< 256` | **equivalent mutant** (see below) |
-| `channel_mode % 4` → `% 5` | yes |
-| `samplerate / 1000 < 256` → `<= 256` | yes |
-| sync word `0xFFF8` → `0xFFF9` | yes |
-| `cur_blocksize 32768` code `0xF` → `0xE` | yes |
-| `MID_SIDE` code `0x0A` → `0x0B` | yes |
-| `samplerate % 10` → `% 100` | yes |
-| drop `#[unsafe(no_mangle)]` | yes (`sym_01` reports the missing symbol) |
-| `bitdepth` default arm sets bits instead of none | yes (`err_18`, `err_19`, …) |
-
-`cur_blocksize <= 256` → `< 256` is a genuinely **equivalent** mutant, not a
-coverage gap: the ternary at `lib.c:55` is only reached when the value matched no
-`case`, and `256` *is* a case label (`lib.c:29`), so the two predicates can only
-disagree on a value that never reaches them.
+`translation/Cargo.toml` declares **no `[features]` table** and no optional
+dependencies, so there is exactly ONE feature combination: the default (empty)
+one. `cargo check --no-default-features` and `cargo check` are the same build.
+`crate-type = ["cdylib"]` only — no binary target, so there is no driver
+executable to compare stdout for.

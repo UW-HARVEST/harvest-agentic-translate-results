@@ -1,77 +1,90 @@
-# CONFIGS.md — Phase A: configuration-surface table
+# CONFIGS.md — Phase A: configuration-surface table (valid inputs)
 
-The mirror of `ERRORS.md`: every **valid** input configuration the C actually
-distinguishes.
+## Axes mechanically derived from the C source
 
-## Axes derived from the C source (not guessed)
+`c_src/include/lib.h` + `c_src/src/lib.c` in full: one type and one function.
 
-`md5_digest` has no options, flags, modes, or `#ifdef`s. Grepping the header and
-source for branches yields nothing (see `ERRORS.md`). So the configuration
-surface is **not** made of option toggles — it is made of the two things the code
-does branch-free work over, plus the pointer geometry the signature permits:
+### Axis 1 — runtime options / modes / flags
 
-**Axis 1 — source field.** Four distinct source offsets, hard-coded:
-`a`@0, `b`@4, `c`@8, `d`@12. A wrong offset in the port only shows up if the
-four fields hold *different* values.
+```
+$ grep -nE '#if|#ifdef|#ifndef|#define|if|switch|enum|flag|mode|option' c_src/src/lib.c c_src/include/lib.h
+c_src/src/lib.c:1: #include "lib.h"
+c_src/include/lib.h:1: #include <stdint.h>
+```
 
-**Axis 2 — shift / truncation.** Each field is emitted with shifts
-`0, 8, 16, 24` and truncated by `(tflac_u8)`. A wrong shift or a signed shift
-only shows up for values whose bytes differ and whose high bit is set.
+**None.** There are no `#ifdef`s, no `#define`d build knobs, no setter
+functions, no context/handle carrying state, no flags argument. The library is
+stateless and has exactly one behaviour mode. So this axis has a single value:
+`(no options)`.
 
-**Axis 3 — value shape** of each `tflac_u32`. The cast `(tflac_u8)(m->x >> k)`
-is value-dependent, so these shapes are distinguished:
-`0x00000000`, `0xFFFFFFFF`, high-bit-set (`0x80000000`, sign-extension trap),
-single-byte-isolated (`0x000000FF`, `0x0000FF00`, `0x00FF0000`, `0xFF000000`,
-each pins one shift), byte-distinct ascending, and uniform random.
+### Axis 2 — public entry points (full set, lowest level included)
 
-**Axis 4 — pointer geometry.** The signature is
-`(const tflac_md5 *, tflac_u8 *)` with **no `restrict`**, so aliasing is legal
-input, and neither pointer is required by the ABI to be well-aligned in practice
-on x86-64. The C compiler therefore **reloads the source field before every
-single byte store** (verified in the disassembly at both `-O0` and `-O2`), which
-makes overlapping buffers *defined and observable*. Each overlap displacement is
-a genuinely different code path through the data.
+`nm -D --defined-only` on the C `.so` yields exactly one entry point, which is
+also the lowest-level one — there is no convenience wrapper / one-shot layer to
+mistake for the real API:
 
-**Axis 5 — write extent.** Exactly 16 bytes, no length parameter: the port must
-write all 16 and never a 17th, and never read a 17th source byte.
+| entry point | signature |
+|---|---|
+| `md5_digest` | `void md5_digest(const tflac_md5 *m, tflac_u8 out[16])` |
 
-## Table
+There is deliberately **no** `md5_init` / `md5_update` / `md5_finalize` in this
+tree — only the digest-serialization step — so "drive the library as a real
+consumer" here means: build a `tflac_md5` state, call `md5_digest`, inspect all
+16 output bytes.
 
-One row per combination the C treats differently. All rows are driven through
-the `.so` exports of **both** implementations and compared byte-for-byte. Rows
-marked *randomized* run many property-style iterations with a fixed seed
-(`SplitMix64`, seed `0x243F6A8885A308D3`) so they cover value-dependent paths
-rather than one hand-picked value.
+### Axis 3 — input shapes the code distinguishes
 
-| # | entry point(s) | configuration (options set + input shape) | ✔ |
-|---|----------------|-------------------------------------------|---|
-| C1 | `md5_digest` | disjoint buffers, both aligned; `a=b=c=d=0` | [x] |
-| C2 | `md5_digest` | disjoint, aligned; `a=b=c=d=0xFFFFFFFF` | [x] |
-| C3 | `md5_digest` | disjoint, aligned; byte-distinct ascending `0x04030201,0x08070605,0x0C0B0A09,0x100F0E0D` (pins all 4 offsets × all 4 shifts at once) | [x] |
-| C4 | `md5_digest` | disjoint, aligned; each field `0x80000000` (high bit set — catches signed/arithmetic shift) | [x] |
-| C5 | `md5_digest` | disjoint, aligned; single-byte-isolated sweep: for each field f in {a,b,c,d} × each byte k in {0,1,2,3}, only that byte non-zero (16 sub-cases — pins every field/shift pair independently) | [x] |
-| C6 | `md5_digest` | disjoint, aligned; **randomized** full-range `u32` × 4 (2000 iters) | [x] |
-| C7 | `md5_digest` | disjoint, aligned; **randomized** but each field drawn from a byte-sparse pool (values built from `{0x00,0x01,0x7F,0x80,0xFE,0xFF}` bytes, 2000 iters — boundary bytes in every position) | [x] |
-| C8 | `md5_digest` | disjoint; `out` **misaligned** at every offset 0..8 within its allocation, `m` aligned; randomized values | [x] |
-| C9 | `md5_digest` | disjoint; `m` **misaligned** at every offset 1..8 (unaligned 32-bit source loads), `out` aligned; randomized values | [x] |
-| C10 | `md5_digest` | disjoint; **both** misaligned, independent odd offsets; randomized values | [x] |
-| C11 | `md5_digest` | `out == (tflac_u8 *)m` — exact full self-overlap; randomized values | [x] |
-| C12 | `md5_digest` | forward partial overlap: `out = (u8*)m + d` for every `d` in 1..=15 (source partly clobbered mid-copy; each `d` is a distinct data path) ; randomized values | [x] |
-| C13 | `md5_digest` | backward partial overlap: `out = (u8*)m - d` for every `d` in 1..=15 ; randomized values | [x] |
-| C14 | `md5_digest` | overlap at every `d` in 16..=31 and -16..=-31 (adjacent-but-disjoint boundary — must behave as plain disjoint) ; randomized values | [x] |
-| C15 | `md5_digest` | `out` immediately followed by guard bytes; assert exactly bytes 0..15 change and byte 16.. untouched (write-extent = 16) | [x] |
-| C16 | `md5_digest` | `out` pre-filled with a non-zero sentinel (`0xAA`) and input all-zero — proves all 16 bytes are actually *stored*, not skipped | [x] |
-| C17 | `md5_digest` | 16-byte source at the very end of a mapped page followed by `PROT_NONE` guard — proves no 17th source byte is read | [x] |
-| C18 | `md5_digest` | 16-byte `out` at the very end of a mapped page followed by `PROT_NONE` guard — proves no 17th byte is written | [x] |
-| C19 | `md5_digest` | repeated invocation on the same `out` with different `m` (no hidden state between calls); randomized, 500 iters | [x] |
-| C20 | `md5_digest` | `m` and `out` both taken from a heap allocation with randomized alignment AND randomized overlap displacement in -31..=31 (cross-product of axes 4 and 3, 4000 iters) | [x] |
+The 16 assignments read the four `tflac_u32` fields at fixed offsets and shift
+by 0/8/16/24. The shapes that can therefore change behaviour are:
 
-## Feature combinations
+* **field value class**: zero, all-ones, single-bit-set (each of the 32 bit
+  positions), byte-boundary values (`0x000000FF`, `0x0000FF00`, `0x00FF0000`,
+  `0xFF000000`), sign-bit `0x80000000`, `0x7FFFFFFF`, and uniformly random.
+* **which fields are non-zero**: none / only `a` / only `b` / only `c` /
+  only `d` / all four (isolates a wrong field offset or a swapped field).
+* **byte order**: the code hard-codes little-endian serialization via shifts,
+  so the *value → byte* mapping is the shape under test (a Rust `to_le_bytes`
+  vs `to_be_bytes` mistake shows up here).
+* **`out` buffer**: pre-fill pattern (0x00 / 0xFF / 0xAA / random) so that any
+  byte the C leaves untouched is detectable; exact-16-byte vs larger arena with
+  guard bytes (detects over-write past index 15 and before index 0).
+* **`out` alignment**: offsets 0..8 inside an over-aligned arena.
+* **`m` alignment**: `tflac_md5` placed at offsets 0..8 inside a byte arena
+  (the C does 4-byte loads; x86-64 tolerates misalignment).
+* **aliasing**: `out` disjoint from `m`, `out == (u8*)m`, and `out` at every
+  overlap offset — the C re-loads each field from memory *after* every byte
+  store, so overlap is a distinct, observable code path.
+* **repetition / statefulness**: one call, and many calls in a row on the same
+  buffers (proves the Rust keeps no hidden state).
 
-`translation/Cargo.toml` declares **no `[features]` table** — there are zero
-cargo features, hence exactly one feature combination (the default, which is
-also `--no-default-features`). The C likewise has no `#ifdef` configuration.
-Phase D's "repeat B–C for every feature combination" therefore reduces to the
-single default combination, but the suite is still executed under
-`--no-default-features`, `--all-features`, and both `dev` and `release` profiles
-to prove the claim rather than assume it (see `run_all_configs.sh`).
+There is no count/length/element-type/format axis, because the API has no
+length parameter, no element-type selector and a fixed 16-byte output.
+
+## Configuration table (cross-product, pruned to what the C distinguishes)
+
+Every row is driven through **both** `.so` files via `libloading` and compared
+byte-for-byte. Rows marked "randomized" use a fixed-seed xorshift64* PRNG
+(seed `0x243F6A8885A308D3`) with the iteration count shown.
+
+| # | entry point(s) | configuration (options set + input shape) | [x] |
+|---|----------------|-------------------------------------------|-----|
+| 1 | `md5_digest` | ABI probe: `sizeof`/`alignof`/field offsets of `tflac_md5` vs the C compiler's own values | [x] |
+| 2 | `md5_digest` | all fields `0x00000000`; `out` pre-filled `0xFF` (detects "no write at all") | [x] |
+| 3 | `md5_digest` | all fields `0xFFFFFFFF`; `out` pre-filled `0x00` | [x] |
+| 4 | `md5_digest` | field-isolation: exactly one of `a`/`b`/`c`/`d` = `0xDEADBEEF`, rest `0` (4 sub-cases; detects swapped/wrong offsets) | [x] |
+| 5 | `md5_digest` | byte-isolation: each field set in turn to `0x000000FF`, `0x0000FF00`, `0x00FF0000`, `0xFF000000` (16 sub-cases; detects wrong shift amount / endianness) | [x] |
+| 6 | `md5_digest` | single-bit sweep: for each of the 128 bits of the struct, only that bit set (128 sub-cases; exact bit→(byte,bit) map) | [x] |
+| 7 | `md5_digest` | boundary values `0x7FFFFFFF`, `0x80000000`, `0x00000001`, `0xFFFFFFFE` in all four fields (cross-product sample) | [x] |
+| 8 | `md5_digest` | randomized fields, `out` = exact 16-byte buffer, disjoint from `m`, aligned — 20 000 iterations | [x] |
+| 9 | `md5_digest` | randomized fields, `out` pre-filled with random bytes (so unwritten bytes are visible) — 20 000 iterations | [x] |
+| 10 | `md5_digest` | randomized fields, `out` inside a 64-byte arena with 0x5A guard bytes before/after the 16-byte window — asserts guards unchanged in both — 10 000 iterations | [x] |
+| 11 | `md5_digest` | randomized fields, **`out` misaligned** at every offset 0..=8 in an arena (9 × 2 000 iterations) | [x] |
+| 12 | `md5_digest` | randomized fields, **`m` misaligned** at every offset 0..=8 in a byte arena (9 × 2 000 iterations) | [x] |
+| 13 | `md5_digest` | randomized fields, **both `m` and `out` misaligned** independently (cross-product of offsets 0..=4, 5 × 5 × 500 iterations) | [x] |
+| 14 | `md5_digest` | aliasing: `out == (tflac_u8 *)m` exactly (in-place serialization) — randomized, 5 000 iterations | [x] |
+| 15 | `md5_digest` | aliasing: `out` overlapping `m` at every offset `-16..=16` inside one arena, randomized — 33 × 500 iterations (exercises the per-store re-load cascade) | [x] |
+| 16 | `md5_digest` | repeated invocation: 1 000 back-to-back calls on the same `m`/`out` pair with fresh random values, comparing after every call (no hidden state, idempotent) | [x] |
+| 17 | `md5_digest` | idempotence on a fixed input: the same call made 8 times must yield identical bytes each time in both libraries | [x] |
+| 18 | `md5_digest` | multi-threaded: 4 threads × 2 000 randomized calls each through both `.so`s (stateless / reentrant, no shared mutable state) | [x] |
+| 19 | `md5_digest` | struct read from an over-large allocation whose trailing bytes are random — asserts the C/Rust read only 16 bytes (extra bytes must not influence output) | [x] |
+| 20 | `md5_digest` | feature configuration sweep: rows 1–19 re-run under the default build **and** `--no-default-features` (the crate declares no `[features]`, so these are the only two configurations) | [x] |

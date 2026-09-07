@@ -11,9 +11,7 @@ pub unsafe extern "C" fn printIntPtrLine(int_number: *const c_int) {
     }
 }
 
-#[cfg(not(target_arch = "x86_64"))]
-compile_error!("the C bad path requires the x86_64 stack-frame translation");
-
+#[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bad() {
@@ -21,7 +19,7 @@ pub unsafe extern "C" fn bad() {
         "push rbp",
         "mov rbp, rsp",
         "sub rsp, 16",
-        "mov rax, qword ptr [rbp - 8]",
+        "mov rax, [rbp - 8]",
         "mov rdi, rax",
         "call printIntPtrLine",
         "nop",
@@ -38,6 +36,7 @@ pub extern "C" fn good() {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn driver(_use_good: c_int) {
@@ -48,11 +47,11 @@ pub unsafe extern "C" fn driver(_use_good: c_int) {
         "mov dword ptr [rbp - 4], edi",
         "cmp dword ptr [rbp - 4], 0",
         "je 2f",
-        "xor eax, eax",
+        "mov eax, 0",
         "call good",
         "jmp 3f",
         "2:",
-        "xor eax, eax",
+        "mov eax, 0",
         "call bad",
         "3:",
         "nop",

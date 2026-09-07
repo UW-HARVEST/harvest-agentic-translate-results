@@ -19,40 +19,14 @@
 //! NaN the result is that NaN made quiet. Relying on plain `+`/`-`/`*` would
 //! leave the choice of operand order (and hence the NaN sign/payload that
 //! survives) up to LLVM's canonicalisation.
-//!
-//! The helpers nevertheless *always* perform the hardware operation, even when
-//! its result is going to be discarded in favour of a forwarded NaN, because the
-//! instruction's side effect on the floating-point status word is observable
-//! (`fetestexcept`, or a trap if the caller used `feenableexcept`). Only the
-//! *value* is overridden.
-//!
-//! For the same reason the hue dispatch raises `FE_INVALID` explicitly for a NaN
-//! hue: the C compiles `h >= 0.0f` and friends to **`comiss`**, the *signalling*
-//! compare, which raises the invalid-operation flag even for a quiet NaN,
-//! whereas Rust's `>=`/`<` lower to the quiet `ucomiss`.
 
 #![allow(clippy::missing_safety_doc)]
 
 use std::ffi::c_float;
-use std::ffi::c_int;
-use std::hint::black_box;
 
 unsafe extern "C" {
     /// `float fmodf(float, float)` from libm, exactly as used by the C source.
     safe fn fmodf(x: c_float, y: c_float) -> c_float;
-    /// `<fenv.h>`; used to reproduce the side effect of the C's signalling
-    /// `comiss` hue comparisons.
-    safe fn feraiseexcept(excepts: c_int) -> c_int;
-}
-
-/// `FE_INVALID` — the invalid-operation flag, bit 0 of the x87/SSE status word.
-const FE_INVALID: c_int = 0x01;
-
-/// Raise the invalid-operation flag, as the `comiss` that the C compiler emits
-/// for `if (h >= 0.0f && h < 60.0f)` does when `h` is a NaN of *either* kind.
-#[inline]
-fn raise_invalid() {
-    feraiseexcept(FE_INVALID);
 }
 
 /// Set the "quiet" bit of a NaN, as every SSE arithmetic instruction does when
@@ -75,46 +49,38 @@ fn nan_result(src1: c_float, src2: c_float) -> Option<c_float> {
 }
 
 /// `addss src1, src2`
-///
-/// `black_box` keeps the addition itself alive even on the paths where its value
-/// is discarded, so that the instruction's effect on the FP status word (e.g.
-/// `FE_INVALID` for a signalling-NaN operand) still happens exactly as in the C.
 #[inline]
 fn add_ss(src1: c_float, src2: c_float) -> c_float {
-    let raw = black_box(src1 + src2);
     match nan_result(src1, src2) {
         Some(v) => v,
-        None => raw,
+        None => src1 + src2,
     }
 }
 
 /// `subss src1, src2`
 #[inline]
 fn sub_ss(src1: c_float, src2: c_float) -> c_float {
-    let raw = black_box(src1 - src2);
     match nan_result(src1, src2) {
         Some(v) => v,
-        None => raw,
+        None => src1 - src2,
     }
 }
 
 /// `mulss src1, src2`
 #[inline]
 fn mul_ss(src1: c_float, src2: c_float) -> c_float {
-    let raw = black_box(src1 * src2);
     match nan_result(src1, src2) {
         Some(v) => v,
-        None => raw,
+        None => src1 * src2,
     }
 }
 
 /// `divss src1, src2`
 #[inline]
 fn div_ss(src1: c_float, src2: c_float) -> c_float {
-    let raw = black_box(src1 / src2);
     match nan_result(src1, src2) {
         Some(v) => v,
-        None => raw,
+        None => src1 / src2,
     }
 }
 
@@ -171,16 +137,6 @@ pub unsafe extern "C" fn hsl_to_rgb(dest: *mut c_float, src: *const c_float) {
         sub_ss(1.0, fabsf(sub_ss(fmodf(div_ss(h, 60.0), 2.0), 1.0))),
         c,
     );
-
-    // The C's dispatch chain uses `comiss`, the *signalling* compare, so a NaN
-    // hue raises FE_INVALID there even though it is quiet. Rust's `>=`/`<` lower
-    // to `ucomiss`, which does not, so raise the flag explicitly. (For an
-    // ordered comparison `comiss` raises nothing, and the constants are never
-    // NaN, so `h` being a NaN is the only trigger. The flag is sticky, so the
-    // fact that the C executes up to twelve `comiss` is immaterial.)
-    if h.is_nan() {
-        raise_invalid();
-    }
 
     if h >= 0.0 && h < 60.0 {
         // dest = { c + m, x + m, m }

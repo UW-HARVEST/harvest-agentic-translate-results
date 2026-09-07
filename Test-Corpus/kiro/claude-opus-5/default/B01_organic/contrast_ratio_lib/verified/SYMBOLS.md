@@ -1,81 +1,85 @@
-# SYMBOLS.md — public ABI surface parity
+# SYMBOLS.md — Phase A / Phase D symbol parity
 
-Derived mechanically from `nm -D` on both shared objects.
-
-Commands used:
+Derived mechanically, not from assumptions:
 
 ```sh
-# C
-cd c_src && mkdir -p build && cd build \
-  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
-nm -D --defined-only c_src/build/libharvest-work-x12mak.so
-
-# Rust
-cd translation && cargo build --release
-nm -D --defined-only translation/target/release/libcontrast_ratio_lib.so
+CSO=c_src/build/libharvest-work-XIHzQf.so
+RSO=translation/target/release/libcontrast_ratio_lib.so
+nm -D --defined-only "$CSO" | awk '$2 ~ /^[TtWwDdBbRr]$/ {print $3}' | sort -u > /tmp/c_syms.txt
+nm -D --defined-only "$RSO" | awk '$2 ~ /^[TtWwDdBbRr]$/ {print $3}' | sort -u > /tmp/r_syms.txt
+comm -23 /tmp/c_syms.txt /tmp/r_syms.txt     # symbols missing from Rust
 ```
 
-## C `.so` defined dynamic symbols (excluding absolute/ABI tag symbols)
+## Public symbols exported by the C `.so`
 
-| # | symbol | type | notes |
-|---|--------|------|-------|
-| 1 | `contrast_ratio` | `T` (text, global) | the only public API symbol |
+| # | symbol | C `nm -D` | Rust `nm -D` | status |
+|---|--------|-----------|--------------|--------|
+| 1 | `contrast_ratio` | `T` | `T` | present |
 
-`c_src/src/lib.c` also defines `cbLuminance` and `cbContrastRatio`, but both are
-`static` and therefore have **no** dynamic symbol — they must NOT appear in the
-Rust `.so` either (and do not; they are private Rust `fn`s).
+`comm -23` output is **EMPTY** → 0 symbols missing from the Rust `.so`.
 
-The C `.so` additionally imports `pow` from `libm` (undefined symbol `pow`).
-The Rust `.so` resolves `f64::powf` to the same `libm` `pow` on this target,
-so its undefined-symbol set is a subset of libc/libm as well.
+## C symbols deliberately NOT exported
 
-## Rust `.so` defined dynamic symbols relevant to the C surface
+`c_src/src/lib.c` declares two helpers `static`, so they have internal linkage
+and appear in neither `.so`'s dynamic symbol table. They are correctly private
+(non-`pub`, non-`no_mangle`) in the Rust translation as well:
 
-| # | symbol | present in Rust `.so`? | how |
-|---|--------|------------------------|-----|
-| 1 | `contrast_ratio` | YES | `#[unsafe(no_mangle)] pub extern "C" fn contrast_ratio` in `src/lib.rs` |
+| C symbol | linkage | Rust counterpart | exported? |
+|----------|---------|------------------|-----------|
+| `cbLuminance` | `static` (internal) | `fn cbLuminance` | no — correct |
+| `cbContrastRatio` | `static` (internal) | `fn cbContrastRatio` | no — correct |
 
-## Symbol diff
+No C source file was left untranslated: the library is a single translation
+unit (`src/lib.c`, 29 lines) plus one header (`include/lib.h`, 7 lines), and
+every function in it has a Rust counterpart. No symbol is stubbed or
+`unimplemented!()`.
 
-```
-comm -23 <(c symbols) <(rust symbols)   # C-only  -> EMPTY
-```
+## Undefined symbols in the Rust `.so`
 
-**Result: 0 symbols missing from the Rust `.so`. 0 undefined non-libc/libm
-symbols in the Rust `.so`.** No C source file was left untranslated: `src/lib.c`
-is the only translation unit in `CMakeLists.txt` and all three of its functions
-(`cbLuminance`, `cbContrastRatio`, `contrast_ratio`) exist in `src/lib.rs`.
+`nm -D -u` on the Rust `.so` lists only libc / glibc / unwinder imports
+(`pow@GLIBC_2.29`, `malloc`, `memcpy`, `_Unwind_*`, `__cxa_finalize`, …).
+**0 undefined non-libc symbols.**
 
-## Feature combinations
+Notable: Rust's `f64::powf` lowers to the *same* `pow@GLIBC_2.29` that the C
+object imports, so the transfer function is bit-identical by construction
+rather than by luck.
 
-`translation/Cargo.toml` declares **no** `[features]` table, so there is exactly
-one feature combination (the empty/default one). `--no-default-features` and the
-default build are the same build. Verified by
-`cargo check --no-default-features` succeeding and producing an identical symbol
-set.
+## Build configurations covered
 
-## Verification evidence
+`translation/Cargo.toml` has **no `[features]` section**, so the only feature
+configuration that exists is the default (empty) one. There are no `[[bin]]`
+targets, no `src/main.rs`, and no `src/bin/`; `c_src/CMakeLists.txt` contains
+no `add_executable`. Therefore there is no driver binary to diff, and the
+Phase D "every feature combination" requirement is satisfied by the single
+default configuration (verified below with `--no-default-features` as well).
 
-```
-$ nm -D --defined-only c_src/build/libharvest-work-x12mak.so
-0000000000001369 T contrast_ratio
+## Completion gate (re-verified, `./verify_all.sh`)
 
-$ nm -D --defined-only translation/target/harness/release/libcontrast_ratio_lib.so | grep contrast
-0000000000011780 T contrast_ratio
+| gate | result |
+|---|---|
+| `nm -D`: 0 missing symbols, 0 undefined non-libc symbols in Rust | PASS (all 4 configs) |
+| Phase B: every `CONFIGS.md` row passes across randomized inputs | PASS 27/27 rows, 28 tests |
+| Binary/driver stdout diff | N/A — no `[[bin]]`, no `src/main.rs`, no `add_executable` |
+| Phase C: every `ERRORS.md` row has a passing differential test | PASS 15/15 rows |
+| Holds under every feature combination | PASS — `{default, --no-default-features}` × `{debug, release}` |
 
-$ diff <(C defined syms) <(Rust defined syms) | grep '^<'
-no C-only symbols: OK
-```
+Harness integrity is itself asserted by `tests/phase_a_harness.rs` (4 tests): the
+two `.so`s are distinct files, `dlsym` resolves `contrast_ratio` to two distinct
+addresses, comparison is bit-exact (a 1-ULP difference is not tolerated), NaN is
+compared by bits rather than `==`, and the Rust artifact is not stale.
 
-Undefined (imported) symbols in the Rust `.so` are all libc / libm / unwind:
-`pow@GLIBC_2.29` (the identical `libm` entry point the C `.so` calls), plus
-`malloc`, `memcpy`, `_Unwind_*`, `__cxa_finalize`, etc. **0 non-libc undefined
-symbols.**
+Rows 7 and 8 sweep the **entire 2^24 color domain** (16 777 216 cases each,
+stride 1) in both operand positions. Because the result depends on each operand
+only through its `float` luminance, these two rows exhaust every reachable
+luminance value on both sides of the division.
 
-Automated by `translation/run_matrix.sh`, which enumerates the feature list from
-`Cargo.toml` (rather than hardcoding it), runs the suite for every combination in
-both profiles, and finishes with the `nm -D` diff.
+### Note on `0.0f / 0.0f`
 
-Test `d01_symbol_parity` re-checks this from inside the suite: it shells out to
-`nm -D` on the C `.so`, then `dlsym`s **every** resulting name in the Rust `.so`,
-and additionally asserts the two `static` C helpers are absent from both.
+The C's unguarded `High / Low` for black-vs-black executes a hardware `divss`,
+producing the *negative* quiet NaN `0xFFC00000`. A compile-time-folded
+`0.0 / 0.0` in Rust instead yields `0x7FC00000`. The translated
+`contrast_ratio` is unaffected (its operands come from a runtime call, so the
+division is not folded) and matches the C bit-for-bit — asserted by
+`row16_black_vs_black_is_nan` and `err03_zero_over_zero_is_nan`. Worth knowing
+if the function is ever made `const` or `#[inline]`-visible to callers, which
+would let a caller const-fold it into the wrong NaN.

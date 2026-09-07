@@ -1,105 +1,93 @@
-# ERRORS.md — Error-surface table (Phase C gate)
+# ERRORS.md — Phase C error-surface table
 
-## How this table was derived
+## Mechanical derivation
 
-The whole library is one 48-line translation unit. Mechanically grepping
-`c_src/src/driver.c` for *every* rejection construct:
+Every error-shaped construct was grepped out of the C source:
 
-```sh
-grep -n 'return\|RETURN_ERROR\|assert\|NULL\|errno\|exit\|abort\|if *(\|switch\|#if\|else' \
-    c_src/src/driver.c
-# -> no matches (outside of the copyright comment block)
+```
+$ grep -nE 'return|assert|RETURN_ERROR|NULL|errno|exit\(|abort|if *\(|switch|#if' \
+      c_src/src/driver.c c_src/include/driver.h
+c_src/include/driver.h:24:#ifndef DRIVER_H_        # include guard only
 ```
 
-Results, per construct:
+Result: `driver.c` contains **zero** `return` statements, **zero** `assert`s,
+**zero** `if`/`switch`/range checks, **zero** null checks, **zero** error
+enums/macros, and **no** min/max constants. `driver` is `void`-returning and
+takes a by-value `char`, so there is no pointer to be null and no status to
+return. There is therefore **no explicit rejection path in this library**.
 
-| construct searched for | occurrences in `driver.c` |
-|------------------------|---------------------------|
-| `return` (any)         | 0 (`driver` is `void`)    |
-| `return -1` / sentinel | 0                         |
-| `return NULL`          | 0                         |
-| `RETURN_ERROR`-style macro | 0                      |
-| `assert` / `static_assert` | 0                      |
-| explicit range check (`if`, `<`, `>`, `?:`) | 0 |
-| null-pointer check     | 0 (no pointer parameters) |
-| `switch` / `#ifdef` branch | 0 (only the header guard `DRIVER_H_`) |
-| error enum / status type | 0                       |
-| min/max constant       | 0                         |
-| `errno` read or write  | 0                         |
-| `exit` / `abort`       | 0                         |
+The real error/edge surface is consequently:
 
-So the library has **no explicit error surface**: `void driver(char c)` accepts
-every one of the 256 `char` bit patterns, has no failure mode, no return value,
-and no out-parameter. Its *entire* observable behaviour is the 14 lines it
-`printf`s to `stdout`.
+1. the implicit range handling glibc performs on the value it is handed
+   (`__ctype_b_loc()[c]`, and the real `tolower`/`toupper` functions, which the
+   C `.so` imports — see `nm -D --undefined-only`, `U tolower@GLIBC_2.2.5`);
+2. what happens when a caller pushes a value that is not a valid `char` across
+   the FFI boundary (C prototypes are promoted, so any `int` is accepted by an
+   external caller — the analogue of an out-of-range enum value).
 
-That does not end the phase. The rows below are the rejection/edge conditions
-that *do* exist for this API — the implicit ones at the language and FFI
-boundary, i.e. every input that a real caller can construct and for which the
-two implementations could disagree. "Expected C result" is the ground truth the
-Rust must reproduce byte-for-byte; where the C does not reject at all, the
-required behaviour is *not rejecting in exactly the same way*.
+Both are enumerated below and every row is differentially tested. "Expected C
+result" is whatever the C `.so` actually emits; the test asserts the Rust `.so`
+emits the identical bytes, so no row encodes a guess.
 
 ## Table
 
 | # | function | trigger (the exact invalid input/condition) | expected C result |
 |---|----------|---------------------------------------------|-------------------|
-| 1 | `driver` | `c == 0` (NUL, the C-string terminator / "empty" sentinel) | No rejection. 14 lines printed; classifiers report the raw `_IScntrl` bit, so `control: 2`, all other classes `0`; `to lower:`/`to upper:` emit a literal NUL byte (`%c` of `0`) |
-| 2 | `driver` | `c == -1` i.e. `(char)0xFF`. Sign-extends to `-1`, which is the value of `EOF`; the ctype tables have a dedicated `EOF` slot at index `-1` | No rejection. All 12 classifiers `0`; `tolower(-1) == -1` and `toupper(-1) == -1`, and `printf("%c", -1)` writes the single byte `0xFF` |
-| 3 | `driver` | `c == -128` i.e. `(char)0x80` — the most-negative `char`, the lowest legal index into glibc's ctype table | No rejection. Classifiers `0`; `tolower`/`toupper` return `128`, and `%c` of `128` writes the byte `0x80` |
-| 4 | `driver` | any `c` in `-128..=-2` (high-bit set; `char` is **signed** on x86-64 Linux, so these index the ctype tables at a *negative* offset — out of the `0..=255` range the C standard defines for `isXXX`) | No rejection, no crash: glibc's tables are legally addressable from `-128`. Classifiers `0` for all of `-128..=-1`; `tolower`/`toupper` are the identity on `128..=254` |
-| 5 | `driver` | `c == 127` (`DEL`) — one step past the last *printable* ASCII value and the largest positive `char` | No rejection. `control: 2`, everything else `0`; `%c` writes byte `0x7F` |
-| 6 | `driver` | `c == 128` written by the caller as a wider integer (`128` is *not* representable in a signed `char`; implementation-defined narrowing) | No rejection. Narrows to `-128`, so output is identical to row 3 |
-| 7 | `driver` | `c == 256`/`c == 0x100` passed as a wider integer — one step past the end of the `unsigned char` range | No rejection. Only the low 8 bits are consumed, so output is identical to `c == 0` (row 1) |
-| 8 | `driver` | caller passes a full-width `int` with garbage in bits 8..31 (e.g. `0xDEADBE41`), the FFI analogue of an **out-of-range enum value**: the ABI passes sub-`int` args in a 32-bit register slot and the callee may not rely on the upper bits | No rejection. Callee sign-extends the low byte only (`movsbl`), so `0xDEADBE41` behaves exactly like `c == 'A'` (`0x41`) |
-| 9 | `driver` | caller passes a negative wide `int` whose low byte is positive (e.g. `-65280 == 0xFFFF0100`) | No rejection. Low byte `0x00`, so identical to row 1 |
-| 10 | `driver` | `c` is one of the values glibc classifies with *multiple* bits at once (`'0'..'9'` → `_ISalnum|_ISdigit|_ISxdigit|_ISgraph|_ISprint`) — the case where a normalising `0`/`1` translation would silently diverge | No rejection, and the returned `int` is the **raw masked bit**, not `1`: e.g. for `'0'`, `alphanumeric: 8`, `digit: 2048`, `hexadecimal: 4096`, `graphical: 32768`, `printing: 16384` |
-| 11 | `driver` | `c == ' '` (0x20) — the one value that is `_ISblank|_ISspace|_ISprint` but **not** `_ISgraph` | No rejection. `space: 8192`, `blank: 1`, `printing: 16384`, `graphical: 0` |
-| 12 | `driver` | `c == '\t'` (0x09) — `_ISblank` **and** `_IScntrl` and `_ISspace` simultaneously | No rejection. `control: 2`, `space: 8192`, `blank: 1`; `printing: 0` |
-| 13 | `driver` | repeated invocation / locale already changed by an earlier caller (`driver` unconditionally calls `setlocale(LC_ALL, "C")` with no error check on its return value) | No rejection, and the return value of `setlocale` is discarded. Output is idempotent: the N-th call for a given `c` is byte-identical to the first |
-| 14 | `driver` | `stdout` redirected to a non-tty (fully buffered) and never flushed by the callee — `driver` calls no `fflush` | No rejection. The 14 lines sit in the `stdout` FILE buffer; both implementations must share the *same* libc `stdout` buffer, so a caller's `fflush(NULL)` drains both identically |
+| 1 | `driver` | `c = 0` (NUL — the C-string terminator, degenerate "empty" char) | no rejection; 14 lines; classifiers report the `_IScntrl` bit (`control: 2`), `to lower`/`to upper` emit the NUL byte `0x00` |
+| 2 | `driver` | `c = 127` (`0x7F`, DEL — top of the positive `char` range) | no rejection; `control: 2`; identity case conversion |
+| 3 | `driver` | `c = -1` (`0xFF`) — bit-identical to `EOF`, the sentinel every ctype function special-cases | no rejection; all classifier bits 0; `tolower(-1)`/`toupper(-1)` return `-1`, and `printf("%c", -1)` emits byte `0xFF` |
+| 4 | `driver` | `c = -128` (`0x80`) — most negative `char`, lowest legal ctype table index | no rejection; all classifier bits 0; case conversion is identity, `%c` emits byte `0x80` |
+| 5 | `driver` | `c` in `-128..=-2` (`0x80..=0xFE`) — every remaining negative index, i.e. one step past the *documented* `unsigned char` domain of `<ctype.h>` | no rejection; all 12 classifier bits 0; both conversions identity |
+| 6 | `driver` | out-of-range argument: caller passes an `int` outside `-128..=127` (e.g. `256`, `-129`, `0x1234`, `INT_MAX`, `INT_MIN`) across the FFI boundary — legal for a promoted C prototype, no valid `char` "variant" | callee truncates to the low 8 bits; result is identical to the corresponding in-range `char`, no trap/error |
+| 7 | `driver` | `c = 32` (space) vs `c = 9` (tab) — the only two values where `isspace`/`isblank` disagree, the classic off-by-one classification boundary | `space: 8192` for both; `blank: 1` for both; but `printing: 16384` only for `32`, and `graphical` is 0 for both |
+| 8 | `driver` | boundary values one step outside each classifier's valid range: `'0'-1`=`/`, `'9'+1`=`:`, `'A'-1`=`@`, `'Z'+1`=`[`, `'a'-1`=`` ` ``, `'z'+1`=`{`, `'f'+1`=`g`, `'F'+1`=`G` | no rejection; the adjacent value must report the *punct* bits, not the digit/alpha/xdigit bits — verifies no fencepost error in the classification tables |
+| 9 | `driver` | repeated invocation (state leak / `setlocale(LC_ALL,"C")` re-entry): call `driver` many times in one process, interleaved between the C and Rust `.so` | no rejection; output for a given `c` is identical on every call and unaffected by the other library having run first |
 
-No row is a real *rejection*, because the C rejects nothing — recording that
-truthfully is the point. Every row is exercised by a differential test in
-`tests/errors.rs` that asserts the two `.so`s produce byte-identical output
-(and, for the wide-integer rows, identical narrowing).
+Check-off status (all rows verified by `tests/differential.rs`):
 
-## Status
+- [x] 1  `error_row_01_nul`
+- [x] 2  `error_row_02_del_127`
+- [x] 3  `error_row_03_eof_minus_one`
+- [x] 4  `error_row_04_most_negative`
+- [x] 5  `error_row_05_all_negative_chars`
+- [x] 6  `error_row_06_out_of_range_int_arg`
+- [x] 7  `error_row_07_space_vs_blank`
+- [x] 8  `error_row_08_one_past_each_class_boundary`
+- [x] 9  `error_row_09_repeat_and_interleave`
 
-All rows have a passing differential test in `tests/errors.rs`.
+## Divergence found and fixed (row 6)
 
-| # | test | result |
-|---|------|--------|
-| 1 | `err_01_nul_byte` | [x] pass |
-| 2 | `err_02_minus_one_eof_slot` | [x] pass |
-| 3 | `err_03_most_negative_char` | [x] pass |
-| 4 | `err_04_all_negative_chars` | [x] pass |
-| 5 | `err_05_del_127` | [x] pass |
-| 6 | `err_06_128_narrowing` | [x] pass |
-| 7 | `err_07_256_one_past_uchar` | [x] pass |
-| 8 | `err_08_garbage_high_bits` | [x] pass |
-| 9 | `err_09_negative_wide_int` | [x] pass |
-| 10 | `err_10_multi_bit_classes_raw_mask` | [x] pass |
-| 11 | `err_11_space_is_blank_not_graph` | [x] pass |
-| 12 | `err_12_tab_is_blank_and_cntrl` | [x] pass |
-| 13 | `err_13_repeated_calls_idempotent` | [x] pass |
-| 14 | `err_14_shared_stdout_buffer` | [x] pass |
+Row 6 was the only failing row and it was a real translation bug, not a test
+artifact:
 
-Plus the generic boundaries the task calls out even though they are not table
-rows:
+* **Symptom.** Calling the export with `256` (a promoted `int`, low 8 bits `0`)
+  gave, from the C `.so`, exactly the `c == 0` output (`control: 2`, everything
+  else `0`). The Rust `.so` instead printed `alphabetic: 1024`, `digit: 2048`,
+  `space: 8192`, `printing: 16384` and `to lower: 0x80` — values read from
+  past the end of the ctype table.
+* **Cause.** The export was declared `extern "C" fn driver(c: c_char)`. rustc
+  tags an `i8` C-ABI parameter `signext`, so LLVM assumed the register already
+  held a sign-extended `char`, kept the full `256`, proved `c` was in
+  `-128..=127`, elided the bounds check on `CTYPE_B[c + 128]`, and read index
+  `384` of a 384-element table. gcc's `char`-taking callee, by contrast, reads
+  only the low 8 bits of the argument register.
+* **Fix.** The export now takes `c_int` and truncates with `arg as c_char`,
+  reproducing the C's truncation; `ctype_index` additionally masks with `0x1FF`
+  so an out-of-bounds table read is impossible by construction. Both changes
+  are in `src/lib.rs`; `c_src` was not touched.
+* **ABI check.** `scripts/compare_binaries.sh` compiles a gcc consumer against
+  the unmodified `c_src/include/driver.h` (declared prototype `void
+  driver(char)`), links it against each `.so` in turn, and diffs stdout over
+  all 256 `char` values plus values the C compiler must narrow itself — the
+  `c_int` parameter is ABI-indistinguishable for real callers.
 
-| boundary | test | result |
-|---|---|---|
-| null-pointer / length parameters | `generic_boundaries_no_pointer_or_length_params` — asserts mechanically, from `driver.h`, that the API has neither, then checks totality over the whole parameter domain | [x] pass |
-| one step past every documented range | `generic_boundaries_one_step_past_ranges` | [x] pass |
-| out-of-range value crossing FFI (the enum analogue) | `err_08_garbage_high_bits` — 512 seeded-random 32-bit arguments plus adversarial patterns | [x] pass |
+## Harness credibility (mutation checks)
 
-### Bug this phase found
+The suite was confirmed capable of failing, not just of passing:
 
-Row 8 was not a formality. Passing `0xDEAD_BE41` through the `driver` symbol
-**segfaulted the Rust** while the C printed the results for `'A'`:
-`extern "C" fn driver(c: c_char)` makes rustc mark the parameter `signext` and
-emit `movslq %edi`, so the *whole* 32-bit register became the ctype-table index.
-GCC's code keeps only `%al` (`mov %al,-0x4(%rbp)`) and re-reads it with `movsbq`.
-Fixed by taking the argument as `c_int` and narrowing explicitly. See
-`CONFIGS.md` for the full list of the three bugs verification uncovered.
+| mutation applied to `src/lib.rs` | result |
+|----------------------------------|--------|
+| `IS_CNTRL` mask `2` → `6` | 9 of 25 rows FAILED |
+| one `CTYPE_TOLOWER` entry `97` → `98` | `compare_binaries.sh` FAILED (exit 1) |
+
+Both mutations were reverted and the suite returned to 25/25 passing.

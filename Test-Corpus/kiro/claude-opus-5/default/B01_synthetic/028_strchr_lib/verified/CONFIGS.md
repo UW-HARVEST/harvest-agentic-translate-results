@@ -1,75 +1,82 @@
-# CONFIGS.md — configuration surface for VALID inputs
+# CONFIGS.md — Phase B configuration-surface table
 
-Mechanical enumeration of the axes the C code actually branches on.
+## How this table was derived
 
-## Public entry points (the FULL set, from `nm -D --defined-only`)
+The public surface is enumerated from the header plus the actual exported
+symbols (see `SYMBOLS.md`), not from the convenience wrapper alone:
 
-| entry point | signature | level |
-|-------------|-----------|-------|
-| `foo` | `int foo(const char *in, char c)` | **low-level** — not in `driver.h`, but exported; takes the search byte as a parameter |
-| `driver` | `void driver(const char *in)` | convenience wrapper — calls `foo(in,'A')` then `foo(in,'x')` and `printf`s both |
+- **Low-level entry point:** `int foo(const char *in, char c)` —
+  `c_src/src/driver.c:29`. Not in `driver.h`, but exported (`nm -D` → `T foo`),
+  so it is a public entry point and is driven **directly**.
+- **Convenience / one-shot wrapper:** `void driver(const char *in)` —
+  `c_src/src/driver.c:37`. Hard-codes two `foo` calls (`'A'`, then `'x'`) and
+  formats each result with `printf("%s: %d\n")` to stdout.
 
-Tests drive `foo` directly (all byte values), not only through `driver`.
+There are **no runtime options, modes or flags**: no setter, no config struct,
+no global state, no `#ifdef` in the source (grep for `#if`/`switch`/`if (`
+returns 0 hits — see `ERRORS.md`). The branch axes the C code actually
+distinguishes are therefore purely **input shape**:
 
-## Runtime options / modes / flags
+1. **needle value `c`** (only variable for `foo`; fixed to `'A'`/`'x'` for
+   `driver`): absent from input / present / `'\0'` / high-bit (negative
+   `signed char`) / equal to the first byte / equal to the last byte.
+2. **occurrence count**: zero, exactly one, many, *all* bytes matching.
+3. **occurrence position** — this is what the `s++`-after-match walk branches
+   on: at index 0, in the middle, at the final byte before NUL, and consecutive
+   runs (adjacent matches, where `s++` lands on another match).
+4. **input length**: empty (0), 1 byte, small, large (1 MiB), i.e.
+   empty / one / many.
+5. **byte content**: printable ASCII, full 0x01–0xFF alphabet including
+   high-bit bytes, and inputs whose bytes are *not* valid UTF-8 (the Rust side
+   must stay byte-oriented and never assume UTF-8).
+6. **stdout formatting path** (`driver` only): the `%d` conversion for counts of
+   0, single digits, and multi-digit values, and the ordering/interleaving of
+   the two `printf` calls in one stream.
 
-There are **none**. Greps for `#ifdef`, `#if`, `switch`, and any global/static
-state in `c_src/src/driver.c` return nothing beyond the `DRIVER_H_` include
-guard; the library is stateless and has no configuration API. The only "option"
-the API can set is the `c` parameter of `foo`, which is therefore treated as a
-first-class configuration axis below.
+Rows are the pruned cross-product of the axes the code treats differently.
+Every row is exercised with **many randomized inputs** from a fixed-seed
+xorshift PRNG (seed `0x243F6A8885A308D3`) — 200+ cases per randomized row — and
+both `.so`s are called through `libloading`, never by direct Rust linkage.
 
-## Axes the code distinguishes
+## Table
 
-* **A1 — search byte `c`** (the only runtime option): `'A'`, `'x'` (the two
-  values `driver` hard-codes), other ASCII, digit, space, `0x01`, `0x7F`,
-  high-bit `0x80..0xFF` (negative `c_char`). `c == 0` is excluded — it is
-  undefined behaviour, see `ERRORS.md` row 5.
-* **A2 — input length**: `0` (empty), `1`, small, ≥16, ≥32, ≥64, ≥4096
-  (crosses the vector-width and page-size boundaries that glibc `strchr`'s
-  aligned SIMD loop special-cases).
-* **A3 — match count**: `0`, `1`, `2`, many, `strlen(in)` (all bytes match).
-* **A4 — match position**: first byte, last byte before the terminator,
-  interior only, adjacent/consecutive matches (exercises the `s++` step).
-* **A5 — start alignment**: the string's first byte placed at offset
-  `0..=63` inside a 64-byte-aligned allocation. glibc `strchr` reads aligned
-  words, the Rust translation reads byte-by-byte; results must agree for every
-  alignment.
-* **A6 — byte content**: ASCII only vs. arbitrary bytes `0x01..0xFF`
-  (non-UTF-8, high-bit set) — the API is byte-oriented.
-* **A7 — digit width of the printed counts** (`driver` only, via `printf("%d")`):
-  0, 1-digit, 2-digit, 3-digit, 4-digit, 5-digit; and the two counts differing
-  from each other.
+| # | entry point(s) | configuration (options set + input shape) | test | [ ] |
+|---|----------------|--------------------------------------------|------|-----|
+| 1 | `foo` | empty input `""`, needle swept over all 256 byte values (needle `0` excluded → row 12) | `cfg_row1_empty_input_all_needles` | [x] |
+| 2 | `foo` | 1-byte input, needle swept over all 256 values × payload byte swept over all 255 non-NUL values (full 255×256 matrix) | `cfg_row2_single_byte_matrix` | [x] |
+| 3 | `foo` | needle absent from input (zero occurrences), randomized ASCII inputs of random length | `cfg_row3_zero_occurrences_random` | [x] |
+| 4 | `foo` | exactly one occurrence, at a randomized position | `cfg_row4_exactly_one_occurrence_random` | [x] |
+| 5 | `foo` | many scattered occurrences, randomized inputs over a small alphabet (high match density) | `cfg_row5_many_occurrences_random` | [x] |
+| 6 | `foo` | consecutive/adjacent occurrences (runs of the needle), so post-match `s++` lands on another match | `cfg_row6_consecutive_runs_random` | [x] |
+| 7 | `foo` | occurrence at index 0 (first byte) | `cfg_row7_match_at_first_byte_random` | [x] |
+| 8 | `foo` | occurrence at the last byte before the NUL | `cfg_row8_match_at_last_byte_random` | [x] |
+| 9 | `foo` | every byte of the input equals the needle (saturated input, count == length) | `cfg_row9_all_bytes_match_random` | [x] |
+| 10 | `foo` | randomized inputs over the **full** 0x01–0xFF byte alphabet (non-UTF-8, high-bit bytes) × randomized non-zero needle | `cfg_row10_full_byte_alphabet_random` | [x] |
+| 11 | `foo` | high-bit needle (`0x80`–`0xFF`, negative as `signed char`) against inputs containing both that byte and other high-bit bytes | `cfg_row11_high_bit_needle_random` | [x] |
+| 12 | `foo` | needle `c == '\0'`. `strchr(s, 0)` always matches a terminator and so never yields the loop's NULL exit sentinel: the pointer walks out of the object forever. Driven over a deterministic zero-padded arena and out-of-process (`alarm()`-bounded), comparing the termination signal rather than a return value — the call never returns in either library | `cfg_row12_nul_needle_padded_arena` | [x] |
+| 13 | `foo` | large input (1 MiB) with randomized needle density | `cfg_row13_large_input_random` | [x] |
+| 14 | `driver` | full end-to-end pipeline, stdout captured and compared byte-for-byte: input with neither `'A'` nor `'x'` (both counts `0`) | `cfg_row14_driver_stdout_no_matches` | [x] |
+| 15 | `driver` | stdout compared: `'A'` present, `'x'` absent (asymmetric — catches a swapped needle/label) | `cfg_row15_driver_stdout_only_A` | [x] |
+| 16 | `driver` | stdout compared: `'x'` present, `'A'` absent (the mirror of row 15) | `cfg_row16_driver_stdout_only_x` | [x] |
+| 17 | `driver` | stdout compared: both present with **different** multi-digit counts (exercises `%d` width and the two-line ordering) | `cfg_row17_driver_stdout_multi_digit` | [x] |
+| 18 | `driver` | stdout compared: empty input `""` (both counts `0`) | `cfg_row18_driver_stdout_empty` | [x] |
+| 19 | `driver` | stdout compared over randomized inputs from the full byte alphabet, including `'A'`/`'x'` at boundary positions and adjacent runs | `cfg_row19_driver_stdout_random` | [x] |
+| 20 | `foo` + `driver` composed | the composed pipeline: for the same randomized input, assert `driver`'s two printed numbers equal the directly-called `foo(in,'A')` / `foo(in,'x')` values, cross-checked between the two libraries (catches a wrapper that calls the right function with the wrong argument) | `cfg_row20_composed_consistency_random` | [x] |
 
-## Rows — meaningful combinations (cross-product, pruned to what the C distinguishes)
+No binary executable is built (`CMakeLists.txt` has no `add_executable`), so the
+"compare C and Rust binary stdout" clause is satisfied instead by rows 14–19,
+which compare the stdout each `.so` writes to a real captured fd.
 
-Every row is exercised with **many randomised inputs** (fixed seed
-`0x5EED_1234_ABCD_0001`, deterministic SplitMix64), not a single hand-picked
-value, and asserted byte-for-byte between the C `.so` and the Rust `.so`.
+## Randomization
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `foo` | A2=0 (empty string) × A1 = all 255 non-zero byte values | [x] |
-| 2 | `foo` | A2=1 (single byte) × A1 = all 255 non-zero byte values × A6 = every possible single content byte | [x] |
-| 3 | `foo` | A3=0 (no match) × A2 small/medium random × A1 random non-zero | [x] |
-| 4 | `foo` | A3=1, A4=first byte × randomised remainder | [x] |
-| 5 | `foo` | A3=1, A4=last byte before terminator × randomised prefix | [x] |
-| 6 | `foo` | A3=1, A4=interior × randomised | [x] |
-| 7 | `foo` | A3=2 with the two matches **adjacent** (consecutive bytes) | [x] |
-| 8 | `foo` | A3=many, matches scattered at random positions, A2 random 0..512 | [x] |
-| 9 | `foo` | A3=`strlen(in)` (all bytes match) × A2 ∈ {1,2,15,16,17,31,32,33,63,64,65,4095,4096,4097} | [x] |
-| 10 | `foo` | A1 = high-bit byte (`0x80..0xFF`, negative `c_char`) × A6 = random arbitrary bytes | [x] |
-| 11 | `foo` | A1 ∈ {`0x01`, `0x7F`} boundary search bytes × random content | [x] |
-| 12 | `foo` | A5 = start alignment `0..=63` inside a 64-byte-aligned buffer × random content and random `c` | [x] |
-| 13 | `foo` | A2 = length boundaries {15,16,17,31,32,33,63,64,65,127,128,129,4095,4096,4097} × random content × random `c` | [x] |
-| 14 | `foo` | A6 = full random bytes `0x01..0xFF` (non-UTF-8), A2 random 0..1024, A1 random — broad property sweep | [x] |
-| 15 | `foo` | A1 = `'A'` and `'x'` specifically (the bytes `driver` uses) × random content | [x] |
-| 16 | `driver` | A7=0: input containing neither `'A'` nor `'x'` → `A: 0\nx: 0\n` | [x] |
-| 17 | `driver` | A7: exactly one `'A'`, no `'x'` → counts `1` and `0` | [x] |
-| 18 | `driver` | A7: no `'A'`, exactly one `'x'` → counts `0` and `1` | [x] |
-| 19 | `driver` | A7: both present, 2-digit counts, counts differing from each other | [x] |
-| 20 | `driver` | A7: 3-, 4- and 5-digit counts (long inputs) | [x] |
-| 21 | `driver` | A2=0 (empty input) | [x] |
-| 22 | `driver` | A6 = random arbitrary bytes incl. high-bit, A2 random 0..2048 — broad property sweep of the composed pipeline | [x] |
-| 23 | `driver` | A5 = start alignment `0..=63` × random content | [x] |
-| 24 | `foo` + `driver` | composed: the same buffer fed to `driver` and to `foo(in,'A')`/`foo(in,'x')`, asserting `driver`'s printed digits equal the low-level results in **both** libraries (catches wrapper/pipeline bugs invisible per-function) | [x] |
+Rows marked `_random` draw from `Rng` (xorshift64\*) seeded from
+`SEED = 0x243F6A8885A308D3` XOR a per-row constant, so every row is
+independently reproducible and no two rows draw the same sequence. Iteration
+counts: 300–600 per randomized row; rows 1, 2, 11 are *exhaustive* over the
+byte/needle space instead (row 2 alone is 255 × 255 = 65 025 differential
+calls).
+
+## Result
+
+All 20 rows pass, in the debug profile, the release profile, and release with
+`-Cdebug-assertions=on` forced. Run with `./run_all_combos.sh`.

@@ -1,25 +1,13 @@
 # ERRORS.md — Phase C error-surface table
 
-Mechanically derived by grepping the **entire** C source for every rejection
-mechanism. Commands run and their complete results:
+Mechanically derived from the complete C source (`c_src/src/hello.c`,
+`c_src/include/hello.h`). Greps performed over all of `c_src/`:
 
-```sh
-cd c_src
-grep -rn "return" src include
-#   src/hello.c:30:    return 0;          <-- the ONLY return in the library
-
-grep -rniE "RETURN_ERROR|assert|NULL|errno|return *-|E[A-Z]{3,}|enum|\
-#ifdef|#if |switch|if *\(|for *\(|while *\(" src include
-#   only license-comment lines, the HELLO_H_ include guard, and
-#   `int helloworld() {` / `printf(...)` / `return 0;`
-
-grep -rnE "\*|MAX|MIN|size_t|len|\[|\]" src include   # (excluding comments)
-#   (NONE FOUND)
+```
+grep -rnE 'return|assert|RETURN_ERROR|NULL|errno|if *\(|switch|#ifdef|<|>|==|!=' c_src/src c_src/include
 ```
 
-## Findings (the absence is the finding)
-
-The complete library is:
+Findings: the only executable statements in the entire library are
 
 ```c
 int helloworld() {
@@ -28,77 +16,45 @@ int helloworld() {
 }
 ```
 
-* **0** error-return macros (`RETURN_ERROR` &c.) — the macro does not exist.
-* **0** `return -1` / `return NULL` / error-enum returns. The single `return`
-  statement is the unconditional `return 0`.
-* **0** `assert`s.
-* **0** `if` / `switch` / loop statements — the function is entirely branchless.
-* **0** parameters ⇒ no pointer parameters, no length parameters, no enum
-  parameters, no range checks, and no `MIN`/`MAX` constants.
-* `printf`'s return value is **discarded**; the function returns `0` even when
-  the write fails. Replicating this "swallow the I/O error" behaviour is the
-  real error-path contract of this library.
+There is:
 
-So the error surface consists of the conditions under which the *only*
-fallible operation (`printf`, lowered to `puts`) fails, plus the ABI-level
-boundaries that exist for every C entry point. One row per distinct condition.
+* **no** parameter (so no null check, no range check, no enum, no length),
+* **no** `if` / `switch` / `assert` / `errno` inspection,
+* **no** error-return macro, no `-1`, no `NULL` return,
+* **exactly one** `return` statement, with the constant `0`,
+* the return value of `printf` is **discarded** — i.e. the C code deliberately
+  ignores I/O failure and still reports success.
 
-## Error-surface table
+The error surface therefore consists of the *environmental* failure modes that
+this function can be subjected to, plus the FFI-boundary edge cases a C caller
+can legally create against a `()`-prototyped (unprototyped, K&R) function.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | test | status |
-|---|----------|----------------------------------------------|-------------------|------|--------|
-| E1 | `helloworld` | fd 1 **closed** before the call, stdout unbuffered ⇒ `puts` → `write(1,…)` fails `EBADF` | returns `0`; emits no bytes; stdout error indicator (`ferror`) set | `e1_fd1_closed_write_fails` | [x] |
-| E2 | `helloworld` | fd 1 is a **read-only** descriptor (file opened `O_RDONLY`), stdout unbuffered ⇒ `write` fails `EBADF` | returns `0`; emits no bytes; `ferror` set | `e2_fd1_read_only_write_fails` | [x] |
-| E3 | `helloworld` | fd 1 is the write end of a **pipe whose read end is closed**, stdout unbuffered ⇒ `write` fails `EPIPE` (SIGPIPE ignored) | returns `0`; `ferror` set | `e3_fd1_broken_pipe` | [x] |
-| E4 | `helloworld` | stdout's **error indicator already set** before the call (no `clearerr`) — glibc refuses further output on the stream | returns `0`; C performs no check and reports nothing | `e4_error_flag_already_set` | [x] |
-| E5 | `helloworld` | fd 1 is a **directory** fd (write always fails `EBADF`), stdout unbuffered | returns `0`; `ferror` set | `e5_fd1_is_directory` | [x] |
-| E6 | `helloworld` | **error latching across a good → bad → good sequence** of calls: call 1 writes to a valid file, then fd 1 is closed under the stream and call 2 fails, then a valid fd is restored for call 3 while the stream's error flag is still latched | all three calls return `0`; `ferror` progression `false, true, true`; identical bytes reach the file | `e6_error_latching_across_calls` | [x] |
-| E7 | `helloworld` | called through an **unprototyped (K&R) signature with extra arguments** — `int helloworld();` accepts any arity in C, so garbage in `rdi/rsi/rdx/rcx/xmm0` is a real input the C tolerates. This is the zero-parameter analogue of "out-of-range enum value across the FFI boundary": values with no valid meaning arrive in the argument registers and must be ignored identically. Driven with a seeded set of extreme `int` values (`0`, `-1`, `i32::MIN`, `i32::MAX`, random) | returns `0`; prints `Hello World!\n`; arguments ignored | `e7_extra_arguments_unprototyped` | [x] |
-| E8 | `helloworld` | called with a **variadic** call signature (`extern "C" fn(c_int, ...)`) — another arity/ABI mismatch an external caller can produce through the unprototyped header (sets `al` to the SSE-register count) | returns `0`; prints `Hello World!\n` | `e8_variadic_call_signature` | [x] |
+| # | function | trigger (the exact invalid input/condition) | expected C result |
+|---|----------|----------------------------------------------|-------------------|
+| 1 | `helloworld` | Write failure: `stdout` redirected to `/dev/full` (every write returns `ENOSPC`) | `printf` fails, its return value is discarded → function still returns `0`; nothing readable is produced. Rust must also return `0` and must NOT panic/abort. |
+| 2 | `helloworld` | `stdout`'s underlying fd 1 is **closed** before the call (`close(1)`) | `printf` fails (`EBADF`), value discarded → returns `0`, no output, no crash. |
+| 3 | `helloworld` | `stdout` redirected to a **read-only** fd (opened `O_RDONLY`), so writes fail with `EBADF` | returns `0`, no output, no crash. |
+| 4 | `helloworld` | `stdout` is a **pipe whose read end is closed** → `SIGPIPE`/`EPIPE` on flush | identical behaviour between C and Rust (both go through the same libc `stdout`); with `SIGPIPE` ignored, `printf`/`fflush` fails, `helloworld` returns `0`. |
+| 5 | `helloworld` | `stdout` set **unbuffered** (`setvbuf(stdout, NULL, _IONBF, 0)`) then write target fails | returns `0` (failure surfaces immediately inside `printf` rather than at flush); still `0`. |
+| 6 | `helloworld` | Called through a **wrongly-typed function pointer with extra arguments** — legal in C because `int helloworld()` has no prototype: `((int(*)(int,int,int))helloworld)(1,2,3)` | Extra SysV register arguments are ignored; prints `Hello World!\n`, returns `0`. Rust `extern "C" fn()` must behave identically. |
+| 7 | `helloworld` | Called through a function pointer declared to return a **wider/narrower type** than `int` (`long`/`short` reinterpretation of the return register) | Low 32 bits of the return register are `0`; C and Rust must agree bit-for-bit on the returned `int` (`0`, not a garbage sentinel). |
+| 8 | `helloworld` | Called with a **NULL `this`/no arguments at all** — i.e. the degenerate "no input" case, which is the only input the prototype admits | returns `0`, prints once. (Baseline: there is no invalid *argument* to construct, so the only in-range/out-of-range distinction is "called" vs "not called".) |
+| 9 | `helloworld` | Invoked a very large number of times in a row (exhaustion / state-corruption probe: 100 000 calls) | returns `0` every time; output is exactly 100 000 repetitions; no internal state, no leak, no drift. Rust must not accumulate state. |
+| 10 | `helloworld` | Called concurrently from **many threads** while `stdout` is shared (locking-error probe: glibc `printf` takes the FILE lock) | No interleaving *within* a line, no crash, all calls return `0`; total byte count is exact. Rust must use the same locked libc path, not an unlocked writer. |
+| 11 | `helloworld` | `stdout` `FILE` re-pointed with `freopen` to a new file mid-lifetime | Output goes to the *new* target; returns `0`. Confirms Rust resolves `stdout` dynamically through libc rather than caching a handle. |
 
-## Generic C-API boundaries: applicability
+## Status
 
-The task list requires covering null pointers, zero/oversized lengths,
-one-past-range values, and out-of-range enum values. `helloworld` has **no
-parameters at all** (`c_src/include/hello.h:27`), so these classes are
-structurally inapplicable rather than untested. Recorded explicitly:
-
-| generic boundary class | applicable? | why | covered by |
-|------------------------|-------------|-----|-----------|
-| null pointer argument | no | no pointer parameter exists in the API | — (E7/E8 pass garbage in the register a pointer would occupy, incl. `0` = `NULL` and `-1`) |
-| zero length | no | no length/size parameter exists | — (E7 passes `0`) |
-| oversized length | no | no length/size parameter exists | — (E7 passes `i32::MAX`, `u64::MAX`) |
-| one past a documented valid range | no | no parameter has a documented range | — (E7 passes `i32::MIN`/`i32::MAX`) |
-| out-of-range enum value | no | no enum parameter exists | E7/E8 — the ABI-level equivalent: meaningless ints crossing the FFI boundary |
-| out parameter / return-buffer overflow | no | no out parameters; return type is a plain `int` | — |
-| double-free / use-after-free of a handle | no | the API allocates nothing and returns no handle | — |
-| uninitialised-context / wrong-order calls | no | the library holds no state; there is no init/destroy pair | B14 (idempotence over many calls) |
-
-**All 8 applicable rows have a passing differential test — see
-`tests/phase_c.rs` (harness in `tests/common/mod.rs`) and the evidence below.**
-
-## Verification evidence
-
-`./verify.sh` (debug and release × default / `--no-default-features` /
-`--all-features`):
-
-```
-tests/phase_c.rs — test result: ok. 9 passed; 0 failed
-  e1_fd1_closed_write_fails                    ... ok   (ret 0, ferror set, errno EBADF)
-  e2_fd1_read_only_write_fails                 ... ok   (ret 0, ferror set, errno EBADF)
-  e3_fd1_broken_pipe                           ... ok   (ret 0, ferror set, errno EPIPE)
-  e4_error_flag_already_set                     ... ok
-  e5_fd1_is_directory                           ... ok   (ret 0, ferror set, errno EBADF)
-  e6_error_latching_across_calls                ... ok   (rets [0,0,0], ferror [f,t,t])
-  e7_extra_arguments_unprototyped               ... ok   (5-arg, 8-arg, hostile)
-  e8_variadic_call_signature                    ... ok   (happy + hostile)
-  generic_boundaries_have_no_applicable_surface ... ok
-```
-
-Every row asserts the *same specific* outcome from both `.so`s — identical
-return value, identical `ferror(stdout)` state and identical `errno` — not merely
-"both failed somehow".
-
-Two Phase C mutants confirm these tests have teeth (`./mutation_test.sh`):
-making the Rust return `-1` on a failed write is caught by 7 tests, and making it
-`panic!` on a failed write aborts the process. Both are KILLED.
+| # | test | result |
+|---|------|--------|
+| 1 | `err_01_dev_full` | [x] pass |
+| 2 | `err_02_closed_fd1` | [x] pass |
+| 3 | `err_03_readonly_fd` | [x] pass |
+| 4 | `err_04_broken_pipe` | [x] pass |
+| 5 | `err_05_unbuffered_failing_target` | [x] pass |
+| 6 | `err_06_extra_args_unprototyped` | [x] pass |
+| 7 | `err_07_return_register_width` | [x] pass |
+| 8 | `err_08_baseline_no_args` | [x] pass |
+| 9 | `err_09_many_calls` | [x] pass |
+| 10 | `err_10_threaded` | [x] pass |
+| 11 | `err_11_freopen` | [x] pass |

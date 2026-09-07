@@ -1,72 +1,58 @@
-# Configuration-surface table
+# Configuration surface
 
-Mechanically derived axes from `c_src/src/lib.c`:
+Mechanically derived from the exported symbols, the four flag branches, the
+four parameter-truthiness branches, the dynamic-array capacity branch, and the
+fixed 3-by-4 matrix loops in `../c_src/src/lib.c`.
 
-- exported entry points/data: all eight symbols listed in `SYMBOLS.md`;
-- dynamic-array shapes: capacity zero/one/many, size below capacity, and size at
-  capacity (which selects the expansion branch);
-- flag options: the full cross-product of READ/WRITE/EXECUTE/DELETE, plus
-  unrelated high bits (which the C code ignores);
-- matrix shapes: original contents and mutable zero/positive/negative values;
-- `matrixsum` options: the full cross-product of each argument being zero or
-  nonzero, with randomized nonzero magnitudes/signs.
+There are no Cargo features, C preprocessor configuration branches, runtime
+mode setters, or executable targets. The only runtime option axes are the four
+flag bits / four parameter truth values, mutable matrix contents, and dynamic
+array size-versus-capacity shape.
 
-Randomized rows use a fixed seed and avoid signed-overflow expressions in C.
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| 1 | `init_array`, `free_array` | positive capacity `1`; returned size `0`, capacity `1` | [x] |
+| 2 | `init_array`, `free_array` | positive capacity `2` (the `matrixsum` path); returned size `0`, capacity `2` | [x] |
+| 3 | `init_array`, `free_array` | positive capacity greater than `2`; randomized small capacities | [x] |
+| 4 | `expand_array` | non-null array with `size < capacity`; capacity doubles and existing elements survive | [x] |
+| 5 | `expand_array` | non-null array with `size == capacity`; capacity doubles and all elements survive | [x] |
+| 6 | `add_element` | `size < capacity`; append without expansion | [x] |
+| 7 | `add_element`, `expand_array` | `size == capacity`; append after successful expansion | [x] |
+| 8 | `init_array`, `add_element`, `free_array` | capacity `1`, empty/one/many sequence crossing multiple growth boundaries | [x] |
+| 9 | `init_array`, `add_element`, `free_array` | capacity `2`, four-element sequence used by `matrixsum` | [x] |
+| 10 | `free_array` | non-null initialized array containing randomized elements | [x] |
+| 11 | `process_flags` | low flag mask `0b0000` (none) with randomized unrelated high bits | [x] |
+| 12 | `process_flags` | low flag mask `0b0001` (read) with randomized unrelated high bits | [x] |
+| 13 | `process_flags` | low flag mask `0b0010` (write) with randomized unrelated high bits | [x] |
+| 14 | `process_flags` | low flag mask `0b0011` (read+write) with randomized unrelated high bits | [x] |
+| 15 | `process_flags` | low flag mask `0b0100` (execute) with randomized unrelated high bits | [x] |
+| 16 | `process_flags` | low flag mask `0b0101` (read+execute) with randomized unrelated high bits | [x] |
+| 17 | `process_flags` | low flag mask `0b0110` (write+execute) with randomized unrelated high bits | [x] |
+| 18 | `process_flags` | low flag mask `0b0111` (read+write+execute) with randomized unrelated high bits | [x] |
+| 19 | `process_flags` | low flag mask `0b1000` (delete) with randomized unrelated high bits | [x] |
+| 20 | `process_flags` | low flag mask `0b1001` (read+delete) with randomized unrelated high bits | [x] |
+| 21 | `process_flags` | low flag mask `0b1010` (write+delete) with randomized unrelated high bits | [x] |
+| 22 | `process_flags` | low flag mask `0b1011` (read+write+delete) with randomized unrelated high bits | [x] |
+| 23 | `process_flags` | low flag mask `0b1100` (execute+delete) with randomized unrelated high bits | [x] |
+| 24 | `process_flags` | low flag mask `0b1101` (read+execute+delete) with randomized unrelated high bits | [x] |
+| 25 | `process_flags` | low flag mask `0b1110` (write+execute+delete) with randomized unrelated high bits | [x] |
+| 26 | `process_flags` | low flag mask `0b1111` (all four) with randomized unrelated high bits | [x] |
+| 27 | `matrix`, `calculate_matrix_checksum` | compiled default 3-by-4 matrix contents | [x] |
+| 28 | `matrix`, `calculate_matrix_checksum` | externally mutated 3-by-4 matrix with randomized signed values | [x] |
+| 29 | `matrixsum` | parameter truth mask `0b0000`; all four parameters zero | [x] |
+| 30 | `matrixsum` | parameter truth mask `0b0001`; only parameter 1 nonzero | [x] |
+| 31 | `matrixsum` | parameter truth mask `0b0010`; only parameter 2 nonzero | [x] |
+| 32 | `matrixsum` | parameter truth mask `0b0011`; parameters 1-2 nonzero | [x] |
+| 33 | `matrixsum` | parameter truth mask `0b0100`; only parameter 3 nonzero | [x] |
+| 34 | `matrixsum` | parameter truth mask `0b0101`; parameters 1 and 3 nonzero | [x] |
+| 35 | `matrixsum` | parameter truth mask `0b0110`; parameters 2-3 nonzero | [x] |
+| 36 | `matrixsum` | parameter truth mask `0b0111`; parameters 1-3 nonzero | [x] |
+| 37 | `matrixsum` | parameter truth mask `0b1000`; only parameter 4 nonzero | [x] |
+| 38 | `matrixsum` | parameter truth mask `0b1001`; parameters 1 and 4 nonzero | [x] |
+| 39 | `matrixsum` | parameter truth mask `0b1010`; parameters 2 and 4 nonzero | [x] |
+| 40 | `matrixsum` | parameter truth mask `0b1011`; parameters 1, 2, and 4 nonzero | [x] |
+| 41 | `matrixsum` | parameter truth mask `0b1100`; parameters 3-4 nonzero | [x] |
+| 42 | `matrixsum` | parameter truth mask `0b1101`; parameters 1, 3, and 4 nonzero | [x] |
+| 43 | `matrixsum` | parameter truth mask `0b1110`; parameters 2-4 nonzero | [x] |
+| 44 | `matrixsum` | parameter truth mask `0b1111`; all four parameters nonzero | [x] |
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| C1 | `matrix` | read the initial 3x4 exported object byte-for-byte | [x] |
-| C2 | `init_array` | capacity `0` (empty boundary; compare nullness and fields if allocated) | [x] |
-| C3 | `init_array`, `free_array` | capacity `1` | [x] |
-| C4 | `init_array`, `free_array` | randomized capacity `2..256` | [x] |
-| C5 | `expand_array` | positive capacity `1`, preserving existing element data | [x] |
-| C6 | `expand_array` | randomized positive capacity `2..128`, preserving all data | [x] |
-| C7 | `add_element` | empty array with spare capacity (`size == 0 < capacity`) | [x] |
-| C8 | `add_element` | nonempty array with spare capacity (`0 < size < capacity`) | [x] |
-| C9 | `add_element`, `expand_array` | one-element full array (`size == capacity == 1`) | [x] |
-| C10 | `add_element`, `expand_array` | randomized many-element full array (`size == capacity`, `2..64`) | [x] |
-| C11 | `free_array` | allocated empty array | [x] |
-| C12 | `free_array` | allocated populated array | [x] |
-| C13 | `process_flags` | recognized mask `0x0` (none), randomized unrelated bits | [x] |
-| C14 | `process_flags` | recognized mask `0x1` (READ), randomized unrelated bits | [x] |
-| C15 | `process_flags` | recognized mask `0x2` (WRITE), randomized unrelated bits | [x] |
-| C16 | `process_flags` | recognized mask `0x3` (READ+WRITE), randomized unrelated bits | [x] |
-| C17 | `process_flags` | recognized mask `0x4` (EXECUTE), randomized unrelated bits | [x] |
-| C18 | `process_flags` | recognized mask `0x5` (READ+EXECUTE), randomized unrelated bits | [x] |
-| C19 | `process_flags` | recognized mask `0x6` (WRITE+EXECUTE), randomized unrelated bits | [x] |
-| C20 | `process_flags` | recognized mask `0x7` (READ+WRITE+EXECUTE), randomized unrelated bits | [x] |
-| C21 | `process_flags` | recognized mask `0x8` (DELETE), randomized unrelated bits | [x] |
-| C22 | `process_flags` | recognized mask `0x9` (READ+DELETE), randomized unrelated bits | [x] |
-| C23 | `process_flags` | recognized mask `0xA` (WRITE+DELETE), randomized unrelated bits | [x] |
-| C24 | `process_flags` | recognized mask `0xB` (READ+WRITE+DELETE), randomized unrelated bits | [x] |
-| C25 | `process_flags` | recognized mask `0xC` (EXECUTE+DELETE), randomized unrelated bits | [x] |
-| C26 | `process_flags` | recognized mask `0xD` (READ+EXECUTE+DELETE), randomized unrelated bits | [x] |
-| C27 | `process_flags` | recognized mask `0xE` (WRITE+EXECUTE+DELETE), randomized unrelated bits | [x] |
-| C28 | `process_flags` | recognized mask `0xF` (all four), randomized unrelated bits | [x] |
-| C29 | `calculate_matrix_checksum`, `matrix` | original matrix contents | [x] |
-| C30 | `calculate_matrix_checksum`, `matrix` | all-zero matrix | [x] |
-| C31 | `calculate_matrix_checksum`, `matrix` | randomized mixed positive/negative 3x4 matrix with in-range sum | [x] |
-| C32 | `matrixsum` | zero/nonzero mask `0x0`; randomized matrix | [x] |
-| C33 | `matrixsum` | zero/nonzero mask `0x1`; randomized signs/magnitudes and matrix | [x] |
-| C34 | `matrixsum` | zero/nonzero mask `0x2`; randomized signs/magnitudes and matrix | [x] |
-| C35 | `matrixsum` | zero/nonzero mask `0x3`; randomized signs/magnitudes and matrix | [x] |
-| C36 | `matrixsum` | zero/nonzero mask `0x4`; randomized signs/magnitudes and matrix | [x] |
-| C37 | `matrixsum` | zero/nonzero mask `0x5`; randomized signs/magnitudes and matrix | [x] |
-| C38 | `matrixsum` | zero/nonzero mask `0x6`; randomized signs/magnitudes and matrix | [x] |
-| C39 | `matrixsum` | zero/nonzero mask `0x7`; randomized signs/magnitudes and matrix | [x] |
-| C40 | `matrixsum` | zero/nonzero mask `0x8`; randomized signs/magnitudes and matrix | [x] |
-| C41 | `matrixsum` | zero/nonzero mask `0x9`; randomized signs/magnitudes and matrix | [x] |
-| C42 | `matrixsum` | zero/nonzero mask `0xA`; randomized signs/magnitudes and matrix | [x] |
-| C43 | `matrixsum` | zero/nonzero mask `0xB`; randomized signs/magnitudes and matrix | [x] |
-| C44 | `matrixsum` | zero/nonzero mask `0xC`; randomized signs/magnitudes and matrix | [x] |
-| C45 | `matrixsum` | zero/nonzero mask `0xD`; randomized signs/magnitudes and matrix | [x] |
-| C46 | `matrixsum` | zero/nonzero mask `0xE`; randomized signs/magnitudes and matrix | [x] |
-| C47 | `matrixsum` | zero/nonzero mask `0xF`; randomized signs/magnitudes and matrix | [x] |
-| C48 | `init_array`, `add_element`, `expand_array`, `free_array` | end-to-end low-level sequence from capacity `1`, multiple expansions | [x] |
-| C49 | `init_array`, `add_element`, `expand_array`, `free_array` | end-to-end low-level sequence from capacity `2`, the same growth path used by `matrixsum` | [x] |
-| C50 | `init_array`, `add_element`, `free_array` | end-to-end low-level sequence with exact capacity (no expansion) | [x] |
-| C51 | all function exports and `matrix` | repeated mixed operations while keeping C and Rust state synchronized | [x] |
-
-Feature surface: `Cargo.toml` declares no features. The sole effective
-configuration is therefore the empty/default feature set; verification runs
-both normal commands and `--no-default-features` to prove they are identical.

@@ -1,115 +1,95 @@
-# CONFIGS.md — configuration surface table (Phase A, gate for Phase B)
+# CONFIGS.md — Phase A configuration-surface table
 
-## Axes derived from the C source
+Mechanically derived from `c_src/include/lib.h` and `c_src/src/lib.c`.
 
-There is exactly one public entry point, and it is also the lowest-level one:
+## Axes the C code actually branches on
+
+The public API is exactly one entry point (there are no convenience wrappers and
+no lower layer to reach past — `include/lib.h` is one line):
 
 ```c
-void normalize(float *dest, const float *src, int size);   /* c_src/include/lib.h */
+void normalize(float *dest, const float *src, int size);
 ```
 
-There are no convenience wrappers, no init/teardown, no opaque context, and no
-higher layer to compose — the whole library is this one call, so "driving it the
-way a real consumer does" *is* calling `normalize` directly.
+There is **no runtime option / mode / flag**: no struct of settings, no global,
+no `#ifdef` in `src/lib.c`, no `switch`. `grep -n '#if' src/lib.c` → no matches.
+So the configuration axes are purely the *input shape* and *pointer topology*
+that the three branches at lines 9, 11 and 15 distinguish:
 
-Runtime options/modes/flags: **none**. Verified mechanically:
+| axis | values the code distinguishes |
+|------|-------------------------------|
+| A. `size` | `< 0`, `0`, `1`, `2`, small (3–8), medium (9–64), large (65–4096), odd/even (vectorization boundary), non-multiple-of-vector-width tails |
+| B. pointer topology | `dest != src` (disjoint), `dest == src` (full in-place), `dest` overlaps `src` forward (`dest = src + k`), `dest` overlaps `src` backward (`src = dest + k`) |
+| C. `sum` classification (line 11 `sum > 0.0f`) | `sum > 0` finite, `sum == +inf` (overflow), `sum == 0` from all-zero input, `sum == 0` from underflow, `sum == NaN` |
+| D. element value class | `[-1,1]` uniform, small ints, huge finite (`~1e19`+, square overflows), tiny/subnormal (square underflows), mixed signs, `±0.0`, `±inf`, `NaN`, arbitrary random bit patterns, mixed magnitudes (catastrophic-cancellation-free but rounding-sensitive accumulation order) |
+| E. buffer alignment | `dest`/`src` 16-byte aligned vs offset by 1/2/3 floats (release-build auto-vectorization of the store loop is alignment-sensitive) |
 
-```sh
-grep -nE '#ifdef|#if |switch|enum|typedef|extern' -r c_src/src c_src/include   # no match
-```
+Rows below are the pruned cross-product: one row per combination the C treats
+differently. Every row is exercised with **many randomized inputs (fixed seed
+`0x9E3779B97F4A7C15`)**, both `.so`s loaded via `libloading`, comparing all
+`size` output floats as raw `u32` bit patterns (so NaN payloads and signed zero
+are compared exactly), plus canary bytes on both sides of `dest`.
 
-So the configuration axes are the *input shapes* the code branches on. The C
-has exactly three branch points, and they define the axes:
+## Configuration surface
 
-* `A. size` — controls both loop trip counts (`i < size`) and the `memset`
-  length (`size * sizeof(float)`).
-  Values: `0`, `1`, `2`, `3`, `4`, `5`, `7`, `8`, `15`, `16`, `17`, `31`, `33`,
-  `64`, `1000`, `4096`, `65536` (odd/even, powers of two ±1, "empty / one /
-  many"), plus the negative and `INT_MIN`/`INT_MAX` cases which live in
-  `ERRORS.md`.
-* `B. pointer relationship` — the `dest != src` test, and the read-then-write
-  ordering of the second loop.
-  Values: `disjoint` · `identical (dest == src, in-place)` ·
-  `forward overlap (dest == src + 1)` · `backward overlap (dest == src - 1)` ·
-  `partial overlap (dest == src + size/2)`.
-* `C. the class of `sum`` — the `sum > 0.0f` test.
-  Values: `positive normal` · `exactly +0.0 (all inputs zero)` ·
-  `exactly +0.0 by underflow (non-zero inputs whose squares round to 0)` ·
-  `positive denormal` · `+inf (overflow)` · `NaN (NaN input)` ·
-  `+inf via ±inf input`.
-* `D. element value population` — value-dependent rounding in the accumulation
-  and in `src[i] * sum`.
-  Values: `uniform [-1,1]` · `wide exponent range` · `all denormal` ·
-  `mixed denormal + normal` · `near FLT_MAX` · `±0.0 mixed` ·
-  `±inf sprinkled` · `NaN sprinkled` · `exact powers of two` ·
-  `sum contrived to be exactly 1.0`.
+| # | entry point(s) | configuration (options set + input shape) | test | [x] |
+|---|----------------|-------------------------------------------|------|-----|
+| 1 | `normalize` | A=`0`, B=disjoint, D=n/a | `cfg_row01_size0_disjoint` | [x] |
+| 2 | `normalize` | A=`0`, B=in-place | `cfg_row02_size0_inplace` | [x] |
+| 3 | `normalize` | A=`1`, B=disjoint, C=`sum>0`, D=uniform `[-1,1]` | `cfg_row03_size1_disjoint_uniform` | [x] |
+| 4 | `normalize` | A=`1`, B=in-place, C=`sum>0`, D=uniform | `cfg_row04_size1_inplace_uniform` | [x] |
+| 5 | `normalize` | A=`1`, B=disjoint, C=`sum==0`, D=`±0.0` | `cfg_row05_size1_zero` | [x] |
+| 6 | `normalize` | A=`2`, B=disjoint, C=`sum>0`, D=uniform | `cfg_row06_size2_disjoint_uniform` | [x] |
+| 7 | `normalize` | A=small `3..8`, B=disjoint, C=`sum>0`, D=uniform | `cfg_row07_small_disjoint_uniform` | [x] |
+| 8 | `normalize` | A=small `3..8`, B=in-place, C=`sum>0`, D=uniform | `cfg_row08_small_inplace_uniform` | [x] |
+| 9 | `normalize` | A=medium `9..64`, B=disjoint, C=`sum>0`, D=uniform | `cfg_row09_medium_disjoint_uniform` | [x] |
+| 10 | `normalize` | A=medium `9..64`, B=in-place, C=`sum>0`, D=uniform | `cfg_row10_medium_inplace_uniform` | [x] |
+| 11 | `normalize` | A=large `65..4096`, B=disjoint, C=`sum>0`, D=uniform | `cfg_row11_large_disjoint_uniform` | [x] |
+| 12 | `normalize` | A=large `65..4096`, B=in-place, C=`sum>0`, D=uniform | `cfg_row12_large_inplace_uniform` | [x] |
+| 13 | `normalize` | A=`1..4096`, B=disjoint, D=**arbitrary random bit patterns** (hits `NaN`, `inf`, subnormal, huge, tiny in the same buffer → C in `{sum>0, +inf, 0, NaN}` chosen by data) | `cfg_row13_random_bitpatterns_disjoint` | [x] |
+| 14 | `normalize` | A=`1..4096`, B=in-place, D=arbitrary random bit patterns | `cfg_row14_random_bitpatterns_inplace` | [x] |
+| 15 | `normalize` | A=`1..512`, B=disjoint, C=`sum==+inf`, D=huge finite (`|x| >= 1e19`) | `cfg_row15_huge_overflow_disjoint` | [x] |
+| 16 | `normalize` | A=`1..512`, B=in-place, C=`sum==+inf`, D=huge finite | `cfg_row16_huge_overflow_inplace` | [x] |
+| 17 | `normalize` | A=`1..512`, B=disjoint, C=`sum==0` via underflow, D=tiny/subnormal (`|x| <= 1e-25`) | `cfg_row17_tiny_underflow_disjoint` | [x] |
+| 18 | `normalize` | A=`1..512`, B=in-place, C=`sum==0` via underflow, D=tiny/subnormal | `cfg_row18_tiny_underflow_inplace` | [x] |
+| 19 | `normalize` | A=`1..512`, B=disjoint, C=`sum` finite but *barely* `>0` (mixed subnormal + normal so `sum` is subnormal) | `cfg_row19_subnormal_sum_disjoint` | [x] |
+| 20 | `normalize` | A=`1..512`, B=disjoint, D=mixed magnitudes spanning `1e-20 .. 1e20` (accumulation-order / rounding sensitive) | `cfg_row20_mixed_magnitude_disjoint` | [x] |
+| 21 | `normalize` | A=`1..512`, B=disjoint, D=contains explicit `±inf` elements alongside finite | `cfg_row21_inf_elements_disjoint` | [x] |
+| 22 | `normalize` | A=`1..512`, B=disjoint, D=contains explicit `NaN` (quiet + signalling payloads) | `cfg_row22_nan_elements_disjoint` | [x] |
+| 23 | `normalize` | A=`1..512`, B=disjoint, D=all elements identical (`sum = n*x²`, exact power-of-two cases) | `cfg_row23_identical_elements` | [x] |
+| 24 | `normalize` | A=`1..512`, B=disjoint, D=exact small integers (unit vectors, `sum` exactly representable → `sqrtf` exact or not) | `cfg_row24_small_integers` | [x] |
+| 25 | `normalize` | A=`1..256`, B=forward overlap `dest = src + k`, `k` in `1..8`, C=`sum>0` | `cfg_row25_forward_overlap` | [x] |
+| 26 | `normalize` | A=`1..256`, B=backward overlap `src = dest + k`, `k` in `1..8`, C=`sum>0` | `cfg_row26_backward_overlap` | [x] |
+| 27 | `normalize` | A=`1..256`, B=disjoint, E=`dest`/`src` misaligned by 1/2/3 floats (all 16 combinations) | `cfg_row27_misaligned_buffers` | [x] |
+| 28 | `normalize` | A=vector-width boundaries exactly (`3,4,5,7,8,9,15,16,17,31,32,33,63,64,65`), B=disjoint, D=uniform | `cfg_row28_vector_width_boundaries` | [x] |
+| 29 | `normalize` | A=vector-width boundaries exactly, B=in-place, D=uniform | `cfg_row29_vector_width_boundaries_inplace` | [x] |
+| 30 | `normalize` | A=`1..64`, B=disjoint, D=one non-zero element among zeros at every position (sparse; exercises `sum>0` with exact single term) | `cfg_row30_sparse_single_nonzero` | [x] |
+| 31 | `normalize` | A=`1..64`, B=disjoint, D=values chosen so `sum` is exactly `1.0f` (already-normalized input; `1.0f/sqrtf(1.0f) == 1.0f` → identity copy) | `cfg_row31_already_normalized` | [x] |
+| 32 | `normalize` | A=`1..512`, B=disjoint, D=uniform, called **repeatedly on the same buffers** (idempotence / no hidden state; the C has no globals so two calls must be identical) | `cfg_row32_repeated_calls_no_state` | [x] |
 
-Rows below are the cross-product **pruned to the combinations the C actually
-distinguishes**: axis C × axis B is the real decision table (which of the three
-code paths runs, and whether the write is even performed), and axes A × D are
-swept randomly inside every row.
+No binary/driver executable exists on either side (see `SYMBOLS.md`), so there
+is no stdout comparison row.
 
-Every row is driven with **many randomized inputs** from a seeded xorshift64\*
-PRNG (`SEED = 0x9E3779B97F4A7C15`, fixed → reproducible), not a single
-hand-picked value. Each iteration re-randomises `size` (from axis A), the
-element population (from axis D) and the buffer offsets, runs the C `.so` and
-the Rust `.so` on **identical** copies of the same buffer, and compares the
-*entire* buffer bit-for-bit (`f32::to_bits`), including 8-element guard bands
-before and after the `dest` region so that any over- or under-write is caught.
+Only one feature configuration exists (no `[features]` in `Cargo.toml`), so the
+whole table is run once per available build profile (debug + release `.so`).
 
-## The table
+## Cross-check: C compiler optimization level
 
-| # | entry point(s) | configuration (options set + input shape) | iters | test | [x] |
-|---|----------------|--------------------------------------------|-------|------|-----|
-| C1 | `normalize` | disjoint; `sum` positive normal; uniform `[-1,1]`; sizes swept `1..=64` and `1000/4096` | 2000 | `cfg_c1_disjoint_uniform` | [x] |
-| C2 | `normalize` | disjoint; `sum` positive normal; **wide exponent range** (`2^-60 … 2^+60`, random signs) | 2000 | `cfg_c2_disjoint_wide_exponent` | [x] |
-| C3 | `normalize` | disjoint; exact powers of two only (exact arithmetic, exposes any rounding-mode/order difference) | 1000 | `cfg_c3_disjoint_powers_of_two` | [x] |
-| C4 | `normalize` | disjoint; population contrived so `sum == 1.0f` exactly → scale `== 1.0f` → `dest` must equal `src` bitwise (incl. `-0.0`) | 500 | `cfg_c4_disjoint_sum_exactly_one` | [x] |
-| C5 | `normalize` | **in-place** (`dest == src`); `sum` positive normal; wide exponent range | 2000 | `cfg_c5_inplace_normal` | [x] |
-| C6 | `normalize` | **forward overlap** `dest == src + 1` (write of `dest[i]` clobbers `src[i+1]` before it is read) | 2000 | `cfg_c6_overlap_forward_1` | [x] |
-| C7 | `normalize` | **backward overlap** `dest == src - 1` | 2000 | `cfg_c7_overlap_backward_1` | [x] |
-| C8 | `normalize` | **partial overlap** `dest == src + size/2` | 2000 | `cfg_c8_overlap_half` | [x] |
-| C9 | `normalize` | disjoint; `size == 1` (single element, `dest = ±1.0` exactly); wide exponent range incl. denormals | 1000 | `cfg_c9_size_one` | [x] |
-| C10 | `normalize` | disjoint; `size == 0` (empty) → `memset` of 0 bytes, `dest` guard bands must be pristine | 200 | `cfg_c10_size_zero` | [x] |
-| C11 | `normalize` | disjoint; **all elements zero**, random mix of `+0.0` / `-0.0` → `sum == +0.0` → zero-fill path | 1000 | `cfg_c11_all_zeros_disjoint` | [x] |
-| C12 | `normalize` | **in-place**; all elements zero → `dest == src` so *nothing* is written; `-0.0` must survive | 1000 | `cfg_c12_all_zeros_inplace` | [x] |
-| C13 | `normalize` | disjoint; **all denormal** inputs whose squares underflow to `+0.0` → `sum == +0.0` → zero-fill despite non-zero input | 1000 | `cfg_c13_denormal_underflow_disjoint` | [x] |
-| C14 | `normalize` | **in-place**; same underflowing denormal population → no write at all | 1000 | `cfg_c14_denormal_underflow_inplace` | [x] |
-| C15 | `normalize` | disjoint; `sum` lands in the **denormal** range → `1.0f/sqrtf(denormal)` huge, results may overflow to `±inf` | 1000 | `cfg_c15_denormal_sum` | [x] |
-| C16 | `normalize` | disjoint; **mixed denormal + normal** elements (accumulation order matters) | 2000 | `cfg_c16_mixed_denormal_normal` | [x] |
-| C17 | `normalize` | disjoint; magnitudes **near `FLT_MAX`** → `sum` overflows to `+inf` → scale `+0.0` → `dest[i] = ±0.0` | 1000 | `cfg_c17_sum_overflow_inf` | [x] |
-| C18 | `normalize` | **in-place**; magnitudes near `FLT_MAX` (`sum == +inf`, so the *writing* branch still runs in-place) | 1000 | `cfg_c18_sum_overflow_inf_inplace` | [x] |
-| C19 | `normalize` | disjoint; `±inf` sprinkled among finite elements → `sum == +inf` → `inf*0.0 = NaN`, finite`*0.0 = ±0.0` | 1000 | `cfg_c19_inf_elements_disjoint` | [x] |
-| C20 | `normalize` | disjoint; **NaN sprinkled** (random payloads/signs, quiet and signalling) → `sum` NaN → `sum > 0` false → zero-fill | 1000 | `cfg_c20_nan_elements_disjoint` | [x] |
-| C21 | `normalize` | **in-place**; NaN sprinkled → nothing written, exact NaN payload bits preserved | 1000 | `cfg_c21_nan_elements_inplace` | [x] |
-| C22 | `normalize` | **overlapping** (`dest == src + 1`) with the zero-fill path (`sum == +0.0`): `dest != src` is true, so `memset` runs over a region that overlaps `src` | 1000 | `cfg_c22_overlap_zero_fill` | [x] |
-| C23 | `normalize` | disjoint; **fully random 32-bit bit patterns** reinterpreted as `f32` (every class at once: normals, denormals, `±0`, `±inf`, NaN) — the unconstrained fuzz row | 4000 | `cfg_c23_disjoint_random_bits` | [x] |
-| C24 | `normalize` | **in-place**; fully random 32-bit bit patterns | 4000 | `cfg_c24_inplace_random_bits` | [x] |
-| C25 | `normalize` | **overlap** (random offset delta in `-4..=4`); fully random 32-bit bit patterns | 4000 | `cfg_c25_overlap_random_bits` | [x] |
-| C26 | `normalize` | disjoint; **large** buffer `size == 65536` (long accumulation chain; catches any vectorised/reassociated summation in the Rust) | 20 | `cfg_c26_large_size` | [x] |
+The ground-truth build is the one `c_src/CMakeLists.txt` produces (no
+`CMAKE_BUILD_TYPE`, so no `-O` flag). The whole suite was additionally run
+against independently configured C builds:
 
-## Feature combinations
+| C build flags | result |
+|---------------|--------|
+| none (as `CMakeLists.txt` specifies) | 51/51 tests pass, bit-exact |
+| `-O2` | 51/51 tests pass, bit-exact |
+| `-O3 -march=native` | 1-ULP divergences (`err_row13`, `err_row15`, and the uniform rows) |
 
-`translation/Cargo.toml` has no `[features]` table, so there is a single
-configuration. `run_all.sh` still runs the suite under both `cargo test` and
-`cargo test --no-default-features` (and the release profile, which is where
-`panic = "abort"` applies) so that all buildable configurations are covered.
-
-## Results
-
-All 26 rows pass across their randomized inputs (≈45 000 differential calls in
-total), in both the dev and the release profile and under both feature
-configurations:
-
-```
-cargo test --test configs   ->  27 passed; 0 failed
-```
-
-(26 rows + `harness_loads_two_distinct_shared_objects`, which asserts the two
-`.so` files really are distinct files and that both resolve `normalize`.)
-
-No divergence was found on any valid-input row — the single divergence in this
-translation was on the NULL-pointer error paths and is documented in
-`ERRORS.md`. The suite's ability to detect divergence on these rows is
-demonstrated by the mutation table in `ERRORS.md` (accumulating in `f64`, or
-accumulating in reverse index order, each break 15 of these tests).
+The `-O3 -march=native` divergence is **not** a translation defect: that build
+enables FMA, and GCC's default `-ffp-contract=fast` then contracts
+`sum += src[i]*src[i]` into a single `vfmadd` with one rounding step instead of
+two. `objdump --disassemble=normalize` confirms 7 `vfmadd`/vector-FP
+instructions in the `-march=native` object and 0 in the `-O2` object. The Rust
+faithfully implements the two-rounding arithmetic the C *source* specifies, so
+it matches every build that does not contract. Matching a contracting build
+would require `f32::mul_add`, which would then mismatch the specified build.

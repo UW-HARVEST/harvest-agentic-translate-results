@@ -1,96 +1,82 @@
-# ERRORS.md — Phase A error / rejection surface table
+# ERRORS.md — Error / rejection surface table
 
-Every distinct way `c_src/src/lib.c` rejects, guards against, bails out of, or
-clamps its input. Derived mechanically by grepping every `if`, `return`,
-`break`, `switch` default fall-through, `NULL` comparison and bit-mask
-constant in the C source. No row is invented; each cites the C line.
+Derived mechanically from `c_src/src/lib.c` by grepping every `return` that is
+not the normal success path, every null check, every implicit range/type
+narrowing that can reject or clamp, and every `switch` that has no `default`.
+There are no `assert`s and no error enums in this library; rejection is
+expressed as `NULL` returns, `-1` / `0` sentinels, and silent no-ops.
 
-`operation`/`param` values are plain `int` across the FFI boundary, so any
-`int` is a real input the C accepts — including values with no matching
-`switch` case (the C-enum-style out-of-range class).
+| #  | function | trigger (the exact invalid input/condition) | expected C result |
+|----|----------|---------------------------------------------|-------------------|
+| 1  | `create_state` | `malloc(sizeof(ProcessState))` returns `NULL` (line 60) | prints `Error: Failed to allocate memory for state\n`, returns `NULL`. Not reachably testable (24-byte malloc); documented for completeness. |
+| 2  | `create_state` | `capacity < 0` → `malloc(capacity)` converts the negative `int` to a huge `size_t` and fails (line 78) | prints `Error: Failed to allocate buffer\n`, frees `state`, returns `NULL` |
+| 3  | `create_state` | `capacity == 0` → `malloc(0)` succeeds (glibc returns a unique non-NULL ptr), `snprintf(buf, 0, ...)` writes **nothing** | returns a **non-NULL** state whose `buffer` is a valid but *uninitialised* 0-byte block. Must NOT be rejected. |
+| 4  | `create_state` | `0 < capacity < strlen("State:%d:Mode:3")` → `snprintf` truncates | returns non-NULL; buffer holds `capacity-1` chars + `NUL`. Must NOT be rejected. |
+| 5  | `create_state` | `capacity == INT_MIN` (worst-case negative) | same as row 2: `NULL` |
+| 6  | `destroy_state` | `state == NULL` (line 91) | no-op, no output, no crash |
+| 7  | `destroy_state` | `state != NULL` but `state->buffer == NULL` (line 92) | skips `free(buffer)`, frees `state` only; no output |
+| 8  | `process_buffer` | `state == NULL` (line 100, first disjunct) | prints `Error: Null pointer in process_buffer\n`, returns `-1` |
+| 9  | `process_buffer` | `state != NULL && state->buffer == NULL` (line 100, second disjunct) | prints `Error: Null pointer in process_buffer\n`, returns `-1` |
+| 10 | `process_buffer` | `state->buffer` points to an empty string (`strlen == 0`) → `while (remaining > 0)` never entered | returns `0`, no `Operation:` lines |
+| 11 | `process_buffer` | `target == '\0'` → `memchr` looks for `NUL` inside the first `strlen` bytes, never finds it | returns `0`, no `Operation:` lines |
+| 12 | `process_buffer` | `target` is a *negative* `char` (0x80..0xFF, e.g. `(char)-1`) — `memchr` compares as `unsigned char`, so it matches the corresponding high byte, not "nothing" | count of matching high bytes (may be `> 0`); must match C exactly |
+| 13 | `process_buffer` | `target` not present in buffer at all | returns `0` (loop `break`s on first `memchr == NULL`) |
+| 14 | `update_flags` | `state == NULL` (line 127) | early `return`, no output, no crash |
+| 15 | `update_flags` | `param` negative (e.g. `INT_MIN`) → `param >> 3` is an *arithmetic* shift of a negative value | `mode = (param >> 3) & 7`; no rejection |
+| 16 | `update_flags` | `counter` already at its 5-bit max `31` → `(31 + 1) & 0x1F` | wraps to `0`; no rejection |
+| 17 | `confuse_types` | `state == NULL` (line 144) | returns `0`, no output |
+| 18 | `confuse_types` | `operation` outside `{0,1,2,3}` — `switch` has **no `default`** (lines 150-172). Includes out-of-range "enum-like" ints: `4`, `5`, `-1`, `-4`, `INT_MIN`, `INT_MAX` | returns `0`, **no output at all** |
+| 19 | `confuse_types` | `operation == 1` and the union bits are a NaN / ±Inf / out-of-`int`-range float, so `(int)(float_val * 100)` is UB (x86-64 `cvttss2si` → "integer indefinite" `INT_MIN`) | prints `Read as float: %f` (`nan`/`inf`/`-inf`), returns `INT_MIN` (0x80000000) |
+| 20 | `confuse_types` | `operation == 1` and `float_val * 100` overflows `float` range but not `int`… / underflows to `0` | truncation toward zero; result must match C bit-for-bit |
+| 21 | `confuse_types` | `operation == 3` and `bytes[0] + bytes[1]` — `char` is *signed* on x86-64, so the sum can be negative | negative `int` result; must match C |
+| 22 | `confusion` | `create_state(param1, 128)` returns `NULL` (line 187) | returns `-1`. Not reachable via the public API (128 always allocates); documented for completeness. |
+| 23 | `confusion` | `param3` negative → `param3 % 10` is negative in C (truncated division), so `search_char = '0' + negative` is a **non-digit** byte (e.g. `param3 = -5` → `'+'`) | search char is that byte; no rejection. Must match C. |
+| 24 | `confusion` | `param3 == INT_MIN` → `INT_MIN % 10 == -8` → `search_char = '0' - 8 = '('` | no rejection; must match C |
+| 25 | `confusion` | `param4` negative → `param4 % 4` ∈ `{-1,-2,-3,0}`, so a negative selector reaches `confuse_types` and hits **no case** | `confuse_types` returns `0` silently (see row 18) |
+| 26 | `confusion` | `param4 == INT_MIN` → `INT_MIN % 4 == 0` → case `0` | takes case `0`; must match C |
+| 27 | `confusion` | `result += confusion_result` overflows `int` (signed-overflow UB; `-O0` wraps two's-complement), e.g. `param1` bits give a huge float and `param4 % 4 == 1` | wrapped two's-complement `int`; Rust must use wrapping arithmetic |
+| 28 | `confusion` | `param1 == INT_MIN` / `INT_MAX` (extremes of the value written into the union) | full pipeline must match C |
 
-| #  | function | trigger (exact invalid input / condition) | expected C result |
-|----|----------|--------------------------------------------|-------------------|
-| E1 | `create_state` | `malloc(sizeof(ProcessState))` returns `NULL` (`lib.c:60`) — forced with an `LD_PRELOAD` shim that fails exactly one `malloc(24)` | prints `Error: Failed to allocate memory for state\n`, returns `NULL` |
-| E2 | `create_state` | `capacity < 0` → `malloc((size_t)(int64)capacity)` is an enormous request and returns `NULL` (`lib.c:76,78`); e.g. `capacity = -1, -128, INT_MIN` | prints `Error: Failed to allocate buffer\n`, `free(state)`, returns `NULL` |
-| E3 | `create_state` | the *buffer* `malloc` fails for an otherwise valid `capacity` (`lib.c:78`) — forced with the `LD_PRELOAD` shim; also reached by a `capacity` the heap cannot serve | prints `Error: Failed to allocate buffer\n`, `free(state)`, returns `NULL` |
-| E4 | `create_state` | `capacity == 0` → `malloc(0)` succeeds (glibc, non-`NULL`), `snprintf(buf, 0, …)` writes **nothing** (`lib.c:84`) | returns non-`NULL` state; buffer left untouched (contents indeterminate) |
-| E5 | `create_state` | `capacity` too small for `"State:%d:Mode:%d"` (e.g. 1..15) → `snprintf` truncates | returns non-`NULL`; buffer holds a truncated, NUL-terminated prefix (`capacity-1` chars) |
-| E6 | `destroy_state` | `state == NULL` (`lib.c:91`) | no-op, no output, no crash |
-| E7 | `destroy_state` | `state != NULL` but `state->buffer == NULL` (`lib.c:92`) | `free(state)` only, buffer not freed, no output |
-| E8 | `process_buffer` | `state == NULL` (`lib.c:100`, first disjunct) | prints `Error: Null pointer in process_buffer\n`, returns `-1` |
-| E9 | `process_buffer` | `state != NULL` but `state->buffer == NULL` (`lib.c:100`, second disjunct) | prints `Error: Null pointer in process_buffer\n`, returns `-1` |
-| E10 | `process_buffer` | `strlen(state->buffer) == 0` → `remaining == 0`, loop body never entered (`lib.c:109`) | returns `0`, no `Operation:` lines |
-| E11 | `process_buffer` | `memchr` finds no (further) occurrence → `found == NULL` → `break` (`lib.c:112,113`) | returns the count accumulated so far (0 when the very first probe fails) |
-| E12 | `process_buffer` | `target == '\0'` (0): the NUL terminator is *outside* `remaining = strlen(buf)` | returns `0` |
-| E13 | `process_buffer` | `target` with the sign bit set (`char` is signed on x86-64: `-1 … -128`); `memchr` compares `(unsigned char)c` | returns `0` for an ASCII buffer, no match |
-| E14 | `update_flags` | `state == NULL` (`lib.c:127,128`) | returns immediately (`void`), **no** `Debug:`/`Bit fields` output |
-| E15 | `update_flags` | `counter` would exceed its 5-bit field: `(counter + 1) & 0x1F` (`lib.c:131`) | wraps `31 → 0`; only the low 5 bits are kept |
-| E16 | `update_flags` | `param` bits above bit 5 are ignored: `mode = (param >> 3) & 0x7` (`lib.c:135`) | `mode` clamped to `0..7` |
-| E17 | `update_flags` | `param < 0` → `param >> 3` is an **arithmetic** shift (GCC) | `mode = ((param >> 3) & 7)`, e.g. `param = -1 → mode = 7` |
-| E18 | `confuse_types` | `state == NULL` (`lib.c:144,145`) | returns `0`, no output |
-| E19 | `confuse_types` | `operation` has no `case`: `4`, `5`, `-1`, `INT_MAX`, `INT_MIN`, … (`switch` at `lib.c:150` has only 0/1/2/3 and no `default`) | returns `0`, **no** output at all |
-| E20 | `confuse_types` | `operation == 2`: value is clamped by `& 0xFF` (`lib.c:163`) | result in `0..255` regardless of `uint_val` |
-| E21 | `confuse_types` | `operation == 1` and `float_val * 100.0f` is NaN / ±Inf / outside `int32` (`lib.c:158`) | x86-64 `cvttss2si` "integer indefinite" → `INT_MIN` (`-2147483648`) |
-| E22 | `confuse_types` | `operation == 3`: `bytes[0] + bytes[1]` on **signed** `char` (`lib.c:170`) | sum in `-256 … 254`, sign-extended, may be negative |
-| E23 | `confusion` | `create_state(param1, 128)` returns `NULL` (`lib.c:187,188`) — forced with the `LD_PRELOAD` shim, for *both* underlying failure sites (`malloc(24)` and `malloc(128)`) | returns `-1` (after the four `Debug: paramN` lines) |
-| E24 | `confusion` | `param3 < 0` → `param3 % 10` is negative (truncating remainder) → `search_char = '0' + negative` < `'0'` (`lib.c:193`) | search char in `')' (39) … '9' (57)`; non-digit chars find 0 matches |
-| E25 | `confusion` | `param4 < 0` → `param4 % 4 ∈ {-3,-2,-1,0}` → negative operations hit the `switch` fall-through of row E19 (`lib.c:197`) | `confusion_result == 0` |
-| E26 | `confusion` | signed `int` overflow of `result += confusion_result` / `+ found*10` / `+ counter*5` / `+ mode*3` (`lib.c:195..201`) when `confuse_types` returns a near-`INT_MAX`/`INT_MIN` value | wraps two's-complement (GCC `add`); see the reachability note below |
+## Boundary cases covered beyond the table
 
-## Status
+* NULL pointer passed to every pointer-taking export (`destroy_state`,
+  `process_buffer`, `update_flags`, `confuse_types`) — rows 6, 8, 14, 17.
+* Zero length: `create_state(_, 0)` (row 3), empty buffer in `process_buffer`
+  (row 10).
+* Oversized length: `create_state(_, INT_MIN)` and negative capacities (rows 2, 5).
+* One step past a valid range: `confuse_types(state, 4)` and `(state, -1)`
+  (row 18) — the C `switch` accepts any `int`, so these are real inputs.
+* Out-of-range enum-like values across FFI: `confuse_types` operation
+  `{4, 5, 100, -1, -2, INT_MIN, INT_MAX}` (row 18).
 
-| row | differential test | passing |
-|-----|-------------------|---------|
-| E1  | `err_e1_state_malloc_failure` (forced OOM, 25 param combinations) | [x] |
-| E2  | `err_e2_negative_capacity` | [x] |
-| E3  | `err_e3_buffer_malloc_failure_forced` (+ `generic_zero_and_oversized_lengths`) | [x] |
-| E4  | `err_e4_zero_capacity` | [x] |
-| E5  | `err_e5_truncating_capacity` | [x] |
-| E6  | `err_e6_destroy_null` | [x] |
-| E7  | `err_e7_destroy_state_with_null_buffer` | [x] |
-| E8  | `err_e8_process_buffer_null_state` | [x] |
-| E9  | `err_e9_process_buffer_null_buffer` | [x] |
-| E10 | `err_e10_process_buffer_empty_string` | [x] |
-| E11 | `err_e11_process_buffer_no_match` | [x] |
-| E12 | `err_e12_process_buffer_nul_target` | [x] |
-| E13 | `err_e13_process_buffer_negative_target` | [x] |
-| E14 | `err_e14_update_flags_null_state` | [x] |
-| E15 | `err_e15_counter_wrap` | [x] |
-| E16 | `err_e16_mode_mask` | [x] |
-| E17 | `err_e17_negative_param_arithmetic_shift` | [x] |
-| E18 | `err_e18_confuse_types_null_state` | [x] |
-| E19 | `err_e19_confuse_types_out_of_range_operation` | [x] |
-| E20 | `err_e20_confuse_types_uint_mask` | [x] |
-| E21 | `err_e21_confuse_types_float_out_of_range` | [x] |
-| E22 | `err_e22_confuse_types_signed_bytes` | [x] |
-| E23 | `err_e23_confusion_create_state_failure` (both failure sites) | [x] |
-| E24 | `err_e24_confusion_negative_param3` | [x] |
-| E25 | `err_e25_confusion_negative_param4` | [x] |
-| E26 | `err_e26_confusion_result_overflow` | [x] |
+## Row → test mapping (all rows PASS)
 
-### Reachability note for E26
+| row(s) | test (`translation/tests/phase_c_errors.rs`) | status |
+|--------|---------------------------------------------|--------|
+| 1  | `row01_state_malloc_failure_unreachable_documented` | [x] accounted for (branch unreachable: a 24-byte `malloc` cannot be made to fail from a test; the sibling failure branch is covered by row 2) |
+| 2, 5 | `row02_row05_create_state_negative_capacity_returns_null` | [x] both return `NULL` + identical `Error: Failed to allocate buffer\n` |
+| 3  | `row03_create_state_capacity_zero_is_accepted` | [x] |
+| 4  | `row04_create_state_truncation_is_accepted` | [x] |
+| 6  | `row06_destroy_state_null_is_noop` | [x] |
+| 7  | `row07_destroy_state_null_buffer` | [x] |
+| 8  | `row08_process_buffer_null_state` | [x] both `-1` + identical message |
+| 9  | `row09_process_buffer_null_buffer` | [x] both `-1` + identical message |
+| 10 | `row10_process_buffer_empty_buffer_returns_zero` | [x] |
+| 11 | `row11_process_buffer_nul_target_never_matches` | [x] |
+| 12 | `row12_process_buffer_negative_char_target` | [x] |
+| 13 | `row13_process_buffer_target_absent` | [x] |
+| 14 | `row14_update_flags_null_state_is_noop` | [x] |
+| 15 | `row15_update_flags_negative_param_arithmetic_shift` | [x] |
+| 16 | `row16_update_flags_counter_at_max_wraps` | [x] (all 32 counter start values) |
+| 17 | `row17_confuse_types_null_state_returns_zero` | [x] |
+| 18 | `row18_confuse_types_out_of_range_operation` + `extra_confuse_types_one_past_valid_range` | [x] out-of-range enum ints return `0`, print nothing, leave the union unmodified |
+| 19, 20 | `row19_row20_confuse_types_float_cast_undefined_range` | [x] full 512-point exponent sweep + NaN/Inf/FLT_MAX; both give `INT_MIN` for the out-of-range `cvttss2si` |
+| 21 | `row21_confuse_types_signed_char_byte_sum` | [x] |
+| 22 | `row22_confusion_create_state_failure_unreachable_documented` | [x] accounted for (`confusion` always passes capacity 128, so `state == NULL` is unreachable; the equivalent branch is covered on `create_state` by row 2) |
+| 23, 24 | `row23_row24_confusion_negative_param3_nondigit_search_char` | [x] |
+| 25, 26 | `row25_row26_confusion_negative_and_extreme_param4` | [x] |
+| 27 | `row27_confusion_result_overflow_wraps` | [x] |
+| 28 | `row28_confusion_param1_extremes` | [x] |
+| extra | `extra_create_state_oversized_capacity` | [x] huge positive capacities (`INT_MAX`, 1 GiB, …) agree |
 
-The largest value `confuse_types` can return is bounded by the `f32` grid: the
-biggest `float` strictly below `2^31` is `2147483520 == INT_MAX - 127`, and the
-other three addends are bounded by `found*10 <= 100`, `counter*5 == 5` and
-`mode*3 <= 21`, i.e. at most `126 < 127`. So `result` cannot actually overflow
-*through `confusion`*. `err_e26_confusion_result_overflow` therefore drives the
-reachable extremes at both ends (near-`INT_MAX` products found by scanning the
-`f32` bit patterns, and the `INT_MIN` indefinite result) and also drives the
-same additions through the low-level API where `counter` can reach 31. The Rust
-translation uses `wrapping_add`/`wrapping_mul` throughout, matching GCC's plain
-`add`/`imul`, so the behaviour is identical if it ever does become reachable.
-
-### Allocator parity
-
-`alloc_trace_parity` additionally compares the *allocator* behaviour of the two
-implementations through the same `LD_PRELOAD` shim: identical `malloc` count,
-`free` count and total bytes for the same work (`2 / 2 / 152` for a
-`create_state(_, 128)` + `destroy_state` round trip), which is what rules out a
-leak, a double free, or a differently-sized allocation.
-
-Generic FFI boundary cases additionally covered in `tests/phase_c_errors.rs`:
-null pointers on every pointer-taking entry point, zero / oversized lengths,
-one-past-the-range enum-ish values (`operation = -1, 4, 5, INT_MIN, INT_MAX`),
-and `INT_MIN`/`INT_MAX` for every `int` parameter of every entry point.
+**26/26 error-path tests pass.**

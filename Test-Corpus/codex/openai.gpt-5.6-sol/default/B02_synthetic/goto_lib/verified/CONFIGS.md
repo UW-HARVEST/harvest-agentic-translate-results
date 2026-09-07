@@ -1,34 +1,27 @@
-# Configuration Surface
+# Configuration-Surface Table
 
-The C library has no runtime options, modes, flags, enums, `switch` statements,
-conditional-compilation branches, or Cargo features. Its effective feature
-matrix has one configuration: no declared features (default and
-`--no-default-features` are equivalent).
+Mechanically derived from all three exported entry points and the C branches
+on `x < 0`, `fopen`, the `fgets` loop with a 100-byte buffer (99-byte maximum
+payload per call), `ferror`, and the two composed `driver` result checks.
 
-The source branches on the sign of `x`, whether `fopen` succeeds, the number of
-successful `fgets` iterations with a 100-byte buffer (at most 99 data bytes per
-call), and `ferror`. Valid rows below cover the nonnegative integer classes and
-the readable-file shapes. Embedded NUL is distinct because each chunk is
-emitted with `printf("%s", buffer)`.
+There are no runtime options, modes, flags, compile-time feature branches, or
+Cargo features. The sole build configuration is the featureless library; it is
+tested both normally and with `--no-default-features`.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|--------------------------------------------|-----|
-| 1 | `forward_goto_example` | `x = 0` boundary | [x] |
-| 2 | `forward_goto_example` | `1 <= x <= INT_MAX / 2` (doubling is representable) | [x] |
-| 3 | `forward_goto_example` | `INT_MAX / 2 < x <= INT_MAX` (compiled C integer wrap behavior) | [x] |
-| 4 | `open_with_cleanup` | readable empty file; zero `fgets` iterations | [x] |
-| 5 | `open_with_cleanup` | readable nonempty file emitted by one `fgets` iteration (1-99 bytes, with or without newline) | [x] |
-| 6 | `open_with_cleanup` | readable file emitted by multiple `fgets` iterations (multiple lines and/or chunks over 99 bytes) | [x] |
-| 7 | `open_with_cleanup` | readable file containing an embedded NUL in an `fgets` chunk | [x] |
-| 8 | `driver` | `x = 0`; readable empty file | [x] |
-| 9 | `driver` | `x = 0`; one emitted file chunk | [x] |
-| 10 | `driver` | `x = 0`; multiple emitted file chunks | [x] |
-| 11 | `driver` | `x = 0`; embedded NUL in a file chunk | [x] |
-| 12 | `driver` | representable positive doubling; readable empty file | [x] |
-| 13 | `driver` | representable positive doubling; one emitted file chunk | [x] |
-| 14 | `driver` | representable positive doubling; multiple emitted file chunks | [x] |
-| 15 | `driver` | representable positive doubling; embedded NUL in a file chunk | [x] |
-| 16 | `driver` | wrapping positive doubling; readable empty file | [x] |
-| 17 | `driver` | wrapping positive doubling; one emitted file chunk | [x] |
-| 18 | `driver` | wrapping positive doubling; multiple emitted file chunks | [x] |
-| 19 | `driver` | wrapping positive doubling; embedded NUL in a file chunk | [x] |
+| # | entry point(s) | configuration (options set + input shape) | verified |
+|---|----------------|--------------------------------------------|----------|
+| 1 | `forward_goto_example` | valid integer branch `x >= 0`, randomized across zero, small values, the multiplication-overflow boundary, and `INT_MAX` | [x] |
+| 2 | `open_with_cleanup` | readable empty file; `fgets` loop executes zero times | [x] |
+| 3 | `open_with_cleanup` | one short newline-terminated line, 1..98 bytes total; one `fgets` iteration | [x] |
+| 4 | `open_with_cleanup` | one short final line without newline, 1..98 bytes; one `fgets` iteration followed by EOF | [x] |
+| 5 | `open_with_cleanup` | multiple short lines; multiple `fgets` iterations split by newline | [x] |
+| 6 | `open_with_cleanup` | exactly 99 non-newline bytes; maximum payload in one `fgets` iteration | [x] |
+| 7 | `open_with_cleanup` | more than 99 bytes in a line; `fgets` splits it across multiple chunks | [x] |
+| 8 | `open_with_cleanup` | readable bytes containing embedded NUL; `fgets` consumes them while `printf("%s")` truncates each printed chunk at NUL | [x] |
+| 9 | `driver` | valid randomized `num >= 0` plus readable empty file | [x] |
+| 10 | `driver` | valid randomized `num >= 0` plus one short newline-terminated line | [x] |
+| 11 | `driver` | valid randomized `num >= 0` plus one short final line without newline | [x] |
+| 12 | `driver` | valid randomized `num >= 0` plus multiple short lines | [x] |
+| 13 | `driver` | valid randomized `num >= 0` plus exactly 99 non-newline bytes | [x] |
+| 14 | `driver` | valid randomized `num >= 0` plus a line longer than 99 bytes | [x] |
+| 15 | `driver` | valid randomized `num >= 0` plus readable bytes containing embedded NUL | [x] |

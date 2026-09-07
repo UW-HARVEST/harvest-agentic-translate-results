@@ -1,64 +1,82 @@
-# SYMBOLS.md — Public symbol surface (Phase A)
+# SYMBOLS.md — Phase A symbol surface
 
-Mechanically derived from `nm -D --defined-only` on both shared objects.
+Derived mechanically from `nm -D --defined-only` on both shared objects.
 
-* C  `.so`: `c_src/build/libharvest-work-Hy8ql9.so`
-  (CMake derives the project name from the parent directory name, so the
-  file name follows the working-directory name.)
+* C  `.so`: `c_src/build/libharvest-work-odDx5S.so` (from `c_src/CMakeLists.txt`,
+  single translation unit `src/lib.c`)
 * Rust `.so`: `translation/target/release/libdoubleneg_lib.so`
+  (`[lib] name = "doubleneg_lib"`, `crate-type = ["cdylib"]`)
 
-Reproduce with:
+`c_src/include/lib.h` declares only `doubleneg`, but no function in `src/lib.c`
+is `static`, so all six symbols are part of the public ABI. There are no
+namespacing/renaming macros in the header, so link names equal source names.
 
-```sh
-nm -D --defined-only c_src/build/libharvest-work-*.so     | awk '{print $3}' | sort > /tmp/c.syms
-nm -D --defined-only translation/target/release/libdoubleneg_lib.so | awk '{print $3}' | sort > /tmp/r.syms
-comm -23 /tmp/c.syms /tmp/r.syms   # must be EMPTY
+## Exported (dynamic, defined) symbols
+
+| # | symbol | C `.so` | Rust `.so` | Rust implementation | status |
+|---|--------|---------|------------|---------------------|--------|
+| 1 | `calculate_with_doubles` | T | T | `src/doubles.rs` | present |
+| 2 | `convert_double_to_int`  | T | T | `src/conv.rs`    | present |
+| 3 | `create_numeric_buffer`  | T | T | `src/buffer.rs`  | present |
+| 4 | `doubleneg`              | T | T | `src/doubleneg.rs` | present |
+| 5 | `find_value_in_buffer`   | T | T | `src/buffer.rs`  | present |
+| 6 | `process_negation`       | T | T | `src/negation.rs` | present |
+
+## Symbol diff
+
+```
+$ comm -23 <(nm -D --defined-only C.so   | awk '{print $3}' | sort) \
+           <(nm -D --defined-only RUST.so | awk '{print $3}' | sort)
+(empty)
 ```
 
-## Defined (exported) symbols
+**0 symbols missing from the Rust `.so`.** No module of `src/lib.c` was skipped;
+every non-`static` C function has a real translation (no stubs, no
+`unimplemented!()`).
 
-| # | symbol (C `.so`) | exported by Rust `.so`? | Rust implementation |
-|---|------------------|-------------------------|---------------------|
-| 1 | `calculate_with_doubles` | yes | `src/doubles.rs` |
-| 2 | `convert_double_to_int`  | yes | `src/conv.rs` |
-| 3 | `create_numeric_buffer`  | yes | `src/buffer.rs` |
-| 4 | `doubleneg`              | yes | `src/doubleneg.rs` |
-| 5 | `find_value_in_buffer`   | yes | `src/buffer.rs` |
-| 6 | `process_negation`       | yes | `src/negation.rs` |
+## Undefined (imported) non-libc symbols
 
-`c_src/src/lib.c` is the only translation unit; `include/lib.h` declares only
-`doubleneg`, but no function is `static`, so all six have external linkage and
-all six are part of the ABI. There are no namespacing/renaming macros, so
-linker names equal source names. No macro-generated symbols exist.
+Both libraries import only libc/libm entry points, and the Rust translation
+deliberately binds the *same* ones (`src/ffi.rs`) so formatting and
+floating-point results are bit-identical:
 
-**Missing from Rust `.so`: 0.** No stubs were introduced; every symbol is a
-real translation of the corresponding C function.
+| symbol | C `.so` | Rust `.so` | provider |
+|--------|---------|------------|----------|
+| `printf` | U | U | libc |
+| `memchr` | U | U | libc |
+| `pow`    | U | U | libm (C links `m`; Rust resolves via libm loaded in-process) |
 
-## Undefined (imported) symbols
+There are **0 undefined non-libc symbols** in the Rust `.so`.
 
-C imports: `memchr`, `pow`, `printf`, `puts` (all glibc/libm) plus the weak
-`_ITM_*`, `__cxa_finalize`, `__gmon_start__` markers every ELF DSO carries.
+## Reproducing this verification
 
-The Rust `.so` imports the same `memchr`, `pow`, `printf`, `puts` (the
-translation deliberately calls the *same* libc/libm entry points so that
-`%e` formatting and `pow` results are bit-identical) plus the standard Rust
-runtime set: `_Unwind_*`, `__errno_location`, `__tls_get_addr`, `abort`,
-`bcmp`, `calloc`/`free`/`malloc`/`realloc`/`posix_memalign`,
-`close`/`open64`/`read`/`write`/`writev`/`lseek64`/`fstat64`/`stat64`/`statx`,
-`dl_iterate_phdr`, `getcwd`, `getenv`, `gettid`, `memcpy`/`memmove`/`memset`,
-`mmap64`/`munmap`, `pthread_key_*`/`pthread_setspecific`, `readlink`,
-`realpath`, `strlen`, `syscall`.
+```bash
+# 1. build the C shared library (ground truth)
+cd c_src && mkdir -p build && cd build \
+  && cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && cmake --build .
 
-**Undefined non-libc symbols in the Rust `.so`: 0** — every entry above is
-provided by glibc or libgcc_s, both of which are already dependencies of any
-process that loads the library.
+# 2. build the Rust cdylib — `cargo test` does NOT build a cdylib, so this
+#    step is required before the differential tests can dlopen it
+cd translation && cargo build --release
 
-## Feature combinations
-
-`translation/Cargo.toml` declares **no `[features]` table**, therefore the
-only build configuration is the default one (`--no-default-features` is
-equivalent to the default here). Verified mechanically:
-
-```sh
-grep -n '^\[features\]' translation/Cargo.toml   # no match
+# 3. every phase, every feature combination, plus the nm -D symbol diff
+./verify_all.sh
 ```
+
+`verify_all.sh` enumerates the `[features]` powerset from `Cargo.toml` (currently
+empty, so it runs `default` and `--no-default-features`), and for each one runs
+`cargo check`, `cargo build --release`, the `nm -D` symbol diff, and `cargo test`.
+
+The test harness (`tests/common/mod.rs`) refuses to run against a `.so` older
+than any file in `src/`, so a stale artifact cannot be mistaken for a pass.
+
+## Verification checklist
+
+- [x] `nm -D` symbol sets are identical (6 = 6, diff empty).
+- [x] Every C symbol has a real Rust implementation (not a stub).
+- [x] 0 missing/undefined non-libc symbols in the Rust `.so`.
+- [x] Cargo.toml declares **no `[features]`**, so the default build is the only
+      feature combination; `--no-default-features` is equivalent.
+- [x] `CMakeLists.txt` builds **only** `add_library(... SHARED)` — there is no
+      binary/driver executable, so the stdout-comparison gate is satisfied by
+      the in-process stdout capture of `doubleneg` in Phase B.

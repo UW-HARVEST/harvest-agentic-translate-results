@@ -3,40 +3,40 @@
 //! The translation is intentionally literal: every observable behaviour of the C
 //! implementation (including its quirks and bugs) is reproduced.
 //!
-//! # `assert()` semantics
-//!
-//! `c_src/CMakeLists.txt` sets no `CMAKE_BUILD_TYPE` and never defines `NDEBUG`,
-//! so the reference `.so` is compiled with `assert()` **live** (its dynamic
-//! symbol table imports `__assert_fail`). A failing assertion therefore
-//! `abort()`s the process, and that is an observable part of the C's behaviour
-//! on malformed input.
-//!
-//! The `c_asserts` feature (enabled by default) reproduces the assertions
-//! literally; combined with `panic = "abort"` this aborts on exactly the same
-//! inputs as the C. Building with `--no-default-features` drops them, matching a
-//! C build with `-DNDEBUG`.
+//! `c_src` is compiled with no `-DNDEBUG` (see `c_src/CMakeLists.txt`: the only
+//! flag is `-fPIC`, and the resulting `.so` imports `__assert_fail`), so
+//! `assert()` is **live** in the reference library: an assert-tripping input makes
+//! it print a diagnostic and `abort()`. Every `assert()` from the C source is
+//! therefore transcribed below as [`cp_assert!`], which does the same. Using
+//! `process::abort()` rather than `panic!` keeps the behaviour identical
+//! (SIGABRT) in every build profile and never unwinds across the FFI boundary.
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
-#![allow(unused_macros)]
 
 use std::ffi::{c_char, c_int, c_void};
 use std::ptr;
 
-/// Mirrors C's `assert()`: active unless the C was compiled with `NDEBUG`.
-#[cfg(feature = "c_asserts")]
-macro_rules! c_assert {
-    ($cond:expr, $name:literal) => {
-        if !$cond {
-            panic!(concat!("Assertion `", $name, "' failed."));
+/// Mirror of glibc's `assert()`: write a diagnostic to stderr, then `abort()`.
+macro_rules! cp_assert {
+    ($cond:expr, $text:literal) => {
+        if !($cond) {
+            cp_assert_fail($text);
         }
     };
 }
 
-#[cfg(not(feature = "c_asserts"))]
-macro_rules! c_assert {
-    ($cond:expr, $name:literal) => {};
+#[cold]
+#[inline(never)]
+fn cp_assert_fail(text: &str) -> ! {
+    use std::io::Write;
+    let mut err = std::io::stderr();
+    let _ = err.write_all(b"lib.c: Assertion `");
+    let _ = err.write_all(text.as_bytes());
+    let _ = err.write_all(b"' failed.\n");
+    let _ = err.flush();
+    std::process::abort()
 }
 
 // ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ unsafe fn cp_would_overflow(s: *mut cp_state_t, num_bits: c_int) -> c_int {
 
 unsafe fn cp_ptr(s: *mut cp_state_t) -> *mut c_char {
     let s = &*s;
-    c_assert!((s.bits_left & 7) == 0, "!(s->bits_left & 7)");
+    cp_assert!((s.bits_left & 7) == 0, "!(s->bits_left & 7)");
     (s.words.offset(s.word_index as isize) as *mut c_char).offset(-((s.count / 8) as isize))
 }
 
@@ -199,7 +199,10 @@ unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
             st.word_index += 1;
             st.bits |= (word as u64) << st.count;
             st.count += 32;
-            c_assert!(st.word_index <= st.word_count, "s->word_index <= s->word_count");
+            cp_assert!(
+                st.word_index <= st.word_count,
+                "s->word_index <= s->word_count"
+            );
         } else if st.final_word_available != 0 {
             let word = st.final_word;
             st.bits |= (word as u64) << st.count;
@@ -212,7 +215,7 @@ unsafe fn cp_peak_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u64 {
 
 unsafe fn cp_consume_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
     let st = &mut *s;
-    c_assert!(st.count >= num_bits_to_read, "s->count >= num_bits_to_read");
+    cp_assert!(st.count >= num_bits_to_read, "s->count >= num_bits_to_read");
     let bits = (st.bits & (((1u64) << num_bits_to_read).wrapping_sub(1))) as u32;
     st.bits >>= num_bits_to_read;
     st.count -= num_bits_to_read;
@@ -221,11 +224,11 @@ unsafe fn cp_consume_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
 }
 
 unsafe fn cp_read_bits(s: *mut cp_state_t, num_bits_to_read: c_int) -> u32 {
-    c_assert!(num_bits_to_read <= 32, "num_bits_to_read <= 32");
-    c_assert!(num_bits_to_read >= 0, "num_bits_to_read >= 0");
-    c_assert!((*s).bits_left > 0, "s->bits_left > 0");
-    c_assert!((*s).count <= 64, "s->count <= 64");
-    c_assert!(
+    cp_assert!(num_bits_to_read <= 32, "num_bits_to_read <= 32");
+    cp_assert!(num_bits_to_read >= 0, "num_bits_to_read >= 0");
+    cp_assert!((*s).bits_left > 0, "s->bits_left > 0");
+    cp_assert!((*s).count <= 64, "s->count <= 64");
+    cp_assert!(
         cp_would_overflow(s, num_bits_to_read) == 0,
         "!cp_would_overflow(s, num_bits_to_read)"
     );
@@ -248,18 +251,19 @@ unsafe fn cp_build(
     lens: *const u8,
     sym_count: c_int,
 ) -> c_int {
-    // C: `int n, codes[16], first[16], counts[16] = {0};`
+    // int n, codes[16], first[16], counts[16] = {0};
     //
-    // The C then does `counts[lens[n]]++` with no range check, and `lens[n]` can
-    // be up to 255 when a malformed dynamic block (or a caller-mutated
-    // `cp_fixed_table`) yields a code length >= 16 — an out-of-bounds stack
-    // access, i.e. undefined behaviour (`ERRORS.md` row U6). These arrays are
-    // widened to 256 entries so the Rust absorbs the same index instead of
-    // faulting on a bounds check: with `c_asserts` on, `assert(len < 16)` then
-    // aborts at exactly the point the C's assert does; with `-DNDEBUG` semantics
-    // the C's own result is undefined.
-    let mut codes: [c_int; 256] = [0; 256];
-    let mut first: [c_int; 256] = [0; 256];
+    // `counts` is deliberately 256 entries wide here, not 16. The C indexes it
+    // with `counts[lens[n]]++` for a raw `uint8_t` length, so a caller that puts
+    // a length >= 16 into `cp_fixed_table` makes the C write out of bounds. The
+    // reference build's *observable* outcome for that input is an abort at
+    // `assert(len < 16)` in the loop below (the corrupted values are never read
+    // before the abort). A 16-entry array in Rust would instead panic on the
+    // bounds check in this first loop, i.e. abort on the wrong condition. The
+    // wider array is behaviour-identical for every length <= 15 (only indices
+    // 0..15 are ever read) and reproduces the C's abort site exactly.
+    let mut codes: [c_int; 16] = [0; 16];
+    let mut first: [c_int; 16] = [0; 16];
     let mut counts: [c_int; 256] = [0; 256];
 
     let mut n: c_int = 0;
@@ -284,17 +288,14 @@ unsafe fn cp_build(
     while i < sym_count {
         let len = ptr::read(lens.offset(i as isize)) as c_int;
         if len != 0 {
-            c_assert!(len < 16, "len < 16");
+            cp_assert!(len < 16, "len < 16");
             let code = codes[len as usize] as u32;
             codes[len as usize] = codes[len as usize].wrapping_add(1);
             let slot = first[len as usize] as u32;
             first[len as usize] = first[len as usize].wrapping_add(1);
             ptr::write(
                 tree.offset(slot as isize),
-                // `code << (32 - len)`: with a malformed `len > 32` the C's shift
-                // count is out of range; `wrapping_shl` reproduces the masking the
-                // hardware (and hence the compiled C) performs.
-                code.wrapping_shl((32 - len) as u32) | ((i as u32) << 4) | (len as u32),
+                (code << (32 - len)) | ((i as u32) << 4) | (len as u32),
             );
             if !s.is_null() && len <= 9 {
                 let mut j: c_int = (cp_rev16(code) >> (16 - len)) as c_int;
@@ -336,12 +337,7 @@ unsafe fn cp_fixed(s: *mut cp_state_t) -> c_int {
     let lit = (*s).lit.as_mut_ptr();
     (*s).nlit = cp_build(s, lit, table as *const u8, 288) as u32;
     let dst = (*s).dst.as_mut_ptr();
-    (*s).ndst = cp_build(
-        ptr::null_mut(),
-        dst,
-        table.offset(288) as *const u8,
-        32,
-    ) as u32;
+    (*s).ndst = cp_build(ptr::null_mut(), dst, table.offset(288) as *const u8, 32) as u32;
     1
 }
 
@@ -359,12 +355,14 @@ unsafe fn cp_decode(s: *mut cp_state_t, tree: *mut u32, hi: c_int) -> c_int {
         }
     }
     let key = ptr::read(tree.offset((lo - 1) as isize));
-    // `uint32_t len = (32 - (key & 0xF));` can be 32, in which case the C's
-    // `>> len` is a 32-bit shift by 32; `wrapping_shr` reproduces what the
-    // hardware (and therefore the compiled C) actually does.
-    let _len: u32 = 32u32.wrapping_sub(key & 0xF);
-    c_assert!(
-        search.wrapping_shr(_len) == key.wrapping_shr(_len),
+    // uint32_t len = (32 - (key & 0xF));
+    //
+    // When `key & 0xF == 0` the C shifts a uint32_t by 32, which on x86-64
+    // compiles to `shr` with the count masked to 5 bits (i.e. a shift by 0).
+    // `wrapping_shr` reproduces exactly that.
+    let len = 32u32.wrapping_sub(key & 0xF);
+    cp_assert!(
+        search.wrapping_shr(len) == key.wrapping_shr(len),
         "(search >> len) == (key >> len)"
     );
     let code = cp_consume_bits(s, (key & 0xF) as c_int);
@@ -457,23 +455,22 @@ unsafe fn cp_block(s: *mut cp_state_t) -> c_int {
             (*s).out = (*s).out.offset(1);
         } else if symbol > 256 {
             symbol -= 257;
-            let len_extra = ptr::read(((&raw mut cp_len_extra_bits) as *const u8).offset(symbol as isize));
-            let len_base = ptr::read(((&raw mut cp_len_base) as *const u32).offset(symbol as isize));
+            let len_extra =
+                ptr::read(((&raw mut cp_len_extra_bits) as *const u8).offset(symbol as isize));
+            let len_base =
+                ptr::read(((&raw mut cp_len_base) as *const u32).offset(symbol as isize));
             let length: c_int =
                 (cp_read_bits(s, len_extra as c_int) as c_int).wrapping_add(len_base as c_int);
             let distance_symbol = cp_decode(s, (*s).dst.as_mut_ptr(), (*s).ndst as c_int);
             let dist_extra = ptr::read(
                 ((&raw mut cp_dist_extra_bits) as *const u8).offset(distance_symbol as isize),
             );
-            let dist_base = ptr::read(
-                ((&raw mut cp_dist_base) as *const u32).offset(distance_symbol as isize),
-            );
+            let dist_base =
+                ptr::read(((&raw mut cp_dist_base) as *const u32).offset(distance_symbol as isize));
             let backwards_distance: c_int =
                 (cp_read_bits(s, dist_extra as c_int) as c_int).wrapping_add(dist_base as c_int);
             if !((*s).out.offset(-(backwards_distance as isize)) >= (*s).begin) {
-                set_error(
-                    b"Attempted to write before out buffer (invalid backwards distance).\0",
-                );
+                set_error(b"Attempted to write before out buffer (invalid backwards distance).\0");
                 return 0;
             }
             if !((*s).out.offset(length as isize) <= (*s).out_end) {

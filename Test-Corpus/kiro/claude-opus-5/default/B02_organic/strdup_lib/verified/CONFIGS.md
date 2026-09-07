@@ -1,64 +1,94 @@
-# CONFIGS.md — configuration-surface table (Phase A / Phase B)
+# CONFIGS.md — Configuration-surface table (Phase A, gate for Phase B)
 
-Derived mechanically from `c_src/include/lib.h` and `c_src/src/lib.c`.
+Derived **mechanically** from the C source, the same way `ERRORS.md` is.
 
-## Axis extraction from the C source
+## Step 1 — enumerate the axes the C actually distinguishes
 
-**Runtime options / modes / flags.** `grep -n 'if\|switch\|#if\|#ifdef' c_src/src/lib.c`
-returns only the two null checks already listed in `ERRORS.md`. There is no
-global state, no init/teardown, no options struct, no `#ifdef` in either file.
-**Number of runtime option axes: 0.**
+### Axis: public entry points (full set, including the lowest level)
 
-**Public entry points.** `c_src/include/lib.h` is one line and declares exactly
-one function, `custom_strdup`. It is simultaneously the highest- and the
-lowest-level entry point — there is no convenience wrapper to hide behind, and
-no internal helper with external linkage (`nm -D` confirms a single `T` symbol).
+```sh
+grep -nE '^[A-Za-z_].*\(' c_src/include/lib.h   # -> char *custom_strdup(const char *str);
+nm -D --defined-only c_src/build/libdriver.so   # -> T custom_strdup
+```
 
-**Input shapes the code is sensitive to.** The function body is
-`strlen` → `+1` → `malloc` → `memcpy`. Although the C has no explicit
-size branches, the *observable* behaviour varies with:
+`custom_strdup` is the **only** public entry point. It is simultaneously the
+lowest-level and the highest-level API — there is no convenience wrapper layered
+over a lower primitive, so "test the low-level entry points, not just the
+wrappers" collapses to "test `custom_strdup`". Its three internal callees
+(`strlen`, `malloc`, `memcpy`) come from libc and are not part of this library.
 
-* `len = strlen(str) + 1` — the terminator-inclusive length, which selects a
-  different `malloc` size class (fastbin / smallbin / page-multiple / `mmap`
-  threshold) and a different `memcpy` code path (byte loop vs SSE/AVX vs
-  `rep movsb` vs page copy). These are the axes where a translation that got
-  the `+1` or the copy length wrong shows up.
-* byte content, including `0x80`–`0xFF` (the buffer is `char*`, not UTF-8; a
-  Rust translation that routed through `str`/`CStr` UTF-8 validation would
-  diverge here).
-* alignment of the input pointer.
-* placement relative to the end of a mapped page (detects reading past the NUL).
-* call sequence / repetition (detects hidden shared state — there must be none).
+### Axis: runtime options / modes / flags
 
-## Configuration-surface table
+**Empty.** `grep -cE 'enum|#define|static|extern|struct|flag|mode|option|setopt' c_src/src/lib.c c_src/include/lib.h` finds no configuration state: no global, no init function, no setopt-style call, no `enum`, no flags parameter, no `#ifdef`. The function is pure w.r.t. configuration — its behaviour is a function of the single `str` argument and the allocator's success only.
 
-One row per meaningful combination of `{entry point} × {length class} × {content
-class} × {alignment} × {call pattern}`, pruned to the combinations the C
-actually distinguishes. Every row is driven with many randomized inputs
-(xorshift64\* PRNG, fixed seed `0x2024_0601_C0FFEE01`), and both the C `.so` and
-the Rust `.so` are called through `libloading` and compared byte-for-byte
-(including the NUL terminator).
+### Axis: `#if` / `#ifdef` conditional compilation
+
+**Empty** in both C files. `Cargo.toml` declares no `[features]`, so the Rust side likewise has a single configuration. The full "feature combination" cross-product is therefore the single default build (see `SYMBOLS.md`).
+
+### Axis: input shapes the code is sensitive to
+
+The C body is straight-line after the two null checks, but its behaviour is still shape-dependent through `strlen` (where the copy stops) and `memcpy` (which selects different SIMD/word-at-a-time paths by size and alignment). Shapes enumerated:
+
+* **pointer validity** — `NULL` vs valid buffer (the `if(!str)` branch);
+* **length** — 0 (empty), 1, 2, machine-word and SIMD boundaries (7/8/9, 15/16/17, 31/32/33, 63/64/65, 127/128/129), page boundaries (4095/4096/4097, 8191/8192/8193), large (1 MiB), huge (16 MiB);
+* **byte content** — ASCII, high bytes ≥ 0x80 (signedness of `char`!), 0xFF, the complete non-NUL byte domain `1..=255`;
+* **content past the terminator** — a buffer whose bytes *after* the NUL are non-zero garbage, to prove exactly `strlen+1` bytes are copied and no more;
+* **source alignment** — the string starting at each offset 0..15 of an aligned buffer;
+* **read-boundary** — the NUL as the final readable byte before an unmapped guard page, to prove no over-read;
+* **count / lifetime** — one call, many simultaneously live results, many sequential calls, concurrent calls from several threads;
+* **allocator ABI** — the result must be releasable with `free`, since the C hands back a `malloc` buffer and that is observable to every caller.
+
+Byte order / element type / element width are not axes: the function copies raw bytes and never interprets multi-byte values.
+
+## Step 2 — pruned cross-product
+
+One row per combination the C treats differently. Every row is exercised against **both** `.so`s via `libloading` with **many seeded-random inputs** (seed `0x5EED_C0FFEE_u64`, `SplitMix64`), not a single hand-picked value.
 
 | # | entry point(s) | configuration (options set + input shape) | test | [x] |
 |---|----------------|-------------------------------------------|------|-----|
-| C1 | `custom_strdup` | no options (none exist); `len_with_nul == 1`, i.e. the empty string `""` | `cfg_c1_empty` | [x] |
-| C2 | `custom_strdup` | `len_with_nul == 2`: **exhaustively all 255** legal single-byte contents `0x01..=0xFF` | `cfg_c2_all_single_bytes` | [x] |
-| C3 | `custom_strdup` | `len_with_nul == 3`: **exhaustively all 255×255** two-byte contents | `cfg_c3_all_two_byte_pairs` | [x] |
-| C4 | `custom_strdup` | small sizes 1..=64 bytes, randomized non-zero contents, many trials per size (fastbin / smallbin `malloc` classes, short-`memcpy` paths) | `cfg_c4_small_sizes_sweep` | [x] |
-| C5 | `custom_strdup` | `memcpy`/`malloc` alignment boundaries: lengths `{7,8,9,15,16,17,23,24,25,31,32,33,63,64,65,127,128,129}`, randomized contents | `cfg_c5_alignment_boundaries` | [x] |
-| C6 | `custom_strdup` | page boundaries: lengths `{4094,4095,4096,4097,4098,8191,8192,8193}`, randomized contents | `cfg_c6_page_boundaries` | [x] |
-| C7 | `custom_strdup` | large allocation, 1 MiB of randomized bytes | `cfg_c7_one_mib` | [x] |
-| C8 | `custom_strdup` | past `malloc`'s default `mmap` threshold: 16 MiB + 1 of randomized bytes (different allocator path entirely) | `cfg_c8_mmap_threshold` | [x] |
-| C9 | `custom_strdup` | high-bit-only / non-UTF-8 contents (`0x80..=0xFF`, plus deliberately invalid UTF-8 sequences: lone continuation bytes, truncated multi-byte sequences, `0xFE`/`0xFF`), randomized lengths | `cfg_c9_non_utf8` | [x] |
-| C10 | `custom_strdup` | misaligned input pointer: same logical string read at offsets 0..=15 inside an over-aligned backing buffer, randomized lengths | `cfg_c10_misaligned_input` | [x] |
-| C11 | `custom_strdup` | result-ownership shape: returned pointer is non-null, **not** aliasing the input, and releasable via libc `free()`; two successive calls return distinct buffers | `cfg_c11_result_is_free_able` | [x] |
-| C12 | `custom_strdup` | input whose NUL terminator is the **last readable byte** before an unmapped guard page (proves neither impl reads past the terminator), lengths 1..=64 | `cfg_c12_guard_page` | [x] |
-| C13 | `custom_strdup` | call pattern: 2000 interleaved C/Rust calls with randomized inputs, results kept alive simultaneously (proves no shared/leaked state and no allocator interference) | `cfg_c13_interleaved_stateful` | [x] |
-| C14 | `custom_strdup` | free-form property sweep: 5000 iterations, random length `0..=8192`, random byte contents, fixed seed | `cfg_c14_property_sweep` | [x] |
+| 1 | `custom_strdup` | no options (none exist) × `str = NULL` | `cfg_row01_null_pointer` | [x] |
+| 2 | `custom_strdup` | × empty string `""` (length 0 → `len == 1`) | `cfg_row02_empty_string` | [x] |
+| 3 | `custom_strdup` | × length exactly 1, all 255 possible single non-NUL byte values | `cfg_row03_length_one_all_bytes` | [x] |
+| 4 | `custom_strdup` | × every length 0..=64, randomized ASCII content, many seeds | `cfg_row04_lengths_0_to_64_random_ascii` | [x] |
+| 5 | `custom_strdup` | × machine-word / SIMD `memcpy` boundary lengths {7,8,9,15,16,17,31,32,33,63,64,65,127,128,129}, randomized full-byte-domain content | `cfg_row05_word_and_simd_boundary_lengths` | [x] |
+| 6 | `custom_strdup` | × page-boundary lengths {4095,4096,4097,8191,8192,8193}, randomized content | `cfg_row06_page_boundary_lengths` | [x] |
+| 7 | `custom_strdup` | × large body: 1 MiB of randomized non-NUL bytes | `cfg_row07_one_mib_random` | [x] |
+| 8 | `custom_strdup` | × huge body: 16 MiB of randomized non-NUL bytes | `cfg_row08_sixteen_mib_random` | [x] |
+| 9 | `custom_strdup` | × content = the complete non-NUL byte domain `1..=255` in one string (high bytes, `char`-signedness sensitive) | `cfg_row09_full_byte_domain` | [x] |
+| 10 | `custom_strdup` | × content = only high bytes `0x80..=0xFF`, randomized order and length | `cfg_row10_high_bytes_only` | [x] |
+| 11 | `custom_strdup` | × non-zero garbage **after** the terminator (buffer ≫ string) — exactly `strlen+1` bytes must be copied, no over-copy | `cfg_row11_garbage_after_terminator` | [x] |
+| 12 | `custom_strdup` | × terminator at offset 0 inside a large populated buffer (early-NUL truncation) | `cfg_row12_early_nul_in_large_buffer` | [x] |
+| 13 | `custom_strdup` | × source pointer at each misalignment 0..=15 within an aligned buffer, randomized lengths | `cfg_row13_source_misalignment` | [x] |
+| 14 | `custom_strdup` | × string whose NUL is the last readable byte before an unmapped guard page (proves no read past the terminator) | `cfg_row14_guard_page_no_overread` | [x] |
+| 15 | `custom_strdup` | × result must be `free`-able — allocator ABI compatibility of the returned buffer (C returns `malloc` memory; Rust must too) | `cfg_row15_result_is_free_able` | [x] |
+| 16 | `custom_strdup` | × result must not alias the input and must be an independent buffer (mutate result, input unchanged; mutate input, result unchanged) | `cfg_row16_result_is_independent_copy` | [x] |
+| 17 | `custom_strdup` | × many simultaneously live results (256 outstanding buffers, all distinct, all intact) — no shared scratch buffer | `cfg_row17_many_live_results` | [x] |
+| 18 | `custom_strdup` | × concurrent calls from 8 threads, randomized inputs (reentrancy / no shared mutable state) | `cfg_row18_concurrent_calls` | [x] |
+| 19 | `custom_strdup` | × unrestricted property sweep: 20 000 seeded-random inputs, length 0..=4096, bytes drawn from `1..=255`, ~1/50 of them `NULL` — mixes all axes above | `cfg_row19_property_sweep` | [x] |
 
-## Feature combinations
+## Binary / driver executable
 
-`translation/Cargo.toml` has no `[features]` table, so the cross-product of
-cargo features is a single point. `tests/feature_matrix.sh` still runs the
-default build and `--no-default-features` explicitly so the claim is verified
-rather than assumed.
+`c_src/CMakeLists.txt` contains **no `add_executable`** (only
+`add_library(driver SHARED src/lib.c)`), and `translation/` has no `src/main.rs`
+and no `[[bin]]` in `Cargo.toml`. The project builds **no binary**, so the
+"compare C and Rust stdout byte-for-byte" gate item is **N/A**. Verified:
+
+```sh
+grep -c add_executable c_src/CMakeLists.txt   # -> 0
+ls translation/src/                            # -> lib.rs only
+```
+
+## Harness validation (proof the rows are not vacuous)
+
+Passing tests only mean something if they can fail. Four bugs were injected into
+`src/lib.rs` in turn (then reverted; `src/lib.rs` is byte-identical to its
+original), rebuilt, and the suite re-run:
+
+| injected bug | result |
+|--------------|--------|
+| `len = strlen(str)` — drop the `+ 1`, so the NUL is not copied | 16 tests failed |
+| `if(!str)` returns `malloc(1)` instead of `NULL` | 3 tests failed |
+| return the input pointer instead of the fresh copy (aliasing) | 11 tests failed |
+| `memcpy` copies `len - 1` bytes for `len > 4` (partial copy) | 12 tests failed |
+
+Every mutant was detected by assertion failures, not by luck or by a crash.

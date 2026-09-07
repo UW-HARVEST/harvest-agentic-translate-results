@@ -92,54 +92,79 @@ const CACHE_ENABLED_SHIFT: u32 = 3;
 const LOG_LEVEL_SHIFT: u32 = 4;
 const RESERVED_SHIFT: u32 = 7;
 
-// The bit-fields are accessed through *raw pointers only* — no `&`/`&mut`
-// reference is ever formed from the caller's `struct ConfigFlags*`.  That matters
-// for exact behavioural fidelity: a C caller is free to pass a NULL (or
-// otherwise invalid) pointer, and the C library then faults on the load/store
-// itself (SIGSEGV).  Forming a Rust reference first would instead trip a
-// debug-profile UB check and abort (SIGABRT), i.e. a different observable
-// outcome.  Even a plain `*p` deref is not enough: with `-C debug-assertions`
-// (the default for the `dev` profile) rustc inserts a null check that panics,
-// and the panic escaping an `extern "C"` function turns into SIGABRT.  The
-// volatile accessors below carry no such check and compile to exactly the single
-// load / store gcc emits, so *both* Rust profiles fault identically to the C.
+// The bit-field accessors deliberately work on a RAW POINTER and never form a
+// `&`/`&mut ConfigFlags`.  A C caller may legally pass any pointer value at all
+// (a C compiler emits no validity check), so turning the argument into a Rust
+// reference would attach guarantees the input does not carry: for a null or
+// misaligned pointer, `&mut *p` is instant UB and — with `debug_assertions` on
+// — aborts the process with SIGABRT, whereas the C library simply performs the
+// load/store and takes SIGSEGV.  Reading and writing through the raw pointer
+// reproduces the C behaviour byte for byte in every build profile.
+//
+// Only byte 0 is ever touched, matching gcc's codegen for this layout
+// (`movzbl (%rax),%edx; and/or; mov %dl,(%rax)`): bytes 1..3 of the 4-byte
+// allocation unit keep whatever the caller had in them.
 
-/// Reads a bit-field out of byte 0 of the allocation unit.
 #[inline]
-unsafe fn bf_get(p: *const ConfigFlags, shift: u32, width: u32) -> c_uint {
-    let byte: u8 = core::ptr::read_volatile(p as *const u8);
+unsafe fn cf_get(p: *const ConfigFlags, shift: u32, width: u32) -> c_uint {
+    let byte = (p as *const u8).read();
     ((byte >> shift) as c_uint) & ((1u32 << width) - 1)
 }
 
 /// Read-modify-write of byte 0 only, exactly as gcc codegens a bit-field store
-/// for this layout (bits 8..31 of the unit are left untouched).
+/// for this layout.
 #[inline]
-unsafe fn bf_set(p: *mut ConfigFlags, shift: u32, width: u32, value: c_uint) {
-    let b = p as *mut u8;
+unsafe fn cf_set(p: *mut ConfigFlags, shift: u32, width: u32, value: c_uint) {
+    let base = p as *mut u8;
     let mask = ((1u32 << width) - 1) as u8;
-    let byte: u8 = core::ptr::read_volatile(b);
-    core::ptr::write_volatile(b, (byte & !(mask << shift)) | (((value as u8) & mask) << shift));
+    let byte = base.read();
+    base.write((byte & !(mask << shift)) | (((value as u8) & mask) << shift));
 }
 
 #[inline]
-unsafe fn get_verbose(p: *const ConfigFlags) -> c_uint {
-    bf_get(p, VERBOSE_SHIFT, 1)
+unsafe fn cf_verbose(p: *const ConfigFlags) -> c_uint {
+    cf_get(p, VERBOSE_SHIFT, 1)
 }
 #[inline]
-unsafe fn get_debug(p: *const ConfigFlags) -> c_uint {
-    bf_get(p, DEBUG_SHIFT, 1)
+unsafe fn cf_debug(p: *const ConfigFlags) -> c_uint {
+    cf_get(p, DEBUG_SHIFT, 1)
 }
 #[inline]
-unsafe fn get_optimize(p: *const ConfigFlags) -> c_uint {
-    bf_get(p, OPTIMIZE_SHIFT, 1)
+unsafe fn cf_optimize(p: *const ConfigFlags) -> c_uint {
+    cf_get(p, OPTIMIZE_SHIFT, 1)
 }
 #[inline]
-unsafe fn get_cache_enabled(p: *const ConfigFlags) -> c_uint {
-    bf_get(p, CACHE_ENABLED_SHIFT, 1)
+unsafe fn cf_cache_enabled(p: *const ConfigFlags) -> c_uint {
+    cf_get(p, CACHE_ENABLED_SHIFT, 1)
 }
 #[inline]
-unsafe fn get_log_level(p: *const ConfigFlags) -> c_uint {
-    bf_get(p, LOG_LEVEL_SHIFT, 3)
+unsafe fn cf_log_level(p: *const ConfigFlags) -> c_uint {
+    cf_get(p, LOG_LEVEL_SHIFT, 3)
+}
+
+#[inline]
+unsafe fn cf_set_verbose(p: *mut ConfigFlags, v: c_uint) {
+    cf_set(p, VERBOSE_SHIFT, 1, v)
+}
+#[inline]
+unsafe fn cf_set_debug(p: *mut ConfigFlags, v: c_uint) {
+    cf_set(p, DEBUG_SHIFT, 1, v)
+}
+#[inline]
+unsafe fn cf_set_optimize(p: *mut ConfigFlags, v: c_uint) {
+    cf_set(p, OPTIMIZE_SHIFT, 1, v)
+}
+#[inline]
+unsafe fn cf_set_cache_enabled(p: *mut ConfigFlags, v: c_uint) {
+    cf_set(p, CACHE_ENABLED_SHIFT, 1, v)
+}
+#[inline]
+unsafe fn cf_set_log_level(p: *mut ConfigFlags, v: c_uint) {
+    cf_set(p, LOG_LEVEL_SHIFT, 3, v)
+}
+#[inline]
+unsafe fn cf_set_reserved(p: *mut ConfigFlags, v: c_uint) {
+    cf_set(p, RESERVED_SHIFT, 1, v)
 }
 
 // ---------------------------------------------------------------------------
@@ -252,30 +277,26 @@ pub unsafe extern "C" fn init_config_from_env(flags: *mut ConfigFlags) {
     let debug_env: *mut c_char = getenv(cstr(S_PROG_DEBUG));
     let optimize_env: *mut c_char = getenv(cstr(S_PROG_OPTIMIZE));
 
-    bf_set(
+    cf_set_verbose(
         flags,
-        VERBOSE_SHIFT,
-        1,
         if !verbose_env.is_null() && !strchr(verbose_env, b'1' as c_int).is_null() {
             1
         } else {
             0
         },
     );
-    bf_set(
+    cf_set_debug(
         flags,
-        DEBUG_SHIFT,
-        1,
         if !debug_env.is_null() && !strchr(debug_env, b'1' as c_int).is_null() {
             1
         } else {
             0
         },
     );
-    bf_set(flags, OPTIMIZE_SHIFT, 1, if !optimize_env.is_null() { 1 } else { 0 });
-    bf_set(flags, CACHE_ENABLED_SHIFT, 1, 1);
-    bf_set(flags, LOG_LEVEL_SHIFT, 3, 0o3);
-    bf_set(flags, RESERVED_SHIFT, 1, 0);
+    cf_set_optimize(flags, if !optimize_env.is_null() { 1 } else { 0 });
+    cf_set_cache_enabled(flags, 1);
+    cf_set_log_level(flags, 0o3);
+    cf_set_reserved(flags, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -295,17 +316,17 @@ pub unsafe extern "C" fn perform_operation(
 
     let operation_mode: c_int = 0o755;
 
-    if get_optimize(flags) != 0 {
+    if cf_optimize(flags) != 0 {
         result = val1.wrapping_add(val2);
     } else {
         // The bit-field `log_level` (unsigned int : 3) undergoes the integer
         // promotions and becomes a plain `int` here.
         result = val1
-            .wrapping_mul(get_log_level(flags) as c_int)
+            .wrapping_mul(cf_log_level(flags) as c_int)
             .wrapping_add(val2.wrapping_div(2));
     }
 
-    if get_debug(flags) != 0 {
+    if cf_debug(flags) != 0 {
         printf(cstr(S_DBG_OPERATION_MODE), operation_mode);
         printf(cstr(S_DBG_RESULT_BEFORE), result);
     }
@@ -324,11 +345,11 @@ pub unsafe extern "C" fn apply_bit_operations(
 ) -> c_int {
     let mut adjusted: c_int = value;
 
-    if get_verbose(flags) != 0 {
+    if cf_verbose(flags) != 0 {
         adjusted = ((adjusted as u32) << 1) as c_int;
     }
 
-    if get_cache_enabled(flags) != 0 {
+    if cf_cache_enabled(flags) != 0 {
         adjusted |= 0x0F;
     }
 
@@ -370,7 +391,7 @@ pub unsafe extern "C" fn envy(
     let base_offset: c_int = parse_env_numeric(cstr(S_PROG_BASE_OFFSET), 0o100);
     let multiplier: c_int = parse_env_numeric(cstr(S_PROG_MULTIPLIER), 0o12);
 
-    if get_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
+    if cf_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
         printf(cstr(S_VERBOSE_ENABLED));
         printf(cstr(S_BASE_OFFSET), base_offset);
         printf(cstr(S_MULTIPLIER), multiplier);
@@ -386,7 +407,7 @@ pub unsafe extern "C" fn envy(
         core::mem::size_of::<ProcessState>(),
     );
 
-    if get_debug(core::ptr::addr_of!((*state).flags)) != 0 {
+    if cf_debug(core::ptr::addr_of!((*state).flags)) != 0 {
         printf(cstr(S_DBG_CREATED_BACKUP));
         printf(cstr(S_DBG_BACKUP_BASE), (*state_backup).base_value);
     }
@@ -409,7 +430,7 @@ pub unsafe extern "C" fn envy(
 
     let colon_pos: *mut c_char = strchr(buffer_ptr, b':' as c_int);
     if !colon_pos.is_null() {
-        if get_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
+        if cf_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
             printf(
                 cstr(S_FOUND_COLON),
                 (colon_pos as isize - buffer_ptr as isize) as c_long,
@@ -417,7 +438,7 @@ pub unsafe extern "C" fn envy(
         }
 
         let second_colon: *mut c_char = strchr(colon_pos.add(1), b':' as c_int);
-        if !second_colon.is_null() && get_debug(core::ptr::addr_of!((*state).flags)) != 0 {
+        if !second_colon.is_null() && cf_debug(core::ptr::addr_of!((*state).flags)) != 0 {
             printf(cstr(S_DBG_FORMAT_VALIDATED));
         }
     }
@@ -430,18 +451,18 @@ pub unsafe extern "C" fn envy(
         );
         result = (*state).base_value; /* Use original base value */
 
-        if get_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
+        if cf_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
             printf(cstr(S_RESTORED_STATE));
         }
     }
 
-    if get_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
+    if cf_verbose(core::ptr::addr_of!((*state).flags)) != 0 {
         printf(cstr(S_FINAL_RESULT), result);
         printf(
             cstr(S_CONFIGURATION),
-            get_debug(core::ptr::addr_of!((*state).flags)) as c_int,
-            get_optimize(core::ptr::addr_of!((*state).flags)) as c_int,
-            get_log_level(core::ptr::addr_of!((*state).flags)) as c_int,
+            cf_debug(core::ptr::addr_of!((*state).flags)) as c_int,
+            cf_optimize(core::ptr::addr_of!((*state).flags)) as c_int,
+            cf_log_level(core::ptr::addr_of!((*state).flags)) as c_int,
         );
     }
 

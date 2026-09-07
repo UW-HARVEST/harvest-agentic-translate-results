@@ -1,18 +1,21 @@
-# Configuration Surface
+# Configuration surface
 
-The public surface has one entry point and no runtime options, modes, flags,
-element types, lengths, counts, formats, byte-order choices, feature gates, or
-compile-time feature combinations. The rows below are the reachable outcomes
-of the `s1`/`s2` separator branches in `tool_basename`.
+The public header exposes one entry point and no runtime modes, flags, element
+types, formats, byte-order options, or feature-controlled APIs. The rows below
+cover the input shapes distinguished by the `strrchr` results and pointer-order
+branch in `tool_basename`, plus zero-length and trailing-separator boundaries.
+Randomized rows include one and many occurrences of the indicated separators.
 
-| # | entry point(s) | configuration (options set + input shape) | [ ] |
-|---|----------------|-------------------------------------------|-----|
-| 1 | `tool_basename` | No options; no `/` or `\` (empty and non-empty strings) | [x] |
-| 2 | `tool_basename` | No options; one or more `/`, no `\` | [x] |
-| 3 | `tool_basename` | No options; one or more `\`, no `/` | [x] |
-| 4 | `tool_basename` | No options; both separator types, last `/` occurs later | [x] |
-| 5 | `tool_basename` | No options; both separator types, last `\` occurs later | [x] |
+| # | entry point(s) | configuration (options set + input shape) | status |
+|---|----------------|--------------------------------------------|--------|
+| 1 | `tool_basename` | empty C string (zero-length boundary; neither separator exists) | [x] |
+| 2 | `tool_basename` | non-empty string with neither `/` nor `\` | [x] |
+| 3 | `tool_basename` | one or many `/` separators and no `\`; final `/` is not trailing | [x] |
+| 4 | `tool_basename` | one or many `\` separators and no `/`; final `\` is not trailing | [x] |
+| 5 | `tool_basename` | both separator kinds occur and the last `/` is later than the last `\` | [x] |
+| 6 | `tool_basename` | both separator kinds occur and the last `\` is later than the last `/` | [x] |
+| 7 | `tool_basename` | string ends in `/`, so the returned basename is empty | [x] |
+| 8 | `tool_basename` | string ends in `\`, so the returned basename is empty | [x] |
 
-For every row, comparison includes the returned pointer offset, returned suffix
-bytes through the terminating NUL, and confirmation that the input buffer is
-unchanged.
+Each row passes hundreds of fixed-seed randomized cases under both the default
+build and `--no-default-features`.

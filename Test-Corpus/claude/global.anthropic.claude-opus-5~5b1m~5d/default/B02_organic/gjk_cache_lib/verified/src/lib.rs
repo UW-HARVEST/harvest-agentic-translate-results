@@ -1,36 +1,15 @@
-//! Rust translation of `c_src/src/lib.c` (tinyc2-style 2D GJK routines).
+//! Rust translation of c_src/src/lib.c (tinyc2-style 2D GJK routines).
 //!
 //! The C library is compiled by CMake as one shared object that exports every
 //! non-static function in `src/lib.c`.  This crate reproduces that exact ABI:
 //! same symbol names, same C signatures, same struct layouts, and bit-for-bit
-//! identical floating point results.
-//!
-//! # Bit-exactness
-//!
-//! All arithmetic is plain IEEE-754 single precision: no fused multiply-add, no
-//! reassociation, no `-ffast-math`.  For *finite* inputs `a + b` in Rust and
-//! `a + b` in C are therefore already identical.
-//!
-//! They are **not** automatically identical when both operands of a commutative
-//! SSE operation are NaN: `addss`/`mulss` return the *destination* operand's
-//! NaN payload, and which C operand ends up in the destination register is a
-//! choice the compiler makes.  gcc at `-O0` does not consistently pick the
-//! left-hand operand — e.g. in `c2Dot` it computes `a.x*b.x` with `a.x` as the
-//! destination but `a.y*b.y` with `b.y` as the destination, and then adds with
-//! the *second* product as the destination.  LLVM makes its own (different)
-//! choices and freely commutes `fadd`/`fmul`.
-//!
-//! To be byte-identical for every input, including NaN, this file does not use
-//! `+`/`-`/`*`/`/` on `f32` at all.  It uses [`fp::add`], [`fp::sub`],
-//! [`fp::mul`] and [`fp::div`], which are single SSE instructions with the
-//! destination operand pinned by inline assembly, and each call site names the
-//! destination gcc chose (read off `objdump -d` of the C `.so`).
+//! identical floating point behaviour (all arithmetic is plain IEEE-754
+//! single precision, no fused operations, no reassociation).
 //!
 //! Bugs / quirks in the original C are preserved verbatim, including:
 //!   * the inverted cache-validity test in `c2GJK`
 //!   * `gjk_cache` never writing through its `a9` / `b9` out-parameters
 //!   * NaN-propagating min/max ordering in `c2Maxv` / `c2Minv`
-//!   * `c2MakeProxy` writing nothing at all for an out-of-range `C2_TYPE`
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -38,125 +17,6 @@
 
 use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::ptr;
-
-// ---------------------------------------------------------------------------
-// Operand-order-pinned IEEE-754 single-precision primitives.
-//
-// `fp::OP(d, s)` computes `d OP s` with `d` in the destination register, i.e.
-// exactly `OPss d, s` on x86-64.  That fixes NaN-payload selection (the
-// destination wins when both operands are NaN) and forbids the optimiser from
-// commuting the operands.
-// ---------------------------------------------------------------------------
-
-mod fp {
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn add(mut d: f32, s: f32) -> f32 {
-        unsafe {
-            core::arch::asm!(
-                "addss {d}, {s}",
-                d = inout(xmm_reg) d,
-                s = in(xmm_reg) s,
-                options(pure, nomem, nostack, preserves_flags),
-            );
-        }
-        d
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn sub(mut d: f32, s: f32) -> f32 {
-        unsafe {
-            core::arch::asm!(
-                "subss {d}, {s}",
-                d = inout(xmm_reg) d,
-                s = in(xmm_reg) s,
-                options(pure, nomem, nostack, preserves_flags),
-            );
-        }
-        d
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn mul(mut d: f32, s: f32) -> f32 {
-        unsafe {
-            core::arch::asm!(
-                "mulss {d}, {s}",
-                d = inout(xmm_reg) d,
-                s = in(xmm_reg) s,
-                options(pure, nomem, nostack, preserves_flags),
-            );
-        }
-        d
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn div(mut d: f32, s: f32) -> f32 {
-        unsafe {
-            core::arch::asm!(
-                "divss {d}, {s}",
-                d = inout(xmm_reg) d,
-                s = in(xmm_reg) s,
-                options(pure, nomem, nostack, preserves_flags),
-            );
-        }
-        d
-    }
-
-    /// `sqrtf`.  Correctly rounded per IEEE-754, so a single `sqrtss` is
-    /// bit-identical to glibc's `sqrtf` for every input (including NaN payload
-    /// propagation, which `sqrtss` quiets exactly like the libm routine).
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    pub fn sqrt(mut d: f32) -> f32 {
-        unsafe {
-            core::arch::asm!(
-                "sqrtss {d}, {d}",
-                d = inout(xmm_reg) d,
-                options(pure, nomem, nostack, preserves_flags),
-            );
-        }
-        d
-    }
-
-    // Portable fallbacks.  Operand order cannot be pinned without target
-    // specific assembly, so on other architectures the NaN-payload tie-break
-    // follows whatever the platform does; every other input is still exact.
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn add(d: f32, s: f32) -> f32 {
-        d + s
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn sub(d: f32, s: f32) -> f32 {
-        d - s
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn mul(d: f32, s: f32) -> f32 {
-        d * s
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn div(d: f32, s: f32) -> f32 {
-        d / s
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline(always)]
-    pub fn sqrt(d: f32) -> f32 {
-        d.sqrt()
-    }
-
-    /// Sign flip.  gcc emits `xorps` with a sign mask, which flips the sign bit
-    /// of every value including NaNs; Rust's unary `-` does the same.
-    #[inline(always)]
-    pub fn neg(x: f32) -> f32 {
-        f32::from_bits(x.to_bits() ^ 0x8000_0000)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // C2_TYPE (C enum -> unsigned int on the SysV x86-64 ABI)
@@ -167,12 +27,10 @@ pub const C2_TYPE_AABB: c_uint = 1;
 pub const C2_TYPE_CAPSULE: c_uint = 2;
 
 // ---------------------------------------------------------------------------
-// Public / internal structs.  Layouts verified against gcc 11.5 / x86-64 SysV:
+// Public / internal structs.  Layouts verified against the C compiler:
 //   c2v = 8, c2r = 8, c2x = 16, c2Circle = 12, c2AABB = 16, c2Capsule = 20,
-//   c2GJKCache = 36 (metric@0 count@4 iA@8 iB@20 div@32),
-//   c2Proxy = 72 (radius@0 count@4 verts@8),
-//   c2sv = 36 (sA@0 sB@8 p@16 u@24 iA@28 iB@32),
-//   c2Simplex = 152 (a@0 b@36 c@72 d@108 div@144 count@148)
+//   c2GJKCache = 36 (div @ 32), c2Proxy = 72 (verts @ 8),
+//   c2sv = 36, c2Simplex = 152 (b @ 36, div @ 144, count @ 148)
 // ---------------------------------------------------------------------------
 
 #[repr(C)]
@@ -269,30 +127,10 @@ const ZERO_SV: c2sv = c2sv {
     iB: 0,
 };
 
-// The three float constants the C source spells out, cross-checked against the
-// `.rodata` of the compiled C `.so`:
-//   0x4024 = 0x7f7fffff  FLT_MAX
-//   0x402c = 0x34000000  FLT_EPSILON            (2^-23)
-//   0x4028 = 0x28800000  FLT_EPSILON*FLT_EPSILON (2^-46, constant-folded by gcc)
-//   0x4020 = 0xccbebc20  -1.0e8f
-const C2_FLT_MAX: f32 = f32::MAX;
+// FLT_MAX as spelled in the C source.
+const C2_FLT_MAX: f32 = 3.402_823_466_385_288_6e38_f32;
+// FLT_EPSILON as spelled in the C source.
 const C2_FLT_EPSILON: f32 = 1.192_092_895_507_812_5e-7_f32;
-const C2_FLT_EPSILON_SQ: f32 = C2_FLT_EPSILON * C2_FLT_EPSILON;
-
-// Compile-time proof that the constants above have the exact bit patterns gcc
-// baked into the C shared object.
-const _: () = {
-    assert!(C2_FLT_MAX.to_bits() == 0x7f7f_ffff);
-    assert!(C2_FLT_EPSILON.to_bits() == 0x3400_0000);
-    assert!(C2_FLT_EPSILON_SQ.to_bits() == 0x2880_0000);
-    assert!((-1.0e8f32).to_bits() == 0xccbe_bc20);
-    assert!((0.5f32).to_bits() == 0x3f00_0000);
-    assert!((15.0f32).to_bits() == 0x4170_0000);
-    assert!((100.0f32).to_bits() == 0x42c8_0000);
-    assert!((-25.0f32).to_bits() == 0xc1c8_0000);
-    assert!((75.0f32).to_bits() == 0x4296_0000);
-    assert!((10.0f32).to_bits() == 0x4120_0000);
-};
 
 // ---------------------------------------------------------------------------
 // Vector helpers
@@ -306,13 +144,13 @@ pub extern "C" fn c2V(x: f32, y: f32) -> c2v {
     a
 }
 
-/// C: `a.x *= b; a.y *= b;`
-/// gcc: `mulss` with the vector component as the destination.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulvs(a: c2v, b: f32) -> c2v {
     let mut a = a;
-    a.x = fp::mul(a.x, b);
-    a.y = fp::mul(a.y, b);
+    // mulss -0xc(%rbp),%xmm0   with %xmm0 = a.x  -> src1 = a.x
+    a.x = mulss(a.x, b);
+    // mulss -0xc(%rbp),%xmm0   with %xmm0 = a.y  -> src1 = a.y
+    a.y = mulss(a.y, b);
     a
 }
 
@@ -337,20 +175,25 @@ pub extern "C" fn c2Clampv(a: c2v, lo: c2v, hi: c2v) -> c2v {
     c2Maxv(lo, c2Minv(a, hi))
 }
 
-/// C: `a.x -= b.x; a.y -= b.y;`  gcc: `subss` with `a` as the destination.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Sub(a: c2v, b: c2v) -> c2v {
     let mut a = a;
-    a.x = fp::sub(a.x, b.x);
-    a.y = fp::sub(a.y, b.y);
+    // subss %xmm1,%xmm0  with %xmm0 = a.x, %xmm1 = b.x  -> src1 = a.x
+    a.x = subss(a.x, b.x);
+    // subss %xmm1,%xmm0  with %xmm0 = a.y, %xmm1 = b.y  -> src1 = a.y
+    a.y = subss(a.y, b.y);
     a
 }
 
-/// C: `a.x * b.x + a.y * b.y`
-/// gcc: `mulss a.x, b.x` / `mulss b.y, a.y` / `addss (b.y*a.y), (a.x*b.x)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Dot(a: c2v, b: c2v) -> f32 {
-    fp::add(fp::mul(b.y, a.y), fp::mul(a.x, b.x))
+    // gcc -O0 emits:
+    //   mulss %xmm0,%xmm1  ; %xmm1 = a.x, %xmm0 = b.x -> t1, src1 = a.x
+    //   mulss %xmm2,%xmm0  ; %xmm0 = b.y, %xmm2 = a.y -> t2, src1 = b.y
+    //   addss %xmm1,%xmm0  ; %xmm0 = t2               -> src1 = t2
+    let t1 = mulss(a.x, b.x);
+    let t2 = mulss(b.y, a.y);
+    addss(t2, t1)
 }
 
 #[unsafe(no_mangle)]
@@ -406,8 +249,7 @@ pub unsafe extern "C" fn c2MakeProxy(shape: *const c_void, r#type: c_uint, p: *m
             (*p).verts[0] = (*c).a;
             (*p).verts[1] = (*c).b;
         }
-        // No `default:` label in the C switch -- nothing is written, and `p` is
-        // not even dereferenced.
+        // No `default:` label in the C switch -- nothing is written.
         _ => {}
     }
 }
@@ -418,14 +260,18 @@ pub unsafe extern "C" fn c2MakeProxy(shape: *const c_void, r#type: c_uint, p: *m
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Len(a: c2v) -> f32 {
-    fp::sqrt(c2Dot(a, a))
+    sqrtf(c2Dot(a, a))
 }
 
-/// C: `a.x * b.y - a.y * b.x`
-/// gcc: `mulss b.y, a.x` / `mulss b.x, a.y` / `subss`.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Det2(a: c2v, b: c2v) -> f32 {
-    fp::sub(fp::mul(b.y, a.x), fp::mul(b.x, a.y))
+    // gcc -O0 emits:
+    //   mulss %xmm1,%xmm0  ; %xmm0 = b.y, %xmm1 = a.x -> t1, src1 = b.y
+    //   mulss %xmm2,%xmm1  ; %xmm1 = b.x, %xmm2 = a.y -> t2, src1 = b.x
+    //   subss %xmm1,%xmm0  ; %xmm0 = t1               -> src1 = t1
+    let t1 = mulss(b.y, a.x);
+    let t2 = mulss(b.x, a.y);
+    subss(t1, t2)
 }
 
 #[unsafe(no_mangle)]
@@ -441,23 +287,27 @@ pub unsafe extern "C" fn c2GJKSimplexMetric(s: *mut c2Simplex) -> f32 {
     }
 }
 
-/// C: `c2V(a.c * b.x - a.s * b.y, a.s * b.x + a.c * b.y)`
-/// gcc: x = `subss (b.x*a.c), (b.y*a.s)`, y = `addss (a.s*b.x), (b.y*a.c)`.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Mulrv(a: c2r, b: c2v) -> c2v {
-    c2V(
-        fp::sub(fp::mul(b.x, a.c), fp::mul(b.y, a.s)),
-        fp::add(fp::mul(a.s, b.x), fp::mul(b.y, a.c)),
-    )
+    // gcc -O0 evaluates the 2nd c2V argument first:
+    //   mulss %xmm0,%xmm1 ; %xmm1 = a.s, %xmm0 = b.x -> src1 = a.s
+    //   mulss %xmm2,%xmm0 ; %xmm0 = b.y, %xmm2 = a.c -> src1 = b.y
+    //   addss %xmm0,%xmm3 ; %xmm3 = a.s*b.x          -> src1 = a.s*b.x
+    let y = addss(mulss(a.s, b.x), mulss(b.y, a.c));
+    //   mulss %xmm1,%xmm0 ; %xmm0 = b.x, %xmm1 = a.c -> src1 = b.x
+    //   mulss %xmm2,%xmm1 ; %xmm1 = b.y, %xmm2 = a.s -> src1 = b.y
+    //   subss %xmm1,%xmm0 ; %xmm0 = a.c*b.x          -> src1 = a.c*b.x
+    let x = subss(mulss(b.x, a.c), mulss(b.y, a.s));
+    c2V(x, y)
 }
 
-/// C: `a.x += b.x; a.y += b.y;`
-/// gcc: `addss` with **`b`** as the destination register.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Add(a: c2v, b: c2v) -> c2v {
     let mut a = a;
-    a.x = fp::add(b.x, a.x);
-    a.y = fp::add(b.y, a.y);
+    // addss %xmm1,%xmm0  with %xmm0 = b.x, %xmm1 = a.x  -> src1 = b.x (!)
+    a.x = addss(b.x, a.x);
+    // addss %xmm1,%xmm0  with %xmm0 = b.y, %xmm1 = a.y  -> src1 = b.y (!)
+    a.y = addss(b.y, a.y);
     a
 }
 
@@ -484,7 +334,8 @@ pub unsafe extern "C" fn c22(s: *mut c2Simplex) {
     } else {
         (*s).verts[0].u = u;
         (*s).verts[1].u = v;
-        (*s).div = fp::add(u, v);
+        // movss -0x14(%rbp),%xmm0 (u) ; addss -0x18(%rbp),%xmm0 (v) -> src1 = u
+        (*s).div = addss(u, v);
         (*s).count = 2;
     }
 }
@@ -501,10 +352,11 @@ pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
     let uCA = c2Dot(a, c2Sub(a, c));
     let vCA = c2Dot(c, c2Sub(c, a));
     let area = c2Det2(c2Sub(b, a), c2Sub(c, a));
-    // gcc: `mulss det, area` -- the determinant is the destination.
-    let uABC = fp::mul(c2Det2(b, c), area);
-    let vABC = fp::mul(c2Det2(c, a), area);
-    let wABC = fp::mul(c2Det2(a, b), area);
+    // `mulss %xmm1,%xmm0` with %xmm0 = the c2Det2 return value, %xmm1 = area
+    // -> src1 is the determinant, src2 is `area` (source order).
+    let uABC = mulss(c2Det2(b, c), area);
+    let vABC = mulss(c2Det2(c, a), area);
+    let wABC = mulss(c2Det2(a, b), area);
     if vAB <= 0.0 && uCA <= 0.0 {
         (*s).verts[0].u = 1.0f32;
         (*s).div = 1.0f32;
@@ -522,40 +374,44 @@ pub unsafe extern "C" fn c23(s: *mut c2Simplex) {
     } else if uAB > 0.0 && vAB > 0.0 && wABC <= 0.0 {
         (*s).verts[0].u = uAB;
         (*s).verts[1].u = vAB;
-        (*s).div = fp::add(uAB, vAB);
+        // movss uAB ; addss vAB -> src1 = uAB
+        (*s).div = addss(uAB, vAB);
         (*s).count = 2;
     } else if uBC > 0.0 && vBC > 0.0 && uABC <= 0.0 {
         (*s).verts[0] = (*s).verts[1];
         (*s).verts[1] = (*s).verts[2];
         (*s).verts[0].u = uBC;
         (*s).verts[1].u = vBC;
-        (*s).div = fp::add(uBC, vBC);
+        // movss uBC ; addss vBC -> src1 = uBC
+        (*s).div = addss(uBC, vBC);
         (*s).count = 2;
     } else if uCA > 0.0 && vCA > 0.0 && vABC <= 0.0 {
         (*s).verts[1] = (*s).verts[0];
         (*s).verts[0] = (*s).verts[2];
         (*s).verts[0].u = uCA;
         (*s).verts[1].u = vCA;
-        (*s).div = fp::add(uCA, vCA);
+        // movss uCA ; addss vCA -> src1 = uCA
+        (*s).div = addss(uCA, vCA);
         (*s).count = 2;
     } else {
         (*s).verts[0].u = uABC;
         (*s).verts[1].u = vABC;
         (*s).verts[2].u = wABC;
-        (*s).div = fp::add(fp::add(uABC, vABC), wABC);
+        // movss uABC ; addss vABC ; addss wABC -> left-assoc, src1 = lhs
+        (*s).div = addss(addss(uABC, vABC), wABC);
         (*s).count = 3;
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Neg(a: c2v) -> c2v {
-    c2V(fp::neg(a.x), fp::neg(a.y))
+    c2V(-a.x, -a.y)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Skew(a: c2v) -> c2v {
     let mut b = ZERO_V;
-    b.x = fp::neg(a.y);
+    b.x = -a.y;
     b.y = a.x;
     b
 }
@@ -564,7 +420,7 @@ pub extern "C" fn c2Skew(a: c2v) -> c2v {
 pub extern "C" fn c2CCW90(a: c2v) -> c2v {
     let mut b = ZERO_V;
     b.x = a.y;
-    b.y = fp::neg(a.x);
+    b.y = -a.x;
     b
 }
 
@@ -587,12 +443,7 @@ pub unsafe extern "C" fn c2D(s: *mut c2Simplex) -> c2v {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c_int {
     let mut imax: c_int = 0;
-    // The C loads `verts[0]` *unconditionally*, before it looks at `count`
-    // (line 300 of lib.c), so `c2Support(NULL, 0, d)` faults.  `dmax` is dead
-    // when `count <= 1`, and LLVM happily deletes a plain load in that case --
-    // which would turn a segfault into a quiet `return 0`.  A volatile read
-    // pins the access down so the two libraries fault identically.
-    let mut dmax = c2Dot(ptr::read_volatile(verts), d);
+    let mut dmax = c2Dot(*verts.offset(0), d);
     let mut i: c_int = 1;
     while i < count {
         let dot = c2Dot(*verts.offset(i as isize), d);
@@ -607,38 +458,40 @@ pub unsafe extern "C" fn c2Support(verts: *const c2v, count: c_int, d: c2v) -> c
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) {
-    // gcc: `divss 1.0f, s->div` (the literal is the destination).
-    let den = fp::div(1.0f32, (*s).div);
+    // movss 1.0f,%xmm0 ; divss 0x90(%rax),%xmm0 -> src1 = 1.0f
+    let den = divss(1.0f32, (*s).div);
+    // Every weight is `movss <u>,%xmm0 ; mulss -0x14(%rbp),%xmm0`, i.e.
+    // src1 = the vertex weight `u`, src2 = `den` -- the reverse of how the C
+    // source spells `(den * s->a.u)`.
     match (*s).count {
         1 => {
             *a = (*s).verts[0].sA;
             *b = (*s).verts[0].sB;
         }
         2 => {
-            // gcc: `mulss u, den` -- `u` is the destination.
             *a = c2Add(
-                c2Mulvs((*s).verts[0].sA, fp::mul((*s).verts[0].u, den)),
-                c2Mulvs((*s).verts[1].sA, fp::mul((*s).verts[1].u, den)),
+                c2Mulvs((*s).verts[0].sA, mulss((*s).verts[0].u, den)),
+                c2Mulvs((*s).verts[1].sA, mulss((*s).verts[1].u, den)),
             );
             *b = c2Add(
-                c2Mulvs((*s).verts[0].sB, fp::mul((*s).verts[0].u, den)),
-                c2Mulvs((*s).verts[1].sB, fp::mul((*s).verts[1].u, den)),
+                c2Mulvs((*s).verts[0].sB, mulss((*s).verts[0].u, den)),
+                c2Mulvs((*s).verts[1].sB, mulss((*s).verts[1].u, den)),
             );
         }
         3 => {
             *a = c2Add(
                 c2Add(
-                    c2Mulvs((*s).verts[0].sA, fp::mul((*s).verts[0].u, den)),
-                    c2Mulvs((*s).verts[1].sA, fp::mul((*s).verts[1].u, den)),
+                    c2Mulvs((*s).verts[0].sA, mulss((*s).verts[0].u, den)),
+                    c2Mulvs((*s).verts[1].sA, mulss((*s).verts[1].u, den)),
                 ),
-                c2Mulvs((*s).verts[2].sA, fp::mul((*s).verts[2].u, den)),
+                c2Mulvs((*s).verts[2].sA, mulss((*s).verts[2].u, den)),
             );
             *b = c2Add(
                 c2Add(
-                    c2Mulvs((*s).verts[0].sB, fp::mul((*s).verts[0].u, den)),
-                    c2Mulvs((*s).verts[1].sB, fp::mul((*s).verts[1].u, den)),
+                    c2Mulvs((*s).verts[0].sB, mulss((*s).verts[0].u, den)),
+                    c2Mulvs((*s).verts[1].sB, mulss((*s).verts[1].u, den)),
                 ),
-                c2Mulvs((*s).verts[2].sB, fp::mul((*s).verts[2].u, den)),
+                c2Mulvs((*s).verts[2].sB, mulss((*s).verts[2].u, den)),
             );
         }
         _ => {
@@ -650,7 +503,8 @@ pub unsafe extern "C" fn c2Witness(s: *mut c2Simplex, a: *mut c2v, b: *mut c2v) 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn c2Div(a: c2v, b: f32) -> c2v {
-    c2Mulvs(a, fp::div(1.0f32, b))
+    // movss 1.0f,%xmm0 ; divss -0xc(%rbp),%xmm0 -> src1 = 1.0f
+    c2Mulvs(a, divss(1.0f32, b))
 }
 
 #[unsafe(no_mangle)]
@@ -660,28 +514,33 @@ pub extern "C" fn c2Norm(a: c2v) -> c2v {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn c2L(s: *mut c2Simplex) -> c2v {
-    let den = fp::div(1.0f32, (*s).div);
+    // movss 1.0f,%xmm0 ; divss 0x90(%rax),%xmm0 -> src1 = 1.0f
+    let den = divss(1.0f32, (*s).div);
+    // `movss <u>,%xmm0 ; mulss -0x14(%rbp),%xmm0` -> src1 = u, src2 = den.
     match (*s).count {
         1 => (*s).verts[0].p,
         2 => c2Add(
-            c2Mulvs((*s).verts[0].p, fp::mul((*s).verts[0].u, den)),
-            c2Mulvs((*s).verts[1].p, fp::mul((*s).verts[1].u, den)),
+            c2Mulvs((*s).verts[0].p, mulss((*s).verts[0].u, den)),
+            c2Mulvs((*s).verts[1].p, mulss((*s).verts[1].u, den)),
         ),
         _ => c2V(0.0, 0.0),
     }
 }
 
-/// C: `c2V(a.c * b.x + a.s * b.y, -a.s * b.x + a.c * b.y)`
-/// gcc: x = `addss (a.c*b.x), (b.y*a.s)`,
-///      y = `addss ((-a.s)*b.x), (b.y*a.c)` with the `xorps` sign flip applied
-///      to `a.s` *before* the multiply -- that ordering is observable through
-///      NaN sign bits, so it must not be folded into a subtraction.
 #[unsafe(no_mangle)]
 pub extern "C" fn c2MulrvT(a: c2r, b: c2v) -> c2v {
-    c2V(
-        fp::add(fp::mul(a.c, b.x), fp::mul(b.y, a.s)),
-        fp::add(fp::mul(fp::neg(a.s), b.x), fp::mul(b.y, a.c)),
-    )
+    // gcc -O0 evaluates the 2nd c2V argument first, negating `a.s` with
+    // `xorps` against the sign mask *before* the multiply:
+    //   xorps %xmm0,%xmm1 ; %xmm1 = -a.s
+    //   mulss %xmm0,%xmm1 ; %xmm1 = -a.s, %xmm0 = b.x -> src1 = -a.s
+    //   mulss %xmm2,%xmm0 ; %xmm0 = b.y, %xmm2 = a.c  -> src1 = b.y
+    //   addss %xmm0,%xmm3 ; %xmm3 = (-a.s)*b.x        -> src1 = (-a.s)*b.x
+    let y = addss(mulss(fneg(a.s), b.x), mulss(b.y, a.c));
+    //   mulss %xmm0,%xmm1 ; %xmm1 = a.c, %xmm0 = b.x  -> src1 = a.c
+    //   mulss %xmm2,%xmm0 ; %xmm0 = b.y, %xmm2 = a.s  -> src1 = b.y
+    //   addss %xmm0,%xmm1 ; %xmm1 = a.c*b.x           -> src1 = a.c*b.x
+    let x = addss(mulss(a.c, b.x), mulss(b.y, a.s));
+    c2V(x, y)
 }
 
 // ---------------------------------------------------------------------------
@@ -719,11 +578,6 @@ pub unsafe extern "C" fn c2GJK(
         bx = *bx_ptr;
     }
 
-    // `c2Proxy pA; c2Proxy pB;` are uninitialised automatics in the C.  For
-    // every in-range `C2_TYPE` `c2MakeProxy` writes `radius`, `count` and all
-    // the vertices the code goes on to read, so zero-filling here is
-    // behaviourally identical.  (For an out-of-range type the C reads
-    // indeterminate stack -- undefined behaviour that cannot be reproduced.)
     let mut pA = c2Proxy {
         radius: 0.0,
         count: 0,
@@ -770,8 +624,8 @@ pub unsafe extern "C" fn c2GJK(
             let metric = c2GJKSimplexMetric(s);
             let min_metric = if metric < metric_old { metric } else { metric_old };
             let max_metric = if metric > metric_old { metric } else { metric_old };
-            // gcc turns `max_metric * 2.0f` into `addss m, m`.
-            if !(min_metric < fp::add(max_metric, max_metric) && metric < -1.0e8f32) {
+            // gcc emits `addss %xmm0,%xmm0` for `max_metric * 2.0f`.
+            if !(min_metric < addss(max_metric, max_metric) && metric < -1.0e8f32) {
                 cache_was_read = 1;
             }
         }
@@ -808,7 +662,6 @@ pub unsafe extern "C" fn c2GJK(
             1 => {}
             2 => c22(s),
             3 => c23(s),
-            // The C switch has no `default:` label.
             _ => {}
         }
 
@@ -825,7 +678,7 @@ pub unsafe extern "C" fn c2GJK(
         d0 = d1;
 
         let d = c2D(s);
-        if c2Dot(d, d) < C2_FLT_EPSILON_SQ {
+        if c2Dot(d, d) < C2_FLT_EPSILON * C2_FLT_EPSILON {
             break;
         }
 
@@ -867,9 +720,10 @@ pub unsafe extern "C" fn c2GJK(
     } else if use_radius != 0 {
         let rA = pA.radius;
         let rB = pB.radius;
-        // gcc: `addss rA, rB` (rA is the destination).
-        if dist > fp::add(rA, rB) && dist > C2_FLT_EPSILON {
-            dist = fp::sub(dist, fp::add(rA, rB));
+        // `movss rA,%xmm0 ; movaps %xmm0,%xmm1 ; addss rB,%xmm1` -> src1 = rA
+        if dist > addss(rA, rB) && dist > C2_FLT_EPSILON {
+            // `subss %xmm1,%xmm0` with %xmm0 = dist -> src1 = dist
+            dist = subss(dist, addss(rA, rB));
             let n = c2Norm(c2Sub(b, a));
             a = c2Add(a, c2Mulvs(n, rA));
             b = c2Sub(b, c2Mulvs(n, rB));
@@ -1034,4 +888,99 @@ pub unsafe extern "C" fn gjk_cache(
 
     // The C never dereferences `a9` / `b9`; neither do we.
     let _ = (a9, b9);
+}
+
+// ---------------------------------------------------------------------------
+// math
+// ---------------------------------------------------------------------------
+
+/// Single-precision square root, matching libm's `sqrtf` bit for bit
+/// (`sqrtss` on x86-64, correctly rounded per IEEE-754).
+#[inline]
+fn sqrtf(x: f32) -> f32 {
+    x.sqrt()
+}
+
+// ---------------------------------------------------------------------------
+// SSE scalar-op emulation with explicit `src1` selection
+// ---------------------------------------------------------------------------
+//
+// The C library is compiled by CMake with no `CMAKE_BUILD_TYPE`, i.e. `gcc
+// -O0`, and every float expression becomes a literal `ADDSS`/`SUBSS`/`MULSS`/
+// `DIVSS`.  Those instructions are *not* symmetric in their NaN handling:
+//
+//     if src1 is NaN -> result = quiet(src1)      (src2 ignored entirely)
+//     else if src2 is NaN -> result = quiet(src2)
+//
+// so when BOTH operands are NaN the surviving payload is decided purely by
+// which operand gcc happened to put in the destination register.  For the
+// commutative operations gcc's register allocator does not always pick the
+// left-hand source: e.g. in `c2Add` it emits `addss %xmm1,%xmm0` with
+// `%xmm0 = b.x`, so `a.x + b.x` propagates *b*'s payload.
+//
+// LLVM, by contrast, freely commutes `fadd`/`fmul`, so writing `a + b` in
+// Rust gives no control over which payload survives.  The helpers below pin
+// the choice down explicitly and portably: `src1` is always the operand whose
+// payload wins.  For non-NaN operands they are plain IEEE-754 ops, so nothing
+// else changes.  Each call site below is annotated with the exact instruction
+// from `objdump -d` on the C `.so` that it mirrors.
+
+#[inline(always)]
+fn quiet(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() | 0x0040_0000)
+}
+
+/// `ADDSS src1, src2` — `src1`'s NaN payload wins.
+#[inline(always)]
+fn addss(src1: f32, src2: f32) -> f32 {
+    if src1.is_nan() {
+        quiet(src1)
+    } else if src2.is_nan() {
+        quiet(src2)
+    } else {
+        src1 + src2
+    }
+}
+
+/// `SUBSS src1, src2` — computes `src1 - src2`; `src1`'s NaN payload wins.
+#[inline(always)]
+fn subss(src1: f32, src2: f32) -> f32 {
+    if src1.is_nan() {
+        quiet(src1)
+    } else if src2.is_nan() {
+        quiet(src2)
+    } else {
+        src1 - src2
+    }
+}
+
+/// `MULSS src1, src2` — `src1`'s NaN payload wins.
+#[inline(always)]
+fn mulss(src1: f32, src2: f32) -> f32 {
+    if src1.is_nan() {
+        quiet(src1)
+    } else if src2.is_nan() {
+        quiet(src2)
+    } else {
+        src1 * src2
+    }
+}
+
+/// `DIVSS src1, src2` — computes `src1 / src2`; `src1`'s NaN payload wins.
+#[inline(always)]
+fn divss(src1: f32, src2: f32) -> f32 {
+    if src1.is_nan() {
+        quiet(src1)
+    } else if src2.is_nan() {
+        quiet(src2)
+    } else {
+        src1 / src2
+    }
+}
+
+/// Unary negation as gcc emits it: `XORPS` against the sign mask, which flips
+/// the sign bit of a NaN without quieting it.
+#[inline(always)]
+fn fneg(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() ^ 0x8000_0000)
 }

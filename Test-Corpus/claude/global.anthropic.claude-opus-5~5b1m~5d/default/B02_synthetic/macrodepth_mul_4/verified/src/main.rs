@@ -13,7 +13,13 @@ use std::ffi::c_int;
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 
-use mdconfig::{INIT, OP_NAME, REPEAT};
+use mdconfig::{INIT, OP_NAME_C, REPEAT};
+
+/* mdmain.c uses C stdio; call the same libc functions so buffering, flush
+ * order and formatting are identical to the C driver's. */
+extern "C" {
+    fn printf(fmt: *const std::ffi::c_char, ...) -> c_int;
+}
 
 /// glibc `atoi(s)` == `(int)strtol(s, NULL, 10)`.
 fn atoi(bytes: &[u8]) -> c_int {
@@ -59,13 +65,15 @@ fn main() {
     let argc = args.len();
 
     if argc < 3 {
-        let prog = args
-            .first()
-            .map(|s| String::from_utf8_lossy(s.as_bytes()).into_owned())
-            .unwrap_or_default();
+        // `fprintf(stderr, "usage: %s A B\n", argv[0])`.  stderr is unbuffered
+        // in C stdio and in Rust, and argv[0] is written as raw bytes (it need
+        // not be valid UTF-8).
+        let prog: &[u8] = args.first().map(|s| s.as_bytes()).unwrap_or(b"");
         let stderr = std::io::stderr();
         let mut lock = stderr.lock();
-        let _ = write!(lock, "usage: {} A B\n", prog);
+        let _ = lock.write_all(b"usage: ");
+        let _ = lock.write_all(prog);
+        let _ = lock.write_all(b" A B\n");
         let _ = lock.flush();
         std::process::exit(2);
     }
@@ -80,7 +88,7 @@ fn main() {
     let x1 = mdcore::helper_call(a, b);
     let x2 = mdcore::helper_ptr(a, b);
     let x3 = mdcore::use_generated(REPEAT);
-    let g = (mdcore::g_op())(a, b);
+    let g = (mdcore::G_OP)(a, b);
 
     let summary = r_call
         .wrapping_add(acc)
@@ -89,14 +97,16 @@ fn main() {
         .wrapping_add(x3)
         .wrapping_add(g);
 
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    let _ = write!(
-        lock,
-        "op={} call={} acc={} g.call={}\n",
-        OP_NAME, r_call, acc, g
-    );
-    let _ = write!(lock, "summary={}\n", summary);
-    let _ = lock.flush();
+    unsafe {
+        printf(
+            c"op=%s call=%d acc=%d g.call=%d\n".as_ptr(),
+            OP_NAME_C.as_ptr() as *const std::ffi::c_char,
+            r_call as c_int,
+            acc as c_int,
+            g as c_int,
+        );
+        printf(c"summary=%d\n".as_ptr(), summary as c_int);
+    }
+    // `return 0` from main: libc `exit()` flushes all C stdio streams.
     std::process::exit(0);
 }

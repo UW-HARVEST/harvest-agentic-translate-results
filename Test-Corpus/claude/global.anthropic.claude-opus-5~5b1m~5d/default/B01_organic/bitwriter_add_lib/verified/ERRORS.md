@@ -1,54 +1,48 @@
 # ERRORS.md — Phase C error-surface table
 
-Derived mechanically from `c_src/src/lib.c`. Exhaustive greps over the whole C
-source tree:
+Mechanically derived from `c_src/src/lib.c` (24 lines) and `c_src/include/lib.h`.
+
+## Exhaustive grep of every rejection / error construct in the C source
 
 ```
-grep -n 'return'                          -> line 23 only: `return 0;`
-grep -n -E 'assert|NULL|ERROR|errno|if \(|switch|#ifdef|#if '  -> NO MATCHES
-grep -n -E 'while|\?|else'                -> line 11 (while), line 13 (ternary)
+$ grep -n 'return\|assert\|NULL\|RETURN_ERROR\|ERROR\|if\|while\|<\|>\|==\|!=' c_src/src/lib.c
+11:    while ((bw->bits + bits >= (8 * sizeof(tflac_uint))) && i < 100)   # loop guard
+13:    b = b > bits ? bits : b;                                           # clamp, not a rejection
+23:    return 0;                                                          # the ONLY return
 ```
 
-**Key finding — the C function has NO error surface.** There is not one
-error-return macro, not one `return -1`, not one `return NULL`, no error enum, no
-`assert`, no null check, no range check, and no min/max constant. `bitwriter_add`
-has a single exit, `return 0`, which is unconditional. The local `int r;` on line 7
-is declared and never assigned or returned.
+Findings:
 
-Consequently the differential obligation on the error surface is the *inverse* of
-the usual one: for every input a normal API would reject, the C **accepts** it,
-executes C-undefined-behaviour shifts / unsigned wraparound, and still returns `0`.
-The Rust must reproduce the same accepted-and-mangled state and the same `0`.
-Every row below asserts *both* the return value and the full post-call struct.
+* `return` statements in the whole library: **1** (`return 0`).
+* `assert` / `NULL` checks / `RETURN_ERROR` macros / error enums / range
+  validation of `bits` / capacity checks against `bw->len` / `bw->pos` /
+  `bw->buffer`: **0** — the C performs **no input validation at all**.
+* Therefore `bitwriter_add` has an *unconditional* success result and the
+  "error surface" consists solely of implicit / UB-adjacent conditions whose
+  observable behaviour still has to match byte-for-byte.
 
-The reference C is compiled by `CMakeLists.txt` with no `CMAKE_BUILD_TYPE`, i.e.
-`-O0`. The emitted code (verified via `objdump -d`) uses `shlq %cl` / `shrq %cl`
-with 64-bit operands, so every out-of-range shift count is reduced **mod 64** by
-the hardware, and every `unsigned int` expression wraps **mod 2^32**. That is the
-exact contract the Rust reproduces with `wrapping_shl` / `wrapping_shr` /
-`wrapping_add` / `wrapping_sub`.
+## Error-surface table
 
-## Error / rejection table
+| # | function | trigger (exact invalid input/condition) | expected C result | [x] |
+|---|----------|------------------------------------------|-------------------|-----|
+| 1 | `bitwriter_add` | any well-formed call at all (no validation exists) | returns `0`; never a non-zero code | [x] |
+| 2 | `bitwriter_add` | `bits == 0` → `val <<= (64 - 0)` = shift-by-64, C UB | compiled code emits `shlq %cl` → count masked to `& 63` = 0, so `val` unchanged; returns `0` | [x] |
+| 3 | `bitwriter_add` | `bits > 64` (e.g. 65, 100, 0xFFFF_FFFF) → `64 - bits` underflows `tflac_u32` | `64 - bits` wraps mod 2^32, shift count masked `& 63`; loop runs and clamps `b` to `bits`; returns `0` | [x] |
+| 4 | `bitwriter_add` | `bits == 64` → `val <<= 0`, `bw->bits + 64 >= 64` always true | enters loop; returns `0` | [x] |
+| 5 | `bitwriter_add` | `bw->bits` already `>= 64` on entry → `val >> bw->bits` is shift-by->=64, C UB | `shr %cl` masks count `& 63`; `bw->bits` keeps growing with wrapping `u32` add; returns `0` | [x] |
+| 6 | `bitwriter_add` | `bw->bits == 63` → `b = 64 - 63 - 1 = 0`, so `b` clamps to `0` and `bits` never decreases | loop spins until the `i < 100` guard stops it at exactly 100 iterations; returns `0` | [x] |
+| 7 | `bitwriter_add` | `bw->bits > 63` → `64 - bw->bits - 1` underflows `tflac_u32` to a huge value, then clamped by `b > bits ? bits : b` | `b = bits`, one iteration consumes all bits; returns `0` | [x] |
+| 8 | `bitwriter_add` | `bw->bits + bits` overflows `tflac_u32` (e.g. `bw->bits = 0xFFFF_FFFF`, `bits = 1` → `0`) | wraps to `0`, `0 >= 64` false, loop skipped; returns `0` | [x] |
+| 9 | `bitwriter_add` | `bw->tot += bits` overflows `tflac_u32` | wraps mod 2^32; returns `0` | [x] |
+| 10 | `bitwriter_add` | `bw->buffer` is `NULL` and/or `bw->len == 0` / `bw->pos > bw->len` | never dereferenced by this function → no crash, no error; `pos`/`len`/`buffer` left untouched; returns `0` | [x] |
+| 11 | `bitwriter_add` | `bw == NULL` | C dereferences unconditionally → SIGSEGV. Rust `&mut *bw` likewise. **Not differentially tested** (a crash would abort the harness); documented as identical UB. | [n/a] |
+| 12 | `bitwriter_add` | out-of-range "enum" value passed across FFI | **no enum exists** in the public header (`bits` is a plain `tflac_u32`, every one of the 2^32 values is accepted). Covered by rows 2–4 and the exhaustive `bits` sweep. | [x] |
 
-| #  | function | trigger (the exact invalid input/condition) | expected C result | [x] |
-|----|----------|---------------------------------------------|-------------------|-----|
-| E1 | `bitwriter_add` | `bw == NULL` — pointer dereferenced at line 9 (`bw->tot += bits`) with no null check | no error code: process fatal `SIGSEGV` (signal 11). Rust must also fault, same signal, not return | [x] |
-| E2 | `bitwriter_add` | `bits == 0` → line 8 shift count `64 - 0 == 64`, out of range for a 64-bit shift (C UB) | accepted, returns `0`; `%cl`-masked count `64 & 63 == 0` so `val` is left unshifted | [x] |
-| E3 | `bitwriter_add` | `bits == 64` — boundary, exactly the operand width; `64 - 64 == 0` | accepted, returns `0`; shift by 0 | [x] |
-| E4 | `bitwriter_add` | `bits == 65` — one step past the maximum meaningful width; `64 - 65` wraps to `0xFFFFFFFF`, shift count mod 64 == 63 | accepted, returns `0`, no rejection | [x] |
-| E5 | `bitwriter_add` | `bits` huge / oversized length (`0x80000000`, `u32::MAX`) — no upper-bound check exists | accepted, returns `0`; wrapped shift + wrapped `bw->tot` | [x] |
-| E6 | `bitwriter_add` | `bw->bits == 64` (invalid internal state ≥ operand width) → line 12 `64 - 64 - 1` wraps to `0xFFFFFFFF`, and line 14/21 `val >> bw->bits` is an out-of-range shift | accepted, returns `0`; shift counts masked mod 64 | [x] |
-| E7 | `bitwriter_add` | `bw->bits > 64` up to `u32::MAX` (grossly invalid internal state), never validated | accepted, returns `0` | [x] |
-| E8 | `bitwriter_add` | `bw->bits == 63` with `bits >= 1` → line 12/13 make `b == 0`, so the loop makes **no progress**. This is the one and only defensive construct in the C: the `i < 100` guard on line 11 | no error code: loop bails out after exactly 100 iterations and returns `0`. `bw->val` has had `mask` applied 100× and `bw->bits` is unchanged | [x] |
-| E9 | `bitwriter_add` | `bits == 0` while `bw->bits >= 64` → loop entered (`bits+bw->bits >= 64`) but `b = min(b, 0) == 0`, again no progress | returns `0` after the 100-iteration cap | [x] |
-| E10 | `bitwriter_add` | `bw->bits + bits` overflows `unsigned int` (e.g. `bw->bits = 0xFFFFFFFF`, `bits = 1` → sum `0`) — line 11 compares the **wrapped 32-bit** sum against 64 | accepted, returns `0`; loop is **not** entered at all despite both operands being huge | [x] |
-| E11 | `bitwriter_add` | `bw->tot` overflow: `bw->tot = 0xFFFFFFFF`, `bits >= 1` → line 9 wraps mod 2^32, unchecked | accepted, returns `0`, `tot` wraps silently | [x] |
-| E12 | `bitwriter_add` | out-of-range "enum"-style ints across FFI: `bits` is the only scalar selector and is `tflac_u32`; every one of the 2^32 values is a legal C input (no variant set). Sampled at `0,1,63,64,65,127,128,255,256,1000,0x7FFFFFFF,0x80000000,0xFFFFFFFE,0xFFFFFFFF` plus randomized | all accepted, all return `0` | [x] |
-| E13 | `bitwriter_add` | fields the C never reads or writes (`pos`, `len`, `buffer`) set to garbage / dangling / non-null junk pointers | ignored entirely; must be byte-identical after the call, and must not be dereferenced | [x] |
+## Notes on non-existent error paths
 
-## Notes on E1
-
-`bw == NULL` cannot be tested in-process without killing the test runner, so the
-Phase C test `fork()`s and compares the child's termination signal for the C `.so`
-and the Rust `.so`. Both must die by the same signal (`SIGSEGV`) rather than
-returning a value.
+There is no `tflac_bitwriter_init`, no `flush`, no error enum, no return-code
+constant other than the literal `0`, and no bounds check involving `pos`,
+`len`, or `buffer` anywhere in `c_src/`. Any test asserting a non-zero return
+would be asserting behaviour the C does not have; instead every error-path test
+below asserts `rc_c == rc_rust == 0` **and** full struct equality, which is the
+strictest observable contract this API offers.

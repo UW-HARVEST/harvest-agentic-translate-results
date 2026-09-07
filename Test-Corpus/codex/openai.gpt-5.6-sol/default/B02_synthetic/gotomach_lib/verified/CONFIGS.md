@@ -1,52 +1,58 @@
 # Configuration Surface
 
-Mechanically derived from the public dynamic symbols, the `mode` switch, the
-iteration loop shapes, the strict `value < threshold` branch, and the
-`UINT16_MAX` count break in `../c_src/src/lib.c`. The two formally unused
-arguments of each low-level operation are varied between boundary integers and
-null/non-null context pointers even though C does not branch on them.
+The axes below come directly from the public function signatures and branches
+in `src/lib.c`:
 
-Mode classes are `0` (add 10), `1` (double), `2` (triple), and `other`
-(default/add 10). "Rejected" includes equality because the comparison is
-strict. Each non-boundary row uses many fixed-seed randomized inputs.
+- operation entry point: add 10, double, or triple;
+- ignored operation arguments: arbitrary `unused_param`, and null/non-null
+  opaque `unused_context`;
+- `gotomach` mode: `0`, `1`, `2`, or any other integer (warning + mode `0`);
+- iteration shape: empty, one, many, or `UINT16_MAX`;
+- threshold branch: no generated values selected, some selected, or all
+  selected;
+- valid seed shape: minimum (`0`), interior values, and maximum
+  (`UINT16_MAX`);
+- count warning: selecting all `UINT16_MAX` generated values reaches the
+  `state->count >= UINT16_MAX` break.
+
+Rows use randomized valid seeds and thresholds where applicable, always adding
+the valid seed boundaries. “Invalid/default mode” includes negative values,
+`3`, and extreme `int` values.
 
 | # | entry point(s) | configuration (options set + input shape) | [ ] |
 |---|----------------|--------------------------------------------|-----|
-| 1 | `process_value` | Safe full-width negative/zero/positive values; ignored integer at boundaries; context null/non-null | [x] |
-| 2 | `double_value` | Safe negative/zero/positive values; ignored integer at boundaries; context null/non-null | [x] |
-| 3 | `triple_value` | Safe negative/zero/positive values; ignored integer at boundaries; context null/non-null | [x] |
-| 4 | `gotomach` | mode 0; zero iterations; valid seed boundaries/interior; threshold unused | [x] |
-| 5 | `gotomach` | mode 1; zero iterations; valid seed boundaries/interior; threshold unused | [x] |
-| 6 | `gotomach` | mode 2; zero iterations; valid seed boundaries/interior; threshold unused | [x] |
-| 7 | `gotomach` | other mode; zero iterations; valid seed boundaries/interior; threshold unused | [x] |
-| 8 | `gotomach` | mode 0; one iteration; generated value rejected (including equality) | [x] |
-| 9 | `gotomach` | mode 0; one iteration; generated value accepted | [x] |
-| 10 | `gotomach` | mode 1; one iteration; generated value rejected (including equality) | [x] |
-| 11 | `gotomach` | mode 1; one iteration; generated value accepted | [x] |
-| 12 | `gotomach` | mode 2; one iteration; generated value rejected (including equality) | [x] |
-| 13 | `gotomach` | mode 2; one iteration; generated value accepted | [x] |
-| 14 | `gotomach` | other mode; one iteration; generated value rejected (including equality) | [x] |
-| 15 | `gotomach` | other mode; one iteration; generated value accepted | [x] |
-| 16 | `gotomach` | mode 0; many iterations; no generated values accepted | [x] |
-| 17 | `gotomach` | mode 0; many iterations; mixed rejected and accepted values | [x] |
-| 18 | `gotomach` | mode 0; many iterations; all generated values accepted | [x] |
-| 19 | `gotomach` | mode 1; many iterations; no generated values accepted | [x] |
-| 20 | `gotomach` | mode 1; many iterations; mixed rejected and accepted values | [x] |
-| 21 | `gotomach` | mode 1; many iterations; all generated values accepted | [x] |
-| 22 | `gotomach` | mode 2; many iterations; no generated values accepted | [x] |
-| 23 | `gotomach` | mode 2; many iterations; mixed rejected and accepted values | [x] |
-| 24 | `gotomach` | mode 2; many iterations; all generated values accepted | [x] |
-| 25 | `gotomach` | other mode; many iterations; no generated values accepted | [x] |
-| 26 | `gotomach` | other mode; many iterations; mixed rejected and accepted values | [x] |
-| 27 | `gotomach` | other mode; many iterations; all generated values accepted | [x] |
-| 28 | `gotomach` | mode 0; 65535 iterations; no values accepted; count break not reached | [x] |
-| 29 | `gotomach` | mode 0; 65535 iterations; all values accepted; count reaches `UINT16_MAX` | [x] |
-| 30 | `gotomach` | mode 1; 65535 iterations; no values accepted; count break not reached | [x] |
-| 31 | `gotomach` | mode 1; 65535 iterations; all values accepted; count reaches `UINT16_MAX` | [x] |
-| 32 | `gotomach` | mode 2; 65535 iterations; no values accepted; count break not reached | [x] |
-| 33 | `gotomach` | mode 2; 65535 iterations; all values accepted; count reaches `UINT16_MAX` | [x] |
-| 34 | `gotomach` | other mode; 65535 iterations; no values accepted; count break not reached | [x] |
-| 35 | `gotomach` | other mode; 65535 iterations; all values accepted; count reaches `UINT16_MAX` | [x] |
+| C01 | `process_value` | randomized non-overflowing `int` values; arbitrary ignored integer; null and non-null context | [x] |
+| C02 | `double_value` | randomized values in `INT_MIN/2..INT_MAX/2`; arbitrary ignored integer; null and non-null context | [x] |
+| C03 | `triple_value` | randomized values in `ceil(INT_MIN/3)..floor(INT_MAX/3)`; arbitrary ignored integer; null and non-null context | [x] |
+| C04 | `gotomach` | mode 0; 0 iterations; valid seed min/interior/max; threshold arbitrary | [x] |
+| C05 | `gotomach` | mode 1; 0 iterations; valid seed min/interior/max; threshold arbitrary | [x] |
+| C06 | `gotomach` | mode 2; 0 iterations; valid seed min/interior/max; threshold arbitrary | [x] |
+| C07 | `gotomach` | invalid/default mode; 0 iterations; valid seed min/interior/max; threshold arbitrary; warning path | [x] |
+| C08 | `gotomach` | mode 0; 1 iteration; threshold selects none; valid seed min/interior/max | [x] |
+| C09 | `gotomach` | mode 0; 1 iteration; threshold selects all; valid seed min/interior/max | [x] |
+| C10 | `gotomach` | mode 1; 1 iteration; threshold selects none; valid seed min/interior/max | [x] |
+| C11 | `gotomach` | mode 1; 1 iteration; threshold selects all; valid seed min/interior/max | [x] |
+| C12 | `gotomach` | mode 2; 1 iteration; threshold selects none; valid seed min/interior/max | [x] |
+| C13 | `gotomach` | mode 2; 1 iteration; threshold selects all; valid seed min/interior/max | [x] |
+| C14 | `gotomach` | invalid/default mode; 1 iteration; threshold selects none; valid seed min/interior/max; warning path | [x] |
+| C15 | `gotomach` | invalid/default mode; 1 iteration; threshold selects all; valid seed min/interior/max; warning path | [x] |
+| C16 | `gotomach` | mode 0; many iterations; threshold selects none | [x] |
+| C17 | `gotomach` | mode 0; many iterations; threshold selects some | [x] |
+| C18 | `gotomach` | mode 0; many iterations; threshold selects all | [x] |
+| C19 | `gotomach` | mode 1; many iterations; threshold selects none | [x] |
+| C20 | `gotomach` | mode 1; many iterations; threshold selects some | [x] |
+| C21 | `gotomach` | mode 1; many iterations; threshold selects all | [x] |
+| C22 | `gotomach` | mode 2; many iterations; threshold selects none | [x] |
+| C23 | `gotomach` | mode 2; many iterations; threshold selects some | [x] |
+| C24 | `gotomach` | mode 2; many iterations; threshold selects all | [x] |
+| C25 | `gotomach` | invalid/default mode; many iterations; threshold selects none; warning path | [x] |
+| C26 | `gotomach` | invalid/default mode; many iterations; threshold selects some; warning path | [x] |
+| C27 | `gotomach` | invalid/default mode; many iterations; threshold selects all; warning path | [x] |
+| C28 | `gotomach` | mode 0; `UINT16_MAX` iterations; all values selected; maximum-count warning/break | [x] |
+| C29 | `gotomach` | mode 1; `UINT16_MAX` iterations; all values selected; maximum-count warning/break | [x] |
+| C30 | `gotomach` | mode 2; `UINT16_MAX` iterations; all values selected; maximum-count warning/break | [x] |
+| C31 | `gotomach` | invalid/default mode; `UINT16_MAX` iterations; all values selected; invalid-mode and maximum-count warnings | [x] |
 
-Compile-time Cargo feature combinations: one (`default`; no features are
-declared in `Cargo.toml`).
+Cargo feature surface: `Cargo.toml` declares no features, so the complete
+feature set is the empty set. Verification is run both normally and with
+`--no-default-features`; both select that same empty feature combination.

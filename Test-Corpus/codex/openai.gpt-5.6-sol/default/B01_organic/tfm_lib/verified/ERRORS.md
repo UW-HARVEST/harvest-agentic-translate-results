@@ -1,25 +1,27 @@
-# Error Surface
+# Error surface
 
-Mechanical search covered `c_src/src/lib.c` and `c_src/include/lib.h` for
-error-return macros/statements, `assert`, null checks, explicit range checks,
-error enums, and min/max constants.
+Mechanical searches covered `c_src/src/lib.c` and `c_src/include/lib.h` for
+error-return statements/macros, assertions, null checks, explicit range checks,
+enums, and min/max constants.
 
-| # | function | trigger (the exact invalid input/condition) | expected C result | [ ] |
-|---|----------|---------------------------------------------|-------------------|-----|
+The C implementation has **no explicit rejection paths**: it returns `void`,
+contains no error code or sentinel, and performs no validation.
 
-The C source contains no explicit rejection or error path. `tfm` returns
-`void`; when `count <= 0`, it performs no pointer access and leaves the
-destination unchanged. Pointer/length combinations that do not designate the
-required accessible storage when `count > 0` invoke undefined C behavior and
-therefore have no C rejection result to compare.
+| # | function | trigger (the exact invalid input/condition) | expected C result | Test |
+|---|----------|----------------------------------------------|-------------------|------|
 
-## Generic Boundary Applicability
+## Mandatory generic FFI boundaries
 
-| boundary | coverage |
-|----------|----------|
-| Null pointers | Covered with zero and negative counts, the combinations for which C does not dereference them |
-| Zero length | Covered |
-| Large length | Covered with 16,384 triples and correctly sized storage |
-| One past a documented range | Not applicable: the API documents no numeric range |
-| Out-of-range enum | Not applicable: the API has no enum parameter |
-| Positive count with null/short storage | Not comparable: C behavior is undefined rather than an error result |
+These are boundary cases required by Phase C even though they are not explicit
+C rejection branches.
+
+| # | function | boundary | expected C behavior | Test |
+|---|----------|----------|---------------------|------|
+| B1 | `tfm` | `count == 0`, including null `dest` and `src` | returns normally without dereferencing either pointer | [x] |
+| B2 | `tfm` | `count < 0`, including `INT_MIN` and null pointers | returns normally without dereferencing either pointer | [x] |
+| B3 | `tfm` | `count == 1`, null `dest`, non-null `src` | undefined behavior; compare isolated-process termination behavior | [x] |
+| B4 | `tfm` | `count == 1`, non-null `dest`, null `src` | undefined behavior; compare isolated-process termination behavior | [x] |
+| B5 | `tfm` | oversized positive count with storage for only one item | undefined behavior; compare isolated-process termination behavior with guarded pages | [x] |
+
+There are no enum parameters, documented numeric option ranges, error enums,
+or feature-specific error paths.

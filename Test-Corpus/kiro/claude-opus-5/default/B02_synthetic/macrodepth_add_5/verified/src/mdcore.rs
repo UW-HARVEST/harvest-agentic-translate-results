@@ -69,30 +69,29 @@ fn accum(n: c_int) -> c_int {
 // ---------------------------------------------------------------------------
 
 /// Storage backing `G_OP_NAME`, standing in for the string literal that
-/// `STR(OP)` expands to.
+/// `STR(OP)` expands to. Immutable, so it lands in `.rodata` exactly like C's
+/// string literal -- writing *through* `G_OP_NAME` faults on both sides.
 static OP_NAME_STORAGE: [u8; 4] = *OP_NAME_C;
-
-/// `const char *` in a `static`: a bare raw pointer is not `Sync`, so it is
-/// wrapped in a `repr(transparent)` newtype. The exported symbol is still a
-/// single pointer-sized slot holding the address of the name, identical to what
-/// the C compiler emits for `const char *G_OP_NAME = STR(OP);`.
-#[repr(transparent)]
-pub struct CStrPtr(pub *const c_char);
-
-// SAFETY: the pointer targets `OP_NAME_STORAGE`, an immutable `static` that
-// lives for the whole program and is never written, so sharing it across threads
-// is sound. C exposes the same global with no synchronization at all.
-unsafe impl Sync for CStrPtr {}
 
 /// `int (*G_OP)(int,int) = OP_FN(OP);`
 ///
-/// Mutable to match the non-`const` C global; nothing in the program writes it.
+/// `static mut` to match the non-`const` C global: it must land in a *writable*
+/// section so an external caller can overwrite it, as it can in C. Nothing in
+/// this library reads it (`helper_call`/`helper_ptr` use `OP_FN(OP)` directly),
+/// so overwriting it changes no internal behaviour -- also true of the C.
 #[unsafe(no_mangle)]
 pub static mut G_OP: extern "C" fn(c_int, c_int) -> c_int = OP_FN;
 
 /// `const char *G_OP_NAME = STR(OP);`
+///
+/// Also `static mut`, and for the same reason. The `const` in the C declaration
+/// qualifies the *pointee*, not the pointer, so `G_OP_NAME` itself is a mutable
+/// global that gcc emits into `.data`. An immutable Rust `static` holding an
+/// address is placed in `.data.rel.ro`, which the loader turns read-only under
+/// RELRO -- a caller storing through the symbol would then fault where the C
+/// succeeds. `static mut` keeps the symbol in `.data` and preserves that.
 #[unsafe(no_mangle)]
-pub static G_OP_NAME: CStrPtr = CStrPtr(&OP_NAME_STORAGE as *const [u8; 4] as *const c_char);
+pub static mut G_OP_NAME: *const c_char = &OP_NAME_STORAGE as *const [u8; 4] as *const c_char;
 
 // ---------------------------------------------------------------------------
 // Helpers
