@@ -1,342 +1,300 @@
-//! Differential-test harness.
+//! Shared harness for the C ⇄ Rust differential tests.
 //!
-//! Both implementations are reached **only** through `dlopen`/`dlsym`, so the
-//! `#[no_mangle] extern "C"` export wrappers of the Rust crate are part of what
-//! is under test.  Nothing in these tests links the Rust library directly.
+//! Both libraries are loaded as shared objects through `libloading` and driven
+//! only through their exported C symbols — the Rust implementation is never
+//! called directly, so the `#[no_mangle]` wrappers are part of what is tested.
 //!
-//! * C side: `cbuild/<backend>_<thash>_<secpar>/app/libsphincs_core_det.so`
-//!   together with `.../lib/<backend>/lib<backend>.so`.  The two objects
-//!   reference each other's symbols (`libsphincs_core_det.so` has no
-//!   `thash`/`prf_addr`, the backend has no `treehash` unless it happens to
-//!   compile `utils.c`), so both are opened `RTLD_GLOBAL | RTLD_LAZY` and let
-//!   the loader tie them together exactly as the `driver` link line does.
-//! * Rust side: the `cdylib` cargo just built next to the test executable,
-//!   opened `RTLD_LOCAL | RTLD_NOW` so that it can neither interpose on nor be
-//!   interposed by the C objects.
+//! Library layout for one feature combination `<be>,<th>,<sp>`:
+//!
+//! * `../cbuild/<be>_<th>_<sp>/lib/<be>/lib<be>.so`     — hash backend (+ `utils.c`)
+//! * `../cbuild/<be>_<th>_<sp>/app/libsphincs_core_det.so` — core + `rng.c`
+//! * `target/<profile>/libsphincs_plus.so`               — the Rust cdylib
+//!
+//! `libsphincs_core_det.so` has undefined `SPX_thash`/`SPX_prf_addr`/… which
+//! the backend `.so` provides, so the backend is opened first with
+//! `RTLD_GLOBAL`; `libcrypto.so.3` is opened first for the same reason
+//! (`rng.c` uses OpenSSL EVP).  The Rust `.so` is opened `RTLD_LOCAL` so it
+//! cannot be interposed by the C definitions of the same names.
 
 #![allow(dead_code)]
 #![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
 
-use libloading::os::unix::{Library, Symbol};
+use libloading::os::unix::{Library, Symbol, RTLD_LOCAL, RTLD_NOW};
 use std::path::PathBuf;
 
-const RTLD_LAZY: i32 = 0x1;
-const RTLD_NOW: i32 = 0x2;
-const RTLD_GLOBAL: i32 = 0x100;
-const RTLD_LOCAL: i32 = 0x0;
+/* ------------------------------------------------------------------ */
+/* Parameters — re-derived here from the Cargo features, independently  */
+/* of src/params.rs, exactly as app/params/params-sphincs-*.h do it.    */
+/* ------------------------------------------------------------------ */
 
-// ---------------------------------------------------------------------------
-// Build configuration, mirrored from c_src/app/params/params-*.h.
-// ---------------------------------------------------------------------------
+pub const SPX_N: usize = if cfg!(any(feature = "256s", feature = "256f")) {
+    32
+} else if cfg!(any(feature = "192s", feature = "192f")) {
+    24
+} else {
+    16
+};
 
-pub mod params {
-    #[cfg(backend_blake)]
-    pub const BACKEND: &str = "blake";
-    #[cfg(backend_haraka)]
-    pub const BACKEND: &str = "haraka";
-    #[cfg(backend_sha2)]
-    pub const BACKEND: &str = "sha2";
-    #[cfg(backend_shake)]
-    pub const BACKEND: &str = "shake";
+pub const SPX_FULL_HEIGHT: u32 = if cfg!(feature = "256f") {
+    68
+} else if cfg!(feature = "256s") {
+    64
+} else if cfg!(feature = "192f") {
+    66
+} else if cfg!(feature = "192s") {
+    63
+} else if cfg!(feature = "128f") {
+    66
+} else {
+    63
+};
 
-    #[cfg(thash_robust)]
-    pub const THASH: &str = "robust";
-    #[cfg(thash_simple)]
-    pub const THASH: &str = "simple";
+pub const SPX_D: u32 = if cfg!(feature = "256f") {
+    17
+} else if cfg!(feature = "256s") {
+    8
+} else if cfg!(any(feature = "192f", feature = "128f")) {
+    22
+} else {
+    7
+};
 
-    #[cfg(secpar_128s)]
-    pub const SECPAR: &str = "128s";
-    #[cfg(secpar_128f)]
-    pub const SECPAR: &str = "128f";
-    #[cfg(secpar_192s)]
-    pub const SECPAR: &str = "192s";
-    #[cfg(secpar_192f)]
-    pub const SECPAR: &str = "192f";
-    #[cfg(secpar_256s)]
-    pub const SECPAR: &str = "256s";
-    #[cfg(secpar_256f)]
-    pub const SECPAR: &str = "256f";
+pub const SPX_FORS_HEIGHT: u32 = if cfg!(feature = "256f") {
+    9
+} else if cfg!(any(feature = "256s", feature = "192s")) {
+    14
+} else if cfg!(feature = "192f") {
+    8
+} else if cfg!(feature = "128f") {
+    6
+} else {
+    12
+};
 
-    #[cfg(secpar_128s)]
-    pub const SPX_N: usize = 16;
-    #[cfg(secpar_128s)]
-    pub const SPX_FULL_HEIGHT: usize = 63;
-    #[cfg(secpar_128s)]
-    pub const SPX_D: usize = 7;
-    #[cfg(secpar_128s)]
-    pub const SPX_FORS_HEIGHT: usize = 12;
-    #[cfg(secpar_128s)]
-    pub const SPX_FORS_TREES: usize = 14;
+pub const SPX_FORS_TREES: u32 = if cfg!(feature = "256f") {
+    35
+} else if cfg!(feature = "256s") {
+    22
+} else if cfg!(feature = "192s") {
+    17
+} else if cfg!(any(feature = "192f", feature = "128f")) {
+    33
+} else {
+    14
+};
 
-    #[cfg(secpar_128f)]
-    pub const SPX_N: usize = 16;
-    #[cfg(secpar_128f)]
-    pub const SPX_FULL_HEIGHT: usize = 66;
-    #[cfg(secpar_128f)]
-    pub const SPX_D: usize = 22;
-    #[cfg(secpar_128f)]
-    pub const SPX_FORS_HEIGHT: usize = 6;
-    #[cfg(secpar_128f)]
-    pub const SPX_FORS_TREES: usize = 33;
+pub const SPX_WOTS_W: u32 = 16;
+pub const SPX_WOTS_LOGW: u32 = 4;
+pub const SPX_ADDR_BYTES: usize = 32;
+pub const SPX_WOTS_LEN1: usize = (8 * SPX_N) / SPX_WOTS_LOGW as usize;
+pub const SPX_WOTS_LEN2: usize = 3; // SPX_N in 9..=136 for every shipped set
+pub const SPX_WOTS_LEN: usize = SPX_WOTS_LEN1 + SPX_WOTS_LEN2;
+pub const SPX_WOTS_BYTES: usize = SPX_WOTS_LEN * SPX_N;
+pub const SPX_TREE_HEIGHT: u32 = SPX_FULL_HEIGHT / SPX_D;
+pub const SPX_FORS_MSG_BYTES: usize = ((SPX_FORS_HEIGHT * SPX_FORS_TREES + 7) / 8) as usize;
+pub const SPX_FORS_BYTES: usize = ((SPX_FORS_HEIGHT + 1) * SPX_FORS_TREES) as usize * SPX_N;
+pub const SPX_PK_BYTES: usize = 2 * SPX_N;
+pub const SPX_SK_BYTES: usize = 2 * SPX_N + SPX_PK_BYTES;
+pub const SPX_BYTES: usize = SPX_N
+    + SPX_FORS_BYTES
+    + SPX_D as usize * SPX_WOTS_BYTES
+    + SPX_FULL_HEIGHT as usize * SPX_N;
+pub const CRYPTO_SEEDBYTES: usize = 3 * SPX_N;
 
-    #[cfg(secpar_192s)]
-    pub const SPX_N: usize = 24;
-    #[cfg(secpar_192s)]
-    pub const SPX_FULL_HEIGHT: usize = 63;
-    #[cfg(secpar_192s)]
-    pub const SPX_D: usize = 7;
-    #[cfg(secpar_192s)]
-    pub const SPX_FORS_HEIGHT: usize = 14;
-    #[cfg(secpar_192s)]
-    pub const SPX_FORS_TREES: usize = 17;
+/// `SPX_SHA512` / `SPX_BLAKE512` from the parameter headers.
+pub const WIDE: bool = SPX_N >= 24;
 
-    #[cfg(secpar_192f)]
-    pub const SPX_N: usize = 24;
-    #[cfg(secpar_192f)]
-    pub const SPX_FULL_HEIGHT: usize = 66;
-    #[cfg(secpar_192f)]
-    pub const SPX_D: usize = 22;
-    #[cfg(secpar_192f)]
-    pub const SPX_FORS_HEIGHT: usize = 8;
-    #[cfg(secpar_192f)]
-    pub const SPX_FORS_TREES: usize = 33;
+/* ADRS field offsets — sha2 uses the compressed address, others the full one. */
+#[cfg(feature = "sha2")]
+pub mod off {
+    pub const LAYER: usize = 0;
+    pub const TREE: usize = 1;
+    pub const TYPE: usize = 9;
+    pub const KP_ADDR: usize = 10;
+    pub const CHAIN_ADDR: usize = 17;
+    pub const HASH_ADDR: usize = 21;
+    pub const TREE_HGT: usize = 17;
+    pub const TREE_INDEX: usize = 18;
+}
+#[cfg(not(feature = "sha2"))]
+pub mod off {
+    pub const LAYER: usize = 3;
+    pub const TREE: usize = 8;
+    pub const TYPE: usize = 19;
+    pub const KP_ADDR: usize = 20;
+    pub const CHAIN_ADDR: usize = 27;
+    pub const HASH_ADDR: usize = 31;
+    pub const TREE_HGT: usize = 27;
+    pub const TREE_INDEX: usize = 28;
+}
 
-    #[cfg(secpar_256s)]
-    pub const SPX_N: usize = 32;
-    #[cfg(secpar_256s)]
-    pub const SPX_FULL_HEIGHT: usize = 64;
-    #[cfg(secpar_256s)]
-    pub const SPX_D: usize = 8;
-    #[cfg(secpar_256s)]
-    pub const SPX_FORS_HEIGHT: usize = 14;
-    #[cfg(secpar_256s)]
-    pub const SPX_FORS_TREES: usize = 22;
+pub const ADDR_TYPES: [u32; 7] = [0, 1, 2, 3, 4, 5, 6];
 
-    #[cfg(secpar_256f)]
-    pub const SPX_N: usize = 32;
-    #[cfg(secpar_256f)]
-    pub const SPX_FULL_HEIGHT: usize = 68;
-    #[cfg(secpar_256f)]
-    pub const SPX_D: usize = 17;
-    #[cfg(secpar_256f)]
-    pub const SPX_FORS_HEIGHT: usize = 9;
-    #[cfg(secpar_256f)]
-    pub const SPX_FORS_TREES: usize = 35;
-
-    pub const SPX_ADDR_BYTES: usize = 32;
-    pub const SPX_WOTS_W: usize = 16;
-    pub const SPX_WOTS_LOGW: usize = 4;
-    pub const SPX_WOTS_LEN1: usize = 8 * SPX_N / SPX_WOTS_LOGW;
-    pub const SPX_WOTS_LEN2: usize = if SPX_N <= 8 {
-        2
-    } else if SPX_N <= 136 {
-        3
+/// `sizeof(spx_ctx)` for the active configuration (see `app/include/context.h`).
+pub const CTX_BYTES: usize = if cfg!(feature = "sha2") {
+    if WIDE {
+        2 * SPX_N + 40 + 72
     } else {
-        4
-    };
-    pub const SPX_WOTS_LEN: usize = SPX_WOTS_LEN1 + SPX_WOTS_LEN2;
-    pub const SPX_WOTS_BYTES: usize = SPX_WOTS_LEN * SPX_N;
-    pub const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / SPX_D;
-    pub const SPX_FORS_MSG_BYTES: usize = (SPX_FORS_HEIGHT * SPX_FORS_TREES + 7) / 8;
-    pub const SPX_FORS_BYTES: usize = (SPX_FORS_HEIGHT + 1) * SPX_FORS_TREES * SPX_N;
-    pub const SPX_BYTES: usize =
-        SPX_N + SPX_FORS_BYTES + SPX_D * SPX_WOTS_BYTES + SPX_FULL_HEIGHT * SPX_N;
-    pub const SPX_PK_BYTES: usize = 2 * SPX_N;
-    pub const SPX_SK_BYTES: usize = 2 * SPX_N + SPX_PK_BYTES;
-    pub const CRYPTO_SEEDBYTES: usize = 3 * SPX_N;
+        2 * SPX_N + 40
+    }
+} else if cfg!(any(feature = "shake", feature = "shake256", feature = "blake")) {
+    2 * SPX_N
+} else {
+    // haraka: uint64_t[10][8] + uint32_t[10][8]
+    2 * SPX_N + 640 + 320
+};
 
-    /// `SPX_BLAKE512` / `SPX_SHA512`; 0 for the 128-bit sets, 1 otherwise,
-    /// which is exactly `SPX_N >= 24`.
-    pub const WIDE: bool = SPX_N >= 24;
-
-    /// `sizeof(spx_ctx)` for the selected backend (`app/include/context.h`).
-    pub const CTX_SIZE: usize = 2 * SPX_N
-        + if cfg!(backend_sha2) {
-            40 + if WIDE { 72 } else { 0 }
-        } else {
-            0
-        }
-        + if cfg!(backend_haraka) { 10 * 8 * 8 + 10 * 8 * 4 } else { 0 };
-
-    /// Largest `inblocks` the library itself ever passes to `thash`.
-    pub const THASH_MAX_INTERNAL: usize = if SPX_WOTS_LEN > SPX_FORS_TREES {
-        SPX_WOTS_LEN
+/// The backend's hash block / sponge rate, used to pick `mlen` boundaries.
+pub const BACKEND_BLOCK: usize = if cfg!(feature = "sha2") {
+    if WIDE {
+        128
     } else {
-        SPX_FORS_TREES
-    };
-
-    pub const SPX_SHA256_ADDR_BYTES: usize = 22;
-}
-
-pub fn tag() -> String {
-    format!(
-        "{}_{}_{}",
-        params::BACKEND,
-        params::THASH,
-        params::SECPAR
-    )
-}
-
-// ---------------------------------------------------------------------------
-// Library loading
-// ---------------------------------------------------------------------------
-
-pub struct Libs {
-    pub c_core: Library,
-    pub c_back: Library,
-    pub rs: Library,
-    pub rs_path: PathBuf,
-    pub c_core_path: PathBuf,
-    pub c_back_path: PathBuf,
-}
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-pub fn rust_so_path() -> PathBuf {
-    // target/<profile>/deps/<test-exe>  ->  target/<profile>/libsphincsplus.so
-    let exe = std::env::current_exe().expect("current_exe");
-    exe.parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("libsphincsplus.so")
-}
-
-pub fn c_core_path() -> PathBuf {
-    workspace_root()
-        .join("cbuild")
-        .join(tag())
-        .join("app/libsphincs_core_det.so")
-}
-
-pub fn c_back_path() -> PathBuf {
-    workspace_root()
-        .join("cbuild")
-        .join(tag())
-        .join(format!("lib/{0}/lib{0}.so", params::BACKEND))
-}
-
-pub fn load() -> Libs {
-    let rs_path = rust_so_path();
-    let c_core_path = c_core_path();
-    let c_back_path = c_back_path();
-    assert!(rs_path.exists(), "missing Rust cdylib at {rs_path:?}");
-    assert!(
-        c_core_path.exists(),
-        "missing C core at {c_core_path:?}; run ./build_c_all.sh"
-    );
-    assert!(c_back_path.exists(), "missing C backend at {c_back_path:?}");
-
-    unsafe {
-        // Rust first, private and fully bound, so the C objects that follow
-        // cannot interpose on it.
-        let rs = Library::open(Some(&rs_path), RTLD_LOCAL | RTLD_NOW)
-            .unwrap_or_else(|e| panic!("dlopen {rs_path:?}: {e}"));
-        // The two C objects have mutually undefined symbols; lazy binding lets
-        // both be mapped before anything is resolved.
-        let c_back = Library::open(Some(&c_back_path), RTLD_GLOBAL | RTLD_LAZY)
-            .unwrap_or_else(|e| panic!("dlopen {c_back_path:?}: {e}"));
-        let c_core = Library::open(Some(&c_core_path), RTLD_GLOBAL | RTLD_LAZY)
-            .unwrap_or_else(|e| panic!("dlopen {c_core_path:?}: {e}"));
-        let libs = Libs {
-            c_core,
-            c_back,
-            rs,
-            rs_path,
-            c_core_path,
-            c_back_path,
-        };
-        libs.assert_configuration();
-        libs
+        64
     }
+} else if cfg!(any(feature = "shake", feature = "shake256")) {
+    136
+} else if cfg!(feature = "blake") {
+    if WIDE {
+        128
+    } else {
+        64
+    }
+} else {
+    32 // haraka sponge rate
+};
+
+/// `SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES - SPX_N - SPX_PK_BYTES` from
+/// `hash_sha2.c` — the `mlen` at which `hash_message` switches branch.
+pub const HASH_MESSAGE_BOUNDARY: usize = {
+    let b = if WIDE { 128 } else { 64 };
+    let inblocks = (SPX_N + SPX_PK_BYTES + b - 1) / b;
+    inblocks * b - SPX_N - SPX_PK_BYTES
+};
+
+/// `SPX_SHAX_BLOCK_BYTES - SPX_N` from `hash_sha2.c` — the `mlen` at which
+/// `gen_message_random` switches branch.
+pub const GEN_MSG_RANDOM_BOUNDARY: usize = (if WIDE { 128 } else { 64 }) - SPX_N;
+
+/* ------------------------------------------------------------------ */
+/* C structs that cross the FFI boundary                               */
+/* ------------------------------------------------------------------ */
+
+/// `wotsx1.h: struct leaf_info_x1`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LeafInfoX1 {
+    pub wots_sig: *mut u8,
+    pub wots_sign_leaf: u32,
+    pub wots_steps: *mut u32,
+    pub leaf_addr: [u32; 8],
+    pub pk_addr: [u32; 8],
 }
 
-type SizeFn = unsafe extern "C" fn() -> u64;
-
-impl Libs {
-    /// Guards against a stale `libsphincsplus.so` left behind by a build with
-    /// different features: the loaded object must agree with the compile-time
-    /// parameters of this test binary on both the backend and the key sizes.
-    fn assert_configuration(&self) {
-        // A symbol only the selected backend defines.
-        let probe = match params::BACKEND {
-            "blake" => "blake256",
-            "haraka" => "SPX_haraka512",
-            "sha2" => "sha256",
-            _ => "shake256",
-        };
-        let mut n = probe.as_bytes().to_vec();
-        n.push(0);
-        unsafe {
-            assert!(
-                self.rs.get::<*const ()>(&n).is_ok(),
-                "the Rust .so at {:?} does not export {probe}: it was built for a different \
-                 HASH_BACKEND than this test binary. Run `cargo build --release --features ...` \
-                 with the same features before `cargo test`.",
-                self.rs_path
-            );
-        }
-        for (name, expect) in [
-            ("crypto_sign_secretkeybytes", params::SPX_SK_BYTES as u64),
-            ("crypto_sign_publickeybytes", params::SPX_PK_BYTES as u64),
-            ("crypto_sign_bytes", params::SPX_BYTES as u64),
-            ("crypto_sign_seedbytes", params::CRYPTO_SEEDBYTES as u64),
-        ] {
-            let (fc, fr) = self.pair::<SizeFn>(name);
-            unsafe {
-                assert_eq!(fc(), expect, "C {name} disagrees with the test's params");
-                assert_eq!(
-                    fr(),
-                    expect,
-                    "Rust {name} disagrees with the test's params: stale .so at {:?}?",
-                    self.rs_path
-                );
-            }
+impl Default for LeafInfoX1 {
+    fn default() -> Self {
+        LeafInfoX1 {
+            wots_sig: std::ptr::null_mut(),
+            wots_sign_leaf: 0,
+            wots_steps: std::ptr::null_mut(),
+            leaf_addr: [0; 8],
+            pk_addr: [0; 8],
         }
     }
 }
 
-impl Libs {
-    /// A symbol from the C pair (core first, then the backend object).
-    pub fn c<T>(&self, name: &str) -> Symbol<T> {
-        let mut n = name.as_bytes().to_vec();
-        n.push(0);
-        unsafe {
-            match self.c_core.get::<T>(&n) {
-                Ok(s) => s,
-                Err(_) => self
-                    .c_back
-                    .get::<T>(&n)
-                    .unwrap_or_else(|e| panic!("C symbol {name} not found: {e}")),
-            }
-        }
-    }
+/// `fors.h: struct fors_gen_leaf_info`
+#[repr(C)]
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
+pub struct ForsGenLeafInfo {
+    pub leaf_addrx: [u32; 8],
+}
 
-    /// A symbol from the Rust `cdylib`.
-    pub fn r<T>(&self, name: &str) -> Symbol<T> {
-        let mut n = name.as_bytes().to_vec();
-        n.push(0);
-        unsafe {
-            self.rs
-                .get::<T>(&n)
-                .unwrap_or_else(|e| panic!("Rust symbol {name} not found: {e}"))
-        }
-    }
+/// `rng.h: AES_XOF_struct`
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct AesXofStruct {
+    pub buffer: [u8; 16],
+    pub buffer_pos: u64,
+    pub length_remaining: u64,
+    pub key: [u8; 32],
+    pub ctr: [u8; 16],
+}
 
-    /// Both sides of the same symbol.
-    pub fn pair<T>(&self, name: &str) -> (Symbol<T>, Symbol<T>) {
-        (self.c(name), self.r(name))
+impl Default for AesXofStruct {
+    fn default() -> Self {
+        AesXofStruct {
+            buffer: [0; 16],
+            buffer_pos: 0,
+            length_remaining: 0,
+            key: [0; 32],
+            ctr: [0; 16],
+        }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Deterministic randomness for the property-style sweeps
-// ---------------------------------------------------------------------------
+/// `rng.h: AES256_CTR_DRBG_struct`
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub struct Drbg {
+    pub key: [u8; 32],
+    pub v: [u8; 16],
+    pub reseed_counter: i32,
+}
+
+/// `blake.h: blakestate256`
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct BlakeState256 {
+    pub h: [u32; 8],
+    pub s: [u32; 4],
+    pub t: [u32; 2],
+    pub buflen: i32,
+    pub nullt: i32,
+    pub buf: [u8; 64],
+}
+
+impl Default for BlakeState256 {
+    fn default() -> Self {
+        BlakeState256 {
+            h: [0; 8],
+            s: [0; 4],
+            t: [0; 2],
+            buflen: 0,
+            nullt: 0,
+            buf: [0; 64],
+        }
+    }
+}
+
+/// `blake.h: blakestate512`
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct BlakeState512 {
+    pub h: [u64; 8],
+    pub s: [u64; 4],
+    pub t: [u64; 2],
+    pub buflen: i32,
+    pub nullt: i32,
+    pub buf: [u8; 128],
+}
+
+impl Default for BlakeState512 {
+    fn default() -> Self {
+        BlakeState512 {
+            h: [0; 8],
+            s: [0; 4],
+            t: [0; 2],
+            buflen: 0,
+            nullt: 0,
+            buf: [0; 128],
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Deterministic PRNG (fixed seed => reproducible property tests)      */
+/* ------------------------------------------------------------------ */
 
 pub struct Rng(u64);
 
@@ -355,24 +313,20 @@ impl Rng {
     pub fn next_u32(&mut self) -> u32 {
         self.next_u64() as u32
     }
-    pub fn below(&mut self, n: u32) -> u32 {
-        if n == 0 {
-            0
-        } else {
-            self.next_u32() % n
-        }
+    pub fn byte(&mut self) -> u8 {
+        self.next_u64() as u8
     }
     pub fn bytes(&mut self, n: usize) -> Vec<u8> {
-        let mut v = Vec::with_capacity(n);
-        while v.len() < n {
-            v.extend_from_slice(&self.next_u64().to_le_bytes());
-        }
-        v.truncate(n);
-        v
+        (0..n).map(|_| self.byte()).collect()
     }
-    pub fn fill(&mut self, out: &mut [u8]) {
-        let b = self.bytes(out.len());
-        out.copy_from_slice(&b);
+    pub fn fill(&mut self, b: &mut [u8]) {
+        for x in b.iter_mut() {
+            *x = self.byte();
+        }
+    }
+    /// Uniform-ish value in `0..n` (n > 0).
+    pub fn below(&mut self, n: u64) -> u64 {
+        self.next_u64() % n
     }
     pub fn addr(&mut self) -> [u32; 8] {
         let mut a = [0u32; 8];
@@ -383,262 +337,307 @@ impl Rng {
     }
 }
 
-/// The message lengths that straddle every block/rate boundary any backend
-/// branches on.  See CONFIGS.md.
-pub const MLEN_SWEEP: &[usize] = &[
-    0, 1, 2, 15, 16, 17, 31, 32, 33, 47, 48, 49, 55, 56, 57, 63, 64, 65, 71, 72, 73, 95, 96, 97,
-    103, 104, 105, 127, 128, 129, 135, 136, 137, 167, 168, 169, 191, 192, 193, 255, 256, 257, 1000,
-    4096,
-];
+/// The seed every property test starts from, so failures are reproducible.
+pub const SEED: u64 = 0x5EED_C0FF_EEu64;
+/// Randomized inputs per `CONFIGS.md` row.
+pub const NUM_ITERS: usize = 32;
 
-/// Reduced sweep for the rows whose cost is a full SPHINCS+ operation.  The
-/// message-length branches themselves are swept densely and cheaply by rows 10
-/// and 11 (`gen_message_random` / `hash_message`), which are the only places
-/// `mlen` is branched on; these values exist to confirm the composition.
-pub const MLEN_SWEEP_SMALL: &[usize] = &[0, 1, 33, 137];
+/* ------------------------------------------------------------------ */
+/* Library loading                                                     */
+/* ------------------------------------------------------------------ */
 
-// ---------------------------------------------------------------------------
-// spx_ctx
-// ---------------------------------------------------------------------------
+pub fn backend_name() -> &'static str {
+    if cfg!(feature = "sha2") {
+        "sha2"
+    } else if cfg!(any(feature = "shake", feature = "shake256")) {
+        "shake"
+    } else if cfg!(feature = "blake") {
+        "blake"
+    } else {
+        "haraka"
+    }
+}
 
-/// An 8-byte aligned `spx_ctx` sized buffer (`haraka`'s members are `uint64_t`).
+pub fn thash_name() -> &'static str {
+    if cfg!(feature = "simple") {
+        "simple"
+    } else {
+        "robust"
+    }
+}
+
+pub fn secpar_name() -> &'static str {
+    if cfg!(feature = "256f") {
+        "256f"
+    } else if cfg!(feature = "256s") {
+        "256s"
+    } else if cfg!(feature = "192f") {
+        "192f"
+    } else if cfg!(feature = "192s") {
+        "192s"
+    } else if cfg!(feature = "128f") {
+        "128f"
+    } else {
+        "128s"
+    }
+}
+
+pub fn combo() -> String {
+    format!("{}_{}_{}", backend_name(), thash_name(), secpar_name())
+}
+
+/// Holds every `dlopen`ed handle; dropping it closes them.
+pub struct Libs {
+    c: Library,
+    r: Library,
+}
+
+fn manifest_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// `target/<profile>/libsphincs_plus.so`, found relative to the test binary
+/// (`target/<profile>/deps/<test>-<hash>`).  Overridable with `SPHINCS_RUST_SO`.
+fn rust_so() -> PathBuf {
+    if let Ok(p) = std::env::var("SPHINCS_RUST_SO") {
+        return PathBuf::from(p);
+    }
+    let exe = std::env::current_exe().expect("current_exe");
+    let profile_dir = exe
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("target/<profile>")
+        .to_path_buf();
+    profile_dir.join("libsphincs_plus.so")
+}
+
+type SizeFn = unsafe extern "C" fn() -> u64;
+
+/// Both `.so`s must be built for the parameter set this test binary was
+/// compiled for.  A stale `target/<profile>/libsphincs_plus.so` from a previous
+/// `--features` run would otherwise silently corrupt every buffer the tests
+/// hand out (different `SPX_N`), so this is checked up front and loudly.
+fn assert_param_set(l: &Libs, which: &str, get: impl Fn(&str) -> Symbol<SizeFn>) {
+    for (name, expect) in [
+        ("crypto_sign_secretkeybytes", SPX_SK_BYTES as u64),
+        ("crypto_sign_publickeybytes", SPX_PK_BYTES as u64),
+        ("crypto_sign_bytes", SPX_BYTES as u64),
+        ("crypto_sign_seedbytes", CRYPTO_SEEDBYTES as u64),
+    ] {
+        let f = get(name);
+        let got = unsafe { f() };
+        assert_eq!(
+            got, expect,
+            "the {which} shared object is built for a DIFFERENT parameter set: \
+             {name}() = {got}, expected {expect} for `{}`.\n\
+             Rebuild it: cargo build --release --no-default-features --features {},{},{}  \
+             (and ../build_c_flat.sh for the C side)",
+            combo(),
+            backend_name(),
+            thash_name(),
+            secpar_name(),
+        );
+    }
+    let _ = l;
+}
+
+impl Libs {
+    pub fn load() -> Libs {
+        let root = manifest_dir().parent().unwrap().to_path_buf();
+        let c_path = root
+            .join("cbuild_flat")
+            .join(format!("libspx_{}.so", combo()));
+        let rust_path = rust_so();
+
+        for p in [&c_path, &rust_path] {
+            assert!(
+                p.exists(),
+                "missing shared object {}\n\
+                 run ../build_c_flat.sh (C) and `cargo build --release` (Rust) first",
+                p.display()
+            );
+        }
+
+        // Both RTLD_LOCAL: the two libraries export the same names, and neither
+        // has undefined project symbols, so nothing can be interposed and each
+        // handle resolves strictly to its own implementation.
+        let c = unsafe {
+            Library::open(Some(&c_path), RTLD_NOW | RTLD_LOCAL)
+                .unwrap_or_else(|e| panic!("dlopen {}: {e}", c_path.display()))
+        };
+        let r = unsafe {
+            Library::open(Some(&rust_path), RTLD_NOW | RTLD_LOCAL)
+                .unwrap_or_else(|e| panic!("dlopen {}: {e}", rust_path.display()))
+        };
+        let l = Libs { c, r };
+        // Guard against accidental interposition: the same name must resolve to
+        // two different addresses.
+        for name in ["SPX_thash", "crypto_sign_verify", "SPX_ull_to_bytes", "randombytes"] {
+            let a = l.c::<unsafe extern "C" fn()>(name).into_raw();
+            let b = l.rs::<unsafe extern "C" fn()>(name).into_raw();
+            assert_ne!(
+                a as usize, b as usize,
+                "`{name}` resolved to the same address in both libraries — \
+                 one is interposing the other, the differential test would be vacuous"
+            );
+        }
+        assert_param_set(&l, "C", |n| l.c::<SizeFn>(n));
+        assert_param_set(&l, "Rust", |n| l.rs::<SizeFn>(n));
+        l
+    }
+
+    /// Look a symbol up in the C library.
+    pub fn c<T>(&self, name: &str) -> Symbol<T> {
+        unsafe {
+            self.c
+                .get::<T>(name.as_bytes())
+                .unwrap_or_else(|e| panic!("C symbol `{name}` not found: {e}"))
+        }
+    }
+
+    /// Look a symbol up in the Rust cdylib.
+    pub fn rs<T>(&self, name: &str) -> Symbol<T> {
+        unsafe {
+            self.r
+                .get::<T>(name.as_bytes())
+                .unwrap_or_else(|e| panic!("Rust symbol `{name}` not found: {e}"))
+        }
+    }
+
+    /// Both sides of one symbol, in `(c, rust)` order.
+    pub fn pair<T>(&self, name: &str) -> (Symbol<T>, Symbol<T>) {
+        (self.c(name), self.rs(name))
+    }
+}
+
+/// One process-wide instance; `dlopen` is refcounted so this is just cheaper.
+pub fn libs() -> &'static Libs {
+    use std::sync::OnceLock;
+    static L: OnceLock<Libs> = OnceLock::new();
+    L.get_or_init(Libs::load)
+}
+
+/// `rng.c` keeps its DRBG in the process-global `DRBG_ctx`, and `libtest` runs
+/// tests in parallel threads.  Every test that seeds or draws from the DRBG
+/// (directly, or indirectly via `crypto_sign_keypair` / `crypto_sign_signature`)
+/// must hold this lock for its whole body, or the two libraries' DRBG streams
+/// interleave differently and the comparison becomes meaningless.
+pub fn drbg_lock() -> std::sync::MutexGuard<'static, ()> {
+    static M: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    M.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/* ------------------------------------------------------------------ */
+/* spx_ctx helpers                                                     */
+/* ------------------------------------------------------------------ */
+
+/// A `spx_ctx` sized and aligned for the active configuration.  Backed by
+/// `u64` so the haraka variant's `uint64_t[10][8]` is properly aligned.
 pub struct Ctx {
     buf: Vec<u64>,
 }
 
 impl Ctx {
-    pub fn new() -> Self {
+    pub fn new() -> Ctx {
         Ctx {
-            buf: vec![0u64; (params::CTX_SIZE + 7) / 8],
+            buf: vec![0u64; (CTX_BYTES + 7) / 8],
         }
     }
-    pub fn bytes(&self) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(self.buf.as_ptr() as *const u8, params::CTX_SIZE)
-        }
-    }
-    pub fn bytes_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            core::slice::from_raw_parts_mut(self.buf.as_mut_ptr() as *mut u8, params::CTX_SIZE)
-        }
-    }
-    pub fn ptr(&self) -> *const u8 {
+    pub fn as_ptr(&self) -> *const u8 {
         self.buf.as_ptr() as *const u8
     }
-    pub fn ptr_mut(&mut self) -> *mut u8 {
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
         self.buf.as_mut_ptr() as *mut u8
     }
+    pub fn bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.as_ptr(), CTX_BYTES) }
+    }
     pub fn set_seeds(&mut self, pub_seed: &[u8], sk_seed: &[u8]) {
-        let n = params::SPX_N;
-        self.bytes_mut()[..n].copy_from_slice(&pub_seed[..n]);
-        self.bytes_mut()[n..2 * n].copy_from_slice(&sk_seed[..n]);
+        assert_eq!(pub_seed.len(), SPX_N);
+        assert_eq!(sk_seed.len(), SPX_N);
+        unsafe {
+            std::ptr::copy_nonoverlapping(pub_seed.as_ptr(), self.as_mut_ptr(), SPX_N);
+            std::ptr::copy_nonoverlapping(sk_seed.as_ptr(), self.as_mut_ptr().add(SPX_N), SPX_N);
+        }
+    }
+}
+
+impl Default for Ctx {
+    fn default() -> Self {
+        Ctx::new()
     }
 }
 
 pub type InitHashFn = unsafe extern "C" fn(*mut u8);
 
-/// Builds one `spx_ctx` per side by calling that side's own
-/// `SPX_initialize_hash_function`, and asserts the two byte images agree.
-pub fn make_ctx_pair(libs: &Libs, pub_seed: &[u8], sk_seed: &[u8]) -> (Ctx, Ctx) {
-    let (ic, ir) = libs.pair::<InitHashFn>("SPX_initialize_hash_function");
+/// Builds a pair of contexts with identical seeds, one initialised by the C
+/// `SPX_initialize_hash_function` and one by the Rust one, and asserts the
+/// resulting `spx_ctx` images are byte-identical.  Returns both.
+pub fn init_ctx_pair(pub_seed: &[u8], sk_seed: &[u8]) -> (Ctx, Ctx) {
+    let l = libs();
+    let (cf, rf) = l.pair::<InitHashFn>("SPX_initialize_hash_function");
     let mut cc = Ctx::new();
-    let mut cr = Ctx::new();
+    let mut rc = Ctx::new();
     cc.set_seeds(pub_seed, sk_seed);
-    cr.set_seeds(pub_seed, sk_seed);
+    rc.set_seeds(pub_seed, sk_seed);
     unsafe {
-        ic(cc.ptr_mut());
-        ir(cr.ptr_mut());
+        cf(cc.as_mut_ptr());
+        rf(rc.as_mut_ptr());
     }
     assert_eq!(
         cc.bytes(),
-        cr.bytes(),
+        rc.bytes(),
         "SPX_initialize_hash_function produced different spx_ctx images"
     );
-    (cc, cr)
+    (cc, rc)
 }
 
-// ---------------------------------------------------------------------------
-// C struct mirrors
-// ---------------------------------------------------------------------------
-
-/// `app/include/wotsx1.h` `leaf_info_x1`
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct LeafInfoX1 {
-    pub wots_sig: *mut u8,
-    pub wots_sign_leaf: u32,
-    pub wots_steps: *mut u32,
-    pub leaf_addr: [u32; 8],
-    pub pk_addr: [u32; 8],
-}
-
-impl LeafInfoX1 {
-    pub fn zeroed() -> Self {
-        LeafInfoX1 {
-            wots_sig: core::ptr::null_mut(),
-            wots_sign_leaf: 0,
-            wots_steps: core::ptr::null_mut(),
-            leaf_addr: [0; 8],
-            pk_addr: [0; 8],
-        }
-    }
-}
-
-/// `app/include/fors.h` `fors_gen_leaf_info`
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct ForsGenLeafInfo {
-    pub leaf_addrx: [u32; 8],
-}
-
-/// `app/include/rng.h` `AES_XOF_struct`
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AesXofStruct {
-    pub buffer: [u8; 16],
-    pub buffer_pos: u64,
-    pub length_remaining: u64,
-    pub key: [u8; 32],
-    pub ctr: [u8; 16],
-}
-
-impl AesXofStruct {
-    pub fn zeroed() -> Self {
-        AesXofStruct {
-            buffer: [0; 16],
-            buffer_pos: 0,
-            length_remaining: 0,
-            key: [0; 32],
-            ctr: [0; 16],
-        }
-    }
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(
-                self as *const _ as *const u8,
-                core::mem::size_of::<AesXofStruct>(),
-            )
-        }
-    }
-}
-
-/// `app/include/rng.h` `AES256_CTR_DRBG_struct`
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct Aes256CtrDrbgStruct {
-    pub Key: [u8; 32],
-    pub V: [u8; 16],
-    pub reseed_counter: i32,
-}
-
-impl Aes256CtrDrbgStruct {
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(
-                self as *const _ as *const u8,
-                core::mem::size_of::<Aes256CtrDrbgStruct>(),
-            )
-        }
-    }
-}
-
-/// `lib/blake/include/blake.h` `blakestate256`
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct BlakeState256 {
-    pub h: [u32; 8],
-    pub s: [u32; 4],
-    pub t: [u32; 2],
-    pub buflen: i32,
-    pub nullt: i32,
-    pub buf: [u8; 64],
-}
-
-impl BlakeState256 {
-    pub fn zeroed() -> Self {
-        BlakeState256 {
-            h: [0; 8],
-            s: [0; 4],
-            t: [0; 2],
-            buflen: 0,
-            nullt: 0,
-            buf: [0; 64],
-        }
-    }
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(
-                self as *const _ as *const u8,
-                core::mem::size_of::<BlakeState256>(),
-            )
-        }
-    }
-}
-
-/// `lib/blake/include/blake.h` `blakestate512`
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct BlakeState512 {
-    pub h: [u64; 8],
-    pub s: [u64; 4],
-    pub t: [u64; 2],
-    pub buflen: i32,
-    pub nullt: i32,
-    pub buf: [u8; 128],
-}
-
-impl BlakeState512 {
-    pub fn zeroed() -> Self {
-        BlakeState512 {
-            h: [0; 8],
-            s: [0; 4],
-            t: [0; 2],
-            buflen: 0,
-            nullt: 0,
-            buf: [0; 128],
-        }
-    }
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(
-                self as *const _ as *const u8,
-                core::mem::size_of::<BlakeState512>(),
-            )
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Comparison helper
-// ---------------------------------------------------------------------------
+/* ------------------------------------------------------------------ */
+/* Assertion helpers                                                   */
+/* ------------------------------------------------------------------ */
 
 #[track_caller]
-pub fn eq(what: &str, c: &[u8], r: &[u8]) {
+pub fn eq_bytes(what: &str, c: &[u8], r: &[u8]) {
     if c != r {
         let first = c
             .iter()
             .zip(r.iter())
             .position(|(a, b)| a != b)
-            .unwrap_or(c.len().min(r.len()));
+            .unwrap_or(usize::MAX);
         panic!(
-            "{what}: C and Rust differ (len {} vs {}) at byte {}\n  C  = {}\n  RS = {}",
+            "{what}: C != Rust (len {} vs {}), first differing byte at index {}\n  C   : {}\n  Rust: {}",
             c.len(),
             r.len(),
-            first,
-            hex(&c[first.saturating_sub(4)..(first + 12).min(c.len())]),
-            hex(&r[first.saturating_sub(4)..(first + 12).min(r.len())]),
+            first as i64,
+            hex(&c[..c.len().min(96)]),
+            hex(&r[..r.len().min(96)]),
         );
     }
 }
 
 pub fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    let mut s = String::with_capacity(b.len() * 2);
+    for x in b {
+        s.push_str(&format!("{x:02x}"));
+    }
+    s
 }
 
-pub fn u32s_as_bytes(a: &[u32]) -> Vec<u8> {
-    let mut v = Vec::with_capacity(a.len() * 4);
-    for x in a {
-        v.extend_from_slice(&x.to_ne_bytes());
+/// The `mlen` values that cover every message-length branch in the backends.
+pub fn mlen_cases() -> Vec<usize> {
+    let mut v = vec![0usize, 1, 2, 31, 32, 33, 63, 64, 65];
+    for b in [GEN_MSG_RANDOM_BOUNDARY, HASH_MESSAGE_BOUNDARY, BACKEND_BLOCK] {
+        if b > 0 {
+            v.push(b - 1);
+        }
+        v.push(b);
+        v.push(b + 1);
+        v.push(2 * b);
+        v.push(2 * b + 1);
     }
+    v.push(231);
+    v.push(1000);
+    v.sort_unstable();
+    v.dedup();
     v
 }

@@ -1,14 +1,19 @@
-//! Translation of `app/src/merkle.c`.
+//! Translation of `app/src/merkle.c` (plus `app/include/merkle.h`).
 
-use crate::address::{copy_subtree_addr, set_layer_addr, set_type};
+use crate::address::{
+    copy_subtree_addr, set_layer_addr, set_type, SPX_ADDR_TYPE_HASHTREE, SPX_ADDR_TYPE_WOTSPK,
+};
 use crate::context::SpxCtx;
-use crate::params::*;
-use crate::utilsx1::wots_treehashx1;
+use crate::params::{SPX_D, SPX_N, SPX_TREE_HEIGHT, SPX_WOTS_BYTES, SPX_WOTS_LEN};
 use crate::wots::chain_lengths;
 use crate::wotsx1::LeafInfoX1;
 
-/// Generates a Merkle signature (WOTS signature followed by the Merkle
-/// authentication path).
+/*
+ * This generates a Merkle signature (WOTS signature followed by the Merkle
+ * authentication path).  This is in this file because most of the complexity
+ * is involved with the WOTS signature; the Merkle authentication path logic
+ * is mostly hidden in treehashx4
+ */
 pub fn merkle_sign(
     sig: &mut [u8],
     root: &mut [u8],
@@ -17,22 +22,28 @@ pub fn merkle_sign(
     tree_addr: &mut [u32; 8],
     idx_leaf: u32,
 ) {
-    let mut info = LeafInfoX1::new();
+    /* `unsigned steps[SPX_WOTS_LEN]; chain_lengths(steps, root);`
+     * Computed before `sig` is handed to the leaf info, since `root` is both
+     * an input (the WOTS message) and an output (the new subtree root). */
     let mut steps = [0u32; SPX_WOTS_LEN];
+    chain_lengths(&mut steps, &root[..SPX_N]);
 
-    let (wots_part, auth_path) = sig.split_at_mut(SPX_WOTS_BYTES);
-    info.wots_sig = wots_part.as_mut_ptr();
-    chain_lengths(&mut steps, root);
-    info.wots_steps = steps.as_ptr();
+    /* `unsigned char *auth_path = sig + SPX_WOTS_BYTES;` */
+    let (wots_area, auth_path) = sig.split_at_mut(SPX_WOTS_BYTES);
+
+    let mut info = LeafInfoX1::new();
+
+    info.wots_sig = Some(wots_area);
+    info.wots_steps = steps;
 
     set_type(tree_addr, SPX_ADDR_TYPE_HASHTREE);
     set_type(&mut info.pk_addr, SPX_ADDR_TYPE_WOTSPK);
-    copy_subtree_addr(&mut info.leaf_addr, wots_addr);
-    copy_subtree_addr(&mut info.pk_addr, wots_addr);
+    copy_subtree_addr(&mut info.leaf_addr, &*wots_addr);
+    copy_subtree_addr(&mut info.pk_addr, &*wots_addr);
 
     info.wots_sign_leaf = idx_leaf;
 
-    wots_treehashx1(
+    crate::utilsx1::wots_treehashx1(
         root,
         auth_path,
         ctx,
@@ -44,9 +55,12 @@ pub fn merkle_sign(
     );
 }
 
-/// Computes the root node of the top-most subtree.
+/* Compute root node of the top-most subtree. */
 pub fn merkle_gen_root(root: &mut [u8], ctx: &SpxCtx) {
-    let mut auth_path = [0u8; SPX_TREE_HEIGHT * SPX_N + SPX_WOTS_BYTES];
+    /* We do not need the auth path in key generation, but it simplifies the
+       code to have just one treehash routine that computes both root and path
+       in one function. */
+    let mut auth_path = vec![0u8; SPX_TREE_HEIGHT * SPX_N + SPX_WOTS_BYTES];
     let mut top_tree_addr = [0u32; 8];
     let mut wots_addr = [0u32; 8];
 
@@ -59,16 +73,16 @@ pub fn merkle_gen_root(root: &mut [u8], ctx: &SpxCtx) {
         ctx,
         &mut wots_addr,
         &mut top_tree_addr,
-        !0u32,
+        !0u32, /* ~0 means "don't bother generating an auth path" */
     );
 }
 
-// ------------------------------------------------------------------
-// Exported C ABI wrappers.
-// ------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// C ABI wrappers (exported linker symbols carry the `SPX_` namespace prefix)
+// ---------------------------------------------------------------------------
 
-#[no_mangle]
-pub unsafe extern "C" fn SPX_merkle_sign(
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_merkle_sign(
     sig: *mut u8,
     root: *mut u8,
     ctx: *const SpxCtx,
@@ -76,15 +90,21 @@ pub unsafe extern "C" fn SPX_merkle_sign(
     tree_addr: *mut u32,
     idx_leaf: u32,
 ) {
-    let sig_s = core::slice::from_raw_parts_mut(sig, SPX_WOTS_BYTES + SPX_TREE_HEIGHT * SPX_N);
-    let root_s = core::slice::from_raw_parts_mut(root, SPX_N);
-    let wa = &mut *(wots_addr as *mut [u32; 8]);
-    let ta = &mut *(tree_addr as *mut [u32; 8]);
-    merkle_sign(sig_s, root_s, &*ctx, wa, ta, idx_leaf);
+    unsafe {
+        merkle_sign(
+            core::slice::from_raw_parts_mut(sig, SPX_WOTS_BYTES + SPX_TREE_HEIGHT * SPX_N),
+            core::slice::from_raw_parts_mut(root, SPX_N),
+            &*ctx,
+            &mut *(wots_addr as *mut [u32; 8]),
+            &mut *(tree_addr as *mut [u32; 8]),
+            idx_leaf,
+        );
+    }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn SPX_merkle_gen_root(root: *mut u8, ctx: *const SpxCtx) {
-    let root_s = core::slice::from_raw_parts_mut(root, SPX_N);
-    merkle_gen_root(root_s, &*ctx);
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_merkle_gen_root(root: *mut u8, ctx: *const SpxCtx) {
+    unsafe {
+        merkle_gen_root(core::slice::from_raw_parts_mut(root, SPX_N), &*ctx);
+    }
 }

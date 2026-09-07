@@ -1,94 +1,60 @@
-# ERRORS.md — error-surface table (Phase C)
+# ERRORS.md — error/rejection surface table (Phase A, tested in Phase C)
 
-## Derivation
+Derived mechanically from the C sources. The complete set of rejection-ish
+constructs in `c_src/` is:
 
-Mechanical grep over the entire C source tree for every rejection / error /
-bounds construct:
-
-```sh
-grep -nE 'RETURN_ERROR|return *-1|return +NULL|assert|errno|exit\(|abort|
-          if *\(.*(<|>|==|!=).*\)|switch|default:|#ifndef|#error' c_src/src/*.c c_src/src/*.h
+```
+$ grep -nE "return|assert|if *\(|switch|default|NULL|-1|#ifndef|#error|exit" c_src/src/*.c c_src/src/*.h
+mdmain.c:29:    if (argc < 3) {          <- the ONLY runtime input validation
+mdmain.c:31:        return 2;            <- the ONLY error exit code
+mdmain.c:47:    return 0;
+mdmacros.h:27:#ifndef OP                <- build-time default
+mdmacros.h:30:#ifndef REPEAT            <- build-time default
+mdmacros.h:83:  switch (n) {             <- DISPATCH_REP range dispatch
+mdmacros.h:91:    default: break;        <- silent rejection of out-of-range n
+mdmacros.h:99:    return acc;
+mdcore.c:28/29/30/44/51/57            <- unconditional value returns
 ```
 
-Findings — the complete set of rejection/fallback points in the C code:
+There are **no** `assert`s, no `RETURN_ERROR`-style macros, no `return -1`, no
+`return NULL`, no error enums, no null-pointer checks and no min/max constants in
+this library. Every row below is one distinct way the C code rejects / silently
+absorbs input, plus the generic FFI boundaries the API still has to survive.
 
-| location | construct | classification |
-|----------|-----------|----------------|
-| `mdmain.c:29` | `if (argc < 3) { fprintf(stderr, "usage: %s A B\n", argv[0]); return 2; }` | the **only** explicit error return in the project |
-| `mdmacros.h:88` (`DISPATCH_REP`) | `default: break;` — `switch (n)` only has `case 0 … case 6` | silent fallback: accumulator is left at `INIT_FOR(OP)` |
-| `mdmacros.h:27-32` | `#ifndef OP / #define OP add`, `#ifndef REPEAT / #define REPEAT 5` | build-time default, not a runtime rejection |
-| `mdmain.c:33-34` | `atoi(argv[1])`, `atoi(argv[2])` | no validation at all; `atoi` returns `0` for un-parsable text and has UB on overflow (glibc: `(int)strtol(…,10)`, i.e. clamp-to-`long`-then-truncate) |
+| # | function | trigger (exact invalid input/condition) | expected C result | test |
+|---|----------|------------------------------------------|-------------------|------|
+| 1 | `main` (`driver`) | `argc < 3` — no arguments at all (`argc == 1`) | `fprintf(stderr,"usage: %s A B\n", argv[0])`, exit status **2**, nothing on stdout | `err_01_main_argc_zero_args` |
+| 2 | `main` (`driver`) | `argc < 3` — exactly one argument (`argc == 2`) | same usage line on stderr, exit status **2**, empty stdout | `err_02_main_argc_one_arg` |
+| 3 | `main` (`driver`) | `argc >= 3` boundary: extra arguments (`argc == 4`, `argc == 8`) are **not** rejected; argv[3..] ignored | normal run, exit status **0** | `err_03_main_extra_args_not_rejected` |
+| 4 | `use_generated` → `DISPATCH_REP` `default:` | `n == 7` (one past the largest `case`, and the largest legal `REPEAT`) | no step executed, accumulator stays `INIT_FOR(OP)` → prints `gen.acc=<INIT>`, returns `INIT` (0 for add/sub, 1 for mul) | `err_04_dispatch_n_seven` |
+| 5 | `use_generated` → `DISPATCH_REP` `default:` | `n == 8` (well past the last `case`) | returns/prints `INIT` | `err_05_dispatch_n_eight` |
+| 6 | `use_generated` → `DISPATCH_REP` `default:` | `n == -1` (negative, no matching `case`) | returns/prints `INIT` | `err_06_dispatch_n_negative_one` |
+| 7 | `use_generated` → `DISPATCH_REP` `default:` | `n == INT_MIN` (`-2147483648`) | returns/prints `INIT` | `err_07_dispatch_n_int_min` |
+| 8 | `use_generated` → `DISPATCH_REP` `default:` | `n == INT_MAX` (`2147483647`) | returns/prints `INIT` | `err_08_dispatch_n_int_max` |
+| 9 | `use_generated` → `DISPATCH_REP` `default:` | every `n` in `-64..=64` and 4096 random `int`s (fuzz of the whole switch, incl. the accepted `0..=6` cases) | `INIT` outside `0..=6`, `REP<n>(OP,acc)` inside | `err_09_dispatch_full_range_and_fuzz` |
+| 10 | `use_generated` | `n` passed as an out-of-range "enum-like" `int` across FFI (`0x7fffffff`, `0x80000000` reinterpreted, `1<<31`, `0xdeadbeef` as `i32`) — C `switch` accepts any `int` | `default: break` → `INIT` | `err_10_dispatch_bit_pattern_ints` |
+| 11 | `op_add` | signed-overflow boundary `INT_MAX + 1`, `INT_MIN + (-1)` (C signed overflow; gcc emits wrapping `add`) | wrapping result (`INT_MIN`, `INT_MAX`) | `err_11_op_add_overflow` |
+| 12 | `op_sub` | signed-overflow boundary `INT_MIN - 1`, `INT_MAX - (-1)`, `0 - INT_MIN` | wrapping result | `err_12_op_sub_overflow` |
+| 13 | `op_mul` | signed-overflow boundary `INT_MIN * -1`, `INT_MAX * 2`, `65536 * 65536`, `INT_MIN * INT_MIN` | wrapping (low 32 bits of the product) | `err_13_op_mul_overflow` |
+| 14 | `helper_call` | overflow of the *composed* result `r + acc` at `a=INT_MAX,b=INT_MAX` (add), and of `acc` itself for `mul` with `REPEAT=7` (`7! ` fits, but `r*acc` may wrap) | wrapping result, stdout `helper.call=<r> helper.acc=<acc>` | `err_14_helper_call_overflow` |
+| 15 | `helper_ptr` | overflow boundary through the function-pointer call path (`INT_MIN`, `INT_MAX` operands) | wrapping result, stdout `helper.ptr=<r>` | `err_15_helper_ptr_overflow` |
+| 16 | `G_OP` (exported mutable global) | a caller **stores** a different function pointer into `G_OP` (legal: `int (*G_OP)(int,int)` is a mutable object in `.data`) | store succeeds (no fault), subsequent read returns the stored pointer; library behaviour unchanged because no C function reads `G_OP` | `err_16_g_op_is_writable` |
+| 17 | `G_OP_NAME` (exported mutable global) | a caller **stores** a different `const char *` into `G_OP_NAME` | store succeeds (no fault); pointed-to bytes are the read-only literal `"add"`/`"sub"`/`"mul"` | `err_17_g_op_name_is_writable` |
+| 18 | build-time `CHOOSE_REP(REPEAT)` / `REP<n>` | `REPEAT` > 7 (e.g. `-DREPEAT=8`) → `CAT(REP,8)` yields the undefined `REP8`, so `RUN_LOOP` expands to the *function call* `REP8(add, acc)` | **compile-time** rejection, verified: `gcc -DOP=add -DREPEAT=8 ...` exits 1 with `warning: implicit declaration of function 'REP8'` + `error: 'add' undeclared (first use in this function)`; no artifact is produced. Rust mirrors this by having no `"8"` feature (so `--features 8` is rejected by cargo). | documented + `configs_00_build_matrix_matches` (asserts `repeat() ∈ 0..=7`) |
+| 19 | build-time `#ifndef OP` / `#ifndef REPEAT` | `OP`/`REPEAT` not defined at all | silently defaults to `add` / `5` — no error. Rust mirrors it via the `cfg(not(any(...)))` fallbacks in `mdconfig.rs`. | `cargo check --no-default-features` (in `check_all.sh`) |
+| 20 | `main`'s `atoi` | non-numeric argv (`"abc"`), empty string, `"+"`/`"-"` alone, leading whitespace, `"0x10"`, trailing garbage (`"12abc"`) — `atoi` has no error report | parses the leading numeric prefix, else `0`; no rejection | `err_20_main_atoi_non_numeric` |
+| 21 | `main`'s `atoi` | out-of-`int` argv (`"99999999999999999999"`, `"-99999999999999999999"`) — glibc `atoi` is `(int)strtol`, saturating at `LONG_MAX`/`LONG_MIN` then truncating | `-1` for the positive overflow, `0` for the negative one (low 32 bits of `LONG_MAX`/`LONG_MIN`) | `err_21_main_atoi_overflow` |
+| 22 | `main` | `argc == 0` (`execve` with an empty `argv`, so `argv[0]` is `NULL` and `%s` is fed a null pointer) | usage line with an empty program name (`"usage:  A B\n"`) on stderr, exit status **2** | `err_22_main_argc_zero_null_argv0` |
+| 23 | `main` / `helper_*` / `use_generated` `printf` | stdout write fails (`ENOSPC`: stdout redirected to `/dev/full`) — every `printf` return value is discarded by the C | no error reported, exit status **0**, stderr empty | `err_23_stdout_write_error_ignored` |
+| 24 | `main` `fprintf(stderr, ...)` | stderr write fails (`/dev/full`) on the `argc < 3` path | no error reported, exit status still **2** | `err_24_stderr_write_error_ignored` |
+| 25 | `main` / `printf` | file descriptor 1 is **closed** before `exec` (`EBADF` on every write) | no error reported, exit status **0**, stderr empty | `err_25_stdout_closed` |
 
-There are **no** `assert`s, **no** null-pointer checks, **no** `errno` use,
-**no** `return -1` / `return NULL`, **no** error enums and **no** range checks
-on `a`/`b`/`n` anywhere in `mdcore.c` or `mdmacros.h`. Consequently the library
-half of the code has exactly one "rejection" behaviour (the `DISPATCH_REP`
-`default:` arm); everything else accepts all `int` inputs unconditionally. The
-generic-boundary rows below (nulls, out-of-range "enum-like" values, extreme
-ints) are therefore included explicitly even though the C contains no check for
-them, because *absence* of a check is itself the behaviour the Rust must match.
+Notes on things that are *not* rows because the C never checks them:
 
-## Error-surface table
-
-| # | function | trigger (the exact invalid input/condition) | expected C result | test |
-|---|----------|----------------------------------------------|-------------------|------|
-| 1 | `use_generated` | `n == 7` (first value past the `switch`'s `case 6`) | `switch` takes `default:` → `acc` stays `INIT_FOR(OP)` (`0` for add/sub, `1` for mul); prints `gen.acc=<INIT>`; returns `INIT` | `err_01_use_generated_n_eq_7` |
-| 2 | `use_generated` | `n > 7` (`8`, `9`, `100`, `INT_MAX`) | same `default:` arm → returns `INIT_FOR(OP)` | `err_02_use_generated_n_gt_7` |
-| 3 | `use_generated` | `n == -1` (first value below `case 0`) | same `default:` arm → returns `INIT_FOR(OP)` | `err_03_use_generated_n_neg_1` |
-| 4 | `use_generated` | `n < -1` (`-2`, `-100`, `INT_MIN`) | same `default:` arm → returns `INIT_FOR(OP)` | `err_04_use_generated_n_very_negative` |
-| 5 | `use_generated` | every in-range value `n ∈ {0,1,2,3,4,5,6}` (the exhaustive `case` list; boundary check that 0 and 6 are *not* rejected) | `REP<n>` runs steps `i = 0 … n-1`; returns the accumulated value, **not** `INIT` (except `n == 0`, where `REP0` is empty) | `err_05_use_generated_in_range_not_rejected` |
-| 6 | `use_generated` | `n` is an out-of-range "enum-like" `int` passed across the FFI boundary (the C `switch` accepts any `int`): `INT_MIN`, `INT_MIN+1`, `-2^31 … 2^31-1` randomized | no variant matches → `default:` → `INIT_FOR(OP)`; must never panic, never wrap into a valid case | `err_06_use_generated_ffi_fuzz_all_int` |
-| 7 | `op_add` | signed-overflow inputs (`INT_MAX + 1`, `INT_MIN + (-1)`, `INT_MAX+INT_MAX`) — C has no check, gcc `-O2` two's-complement wraps | wrapped `int` result, no trap | `err_07_op_add_overflow` |
-| 8 | `op_sub` | signed-overflow inputs (`INT_MIN - 1`, `INT_MIN - INT_MAX`) | wrapped `int` result, no trap | `err_08_op_sub_overflow` |
-| 9 | `op_mul` | signed-overflow inputs (`INT_MAX * INT_MAX`, `INT_MIN * -1`, `INT_MIN * INT_MIN`) | wrapped `int` result, no trap | `err_09_op_mul_overflow` |
-| 10 | `helper_call` | `a`/`b` at the `int` extremes, so the internal `OP_FN(OP)(a,b)` overflows **and** the `r + acc` return overflows | wrapped results in both the `printf` and the return value | `err_10_helper_call_overflow` |
-| 11 | `helper_ptr` | `a`/`b` at the `int` extremes (overflow inside the indirect call) | wrapped result, no trap | `err_11_helper_ptr_overflow` |
-| 12 | `helper_call` / `helper_ptr` / `use_generated` (`OP=mul`, `REPEAT>=7`) | accumulator overflow inside the unrolled `STEP_mul` chain (`1*1*2*…*7`, and `acc *= (i+1)` on already-huge values) | wrapped `int` accumulator | `err_12_mul_accumulator_overflow` |
-| 13 | `helper_ptr` | the *writable* global `G_OP` is overwritten (e.g. with `op_mul`) before the call — `helper_ptr` uses `OP_FN(OP)` **directly**, not `G_OP` | result is unaffected by the `G_OP` write; still uses the build-selected op | `err_13_g_op_write_does_not_affect_helper_ptr` |
-| 14 | `G_OP` | the function pointer is read through `dlsym` and invoked with extreme/overflowing args | identical wrapped result as calling `op_<OP>` directly | `err_14_g_op_pointer_overflow` |
-| 15 | `G_OP_NAME` | the exported `const char *` is dereferenced as a NUL-terminated C string | exactly `"add"` / `"sub"` / `"mul"` (3 bytes + NUL) for the selected `OP`; pointer is non-NULL | `err_15_g_op_name_string` |
-| 16 | `main` (`driver`) | `argc < 3`: no arguments at all | writes `usage: <argv0> A B\n` to **stderr**, nothing to stdout, exit status **2** | `err_16_main_no_args` |
-| 17 | `main` (`driver`) | `argc < 3`: exactly one argument | same: usage on stderr, exit status **2** | `err_17_main_one_arg` |
-| 18 | `main` (`driver`) | `argc > 3`: extra arguments (`A B C D`) — there is no upper-bound check | extra argv entries are ignored; behaves exactly as `A B`; exit status **0** | `err_18_main_extra_args_ignored` |
-| 19 | `main` (`driver`) | un-parsable numeric arguments (`""`, `"abc"`, `"+"`, `"-"`, `"12abc"`, `" 7 "`, `"0x10"`) — `atoi` has no error report | `atoi` yields `0` / the leading-digit prefix; program still exits **0** | `err_19_main_atoi_unparsable` |
-| 20 | `main` (`driver`) | numeric arguments that overflow `int`/`long` (`"2147483648"`, `"-2147483649"`, `"99999999999999999999"`) | glibc `atoi` = `(int)strtol(...)`: clamp to `LONG_MIN`/`LONG_MAX` then truncate to `int`; exit **0** | `err_20_main_atoi_overflow` |
-
-### Null pointers
-
-The library exposes no pointer parameters at all — every function has the
-signature `int f(int, int)` or `int f(int)`, and the two exported globals are
-data, not callbacks invoked with caller data. There is therefore no
-null-pointer row to construct: the only pointers in the API surface are the
-*values* of `G_OP` / `G_OP_NAME`, covered by rows 13–15. `main`'s `argv` is
-always supplied by the loader/`Command`.
-
-### Zero / oversized lengths
-
-There are no length or buffer parameters anywhere in the API, so the
-length-boundary class collapses onto the integer-boundary rows (5, 6, 7–12).
-
-## Status
-
-All 20 rows have a passing differential test (`tests/errors.rs`,
-`err_01` … `err_20`), verified under **all 36 build configurations**
-(`../run_all.sh` → 36/36 PASS).
-
-### Divergence found by this phase
-
-Row 13 uncovered two real bugs in the Rust translation:
-
-1. **`helper_ptr` read the wrong thing.** The C is
-   `int (*fp)(int,int) = OP_FN(OP);` — a *direct* token-pasted reference to
-   `op_<OP>`. The Rust read the mutable global `G_OP` instead, so once a caller
-   overwrote `G_OP` (legal: it is a non-`const` C global) `helper_ptr` changed
-   behaviour in Rust but not in C. Fixed to use `OP_FN_SELECTED`.
-2. **`G_OP` / `G_OP_NAME` were not writable.** Writing the exported `G_OP`
-   worked against the C `.so` but `SIGSEGV`ed against the Rust one, because a
-   plain Rust `static` with a relocated initializer lands in read-only
-   `.data.rel.ro` while gcc puts the C globals in `.data`. Fixed by using
-   `static mut`. See `SYMBOLS.md` for the `readelf` evidence.
-
-### Harness sensitivity (negative control)
-
-To prove the suite is not vacuous, the Rust `mul,7` build was run against the C
-`sub/3` `.so`: **34 assertions failed**, i.e. the tests do detect divergence.
+* No pointer arguments exist anywhere in the exported API (`op_*`, `helper_*`,
+  `use_generated` take `int`s only), so there is no null-pointer check to
+  mirror; rows 16/17 cover the only pointer-typed part of the surface (the two
+  exported globals). "Null pointer" is still exercised: row 17 stores `NULL`
+  into `G_OP_NAME` in both libraries and checks neither faults.
+* No lengths/sizes/buffers exist, so "zero and oversized lengths" degenerate to
+  the `int` extremes covered by rows 4–15.

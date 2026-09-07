@@ -1,38 +1,30 @@
-# Dynamic Symbol Surface
+# Dynamic symbol surface
 
-Reference library:
+Source artifact:
+`c_src/build/libmd_driver_add_5.so`, built from both source files with
+`cc -shared -fPIC -DOP=add -DREPEAT=5`.
 
-```text
-c_src/build/libdriver.so
-```
-
-Mechanical source:
+Command used to derive the table:
 
 ```text
-nm -D --defined-only c_src/build/libdriver.so
+nm -D --defined-only c_src/build/libmd_driver_add_5.so
 ```
 
-| # | symbol | C type | Rust status |
-|---|--------|--------|-------------|
-| 1 | `G_OP` | `D` | present |
-| 2 | `G_OP_NAME` | `D` | present |
-| 3 | `helper_call` | `T` | present |
-| 4 | `helper_ptr` | `T` | present |
-| 5 | `main` | `T` | present |
-| 6 | `op_add` | `T` | present |
-| 7 | `op_mul` | `T` | present |
-| 8 | `op_sub` | `T` | present |
-| 9 | `use_generated` | `T` | present |
+| C symbol | kind | Rust `.so` status | reason/action when missing |
+|----------|------|-------------------|----------------------------|
+| `G_OP` | data | [x] | — |
+| `G_OP_NAME` | data | [x] | — |
+| `helper_call` | function | [x] | — |
+| `helper_ptr` | function | [x] | — |
+| `main` | function | [x] | Added a real C-ABI export in `src/lib.rs` backed by the translated implementation. |
+| `op_add` | function | [x] | — |
+| `op_mul` | function | [x] | — |
+| `op_sub` | function | [x] | — |
+| `use_generated` | function | [x] | — |
 
-`main` was initially missing because the translated behavior existed only as
-the Rust executable entry point. It is now implemented as a real `extern "C"`
-library export with the C argument contract and return values.
+Undefined dynamic symbols in the C object are libc/toolchain imports, not
+library exports: `_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`,
+`__cxa_finalize`, `__gmon_start__`, `atoi`, `fprintf`, `printf`, `stderr`.
 
-Undefined C-library dependencies (`atoi`, `fprintf`, `printf`, `stderr`, and
-toolchain weak symbols) are not implementation symbols and are tracked only
-when checking for unresolved non-libc dependencies.
-
-Completion:
-
-- [x] All 9 C implementation symbols are present in the Rust shared library.
-- [x] The symbol difference is empty for all 24 valid feature combinations.
+Final verification: defined-symbol diffs were empty for all 24 effective
+`OP × REPEAT` configurations.

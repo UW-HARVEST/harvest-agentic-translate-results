@@ -1,101 +1,81 @@
-# SYMBOLS.md — exported-symbol parity (Phase A / Phase D)
+# SYMBOLS.md — dynamic symbol parity, C `.so` vs Rust `.so`
 
-## How this was produced
+## How the two shared libraries are produced
 
-The C project (`c_src/CMakeLists.txt`) only declares `add_executable(driver ...)`,
-so CMake produces **no** `.so`. To obtain a shared library the same two
-translation units are compiled directly with `gcc -shared -fPIC` (nothing in
-`c_src/` is modified — all output goes to `cbuild/`):
+`c_src/CMakeLists.txt` only declares `add_executable(driver src/mdcore.c src/mdmain.c)`,
+so CMake alone never emits a `.so`. The shared library used for differential
+testing is built from `src/mdcore.c` with an equivalent PIC compile (this leaves
+`c_src/` untouched):
 
-```sh
-gcc -O2 -fPIC -shared -DOP=$op -DREPEAT=$rep -Ic_src/src c_src/src/mdcore.c \
-    -o cbuild/libcmd_${op}_${rep}.so
+```
+gcc -O2 -fPIC -std=c11 -DOP=<op> -DREPEAT=<r> -shared -o libmdcore_<op>_<r>.so c_src/src/mdcore.c
+cargo build --release --no-default-features --features <op>,<r>   # -> libdriver.so
 ```
 
-`mdmain.c` is excluded from the `.so` because it defines `main` (it is built into
-`cbuild/driver_${op}_${rep}` instead and compared end-to-end — see
-`tests/driver_cli.rs`).
+`src/mdmain.c` is deliberately excluded from the `.so`: it contributes only
+`main`, and the Rust `[lib]` target mirrors `mdcore.c` (`mdmain.c` is translated
+into the `[[bin]]` target `src/main.rs`). The `main`/driver surface is verified
+separately, process-to-process, in `tests/driver_cli.rs`.
 
-Rust side:
+Scripts: `build_all.sh` (build every configuration), `check_symbols.sh`
+(the parity diff below, over all 24 configurations).
 
-```sh
-cd translation && cargo build --release --no-default-features --features $op,repeat_$rep
-# -> translation/target/release/libdriver.so   (crate-type = ["cdylib"])
-```
+## `nm -D --defined-only` on the C `.so`
 
-Comparison command (`cbuild/symdiff.sh`):
+Exactly 8 dynamic symbols, identical in every one of the 24 `(OP, REPEAT)`
+configurations:
 
-```sh
-comm -23 <(nm -D --defined-only "$C_SO"    | awk '{print $NF}' | sort -u) \
-         <(nm -D --defined-only "$RUST_SO" | awk '{print $NF}' | sort -u)
-```
+| # | symbol | class | C declaration | present in Rust `.so` |
+|---|--------|-------|---------------|-----------------------|
+| 1 | `op_add`        | `T` (text) | `int op_add(int a, int b)`           | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub extern "C" fn op_add` |
+| 2 | `op_sub`        | `T` (text) | `int op_sub(int a, int b)`           | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub extern "C" fn op_sub` |
+| 3 | `op_mul`        | `T` (text) | `int op_mul(int a, int b)`           | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub extern "C" fn op_mul` |
+| 4 | `helper_call`   | `T` (text) | `int helper_call(int a, int b)`      | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub extern "C" fn helper_call` |
+| 5 | `helper_ptr`    | `T` (text) | `int helper_ptr(int a, int b)`       | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub extern "C" fn helper_ptr` |
+| 6 | `use_generated` | `T` (text) | `int use_generated(int n)`           | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub extern "C" fn use_generated` |
+| 7 | `G_OP`          | `D` (data) | `int (*G_OP)(int,int) = OP_FN(OP)`   | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub static mut G_OP` |
+| 8 | `G_OP_NAME`     | `D` (data) | `const char *G_OP_NAME = STR(OP)`    | yes — `mdcore.rs`, `#[unsafe(no_mangle)] pub static G_OP_NAME` |
 
-## Defined dynamic symbols
+Symbol *class* also matches: 1–6 are `T` in both, 7–8 are `D` in both.
 
-`nm -D --defined-only cbuild/libcmd_add_5.so` (identical symbol *set* for all 24
-`(OP, REPEAT)` configurations — only the data these symbols point at changes):
+## Symbols intentionally NOT exported
 
-| symbol | C type / nm class | source | exported by Rust `.so`? | Rust definition |
-|--------|-------------------|--------|-------------------------|-----------------|
-| `op_add`        | `T` (text) `int(int,int)`      | `mdcore.c:28` | yes | `src/mdcore.rs` `#[unsafe(no_mangle)] extern "C" fn op_add` |
-| `op_sub`        | `T` (text) `int(int,int)`      | `mdcore.c:29` | yes | `src/mdcore.rs` `op_sub` |
-| `op_mul`        | `T` (text) `int(int,int)`      | `mdcore.c:30` | yes | `src/mdcore.rs` `op_mul` |
-| `helper_call`   | `T` (text) `int(int,int)`      | `mdcore.c:39` | yes | `src/mdcore.rs` `helper_call` |
-| `helper_ptr`    | `T` (text) `int(int,int)`      | `mdcore.c:47` | yes | `src/mdcore.rs` `helper_ptr` |
-| `use_generated` | `T` (text) `int(int)`          | `mdcore.c:54` | yes | `src/mdcore.rs` `use_generated` |
-| `G_OP`          | `D` (`.data`, 8 B OBJECT) `int(*)(int,int)` | `mdcore.c:36` | yes | `src/mdcore.rs` `static mut G_OP` |
-| `G_OP_NAME`     | `D` (`.data`, 8 B OBJECT) `const char*`     | `mdcore.c:37` | yes | `src/mdcore.rs` `static mut G_OP_NAME` |
+| C construct | why absent from `nm -D` in both |
+|-------------|---------------------------------|
+| `accum_<OP>` (from `DEFINE_ACCUM(OP)`, `mdcore.c:33`) | declared `static` by the macro; internal in C, so private `fn accum` in Rust |
+| `op_add`/`op_sub`/`op_mul` for the *unselected* ops | all three are unconditionally defined in `mdcore.c`, so all three are exported in both — no configuration-dependent gaps |
+| every `mdmacros.h` macro (`STR`, `CAT`, `OP_FN`, `STEP_*`, `INIT_*`, `REP0`–`REP7`, `CHOOSE_REP`, `FOR_EACH`, `DO_LOOP`, `RUN_LOOP`, `DISPATCH_REP`, `DEFINE_ACCUM`, `ACCUM_FN`) | preprocessor-only; nothing reaches the object file. Translated to `cfg`-selected `const`s and `#[inline]` `fn`s in `mdmacros.rs` |
+| `main` (`mdmain.c:28`) | not compiled into the `.so`; lives in the `driver` executable on both sides |
 
-**Symbol diff (C \ Rust): EMPTY — 0 missing symbols.** Verified for all 24
-`(OP, REPEAT)` configurations by `cbuild/symdiff.sh`.
+## Undefined symbols
 
-### Deliberately NOT exported (and correctly absent from Rust too)
-
-| C entity | why not a dynamic symbol |
-|----------|--------------------------|
-| `accum_add` / `accum_sub` / `accum_mul` | `DEFINE_ACCUM` (`mdmacros.h:96`) declares it `static`, so it has internal linkage. Reachable only through `use_generated`. Rust models it as the private `mdmacros::accum`. |
-| `main` | lives in `mdmain.c`, which is not part of the `.so`. |
-| every macro in `mdmacros.h` (`STR`, `CAT`, `OP_FN`, `STEP_*`, `INIT_*`, `REP0..REP7`, `CHOOSE_REP`, `FOR_EACH`, `DO_LOOP`, `RUN_LOOP`, `DISPATCH_REP`, `DEFINE_ACCUM`, `ACCUM_FN`) | preprocessor-only; they never produce a linker symbol. Translated to `cfg`-selected consts/fns in `src/mdmacros.rs`. |
-
-### Undefined (imported) symbols
-
-C `.so` imports `printf@GLIBC_2.2.5` plus the usual weak CRT hooks
+C `.so`: `printf@GLIBC_2.2.5` (`U`), plus the usual weak ELF/glibc hooks
 (`_ITM_deregisterTMCloneTable`, `_ITM_registerTMCloneTable`, `__cxa_finalize`,
-`__gmon_start__`). The Rust `.so` statically links Rust `std`, so it imports a
-different (larger) set of libc symbols. **Undefined-symbol sets are not required
-to match** — only the *defined/exported* set is. There are 0 undefined non-libc
-symbols in the Rust `.so` (checked with `ldd -r`).
+`__gmon_start__`).
 
-## Section-placement note (a real divergence that was fixed)
+Rust `.so`: only libc/`GLIBC`-versioned imports (`write`, `memcpy`, pthread
+primitives, …) pulled in by the statically linked `std`. **Zero unresolved
+non-libc symbols** — checked by `check_symbols.sh`, which greps out
+`_ZN`/`_R`-mangled Rust-runtime names and `@GLIBC`/`__`-prefixed libc names and
+requires the remainder to be empty.
 
-`mdcore.c` declares `int (*G_OP)(int,int)` and `const char *G_OP_NAME` — neither
-pointer *object* is `const`, so gcc puts both in writable `.data`, and an
-external caller can legitimately do:
+Note that `printf` is *not* an import of the Rust `.so`: `mdcore.rs` routes the
+three `printf` call sites through `stdio::print_str`, which formats with
+`format!` and writes the bytes to `std::io::stdout()`. That changes the libc
+function used but not the bytes emitted; `tests/stdout_bytes.rs` asserts the
+emitted bytes are identical.
 
-```c
-int (**gop)(int,int) = dlsym(h, "G_OP");
-*gop = dlsym(h, "op_sub");     /* works against the C .so */
-```
-
-The translation originally used immutable Rust `static`s. LLVM marks those
-`constant`, so they landed in `.data.rel.ro`, which RELRO maps **read-only**
-after relocation — the store above would have segfaulted. Changed to
-`static mut` so both symbols land in `.data` (`WA`), matching C. Verified with
-`readelf -SW` / `readelf -sW`: `G_OP` and `G_OP_NAME` are now 8-byte `OBJECT
-GLOBAL` symbols in the `.data` section in both libraries. Exercised by
-`tests/differential.rs::gop_is_writable_like_c`.
-
-## Verification evidence
-
-`cbuild/symdiff.sh`, run for both `--release` and debug profiles:
+## Result
 
 ```
-ok      OP=add REPEAT=0  (8 C symbols, 0 missing, 0 undefined)
+$ ./check_symbols.sh
+[add_0] symbol parity OK (8 C symbols)
 ...
-ok      OP=mul REPEAT=7  (8 C symbols, 0 missing, 0 undefined)
+[mul_7] symbol parity OK (8 C symbols)
+EXIT=0
 ```
 
-24/24 configurations: **0 missing symbols, 0 undefined non-libc symbols**
-(`ldd -r` on the Rust `.so`). No symbol is stubbed or `unimplemented!()` — every
-one is a real translation of the corresponding `mdcore.c` definition, and every
-one is exercised by the differential tests in `tests/`.
+- 0 symbols missing from the Rust `.so`, in all 24 configurations.
+- 0 unresolved non-libc symbols in the Rust `.so`, in all 24 configurations.
+- Nothing was stubbed: every symbol is backed by a real translation of the
+  corresponding `mdcore.c` definition.

@@ -1,127 +1,202 @@
-//! Translation of `app/src/address.c`.
+//! Translation of `app/src/address.c` / `app/include/address.h`.
 //!
-//! Addresses are `uint32_t addr[8]` in C, but every access is performed
-//! through a byte view (`(unsigned char *)addr`). We keep the `[u32; 8]`
-//! representation and manipulate its native-endian bytes, which reproduces the
-//! exact in-memory layout the C code hashes on a little-endian target.
+//! The C code treats the `uint32_t addr[8]` array as a raw byte buffer and
+//! writes individual bytes at the `SPX_OFFSET_*` positions.  We reproduce that
+//! exactly by re-interpreting the `[u32; 8]` as a `[u8; 32]` in native byte
+//! order (little-endian on x86_64), which is precisely what
+//! `(unsigned char *)addr` does in C.
 
-use crate::params::*;
+use crate::params::{
+    SPX_OFFSET_CHAIN_ADDR, SPX_OFFSET_HASH_ADDR, SPX_OFFSET_KP_ADDR, SPX_OFFSET_LAYER,
+    SPX_OFFSET_TREE, SPX_OFFSET_TREE_HGT, SPX_OFFSET_TREE_INDEX, SPX_OFFSET_TYPE,
+};
 use crate::utils::{u32_to_bytes, ull_to_bytes};
 
-/// View a `[u32; 8]` address as its 32 raw bytes (native endianness).
+/* The hash types that are passed to set_type */
+pub const SPX_ADDR_TYPE_WOTS: u32 = 0;
+pub const SPX_ADDR_TYPE_WOTSPK: u32 = 1;
+pub const SPX_ADDR_TYPE_HASHTREE: u32 = 2;
+pub const SPX_ADDR_TYPE_FORSTREE: u32 = 3;
+pub const SPX_ADDR_TYPE_FORSPK: u32 = 4;
+pub const SPX_ADDR_TYPE_WOTSPRF: u32 = 5;
+pub const SPX_ADDR_TYPE_FORSPRF: u32 = 6;
+
+/// Native-endian byte view of the address, exactly matching
+/// `(const unsigned char *)addr` in C.
 #[inline]
 pub fn addr_bytes(addr: &[u32; 8]) -> &[u8; 32] {
-    // Safe: `[u32; 8]` and `[u8; 32]` have identical size; alignment of the
-    // source (4) exceeds that of the destination (1).
     unsafe { &*(addr.as_ptr() as *const [u8; 32]) }
 }
 
+/// Native-endian mutable byte view of the address, exactly matching
+/// `(unsigned char *)addr` in C.
 #[inline]
-fn addr_bytes_mut(addr: &mut [u32; 8]) -> &mut [u8; 32] {
+pub fn addr_bytes_mut(addr: &mut [u32; 8]) -> &mut [u8; 32] {
     unsafe { &mut *(addr.as_mut_ptr() as *mut [u8; 32]) }
 }
 
+/*
+ * Specify which level of Merkle tree (the "layer") we're working on
+ */
 pub fn set_layer_addr(addr: &mut [u32; 8], layer: u32) {
     addr_bytes_mut(addr)[SPX_OFFSET_LAYER] = layer as u8;
 }
 
+/*
+ * Specify which Merkle tree within the level (the "tree address") we're
+ * working on
+ */
 pub fn set_tree_addr(addr: &mut [u32; 8], tree: u64) {
-    let b = addr_bytes_mut(addr);
-    ull_to_bytes(&mut b[SPX_OFFSET_TREE..], 8, tree);
+    // #if (SPX_TREE_HEIGHT * (SPX_D - 1)) > 64 -> #error
+    // (statically satisfied for all supported parameter sets)
+    let bytes = addr_bytes_mut(addr);
+    ull_to_bytes(&mut bytes[SPX_OFFSET_TREE..SPX_OFFSET_TREE + 8], 8, tree);
 }
 
-pub fn set_type(addr: &mut [u32; 8], t: u32) {
-    addr_bytes_mut(addr)[SPX_OFFSET_TYPE] = t as u8;
+/*
+ * Specify the reason we'll use this address structure for, that is, what
+ * hash will we compute with it.
+ */
+pub fn set_type(addr: &mut [u32; 8], type_: u32) {
+    addr_bytes_mut(addr)[SPX_OFFSET_TYPE] = type_ as u8;
 }
 
-pub fn copy_subtree_addr(out: &mut [u32; 8], inp: &[u32; 8]) {
-    let src = addr_bytes(inp);
+/*
+ * Copy the layer and tree fields of the address structure.
+ */
+pub fn copy_subtree_addr(out: &mut [u32; 8], input: &[u32; 8]) {
+    const LEN: usize = SPX_OFFSET_TREE + 8;
+    let src = addr_bytes(input);
     let dst = addr_bytes_mut(out);
-    dst[..SPX_OFFSET_TREE + 8].copy_from_slice(&src[..SPX_OFFSET_TREE + 8]);
+    dst[..LEN].copy_from_slice(&src[..LEN]);
 }
 
+/* These functions are used for OTS addresses. */
+
+/*
+ * Specify which Merkle leaf we're working on; that is, which OTS keypair
+ * we're talking about.
+ */
 pub fn set_keypair_addr(addr: &mut [u32; 8], keypair: u32) {
-    let b = addr_bytes_mut(addr);
-    u32_to_bytes(&mut b[SPX_OFFSET_KP_ADDR..], keypair);
+    let bytes = addr_bytes_mut(addr);
+    u32_to_bytes(&mut bytes[SPX_OFFSET_KP_ADDR..SPX_OFFSET_KP_ADDR + 4], keypair);
 }
 
-pub fn copy_keypair_addr(out: &mut [u32; 8], inp: &[u32; 8]) {
-    let src = *addr_bytes(inp);
+/*
+ * Copy the layer, tree and keypair fields of the address structure.
+ */
+pub fn copy_keypair_addr(out: &mut [u32; 8], input: &[u32; 8]) {
+    const LEN: usize = SPX_OFFSET_TREE + 8;
+    let src = *addr_bytes(input);
     let dst = addr_bytes_mut(out);
-    dst[..SPX_OFFSET_TREE + 8].copy_from_slice(&src[..SPX_OFFSET_TREE + 8]);
+    dst[..LEN].copy_from_slice(&src[..LEN]);
     dst[SPX_OFFSET_KP_ADDR..SPX_OFFSET_KP_ADDR + 4]
         .copy_from_slice(&src[SPX_OFFSET_KP_ADDR..SPX_OFFSET_KP_ADDR + 4]);
 }
 
+/*
+ * Specify which Merkle chain within the OTS we're working with
+ * (the chain address)
+ */
 pub fn set_chain_addr(addr: &mut [u32; 8], chain: u32) {
     addr_bytes_mut(addr)[SPX_OFFSET_CHAIN_ADDR] = chain as u8;
 }
 
+/*
+ * Specify where in the Merkle chain we are (the hash address)
+ */
 pub fn set_hash_addr(addr: &mut [u32; 8], hash: u32) {
     addr_bytes_mut(addr)[SPX_OFFSET_HASH_ADDR] = hash as u8;
 }
 
+/* These functions are used for all hash tree addresses (including FORS). */
+
+/*
+ * Specify the height of the node in the Merkle/FORS tree we are in
+ * (the tree height)
+ */
 pub fn set_tree_height(addr: &mut [u32; 8], tree_height: u32) {
     addr_bytes_mut(addr)[SPX_OFFSET_TREE_HGT] = tree_height as u8;
 }
 
+/*
+ * Specify the distance from the left edge of the node in the Merkle/FORS tree
+ * (the tree index)
+ */
 pub fn set_tree_index(addr: &mut [u32; 8], tree_index: u32) {
-    let b = addr_bytes_mut(addr);
-    u32_to_bytes(&mut b[SPX_OFFSET_TREE_INDEX..], tree_index);
+    let bytes = addr_bytes_mut(addr);
+    u32_to_bytes(
+        &mut bytes[SPX_OFFSET_TREE_INDEX..SPX_OFFSET_TREE_INDEX + 4],
+        tree_index,
+    );
 }
 
-// ------------------------------------------------------------------
-// Exported C ABI wrappers (namespaced `SPX_*` linker symbols).
-// ------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// C ABI wrappers (exported linker symbols carry the `SPX_` namespace prefix)
+// ---------------------------------------------------------------------------
 
-macro_rules! as_arr8_mut {
-    ($p:expr) => {
-        &mut *($p as *mut [u32; 8])
-    };
-}
-macro_rules! as_arr8 {
-    ($p:expr) => {
-        &*($p as *const [u32; 8])
-    };
+#[inline]
+unsafe fn as_addr_mut(addr: *mut u32) -> &'static mut [u32; 8] {
+    unsafe { &mut *(addr as *mut [u32; 8]) }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_layer_addr(addr: *mut u32, layer: u32) {
-    set_layer_addr(as_arr8_mut!(addr), layer);
+#[inline]
+unsafe fn as_addr(addr: *const u32) -> &'static [u32; 8] {
+    unsafe { &*(addr as *const [u32; 8]) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_tree_addr(addr: *mut u32, tree: u64) {
-    set_tree_addr(as_arr8_mut!(addr), tree);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_layer_addr(addr: *mut u32, layer: u32) {
+    unsafe { set_layer_addr(as_addr_mut(addr), layer) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_type(addr: *mut u32, t: u32) {
-    set_type(as_arr8_mut!(addr), t);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_tree_addr(addr: *mut u32, tree: u64) {
+    unsafe { set_tree_addr(as_addr_mut(addr), tree) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_copy_subtree_addr(out: *mut u32, inp: *const u32) {
-    copy_subtree_addr(as_arr8_mut!(out), as_arr8!(inp));
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_type(addr: *mut u32, type_: u32) {
+    unsafe { set_type(as_addr_mut(addr), type_) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_keypair_addr(addr: *mut u32, keypair: u32) {
-    set_keypair_addr(as_arr8_mut!(addr), keypair);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_copy_subtree_addr(out: *mut u32, input: *const u32) {
+    unsafe {
+        let src = *as_addr(input);
+        copy_subtree_addr(as_addr_mut(out), &src)
+    }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_chain_addr(addr: *mut u32, chain: u32) {
-    set_chain_addr(as_arr8_mut!(addr), chain);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_keypair_addr(addr: *mut u32, keypair: u32) {
+    unsafe { set_keypair_addr(as_addr_mut(addr), keypair) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_hash_addr(addr: *mut u32, hash: u32) {
-    set_hash_addr(as_arr8_mut!(addr), hash);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_chain_addr(addr: *mut u32, chain: u32) {
+    unsafe { set_chain_addr(as_addr_mut(addr), chain) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_copy_keypair_addr(out: *mut u32, inp: *const u32) {
-    copy_keypair_addr(as_arr8_mut!(out), as_arr8!(inp));
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_hash_addr(addr: *mut u32, hash: u32) {
+    unsafe { set_hash_addr(as_addr_mut(addr), hash) }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_tree_height(addr: *mut u32, tree_height: u32) {
-    set_tree_height(as_arr8_mut!(addr), tree_height);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_copy_keypair_addr(out: *mut u32, input: *const u32) {
+    unsafe {
+        let src = *as_addr(input);
+        copy_keypair_addr(as_addr_mut(out), &src)
+    }
 }
-#[no_mangle]
-pub unsafe extern "C" fn SPX_set_tree_index(addr: *mut u32, tree_index: u32) {
-    set_tree_index(as_arr8_mut!(addr), tree_index);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_tree_height(addr: *mut u32, tree_height: u32) {
+    unsafe { set_tree_height(as_addr_mut(addr), tree_height) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn SPX_set_tree_index(addr: *mut u32, tree_index: u32) {
+    unsafe { set_tree_index(as_addr_mut(addr), tree_index) }
 }
